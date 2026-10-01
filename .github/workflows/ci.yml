@@ -129,8 +129,32 @@ jobs:
           }
           if ($bad) { throw 'Mindestens eine ausgelieferte Datei ist nicht gültig signiert.' }
           if ($env:EXPECT_SIGNED -ne 'true') { Write-Host '::notice::Kein Signaturzertifikat hinterlegt – die Pakete sind unsigniert.' }
+      # Nur Builds von main aufbewahren (PRs bauen die Pakete nur, um das Packaging zu prüfen); siehe prune-windows-artifacts
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
           name: archivist-windows
           path: |
             apps/desktop/release/*.exe
+          retention-days: 30
+
+  prune-windows-artifacts:
+    # Installer + portable Version sind groß: bis Releases veröffentlicht werden, reichen die drei neuesten Builds
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    needs: windows-installer
+    permissions:
+      actions: write
+    steps:
+      - name: Nur die drei neuesten Windows-Pakete behalten
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate "repos/${REPO}/actions/artifacts?name=archivist-windows&per_page=100" \
+            --jq '.artifacts[] | select(.expired | not) | [.created_at, .id] | @tsv' \
+            | sort -r | tail -n +4 | cut -f2 \
+            | while read -r id; do
+                gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}"
+                echo "Gelöscht: Artefakt ${id}"
+              done
