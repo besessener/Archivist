@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localDate, localDateTime, localInstant, localToday } from '@archivist/shared';
+import { currentTimeZone, localDate, localDateTime, localInstant, localToday, setDefaultTimeZone } from '@archivist/shared';
 
 const BERLIN = 'Europe/Berlin';
 const NEW_YORK = 'America/New_York';
@@ -62,5 +62,24 @@ describe('localDateTime / localInstant (#77)', () => {
     expect(localInstant('2026-10-05T14:15', '08:00', BERLIN)?.toISOString()).toBe('2026-10-05T12:15:00.000Z');
     expect(localInstant('2026-10-05T14:15:00Z', '08:00', BERLIN)?.toISOString()).toBe('2026-10-05T14:15:00.000Z');
     expect(localInstant('kein Datum', '08:00', BERLIN)).toBeNull();
+  });
+});
+
+describe('setDefaultTimeZone (#77)', () => {
+  it('overrides the process zone until reset and rejects unknown zones', () => {
+    const processZone = currentTimeZone();
+    try {
+      setDefaultTimeZone('Europe/Berlin');
+      expect(currentTimeZone()).toBe('Europe/Berlin');
+      expect(localDate('2026-09-30T22:30:00Z')).toBe('2026-10-01');
+      setDefaultTimeZone('America/New_York');
+      expect(localToday(new Date('2026-10-02T01:30:00Z'))).toBe('2026-10-01');
+      expect(localDateTime('2026-10-05', '08:00').toISOString()).toBe('2026-10-05T12:00:00.000Z');
+      expect(() => setDefaultTimeZone('Mars/Olympus')).toThrow(RangeError);
+      expect(currentTimeZone()).toBe('America/New_York');
+    } finally {
+      setDefaultTimeZone(null);
+    }
+    expect(currentTimeZone()).toBe(processZone);
   });
 });

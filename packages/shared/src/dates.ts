@@ -14,9 +14,21 @@ const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 /** Date with a wall-clock time, optionally followed by a zone designator. */
 const DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/i;
 
-/** The IANA time zone of the running process (or browser). */
+let defaultTimeZone: string | null = null;
+
+/**
+ * Sets the zone used when a function gets no explicit one (null: the zone of the process or browser again).
+ * Needed where `process.env.TZ` cannot be changed at runtime, e.g. in worker threads, whose environment
+ * is a copy that does not reach the ICU default zone. Throws a RangeError for an unknown zone.
+ */
+export function setDefaultTimeZone(timeZone: string | null): void {
+  if (timeZone !== null) formatter(timeZone); // validates the zone
+  defaultTimeZone = timeZone;
+}
+
+/** The IANA time zone used by default: the one set via `setDefaultTimeZone`, otherwise that of the process (or browser). */
 export function currentTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return defaultTimeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>();

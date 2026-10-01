@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setDefaultTimeZone } from '@archivist/shared';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 /**
  * #77: "today", "overdue", reminders and timeline days follow local time, not UTC.
- * The process time zone is pinned per test so the results do not depend on the machine.
+ * Zone and clock are pinned per test so the results do not depend on the machine.
  */
 let app: TestApp;
-const originalTz = process.env.TZ;
 
+/**
+ * Pins zone and clock. The zone is set via setDefaultTimeZone, not process.env.TZ: in worker threads
+ * (e.g. the Stryker/Vitest threads pool) changing process.env.TZ does not change the ICU default zone.
+ */
 function useZoneAndClock(timeZone: string, iso: string): void {
-  process.env.TZ = timeZone;
+  setDefaultTimeZone(timeZone);
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(iso));
 }
@@ -19,8 +23,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   vi.useRealTimers();
-  if (originalTz === undefined) delete process.env.TZ;
-  else process.env.TZ = originalTz;
+  setDefaultTimeZone(null);
   await app.cleanup();
 });
 
@@ -69,9 +72,7 @@ describe('Reminders fire at a fixed local time (#77)', () => {
   });
 
   it('wakes a snoozed insight together with its reminder at the local reminder time', async () => {
-    process.env.TZ = 'Europe/Berlin';
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-10-01T10:00:00Z'));
+    useZoneAndClock('Europe/Berlin', '2026-10-01T10:00:00Z');
     const insight = app.services.insights.upsert({
       kind: 'open_item',
       title: 'Lange unverändert: Angebot',
@@ -117,13 +118,13 @@ describe('Timeline days follow the local day (#77)', () => {
     const item = await createItem('Nachts angelegt', '2026-10-10');
     app.services.ctx.database.sqlite.prepare('UPDATE open_items SET created_at = ? WHERE id = ?').run('2026-09-30T22:30:00.000Z', item.id);
 
-    process.env.TZ = 'Europe/Berlin';
+    setDefaultTimeZone('Europe/Berlin');
     const created = (await app.ok('timeline:get', {})).find((e) => e.id === `task:${item.id}:created`)!;
     expect(created.date).toBe('2026-10-01');
     expect(created.year).toBe(2026);
     expect((await app.ok('timeline:get', { from: '2026-10-01', to: '2026-10-01' })).map((e) => e.id)).toEqual([`task:${item.id}:created`]);
 
-    process.env.TZ = 'America/New_York';
+    setDefaultTimeZone('America/New_York');
     expect((await app.ok('timeline:get', {})).find((e) => e.id === `task:${item.id}:created`)!.date).toBe('2026-09-30');
   });
 });
