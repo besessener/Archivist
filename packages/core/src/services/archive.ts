@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { ArchiveItemRequest, ArchivePlan, ArchivePlanItem, ArchiveResult, DocumentProposal, VerifyReport } from '@archivist/shared';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents } from '../db/schema';
+import { documents, relations } from '../db/schema';
 import { AppError, fsError, permissionError, toErrorInfo } from '../util/errors';
 import { nowIso } from '../util/ids';
 import { truncate } from '../util/text';
@@ -38,17 +38,25 @@ interface UndoData {
   afterUpdatedAt: string;
 }
 
+type RelationRow = typeof relations.$inferSelect;
+
 interface RelocateUndoData {
   documentId: string;
   fromRel: string;
   toRel: string;
   sha256: string;
   beforeCategoryPath: string | null;
+  /** updatedAt before relocating; undo restores it so that the archiving itself stays undoable. Missing in old entries. */
+  beforeUpdatedAt?: string;
   afterUpdatedAt: string;
   /** Beziehung zur neuen Kategorie, falls sie durch das Umlagern entstand (wird bei Undo wieder entfernt). */
   addedRelationId: string | null;
-  /** Kategorie, deren Zuordnung beim Umlagern entfernt wurde (wird bei Undo wiederhergestellt). */
-  removedCategory: string | null;
+  /** Legacy entries only: category whose relation was deleted; undo re-links it as confirmed. */
+  removedCategory?: string | null;
+  /** Category relations deleted by relocating, exactly as they were (undo inserts them again with the same id). */
+  relationsRemoved?: RelationRow[];
+  /** Category relations whose status relocating changed to confirmed, exactly as they were before. */
+  relationsChanged?: RelationRow[];
 }
 
 /** Wunsch: ein bereits archiviertes Dokument in einen anderen Archivordner verschieben. */
@@ -72,6 +80,17 @@ export interface RelocatePlanItem {
 }
 
 const toPosix = (p: string) => p.split(path.sep).join('/');
+
+/**
+ * Topic/project the user chose: an omitted field falls back to the proposal,
+ * an explicit `null` or empty string means "without topic/project".
+ */
+function assignmentNames(req: ArchiveItemRequest, proposal: DocumentProposal | null): { topicName: string | null; projectName: string | null } {
+  return {
+    topicName: (req.topic !== undefined ? req.topic : proposal?.topic)?.trim() || null,
+    projectName: (req.project !== undefined ? req.project : proposal?.project)?.trim() || null,
+  };
+}
 
 /** True when `p` is a readable file whose content has the given checksum. */
 async function hasChecksum(p: string, sha256: string): Promise<boolean> {
@@ -153,6 +172,7 @@ export class ArchiveService {
       targetRelPath: null,
       renamed: false,
       willRemoveSource: false,
+      removesInboxCopy: false,
       duplicates: [],
       conflicts: [],
       newCategories: [],
@@ -170,11 +190,13 @@ export class ArchiveService {
       title: d.title,
       archivePath: d.archiveRelPath ? path.join(this.root, ...d.archiveRelPath.split('/')) : null,
     }));
-    for (const t of [proposal?.topic, proposal?.project, req.topic, req.project]) {
-      if (t) {
-        const e = this.graph.findByName(t === proposal?.project || t === req.project ? 'project' : 'topic', t);
-        if (e) base.affected.push({ type: e.type, id: e.id, label: e.name });
-      }
+    const assigned = assignmentNames(req, proposal);
+    for (const [type, name] of [
+      ['topic', assigned.topicName],
+      ['project', assigned.projectName],
+    ] as const) {
+      const e = name ? this.graph.findByName(type, name) : null;
+      if (e) base.affected.push({ type: e.type, id: e.id, label: e.name });
     }
 
     let source: string;
@@ -209,7 +231,9 @@ export class ArchiveService {
       targetPath: target,
       targetRelPath: toPosix(path.relative(this.root, target)),
       renamed: collided || name !== row.originalName,
-      willRemoveSource: req.mode === 'move' || Boolean(row.stagedPath && source === row.stagedPath),
+      // Only the user's original counts as "removed"; Archivist's own inbox copy is merely cleaned up.
+      willRemoveSource: req.mode === 'move' && Boolean(row.sourcePath && row.sourcePath !== row.stagedPath && fs.existsSync(row.sourcePath)),
+      removesInboxCopy: Boolean(row.stagedPath && fs.existsSync(row.stagedPath)),
       conflicts: collided
         ? [`Im Zielordner existiert bereits „${name}“ – die Datei wird als „${path.basename(target)}“ abgelegt (nichts wird überschrieben).`]
         : [],
@@ -329,8 +353,7 @@ export class ArchiveService {
       };
 
     const proposal = row.proposal as DocumentProposal | null;
-    const topicName = (req.topic !== undefined ? req.topic : proposal?.topic)?.trim() || null;
-    const projectName = (req.project !== undefined ? req.project : proposal?.project)?.trim() || null;
+    const { topicName, projectName } = assignmentNames(req, proposal);
     const before: UndoData['before'] = {
       status: row.status,
       archiveRelPath: row.archiveRelPath,
@@ -409,7 +432,7 @@ export class ArchiveService {
 
     let targetAbs: string | null = null;
     let archiveRel: string | null = null;
-    let relations: RelationChangeSet;
+    let relationChanges: RelationChangeSet;
     const cat = plan._cat ?? null;
 
     if (req.mode === 'index_only') {
@@ -436,7 +459,7 @@ export class ArchiveService {
     const updatedAt = nowIso();
     try {
       // only relations the archiving created or changed go into the undo data, never pre-existing (e.g. rejected) ones
-      ({ changes: relations } = this.graph.trackRelationChanges(row.id, () =>
+      ({ changes: relationChanges } = this.graph.trackRelationChanges(row.id, () =>
         this.ctx.database.transaction(() => {
           if (cat) this.categories.create(cat, true);
           const topic = topicName ? this.graph.ensureEntity('topic', topicName) : null;
@@ -448,8 +471,9 @@ export class ArchiveService {
               archiveRelPath: archiveRel,
               categoryPath: cat ?? row.categoryPath,
               archiveMode: req.mode,
-              topicId: topic?.id ?? row.topicId,
-              projectId: project?.id ?? row.projectId,
+              // An explicitly emptied field means "without topic/project" and clears an earlier assignment.
+              topicId: topic ? topic.id : req.topic !== undefined ? null : row.topicId,
+              projectId: project ? project.id : req.project !== undefined ? null : row.projectId,
               archivedAt: updatedAt,
               updatedAt,
             })
@@ -527,7 +551,7 @@ export class ArchiveService {
       removedStaged,
       removedSource,
       before,
-      relations,
+      relations: relationChanges,
       afterUpdatedAt: finalUpdatedAt,
     };
     const auditId = this.audit.log({
@@ -891,23 +915,32 @@ export class ArchiveService {
     const newRel = toPosix(path.relative(this.root, newAbs));
     const updatedAt = nowIso();
     let addedRelationId: string | null = null;
-    let removedCategory: string | null = null;
+    const relationsRemoved: RelationRow[] = [];
+    const relationsChanged: RelationRow[] = [];
     try {
       this.ctx.database.transaction(() => {
         this.categories.create(cat, false);
         this.db.update(documents).set({ archiveRelPath: newRel, categoryPath: cat, updatedAt }).where(eq(documents.id, row.id)).run();
         const newEntity = this.graph.ensureEntity('category', cat);
-        const mine = this.graph.relationsOf(row.id, { types: ['belongs_to'] }).filter((r) => r.sourceEntityId === row.id);
-        if (row.categoryPath) {
-          const oldEntity = this.graph.findByName('category', row.categoryPath);
-          const old = oldEntity ? mine.find((r) => r.targetEntityId === oldEntity.id) : undefined;
-          if (old && oldEntity?.id !== newEntity.id) {
-            this.graph.deleteRelation(old.id);
-            removedCategory = row.categoryPath;
-          }
+        const mine = this.db
+          .select()
+          .from(relations)
+          .where(and(eq(relations.sourceEntityId, row.id), eq(relations.relationType, 'belongs_to')))
+          .all();
+        const oldEntity = row.categoryPath ? this.graph.findByName('category', row.categoryPath) : undefined;
+        const old = oldEntity && oldEntity.id !== newEntity.id ? mine.find((r) => r.targetEntityId === oldEntity.id) : undefined;
+        // A rejected relation is the user's decision and stays untouched; only the active assignment is removed.
+        if (old && old.status !== 'rejected') {
+          relationsRemoved.push({ ...old });
+          this.graph.deleteRelation(old.id);
         }
-        if (!mine.some((r) => r.targetEntityId === newEntity.id)) {
+        const target = mine.find((r) => r.targetEntityId === newEntity.id);
+        if (!target) {
           addedRelationId = this.graph.link(row.id, newEntity.id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] })?.id ?? null;
+        } else if (target.status !== 'confirmed') {
+          // Relocating is an explicit user decision for the target category, even over an earlier rejection; undo restores the old state.
+          relationsChanged.push({ ...target });
+          this.graph.setRelationStatus(target.id, 'confirmed');
         }
       });
     } catch (err) {
@@ -925,9 +958,11 @@ export class ArchiveService {
       toRel: newRel,
       sha256: row.sha256,
       beforeCategoryPath: row.categoryPath,
+      beforeUpdatedAt: row.updatedAt,
       afterUpdatedAt: updatedAt,
       addedRelationId,
-      removedCategory,
+      relationsRemoved,
+      relationsChanged,
     };
     const trigger = opts.trigger ?? 'manual';
     const auditId = this.audit.log({
@@ -978,6 +1013,42 @@ export class ArchiveService {
     if (!fs.existsSync(now)) conflicts.push('Die Datei fehlt am neuen Ort im Archiv.');
     else if ((await sha256File(now)) !== d.sha256) conflicts.push('Die Datei wurde seit dem Umlagern verändert.');
     if (fs.existsSync(back)) conflicts.push(`Am ursprünglichen Ort existiert bereits eine Datei: ${back}`);
+    conflicts.push(...this.relocateRelationConflicts(d));
+    return conflicts;
+  }
+
+  /** Category relations touched by relocating must still be as relocating left them, else undo would overwrite a newer decision. */
+  private relocateRelationConflicts(d: RelocateUndoData): string[] {
+    const conflicts: string[] = [];
+    const relation = (id: string) => this.db.select().from(relations).where(eq(relations.id, id)).get();
+    const name = (r: Pick<RelationRow, 'targetEntityId'>) => this.graph.getEntity(r.targetEntityId)?.name ?? r.targetEntityId;
+    const changed = (r: Pick<RelationRow, 'targetEntityId'>) => `Die Zuordnung zur Kategorie „${name(r)}“ wurde seit dem Umlagern geändert.`;
+    if (d.addedRelationId) {
+      const added = relation(d.addedRelationId);
+      if (added && added.status !== 'confirmed') conflicts.push(changed(added));
+    }
+    for (const before of d.relationsChanged ?? []) {
+      const now = relation(before.id);
+      if (now?.status !== 'confirmed') conflicts.push(changed(before));
+    }
+    for (const before of d.relationsRemoved ?? []) {
+      if (!this.graph.getEntity(before.targetEntityId)) {
+        conflicts.push(`Die bisherige Kategorie „${d.beforeCategoryPath ?? ''}“ existiert im Wissensgraph nicht mehr.`);
+        continue;
+      }
+      const now = this.db
+        .select()
+        .from(relations)
+        .where(
+          and(
+            eq(relations.sourceEntityId, before.sourceEntityId),
+            eq(relations.targetEntityId, before.targetEntityId),
+            eq(relations.relationType, before.relationType),
+          ),
+        )
+        .get();
+      if (now || relation(before.id)) conflicts.push(changed(before));
+    }
     return conflicts;
   }
 
@@ -988,10 +1059,13 @@ export class ArchiveService {
     this.ctx.database.transaction(() => {
       this.db
         .update(documents)
-        .set({ archiveRelPath: d.fromRel, categoryPath: d.beforeCategoryPath, updatedAt: nowIso() })
+        // the old timestamp comes back too: the document is exactly as before, so earlier undo entries (archiving) stay valid
+        .set({ archiveRelPath: d.fromRel, categoryPath: d.beforeCategoryPath, updatedAt: d.beforeUpdatedAt ?? nowIso() })
         .where(eq(documents.id, d.documentId))
         .run();
       if (d.addedRelationId) this.graph.deleteRelation(d.addedRelationId);
+      for (const { id, ...rest } of d.relationsChanged ?? []) this.db.update(relations).set(rest).where(eq(relations.id, id)).run();
+      if (d.relationsRemoved?.length) this.db.insert(relations).values(d.relationsRemoved).run();
       if (d.removedCategory)
         this.graph.link(d.documentId, this.graph.ensureEntity('category', d.removedCategory).id, 'belongs_to', {
           confidence: 1,
