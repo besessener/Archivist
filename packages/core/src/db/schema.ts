@@ -187,6 +187,10 @@ export const insights = sqliteTable(
     sourceIds: jsonArr('source_ids'),
     recommendedActionId: text('recommended_action_id'),
     recommendedActionLabel: text('recommended_action_label'),
+    /** Answer options of a question insight (`InsightChoice[]`); empty for classic accept/reject insights. */
+    choices: text('choices', { mode: 'json' }).$type<ArchivistJson>().notNull().default([]),
+    /** Id of the choice the user picked (only for insights with choices). */
+    chosenChoiceId: text('chosen_choice_id'),
     status: text('status').notNull().default('open'),
     snoozedUntil: text('snoozed_until'),
     dedupeKey: text('dedupe_key').notNull(),

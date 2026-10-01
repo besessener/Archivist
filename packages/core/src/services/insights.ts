@@ -1,4 +1,4 @@
-import type { EntityRef, Insight, InsightKind } from '@archivist/shared';
+import type { EntityRef, Insight, InsightChoice, InsightKind } from '@archivist/shared';
 import { and, desc, eq, like } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { insights } from '../db/schema';
@@ -18,6 +18,11 @@ export interface InsightInput {
   sourceIds?: string[];
   recommendedActionId?: string | null;
   recommendedActionLabel?: string | null;
+  /**
+   * Turns the insight into a question with several answers (see {@link InsightService.choose}). Propose the actions of
+   * the choices only when `has(dedupeKey)` is false, otherwise every run would leave unused proposals behind.
+   */
+  choices?: InsightChoice[];
   dedupeKey: string;
 }
 
@@ -31,6 +36,8 @@ const map = (r: Row): Insight => ({
   sourceIds: r.sourceIds,
   recommendedActionId: r.recommendedActionId,
   recommendedActionLabel: r.recommendedActionLabel,
+  choices: r.choices as InsightChoice[],
+  chosenChoiceId: r.chosenChoiceId,
   status: r.status as Insight['status'],
   snoozedUntil: r.snoozedUntil,
   createdAt: r.createdAt,
@@ -73,6 +80,7 @@ export class InsightService {
             affected: input.affected ?? [],
             recommendedActionId: input.recommendedActionId ?? existing.recommendedActionId,
             recommendedActionLabel: input.recommendedActionLabel ?? existing.recommendedActionLabel,
+            choices: input.choices ?? existing.choices,
             updatedAt: now,
           })
           .where(eq(insights.id, existing.id))
@@ -90,6 +98,8 @@ export class InsightService {
       sourceIds: input.sourceIds ?? [],
       recommendedActionId: input.recommendedActionId ?? null,
       recommendedActionLabel: input.recommendedActionLabel ?? null,
+      choices: input.choices ?? [],
+      chosenChoiceId: null,
       status: 'open',
       snoozedUntil: null,
       dedupeKey: input.dedupeKey,
@@ -152,6 +162,7 @@ export class InsightService {
   /** Bestätigen: führt die empfohlene Aktion aus (nur mit Bestätigung) und markiert den Insight als akzeptiert. */
   async accept(id: string, opts: { strongConfirmed?: boolean }): Promise<Insight> {
     const i = this.get(id);
+    if (i.choices.length > 0) throw new AppError('validation_error', 'Bitte wähle eine der Antworten.');
     if (i.recommendedActionId) {
       const res = await this.actions.resolve(i.recommendedActionId, 'approve', { confirmed: true, strongConfirmed: opts.strongConfirmed ?? false });
       if (res.status === 'failed') throw new AppError('validation_error', res.result ?? 'Die Aktion ist fehlgeschlagen.');
@@ -163,16 +174,50 @@ export class InsightService {
 
   async reject(id: string): Promise<Insight> {
     const i = this.get(id);
-    if (i.recommendedActionId) {
-      try {
-        await this.actions.resolve(i.recommendedActionId, 'reject', {});
-      } catch {
-        /* bereits entschieden */
-      }
-    }
+    await this.rejectActions([i.recommendedActionId, ...i.choices.map((c) => c.actionId)]);
     this.db.update(insights).set({ status: 'rejected', updatedAt: nowIso() }).where(eq(insights.id, id)).run();
     this.ctx.events.changed('insights', 'status');
     return this.get(id);
+  }
+
+  /**
+   * Answers a question insight with one of its `choices`. A choice with an action executes it (the caller has obtained
+   * the user's confirmation) and accepts the insight; a choice without an action („verschieden“, „keine davon“) rejects
+   * it, so the same question (same dedupe key) is never asked again. The actions of the other choices are rejected.
+   */
+  async choose(id: string, choiceId: string, opts: { strongConfirmed?: boolean } = {}): Promise<Insight> {
+    const i = this.get(id);
+    if (i.status === 'accepted' || i.status === 'rejected') throw new AppError('validation_error', 'Diese Frage wurde bereits beantwortet.');
+    const choice = i.choices.find((c) => c.id === choiceId);
+    if (!choice) throw new AppError('validation_error', 'Diese Antwort gibt es für den Hinweis nicht.');
+    if (choice.actionId) {
+      const res = await this.actions.resolve(choice.actionId, 'approve', { confirmed: true, strongConfirmed: opts.strongConfirmed ?? false });
+      if (res.status !== 'executed')
+        throw new AppError(
+          'validation_error',
+          res.status === 'failed' ? (res.result ?? 'Die Aktion ist fehlgeschlagen.') : 'Die Aktion wurde bereits verworfen.',
+        );
+    }
+    await this.rejectActions(i.choices.filter((c) => c.id !== choice.id).map((c) => c.actionId));
+    this.db
+      .update(insights)
+      .set({ status: choice.actionId ? 'accepted' : 'rejected', chosenChoiceId: choice.id, snoozedUntil: null, updatedAt: nowIso() })
+      .where(eq(insights.id, id))
+      .run();
+    this.ctx.events.changed('insights', 'status');
+    return this.get(id);
+  }
+
+  /** Rejects the still proposed actions among `ids` (already decided ones are left as they are). */
+  private async rejectActions(ids: Array<string | null>): Promise<void> {
+    for (const actionId of new Set(ids)) {
+      if (!actionId) continue;
+      try {
+        await this.actions.resolve(actionId, 'reject', {});
+      } catch {
+        /* bereits entschieden oder nicht mehr vorhanden */
+      }
+    }
   }
 
   remindLater(id: string, remindAt: string): Insight {

@@ -43,6 +43,13 @@
       "when": 1790834032730,
       "tag": "0005_entity_aliases",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790834034730,
+      "tag": "0007_insight_choices",
+      "breakpoints": true
     }
   ]
 }

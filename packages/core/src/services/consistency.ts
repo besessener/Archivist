@@ -8,6 +8,7 @@ import { newId } from '../util/ids';
 import { sha256Text } from '../util/hash';
 import { truncate } from '../util/text';
 import { chooseTargetFolder, folderLabel, splitSubjects } from './archive-structure';
+import { checkTopicProjectNames } from './cleanup/topic-project-names';
 import type { ActionService } from './actions';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
@@ -32,6 +33,7 @@ const KIND_LABELS: Record<string, string> = {
   misplaced_file: 'Ablageort-Auffälligkeiten',
   scattered_documents: 'verstreut abgelegte Dokumente',
   similar_topics: 'ähnliche Themen',
+  topic_project_name: 'gleiche Namen bei Thema und Projekt',
   incomplete_decision: 'unvollständige Entscheidungen',
   possibly_superseded: 'möglicherweise überholte Entscheidungen',
   contradiction: 'Widersprüche',
@@ -258,6 +260,9 @@ export class ConsistencyService {
       });
       count('similar_topics');
     }
+
+    // ---- Gleicher Name als Thema und als Projekt ----
+    checkTopicProjectNames({ graph: this.graph, insights: this.insights, actions: this.actions }, count);
 
     // ---- Entscheidungen ----
     report?.(0.6, 'Prüfe Entscheidungen');

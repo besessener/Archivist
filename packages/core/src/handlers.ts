@@ -211,6 +211,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'insights:respond': async (i) => {
       if (i.response === 'accept') return s.insights.accept(i.id, { strongConfirmed: i.strongConfirmed });
       if (i.response === 'reject') return s.insights.reject(i.id);
+      if (i.response === 'choose') return s.insights.choose(i.id, i.choiceId, { strongConfirmed: i.strongConfirmed });
       return s.insights.remindLater(i.id, i.remindAt);
     },
     'consistency:run': () => ({ jobId: s.enqueueConsistency('manual').id }),
