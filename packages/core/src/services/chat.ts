@@ -1459,7 +1459,7 @@ export class ChatService {
 
   // ---------- Wissensabfragen ----------
   private async gatherSources(query: string, limit = 10): Promise<Array<SourceReference & { _text: string }>> {
-    const hits = await this.search.search(query, { limit: limit * 2, types: ['document', 'decision', 'task', 'note'] });
+    const hits = await this.search.search(query, { limit: limit * 2, types: ['document', 'decision', 'event', 'task', 'note'] });
     const out: Array<SourceReference & { _text: string }> = [];
     for (const h of hits) {
       if (out.length >= limit) break;
@@ -1483,6 +1483,20 @@ export class ChatService {
       } else if (h.type === 'decision') {
         const d = this.decisions.get(h.id);
         out.push({ ...this.decisionSource(d, h.score), _text: this.decisions.format(d).replace(/\*\*/g, '') });
+      } else if (h.type === 'event') {
+        // Ereignisse aus der Timeline: das Datum (occurredAt) gehört in Quelle und Quellentext
+        const e = this.events.get(h.id);
+        const day = e.occurredAt.slice(0, 10);
+        out.push({
+          id: e.id,
+          type: 'event',
+          title: e.title,
+          snippet: truncate(`Am ${day}${e.description ? `: ${e.description}` : ''}`, 220),
+          path: null,
+          date: e.occurredAt,
+          score: h.score,
+          _text: `Ereignis am ${day}: ${e.title}.${e.description ? ` ${e.description}` : ''}${e.topicName ? ` Thema: ${e.topicName}.` : ''}${e.projectName ? ` Projekt: ${e.projectName}.` : ''}`,
+        });
       } else if (h.type === 'task') {
         const i = this.openItems.get(h.id);
         out.push({
@@ -1533,7 +1547,7 @@ export class ChatService {
       return {
         intent: 'knowledge_question',
         content:
-          'Dazu finde ich im Archiv nichts. Es gibt keine archivierten Dokumente, Entscheidungen, offenen Punkte oder Notizen, die zu deiner Frage passen.',
+          'Dazu finde ich im Archiv nichts. Es gibt keine archivierten Dokumente, Entscheidungen, Ereignisse, offenen Punkte oder Notizen, die zu deiner Frage passen.',
         confidence: 0.2,
         uncertainties: [
           'Berücksichtigt werden nur archivierte/indexierte Inhalte – Dateien in Scan-Verzeichnissen oder im Eingang, die noch nicht archiviert sind, fehlen.',
