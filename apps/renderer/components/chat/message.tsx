@@ -7,6 +7,7 @@ import { ConfidenceBadge } from '@/components/common/confidence';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown } from '@/components/common/markdown';
 import { Notice } from '@/components/common/states';
+import { Button } from '@/components/ui/button';
 import { call } from '@/lib/ipc';
 import { entityHref } from '@/lib/nav';
 import { formatDate } from '@/lib/format';
@@ -48,7 +49,16 @@ function SourceChip({ source }: { source: SourceRef }) {
   );
 }
 
-export function ChatBubble({ message, pending = false }: { message: ChatMsg; pending?: boolean }) {
+export function ChatBubble({
+  message,
+  pending = false,
+  onQuickReply,
+}: {
+  message: ChatMsg;
+  pending?: boolean;
+  /** Nur für die letzte Antwort gesetzt: ein Klick auf einen Antwortknopf sendet dessen Text. */
+  onQuickReply?: (text: string) => void;
+}) {
   const isUser = message.role === 'user';
   return (
     <div className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}>
@@ -80,6 +90,15 @@ export function ChatBubble({ message, pending = false }: { message: ChatMsg; pen
                   ))}
                 </ul>
               </Notice>
+            )}
+            {onQuickReply && (message.quickReplies?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap gap-2" data-testid="chat-quick-replies">
+                {(message.quickReplies ?? []).map((q) => (
+                  <Button key={q} size="sm" variant="outline" data-testid="chat-quick-reply" onClick={() => onQuickReply(q)}>
+                    {q}
+                  </Button>
+                ))}
+              </div>
             )}
             {message.actions.length > 0 && (
               <div className="flex flex-col gap-2" data-testid="chat-actions">

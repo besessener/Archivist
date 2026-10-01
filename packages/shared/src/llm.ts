@@ -116,6 +116,9 @@ export type ChatIntent = z.infer<typeof ChatIntent>;
 export const ChatAnalysis = z.object({
   intents: z.array(ChatIntent).min(1).max(5),
   clarification: opt(z.string()).describe('Rückfrage an den Benutzer, wenn die Absicht unklar ist und nichts geraten werden soll'),
+  saveAs: opt(z.enum(['decision', 'event', 'note', 'nothing'])).describe(
+    'Nur als Antwort auf die offene Rückfrage „Entscheidung, Ereignis, Notiz oder nichts speichern?“; sonst null',
+  ),
 });
 export type ChatAnalysis = z.infer<typeof ChatAnalysis>;
 

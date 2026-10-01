@@ -127,6 +127,7 @@ export default function ChatPage() {
         uncertainties: [],
         intent: null,
         errorMessage: null,
+        quickReplies: [],
       };
       setMessages((prev) => [...prev, temp]);
       const res = await run(() => call('chat:send', { text: content, ...(conversationId ? { conversationId } : {}) }), {
@@ -247,8 +248,13 @@ export default function ChatPage() {
               </div>
             </div>
           )}
-          {messages.map((m) => (
-            <ChatBubble key={m.id} message={m} pending={m.id.startsWith('pending-')} />
+          {messages.map((m, i) => (
+            <ChatBubble
+              key={m.id}
+              message={m}
+              pending={m.id.startsWith('pending-')}
+              onQuickReply={i === messages.length - 1 && m.role === 'assistant' && !sending ? (q) => void send(q) : undefined}
+            />
           ))}
           {sending && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status" data-testid="chat-loading">

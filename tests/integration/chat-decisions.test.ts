@@ -409,7 +409,9 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
 
     app.llm.on('ChatIntent', () => intent({ intent: 'unknown' })); // die Antwort wird nicht per LLM ausgewertet
     const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Nur als Notiz' });
-    expect(r2.assistantMessage.content).toMatch(/Notiz gespeichert/);
+    expect(r2.assistantMessage.content).toMatch(/^Notiz gespeichert/);
+    // die Notiz enthält wirklich den Abschnitt zur unsicheren Entscheidung (nicht nur die Erinnerung)
+    expect((await app.ok('search:global', { query: 'eingereicht', limit: 5 })).some((h) => h.type === 'note')).toBe(true);
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
     expect((await app.ok('reminders:list', {}))[0]).toMatchObject({ remindAt: '2026-11-15' });
     expect((await app.ok('search:global', { query: 'German Testing Day', limit: 5 })).some((h) => h.type === 'note')).toBe(true);

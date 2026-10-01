@@ -250,6 +250,7 @@ export const messages = sqliteTable(
     uncertainties: jsonArr('uncertainties'),
     intent: text('intent'),
     errorMessage: text('error_message'),
+    quickReplies: jsonArr('quick_replies'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [index('messages_conv_idx').on(t.conversationId, t.createdAt)],
