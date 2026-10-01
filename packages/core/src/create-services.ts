@@ -95,7 +95,7 @@ function buildServices(opts: CreateServicesOptions) {
   const documentsSvc = new DocumentService(ctx, settings, graph, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
   const decisions = new DecisionService(ctx, graph, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, search, audit, undo);
-  const eventsSvc = new EventService(ctx, graph, search, audit);
+  const eventsSvc = new EventService(ctx, graph, search, audit, undo);
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
