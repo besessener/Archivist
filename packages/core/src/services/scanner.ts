@@ -18,6 +18,7 @@ import { isJobCancelled, type JobContext, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
+import { IntervalSchedule } from './scheduler';
 import type { SettingsService } from './settings';
 
 type RootRow = typeof scanRoots.$inferSelect;
@@ -59,7 +60,8 @@ const mapFile = (r: FileRow): ScanFile => ({
  * ein reiner Dateiscan sendet nie Inhalte an das LLM. Originale werden nie verändert.
  */
 export class ScannerService {
-  private timers: NodeJS.Timeout[] = [];
+  /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
+  private readonly schedule: IntervalSchedule;
 
   constructor(
     private readonly ctx: AppContext,
@@ -73,6 +75,7 @@ export class ScannerService {
     private readonly audit: AuditService,
     private readonly jobs: JobQueueService,
   ) {
+    this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     ctx.events.on('document:archived', (e: { documentId: string; sourcePath: string | null }) => {
       if (!e.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: e.documentId }).where(eq(scanFiles.path, e.sourcePath)).run();
@@ -624,21 +627,32 @@ export class ScannerService {
   }
 
   // ---------- Zeitsteuerung (nur bei laufender Anwendung) ----------
+  /** Starts the periodic scan according to the current settings and folders. */
+  startSchedule(): void {
+    this.applySettings();
+    this.schedule.start();
+  }
+
+  /**
+   * Re-plans the periodic scan from the scan settings and the enabled folders. Cheap and idempotent:
+   * call it after every change of settings or folders; an unchanged plan keeps the pending timer.
+   */
   applySettings(): void {
-    for (const t of this.timers) clearInterval(t);
-    this.timers = [];
     const s = this.settings.get().scan;
-    if (!s.enabled || this.listDirectories().length === 0) return;
-    if (s.periodic) {
-      const t = setInterval(() => {
-        try {
-          this.startScan(undefined, 'interval');
-        } catch (err) {
-          this.ctx.logger.warn('scanner', 'Periodischer Scan nicht gestartet', { error: err });
-        }
-      }, s.intervalMinutes * 60_000);
-      t.unref?.();
-      this.timers.push(t);
+    const active = s.enabled && s.periodic && this.listDirectories().some((r) => r.enabled);
+    this.schedule.setInterval(active ? s.intervalMinutes * 60_000 : null);
+  }
+
+  /** When the next periodic scan is due (epoch ms), or null if none is planned. */
+  nextPeriodicScanAt(): number | null {
+    return this.schedule.nextRunAt();
+  }
+
+  private periodicScan(): void {
+    try {
+      this.startScan(undefined, 'interval');
+    } catch (err) {
+      this.ctx.logger.warn('scanner', 'Periodischer Scan nicht gestartet', { error: err });
     }
   }
 
@@ -654,8 +668,7 @@ export class ScannerService {
   }
 
   stop(): void {
-    for (const t of this.timers) clearInterval(t);
-    this.timers = [];
+    this.schedule.stop();
   }
 
   fileExists(p: string): boolean {

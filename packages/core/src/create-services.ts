@@ -187,11 +187,13 @@ function buildServices(opts: CreateServicesOptions) {
   });
 
   // 7) Reaktion auf geänderte Einstellungen
+  // Schedules are re-planned on every change of settings or scan folders; an unchanged plan keeps its timer.
   events.on('data:changed', (e: { scopes: string[] }) => {
     if (e.scopes.includes('settings')) {
       logger.setLevel(settings.get().logs.level);
-      scanner.applySettings();
+      consistency.applySettings();
     }
+    if (e.scopes.includes('settings') || e.scopes.includes('scanner')) scanner.applySettings();
   });
 
   const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1 });
@@ -241,7 +243,7 @@ function buildServices(opts: CreateServicesOptions) {
       documentsSvc.recoverInterruptedAnalyses();
       jobs.start();
       reminders.start();
-      scanner.applySettings();
+      scanner.startSchedule();
       scanner.startupScan();
       void archive.cleanupInbox();
       if (settings.get().consistency.onStartup) enqueueConsistency('startup');

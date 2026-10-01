@@ -15,6 +15,7 @@ import type { InsightService } from './insights';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { OpenItemService } from './open-items';
+import { IntervalSchedule } from './scheduler';
 import type { SettingsService } from './settings';
 
 export interface ConsistencyReport {
@@ -64,8 +65,9 @@ const h = (ids: string[]) => sha256Text([...ids].sort().join('|')).slice(0, 12);
  * (Insights, Benachrichtigungen, Aktionsvorschläge) – ohne selbst etwas zu ändern.
  */
 export class ConsistencyService {
-  private timer: NodeJS.Timeout | null = null;
-  private lastRunAt = 0;
+  /** Periodic check; every completed run (also manual or on startup) restarts the interval */
+  private readonly schedule: IntervalSchedule;
+  private enqueueInterval: (() => void) | null = null;
 
   constructor(
     private readonly ctx: AppContext,
@@ -76,7 +78,9 @@ export class ConsistencyService {
     private readonly contradictions: ContradictionService,
     private readonly insights: InsightService,
     private readonly notifications: NotificationService,
-  ) {}
+  ) {
+    this.schedule = new IntervalSchedule({ name: 'consistency', run: () => this.enqueueInterval?.(), logger: ctx.logger });
+  }
 
   private get db() {
     return this.ctx.database.db;
@@ -552,27 +556,32 @@ export class ConsistencyService {
         proposedActions: [{ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' }],
         dedupeKey: `consistency:${newId()}`,
       });
-    this.lastRunAt = Date.now();
+    this.schedule.markRun();
     report?.(1, 'Fertig');
     this.ctx.logger.info('consistency', 'Archivprüfung abgeschlossen', { trigger, byKind });
     this.ctx.events.changed('insights', 'notifications', 'status');
     return { insights: total, notifications: notifs, contradictions: found.length, byKind };
   }
 
-  /** Periodische Prüfung, solange die Anwendung läuft. */
+  /** Periodic check while the application runs; `enqueue` starts one check. */
   startTimer(enqueue: () => void): void {
-    this.stopTimer();
+    this.enqueueInterval = enqueue;
+    this.applySettings();
+    this.schedule.start();
+  }
+
+  /** Re-plans the periodic check from the settings (an interval of 0 turns it off); call it after every settings change. */
+  applySettings(): void {
     const hours = this.settings.get().consistency.intervalHours;
-    if (hours > 0) {
-      this.timer = setInterval(() => {
-        if (Date.now() - this.lastRunAt > hours * 3_600_000 * 0.9) enqueue();
-      }, 10 * 60_000);
-      this.timer.unref?.();
-    }
+    this.schedule.setInterval(hours > 0 ? hours * 3_600_000 : null);
+  }
+
+  /** When the next periodic check is due (epoch ms), or null if none is planned. */
+  nextRunAt(): number | null {
+    return this.schedule.nextRunAt();
   }
 
   stopTimer(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    this.schedule.stop();
   }
 }
