@@ -13,6 +13,7 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     permissions:
+      actions: read # die CodeQL-Action liest in privaten Repositories den Workflow-Lauf
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -24,7 +25,7 @@ jobs:
           build-mode: none
           queries: security-extended
       # Kein Upload: Code Scanning ist in privaten Repositories nur mit GitHub Code Security verfügbar.
-      # Wird es aktiviert, `upload: never` entfernen, `security-events: write` (und `actions: read`) ergänzen
+      # Wird es aktiviert, `upload: never` entfernen, `security-events: write` ergänzen
       # und die beiden Schritte nach der Analyse streichen.
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
