@@ -5,6 +5,22 @@ export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}([T ][\d:.]+(Z|[+-]\d
 export const Confidence = z.number().min(0).max(1);
 export const Id = z.string().min(1).max(100);
 
+type WithoutDefault<T> = T extends z.ZodDefault<infer Inner> ? Inner : T;
+type WithoutDefaults<Shape extends z.ZodRawShape> = { [K in keyof Shape]: WithoutDefault<Shape[K]> };
+
+/**
+ * Patch schema for an object schema: every field optional and WITHOUT `.default()`.
+ * Zod 4 applies defaults even inside `.partial()` / `.optional()`, so `Schema.partial()` would fill in every
+ * missing field and a partial update would overwrite the stored values with defaults (issues #55, #58).
+ * Only top-level defaults are removed; nested objects keep theirs.
+ */
+export function patchSchema<Shape extends z.ZodRawShape>(schema: z.ZodObject<Shape>) {
+  const shape = Object.fromEntries(
+    Object.entries(schema.shape).map(([key, field]) => [key, field instanceof z.ZodDefault ? field.unwrap() : field]),
+  ) as WithoutDefaults<Shape>;
+  return z.object(shape).partial();
+}
+
 export const EntityType = z.enum(['document', 'decision', 'topic', 'project', 'person', 'event', 'question', 'task', 'note', 'category', 'tag']);
 export type EntityType = z.infer<typeof EntityType>;
 

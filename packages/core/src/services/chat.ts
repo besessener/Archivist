@@ -1347,7 +1347,8 @@ export class ChatService {
     if ((ex.alternatives ?? []).length) patch.alternatives = [...new Set([...t.alternatives, ...ex.alternatives])];
     if (ex.validFrom) patch.validFrom = ex.validFrom;
     if (ex.validUntil) patch.validUntil = ex.validUntil;
-    if (unknownFields.size) patch.unknownFields = [...unknownFields];
+    // the patch replaces the stored list, so keep what was confirmed as unknown before
+    if (unknownFields.size) patch.unknownFields = [...new Set([...t.unknownFields, ...unknownFields])];
     const updated = this.decisions.update(t.id, patch, { trigger: 'chat' });
     // „Thema oder Projekt?“ bleibt gestellt, bis sie beantwortet ist (oder ein anderes Thema genannt wurde)
     const stillClarify =
