@@ -317,8 +317,12 @@ export class JobQueueService {
 
   private kick(): void {
     if (!this.started || this.stopping) return;
+    // One instant for picking due work and for planning the retry timer: if the timer decision read the clock
+    // again, a retry that became due in between would count as "already due" without having been picked, and
+    // with no job running nothing would ever start it.
+    let now = Date.now();
     while (this.running.size < this.concurrency) {
-      const now = Date.now();
+      now = Date.now();
       const next = this.db
         .select()
         .from(jobs)
@@ -337,17 +341,17 @@ export class JobQueueService {
       });
       this.active.set(next.id, p);
     }
-    this.scheduleRetryTimer();
+    this.scheduleRetryTimer(now);
   }
 
   /**
-   * Wakes the queue when the earliest waiting retry is due. Retries that are already due need no timer:
-   * they are picked up as soon as a slot frees up (each finished job kicks the queue).
+   * Wakes the queue when the earliest waiting retry is due. `now` must be the instant `kick` last looked for
+   * due work: retries due at that instant need no timer, because `kick` either started them or stopped with
+   * every slot busy, and each finished job kicks the queue again.
    */
-  private scheduleRetryTimer(): void {
+  private scheduleRetryTimer(now: number): void {
     this.clearRetryTimer();
     if (!this.started || this.stopping) return;
-    const now = Date.now();
     const upcoming = [...this.retryAt.values()].filter((t) => t > now);
     if (!upcoming.length) return;
     this.retryTimer = setTimeout(
