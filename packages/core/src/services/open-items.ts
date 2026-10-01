@@ -1,7 +1,8 @@
 import type { OpenItem, OpenItemInput, OpenItemStatus } from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { entities, messages, openItems } from '../db/schema';
+import { entities, messages, openItems, reminders } from '../db/schema';
+import { syncReminderAt } from './reminders';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
@@ -117,9 +118,14 @@ export class OpenItemService {
         return row.updatedAt === d.afterUpdatedAt ? [] : ['Der offene Punkt wurde seit der Aktion verändert.'];
       },
       run: async (data) => {
-        const d = data as { id: string; previousStatus: OpenItemStatus };
-        this.db.update(openItems).set({ status: d.previousStatus, updatedAt: nowIso() }).where(eq(openItems.id, d.id)).run();
-        this.ctx.events.changed('openItems');
+        const d = data as { id: string; previousStatus: OpenItemStatus; reminders?: Array<{ id: string; status: string }> };
+        this.db.transaction(() => {
+          this.db.update(openItems).set({ status: d.previousStatus, updatedAt: nowIso() }).where(eq(openItems.id, d.id)).run();
+          // beim Schließen beendete Erinnerungen kommen wieder
+          for (const r of d.reminders ?? []) this.db.update(reminders).set({ status: r.status }).where(eq(reminders.id, r.id)).run();
+          syncReminderAt(this.db, d.id);
+        });
+        this.ctx.events.changed('openItems', 'reminders');
         return 'Status des offenen Punkts wiederhergestellt.';
       },
     });
@@ -355,7 +361,17 @@ export class OpenItemService {
     const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
     const updatedAt = nowIso();
-    this.db.update(openItems).set({ status, updatedAt }).where(eq(openItems.id, id)).run();
+    // offene Erinnerungen des Punkts enden mit ihm (Undo stellt sie wieder her)
+    const ended = this.db
+      .select({ id: reminders.id, status: reminders.status })
+      .from(reminders)
+      .where(and(eq(reminders.targetType, 'open_item'), eq(reminders.targetId, id), inArray(reminders.status, ['pending', 'fired'])))
+      .all();
+    this.db.transaction(() => {
+      this.db.update(openItems).set({ status, updatedAt }).where(eq(openItems.id, id)).run();
+      for (const r of ended) this.db.update(reminders).set({ status: 'dismissed' }).where(eq(reminders.id, r.id)).run();
+      syncReminderAt(this.db, id);
+    });
     this.audit.log({
       action: 'open_item.close',
       actor: 'user',
@@ -364,10 +380,10 @@ export class OpenItemService {
       entityIds: [id],
       before: { status: cur.status },
       after: { status },
-      undo: { type: 'open_item_status', data: { id, previousStatus: cur.status, afterUpdatedAt: updatedAt } },
+      undo: { type: 'open_item_status', data: { id, previousStatus: cur.status, afterUpdatedAt: updatedAt, reminders: ended } },
     });
     void this.reindex(id);
-    this.ctx.events.changed('openItems', 'status');
+    this.ctx.events.changed('openItems', 'status', 'reminders');
     return this.get(id);
   }
 
