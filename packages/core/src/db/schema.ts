@@ -15,6 +15,8 @@ export const entities = sqliteTable(
     description: text('description'),
     /** Former names of entities merged into this one (display form); used to resolve later mentions. */
     aliases: jsonArr('aliases'),
+    /** Roles of a person found in mentions ("Chefin", "Führungskraft"); stored as info, never part of the name. */
+    roles: jsonArr('roles'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

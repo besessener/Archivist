@@ -25,6 +25,7 @@ import type { CategoryService } from './categories';
 import { classifyLocally, humanizeCategoryPath, normalizeIsoDates, snapToKnown } from './classifier';
 import { isJobCancelled, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import type { PersonService } from './persons';
 import type { LlmService } from './llm';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
@@ -91,6 +92,7 @@ export class DocumentService {
     private readonly ctx: AppContext,
     private readonly settings: SettingsService,
     private readonly graph: KnowledgeGraphService,
+    private readonly persons: PersonService,
     private readonly search: SearchService,
     private readonly llm: LlmService,
     private readonly privacy: PrivacyService,
@@ -718,7 +720,7 @@ export class DocumentService {
         docType,
         summary,
         categoryPath,
-        persons,
+        persons: this.persons.resolveNames(persons, { context: 'document', create: false }).names,
         tags,
         dates,
         confidence,
@@ -799,7 +801,7 @@ export class DocumentService {
     const set: Partial<DocRow> = { updatedAt: nowIso() };
     if (patch.title !== undefined && patch.title.trim()) set.title = patch.title.trim().slice(0, 200);
     if (patch.tags) set.tags = patch.tags;
-    if (patch.persons) set.persons = patch.persons;
+    if (patch.persons) set.persons = this.persons.resolveNames(patch.persons, { context: 'document', create: false }).names;
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
     const { changes } = this.graph.trackRelationChanges(id, () =>

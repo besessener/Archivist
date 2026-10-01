@@ -302,6 +302,7 @@ function EntityView({ id }: { id: string }) {
         </div>
         <h2 className="mt-1 text-2xl font-semibold tracking-tight">{entity.name}</h2>
         {entity.description && <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{entity.description}</p>}
+        {entity.roles.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Rollen: {entity.roles.join(', ')}</p>}
         {entity.type === 'topic' && (
           <Button variant="outline" size="sm" className="mt-3" onClick={() => setMergeOpen(true)} data-testid="knowledge-merge">
             <GitMerge aria-hidden /> Mit anderem Thema zusammenführen vorschlagen

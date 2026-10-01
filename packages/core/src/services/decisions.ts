@@ -16,6 +16,7 @@ import { normalizeDateInput } from '../util/dates';
 import { firstSentence, normalizeName, truncate } from '../util/text';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import { mentionContext, type PersonMentionContext, type PersonService } from './persons';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
@@ -69,6 +70,7 @@ export class DecisionService {
   constructor(
     private readonly ctx: AppContext,
     private readonly graph: KnowledgeGraphService,
+    private readonly persons: PersonService,
     private readonly search: SearchService,
     private readonly audit: AuditService,
     undo: UndoService,
@@ -227,11 +229,13 @@ export class DecisionService {
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
     const decidedAt = normalizeDateInput(input.decidedAt ?? null);
+    const personContext = mentionContext(opts.trigger, 'decision');
+    const participants = this.persons.resolveNames(input.participants, { context: personContext }).names;
     const missing = computeMissingFields({
       decisionText: input.decisionText,
       decidedAt,
       topic: topic?.name ?? null,
-      participants: input.participants,
+      participants,
       unknownFields: input.unknownFields,
     });
     const status: DecisionStatus = input.asDraft || missing.length > 0 ? 'draft' : 'active';
@@ -242,7 +246,7 @@ export class DecisionService {
       decidedAt,
       topicId: topic?.id ?? null,
       projectId: project?.id ?? null,
-      participants: input.participants.map((p) => p.trim()).filter(Boolean),
+      participants,
       rationale: input.rationale?.trim() || null,
       consequences: input.consequences?.trim() || null,
       alternatives: input.alternatives,
@@ -259,7 +263,7 @@ export class DecisionService {
     };
     this.db.transaction(() => {
       this.db.insert(decisions).values(row).run();
-      this.syncGraph(row);
+      this.syncGraph(row, personContext);
     });
     this.audit.log({
       action: 'decision.create',
@@ -301,7 +305,8 @@ export class DecisionService {
     if (patch.decidedAt !== undefined) set.decidedAt = normalizeDateInput(patch.decidedAt ?? null);
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
-    if (patch.participants !== undefined) set.participants = patch.participants.map((p) => p.trim()).filter(Boolean);
+    const personContext = mentionContext(opts.trigger, 'decision');
+    if (patch.participants !== undefined) set.participants = this.persons.resolveNames(patch.participants, { context: personContext }).names;
     if (patch.rationale !== undefined) set.rationale = patch.rationale?.trim() || null;
     if (patch.consequences !== undefined) set.consequences = patch.consequences?.trim() || null;
     if (patch.alternatives !== undefined) set.alternatives = patch.alternatives;
@@ -327,7 +332,7 @@ export class DecisionService {
     const { changes } = this.graph.trackRelationChanges(id, () =>
       this.db.transaction(() => {
         this.db.update(decisions).set(set).where(eq(decisions.id, id)).run();
-        this.syncGraph({ ...cur, ...set });
+        this.syncGraph({ ...cur, ...set }, personContext);
       }),
     );
     const before = Object.fromEntries(Object.keys(set).flatMap((k) => (k === 'updatedAt' ? [] : [[k, cur[k as keyof Row]]]))) as Partial<Row>;
@@ -347,13 +352,12 @@ export class DecisionService {
     return this.get(id);
   }
 
-  private syncGraph(r: Row): void {
+  private syncGraph(r: Row, personContext: PersonMentionContext): void {
     this.graph.registerNode('decision', r.id, r.title, r.decisionText);
     if (r.topicId) this.graph.link(r.id, r.topicId, 'concerns', { confidence: r.confidence, status: 'confirmed', sourceIds: r.sourceIds });
     if (r.projectId) this.graph.link(r.id, r.projectId, 'affects', { confidence: r.confidence, status: 'confirmed', sourceIds: r.sourceIds });
     const personIds: string[] = [];
-    for (const name of r.participants) {
-      const person = this.graph.ensureEntity('person', name);
+    for (const person of this.persons.resolveNames(r.participants, { context: personContext }).entities) {
       personIds.push(person.id);
       this.graph.link(person.id, r.id, 'participated_in', { confidence: r.confidence, status: 'confirmed', sourceIds: r.sourceIds });
     }

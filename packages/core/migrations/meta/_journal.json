@@ -50,6 +50,13 @@
       "when": 1790834033730,
       "tag": "0006_relation_resolved_by_user",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790834034730,
+      "tag": "0007_entity_roles",
+      "breakpoints": true
     }
   ]
 }

@@ -24,6 +24,7 @@ import type { ArchivistJson } from '../util/json';
 import { normalizeDateInput, parseGermanDate, promptNow } from '../util/dates';
 import { isInside, sanitizeCategoryPath } from '../util/paths';
 import { nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
+import { isSelfReference } from '../util/person-names';
 import type { ActionService } from './actions';
 import type { ArchiveService } from './archive';
 import { chooseTargetFolder, folderLabel, folderOf, groupByFolder, splitSubjects, type FolderGroup } from './archive-structure';
@@ -34,6 +35,7 @@ import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
+import type { PersonService } from './persons';
 import type { LlmService } from './llm';
 import type { NoteService } from './notes';
 import type { EventService } from './events';
@@ -182,7 +184,6 @@ function withOpenItemTarget(intent: ChatIntent, id: string): ChatIntent {
 const OPEN_ITEM_PREFIX_RE = /^\s*(?:offene[rn]?\s+punkte?|offen|todo|to-do|aufgabe|neue\s+aufgabe|merke?\s+dir)\s*[:–-]\s*/i;
 const MUST_RE = /^\s*(?:ich|wir|du|man)\s+(?:muss|müssen|musst|sollte|sollten|sollen|will|wollen|möchte|möchten)\s+(?:noch\s+|unbedingt\s+|bald\s+)*/i;
 const OPEN_TRIGGER_RE = /(offene[rn]?\s+punkt|offen\s*:|todo|to-do|aufgabe|noch\s+(?:zu\s+)?klären|muss\s+noch|müssen\s+noch|sollten?\s+noch)/i;
-const SELF_RE = /^(ich|mir|mich|selbst|ich selbst|mein|meine|me|myself)$/i;
 
 /**
  * Kurzer Titel und Beschreibung für einen offenen Punkt aus dem zugehörigen Textteil: Präfixe wie „Offener Punkt:“
@@ -395,6 +396,7 @@ export class ChatService {
     private readonly reminders: ReminderService,
     private readonly search: SearchService,
     private readonly graph: KnowledgeGraphService,
+    private readonly persons: PersonService,
     private readonly docs: DocumentService,
     private readonly scanner: ScannerService,
     private readonly contradictions: ContradictionService,
@@ -1240,7 +1242,7 @@ export class ChatService {
       topics: d.topicId ? [{ type: 'topic', id: d.topicId, label: d.topicName ?? '' }] : [],
       projects: d.projectId ? [{ type: 'project', id: d.projectId, label: d.projectName ?? '' }] : [],
       persons: d.participants.map((p) => {
-        const e = this.graph.findByName('person', p);
+        const e = this.persons.resolve(p, { context: 'chat', create: false }).entity;
         return { type: 'person' as const, id: e?.id ?? p, label: p };
       }),
     };
@@ -1900,7 +1902,7 @@ export class ChatService {
   private responsibleName(raw: string | null | undefined): { name: string | null; self: boolean } {
     const v = raw?.trim();
     if (!v) return { name: null, self: false };
-    if (!SELF_RE.test(v)) return { name: v, self: false };
+    if (!isSelfReference(v)) return { name: v, self: false };
     return { name: this.settings.get().profile.name.trim() || null, self: true };
   }
 
@@ -2003,7 +2005,7 @@ export class ChatService {
     if (!existing.responsiblePersonId && who.name) patch.responsible = who.name;
     const due = normalizeDateInput(oi.dueAt ?? null);
     if (!existing.dueAt && due) patch.dueAt = due;
-    const updated = Object.keys(patch).length ? this.openItems.update(existing.id, patch) : existing;
+    const updated = Object.keys(patch).length ? this.openItems.update(existing.id, patch, { trigger: 'chat' }) : existing;
     return {
       intent: 'open_item_update',
       content: `Ich habe den bestehenden Punkt **${updated.title}** ergänzt.`,
@@ -2038,7 +2040,7 @@ export class ChatService {
     if (oi.newStatus && oi.newStatus !== 'resolved' && oi.newStatus !== 'dismissed') patch.status = oi.newStatus;
     if (oi.newStatus === 'resolved' || oi.newStatus === 'dismissed')
       return this.openItemClose(conv, text, { ...intent, openItem: { ...oi, targetHint: item.title } }, state);
-    const updated = Object.keys(patch).length ? this.openItems.update(item.id, patch) : item;
+    const updated = Object.keys(patch).length ? this.openItems.update(item.id, patch, { trigger: 'chat' }) : item;
     const stillAsked: Array<'responsible' | 'due'> = [];
     if (!updated.responsiblePersonId && !updated.responsibleUnknown && pending?.asked.includes('responsible') && !patch.responsible)
       stillAsked.push('responsible');
