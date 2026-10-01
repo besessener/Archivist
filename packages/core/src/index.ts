@@ -1,0 +1,9 @@
+export { createServices, type CreateServicesOptions, type Services } from './create-services';
+export { createHandlers, createIpcDispatcher, type HostApi, type IpcDispatcher } from './handlers';
+export { resolveDataPaths, ensureDataDirs, type DataPaths } from './context';
+export type { SecretCipher } from './services/secret';
+export type { FetchLike } from './services/llm';
+export { AppError, toErrorInfo } from './util/errors';
+export { Logger } from './util/logger';
+export { redactSecrets } from './util/redact';
+export * as pathGuard from './util/paths';

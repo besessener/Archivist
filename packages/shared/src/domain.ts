@@ -391,6 +391,8 @@ export const AgentActionType = z.enum([
   'exclude_path',
   'create_category',
   'set_reminder',
+  'create_open_item',
+  'record_decision',
 ]);
 export type AgentActionType = z.infer<typeof AgentActionType>;
 export const ConfirmationLevel = z.enum(['none', 'confirm', 'strong']);
@@ -442,6 +444,8 @@ export const ActionParamSchemas = {
   exclude_path: z.object({ kind: z.enum(['file', 'dir']), path: z.string() }),
   create_category: z.object({ path: z.string() }),
   set_reminder: z.object({ targetType: z.string(), targetId: z.string().nullable(), title: z.string(), remindAt: IsoDate }),
+  create_open_item: z.object({ title: z.string(), description: z.string().nullish(), dueAt: z.string().nullish(), sourceIds: z.array(z.string()).default([]), topic: z.string().nullish(), project: z.string().nullish() }),
+  record_decision: z.object({ title: z.string(), decisionText: z.string(), decidedAt: z.string().nullish(), participants: z.array(z.string()).default([]), topic: z.string().nullish(), project: z.string().nullish(), sourceIds: z.array(z.string()).default([]) }),
 } as const;
 
 // ---------- Chat ----------
