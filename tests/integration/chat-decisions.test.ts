@@ -551,3 +551,62 @@ describe('Ereignisse in der Timeline', () => {
     await expect(app.call('events:create', { title: 'x', occurredAt: 'kein Datum', sourceIds: [] })).resolves.toMatchObject({ ok: false });
   });
 });
+
+describe('Verweise im Chat führen zum richtigen Objekt', () => {
+  const mk = (text: string, date: string) => ({
+    decisionText: text,
+    title: text.slice(0, 40),
+    topic: 'prod-plat',
+    decidedAt: date,
+    participants: ['Anna'],
+    alternatives: [],
+    unknownFields: [],
+    sourceIds: [],
+    confidence: 0.9,
+    asDraft: false,
+  });
+
+  it('liefert die Erinnerung als Quelle vom Typ „reminder“ (nicht als Notiz)', async () => {
+    app.llm.down = true;
+    const r1 = await app.ok('chat:send', { text: 'Erinnere mich bitte an das Treffen mit dem Team.' });
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: '31.10.' });
+    const rem = (await app.ok('reminders:list', {}))[0]!;
+    expect(r2.assistantMessage.sources.find((s) => s.id === rem.id)?.type).toBe('reminder');
+    // auch aus der gespeicherten Historie gelesen bleibt der Typ erhalten
+    const history = await app.ok('chat:history', { conversationId: r1.conversationId });
+    expect(history.at(-1)!.sources.find((s) => s.id === rem.id)?.type).toBe('reminder');
+  });
+
+  it('kennzeichnet Widersprüche im Kontext als „contradiction“ – nach neuer Entscheidung und bei der Prüfung', async () => {
+    app.llm.down = true;
+    await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
+    const r = await app.ok('chat:send', { text: 'Wir haben entschieden, dass wir prod-plat pausieren. Datum 01.03.2026.' });
+    const r2 = await app.ok('chat:send', { conversationId: r.conversationId, text: 'Anna' });
+    const contra = await app.ok('contradictions:list', {});
+    expect(contra.length).toBeGreaterThan(0);
+    const fromDecision = r2.assistantMessage.context?.contradictions ?? [];
+    expect(fromDecision.length).toBeGreaterThan(0);
+    expect(fromDecision.every((c) => c.type === 'contradiction' && contra.some((x) => x.id === c.id))).toBe(true);
+
+    const check = await app.ok('chat:send', { text: 'gibt es widersprüche?' });
+    expect(check.assistantMessage.intent).toBe('contradiction_check');
+    const fromCheck = check.assistantMessage.context?.contradictions ?? [];
+    expect(fromCheck.map((c) => c.id).sort()).toEqual(contra.map((c) => c.id).sort());
+    expect(fromCheck.every((c) => c.type === 'contradiction')).toBe(true);
+  });
+
+  it('verlinkt Widersprüche im Zeitverlauf auf den Widerspruch selbst', async () => {
+    app.llm.down = true;
+    await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
+    await app.ok('decisions:create', mk('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01'));
+    const [contra] = await app.ok('contradictions:list', {});
+    const entry = (await app.ok('timeline:get', {})).find((e) => e.kind === 'contradiction')!;
+    expect(entry.refs[0]).toMatchObject({ type: 'contradiction', id: contra!.id });
+    expect(entry.refs.slice(1).every((x) => x.type === 'decision')).toBe(true);
+
+    const r = await app.ok('chat:send', { text: 'Zeig mir den Zeitverlauf' });
+    expect(r.assistantMessage.intent).toBe('timeline_query');
+    expect(r.assistantMessage.sources.find((s) => s.id === contra!.id)?.type).toBe('contradiction');
+    expect((r.assistantMessage.context?.contradictions ?? []).map((c) => c.id)).toContain(contra!.id);
+  });
+});

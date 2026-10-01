@@ -55,9 +55,16 @@ export const resultSchema = <T extends z.ZodType>(data: T) =>
   z.discriminatedUnion('ok', [z.object({ ok: z.literal(true), data }), z.object({ ok: z.literal(false), error: AppErrorInfo })]);
 export type Result<T> = { ok: true; data: T } | { ok: false; error: AppErrorInfo };
 
+/**
+ * Art eines Verweises (Kontextpanel, Quellen, Chips): alle Wissensobjekte plus Erinnerungen und Widersprüche,
+ * die keine Graph-Entitäten sind, aber trotzdem auf ihre eigene Ansicht verlinken.
+ */
+export const RefType = z.enum([...EntityType.options, 'reminder', 'contradiction']);
+export type RefType = z.infer<typeof RefType>;
+
 /** Verweis auf ein Wissensobjekt für Kontextpanel, Quellen und Aktionen. */
 export const EntityRef = z.object({
-  type: EntityType,
+  type: RefType,
   id: Id,
   label: z.string(),
   detail: z.string().nullish(),
@@ -66,7 +73,7 @@ export type EntityRef = z.infer<typeof EntityRef>;
 
 export const SourceReference = z.object({
   id: Id,
-  type: EntityType,
+  type: RefType,
   title: z.string(),
   snippet: z.string().default(''),
   path: z.string().nullish(),
