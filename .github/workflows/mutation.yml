@@ -1,0 +1,68 @@
+name: Mutationstest
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/core/src/util/paths.ts'
+      - 'packages/core/src/util/redact.ts'
+      - 'packages/core/src/services/privacy.ts'
+      - 'packages/core/src/services/undo.ts'
+      - 'tests/**'
+      - 'stryker.config.mjs'
+      - 'mutation-targets.mjs'
+      - 'vitest.mutation.config.mts'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - 'packages/core/src/util/paths.ts'
+      - 'packages/core/src/util/redact.ts'
+      - 'packages/core/src/services/privacy.ts'
+      - 'packages/core/src/services/undo.ts'
+      - 'tests/**'
+      - 'stryker.config.mjs'
+      - 'mutation-targets.mjs'
+      - 'vitest.mutation.config.mts'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Inkrementell: Stryker vergleicht mit dem Ergebnis des letzten Laufs und mutiert nur Geändertes. Das übersieht Änderungen an
+      # Dateien, die weder gemutet noch Tests sind (z. B. Konfiguration), deshalb läuft `main` immer voll (--force) und liefert den Cache.
+      - name: Ergebnis des letzten Laufs wiederherstellen
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: reports/stryker-incremental.json
+          key: mutation-incremental-${{ github.sha }}
+          restore-keys: mutation-incremental-
+      - name: Mutationstest (Abbruch unter der Schwelle in stryker.config.mjs)
+        env:
+          FULL_RUN: ${{ github.event_name != 'pull_request' && '--force' || '' }}
+        run: npx stryker run --concurrency 4 --incremental $FULL_RUN
+      - name: Zusammenfassung
+        if: ${{ !cancelled() }}
+        run: node scripts/mutation-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 14
