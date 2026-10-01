@@ -1,5 +1,5 @@
 import type { EntityRef, Insight, InsightKind } from '@archivist/shared';
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, inArray, like } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { insights } from '../db/schema';
 import { AppError } from '../util/errors';
@@ -110,6 +110,25 @@ export class InsightService {
       .all();
     for (const r of rows) if (!keepKeys.has(r.dedupeKey)) this.db.delete(insights).where(eq(insights.id, r.id)).run();
     if (rows.length) this.ctx.events.changed('insights', 'status');
+  }
+
+  /**
+   * Removes pending (open or snoozed) insights of a key prefix that no longer apply and withdraws their proposed
+   * actions. Accepted and rejected insights stay: their keys remember the user's decision.
+   */
+  retirePending(prefix: string, keepKeys: Set<string>, reason = 'Zurückgezogen: Der Hinweis trifft nicht mehr zu.'): number {
+    const rows = this.db
+      .select()
+      .from(insights)
+      .where(and(like(insights.dedupeKey, `${prefix}%`), inArray(insights.status, ['open', 'snoozed'])))
+      .all()
+      .filter((r) => !keepKeys.has(r.dedupeKey));
+    for (const r of rows) {
+      if (r.recommendedActionId) this.actions.withdraw(r.recommendedActionId, reason);
+      this.db.delete(insights).where(eq(insights.id, r.id)).run();
+    }
+    if (rows.length) this.ctx.events.changed('insights', 'status');
+    return rows.length;
   }
 
   byDedupeKey(key: string): Insight | undefined {

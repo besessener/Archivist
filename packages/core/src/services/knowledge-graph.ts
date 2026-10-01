@@ -5,7 +5,7 @@ import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { decisions, documents, entities, events, openItems, relations } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
-import { nameSimilarity, normalizeName } from '../util/text';
+import { normalizeName } from '../util/text';
 import type { AuditService } from './audit';
 import type { UndoService } from './undo';
 
@@ -404,19 +404,6 @@ export class KnowledgeGraphService {
         return other ? [{ ...r, direction: out ? ('out' as const) : ('in' as const), other }] : [];
       }),
     };
-  }
-
-  /** Paare ähnlich benannter Themen (Kandidaten für eine Zusammenführung). */
-  findSimilarTopics(threshold = 0.82): Array<{ a: GraphEntity; b: GraphEntity; score: number }> {
-    const topics = this.db.select().from(entities).where(eq(entities.type, 'topic')).all().map(mapEntity);
-    const out: Array<{ a: GraphEntity; b: GraphEntity; score: number }> = [];
-    for (let i = 0; i < topics.length; i += 1) {
-      for (let j = i + 1; j < topics.length; j += 1) {
-        const score = nameSimilarity(topics[i]!.name, topics[j]!.name);
-        if (score >= threshold) out.push({ a: topics[i]!, b: topics[j]!, score });
-      }
-    }
-    return out.sort((x, y) => y.score - x.score);
   }
 
   // ---------------------------------------------------------------------------------------------

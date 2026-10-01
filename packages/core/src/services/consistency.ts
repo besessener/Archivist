@@ -9,6 +9,7 @@ import { sha256Text } from '../util/hash';
 import { truncate } from '../util/text';
 import { chooseTargetFolder, folderLabel, splitSubjects } from './archive-structure';
 import type { ActionService } from './actions';
+import type { EntityDuplicateCheck } from './cleanup/entity-duplicates';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
@@ -32,6 +33,7 @@ const KIND_LABELS: Record<string, string> = {
   misplaced_file: 'Ablageort-Auffälligkeiten',
   scattered_documents: 'verstreut abgelegte Dokumente',
   similar_topics: 'ähnliche Themen',
+  similar_entities: 'mögliche Dubletten',
   incomplete_decision: 'unvollständige Entscheidungen',
   possibly_superseded: 'möglicherweise überholte Entscheidungen',
   contradiction: 'Widersprüche',
@@ -61,6 +63,7 @@ export class ConsistencyService {
     private readonly insights: InsightService,
     private readonly notifications: NotificationService,
     private readonly actions: ActionService,
+    private readonly entityDuplicates: EntityDuplicateCheck,
   ) {}
 
   private get db() {
@@ -226,38 +229,9 @@ export class ConsistencyService {
     report?.(0.4, 'Prüfe Verzeichnisse');
     this.checkScatteredDocuments(archived, count);
 
-    // ---- Themen ----
-    report?.(0.45, 'Prüfe Themen');
-    for (const { a, b, score } of this.graph.findSimilarTopics()) {
-      if (this.insights.has(`similar-topics:${[a.id, b.id].sort().join('|')}`)) continue;
-      const action = this.actions.propose({
-        actionType: 'merge_topics',
-        label: `Themen „${a.name}“ und „${b.name}“ zusammenführen`,
-        rationale: `Die Namen sind sehr ähnlich (${Math.round(score * 100)} %).`,
-        confidence: score,
-        affectedEntities: [
-          { type: 'topic', id: a.id, label: a.name },
-          { type: 'topic', id: b.id, label: b.name },
-        ],
-        requiredConfirmation: 'confirm',
-        proposedParameters: { sourceTopicId: b.id, targetTopicId: a.id },
-      });
-      this.insights.upsert({
-        kind: 'similar_topics',
-        title: `Ähnliche Themen: „${a.name}“ und „${b.name}“`,
-        explanation:
-          'Beide Themen sind sehr ähnlich benannt. Zusammenführen würde alle Dokumente, Entscheidungen und Beziehungen bündeln (erfordert Bestätigung).',
-        confidence: score,
-        affected: [
-          { type: 'topic', id: a.id, label: a.name },
-          { type: 'topic', id: b.id, label: b.name },
-        ],
-        recommendedActionId: action.id,
-        recommendedActionLabel: 'Themen zusammenführen',
-        dedupeKey: `similar-topics:${[a.id, b.id].sort().join('|')}`,
-      });
-      count('similar_topics');
-    }
+    // ---- Duplicate topics, projects and tags (always asks, never merges on its own) ----
+    report?.(0.45, 'Prüfe Themen, Projekte und Tags');
+    await this.entityDuplicates.run(count);
 
     // ---- Entscheidungen ----
     report?.(0.6, 'Prüfe Entscheidungen');

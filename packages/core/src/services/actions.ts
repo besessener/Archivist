@@ -121,6 +121,17 @@ export class ActionService {
     return this.getMany([...new Set(shownActionIds)]).filter((a) => a.status === 'proposed' && a.conversationId === conversationId);
   }
 
+  /**
+   * Withdraws a still open proposal whose cause is gone (e.g. its insight was retired). Not a user decision, so no
+   * audit entry; executed or rejected actions stay untouched.
+   */
+  withdraw(id: string, reason: string): void {
+    const r = this.db.select().from(agentActions).where(eq(agentActions.id, id)).get();
+    if (r?.status !== 'proposed') return;
+    this.db.update(agentActions).set({ status: 'rejected', result: reason, resolvedAt: nowIso() }).where(eq(agentActions.id, id)).run();
+    this.ctx.events.changed('status');
+  }
+
   async resolve(
     id: string,
     decision: 'approve' | 'reject',
