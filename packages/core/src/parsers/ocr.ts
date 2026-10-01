@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { OCR_LANGUAGE_CODE } from '@archivist/shared';
 
 /**
  * Lokale Texterkennung (OCR) mit tesseract.js. Alles läuft offline:
@@ -15,8 +16,6 @@ export interface OcrOptions {
   languages: string;
 }
 
-const LANG_RE = /^[a-z]{3}(_[a-z]+)?$/;
-
 const nodeRequire = createRequire(typeof __filename === 'string' ? __filename : path.join(process.cwd(), 'noop.js'));
 
 /** Kopiert die gepackten Sprachdaten (4.0.0_best_int) in den lokalen Ordner – nur wenn sie fehlen. */
@@ -27,7 +26,7 @@ export async function ensureTessdata(dir: string, languages: string): Promise<st
     .map((l) => l.trim())
     .filter(Boolean);
   for (const lang of langs) {
-    if (!LANG_RE.test(lang)) throw new Error(`Ungültiger Sprachcode: ${lang}`);
+    if (!OCR_LANGUAGE_CODE.test(lang)) throw new Error(`Ungültiger Sprachcode: ${lang}`);
     const target = path.join(dir, `${lang}.traineddata.gz`);
     if (fs.existsSync(target)) continue;
     let pkgDir: string;

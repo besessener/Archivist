@@ -54,12 +54,18 @@ export const ProfileSettings = z.object({
 });
 
 const NotificationSettings = z.object({ desktop: z.boolean().default(false) });
+
+/** One Tesseract language code, e.g. `deu` or `chi_sim` (same rule the OCR module applies). */
+export const OCR_LANGUAGE_CODE = /^[a-z]{3}(?:_[a-z]+)?$/;
+
+/** `true` if `value` is a `+`-separated list of Tesseract language codes, e.g. `deu+chi_sim`. */
+export function isOcrLanguageList(value: string): boolean {
+  return value.split('+').every((code) => OCR_LANGUAGE_CODE.test(code));
+}
+
 const OcrSettings = z.object({
   enabled: z.boolean().default(true),
-  languages: z
-    .string()
-    .regex(/^[a-z]{3}(\+[a-z]{3})*$/)
-    .default('deu+eng'),
+  languages: z.string().refine(isOcrLanguageList, { message: 'Ungültige OCR-Sprachcodes (Beispiel: deu+eng oder deu+chi_sim).' }).default('deu+eng'),
 });
 
 export const Settings = z.object({
