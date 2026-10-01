@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DocumentProposal } from '@archivist/shared';
+import { DECISION_FIELD_LABELS, type DocumentProposal } from '@archivist/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, relations } from '../db/schema';
@@ -23,6 +23,21 @@ export interface ConsistencyReport {
   contradictions: number;
   byKind: Record<string, number>;
 }
+
+const KIND_LABELS: Record<string, string> = {
+  orphan_document: 'Dokumente ohne Zuordnung',
+  missing_metadata: 'fehlende Metadaten',
+  duplicate: 'mögliche Duplikate',
+  misplaced_file: 'Ablageort-Auffälligkeiten',
+  similar_topics: 'ähnliche Themen',
+  incomplete_decision: 'unvollständige Entscheidungen',
+  possibly_superseded: 'möglicherweise überholte Entscheidungen',
+  contradiction: 'Widersprüche',
+  open_item: 'offene Punkte mit Handlungsbedarf',
+  outdated_info: 'widersprüchliche Status',
+  low_confidence_relation: 'ungeklärte Beziehungen',
+  external_file: 'externe Dateien mit Archivbezug',
+};
 
 const h = (ids: string[]) => sha256Text([...ids].sort().join('|')).slice(0, 12);
 
@@ -138,7 +153,7 @@ export class ConsistencyService {
     for (const d of allDecisions) {
       if (d.status === 'draft' || (d.missingFields.length > 0 && d.status !== 'revoked' && d.status !== 'superseded')) {
         const key = `incomplete-decision:${d.id}:${d.missingFields.join(',')}`;
-        this.insights.upsert({ kind: 'incomplete_decision', title: `Unvollständige Entscheidung: ${d.title}`, explanation: `Es fehlen Angaben: ${d.missingFields.join(', ') || '–'}. Ergänze sie im Chat oder unter „Entscheidungen“.`, confidence: 1, affected: [{ type: 'decision', id: d.id, label: d.title }], dedupeKey: key });
+        this.insights.upsert({ kind: 'incomplete_decision', title: `Unvollständige Entscheidung: ${d.title}`, explanation: `Es fehlen Angaben: ${d.missingFields.map((f) => DECISION_FIELD_LABELS[f]).join(', ') || '–'}. Ergänze sie im Chat oder unter „Entscheidungen“.`, confidence: 1, affected: [{ type: 'decision', id: d.id, label: d.title }], dedupeKey: key });
         this.notifications.create({ title: 'Unvollständige Entscheidung', description: d.title, type: 'incomplete_decision', priority: 'normal', affectedEntityIds: [d.id], proposedActions: [{ label: 'Entscheidungen öffnen', kind: 'navigate', target: '/decisions/' }], dedupeKey: key });
         notifs += 1;
         count('incomplete_decision');
@@ -225,7 +240,7 @@ export class ConsistencyService {
     const total = Object.values(byKind).reduce((a, b) => a + b, 0);
     if (trigger !== 'startup' || total > 0) this.notifications.create({
       title: 'Archivprüfung abgeschlossen',
-      description: total === 0 ? 'Keine Auffälligkeiten gefunden.' : `${total} Hinweis(e): ${Object.entries(byKind).map(([k, v]) => `${v}× ${k}`).join(', ')}.`,
+      description: total === 0 ? 'Keine Auffälligkeiten gefunden.' : `${total} Hinweis(e): ${Object.entries(byKind).map(([k, v]) => `${v}× ${KIND_LABELS[k] ?? k}`).join(', ')}.`,
       type: 'consistency_done',
       priority: 'low',
       proposedActions: [{ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' }],
