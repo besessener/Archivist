@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Logger } from '../../packages/core/src/util/logger';
 import { redactSecrets } from '../../packages/core/src/util/redact';
-import { normalizeDateInput, parseGermanDate } from '../../packages/core/src/util/dates';
+import { normalizeDateInput, parseGermanDate, promptNow } from '../../packages/core/src/util/dates';
 import { chunkText, nameSimilarity } from '../../packages/core/src/util/text';
 import { chosenOption, polarity } from '../../packages/core/src/services/contradictions';
 import { computeMissingFields, questionFor } from '../../packages/core/src/services/decisions';
@@ -57,6 +57,57 @@ describe('Datumserkennung', () => {
     expect(parseGermanDate('nichts', now)).toBeNull();
     expect(normalizeDateInput('2026-02-30', now)).toBeNull();
     expect(normalizeDateInput('2026-03-04', now)).toBe('2026-03-04');
+  });
+
+  it('legt „letzten Freitag“ und Wochentage im Vergangenheitskontext in die Vergangenheit', () => {
+    expect(parseGermanDate('letzten Freitag eingereicht', now)).toBe('2026-09-25');
+    expect(parseGermanDate('am vergangenen Montag', now)).toBe('2026-09-28');
+    expect(parseGermanDate('vorigen Donnerstag', now)).toBe('2026-09-24');
+    expect(parseGermanDate('Kickoff war am Montag', now)).toBe('2026-09-28');
+    expect(parseGermanDate('Ich habe den Antrag am Freitag eingereicht', now)).toBe('2026-09-25');
+    expect(parseGermanDate('Das haben wir Dienstag gemacht', now)).toBe('2026-09-29');
+    expect(parseGermanDate('Donnerstag abgesprochen', now)).toBe('2026-09-24');
+  });
+
+  it('lässt Wochentage ohne Vergangenheitskontext in der Zukunft', () => {
+    expect(parseGermanDate('am Freitag', now)).toBe('2026-10-02');
+    expect(parseGermanDate('Montag', now)).toBe('2026-10-05');
+    expect(parseGermanDate('Donnerstag', now)).toBe('2026-10-08');
+    expect(parseGermanDate('Angebot am Freitag prüfen', now)).toBe('2026-10-02');
+    expect(parseGermanDate('Meeting am Montag geplant', now)).toBe('2026-10-05');
+    expect(parseGermanDate('wurde auf Freitag verschoben', now)).toBe('2026-10-02');
+    expect(parseGermanDate('war für nächsten Montag angesetzt', now)).toBe('2026-10-05');
+  });
+
+  describe('Ortszeit statt UTC (Europe/Berlin)', () => {
+    const tz = process.env.TZ;
+    beforeAll(() => {
+      process.env.TZ = 'Europe/Berlin';
+    });
+    afterAll(() => {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    });
+
+    it('nennt um 00:30 Ortszeit das lokale Datum mit passendem Wochentag', () => {
+      const at = new Date('2026-09-30T22:30:00Z'); // 01.10.2026, 00:30 MESZ
+      expect(at.toISOString().slice(0, 10)).toBe('2026-09-30');
+      expect(promptNow(at)).toBe('2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
+      expect(parseGermanDate('heute', at)).toBe('2026-10-01');
+      expect(parseGermanDate('morgen', at)).toBe('2026-10-02');
+      expect(parseGermanDate('letzten Mittwoch', at)).toBe('2026-09-30');
+    });
+
+    it('bleibt um 23:30 Ortszeit beim selben lokalen Tag', () => {
+      const at = new Date('2026-10-01T21:30:00Z'); // 01.10.2026, 23:30 MESZ
+      expect(promptNow(at)).toBe('2026-10-01 (Donnerstag), 23:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
+      expect(parseGermanDate('heute', at)).toBe('2026-10-01');
+      expect(parseGermanDate('morgen', at)).toBe('2026-10-02');
+    });
+
+    it('nennt im Winter den Versatz UTC+01:00', () => {
+      expect(promptNow(new Date('2026-12-24T23:15:00Z'))).toBe('2026-12-25 (Freitag), 00:15 Uhr, Zeitzone Europe/Berlin (UTC+01:00)');
+    });
   });
 });
 
