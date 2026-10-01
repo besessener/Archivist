@@ -109,7 +109,12 @@ export default function OpenItemsPage() {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {i.priority === 'high' && <Badge variant="danger">Hohe Priorität</Badge>}
-                        {i.status !== 'open' && <Badge variant="outline">{OPEN_ITEM_STATUS_LABELS[i.status]}</Badge>}
+                        {i.status !== 'open' && (
+                          <Badge variant="outline" data-testid="open-item-status">
+                            {OPEN_ITEM_STATUS_LABELS[i.status]}
+                            {i.duplicateOfId ? ' (Duplikat)' : ''}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">

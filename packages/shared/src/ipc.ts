@@ -6,6 +6,10 @@ import {
   ArchiveItemRequest,
   ArchivePlan,
   ArchiveResult,
+  ArchiveRootChangeMode,
+  ArchiveRootChangeResult,
+  ArchiveRootPreview,
+  ArchiveRootStatus,
   AppNotification,
   AuditEntry,
   BackupInfo,
@@ -389,6 +393,18 @@ export const ipcContract = {
   'backup:create': ch(z.object({ includeArchive: z.boolean().default(false) }), BackupInfo),
   'backup:list': ch(Empty, z.array(BackupInfo)),
   'archive:verify': ch(Empty, VerifyReport),
+  'archive:rootStatus': ch(Empty, ArchiveRootStatus),
+  'archive:previewRootChange': ch(z.object({ root: z.string().trim().min(1).max(4096) }), ArchiveRootPreview),
+  'archive:changeRoot': ch(
+    z.object({
+      root: z.string().trim().min(1).max(4096),
+      mode: ArchiveRootChangeMode,
+      confirmed: Confirmed,
+      /** `pathOnly`: switch even though archived documents are missing in the new folder (the user saw the warning). */
+      acceptMissing: z.boolean().default(false),
+    }),
+    ArchiveRootChangeResult,
+  ),
 } as const;
 
 export type IpcContract = typeof ipcContract;
