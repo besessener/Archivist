@@ -47,12 +47,12 @@ export default function InsightsPage() {
   }, [insights.data]);
 
   /** Answers a question insight; an answer that changes data is confirmed in a dialog first. */
-  const choose = async (insight: InsightRecord, choice: InsightChoice, strongConfirmed = false): Promise<boolean> => {
-    const out = await run(() => call('insights:respond', { response: 'choose', id: insight.id, choiceId: choice.id, confirmed: true, strongConfirmed }), {
+  const choose = async (insight: InsightRecord, choice: InsightChoice, strongConfirmed = false): Promise<void> => {
+    await run(() => call('insights:respond', { response: 'choose', id: insight.id, choiceId: choice.id, confirmed: true, strongConfirmed }), {
       success: `Antwort „${choice.label}“ übernommen.`,
     });
-    if (out) void insights.refetch();
-    return Boolean(out);
+    // also after an error: an outdated question is removed by the backend
+    void insights.refetch();
   };
 
   const openContradictions = (contradictions.data ?? []).filter((c) => c.status === 'detected' || c.status === 'acknowledged');
@@ -256,7 +256,8 @@ export default function InsightsPage() {
         confirmTestId="insight-choice-confirm"
         onConfirm={async (checked) => {
           if (!choosing) return;
-          if (await choose(choosing.insight, choosing.choice, checked)) setChoosing(null);
+          await choose(choosing.insight, choosing.choice, checked);
+          setChoosing(null);
         }}
       >
         {choosing && (
