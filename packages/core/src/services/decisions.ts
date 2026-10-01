@@ -382,6 +382,10 @@ export class DecisionService {
     const oldRow = this.db.select().from(decisions).where(eq(decisions.id, oldId)).get();
     const newRow = this.db.select().from(decisions).where(eq(decisions.id, newId)).get();
     if (!oldRow || !newRow) throw new AppError('validation_error', 'Entscheidung nicht gefunden.');
+    // idempotent: superseding the same pair twice changes nothing (and logs nothing)
+    if (oldRow.status === 'superseded' && newRow.supersedesDecisionId === oldId) return { old: this.get(oldId), new: this.get(newId) };
+    if (oldRow.status === 'superseded' || oldRow.status === 'revoked')
+      throw new AppError('validation_error', 'Die ältere Entscheidung ist bereits überholt oder widerrufen.');
     const now = nowIso();
     // an already existing (e.g. user-rejected) supersedes relation is not part of the undo data
     const { changes: relations } = this.graph.trackRelationChanges(newId, () =>
