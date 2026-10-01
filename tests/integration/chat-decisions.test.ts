@@ -294,6 +294,18 @@ describe('Rückfrage nach dem Erinnerungsdatum behält den Kontext', () => {
     const rem = (await app.ok('reminders:list', {}))[0]!;
     expect(rem.remindAt).toBe('2026-10-31');
     expect(rem.title).toBe('Mini-PoC im ACT-Team vorstellen');
+    // Aus der Erinnerung entsteht ein offener Punkt (mit Fälligkeit) und eine Notiz – beides erscheint in Timeline und Suche
+    const items = await app.ok('openItems:list', {});
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ title: 'Mini-PoC im ACT-Team vorstellen', status: 'open' });
+    expect(items[0]!.dueAt?.slice(0, 10)).toBe('2026-10-31');
+    expect(rem.targetId).toBe(items[0]!.id);
+    expect(r2.assistantMessage.content).toMatch(/offenen Punkt .*angelegt/);
+    expect(r2.assistantMessage.content).toMatch(/Notiz gespeichert/);
+    expect(r2.assistantMessage.content).toMatch(/keine Entscheidung|keine erfasst/);
+    expect((await app.ok('decisions:list', {})).length).toBe(0);
+    expect((await app.ok('timeline:get', {})).some((e) => e.kind === 'open_item' && e.date === '2026-10-31')).toBe(true);
+    expect((await app.ok('search:global', { query: 'Stackit Mini-Projekt', limit: 5 })).some((h) => h.type === 'note')).toBe(true);
   });
 
   it('funktioniert auch ohne LLM und verfällt nach einer fremden Nachricht', async () => {

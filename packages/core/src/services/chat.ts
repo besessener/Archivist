@@ -42,7 +42,7 @@ type MsgRow = typeof messages.$inferSelect;
 type Pending =
   | { kind: 'decision'; decisionId: string; asked: DecisionField[]; clarifyTopic?: string | null; supersedes?: string | null }
   | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'> }
-  | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean };
+  | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string };
 
 interface ConvState {
   pending?: Pending | null;
@@ -748,7 +748,7 @@ export class ChatService {
         intent: intent.intent,
         content: 'Wann soll ich dich erinnern? Nenne bitte ein Datum oder z. B. „nächsten Montag“.',
         confidence: 0.4,
-        state: { ...state, pending: { kind: 'reminder', title, targetId: pending?.targetId ?? target?.id ?? null, snooze: intent.intent === 'reminder_snooze' } },
+        state: { ...state, pending: { kind: 'reminder', title, targetId: pending?.targetId ?? target?.id ?? null, snooze: intent.intent === 'reminder_snooze', source: pending?.source ?? text.slice(0, 4000) } },
       };
     }
     state = { ...state, pending: null };
@@ -759,8 +759,39 @@ export class ChatService {
       this.reminders.snooze(existing.id, when);
       return { intent: 'reminder_snooze', content: `Erinnerung verschoben auf ${when}.`, confidence: 0.9, state };
     }
-    const rem = this.reminders.create({ targetType: item ? 'open_item' : 'custom', targetId: item?.id ?? null, title: item?.title ?? pending?.title ?? r.title?.trim() ?? truncate(text, 80), remindAt: when });
-    return { intent: 'reminder_create', content: `Erinnerung für den ${when} angelegt${item ? ` (Offener Punkt: ${item.title})` : ''}. Du siehst sie dann in der Notification Bell – solange Archivist läuft.`, context: item ? { openItems: [{ type: 'task', id: item.id, label: item.title }] } : undefined, confidence: 0.9, uncertainties: ['Erinnerungen werden nur angezeigt, solange Archivist geöffnet ist.'], state: { ...state, last: { ...(state.last ?? {}), openItemId: item?.id ?? state.last?.openItemId } }, sources: [{ id: rem.id, type: 'note', title: rem.title, snippet: `Erinnerung am ${when}`, score: 1, path: null, date: when }] };
+    let target = item;
+    let created: { openItem: string; note: string | null } | null = null;
+    if (!target && intent.intent === 'reminder_create') {
+      // Eine Erinnerung gehört zu einem offenen Punkt – ohne bestehenden Bezug lege ich ihn an (und merke mir den Text als Notiz).
+      const source = (pending?.source ?? text).trim();
+      const title = (pending?.title ?? r.title?.trim() ?? truncate(source.replace(/\s+/g, ' '), 100)).slice(0, 160);
+      target = this.openItems.create(
+        { title, description: source.length > title.length + 10 ? source.slice(0, 2000) : undefined, topic: intent.topic, project: intent.project, dueAt: when, priority: 'normal', sourceIds: [], confidence: 0.7 },
+        { actor: 'user', trigger: 'chat' },
+      );
+      let noteTitle: string | null = null;
+      if (source.length > 120) {
+        const note = this.graph.ensureEntity('note', truncate(source.replace(/\s+/g, ' '), 70), source);
+        this.graph.link(note.id, target.id, 'relates_to', { confidence: 0.8, status: 'confirmed' });
+        await this.search.index({ type: 'note', id: note.id, title: note.name, content: source });
+        noteTitle = note.name;
+      }
+      created = { openItem: target.title, note: noteTitle };
+    }
+    const rem = this.reminders.create({ targetType: target ? 'open_item' : 'custom', targetId: target?.id ?? null, title: target?.title ?? pending?.title ?? r.title?.trim() ?? truncate(text, 80), remindAt: when });
+    const extra = created ? `\n\nDazu habe ich den offenen Punkt **${created.openItem}** (fällig ${when}) angelegt${created.note ? ' und deinen Text als Notiz gespeichert' : ''}. Eine Entscheidung war in der Nachricht nicht enthalten – deshalb habe ich keine erfasst.` : '';
+    return {
+      intent: 'reminder_create',
+      content: `Erinnerung für den ${when} angelegt${target && !created ? ` (Offener Punkt: ${target.title})` : ''}. Du siehst sie dann in der Notification Bell – solange Archivist läuft.${extra}`,
+      context: target ? { openItems: [{ type: 'task', id: target.id, label: target.title }] } : undefined,
+      confidence: 0.9,
+      uncertainties: ['Erinnerungen werden nur angezeigt, solange Archivist geöffnet ist.'],
+      state: { ...state, last: { ...(state.last ?? {}), openItemId: target?.id ?? state.last?.openItemId } },
+      sources: [
+        { id: rem.id, type: 'note', title: rem.title, snippet: `Erinnerung am ${when}`, score: 1, path: null, date: when },
+        ...(target ? [{ id: target.id, type: 'task' as const, title: target.title, snippet: `Fällig ${when}`, score: 1, path: null, date: when }] : []),
+      ],
+    };
   }
 
   // ---------- Vorschläge, Archiv, Scan ----------
