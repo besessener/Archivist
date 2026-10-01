@@ -8,6 +8,7 @@ import { newId, nowIso } from '../util/ids';
 import type { NotificationService } from './notifications';
 
 type Row = typeof reminders.$inferSelect;
+const REMINDER_PREFIX = 'Erinnerung: ';
 const map = (r: Row): Reminder => ({
   id: r.id,
   targetType: r.targetType as Reminder['targetType'],
@@ -112,12 +113,14 @@ export class ReminderService {
     for (const r of due) {
       this.db.update(reminders).set({ status: 'fired' }).where(eq(reminders.id, r.id)).run();
       if (r.targetType === 'open_item' && r.targetId) syncReminderAt(this.db, r.targetId);
+      // A snoozed notification comes back as itself, keeping its actions and target (#79).
+      if (r.targetType === 'notification' && r.targetId && this.notifications.reopen(r.targetId)) continue;
       const link: { label: string; kind: 'navigate' | 'resolve' | 'snooze'; target?: string }[] = [];
       if (r.targetType === 'open_item') link.push({ label: 'Offene Punkte öffnen', kind: 'navigate', target: '/open-items/' });
       if (r.targetType === 'decision') link.push({ label: 'Entscheidungen öffnen', kind: 'navigate', target: '/decisions/' });
       if (r.targetType === 'insight') link.push({ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' });
       this.notifications.create({
-        title: `Erinnerung: ${r.title}`,
+        title: r.title.startsWith(REMINDER_PREFIX) ? r.title : `${REMINDER_PREFIX}${r.title}`,
         description: `Geplant für ${r.remindAt.slice(0, 10)}.`,
         type: 'reminder',
         priority: 'high',

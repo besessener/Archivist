@@ -17,6 +17,7 @@ const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondar
   rejected: { label: 'Abgelehnt', variant: 'secondary' },
   executed: { label: 'Ausgeführt', variant: 'success' },
   failed: { label: 'Fehlgeschlagen', variant: 'danger' },
+  withdrawn: { label: 'Nicht mehr aktuell', variant: 'secondary' },
 };
 
 /** Karte für einen Aktionsvorschlag des Agenten mit Bestätigen/Ablehnen. */

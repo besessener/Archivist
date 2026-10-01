@@ -60,30 +60,54 @@ export async function assertRealInside(root: string, target: string): Promise<st
   return realTarget;
 }
 
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+/** Windows reserves these device names, also when followed by an extension ("CON.txt", "con.tar.gz"). */
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+
+/**
+ * Only a short alphanumeric suffix without spaces counts as a file extension. Mixed case ("St.Gallen") is
+ * treated as part of the name, so it is neither lowercased nor cut; "PDF" or "pdf" are extensions.
+ */
+const EXTENSION_RE = /^(?:[a-z0-9]{1,8}|[A-Z0-9]{1,8})$/;
+
+/** Splits a name into base and extension (without the dot); `ext` is '' when the suffix is no real extension. */
+export function splitExtension(name: string): { base: string; ext: string } {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return { base: name, ext: '' };
+  const ext = name.slice(dot + 1);
+  if (!EXTENSION_RE.test(ext) || name.slice(0, dot).replace(/^\.+/, '') === '') return { base: name, ext: '' };
+  return { base: name.slice(0, dot), ext };
+}
+
+const cleanNamePart = (s: string) =>
+  s
+    .normalize('NFC')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+/, '')
+    // eslint-disable-next-line sonarjs/super-linear-regex -- Dateiname, höchstens 255 Zeichen
+    .replace(/[. ]+$/g, '')
+    .trim();
+
+function finishBase(base: string, fallback: string): string {
+  let out = base || fallback;
+  if (RESERVED.test(out)) out = `_${out}`;
+  if (out.length > 150) out = out.slice(0, 150).trim();
+  return out;
+}
 
 /** Macht einen einzelnen Dateinamen plattformübergreifend gültig und menschenlesbar. */
 export function sanitizeFileName(name: string, fallback = 'Dokument'): string {
-  const ext = path.extname(name);
-  let base = path.basename(name, ext);
-  const clean = (s: string) =>
-    s
-      .normalize('NFC')
-      // eslint-disable-next-line no-control-regex
-      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/^\.+/, '')
-      // eslint-disable-next-line sonarjs/super-linear-regex -- Dateiname, höchstens 255 Zeichen
-      .replace(/[. ]+$/g, '')
-      .trim();
-  base = clean(base);
-  let cleanExt = clean(ext.replace(/^\./, '')).toLowerCase();
-  if (cleanExt.length > 10) cleanExt = cleanExt.slice(0, 10);
-  if (!base) base = fallback;
-  if (RESERVED.test(base)) base = `_${base}`;
-  if (base.length > 150) base = base.slice(0, 150).trim();
-  return cleanExt ? `${base}.${cleanExt}` : base;
+  const { base, ext } = splitExtension(path.basename(name).trimEnd());
+  const cleanExt = ext.toLowerCase();
+  const cleanBase = finishBase(cleanNamePart(base), fallback);
+  return cleanExt ? `${cleanBase}.${cleanExt}` : cleanBase;
+}
+
+/** Sanitises a single folder segment: folders have no extension, so dots inside the name stay untouched. */
+export function sanitizeFolderName(name: string, fallback = 'Ordner'): string {
+  return finishBase(cleanNamePart(name), fallback);
 }
 
 /** Bereinigt einen relativen Kategoriepfad (z. B. "work/projects/prod-plat"); wirft bei Traversal. */
@@ -95,7 +119,7 @@ export function sanitizeCategoryPath(input: string): string {
     .map((s) => s.trim())
     .filter(Boolean);
   if (segs.some((s) => s === '..' || s === '.')) throw permissionError('Ungültiger Zielordner (relative Pfadsegmente).', input);
-  const clean = segs.map((s) => sanitizeFileName(s, 'Ordner')).slice(0, 6);
+  const clean = segs.map((s) => sanitizeFolderName(s)).slice(0, 6);
   if (clean.length === 0) throw validationError('Der Zielordner darf nicht leer sein.');
   return clean.join('/');
 }

@@ -81,7 +81,10 @@ export const ArchivePlanItem = z.object({
   targetPath: z.string().nullable(),
   targetRelPath: z.string().nullable(),
   renamed: z.boolean(),
+  /** True only when a file outside Archivist (the user's original) gets deleted, i.e. on move. */
   willRemoveSource: z.boolean(),
+  /** True when Archivist's own temporary inbox copy gets cleaned up afterwards (the original is untouched). */
+  removesInboxCopy: z.boolean(),
   duplicates: z.array(z.object({ documentId: Id, title: z.string(), archivePath: z.string().nullable() })),
   conflicts: z.array(z.string()),
   newCategories: z.array(z.string()),
@@ -104,7 +107,9 @@ export const ArchiveItemRequest = z.object({
   mode: ArchiveMode.default('copy'),
   categoryPath: z.string().optional(),
   fileName: z.string().optional(),
+  /** Omitted: use the proposal. `null` (or an empty string): explicitly without topic. */
   topic: z.string().nullish(),
+  /** Omitted: use the proposal. `null` (or an empty string): explicitly without project. */
   project: z.string().nullish(),
 });
 export type ArchiveItemRequest = z.infer<typeof ArchiveItemRequest>;
@@ -493,11 +498,15 @@ export const AgentActionProposal = z.object({
 });
 export type AgentActionProposal = z.infer<typeof AgentActionProposal>;
 
+/** `withdrawn`: the proposal was retracted without a user decision (its cause is gone or a newer proposal replaced it). */
+export const AgentActionStatus = z.enum(['proposed', 'approved', 'rejected', 'executed', 'failed', 'withdrawn']);
+export type AgentActionStatus = z.infer<typeof AgentActionStatus>;
+
 export const StoredAgentAction = AgentActionProposal.extend({
   id: Id,
   conversationId: z.string().nullable(),
   label: z.string(),
-  status: z.enum(['proposed', 'approved', 'rejected', 'executed', 'failed']),
+  status: AgentActionStatus,
   result: z.string().nullable(),
   createdAt: IsoDate,
   resolvedAt: IsoDate.nullable(),
@@ -512,7 +521,16 @@ export const ActionParamSchemas = {
   }),
   /** Bereits archivierte Dokumente innerhalb des Archivs in einen anderen Ordner verschieben. */
   relocate_documents: z.object({
-    items: z.array(z.object({ documentId: Id, categoryPath: z.string().min(1) })).min(1),
+    items: z
+      .array(
+        z.object({
+          documentId: Id,
+          categoryPath: z.string().min(1),
+          /** archive path at proposal time; if the document was moved since, the proposal is stale */
+          fromRelPath: z.string().optional(),
+        }),
+      )
+      .min(1),
   }),
   assign_documents: z.object({
     documentIds: z.array(Id).min(1),

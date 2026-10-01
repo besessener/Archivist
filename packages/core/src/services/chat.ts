@@ -35,6 +35,7 @@ import type { InsightService } from './insights';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
+import type { NoteService } from './notes';
 import type { EventService } from './events';
 import { ACTIVE_STATUSES, hintTokens, matchOpenItems, type OpenItemService } from './open-items';
 import type { PrivacyService } from './privacy';
@@ -402,6 +403,7 @@ export class ChatService {
     private readonly jobs: JobQueueService,
     private readonly privacy: PrivacyService,
     private readonly events: EventService,
+    private readonly notes: NoteService,
   ) {}
 
   wire(deps: { actions: ActionService; archive: ArchiveService }): void {
@@ -1515,15 +1517,16 @@ export class ChatService {
   // ---------- Notizen ----------
   private async noteCapture(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const content = (intent.note ?? text).trim();
-    const note = this.graph.ensureEntity('note', truncate(content.replace(/\s+/g, ' '), 70), content);
-    if (intent.topic) this.graph.link(note.id, this.graph.ensureEntity('topic', intent.topic).id, 'relates_to', { confidence: 0.8, status: 'confirmed' });
-    await this.search.index({ type: 'note', id: note.id, title: note.name, content });
-    this.ctx.events.changed('knowledge');
+    const topic = intent.topic ? this.graph.ensureEntity('topic', intent.topic) : null;
+    const { note } = await this.notes.createUnlessExists({
+      content,
+      links: topic ? [{ targetId: topic.id, relationType: 'relates_to', confidence: 0.8 }] : [],
+    });
     return {
       intent: 'note_capture',
       content: `Notiz gespeichert${intent.topic ? ` (Thema: ${intent.topic})` : ''}.`,
       sources: [{ id: note.id, type: 'note', title: note.name, snippet: truncate(content, 200), score: 1, path: null, date: note.createdAt }],
-      context: { topics: intent.topic ? [{ type: 'topic', id: this.graph.ensureEntity('topic', intent.topic).id, label: intent.topic }] : [] },
+      context: { topics: topic ? [{ type: 'topic', id: topic.id, label: intent.topic ?? topic.name }] : [] },
       confidence: intent.confidence,
       state,
     };
@@ -2166,9 +2169,10 @@ export class ChatService {
       );
       let noteTitle: string | null = null;
       if (source.length > 120) {
-        const note = this.graph.ensureEntity('note', truncate(source.replace(/\s+/g, ' '), 70), source);
-        this.graph.link(note.id, target.id, 'relates_to', { confidence: 0.8, status: 'confirmed' });
-        await this.search.index({ type: 'note', id: note.id, title: note.name, content: source });
+        const { note } = await this.notes.createUnlessExists({
+          content: source,
+          links: [{ targetId: target.id, relationType: 'relates_to', confidence: 0.8 }],
+        });
         noteTitle = note.name;
       }
       created = { openItem: target.title, note: noteTitle };
@@ -2265,7 +2269,9 @@ export class ChatService {
       content: confirm
         ? res.status === 'executed'
           ? `Erledigt: ${a.label}. ${res.result ?? ''}`
-          : `Die Aktion konnte nicht ausgeführt werden: ${res.result ?? 'unbekannter Fehler'}`
+          : res.status === 'withdrawn'
+            ? `${res.result ?? 'Der Vorschlag ist nicht mehr aktuell.'} Frag mich gern erneut, dann prüfe ich die aktuelle Lage.`
+            : `Die Aktion konnte nicht ausgeführt werden: ${res.result ?? 'unbekannter Fehler'}`
         : `Verstanden, ich habe den Vorschlag abgelehnt: ${a.label}.`,
       confidence: 0.9,
       state,
@@ -2294,8 +2300,9 @@ export class ChatService {
       documentId: d.id,
       mode: 'copy' as const,
       categoryPath: d.proposal?.location.categoryPath ?? d.categoryPath ?? undefined,
-      topic: topic ?? d.proposal?.topic ?? null,
-      project: project ?? d.proposal?.project ?? null,
+      // undefined (not null): without a wish the proposal applies; null would mean "explicitly without".
+      topic: topic || undefined,
+      project: project || undefined,
     }));
     const action = this.actions.propose({
       actionType: 'archive_documents',
@@ -2505,10 +2512,15 @@ export class ChatService {
       ? `\n\nDiese kann ich nicht verschieben:\n${blocked.map((p) => `• ${truncate(p.title, 60)}: ${p.conflicts.join(' ')}`).join('\n')}`
       : '';
     if (ok.length === 0) return reply(`Ich kann keines der Dokumente nach „${target}“ verschieben.${blockedText}`, { state: next, context, confidence: 0.4 });
-    // ein früherer, noch offener Umlager-Vorschlag dieser Unterhaltung wird durch den neuen ersetzt
-    for (const stale of this.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents' && a.conversationId === conv)) {
-      await this.actions.resolve(stale.id, 'reject', {});
-    }
+    // the new proposal replaces every open relocate proposal of this conversation and every other open one (archive
+    // check, other conversations) for the same documents, so an older target can never move them back later
+    const replaced = new Set(
+      [
+        ...this.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents' && a.conversationId === conv),
+        ...this.actions.openRelocationsFor(docs.map((d) => d.id)),
+      ].map((a) => a.id),
+    );
+    for (const id of replaced) this.actions.withdraw(id, 'Durch einen neueren Umlager-Vorschlag ersetzt.');
     const action = this.actions.propose({
       actionType: 'relocate_documents',
       label: `${ok.length} Dokument(e) nach „${target}“ verschieben`,
@@ -2516,7 +2528,9 @@ export class ChatService {
       confidence: 0.8,
       affectedEntities: ok.map((p) => ({ type: 'document' as const, id: p.documentId, label: p.title })),
       requiredConfirmation: 'confirm',
-      proposedParameters: { items: ok.map((p) => ({ documentId: p.documentId, categoryPath: target })) },
+      proposedParameters: {
+        items: ok.map((p) => ({ documentId: p.documentId, categoryPath: target, fromRelPath: byId.get(p.documentId)?.archiveRelPath ?? undefined })),
+      },
       conversationId: conv,
     });
     const lines = ok

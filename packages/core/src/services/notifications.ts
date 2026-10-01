@@ -142,9 +142,35 @@ export class NotificationService {
     this.ctx.events.changed('notifications', 'status');
   }
 
-  /** Reaktiviert eine erledigte Benachrichtigung (nach „Später erinnern“). */
-  reopen(id: string): void {
-    this.db.update(notifications).set({ resolvedAt: null, readAt: null, createdAt: nowIso() }).where(eq(notifications.id, id)).run();
+  /** Closes open notifications of a key prefix whose cause no longer exists (not in `currentKeys`). */
+  resolveStale(prefix: string, currentKeys: Set<string>): void {
+    const stale = this.db
+      .select({ id: notifications.id, key: notifications.dedupeKey })
+      .from(notifications)
+      .where(and(sql`${notifications.dedupeKey} LIKE ${`${prefix}%`}`, isNull(notifications.resolvedAt)))
+      .all()
+      .filter((n) => n.key !== null && !currentKeys.has(n.key));
+    const now = nowIso();
+    for (const n of stale) this.db.update(notifications).set({ resolvedAt: now }).where(eq(notifications.id, n.id)).run();
+    if (stale.length) this.ctx.events.changed('notifications', 'status');
+  }
+
+  /**
+   * Reopens a resolved notification (after "Später erinnern"): title, actions and targets stay unchanged,
+   * it moves to the top as unread and is announced again like a new notification. Returns null if it no longer exists.
+   */
+  reopen(id: string): AppNotification | null {
+    const existing = this.db.select().from(notifications).where(eq(notifications.id, id)).get();
+    if (!existing) return null;
+    const reopened: Row = { ...existing, resolvedAt: null, readAt: null, createdAt: nowIso() };
+    this.db
+      .update(notifications)
+      .set({ resolvedAt: reopened.resolvedAt, readAt: reopened.readAt, createdAt: reopened.createdAt })
+      .where(eq(notifications.id, id))
+      .run();
+    const out = map(reopened);
+    this.ctx.events.emit('notification:new', out);
     this.ctx.events.changed('notifications', 'status');
+    return out;
   }
 }

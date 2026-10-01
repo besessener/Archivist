@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AppErrorInfo, EntityType, Id, IsoDate, RelationStatus, SourceReference, type Result } from './common';
 import {
   AgentActionProposal,
+  AgentActionStatus,
   ArchiveItemRequest,
   ArchivePlan,
   ArchiveResult,
@@ -62,6 +63,9 @@ export const AppStatus = z.object({
   services: z.array(z.object({ name: z.string(), status: z.enum(['ok', 'degraded', 'error']), detail: z.string().nullable() })),
 });
 export type AppStatus = z.infer<typeof AppStatus>;
+
+export const KnowledgeCreateResult = z.object({ entity: GraphEntity, created: z.boolean() });
+export type KnowledgeCreateResult = z.infer<typeof KnowledgeCreateResult>;
 
 export const LlmTestResult = z.object({
   ok: z.boolean(),
@@ -145,7 +149,7 @@ export const ipcContract = {
   'chat:renameConversation': ch(z.object({ id: Id, title: z.string().trim().min(1).max(120) }), Conversation),
 
   // --- Agentenaktionen ---
-  'actions:list': ch(z.object({ status: z.enum(['proposed', 'approved', 'rejected', 'executed', 'failed']).optional() }), z.array(StoredAgentAction)),
+  'actions:list': ch(z.object({ status: AgentActionStatus.optional() }), z.array(StoredAgentAction)),
   'actions:resolve': ch(
     z.discriminatedUnion('decision', [
       z.object({
@@ -344,9 +348,16 @@ export const ipcContract = {
   ),
   'knowledge:getEntity': ch(z.object({ id: Id }), EntityDetail),
   'knowledge:resolveRelation': ch(z.object({ relationId: Id, status: RelationStatus, confirmed: Confirmed }), Ok),
+  /**
+   * Creates an entry from the knowledge page: topics/projects/persons as graph nodes, notes as indexed notes,
+   * events as real dated records. `created: false` means an identical entry already existed and is returned instead.
+   */
   'knowledge:createEntity': ch(
-    z.object({ type: z.enum(['topic', 'project', 'person', 'event', 'note']), name: z.string().min(1), description: z.string().optional() }),
-    GraphEntity,
+    z.discriminatedUnion('type', [
+      z.object({ type: z.enum(['topic', 'project', 'person', 'note']), name: z.string().trim().min(1), description: z.string().optional() }),
+      EventInput.extend({ type: z.literal('event') }),
+    ]),
+    KnowledgeCreateResult,
   ),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
 

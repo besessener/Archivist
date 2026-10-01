@@ -1,15 +1,25 @@
 import type { EventInput, EventRecord } from '@archivist/shared';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray, like } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, events } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
+import { normalizeName } from '../util/text';
 import type { AuditService } from './audit';
-import type { KnowledgeGraphService } from './knowledge-graph';
+import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { SearchService } from './search';
+import type { UndoService } from './undo';
 
 type Row = typeof events.$inferSelect;
+
+interface EventUpdateUndo {
+  id: string;
+  /** Previous values of the edited columns. */
+  before: Partial<Row>;
+  afterUpdatedAt: string;
+  relations: RelationChangeSet;
+}
 
 /** Datierte Ereignisse („habe am 01.10.2026 beim German Testing Day eingereicht“): eigener Typ, erscheinen in Timeline, Suche und Wissensgraph. */
 export class EventService {
@@ -18,7 +28,34 @@ export class EventService {
     private readonly graph: KnowledgeGraphService,
     private readonly search: SearchService,
     private readonly audit: AuditService,
-  ) {}
+    undo: UndoService,
+  ) {
+    undo.register('event_update', {
+      check: async (data) => {
+        const d = data as EventUpdateUndo;
+        const row = this.db.select().from(events).where(eq(events.id, d.id)).get();
+        if (!row) return ['Das Ereignis existiert nicht mehr.'];
+        const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : ['Das Ereignis wurde seit der Bearbeitung verändert.'];
+        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
+      },
+      run: async (data) => {
+        const d = data as EventUpdateUndo;
+        this.db.transaction(() => {
+          this.db
+            .update(events)
+            .set({ ...d.before, updatedAt: nowIso() })
+            .where(eq(events.id, d.id))
+            .run();
+          const row = this.db.select().from(events).where(eq(events.id, d.id)).get();
+          if (row) this.graph.registerNode('event', row.id, row.title, row.description);
+          this.graph.revertRelationChanges(d.relations);
+        });
+        void this.reindex(d.id);
+        this.ctx.events.changed('events', 'knowledge', 'status');
+        return 'Bearbeitung des Ereignisses rückgängig gemacht.';
+      },
+    });
+  }
 
   private get db() {
     return this.ctx.database.db;
@@ -104,6 +141,26 @@ export class EventService {
     return this.get(row.id);
   }
 
+  /** Finds an event with the same (normalised) title on the same day. */
+  findIdentical(title: string, occurredAt: string): EventRecord | undefined {
+    const day = normalizeDateInput(occurredAt)?.slice(0, 10);
+    const norm = normalizeName(title);
+    if (!day || !norm) return undefined;
+    const hit = this.db
+      .select()
+      .from(events)
+      .where(like(events.occurredAt, `${day}%`))
+      .all()
+      .find((r) => normalizeName(r.title) === norm);
+    return hit ? this.map(hit) : undefined;
+  }
+
+  /** Like `create`, but returns an identical existing event (same title, same day) instead of a duplicate. */
+  createUnlessExists(input: EventInput, ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {}): { event: EventRecord; created: boolean } {
+    const existing = this.findIdentical(input.title, input.occurredAt);
+    return existing ? { event: existing, created: false } : { event: this.create(input, ctxInfo), created: true };
+  }
+
   update(id: string, patch: Partial<EventInput>): EventRecord {
     const cur = this.db.select().from(events).where(eq(events.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
@@ -117,12 +174,19 @@ export class EventService {
     }
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
-    this.db.transaction(() => {
-      this.db.update(events).set(set).where(eq(events.id, id)).run();
-      this.graph.registerNode('event', id, set.title ?? cur.title, set.description === undefined ? cur.description : set.description);
-      if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
-      if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
-    });
+    const { changes } = this.graph.trackRelationChanges(id, () =>
+      this.db.transaction(() => {
+        this.db.update(events).set(set).where(eq(events.id, id)).run();
+        this.graph.registerNode('event', id, set.title ?? cur.title, set.description === undefined ? cur.description : set.description);
+        if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
+        if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
+        // the previous topic/project no longer applies
+        if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
+        if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+      }),
+    );
+    const before = Object.fromEntries(Object.keys(set).flatMap((k) => (k === 'updatedAt' ? [] : [[k, cur[k as keyof Row]]]))) as Partial<Row>;
+    const undoData: EventUpdateUndo = { id, before, afterUpdatedAt: set.updatedAt!, relations: changes };
     this.audit.log({
       action: 'event.update',
       actor: 'user',
@@ -131,6 +195,7 @@ export class EventService {
       entityIds: [id],
       before: { title: cur.title, occurredAt: cur.occurredAt },
       after: patch,
+      undo: { type: 'event_update', data: undoData },
     });
     void this.reindex(id);
     this.ctx.events.changed('events', 'knowledge', 'status');

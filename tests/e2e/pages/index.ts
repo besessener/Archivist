@@ -1,8 +1,11 @@
 import type { Page } from '@playwright/test';
 import { initChat } from './chat';
+import { initDocuments } from './documents';
 import { initInbox } from './inbox';
+import { initKnowledge } from './knowledge';
 import { initNavigation } from './navigation';
 import { initScan } from './scan';
+import { initSettings } from './settings';
 import { initSetupWizard } from './setup';
 import { initTimeline } from './timeline';
 
@@ -14,14 +17,23 @@ export function createPageTree(page: Page) {
     get chat() {
       return initChat(page);
     },
+    get documents() {
+      return initDocuments(page);
+    },
     get inbox() {
       return initInbox(page);
+    },
+    get knowledge() {
+      return initKnowledge(page);
     },
     get navigation() {
       return initNavigation(page);
     },
     get scan() {
       return initScan(page);
+    },
+    get settings() {
+      return initSettings(page);
     },
     get setup() {
       return initSetupWizard(page);
