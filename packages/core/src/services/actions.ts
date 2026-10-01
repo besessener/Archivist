@@ -15,6 +15,7 @@ import { newId, nowIso } from '../util/ids';
 import type { ArchiveService } from './archive';
 import { folderOf } from './archive-structure';
 import type { AuditService } from './audit';
+import type { OpenItemDuplicateService } from './cleanup/open-item-duplicates';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
@@ -47,6 +48,7 @@ export interface ActionDeps {
   documents: DocumentService;
   decisions: DecisionService;
   openItems: OpenItemService;
+  openItemDuplicates: OpenItemDuplicateService;
   contradictions: ContradictionService;
   graph: KnowledgeGraphService;
   scanner: ScannerService;
@@ -290,6 +292,11 @@ export class ActionService {
         if (c.status === 'resolved' || c.status === 'false_positive') return { stale: 'Der Widerspruch ist bereits aufgelöst.' };
         return { params };
       }
+      case 'merge_open_items': {
+        const p = ActionParamSchemas.merge_open_items.parse(params);
+        const stale = d.openItemDuplicates.staleReason(p.keepId, p.duplicateId);
+        return stale ? { stale } : { params };
+      }
       default:
         return { params };
     }
@@ -428,6 +435,11 @@ export class ActionService {
         const { openItemId, documentId, ...extra } = ActionParamSchemas.add_open_item_source.parse(p);
         d.openItems.addSource(openItemId, documentId, extra, { actor: 'agent', trigger });
         return 'Offener Punkt um Quelle ergänzt.';
+      }
+      case 'merge_open_items': {
+        const params = ActionParamSchemas.merge_open_items.parse(p);
+        const r = d.openItemDuplicates.merge(params.keepId, params.duplicateId, { trigger });
+        return `„${r.duplicate.title}“ als Duplikat von „${r.keep.title}“ verworfen${r.takenOver.length ? `; übernommen: ${r.takenOver.join(', ')}` : ''}.`;
       }
       case 'record_decision': {
         const params = ActionParamSchemas.record_decision.parse(p);
