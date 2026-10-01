@@ -11,6 +11,8 @@ import {
   resolveInside,
   sanitizeCategoryPath,
   sanitizeFileName,
+  sanitizeFolderName,
+  splitExtension,
   uniquePath,
 } from '../../packages/core/src/util/paths';
 import { scanDirectory } from '../../packages/core/src/workers/tasks';
@@ -151,12 +153,12 @@ describe('Dateinamen bereinigen (Grenzfälle)', () => {
     for (const fine of ['console', 'xcon', 'conx', 'com0', 'lpt0', 'com10', 'nullable']) expect(sanitizeFileName(`${fine}.txt`)).toBe(`${fine}.txt`);
   });
 
-  it('kürzt den Namen auf höchstens 150 Zeichen und die Endung auf 10', () => {
+  it('truncates the base name to 150 characters and never cuts a long suffix that is no extension', () => {
     expect(sanitizeFileName(`${'x'.repeat(150)}.txt`)).toBe(`${'x'.repeat(150)}.txt`);
     expect(sanitizeFileName(`${'x'.repeat(151)}.txt`)).toBe(`${'x'.repeat(150)}.txt`);
     expect(sanitizeFileName(`${'x'.repeat(300)}.txt`).length).toBe(154);
-    expect(sanitizeFileName('a.abcdefghij')).toBe('a.abcdefghij');
-    expect(sanitizeFileName('a.abcdefghijk')).toBe('a.abcdefghij');
+    expect(sanitizeFileName('a.abcdefgh')).toBe('a.abcdefgh');
+    expect(sanitizeFileName('a.abcdefghijk')).toBe('a.abcdefghijk');
   });
 
   it('schreibt die Endung klein, bereinigt sie und normalisiert Unicode (NFC)', () => {
@@ -312,5 +314,40 @@ describe('Pfadfunktionen: Fehlerpfade und Randfälle', () => {
     fs.writeFileSync(path.join(tmp, 'doppelt (2).txt'), 'x');
 
     expect(await uniquePath(tmp, 'doppelt.txt')).toBe(path.join(tmp, 'doppelt (3).txt'));
+  });
+});
+
+describe('names with ". " inside (issue #69)', () => {
+  it('only treats a short alphanumeric suffix without spaces as the extension', () => {
+    expect(splitExtension('Kunde Dr. Müller GmbH')).toEqual({ base: 'Kunde Dr. Müller GmbH', ext: '' });
+    expect(splitExtension('St. Gallen')).toEqual({ base: 'St. Gallen', ext: '' });
+    expect(splitExtension('St.Gallen')).toEqual({ base: 'St.Gallen', ext: '' });
+    expect(splitExtension('Bericht.PDF')).toEqual({ base: 'Bericht', ext: 'PDF' });
+    expect(splitExtension('archiv.tar.gz')).toEqual({ base: 'archiv.tar', ext: 'gz' });
+    expect(splitExtension('.bashrc')).toEqual({ base: '.bashrc', ext: '' });
+    expect(splitExtension('Rechnung. pdf')).toEqual({ base: 'Rechnung. pdf', ext: '' });
+  });
+
+  it('keeps file names with abbreviations readable', () => {
+    expect(sanitizeFileName('Kunde Dr. Müller GmbH')).toBe('Kunde Dr. Müller GmbH');
+    expect(sanitizeFileName('St. Gallen')).toBe('St. Gallen');
+    expect(sanitizeFileName('Kunde Dr. Müller GmbH.PDF')).toBe('Kunde Dr. Müller GmbH.pdf');
+    expect(sanitizeFileName('Angebot St. Gallen.docx')).toBe('Angebot St. Gallen.docx');
+    expect(sanitizeFileName('Bericht.pdf ')).toBe('Bericht.pdf');
+    expect(sanitizeFileName('Projekt X.Final')).toBe('Projekt X.Final');
+  });
+
+  it('never splits an extension off folder segments', () => {
+    expect(sanitizeFolderName('Kunde Dr. Müller GmbH')).toBe('Kunde Dr. Müller GmbH');
+    expect(sanitizeFolderName('Version 1.PDF')).toBe('Version 1.PDF');
+    expect(sanitizeFolderName('  ')).toBe('Ordner');
+    expect(sanitizeCategoryPath('work/Kunde Dr. Müller GmbH/St. Gallen')).toBe('work/Kunde Dr. Müller GmbH/St. Gallen');
+    expect(sanitizeCategoryPath('kunden/St.Gallen.Archiv')).toBe('kunden/St.Gallen.Archiv');
+  });
+
+  it('prefixes reserved device names even when followed by more dots', () => {
+    expect(sanitizeFileName('con.tar.gz')).toBe('_con.tar.gz');
+    expect(sanitizeFolderName('aux.alt')).toBe('_aux.alt');
+    expect(sanitizeFolderName('auxiliar')).toBe('auxiliar');
   });
 });
