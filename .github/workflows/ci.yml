@@ -8,12 +8,44 @@ on:
     branches: [main]
   pull_request:
 
+permissions: {}
+
 jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Gitleaks installieren (Checksumme geprüft)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+      - name: Gesamte Historie auf Secrets prüfen
+        run: gitleaks git --redact --verbose --no-banner .
+      - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
+        env:
+          # gitleaks läuft oben über die ganze Historie; der Hook selbst prüft nur gestagte Änderungen
+          SKIP: gitleaks
+          GH_TOKEN: ${{ github.token }}
+
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm
@@ -22,7 +54,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run native:check
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: apps/renderer/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/renderer/**/*.ts', 'apps/renderer/**/*.tsx') }}
@@ -33,15 +65,19 @@ jobs:
 
   windows-installer:
     runs-on: windows-latest
+    permissions:
+      contents: read
     needs: test
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: apps/renderer/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/renderer/**/*.ts', 'apps/renderer/**/*.tsx') }}
@@ -65,7 +101,7 @@ jobs:
           }
           if ($bad) { throw 'Mindestens eine ausgelieferte Datei ist nicht gültig signiert.' }
           if ($env:EXPECT_SIGNED -ne 'true') { Write-Host '::notice::Kein Signaturzertifikat hinterlegt – die Pakete sind unsigniert.' }
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: archivist-windows
           path: |

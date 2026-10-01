@@ -183,6 +183,18 @@ npm run db:generate                 # Drizzle-Migration aus Schemaänderungen er
 
 Testabdeckung (Vitest, `npm test`): Decision-Rückfragen, Zod-Validierung von LLM-Ausgaben, IPC-Eingabevalidierung, Pfadnormalisierung, Path-Traversal, Symlink-Ausbruch, Scan-Bereichsgrenzen, Datei-Ausschlüsse, Duplikaterkennung, Bestätigungsworkflows, Archivieren durch Kopieren/Verschieben, Undo (inkl. Konflikte), Datenbankmigrationen, Job-Queue nach Neustart, Widerspruchserkennung mit kontrollierten Beispielen, Maskierung von Schlüsseln in Logs, Verhalten bei nicht erreichbarem LLM, Worker-Threads, Backups, Renderer-Auslieferung/CSP. Der Playwright-E2E-Test fährt den kompletten vertikalen Slice (Einrichtung → Import → Klassifikation → Archivierung → Entscheidung mit Rückfrage → Suche → Scan → Notification Bell) gegen die echte Electron-App mit einem lokalen Fake-LLM-HTTP-Server.
 
+### Qualitätssicherung (CI)
+
+| Prüfung | Wo |
+|---|---|
+| Secret-Scan über die gesamte Historie (gitleaks, Konfiguration `.gitleaks.toml`) | `hygiene`-Job; lokal als pre-commit-Hook |
+| Hygiene-Hooks (YAML/JSON, Merge-Konflikte, private Schlüssel, große Dateien) und Workflow-Linter zizmor | `.pre-commit-config.yaml`; lokal mit `pip install pre-commit && pre-commit install` (oder `prek install`) |
+| Typecheck, ESLint, Vitest, Build, Electron-E2E, Windows-Installer | `test`- bzw. `windows-installer`-Job |
+| Statische Sicherheitsanalyse (CodeQL, `security-extended`; Ergebnisse als SARIF-Artefakt und Job-Zusammenfassung, kein Upload nach Code Scanning, da das Repository privat ist) | `codeql.yml`, bei PR, Push auf `main` und wöchentlich |
+| Aktualisierung von Actions, Hook-Revisionen und npm-Abhängigkeiten | Dependabot (`.github/dependabot.yml`); Electron und native Module werden nie automatisch gemergt |
+
+Alle Actions sind auf Commit-SHAs gepinnt (Kommentar nennt den Tag), Workflows laufen standardmäßig ohne Token-Rechte (`permissions: {}`) und mit `persist-credentials: false`.
+
 ## Packaging
 
 - **Native Module**: `better-sqlite3` (≥ 13) und `sharp` liefern **N-API-Prebuilds** für Windows/macOS/Linux; dieselbe Binärdatei läuft in Node und Electron. Ein `electron-rebuild` ist deshalb nicht nötig (`npmRebuild: false`), das Cross-Packaging ist reproduzierbar. `npm run native:check` beweist das für Node *und* die Electron-Laufzeit. In der Anwendung liegen die Module per `asarUnpack` außerhalb des ASAR-Archivs.
