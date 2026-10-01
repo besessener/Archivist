@@ -1,4 +1,8 @@
 name: CI
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
 on:
   push:
     branches: [main]
@@ -8,8 +12,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -18,6 +22,11 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run native:check
+      - uses: actions/cache@v5
+        with:
+          path: apps/renderer/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/renderer/**/*.ts', 'apps/renderer/**/*.tsx') }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - run: npm run build
       - name: E2E (Electron unter Xvfb)
         run: xvfb-run -a npx playwright test
@@ -26,14 +35,19 @@ jobs:
     runs-on: windows-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - uses: actions/cache@v5
+        with:
+          path: apps/renderer/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/renderer/**/*.ts', 'apps/renderer/**/*.tsx') }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - run: npm run dist:win
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: archivist-windows
           path: |

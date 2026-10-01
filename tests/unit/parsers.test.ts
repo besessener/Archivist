@@ -40,8 +40,11 @@ describe('Dokumentparser', () => {
     expect(p.text).toContain('Meilenstein Q3');
 
     const xlsx = path.join(dir, 'a.xlsx');
-    makeXlsx(xlsx, [['Posten', 'Betrag'], ['Miete', 1200]]);
-    expect((await parseDocument(xlsx)).text).toContain('Miete');
+    await makeXlsx(xlsx, [['Posten', 'Betrag'], ['Miete', 1200]]);
+    const x = await parseDocument(xlsx);
+    expect(x.status).toBe('extracted');
+    expect(x.text).toContain('Tabellenblatt „Budget“');
+    expect(x.text).toContain('Miete | 1200');
 
     const eml = path.join(dir, 'a.eml');
     makeEml(eml, 'Urlaubsantrag', 'Bitte genehmigen.');

@@ -109,11 +109,11 @@ export function classifyLocally(input: {
   const year = (dates.find((d) => d.startsWith(String(now.getFullYear()))) ?? dates[0] ?? String(now.getFullYear())).slice(0, 4);
   const project = matchKnownNames(hay, input.knownProjects);
   const topic = matchKnownNames(hay, input.knownTopics) ?? project;
-  let rule = RULES.find((r) => r.re.test(hay));
+  const rule = RULES.find((r) => r.re.test(hay));
   let categoryPath: string;
   let docType = docTypeFromExt(input.ext);
-  let confidence = 0.3;
-  let rationale = 'Lokale Klassifikation (ohne LLM) anhand von Schlüsselwörtern.';
+  let confidence: number;
+  let rationale: string;
   if (project) {
     categoryPath = `work/projects/${project}`;
     docType = rule?.type ?? docType;
@@ -125,7 +125,6 @@ export function classifyLocally(input: {
     confidence = rule.weight;
     rationale = `Typische Begriffe für „${rule.type}“ gefunden.`;
   } else {
-    rule = undefined;
     categoryPath = 'private/unsortiert';
     rationale = 'Keine eindeutigen Hinweise gefunden – bitte Zielordner prüfen.';
     confidence = 0.25;

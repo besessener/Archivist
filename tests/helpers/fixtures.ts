@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
-import * as XLSX from 'xlsx';
 import sharp from 'sharp';
 
 export async function makeDocx(file: string, paragraphs: string[]): Promise<void> {
@@ -21,10 +20,27 @@ export async function makePptx(file: string, slides: string[]): Promise<void> {
   fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
 }
 
-export function makeXlsx(file: string, rows: (string | number)[][]): void {
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Budget');
-  fs.writeFileSync(file, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+export async function makeXlsx(file: string, rows: (string | number)[][]): Promise<void> {
+  const zip = new JSZip();
+  const strings: string[] = [];
+  const sheetRows = rows
+    .map((row, r) => {
+      const cells = row
+        .map((v, c) => {
+          const ref = `${String.fromCharCode(65 + c)}${r + 1}`;
+          if (typeof v === 'number') return `<c r="${ref}"><v>${v}</v></c>`;
+          strings.push(v);
+          return `<c r="${ref}" t="s"><v>${strings.length - 1}</v></c>`;
+        })
+        .join('');
+      return `<row r="${r + 1}">${cells}</row>`;
+    })
+    .join('');
+  zip.file('xl/workbook.xml', '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Budget" sheetId="1" r:id="rId1"/></sheets></workbook>');
+  zip.file('xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>');
+  zip.file('xl/sharedStrings.xml', `<sst>${strings.map((s) => `<si><t>${s}</t></si>`).join('')}</sst>`);
+  zip.file('xl/worksheets/sheet1.xml', `<worksheet><sheetData>${sheetRows}</sheetData></worksheet>`);
+  fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
 }
 
 export function makeEml(file: string, subject: string, body: string): void {

@@ -264,7 +264,7 @@ export class ArchiveService {
       // keine Dateiaktion
     } else {
       targetAbs = await this.copyExclusive(source, plan._targetDir!, plan._name!);
-      let verified = false;
+      let verified: boolean;
       try {
         verified = (await sha256File(targetAbs)) === row.sha256;
       } catch {
@@ -456,7 +456,7 @@ export class ArchiveService {
       else if ((await this.pool.run('hashFile', { path: abs })) !== r.sha256) report.changedFiles.push({ documentId: r.id, title: r.title, path: abs });
     }
     const walk = async (dir: string): Promise<void> => {
-      let entries: fs.Dirent[] = [];
+      let entries: fs.Dirent[];
       try {
         entries = await fsp.readdir(dir, { withFileTypes: true });
       } catch {

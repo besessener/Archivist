@@ -26,12 +26,23 @@ test.beforeAll(async () => {
   dataDir = path.join(work, 'Archivist');
   downloads = path.join(work, 'Downloads');
   fs.mkdirSync(downloads, { recursive: true });
-  app = await electron.launch({
-    executablePath: packaged ? packagedBinary : electronPath,
-    args: [...(packaged ? [] : [appDir]), '--no-sandbox', '--disable-gpu'],
-    timeout: 60_000,
-    env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1', ARCHIVIST_DATA_DIR: dataDir, ARCHIVIST_TEST_MODE: '1', ARCHIVIST_TEST_PICK_DIR: downloads },
-  });
+  // Der Start der Electron-Binärdatei hängt auf CI-Runnern gelegentlich (Chromium/D-Bus/Xvfb-Race) – ein Neustart behebt das,
+  // ohne dass Testinhalte übersprungen werden. Es wird höchstens zweimal wiederholt.
+  const env: Record<string, string> = { ...(process.env as Record<string, string>), ELECTRON_ENABLE_LOGGING: '1', ARCHIVIST_DATA_DIR: dataDir, ARCHIVIST_TEST_MODE: '1', ARCHIVIST_TEST_PICK_DIR: downloads };
+  delete env.DBUS_SESSION_BUS_ADDRESS; // ein ungültiger Bus verursacht nur Fehlermeldungen von Chromium
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      app = await electron.launch({
+        executablePath: packaged ? packagedBinary : electronPath,
+        args: [...(packaged ? [] : [appDir]), '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+        timeout: 45_000,
+        env,
+      });
+      break;
+    } catch (err) {
+      if (attempt >= 3) throw err;
+    }
+  }
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 });

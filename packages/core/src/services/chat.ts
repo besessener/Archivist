@@ -771,7 +771,7 @@ export class ChatService {
   private async excludePath(conv: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const p = intent.path?.trim();
     if (!p || !p.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(p)) return { intent: 'exclude_path', content: 'Bitte nenne den vollständigen Pfad der Datei oder des Ordners, den ich künftig ignorieren soll.', confidence: 0.4, state };
-    let kind: 'file' | 'dir' = 'file';
+    let kind: 'file' | 'dir';
     try {
       kind = fs.statSync(p).isDirectory() ? 'dir' : 'file';
     } catch {
