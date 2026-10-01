@@ -1,0 +1,12 @@
+title = "Archivist"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Platzhalter und Testdaten, keine echten Zugangsdaten"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''^config\.example\.json$''',
+  '''^tests/''',
+]
