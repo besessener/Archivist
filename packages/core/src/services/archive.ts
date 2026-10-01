@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { ArchiveItemRequest, ArchivePlan, ArchivePlanItem, ArchiveResult, DocumentProposal, VerifyReport } from '@archivist/shared';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
 import { AppError, fsError, permissionError, toErrorInfo } from '../util/errors';
 import { nowIso } from '../util/ids';
 import { truncate } from '../util/text';
 import { sha256File } from '../util/hash';
-import { assertRealInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
+import { assertRealInside, isInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
 import type { ActionService } from './actions';
 import type { AuditService } from './audit';
@@ -78,6 +78,11 @@ async function hasChecksum(p: string, sha256: string): Promise<boolean> {
     return false;
   }
 }
+
+const errCode = (err: unknown) => (err as NodeJS.ErrnoException | null)?.code;
+
+/** User-facing note for a file that could not be cleaned up and is still lying around. */
+const leftoverNote = (what: string, p: string) => `${what} liegt noch unter „${p}“ und muss von Hand entfernt werden.`;
 
 export interface ExecuteOptions {
   confirmed: boolean;
@@ -226,6 +231,25 @@ export class ArchiveService {
   }
 
   // ---------- Ausführung ----------
+  /**
+   * Removes a file this service has just created (partial copy, unverified copy, extra hardlink).
+   * Returns false when the file is still there afterwards; the caller must then report it to the user.
+   */
+  private async removeCreated(p: string): Promise<boolean> {
+    try {
+      await fsp.unlink(p);
+      return true;
+    } catch (err) {
+      if (errCode(err) === 'ENOENT') return true;
+      this.ctx.logger.error('archive', 'Soeben angelegte Datei konnte nicht wieder entfernt werden', { path: p, error: err });
+      return false;
+    }
+  }
+
+  /**
+   * Copies `src` into `dir` without overwriting anything. A copy that fails halfway (e.g. disk full) leaves no partial
+   * file behind; if that cleanup fails as well, the error says where the partial copy is.
+   */
   private async copyExclusive(src: string, dir: string, fileName: string): Promise<string> {
     await fsp.mkdir(dir, { recursive: true });
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -234,7 +258,10 @@ export class ArchiveService {
         await fsp.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
         return dest;
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+        if (errCode(err) === 'EEXIST') continue; // someone else's file: never touch it, try the next free name
+        const what = `Die Datei konnte nicht kopiert werden${errCode(err) ? ` (${errCode(err)})` : ''}.`;
+        if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
+        throw fsError(`${what} ${leftoverNote('Eine unvollständige Kopie', dest)}`, err);
       }
     }
     throw new AppError('archive_conflict', 'Es konnte kein freier Zieldateiname gefunden werden.', { retryable: true });
@@ -242,6 +269,7 @@ export class ArchiveService {
 
   async execute(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
     if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
+    await this.cleanupInbox();
     const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
     for (const req of items) {
       let outcome: ArchiveResult['items'][number];
@@ -392,8 +420,11 @@ export class ArchiveService {
         verified = false;
       }
       if (!verified) {
-        await fsp.unlink(targetAbs).catch(() => undefined); // nur die soeben angelegte Kopie
-        throw new AppError('filesystem_error', 'Die Prüfsumme der Archivkopie stimmt nicht überein; der Vorgang wurde zurückgenommen.', { retryable: true });
+        // only the copy just created
+        const message = (await this.removeCreated(targetAbs))
+          ? 'Die Prüfsumme der Archivkopie stimmt nicht überein; der Vorgang wurde zurückgenommen.'
+          : `Die Prüfsumme der Archivkopie stimmt nicht überein. ${leftoverNote('Die fehlerhafte Kopie', targetAbs)}`;
+        throw new AppError('filesystem_error', message, { retryable: true });
       }
       archiveRel = toPosix(path.relative(this.root, targetAbs));
     }
@@ -432,7 +463,14 @@ export class ArchiveService {
           keep(this.graph.link(row.id, proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] }));
       });
     } catch (err) {
-      if (targetAbs) await fsp.unlink(targetAbs).catch(() => undefined); // keine halbfertige Dateioperation zurücklassen
+      // keine halbfertige Dateioperation zurücklassen
+      if (targetAbs && !(await this.removeCreated(targetAbs))) {
+        const info = toErrorInfo(err);
+        throw new AppError(info.category, `${info.message} ${leftoverNote('Die bereits angelegte Archivkopie', targetAbs)}`, {
+          details: info.details,
+          cause: err,
+        });
+      }
       throw err;
     }
 
@@ -442,8 +480,20 @@ export class ArchiveService {
     const warnings: string[] = [];
     if (req.mode !== 'index_only') {
       if (row.stagedPath && fs.existsSync(row.stagedPath)) {
-        await fsp.unlink(row.stagedPath);
-        removedStaged = true;
+        try {
+          await fsp.unlink(row.stagedPath);
+          removedStaged = true;
+        } catch (err) {
+          if (errCode(err) === 'ENOENT')
+            removedStaged = true; // already gone (e.g. cleaned up concurrently)
+          else {
+            // The archive copy is verified and committed; a locked inbox copy (EBUSY/EPERM on Windows: open in a viewer,
+            // held by a virus scanner) must not turn that into a failure. The row keeps its stagedPath, which marks the
+            // copy for cleanupInbox().
+            this.ctx.logger.warn('archive', 'Kopie im Eingang konnte nach dem Archivieren nicht entfernt werden', { documentId: row.id, error: err });
+            warnings.push('Die Kopie im Eingang konnte noch nicht entfernt werden (z. B. weil sie gerade geöffnet ist); sie wird später automatisch entfernt.');
+          }
+        }
       }
       if (req.mode === 'move' && row.sourcePath && fs.existsSync(row.sourcePath)) {
         try {
@@ -487,10 +537,15 @@ export class ArchiveService {
       undo: { type: 'archive_file', data: undoData },
     });
 
-    await this.docs.indexDocument(row.id);
+    // From here on the archiving is committed and undoable: follow-up steps may only add warnings.
+    await this.reindexAfterCommit(row.id, warnings);
     this.ctx.events.emit('document:archived', { documentId: row.id, sourcePath: row.sourcePath });
     this.notifications.resolveByDedupePrefix(`classified:${row.id}`);
-    this.proposeExtractedItems(row, proposal);
+    try {
+      this.proposeExtractedItems(row, proposal);
+    } catch (err) {
+      this.ctx.logger.error('archive', 'Vorschläge aus dem Dokument konnten nicht angelegt werden', { documentId: row.id, error: err });
+    }
     return {
       documentId: row.id,
       outcome: 'success',
@@ -498,6 +553,52 @@ export class ArchiveService {
       message: [req.mode === 'index_only' ? 'Nur indexiert.' : req.mode === 'move' ? 'Ins Archiv verschoben.' : 'Ins Archiv kopiert.', ...warnings].join(' '),
       auditId,
     };
+  }
+
+  /** Updates the search index after a committed file operation; a failure only becomes a warning. */
+  private async reindexAfterCommit(documentId: string, warnings: string[]): Promise<void> {
+    try {
+      await this.docs.indexDocument(documentId);
+    } catch (err) {
+      this.ctx.logger.error('archive', 'Suchindex konnte nicht aktualisiert werden', { documentId, error: err });
+      warnings.push('Der Suchindex konnte nicht aktualisiert werden.');
+    }
+  }
+
+  /**
+   * Removes inbox copies whose removal failed right after archiving (e.g. the file was open in a viewer).
+   * Such documents are archived but still carry a stagedPath. A copy is only removed when it lies inside the inbox,
+   * is unchanged and the archived file is intact; otherwise it stays. Never throws.
+   * @returns number of documents whose pending inbox copy was cleaned up
+   */
+  async cleanupInbox(): Promise<number> {
+    let cleaned = 0;
+    try {
+      const pending = this.db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.status, 'archived'), isNotNull(documents.stagedPath)))
+        .all();
+      for (const r of pending) {
+        const staged = r.stagedPath!;
+        if (!r.archiveRelPath || !isInside(this.ctx.paths.inbox, staged)) continue;
+        if (!(await hasChecksum(path.join(this.root, ...r.archiveRelPath.split('/')), r.sha256))) continue; // keep the only intact copy
+        if (fs.existsSync(staged)) {
+          if (!(await hasChecksum(staged, r.sha256))) continue;
+          if (!(await this.removeCreated(staged))) continue; // still locked: next attempt later
+        }
+        // updatedAt stays: this completes the archiving itself, so its undo must remain possible
+        this.db.update(documents).set({ stagedPath: null }).where(eq(documents.id, r.id)).run();
+        cleaned += 1;
+      }
+    } catch (err) {
+      this.ctx.logger.error('archive', 'Aufräumen des Eingangs fehlgeschlagen', { error: err });
+    }
+    if (cleaned > 0) {
+      this.ctx.logger.info('archive', 'Vorgemerkte Kopien im Eingang entfernt', { count: cleaned });
+      this.ctx.events.changed('documents');
+    }
+    return cleaned;
   }
 
   /**
@@ -656,37 +757,68 @@ export class ArchiveService {
   }
 
   /**
-   * Legt `src` im Ordner `dir` unter `name` ab, ohne etwas zu überschreiben, und entfernt danach `src`.
+   * Legt eine zweite, verifizierte Fassung von `src` im Ordner `dir` unter `name` ab, ohne etwas zu überschreiben.
    * Bevorzugt ein Hardlink (atomar, schlägt bei vorhandenem Ziel fehl); wo das nicht geht, Kopie mit Prüfsumme.
+   * On failure nothing new is left behind, or the error names the leftover partial copy.
    */
-  private async moveExclusive(src: string, dir: string, name: string, sha256: string, exactName = false): Promise<string> {
+  private async placeExclusive(src: string, dir: string, name: string, sha256: string, exactName: boolean): Promise<{ dest: string; linked: boolean }> {
     await fsp.mkdir(dir, { recursive: true });
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const dest = exactName ? path.join(dir, name) : await uniquePath(dir, name);
+      const taken = () => {
+        if (exactName) throw new AppError('archive_conflict', `Am Zielort existiert bereits eine Datei: ${dest}`);
+      };
       try {
         await fsp.link(src, dest);
+        return { dest, linked: true };
       } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code === 'EEXIST') {
-          if (exactName) throw new AppError('archive_conflict', `Am Zielort existiert bereits eine Datei: ${dest}`);
+        if (errCode(err) === 'EEXIST') {
+          taken();
           continue;
         }
-        // Dateisystem ohne Hardlinks (oder anderes Laufwerk): Kopie, Prüfsumme, erst dann das Original entfernen
-        await fsp.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
-        if ((await sha256File(dest)) !== sha256) {
-          await fsp.unlink(dest).catch(() => undefined);
-          throw fsError('Die Prüfsumme der Kopie stimmt nicht überein; nichts wurde verändert.');
-        }
       }
+      // Dateisystem ohne Hardlinks (oder anderes Laufwerk): Kopie mit Prüfsumme
+      let verified: boolean;
       try {
-        await fsp.unlink(src);
+        await fsp.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+        verified = await hasChecksum(dest, sha256);
       } catch (err) {
-        await fsp.unlink(dest).catch(() => undefined); // nur den soeben angelegten Eintrag zurücknehmen
-        throw fsError('Die ursprüngliche Datei konnte nicht entfernt werden; nichts wurde verändert.', err);
+        if (errCode(err) === 'EEXIST') {
+          taken();
+          continue;
+        }
+        const what = `Die Datei konnte nicht kopiert werden${errCode(err) ? ` (${errCode(err)})` : ''}.`;
+        if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
+        throw fsError(`${what} ${leftoverNote('Eine unvollständige Kopie', dest)}`, err);
       }
-      return dest;
+      if (!verified) {
+        if (await this.removeCreated(dest)) throw fsError('Die Prüfsumme der Kopie stimmt nicht überein; nichts wurde verändert.');
+        throw fsError(`Die Prüfsumme der Kopie stimmt nicht überein. ${leftoverNote('Die fehlerhafte Kopie', dest)}`);
+      }
+      return { dest, linked: false };
     }
     throw new AppError('archive_conflict', 'Es konnte kein freier Zieldateiname gefunden werden.', { retryable: true });
+  }
+
+  /**
+   * Legt `src` im Ordner `dir` unter `name` ab, ohne etwas zu überschreiben, und entfernt danach `src`.
+   * If `src` cannot be removed (e.g. EBUSY), the new entry is taken back; if that fails too, the error says that the
+   * file now exists twice (extra hardlink or copy) instead of claiming nothing changed.
+   */
+  private async moveExclusive(src: string, dir: string, name: string, sha256: string, exactName = false): Promise<string> {
+    const { dest, linked } = await this.placeExclusive(src, dir, name, sha256, exactName);
+    try {
+      await fsp.unlink(src);
+    } catch (err) {
+      const what = `Die ursprüngliche Datei konnte nicht entfernt werden${errCode(err) ? ` (${errCode(err)})` : ''}.`;
+      // nur den soeben angelegten Eintrag zurücknehmen
+      if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
+      throw fsError(
+        `${what} Die Datei liegt weiterhin am bisherigen Ort; ${linked ? 'ein zusätzlicher Verweis (Hardlink) auf dieselbe Datei' : 'eine zusätzliche Kopie'} liegt noch unter „${dest}“ und muss von Hand entfernt werden.`,
+        err,
+      );
+    }
+    return dest;
   }
 
   /** Entfernt leere Ordner von `dir` aufwärts bis zum Archivwurzelordner (nie nicht-leere, nie die Wurzel). */
@@ -775,10 +907,10 @@ export class ArchiveService {
       });
     } catch (err) {
       // Datenbank nicht angepasst: Datei an den ursprünglichen Ort zurücklegen
-      await this.moveExclusive(newAbs, path.dirname(src), path.basename(src), row.sha256, true).catch((back) =>
-        this.ctx.logger.error('archive', 'Zurücklegen nach Fehler beim Umlagern gescheitert', { error: back }),
-      );
-      throw err;
+      const note = await this.putBackAfterFailedRelocate(newAbs, src, row.sha256);
+      if (!note) throw err;
+      const info = toErrorInfo(err);
+      throw new AppError(info.category, `${info.message} ${note}`, { details: info.details, cause: err });
     }
     await this.pruneEmptyDirs(path.dirname(src));
 
@@ -804,14 +936,31 @@ export class ArchiveService {
       after: { path: newAbs, categoryPath: cat },
       undo: { type: 'archive_relocate', data: undoData },
     });
-    await this.docs.indexDocument(row.id);
+    const warnings: string[] = [];
+    await this.reindexAfterCommit(row.id, warnings);
     return {
       documentId: row.id,
       outcome: 'success',
       targetPath: newAbs,
-      message: plan.renamed ? `Verschoben nach ${cat} (umbenannt, weil der Name belegt war).` : `Verschoben nach ${cat}.`,
+      message: [plan.renamed ? `Verschoben nach ${cat} (umbenannt, weil der Name belegt war).` : `Verschoben nach ${cat}.`, ...warnings].join(' '),
       auditId,
     };
+  }
+
+  /**
+   * Moves a relocated file back to `original` after the database update failed. The original is restored first and
+   * the new entry removed afterwards, so the file the database points to always exists.
+   * @returns null when the file is back in place without leftovers, else a user-facing note on the actual state
+   */
+  private async putBackAfterFailedRelocate(moved: string, original: string, sha256: string): Promise<string | null> {
+    try {
+      await this.placeExclusive(moved, path.dirname(original), path.basename(original), sha256, true);
+    } catch (back) {
+      this.ctx.logger.error('archive', 'Zurücklegen nach Fehler beim Umlagern gescheitert', { error: back });
+      return `Die Datei konnte nicht an den bisherigen Ort zurückgelegt werden und liegt jetzt unter „${moved}“; die Datenbank verweist noch auf „${original}“.`;
+    }
+    if (await this.removeCreated(moved)) return null;
+    return `Die Datei liegt wieder am bisherigen Ort; ${leftoverNote('ein zusätzlicher Eintrag', moved)}`;
   }
 
   private async relocateUndoCheck(d: RelocateUndoData): Promise<string[]> {
