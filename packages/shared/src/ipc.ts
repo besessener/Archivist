@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AppErrorInfo, EntityType, Id, IsoDate, RelationStatus, SourceReference, type Result } from './common';
 import {
   AgentActionProposal,
+  AgentActionStatus,
   ArchiveItemRequest,
   ArchivePlan,
   ArchiveResult,
@@ -147,7 +148,7 @@ export const ipcContract = {
   'chat:renameConversation': ch(z.object({ id: Id, title: z.string().trim().min(1).max(120) }), Conversation),
 
   // --- Agentenaktionen ---
-  'actions:list': ch(z.object({ status: z.enum(['proposed', 'approved', 'rejected', 'executed', 'failed']).optional() }), z.array(StoredAgentAction)),
+  'actions:list': ch(z.object({ status: AgentActionStatus.optional() }), z.array(StoredAgentAction)),
   'actions:resolve': ch(
     z.discriminatedUnion('decision', [
       z.object({

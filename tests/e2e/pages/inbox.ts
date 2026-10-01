@@ -8,6 +8,10 @@ export function initInbox(page: Page) {
     items: page.getByTestId('inbox-item'),
     proposals: page.getByTestId('inbox-proposal'),
     llmStatus: page.getByTestId('inbox-llm-status'),
+    fields: {
+      topic: page.getByTestId('inbox-topic'),
+      project: page.getByTestId('inbox-project'),
+    },
     buttons: {
       archive: page.getByTestId('inbox-archive'),
     },
@@ -15,6 +19,8 @@ export function initInbox(page: Page) {
       source: page.getByTestId('archive-plan-source'),
       target: page.getByTestId('archive-plan-target'),
       confirm: page.getByTestId('archive-confirm'),
+      removesSource: page.getByTestId('archive-plan-removes-source'),
+      inboxCopy: page.getByTestId('archive-plan-inbox-copy'),
       result: page.getByTestId('archive-result'),
       close: page.getByTestId('archive-close'),
     },
