@@ -53,6 +53,21 @@ export const ProfileSettings = z.object({
   nicknames: z.array(z.string().max(100)).max(20).default([]),
 });
 
+const NotificationSettings = z.object({ desktop: z.boolean().default(false) });
+
+/** One Tesseract language code, e.g. `deu` or `chi_sim` (same rule the OCR module applies). */
+export const OCR_LANGUAGE_CODE = /^[a-z]{3}(?:_[a-z]+)?$/;
+
+/** `true` if `value` is a `+`-separated list of Tesseract language codes, e.g. `deu+chi_sim`. */
+export function isOcrLanguageList(value: string): boolean {
+  return value.split('+').every((code) => OCR_LANGUAGE_CODE.test(code));
+}
+
+const OcrSettings = z.object({
+  enabled: z.boolean().default(true),
+  languages: z.string().refine(isOcrLanguageList, { message: 'Ungültige OCR-Sprachcodes (Beispiel: deu+eng oder deu+chi_sim).' }).default('deu+eng'),
+});
+
 export const Settings = z.object({
   setupCompleted: z.boolean().default(false),
   profile: ProfileSettings.default(() => ProfileSettings.parse({})),
@@ -61,37 +76,42 @@ export const Settings = z.object({
   archiveRoot: z.string().default(''),
   scan: ScanSettings.default(() => ScanSettings.parse({})),
   privacy: PrivacySettings.default(() => PrivacySettings.parse({})),
-  notifications: z.object({ desktop: z.boolean().default(false) }).default({ desktop: false }),
+  notifications: NotificationSettings.default(() => NotificationSettings.parse({})),
   logs: LogSettings.default(() => LogSettings.parse({})),
   backups: BackupSettings.default(() => BackupSettings.parse({})),
   consistency: ConsistencySettings.default(() => ConsistencySettings.parse({})),
-  ocr: z
-    .object({
-      enabled: z.boolean().default(true),
-      languages: z
-        .string()
-        .regex(/^[a-z]{3}(\+[a-z]{3})*$/)
-        .default('deu+eng'),
-    })
-    .default({ enabled: true, languages: 'deu+eng' }),
+  ocr: OcrSettings.default(() => OcrSettings.parse({})),
 });
 export type Settings = z.infer<typeof Settings>;
 
-/** Teilweise Aktualisierung (pro Bereich flach zusammengeführt). */
+type WithoutDefault<T> = T extends z.ZodDefault<infer Inner> ? Inner : T;
+type WithoutDefaults<Shape extends z.ZodRawShape> = { [K in keyof Shape]: WithoutDefault<Shape[K]> };
+
+/**
+ * Patch schema for one settings section: every field optional and WITHOUT `.default()`.
+ * Zod 4 applies defaults even inside `.partial()` / `.optional()`, so `Section.partial()` would
+ * fill in every missing field and the merge would reset the rest of the section (issue #55).
+ * Defaults are applied only after merging, when the full `Settings` schema is parsed.
+ */
+function sectionPatch<Shape extends z.ZodRawShape>(section: z.ZodObject<Shape>) {
+  const shape = Object.fromEntries(
+    Object.entries(section.shape).map(([key, field]) => [key, field instanceof z.ZodDefault ? field.unwrap() : field]),
+  ) as WithoutDefaults<Shape>;
+  return z.object(shape).partial();
+}
+
+/** Teilweise Aktualisierung (pro Bereich flach zusammengeführt). Enthält bewusst keine Defaults. */
 export const SettingsPatch = z.object({
   setupCompleted: z.boolean().optional(),
-  profile: ProfileSettings.partial().optional(),
-  llm: LlmSettings.partial().optional(),
+  profile: sectionPatch(ProfileSettings).optional(),
+  llm: sectionPatch(LlmSettings).optional(),
   archiveRoot: z.string().optional(),
-  scan: ScanSettings.partial().optional(),
-  privacy: PrivacySettings.partial().optional(),
-  notifications: z.object({ desktop: z.boolean() }).partial().optional(),
-  logs: LogSettings.partial().optional(),
-  backups: BackupSettings.partial().optional(),
-  consistency: ConsistencySettings.partial().optional(),
-  ocr: z
-    .object({ enabled: z.boolean(), languages: z.string().regex(/^[a-z]{3}(\+[a-z]{3})*$/) })
-    .partial()
-    .optional(),
+  scan: sectionPatch(ScanSettings).optional(),
+  privacy: sectionPatch(PrivacySettings).optional(),
+  notifications: sectionPatch(NotificationSettings).optional(),
+  logs: sectionPatch(LogSettings).optional(),
+  backups: sectionPatch(BackupSettings).optional(),
+  consistency: sectionPatch(ConsistencySettings).optional(),
+  ocr: sectionPatch(OcrSettings).optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

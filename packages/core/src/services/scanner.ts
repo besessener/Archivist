@@ -483,6 +483,11 @@ export class ScannerService {
         const decision = this.privacy.evaluate({ path: real, ext: f.ext, rootLlmAllowed: root.llmAllowed });
         const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
         const res = await this.docs.analyze(doc.id, { allowLlm });
+        if (res.skipped) {
+          // the document was archived in the meantime – nothing to propose
+          skipped.push(id);
+          continue;
+        }
         const updated = this.docs.getRow(doc.id);
         this.db
           .update(scanFiles)
@@ -498,6 +503,7 @@ export class ScannerService {
           .run();
         analyzed.push(doc.id);
       } catch (err) {
+        // analyze() has already set the document to `failed` (reprocessable from the inbox), so it is not stuck in `analyzing`
         this.ctx.logger.warn('scanner', 'Analyse fehlgeschlagen', { fileId: id, error: err });
         this.notifications.create({
           title: 'Dateianalyse fehlgeschlagen',

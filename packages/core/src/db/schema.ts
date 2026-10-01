@@ -13,6 +13,8 @@ export const entities = sqliteTable(
     name: text('name').notNull(),
     normalizedName: text('normalized_name').notNull(),
     description: text('description'),
+    /** Former names of entities merged into this one (display form); used to resolve later mentions. */
+    aliases: jsonArr('aliases'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
