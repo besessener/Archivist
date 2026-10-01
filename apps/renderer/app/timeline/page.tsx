@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CalendarDays, FileText, Gavel, ListChecks, Plus, ShieldAlert, StickyNote, Trash2 } from 'lucide-react';
+import { CalendarDays, FileText, Gavel, ListChecks, Pencil, Plus, ShieldAlert, StickyNote, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
-import { EventFormDialog } from '@/components/events/event-form-dialog';
+import { EventFormDialog, eventPatch } from '@/components/events/event-form-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
@@ -12,11 +12,13 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
+import { useToast } from '@/lib/toast';
 import { formatLongDate } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import type { IpcOutput } from '@archivist/shared';
 
 type Entry = IpcOutput<'timeline:get'>[number];
+type EventRecord = IpcOutput<'events:create'>;
 
 const KIND: Record<Entry['kind'], { icon: React.ComponentType<{ className?: string }>; label: string }> = {
   document: { icon: FileText, label: 'Dokument' },
@@ -34,7 +36,9 @@ export default function TimelinePage() {
   const [to, setTo] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editEvent, setEditEvent] = useState<EventRecord | null>(null);
   const { run } = useRun();
+  const { toast } = useToast();
   const topics = useQuery('knowledge:listEntities', { type: 'topic', limit: 1000 }, { scopes: ['knowledge'] });
   const projects = useQuery('knowledge:listEntities', { type: 'project', limit: 1000 }, { scopes: ['knowledge'] });
   const tl = useQuery(
@@ -58,6 +62,14 @@ export default function TimelinePage() {
     }
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [tl.data]);
+
+  async function openEdit(eventId: string) {
+    const all = await run(() => call('events:list', {}));
+    if (!all) return;
+    const found = all.find((ev) => ev.id === eventId);
+    if (found) setEditEvent(found);
+    else toast({ variant: 'info', title: 'Dieses Ereignis gibt es nicht mehr.' });
+  }
 
   return (
     <Page>
@@ -127,6 +139,18 @@ export default function TimelinePage() {
                           variant="ghost"
                           size="icon"
                           className="size-6"
+                          aria-label="Ereignis bearbeiten"
+                          onClick={() => void openEdit(e.id.replace(/^event:/, ''))}
+                          data-testid="event-edit"
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      )}
+                      {e.kind === 'event' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
                           aria-label="Ereignis löschen"
                           onClick={() => setDeleteId(e.id.replace(/^event:/, ''))}
                           data-testid="event-delete"
@@ -160,6 +184,21 @@ export default function TimelinePage() {
           return out !== undefined;
         }}
       />
+      {editEvent && (
+        <EventFormDialog
+          key={editEvent.id}
+          open
+          event={editEvent}
+          onOpenChange={(o) => !o && setEditEvent(null)}
+          onSubmit={async (input) => {
+            const patch = eventPatch(editEvent, input);
+            if (Object.keys(patch).length === 0) return true;
+            const out = await run(() => call('events:update', { id: editEvent.id, patch }), { success: 'Änderungen gespeichert.' });
+            if (out) void tl.refetch();
+            return out !== undefined;
+          }}
+        />
+      )}
       <ConfirmDialog
         open={deleteId !== null}
         onOpenChange={(o) => !o && setDeleteId(null)}
