@@ -80,7 +80,10 @@ export const ArchivePlanItem = z.object({
   targetPath: z.string().nullable(),
   targetRelPath: z.string().nullable(),
   renamed: z.boolean(),
+  /** True only when a file outside Archivist (the user's original) gets deleted, i.e. on move. */
   willRemoveSource: z.boolean(),
+  /** True when Archivist's own temporary inbox copy gets cleaned up afterwards (the original is untouched). */
+  removesInboxCopy: z.boolean(),
   duplicates: z.array(z.object({ documentId: Id, title: z.string(), archivePath: z.string().nullable() })),
   conflicts: z.array(z.string()),
   newCategories: z.array(z.string()),
@@ -103,7 +106,9 @@ export const ArchiveItemRequest = z.object({
   mode: ArchiveMode.default('copy'),
   categoryPath: z.string().optional(),
   fileName: z.string().optional(),
+  /** Omitted: use the proposal. `null` (or an empty string): explicitly without topic. */
   topic: z.string().nullish(),
+  /** Omitted: use the proposal. `null` (or an empty string): explicitly without project. */
   project: z.string().nullish(),
 });
 export type ArchiveItemRequest = z.infer<typeof ArchiveItemRequest>;
