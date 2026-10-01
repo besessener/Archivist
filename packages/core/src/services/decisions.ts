@@ -382,7 +382,8 @@ export class DecisionService {
     return this.get(id);
   }
 
-  private async reindex(id: string): Promise<void> {
+  /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
+  async reindex(id: string): Promise<void> {
     try {
       const d = this.get(id);
       await this.search.index({
