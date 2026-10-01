@@ -74,6 +74,7 @@ interface Reply {
   confidence?: number | null;
   uncertainties?: string[];
   errorMessage?: string | null;
+  quickReplies?: string[];
   state?: ConvState;
 }
 
@@ -110,6 +111,43 @@ const INTENT_LABELS: Partial<Record<ChatIntent['intent'], string>> = {
 function describeIntent(i: ChatIntent): string {
   const label = INTENT_LABELS[i.intent] ?? i.intent;
   return i.segment?.trim() ? `${label}: „${truncate(i.segment.trim(), 80)}“` : label;
+}
+
+export type SaveChoice = 'decision' | 'event' | 'note' | 'nothing';
+/** Absichten, die das LLM für eine reine Antwort auf „Entscheidung, Ereignis, Notiz oder nichts?“ liefern könnte. */
+const SAVE_ANSWER_INTENTS = new Set<ChatIntent['intent']>([
+  'unknown',
+  'smalltalk',
+  'proposal_confirm',
+  'proposal_reject',
+  'note_capture',
+  'decision_new',
+  'decision_amend',
+  'event_record',
+]);
+const SAVE_QUICK_REPLIES = ['Entscheidung', 'Ereignis', 'Notiz', 'Nichts speichern'];
+const SAVE_OPTIONS: Array<[Exclude<SaveChoice, 'nothing'>, string]> = [
+  ['decision', 'entscheidung'],
+  ['event', '(?:ereignis|termin|timeline)'],
+  ['note', '(?:notiz|merken|festhalten|merk)'],
+];
+
+/**
+ * Antwort auf „Entscheidung, Ereignis, Notiz oder nichts?“: sucht die gewählte Option irgendwo in einer kurzen
+ * Antwort und berücksichtigt Verneinungen („keine Entscheidung, sondern ein Ereignis“). Mehrdeutig → null.
+ */
+export function parseSaveChoice(text: string): SaveChoice | null {
+  const t = normalizeName(text);
+  if (!t || t.split(' ').length > 10) return null;
+  const negated = (word: string) => new RegExp(`\\b(?:kein(?:e|en)?|nicht(?: als| eine?)?)\\s+${word}`).test(t);
+  const after = /\bsondern\b(.*)$/.exec(t)?.[1] ?? null;
+  const pick = (scope: string) =>
+    SAVE_OPTIONS.filter(([, word]) => new RegExp(`\\b${word}`).test(scope) && (scope !== t || !negated(word))).map(([choice]) => choice);
+  const chosen = after !== null ? pick(after) : pick(t);
+  if (chosen.length === 1) return chosen[0]!;
+  if (chosen.length > 1) return null;
+  if (/\b(nichts|gar nicht|nicht speichern|verwerf\w*|vergiss)\b/.test(t)) return 'nothing';
+  return shortAnswer(text) === 'no' ? 'nothing' : null;
 }
 
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
@@ -293,6 +331,7 @@ export class ChatService {
       uncertainties: r.uncertainties,
       intent: r.intent,
       errorMessage: r.errorMessage,
+      quickReplies: r.quickReplies,
     };
   }
 
@@ -321,6 +360,7 @@ export class ChatService {
       uncertainties: reply?.uncertainties ?? [],
       intent: reply?.intent ?? null,
       errorMessage: reply?.errorMessage ?? null,
+      quickReplies: reply?.quickReplies ?? [],
       createdAt: nowIso(),
     };
     this.db.insert(messages).values(row).run();
@@ -381,7 +421,7 @@ export class ChatService {
       return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum (dann intent=event_record, event.occurredAt als ISO-Datum, ohne eigenen Titel). Ein anderes Ereignis mit eigenem Titel ist keine Antwort.`;
     if (p.kind === 'proposal_choice') return 'keine';
     if (p.kind === 'confirm_save')
-      return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
+      return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Beantwortet die Nachricht das (auch frei formuliert, z. B. „lieber als Termin“, „keine Entscheidung, nur merken“), setze saveAs (decision, event, note oder nothing) und liefere für die Antwort selbst keine weitere Absicht. Andere Anliegen in der Nachricht ordnest du wie gewohnt ein; passt die Nachricht nicht zur Rückfrage, setze saveAs=null.`;
     const i = this.openItems.get(p.openItemId);
     return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. ${PENDING_ONLY_IF_FITS} (dann intent=open_item_update ohne targetHint)`;
   }
@@ -592,13 +632,29 @@ export class ChatService {
       state = { ...state, pending: null };
       if (chosen) return this.resolveProposal(chosen.action, chosen.confirm, state);
     }
-    // Antwort auf „Entscheidung oder Notiz?“ wird deterministisch ausgewertet
-    if (state.pending?.kind === 'confirm_save') {
-      const answered = await this.answerConfirmSave(conv, text, state, state.pending);
-      if (answered) return answered;
+    // Antwort auf „Entscheidung, Ereignis, Notiz oder nichts?“: zuerst deterministisch, sonst mit Hinweis per LLM
+    const saving = state.pending?.kind === 'confirm_save' ? state.pending : null;
+    if (saving) {
+      const choice = parseSaveChoice(text);
+      if (choice) return this.applySaveChoice(conv, choice, state, saving);
     }
     const { analysis, viaLlm, llmError } = await this.classify(conv, text, state);
-    let reply = await this.runIntents(conv, text, analysis, state, viaLlm);
+    let reply: Reply;
+    // ohne LLM: eine kurze Antwort ohne eigenes Anliegen (auch „ja“) ist ein Versuch, die Rückfrage zu beantworten
+    const shortTry = !viaLlm && words(text) <= 8 && ['note_capture', 'proposal_confirm', 'proposal_reject'].includes(analysis.intents[0]?.intent ?? '');
+    if (saving && shortTry) reply = this.askSaveAgain(saving, state);
+    else if (saving && analysis.saveAs) {
+      const first = await this.applySaveChoice(conv, analysis.saveAs, state, saving);
+      // weitere eigene Anliegen der Nachricht laufen danach; Speicher-Absichten waren nur die Antwort
+      const others = analysis.intents.filter((i) => !SAVE_ANSWER_INTENTS.has(i.intent)).map((intent) => ({ text, intent }));
+      const after = first.state ?? {};
+      if (!others.length) reply = first;
+      else if (after.pending) reply = { ...first, state: { ...after, queue: [...(after.queue ?? []), ...others] } };
+      else {
+        const more = await this.runWork(conv, others, [], { ...after, pending: null, queue: [] }, viaLlm, null);
+        reply = this.mergeReplies([first, more], more.state ?? after);
+      }
+    } else reply = await this.runIntents(conv, text, analysis, state, viaLlm);
     if (!viaLlm && llmError) {
       reply = {
         ...reply,
@@ -655,6 +711,7 @@ export class ChatService {
         replies.push({
           intent: 'clarification',
           content: `${question}\n\nAntworte mit „Entscheidung“, „Ereignis“, „Notiz“ oder „nichts speichern“.`,
+          quickReplies: SAVE_QUICK_REPLIES,
           confidence: item.intent.confidence,
           state: current,
         });
@@ -715,46 +772,47 @@ export class ChatService {
       confidence: confidences.length ? Math.min(...confidences) : null,
       uncertainties: [...new Set(replies.flatMap((r) => r.uncertainties ?? []))],
       errorMessage: replies.map((r) => r.errorMessage).find(Boolean) ?? null,
+      quickReplies: [...replies].reverse().find((r) => r.quickReplies?.length)?.quickReplies ?? [],
       state: finalState,
     };
   }
 
-  /** Verarbeitet die Antwort auf „Entscheidung oder Notiz?“. Gibt null zurück, wenn die Nachricht etwas anderes ist. */
-  private async answerConfirmSave(conv: string, text: string, state: ConvState, pending: Extract<Pending, { kind: 'confirm_save' }>): Promise<Reply | null> {
-    const t = text.trim().toLowerCase();
+  /** Stellt „Entscheidung, Ereignis, Notiz oder nichts?“ erneut – mit Knöpfen; die zurückgestellten Anliegen bleiben. */
+  private askSaveAgain(pending: Extract<Pending, { kind: 'confirm_save' }>, state: ConvState): Reply {
+    return {
+      intent: 'clarification',
+      content: `Das habe ich nicht verstanden. Wie soll ich „${truncate(pending.intent.segment ?? pending.text, 140)}“ speichern – als **Entscheidung**, als **Ereignis**, als **Notiz** oder gar nicht?`,
+      quickReplies: SAVE_QUICK_REPLIES,
+      confidence: 0.4,
+      state,
+    };
+  }
+
+  /** Führt die gewählte Speicherart für die unsichere Entscheidung aus und setzt danach die zurückgestellten Anliegen fort. */
+  private async applySaveChoice(conv: string, choice: SaveChoice, state: ConvState, pending: Extract<Pending, { kind: 'confirm_save' }>): Promise<Reply> {
     const rest = state.queue ?? [];
     const base: ConvState = { ...state, pending: null, queue: [] };
-    const continueWith = async (first: Reply): Promise<Reply> => {
-      // die übrigen Absichten der ursprünglichen Nachricht laufen mit ihrem Originaltext weiter
-      if (first.state?.pending || !rest.length) return { ...first, state: { ...(first.state ?? base), queue: first.state?.pending ? rest : [] } };
-      const more = await this.runWork(conv, [], rest, { ...(first.state ?? base), pending: null, queue: [] }, true, null);
-      return this.mergeReplies([first, more], more.state ?? base);
-    };
-    if (/^(nichts|nein|nee|lieber nicht|verwerf|vergiss|nicht speichern|kein)/.test(t)) {
-      return continueWith({ intent: 'clarification', content: 'Okay, ich speichere dazu nichts.', confidence: 1, state: base });
-    }
-    if (/^(als\s+)?(entscheidung|ja,?\s*(als\s+)?entscheidung|(als\s+entscheidung\s+)?(speichern|erfassen))\b/.test(t) && !/notiz/.test(t)) {
-      const decision = { ...pending.intent, intent: 'decision_new' as const, decisionCertainty: 'clear' as const };
-      return continueWith(await this.dispatch(conv, pending.text, decision, base, true));
-    }
-    if (/^(als\s+)?(ein\s+)?(ereignis|termin)\b/.test(t)) {
-      const seg = pending.intent.segment ?? pending.text;
-      const event = {
+    const seg = pending.intent.segment ?? pending.text;
+    let first: Reply;
+    if (choice === 'nothing') first = { intent: 'clarification', content: 'Okay, ich speichere dazu nichts.', confidence: 1, state: base };
+    else if (choice === 'decision') {
+      first = await this.dispatch(conv, pending.text, { ...pending.intent, intent: 'decision_new', decisionCertainty: 'clear' }, base, true);
+    } else if (choice === 'event') {
+      const event: ChatIntent = {
         ...pending.intent,
-        intent: 'event_record' as const,
+        intent: 'event_record',
         event: {
           title: pending.intent.decision?.title ?? truncate(seg, 100),
           description: seg,
           occurredAt: pending.intent.decision?.decidedAt ?? parseGermanDate(seg),
         },
       };
-      return continueWith(await this.dispatch(conv, pending.text, event, base, true));
-    }
-    if (/^(als\s+)?(nur\s+)?(eine\s+)?notiz\b|^nur\s+notiz|^(festhalten|merken)\b/.test(t)) {
-      const note = { ...pending.intent, intent: 'note_capture' as const, note: pending.intent.segment ?? pending.text };
-      return continueWith(await this.dispatch(conv, pending.text, note, base, true));
-    }
-    return null;
+      first = await this.dispatch(conv, pending.text, event, base, true);
+    } else first = await this.dispatch(conv, pending.text, { ...pending.intent, intent: 'note_capture', note: seg }, base, true);
+    // die übrigen Absichten der ursprünglichen Nachricht laufen mit ihrem Originaltext weiter
+    if (first.state?.pending || !rest.length) return { ...first, state: { ...(first.state ?? base), queue: first.state?.pending ? rest : [] } };
+    const more = await this.runWork(conv, [], rest, { ...(first.state ?? base), pending: null, queue: [] }, true, null);
+    return this.mergeReplies([first, more], more.state ?? base);
   }
 
   private async dispatch(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {

@@ -518,6 +518,8 @@ export const ChatMessage = z.object({
   uncertainties: z.array(z.string()),
   intent: z.string().nullable(),
   errorMessage: z.string().nullable(),
+  /** Antwortknöpfe für eine Rückfrage (z. B. „Entscheidung“, „Notiz“); ein Klick sendet den Text. */
+  quickReplies: z.array(z.string()).default([]),
 });
 export type ChatMessage = z.infer<typeof ChatMessage>;
 

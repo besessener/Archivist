@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `quick_replies` text DEFAULT '[]' NOT NULL;
