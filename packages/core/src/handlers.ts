@@ -57,15 +57,19 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     };
   };
 
-  const documentPath = (id: string): string => {
+  const documentPath = (id: string, opts: { allowQuarantine?: boolean } = {}): string => {
     const d = s.documents.getRow(id);
+    // a quarantined file is suspicious: never open it, only reveal it in the file manager
+    if (d.status === 'quarantined' && !opts.allowQuarantine)
+      throw permissionError('Dateien in Quarantäne werden nicht geöffnet. Nutzen Sie „Ordner öffnen“, um sie im Dateimanager zu prüfen.');
     const candidates = [d.archiveRelPath ? path.join(s.settings.get().archiveRoot, ...d.archiveRelPath.split('/')) : null, d.stagedPath, d.sourcePath].filter(
       (x): x is string => Boolean(x),
     );
     const found = candidates.find((c) => s.scanner.fileExists(c));
     if (!found) throw new AppError('filesystem_error', 'Die Datei wurde nicht gefunden (verschoben oder gelöscht?).');
     // nur Orte öffnen, die Archivist selbst kennt: Archiv, Eingang oder das ursprüngliche Dokument
-    const allowed = [s.settings.get().archiveRoot, s.paths.inbox].some((root) => isInside(root, found)) || found === d.sourcePath;
+    const roots = [s.settings.get().archiveRoot, s.paths.inbox, ...(opts.allowQuarantine ? [s.paths.quarantine] : [])];
+    const allowed = roots.some((root) => isInside(root, found)) || found === d.sourcePath;
     if (!allowed) throw permissionError('Dieser Pfad darf nicht geöffnet werden.');
     return found;
   };
@@ -83,7 +87,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return { ok: true as const };
     },
     'app:revealPath': (i) => {
-      host.revealPath(documentPath(i.documentId));
+      host.revealPath(documentPath(i.documentId, { allowQuarantine: true }));
       return { ok: true as const };
     },
     'app:openScanFile': async (i) => {
@@ -149,6 +153,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         proposedParameters: { oldDecisionId: o.id, newDecisionId: n.id },
       });
     },
+    'decisions:supersede': (i) => s.decisions.supersede(i.oldDecisionId, i.newDecisionId, { confirmed: i.confirmed, trigger }),
+    'decisions:revoke': (i) => s.decisions.revoke(i.id, { confirmed: i.confirmed, trigger }),
 
     'documents:import': async (i) => s.documents.importPaths(i.paths),
     'documents:list': (i) => s.documents.list(i),
@@ -166,6 +172,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return s.documents.list({ [e?.type === 'project' ? 'projectId' : 'topicId']: i.topicId, limit: 500 });
     },
     'documents:setLlmExcluded': (i) => s.documents.setLlmExcluded(i.id, i.excluded),
+    'documents:releaseQuarantine': (i) => s.documents.releaseFromQuarantine(i.id, i.confirmed),
 
     'scanner:addDirectory': (i) => s.scanner.addDirectory(i.path, i.recursive),
     'scanner:removeDirectory': (i) => {
@@ -246,7 +253,32 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });
       return { ok: true as const };
     },
-    'knowledge:createEntity': (i) => s.graph.ensureEntity(i.type, i.name, i.description),
+    'knowledge:createEntity': async (i) => {
+      if (i.type === 'event') {
+        const { event, created } = s.eventRecords.createUnlessExists(i, { actor: 'user', trigger });
+        const entity = s.graph.getEntity(event.id) ?? {
+          id: event.id,
+          type: 'event' as const,
+          name: event.title,
+          description: event.description,
+          aliases: [],
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt,
+        };
+        return { entity, created };
+      }
+      if (i.type === 'note') {
+        const { note, created } = await s.notes.createUnlessExists({ title: i.name, content: i.description?.trim() || i.name });
+        if (created) s.audit.log({ action: 'note.create', actor: 'user', trigger, confirmed: true, entityIds: [note.id], after: { title: note.name } });
+        return { entity: note, created };
+      }
+      // a merged-away name (alias) also counts as existing
+      const existing = s.graph.findByNameOrAlias(i.type, i.name);
+      if (existing) return { entity: existing, created: false };
+      const entity = s.graph.ensureEntity(i.type, i.name, i.description?.trim() || null);
+      s.audit.log({ action: `${i.type}.create`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
+      return { entity, created: true };
+    },
     'knowledge:proposeMerge': (i) => {
       const a = s.graph.getEntity(i.sourceTopicId);
       const b = s.graph.getEntity(i.targetTopicId);

@@ -24,7 +24,7 @@ import { useRun } from '@/lib/use-run';
 import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
 import { nonEmpty, toIsoDay } from '@/lib/utils';
-import type { OpenItemStatus } from '@archivist/shared';
+import { EditableOpenItemStatus, isEditableOpenItemStatus } from '@archivist/shared';
 
 type Group = 'overdue' | 'due' | 'open' | 'done';
 const GROUP_LABELS: Record<Group, string> = { overdue: 'Überfällig', due: 'Bald fällig', open: 'Offen', done: 'Erledigt' };
@@ -189,7 +189,9 @@ function ItemFormDialog({
   const [dueAt, setDueAt] = useState(item?.dueAt?.slice(0, 10) ?? '');
   const [dueUnknown, setDueUnknown] = useState(item?.dueUnknown ?? false);
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>(item?.priority ?? 'normal');
-  const [status, setStatus] = useState<OpenItemStatus>(item?.status ?? 'open');
+  // closing is never part of an edit: it needs the confirmed „Erledigt …“ dialog (with undo)
+  const [status, setStatus] = useState<EditableOpenItemStatus>(item && isEditableOpenItemStatus(item.status) ? item.status : 'open');
+  const statusEditable = item !== null && isEditableOpenItemStatus(item.status);
   const [topic, setTopic] = useState(item?.topicName ?? '');
   const [project, setProject] = useState(item?.projectName ?? '');
 
@@ -206,7 +208,10 @@ function ItemFormDialog({
     const out = await run(
       () =>
         item
-          ? call('openItems:update', { id: item.id, patch: { ...base, status, responsibleUnknown: respUnknown, dueUnknown } })
+          ? call('openItems:update', {
+              id: item.id,
+              patch: { ...base, ...(statusEditable ? { status } : {}), responsibleUnknown: respUnknown, dueUnknown },
+            })
           : call('openItems:create', base),
       { success: item ? 'Änderungen gespeichert.' : 'Offener Punkt angelegt.' },
     );
@@ -270,10 +275,10 @@ function ItemFormDialog({
               <option value="high">Hoch</option>
             </Select>
           </Field>
-          {item && (
+          {statusEditable && (
             <Field label="Status" htmlFor="oi-status" hint="Zum Abschließen nutzen Sie „Erledigt …“.">
-              <Select id="oi-status" value={status} onChange={(e) => setStatus(e.target.value as OpenItemStatus)}>
-                {(['open', 'waiting', 'blocked'] as const).map((s) => (
+              <Select id="oi-status" value={status} onChange={(e) => setStatus(e.target.value as EditableOpenItemStatus)}>
+                {EditableOpenItemStatus.options.map((s) => (
                   <option key={s} value={s}>
                     {OPEN_ITEM_STATUS_LABELS[s]}
                   </option>

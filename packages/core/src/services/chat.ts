@@ -35,6 +35,7 @@ import type { InsightService } from './insights';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
+import type { NoteService } from './notes';
 import type { EventService } from './events';
 import { findOpenItemDuplicate } from './cleanup/open-item-duplicates';
 import { ACTIVE_STATUSES, hintTokens, matchOpenItems, type OpenItemService } from './open-items';
@@ -403,6 +404,7 @@ export class ChatService {
     private readonly jobs: JobQueueService,
     private readonly privacy: PrivacyService,
     private readonly events: EventService,
+    private readonly notes: NoteService,
   ) {}
 
   wire(deps: { actions: ActionService; archive: ArchiveService }): void {
@@ -1344,7 +1346,8 @@ export class ChatService {
     if ((ex.alternatives ?? []).length) patch.alternatives = [...new Set([...t.alternatives, ...ex.alternatives])];
     if (ex.validFrom) patch.validFrom = ex.validFrom;
     if (ex.validUntil) patch.validUntil = ex.validUntil;
-    if (unknownFields.size) patch.unknownFields = [...unknownFields];
+    // the patch replaces the stored list, so keep what was confirmed as unknown before
+    if (unknownFields.size) patch.unknownFields = [...new Set([...t.unknownFields, ...unknownFields])];
     const updated = this.decisions.update(t.id, patch, { trigger: 'chat' });
     // „Thema oder Projekt?“ bleibt gestellt, bis sie beantwortet ist (oder ein anderes Thema genannt wurde)
     const stillClarify =
@@ -1516,15 +1519,16 @@ export class ChatService {
   // ---------- Notizen ----------
   private async noteCapture(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const content = (intent.note ?? text).trim();
-    const note = this.graph.ensureEntity('note', truncate(content.replace(/\s+/g, ' '), 70), content);
-    if (intent.topic) this.graph.link(note.id, this.graph.ensureEntity('topic', intent.topic).id, 'relates_to', { confidence: 0.8, status: 'confirmed' });
-    await this.search.index({ type: 'note', id: note.id, title: note.name, content });
-    this.ctx.events.changed('knowledge');
+    const topic = intent.topic ? this.graph.ensureEntity('topic', intent.topic) : null;
+    const { note } = await this.notes.createUnlessExists({
+      content,
+      links: topic ? [{ targetId: topic.id, relationType: 'relates_to', confidence: 0.8 }] : [],
+    });
     return {
       intent: 'note_capture',
       content: `Notiz gespeichert${intent.topic ? ` (Thema: ${intent.topic})` : ''}.`,
       sources: [{ id: note.id, type: 'note', title: note.name, snippet: truncate(content, 200), score: 1, path: null, date: note.createdAt }],
-      context: { topics: intent.topic ? [{ type: 'topic', id: this.graph.ensureEntity('topic', intent.topic).id, label: intent.topic }] : [] },
+      context: { topics: topic ? [{ type: 'topic', id: topic.id, label: intent.topic ?? topic.name }] : [] },
       confidence: intent.confidence,
       state,
     };
@@ -2151,9 +2155,10 @@ export class ChatService {
       );
       let noteTitle: string | null = null;
       if (source.length > 120) {
-        const note = this.graph.ensureEntity('note', truncate(source.replace(/\s+/g, ' '), 70), source);
-        this.graph.link(note.id, target.id, 'relates_to', { confidence: 0.8, status: 'confirmed' });
-        await this.search.index({ type: 'note', id: note.id, title: note.name, content: source });
+        const { note } = await this.notes.createUnlessExists({
+          content: source,
+          links: [{ targetId: target.id, relationType: 'relates_to', confidence: 0.8 }],
+        });
         noteTitle = note.name;
       }
       created = { openItem: target.title, note: noteTitle };

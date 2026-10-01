@@ -17,13 +17,13 @@ import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { sha256File, sha256Text } from '../util/hash';
 import { normalizeDateInput, promptNow } from '../util/dates';
-import { sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
+import { isInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
 import { normalizeName, truncate } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
 import { classifyLocally, humanizeCategoryPath, normalizeIsoDates, snapToKnown } from './classifier';
-import type { JobQueueService } from './jobs';
+import { isJobCancelled, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { NotificationService } from './notifications';
@@ -47,6 +47,18 @@ interface DocumentMetadataUndo {
 /** Final states an analysis must never reopen (the file already lives in the archive or index). */
 const ARCHIVED_STATUSES: DocumentStatus[] = ['archived', 'indexed_only'];
 const INTERRUPTED_ANALYSIS_REASON = 'Die Analyse wurde unterbrochen (z. B. weil Archivist beendet wurde). Bitte „Erneut verarbeiten“ wählen.';
+const CANCELLED_ANALYSIS_REASON = 'Die Analyse wurde abgebrochen. Bitte „Erneut verarbeiten“ wählen.';
+
+export interface AnalyzeOptions {
+  allowLlm: boolean;
+  /** Cancels the analysis at the next checkpoint (and a running LLM request); the document is then marked as cancelled. */
+  signal?: AbortSignal;
+  /**
+   * On an error, leave the document in `analyzing` instead of marking it `failed` – for callers that retry
+   * (the job queue). They call `markAnalysisFailed` once no attempt is left.
+   */
+  deferFailure?: boolean;
+}
 
 type AnalysisResult = { usedLlm: boolean; warning: string | null; skipped?: true };
 
@@ -60,6 +72,13 @@ const MAGIC: Record<string, (b: Buffer) => boolean> = {
   jpg: (b) => b[0] === 0xff && b[1] === 0xd8,
   jpeg: (b) => b[0] === 0xff && b[1] === 0xd8,
 };
+
+const QUARANTINE_NOT_ANALYZED = 'Dateien in Quarantäne werden nicht analysiert. Wählen Sie zuerst „Trotzdem importieren“.';
+
+/** User-visible reason shown on a quarantined document. */
+function quarantineReason(ext: string): string {
+  return `Der Dateiinhalt passt nicht zur Endung „.${ext}“.`;
+}
 
 export interface ImportResult {
   imported: DocumentRecord[];
@@ -279,9 +298,8 @@ export class DocumentService {
           continue;
         }
         if (!(await this.sniffOk(real, ext))) {
-          const q = await this.copyExclusive(real, this.ctx.paths.quarantine, sanitizeFileName(path.basename(real)));
-          this.audit.log({ action: 'document.quarantine', actor: 'user', trigger: 'upload', confirmed: false, paths: [real, q], success: true });
-          out.rejected.push({ path: input, reason: 'Der Dateiinhalt passt nicht zur Endung – Kopie in die Quarantäne gelegt.' });
+          await this.quarantine(real, ext, st.size);
+          out.rejected.push({ path: input, reason: 'Der Dateiinhalt passt nicht zur Endung – Kopie in die Quarantäne gelegt (Inbox, Filter „Quarantäne“).' });
           continue;
         }
         const fileName = sanitizeFileName(path.basename(real));
@@ -336,6 +354,93 @@ export class DocumentService {
     return out;
   }
 
+  /**
+   * Puts a copy of a suspicious file (content does not match its extension) into quarantine/ and records it as a
+   * document with status `quarantined`, so it shows up in the inbox. The file is neither parsed nor analysed.
+   * The same content is quarantined only once.
+   */
+  private async quarantine(real: string, ext: string, size: number): Promise<void> {
+    const sha = await sha256File(real);
+    const existing = this.db
+      .select()
+      .from(documents)
+      .where(and(eq(documents.sha256, sha), eq(documents.status, 'quarantined')))
+      .all()
+      .find((d) => d.stagedPath && fs.existsSync(d.stagedPath));
+    if (existing) return;
+    const q = await this.copyExclusive(real, this.ctx.paths.quarantine, sanitizeFileName(path.basename(real)));
+    const doc = this.insertDocument({
+      originalName: path.basename(real),
+      ext,
+      size,
+      sha256: sha,
+      sourcePath: real,
+      stagedPath: q,
+      status: 'quarantined',
+      processingError: quarantineReason(ext),
+    });
+    this.audit.log({
+      action: 'document.quarantine',
+      actor: 'user',
+      trigger: 'upload',
+      confirmed: false,
+      entityIds: [doc.id],
+      paths: [real, q],
+      success: true,
+    });
+    this.notifications.create({
+      title: 'Datei in Quarantäne',
+      description: `„${doc.originalName}“: ${quarantineReason(ext)} Die Datei wurde nicht importiert.`,
+      type: 'import_failed',
+      priority: 'normal',
+      affectedEntityIds: [doc.id],
+      proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
+      dedupeKey: `quarantine:${doc.id}`,
+    });
+  }
+
+  /**
+   * "Import anyway": moves a quarantined file into the inbox (inbox/) and queues it for analysis like a normal upload.
+   * Requires an explicit confirmation by the user.
+   */
+  async releaseFromQuarantine(id: string, confirmed: boolean): Promise<DocumentRecord> {
+    if (!confirmed) throw new AppError('permission_error', 'Das Importieren einer Datei aus der Quarantäne erfordert eine Bestätigung.');
+    const row = this.getRow(id);
+    if (row.status !== 'quarantined') throw new AppError('validation_error', 'Das Dokument liegt nicht in der Quarantäne.');
+    const file = row.stagedPath;
+    if (!file || !isInside(this.ctx.paths.quarantine, file) || !fs.existsSync(file))
+      throw fsError('Die Datei in der Quarantäne ist nicht mehr vorhanden.', undefined, false);
+    const sha = await sha256File(file);
+    if (sha !== row.sha256) throw new AppError('validation_error', 'Die Datei in der Quarantäne wurde seither verändert und wird nicht importiert.');
+    const dup = this.findDuplicates(sha, id)[0];
+    if (dup) throw new AppError('validation_error', `Die Datei entspricht bereits dem Dokument „${dup.title}“.`);
+    const staged = await this.copyExclusive(file, this.ctx.paths.inbox, sanitizeFileName(row.originalName));
+    try {
+      this.db
+        .update(documents)
+        .set({ status: 'staged', stagedPath: staged, processingStatus: 'pending', processingError: null, updatedAt: nowIso() })
+        .where(eq(documents.id, id))
+        .run();
+    } catch (err) {
+      await fsp.unlink(staged).catch(() => undefined);
+      throw err;
+    }
+    await fsp.unlink(file).catch((err: unknown) => this.ctx.logger.warn('documents', 'Quarantäne-Kopie nicht entfernt', { error: err, path: file }));
+    this.audit.log({
+      action: 'document.releaseQuarantine',
+      actor: 'user',
+      trigger: 'manual',
+      confirmed: true,
+      entityIds: [id],
+      paths: [file, staged],
+      before: { status: 'quarantined' },
+      after: { status: 'staged' },
+    });
+    this.jobs.enqueue('document.analyze', `Analysiere ${row.originalName}`, { documentId: id, allowLlm: this.privacy.mode() === 'auto' });
+    this.ctx.events.changed('documents', 'status');
+    return this.get(id);
+  }
+
   /** Legt einen Dokumentdatensatz an (Upload oder Scan-Datei). */
   insertDocument(input: {
     originalName: string;
@@ -345,6 +450,8 @@ export class DocumentService {
     sourcePath: string | null;
     stagedPath: string | null;
     llmStatus?: LlmStatus;
+    status?: Extract<DocumentStatus, 'staged' | 'quarantined'>;
+    processingError?: string | null;
   }): DocumentRecord {
     const now = nowIso();
     const row: DocRow = {
@@ -358,9 +465,9 @@ export class DocumentService {
       sourcePath: input.sourcePath,
       stagedPath: input.stagedPath,
       archiveRelPath: null,
-      status: 'staged',
+      status: input.status ?? 'staged',
       processingStatus: 'pending',
-      processingError: null,
+      processingError: input.processingError ?? null,
       docType: null,
       summary: null,
       categoryPath: null,
@@ -400,8 +507,9 @@ export class DocumentService {
    * Inhaltliche Analyse: lokal extrahieren, optional per LLM klassifizieren, Zielordner vorschlagen.
    * Schreibt ausschließlich Vorschläge – die Datei selbst wird nicht angefasst.
    */
-  async analyze(id: string, opts: { allowLlm: boolean }): Promise<AnalysisResult> {
+  async analyze(id: string, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const row = this.getRow(id);
+    if (row.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
     // Claim the document atomically: an archived or index-only document (e.g. archived while its
     // analysis job was still queued) stays untouched.
     const claimed = this.db
@@ -417,18 +525,40 @@ export class DocumentService {
     try {
       return await this.runAnalysis(row, opts);
     } catch (err) {
+      if (isJobCancelled(err)) {
+        this.markAnalysisCancelled(id);
+        throw err;
+      }
       // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
-      if (this.markAnalysisFailed(id, err)) throw err;
+      if (opts.deferFailure ? this.isAnalyzing(id) : this.markAnalysisFailed(id, err)) throw err;
       this.ctx.logger.info('documents', 'Analysefehler ignoriert: Dokumentstatus hat sich inzwischen geändert', { documentId: id, error: err });
       return { usedLlm: false, warning: null, skipped: true };
     }
+  }
+
+  private isAnalyzing(id: string): boolean {
+    return this.db.select({ status: documents.status }).from(documents).where(eq(documents.id, id)).get()?.status === 'analyzing';
+  }
+
+  /**
+   * A cancelled analysis: the document leaves `analyzing` as `failed` with a reason, so the inbox offers
+   * „Erneut verarbeiten“ (no notification – the user cancelled it). Only documents still in `analyzing` are touched.
+   */
+  markAnalysisCancelled(id: string): boolean {
+    const res = this.db
+      .update(documents)
+      .set({ status: 'failed', processingStatus: 'failed', processingError: CANCELLED_ANALYSIS_REASON, updatedAt: nowIso() })
+      .where(and(eq(documents.id, id), eq(documents.status, 'analyzing')))
+      .run();
+    if (res.changes) this.ctx.events.changed('documents', 'status');
+    return res.changes > 0;
   }
 
   /**
    * Marks a document whose analysis failed as `failed` (with reason), so the inbox offers „Erneut verarbeiten“.
    * Only documents still in `analyzing` are touched. Returns whether the document was marked.
    */
-  private markAnalysisFailed(id: string, err: unknown): boolean {
+  markAnalysisFailed(id: string, err: unknown): boolean {
     const message = err instanceof Error ? err.message : String(err);
     const res = this.db
       .update(documents)
@@ -463,9 +593,11 @@ export class DocumentService {
     return orphaned.length;
   }
 
-  private async runAnalysis(row: DocRow, opts: { allowLlm: boolean }): Promise<AnalysisResult> {
+  private async runAnalysis(row: DocRow, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const id = row.id;
+    const signal = opts.signal;
     const file = this.readablePath(row);
+    signal?.throwIfAborted();
     const parsed = await this.pool.run('extractDocument', {
       path: file,
       options: {
@@ -474,6 +606,7 @@ export class DocumentService {
         tessdataDir: path.join(this.ctx.paths.index, 'tessdata'),
       },
     });
+    signal?.throwIfAborted();
     const text = parsed.text;
     const textHash = text.length > 200 ? sha256Text(normalizeName(text).slice(0, 20_000)) : null;
 
@@ -506,6 +639,7 @@ export class DocumentService {
           schemaName: 'DocumentClassification',
           purpose: `Dokumentklassifikation (${row.originalName})`,
           documentIds: [id],
+          signal,
           instructions:
             'Du bist Archivist, ein sorgfältiger persönlicher Archivar. Analysiere das Dokument: Dokumenttyp, Hauptthema, Projekt, Personen, Datumsangaben, Tags, mögliche Entscheidungen und offene Punkte. ' +
             'Schlage einen menschenlesbaren, relativen Zielordner vor (z. B. work/projects/prod-plat, work/meetings/2026, work/contracts, work/architecture, private/vacation/2026, private/finance/taxes/2026, private/insurance, private/housing, private/health). ' +
@@ -539,6 +673,7 @@ export class DocumentService {
         }));
         decisions = c.decisions.map((d) => ({ title: d.title, decisionText: d.decisionText, decidedAt: normalizeDateInput(d.decidedAt ?? null) }));
       } catch (err) {
+        signal?.throwIfAborted(); // a cancelled request is no LLM problem – stop instead of falling back
         warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
         this.ctx.logger.warn('documents', 'LLM-Klassifikation fehlgeschlagen', { documentId: id, error: err });
         this.notifications.create({
@@ -552,6 +687,7 @@ export class DocumentService {
       }
     }
 
+    signal?.throwIfAborted(); // last checkpoint: after this the proposal is stored
     const duplicate = textHash
       ? this.db
           .select({ id: documents.id, meta: documents.technicalMeta })
@@ -619,6 +755,7 @@ export class DocumentService {
   /** Stößt eine (erneute) Verarbeitung an. `allowLlm=true` entspricht der ausdrücklichen Freigabe durch den Benutzer. */
   enqueueAnalysis(id: string, allowLlm: boolean): string {
     const doc = this.getRow(id);
+    if (doc.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
     if (ARCHIVED_STATUSES.includes(doc.status as DocumentStatus))
       throw new AppError('validation_error', 'Archivierte oder nur indexierte Dokumente werden nicht erneut analysiert.');
     return this.jobs.enqueue('document.analyze', `Analysiere ${doc.originalName}`, { documentId: id, allowLlm }).id;

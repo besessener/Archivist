@@ -196,7 +196,8 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     // still remembered after the pair was temporarily not detected (closed and reopened)
     await app.ok('openItems:close', { id: a.id, status: 'resolved', confirmed: true });
     await app.services.consistency.run('test');
-    await app.ok('openItems:update', { id: a.id, patch: { status: 'open' } });
+    const closed = (await app.ok('audit:list', {})).find((e) => e.action === 'open_item.close' && e.entityIds.includes(a.id))!;
+    expect((await app.ok('audit:undo', { auditId: closed.id })).undone).toBe(true);
     await app.services.consistency.run('test');
     expect((await dupInsights()).map((i) => i.status)).toEqual(['rejected']);
   });

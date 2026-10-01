@@ -1,4 +1,4 @@
-import { OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemStatus } from '@archivist/shared';
+import { isEditableOpenItemStatus, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
@@ -310,14 +310,28 @@ export class OpenItemService {
     return this.get(row.id);
   }
 
-  update(id: string, patch: Partial<OpenItemInput> & { status?: OpenItemStatus; responsibleUnknown?: boolean; dueUnknown?: boolean }): OpenItem {
+  /**
+   * Partial update: only fields present in `patch` change. `status` may only move between open, waiting and
+   * blocked – closing needs `close()` with confirmation, reopening goes through undo.
+   */
+  update(id: string, patch: OpenItemPatch): OpenItem {
     const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
+    if (patch.status !== undefined && patch.status !== cur.status) {
+      // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
+      if (!isEditableOpenItemStatus(patch.status))
+        throw new AppError('permission_error', 'Einen offenen Punkt als erledigt oder verworfen zu schließen, erfordert eine ausdrückliche Bestätigung.');
+      if (!isEditableOpenItemStatus(cur.status as OpenItemStatus))
+        throw new AppError(
+          'permission_error',
+          'Ein abgeschlossener Punkt lässt sich nicht durch Bearbeiten wieder öffnen. Machen Sie das Schließen im Änderungsprotokoll rückgängig.',
+        );
+    }
     const set: Partial<Row> = { updatedAt: nowIso() };
     if (patch.title !== undefined) set.title = patch.title.trim();
     if (patch.description !== undefined) set.description = patch.description?.trim() || null;
     if (patch.priority) set.priority = patch.priority;
-    if (patch.status) set.status = patch.status;
+    if (patch.status && patch.status !== cur.status) set.status = patch.status;
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
     if (patch.responsible !== undefined) {
