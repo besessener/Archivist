@@ -15,6 +15,13 @@
       "when": 1790834028730,
       "tag": "0001_search_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790834029730,
+      "tag": "0002_events",
+      "breakpoints": true
     }
   ]
 }

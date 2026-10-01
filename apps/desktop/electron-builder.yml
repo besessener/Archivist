@@ -32,6 +32,12 @@ win:
     - target: portable
       arch: [x64]
   icon: build/icon.png
+  # Authenticode-Signatur: electron-builder signiert automatisch, sobald ein Zertifikat per Umgebungsvariable vorliegt
+  # (CSC_LINK = Pfad/Base64 der .pfx-Datei, CSC_KEY_PASSWORD = Kennwort; alternativ WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD).
+  # Ohne Zertifikat entstehen unsignierte Builds (lokale Entwicklung, Pull Requests aus Forks).
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
+    rfc3161TimeStampServer: http://timestamp.digicert.com
 nsis:
   artifactName: Archivist-Setup-${version}-${arch}.${ext}
   oneClick: false
