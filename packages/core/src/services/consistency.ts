@@ -7,6 +7,7 @@ import { documents, relations } from '../db/schema';
 import { newId } from '../util/ids';
 import { sha256Text } from '../util/hash';
 import { truncate } from '../util/text';
+import { chooseTargetFolder, folderLabel, splitSubjects } from './archive-structure';
 import type { ActionService } from './actions';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
@@ -29,6 +30,7 @@ const KIND_LABELS: Record<string, string> = {
   missing_metadata: 'fehlende Metadaten',
   duplicate: 'mögliche Duplikate',
   misplaced_file: 'Ablageort-Auffälligkeiten',
+  scattered_documents: 'verstreut abgelegte Dokumente',
   similar_topics: 'ähnliche Themen',
   incomplete_decision: 'unvollständige Entscheidungen',
   possibly_superseded: 'möglicherweise überholte Entscheidungen',
@@ -63,6 +65,49 @@ export class ConsistencyService {
 
   private get db() {
     return this.ctx.database.db;
+  }
+
+  /** Dokumente zum selben Thema oder Projekt, die in verschiedenen Archivverzeichnissen liegen: Hinweis plus Umlager-Vorschlag. */
+  private checkScatteredDocuments(archived: Array<typeof documents.$inferSelect>, count: (kind: string) => void): void {
+    const entityName = (id: string | null) => (id ? (this.graph.getEntity(id)?.name ?? null) : null);
+    const placed = archived
+      .filter((d) => d.status === 'archived' && d.archiveRelPath)
+      .map((d) => ({ id: d.id, title: d.title, archiveRelPath: d.archiveRelPath, topicName: entityName(d.topicId), projectName: entityName(d.projectId) }));
+    const keepScattered = new Set<string>();
+    for (const s of splitSubjects(placed)) {
+      const all = s.groups.flatMap((g) => g.docs);
+      // der Schlüssel enthält die Verteilung: ändert sie sich (z. B. nach dem Umlagern), erledigt sich der Hinweis von selbst
+      const key = `scattered:${s.kind}:${s.name}:${h(s.groups.flatMap((g) => g.docs.map((d) => `${d.id}@${g.folder}`)))}`;
+      keepScattered.add(key);
+      if (this.insights.has(key)) continue;
+      const target = chooseTargetFolder(s.groups);
+      const movable = target ? s.groups.filter((g) => g.folder !== target).flatMap((g) => g.docs) : [];
+      const action =
+        target && movable.length
+          ? this.actions.propose({
+              actionType: 'relocate_documents',
+              label: `${movable.length} Dokument(e) zu „${s.name}“ nach „${target}“ verschieben`,
+              rationale: `Die Dokumente zu ${s.kind} „${s.name}“ liegen in ${s.groups.length} Verzeichnissen; in „${target}“ liegen schon die meisten.`,
+              confidence: 0.7,
+              affectedEntities: movable.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })),
+              requiredConfirmation: 'confirm',
+              proposedParameters: { items: movable.map((d) => ({ documentId: d.id, categoryPath: target })) },
+            })
+          : null;
+      this.insights.upsert({
+        kind: 'scattered_documents',
+        title: `${s.kind} „${s.name}“: Dokumente liegen in ${s.groups.length} Verzeichnissen`,
+        explanation: `${s.groups.map((g) => `• ${folderLabel(g.folder)} (${g.docs.length}): ${g.docs.map((d) => truncate(d.title, 50)).join('; ')}`).join('\n')}\n\nDas Verschieben erfordert deine Bestätigung; nichts wird überschrieben, und es lässt sich rückgängig machen.`,
+        confidence: 0.8,
+        affected: all.slice(0, 15).map((d) => ({ type: 'document' as const, id: d.id, label: d.title })),
+        sourceIds: all.map((d) => d.id),
+        recommendedActionId: action?.id,
+        recommendedActionLabel: action ? 'In einen Ordner verschieben' : undefined,
+        dedupeKey: key,
+      });
+      count('scattered_documents');
+    }
+    this.insights.retireOpen('scattered:', keepScattered);
   }
 
   async run(trigger = 'manual', report?: (p: number, m: string) => void): Promise<ConsistencyReport> {
@@ -176,6 +221,10 @@ export class ConsistencyService {
         count('misplaced_file');
       }
     }
+
+    // ---- Verstreute Ablage: Dokumente zum selben Thema/Projekt liegen in verschiedenen Verzeichnissen ----
+    report?.(0.4, 'Prüfe Verzeichnisse');
+    this.checkScatteredDocuments(archived, count);
 
     // ---- Themen ----
     report?.(0.45, 'Prüfe Themen');

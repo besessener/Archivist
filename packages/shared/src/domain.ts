@@ -309,6 +309,7 @@ export const InsightKind = z.enum([
   'external_file',
   'possibly_superseded',
   'misplaced_file',
+  'scattered_documents',
   'low_confidence_relation',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;

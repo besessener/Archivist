@@ -206,4 +206,61 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(rule('gibt es widersprüche?')).toBe('contradiction_check');
     expect(rule('wie viele dokumente habe ich?')).toBe('archive_status');
   });
+
+  describe('Archivprüfung („Archivprüfung jetzt starten“)', () => {
+    const scattered = () => app.services.insights.list('open').filter((i) => i.kind === 'scattered_documents');
+
+    it('erkennt verstreut abgelegte Dokumente und schlägt einen Ordner vor, ohne etwas zu verschieben', async () => {
+      const { ids, other } = await scatteredArchive();
+      const before = ids.map(folderOf);
+
+      const report = await app.services.consistency.run('test');
+
+      expect(report.byKind.scattered_documents).toBe(1);
+      const [insight] = scattered();
+      expect(insight!.title).toBe(`Thema „${TOPIC}“: Dokumente liegen in 3 Verzeichnissen`);
+      expect(insight!.explanation).toContain('private/bildungsurlaub/2026 (3)');
+      expect(insight!.explanation).toContain('work/hr/abwesenheiten (2)');
+      expect(insight!.sourceIds.toSorted()).toEqual(ids.toSorted());
+      expect(insight!.sourceIds).not.toContain(other);
+      const action = app.services.actions.get(insight!.recommendedActionId!);
+      expect(action).toMatchObject({ actionType: 'relocate_documents', status: 'proposed', requiredConfirmation: 'confirm' });
+      expect(action.label).toBe(`3 Dokument(e) zu „${TOPIC}“ nach „private/bildungsurlaub/2026“ verschieben`);
+      expect(ids.map(folderOf), 'die Prüfung ändert nichts').toEqual(before);
+    });
+
+    it('legt bei jedem weiteren Lauf keine Duplikate an', async () => {
+      await scatteredArchive();
+
+      await app.services.consistency.run('test');
+      await app.services.consistency.run('test');
+
+      expect(scattered()).toHaveLength(1);
+      expect(app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents')).toHaveLength(1);
+    });
+
+    it('nach Bestätigung des Vorschlags erledigt sich der Hinweis beim nächsten Lauf von selbst', async () => {
+      const { ids } = await scatteredArchive();
+      await app.services.consistency.run('test');
+      const action = app.services.actions.get(scattered()[0]!.recommendedActionId!);
+
+      const done = await app.services.actions.resolve(action.id, 'approve', { confirmed: true });
+      await app.services.consistency.run('test');
+
+      expect(done.status).toBe('executed');
+      expect(new Set(ids.map(folderOf))).toEqual(new Set(['private/bildungsurlaub/2026']));
+      expect(scattered()).toHaveLength(0);
+    });
+
+    it('meldet nichts, wenn die Dokumente eines Themas beisammen liegen', async () => {
+      await archived('A', 'work/a');
+      await archived('B', 'work/a');
+      await archived('C', 'work/b', 'Anderes Thema');
+
+      const report = await app.services.consistency.run('test');
+
+      expect(report.byKind.scattered_documents).toBeUndefined();
+      expect(scattered()).toHaveLength(0);
+    });
+  });
 });
