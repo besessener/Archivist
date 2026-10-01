@@ -58,7 +58,7 @@ export const Settings = z.object({
   logs: LogSettings.default(() => LogSettings.parse({})),
   backups: BackupSettings.default(() => BackupSettings.parse({})),
   consistency: ConsistencySettings.default(() => ConsistencySettings.parse({})),
-  ocr: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+  ocr: z.object({ enabled: z.boolean().default(true), languages: z.string().regex(/^[a-z]{3}(\+[a-z]{3})*$/).default('deu+eng') }).default({ enabled: true, languages: 'deu+eng' }),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -73,6 +73,6 @@ export const SettingsPatch = z.object({
   logs: LogSettings.partial().optional(),
   backups: BackupSettings.partial().optional(),
   consistency: ConsistencySettings.partial().optional(),
-  ocr: z.object({ enabled: z.boolean() }).partial().optional(),
+  ocr: z.object({ enabled: z.boolean(), languages: z.string().regex(/^[a-z]{3}(\+[a-z]{3})*$/) }).partial().optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

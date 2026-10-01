@@ -104,6 +104,17 @@ test('vertikaler Slice: Einrichtung → Import → Archivierung → Entscheidung
   expect(fs.existsSync(note)).toBe(true); // Original unverändert
   await tid('archive-close').click();
 
+  // 5b) OCR: ein Bild mit Text wird lokal erkannt, der erkannte Text fließt in die Analyse ein
+  const sharp = (await import('sharp')).default;
+  const scan = path.join(dataDir, 'scan.png'); // bewusst außerhalb des Scan-Ordners
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="260"><rect width="100%" height="100%" fill="white"/><text x="40" y="100" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" fill="black">Rechnung 4711</text><text x="40" y="200" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" fill="black">Zahlungsziel 30 Tage</text></svg>';
+  await sharp(Buffer.from(svg)).png().toFile(scan);
+  await tid('nav-chat').click();
+  await tid('file-input').setInputFiles(scan);
+  await expect.poll(() => llm.calls.some((c) => c.schema === 'DocumentClassification' && c.input.includes('4711')), { timeout: 90_000 }).toBe(true);
+  await tid('nav-inbox').click(); // schließt die Import-Karte
+  await tid('nav-chat').click();
+
   // 6) Entscheidung im Chat erfassen, 7) Rückfrage beantworten
   await tid('nav-chat').click();
   await tid('chat-input').fill('Wir haben entschieden, dass wir das Projekt Nordlicht pausieren.');

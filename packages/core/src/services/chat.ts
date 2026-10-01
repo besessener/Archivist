@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {
-  ChatIntent,
+  ChatAnalysis,
   DECISION_FIELD_LABELS,
   KnowledgeAnswer,
   type ChatContext,
@@ -12,7 +12,8 @@ import {
   type StoredAgentAction,
 } from '@archivist/shared';
 import { asc, desc, eq } from 'drizzle-orm';
-import type { Conversation } from '@archivist/shared';
+import type { Conversation ,
+  ChatIntent} from '@archivist/shared';
 import type { AppContext } from '../context';
 import { conversations, messages } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
@@ -42,10 +43,18 @@ type MsgRow = typeof messages.$inferSelect;
 type Pending =
   | { kind: 'decision'; decisionId: string; asked: DecisionField[]; clarifyTopic?: string | null; supersedes?: string | null }
   | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'> }
-  | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string };
+  | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string }
+  | { kind: 'confirm_save'; text: string; intent: ChatIntent };
+
+/** Weitere erkannte Absichten, die nach Beantwortung einer Rückfrage noch abgearbeitet werden. */
+interface QueuedIntent {
+  text: string;
+  intent: ChatIntent;
+}
 
 interface ConvState {
   pending?: Pending | null;
+  queue?: QueuedIntent[];
   last?: { openItemId?: string; decisionId?: string; documentIds?: string[]; topic?: string | null };
 }
 
@@ -84,6 +93,12 @@ Absichten (intent):
 - contradiction_check: Widersprüche prüfen.
 - relation_decide: Eine vorgeschlagene Beziehung bestätigen oder ablehnen.
 - smalltalk / unknown.
+
+Mehrere Absichten: Eine Nachricht kann mehrere Anliegen enthalten (z. B. Notiz + Erinnerung + offener Punkt, oder Entscheidung + Frage). Liefere dann für jedes Anliegen einen eigenen Eintrag in „intents“ (höchstens 5, in der Reihenfolge der Nachricht) und setze segment auf den zugehörigen Textteil. Bilde keine Absicht doppelt und keine, die der Text nicht hergibt. Bei nur einem Anliegen genau ein Element.
+
+Entscheidung oder nicht? Setze decisionCertainty=clear nur, wenn ausdrücklich eine Entscheidung mitgeteilt wird („wir haben entschieden/beschlossen …“, „ab jetzt machen wir …“). Setze decisionCertainty=unsure, wenn es auch ein Plan, eine Absicht, ein Ereignis („habe eingereicht“), ein Status oder eine bloße Notiz sein könnte. Rate in diesem Fall nicht: die Rückfrage stellt der Agent.
+
+Unklare Absicht: Ist die Absicht nicht erkennbar und wäre jede Annahme geraten, liefere intents=[{intent:"unknown"}] und formuliere in „clarification“ eine kurze, konkrete Rückfrage auf Deutsch.
 
 Regeln:
 - Extrahiere nur Angaben, die im Text stehen; fehlende Angaben = null. Erfinde nichts.
@@ -227,27 +242,34 @@ export class ChatService {
     if (p.kind === 'reminder') {
       return `Der Agent hat gefragt, WANN er an „${p.title}“ erinnern soll. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum wie „31.10.“ oder „nächsten Montag“ (intent=${p.snooze ? 'reminder_snooze' : 'reminder_create'}, reminder.remindAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
     }
+    if (p.kind === 'confirm_save') return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
     const i = this.openItems.get(p.openItemId);
     return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. Die Nachricht ist wahrscheinlich die Antwort (intent=open_item_update).`;
   }
 
-  private async classify(text: string, state: ConvState): Promise<{ intent: ChatIntent; viaLlm: boolean; llmError: string | null }> {
+  private historyHint(conv: string): string {
+    const recent = this.history(conv).slice(-7, -1);
+    if (!recent.length) return '';
+    return `Bisheriger Verlauf (zur Auflösung von Bezügen; nur die letzte Nachricht ist zu klassifizieren):\n${recent.map((m) => `${m.role === 'user' ? 'Benutzer' : 'Agent'}: ${truncate(m.content.replace(/\s+/g, ' '), 280)}`).join('\n')}\n\n`;
+  }
+
+  private async classify(conv: string, text: string, state: ConvState): Promise<{ analysis: ChatAnalysis; viaLlm: boolean; llmError: string | null }> {
     if (this.llm.canUse()) {
       try {
         const now = new Date();
-        const intent = await this.llm.completeJson(ChatIntent, {
+        const analysis = await this.llm.completeJson(ChatAnalysis, {
           schemaName: 'ChatIntent',
           purpose: 'Chat-Intent',
           instructions: INTENT_HELP,
-          input: `Heutiges Datum: ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('de-DE', { weekday: 'long' })})\nOffene Rückfrage: ${this.pendingHint(state)}\nBekannte Themen: ${this.graph.listEntities({ type: 'topic', limit: 40 }).map((e) => e.name).join(', ') || '–'}\nBekannte Projekte: ${this.graph.listEntities({ type: 'project', limit: 40 }).map((e) => e.name).join(', ') || '–'}\n\nNachricht des Benutzers:\n${text}`,
+          input: `Heutiges Datum: ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('de-DE', { weekday: 'long' })})\nOffene Rückfrage: ${this.pendingHint(state)}\nBekannte Themen: ${this.graph.listEntities({ type: 'topic', limit: 40 }).map((e) => e.name).join(', ') || '–'}\nBekannte Projekte: ${this.graph.listEntities({ type: 'project', limit: 40 }).map((e) => e.name).join(', ') || '–'}\n\n${this.historyHint(conv)}Nachricht des Benutzers:\n${text}`,
         });
-        return { intent, viaLlm: true, llmError: null };
+        return { analysis, viaLlm: true, llmError: null };
       } catch (err) {
         const info = toErrorInfo(err);
-        return { intent: this.ruleBased(text, state), viaLlm: false, llmError: info.message };
+        return { analysis: { intents: [this.ruleBased(text, state)] }, viaLlm: false, llmError: info.message };
       }
     }
-    return { intent: this.ruleBased(text, state), viaLlm: false, llmError: this.llm.canUse() ? null : 'Das LLM ist nicht konfiguriert.' };
+    return { analysis: { intents: [this.ruleBased(text, state)] }, viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.' };
   }
 
   /** Notfall-Fallback ohne LLM (nur wenn der Endpunkt nicht erreichbar/konfiguriert ist). */
@@ -280,7 +302,7 @@ export class ChatService {
       const known = [...this.graph.listEntities({ type: 'topic', limit: 200 }), ...this.graph.listEntities({ type: 'project', limit: 200 })].map((e) => e.name);
       const lower = ` ${normalizeName(t)} `;
       const topic = known.find((k) => lower.includes(` ${normalizeName(k)} `)) ?? /\b([a-z0-9]+(?:[-_][a-z0-9]+)+)\b/i.exec(t)?.[1] ?? null;
-      return { ...base, intent: 'decision_new', decision: { decisionText: t.replace(/^wir\s+haben\s+(?:uns\s+)?(?:gemeinsam\s+)?(?:entschieden|beschlossen),?\s*(?:dass\s+)?/i, '').trim() || t, title: truncate(t, 80), decidedAt: parseGermanDate(t), topic, participants: [], alternatives: [], unknownFields: [], confidence: 0.4, topicIsProject: null } };
+      return { ...base, intent: 'decision_new', decisionCertainty: 'clear', decision: { decisionText: t.replace(/^wir\s+haben\s+(?:uns\s+)?(?:gemeinsam\s+)?(?:entschieden|beschlossen),?\s*(?:dass\s+)?/i, '').trim() || t, title: truncate(t, 80), decidedAt: parseGermanDate(t), topic, participants: [], alternatives: [], unknownFields: [], confidence: 0.4, topicIsProject: null } };
     }
     if (/\b(erinner\w*)\b/i.test(t)) return { ...base, intent: /verschieb|erneut|wieder/i.test(t) ? 'reminder_snooze' : 'reminder_create', reminder: { relativeText: t, remindAt: parseGermanDate(t) } };
     if (/\b(schlie(ß|ss)e?\w*|erledigt|abgeschlossen)\b/i.test(t) && /(punkt|aufgabe|todo)/i.test(t)) return { ...base, intent: 'open_item_close', openItem: { targetHint: t } };
@@ -295,12 +317,112 @@ export class ChatService {
   }
 
   private async handle(conv: string, text: string, state: ConvState): Promise<Reply> {
-    const { intent, viaLlm, llmError } = await this.classify(text, state);
-    let reply = await this.dispatch(conv, text, intent, state, viaLlm);
+    // Antwort auf „Entscheidung oder Notiz?“ wird deterministisch ausgewertet
+    if (state.pending?.kind === 'confirm_save') {
+      const answered = await this.answerConfirmSave(conv, text, state, state.pending);
+      if (answered) return answered;
+      state = { ...state, pending: null };
+    }
+    const { analysis, viaLlm, llmError } = await this.classify(conv, text, state);
+    let reply = await this.runIntents(conv, text, analysis, state, viaLlm);
     if (!viaLlm && llmError) {
       reply = { ...reply, content: `${reply.content}\n\n_Hinweis: ${llmError} Ich habe die Nachricht regelbasiert ausgewertet – Ergebnisse können ungenauer sein._`, errorMessage: llmError, uncertainties: [...(reply.uncertainties ?? []), 'Ohne LLM nur regelbasierte Auswertung.'] };
     }
     return reply;
+  }
+
+  /** Ist es unklar, ob eine Entscheidung gespeichert werden soll? */
+  private needsDecisionConfirmation(intent: ChatIntent, state: ConvState): boolean {
+    if (intent.intent !== 'decision_new' || state.pending?.kind === 'decision') return false;
+    return intent.decisionCertainty === 'unsure' || (intent.confidence < 0.55 && intent.decisionCertainty !== 'clear');
+  }
+
+  /**
+   * Führt alle erkannten Absichten nacheinander aus. Entsteht dabei eine Rückfrage, werden die übrigen Absichten
+   * zurückgestellt und nach der Antwort abgearbeitet. Unklare Entscheidungen werden nie ungefragt gespeichert.
+   */
+  private async runIntents(conv: string, text: string, analysis: ChatAnalysis, state: ConvState, viaLlm: boolean): Promise<Reply> {
+    const intents = analysis.intents.filter((i, idx, all) => all.findIndex((o) => o.intent === i.intent && (o.segment ?? '') === (i.segment ?? '')) === idx);
+    const queue: QueuedIntent[] = (state.queue ?? []).slice();
+    const work: QueuedIntent[] = [...intents.map((intent) => ({ text, intent })), ...queue];
+    // Rückfrage statt Raten, wenn gar nichts erkannt wurde
+    if (analysis.clarification && intents.every((i) => i.intent === 'unknown' || i.intent === 'smalltalk')) {
+      return { intent: 'clarification', content: analysis.clarification, confidence: 0.3, state: { ...state, queue: [] } };
+    }
+    const replies: Reply[] = [];
+    let current: ConvState = { ...state, queue: [] };
+    for (let i = 0; i < work.length; i += 1) {
+      const item = work[i]!;
+      // eine offene Rückfrage gehört zur ersten Absicht; weitere Absichten sehen sie nur, wenn sie dazu passen
+      if (this.needsDecisionConfirmation(item.intent, current)) {
+        const rest = work.slice(i + 1);
+        const question = analysis.clarification?.trim() || `Ich bin nicht sicher, ob das eine getroffene **Entscheidung** ist${item.intent.segment ? ` („${truncate(item.intent.segment, 140)}“)` : ''}. Soll ich sie als Entscheidung erfassen, nur als Notiz festhalten oder nichts speichern?`;
+        current = { ...current, pending: { kind: 'confirm_save', text: item.text, intent: item.intent }, queue: rest };
+        replies.push({ intent: 'clarification', content: `${question}\n\nAntworte mit „Entscheidung“, „Notiz“ oder „nichts speichern“.`, confidence: item.intent.confidence, state: current });
+        break;
+      }
+      const reply = await this.dispatch(conv, item.text, item.intent, current, viaLlm);
+      replies.push(reply);
+      current = { ...(reply.state ?? current), queue: [] };
+      if (current.pending && i < work.length - 1) {
+        current = { ...current, queue: work.slice(i + 1) };
+        break;
+      }
+    }
+    return this.mergeReplies(replies, current);
+  }
+
+  private mergeReplies(replies: Reply[], finalState: ConvState): Reply {
+    const last = replies[replies.length - 1]!;
+    if (replies.length === 1) return { ...last, state: finalState };
+    const contextKeys = ['topics', 'projects', 'persons', 'decisions', 'openItems', 'documents', 'contradictions'] as const;
+    const context: Partial<ChatContext> = {};
+    for (const k of contextKeys) {
+      const seen = new Map<string, EntityRef>();
+      for (const r of replies) for (const e of (r.context?.[k] ?? []) as EntityRef[]) seen.set(`${e.type}:${e.id}`, e);
+      if (seen.size) (context as Record<string, EntityRef[]>)[k] = [...seen.values()];
+    }
+    const sources = new Map<string, SourceReference>();
+    for (const r of replies) for (const src of r.sources ?? []) sources.set(`${src.type}:${src.id}`, src);
+    const actions = new Map<string, StoredAgentAction>();
+    for (const r of replies) for (const a of r.actions ?? []) actions.set(a.id, a);
+    const confidences = replies.map((r) => r.confidence).filter((c): c is number => typeof c === 'number');
+    return {
+      intent: replies.find((r) => r.intent !== 'clarification')?.intent ?? last.intent,
+      content: replies.map((r) => r.content).join('\n\n'),
+      sources: [...sources.values()],
+      context,
+      actions: [...actions.values()],
+      confidence: confidences.length ? Math.min(...confidences) : null,
+      uncertainties: [...new Set(replies.flatMap((r) => r.uncertainties ?? []))],
+      errorMessage: replies.map((r) => r.errorMessage).find(Boolean) ?? null,
+      state: finalState,
+    };
+  }
+
+  /** Verarbeitet die Antwort auf „Entscheidung oder Notiz?“. Gibt null zurück, wenn die Nachricht etwas anderes ist. */
+  private async answerConfirmSave(conv: string, text: string, state: ConvState, pending: Extract<Pending, { kind: 'confirm_save' }>): Promise<Reply | null> {
+    const t = text.trim().toLowerCase();
+    const rest = state.queue ?? [];
+    const base: ConvState = { ...state, pending: null, queue: [] };
+    const continueWith = async (first: Reply | null): Promise<Reply> => {
+      const followUps = first?.state?.pending ? { ...first.state, queue: rest } : null;
+      if (followUps || !rest.length) return first ? { ...first, state: followUps ?? first.state } : { intent: 'clarification', content: 'Okay.', state: base };
+      const more = await this.runIntents(conv, '', { intents: rest.map((r) => r.intent) }, first?.state ?? base, true);
+      return first ? this.mergeReplies([first, more], more.state ?? base) : more;
+    };
+    if (/^(nichts|nein|nee|lieber nicht|verwerf|vergiss|nicht speichern|kein)/.test(t)) {
+      return continueWith({ intent: 'clarification', content: 'Okay, ich speichere dazu nichts.', confidence: 1, state: base });
+    }
+    if (/^(als\s+)?(entscheidung|ja|ja,?\s*bitte|ja,?\s*entscheidung|speichern|erfassen)\b/.test(t) && !/notiz/.test(t)) {
+      const decision = { ...pending.intent, intent: 'decision_new' as const, decisionCertainty: 'clear' as const };
+      return continueWith(await this.dispatch(conv, pending.text, decision, base, true));
+    }
+    if (/^(als\s+)?(nur\s+)?(eine\s+)?notiz\b|^nur\s+notiz|^(festhalten|merken)\b/.test(t)) {
+      const note = { ...pending.intent, intent: 'note_capture' as const, note: pending.intent.segment ?? pending.text };
+      return continueWith(await this.dispatch(conv, pending.text, note, base, true));
+    }
+    return null;
   }
 
   private async dispatch(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {

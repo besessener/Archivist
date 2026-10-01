@@ -56,7 +56,8 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
       const parsed = JSON.parse(body) as { instructions?: string; input?: string };
       const schema = /JSON-Schema „(\w+)“/.exec(parsed.instructions ?? '')?.[1] ?? 'plain';
       calls.push({ schema, input: parsed.input ?? '' });
-      const out = respond(schema, parsed.input ?? '');
+      let out = respond(schema, parsed.input ?? '');
+      if (schema === 'ChatIntent' && out && typeof out === 'object' && 'intent' in out) out = { intents: [out] };
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ id: 'r', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: typeof out === 'string' ? out : JSON.stringify(out) }] }] }));
     });

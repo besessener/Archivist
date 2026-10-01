@@ -95,8 +95,17 @@ export const ChatIntent = z.object({
   reminder: opt(z.object({ remindAt: opt(z.string()), relativeText: opt(z.string()), targetHint: opt(z.string()), title: opt(z.string()) })),
   path: opt(z.string()),
   note: opt(z.string()),
+  decisionCertainty: opt(z.enum(['clear', 'unsure'])).describe('Nur bei decision_new: clear = ausdrücklich getroffene Entscheidung; unsure = könnte auch Plan, Ereignis, Status oder Notiz sein'),
+  segment: opt(z.string()).describe('Der Teil der Nachricht, auf den sich diese Absicht bezieht'),
 });
 export type ChatIntent = z.infer<typeof ChatIntent>;
+
+/** Ergebnis der Intent-Analyse: eine Nachricht kann mehrere Absichten enthalten. */
+export const ChatAnalysis = z.object({
+  intents: z.array(ChatIntent).min(1).max(5),
+  clarification: opt(z.string()).describe('Rückfrage an den Benutzer, wenn die Absicht unklar ist und nichts geraten werden soll'),
+});
+export type ChatAnalysis = z.infer<typeof ChatAnalysis>;
 
 export const DocumentClassification = z.object({
   docType: z.string().describe('z. B. Vertrag, Protokoll, Rechnung, Notiz, Präsentation'),
