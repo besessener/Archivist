@@ -1,6 +1,7 @@
 {
   "setupCompleted": false,
   "language": "de",
+  "profile": { "name": "", "nicknames": [] },
   "llm": {
     "baseUrl": "https://example.openai.azure.com/openai/v1",
     "model": "mein-modell-name",

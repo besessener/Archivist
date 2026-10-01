@@ -17,6 +17,36 @@ import { useRun } from '@/lib/use-run';
 import type { AuditEntry } from '@archivist/shared';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 
+export function ProfileTab({ settings, reload }: TabProps) {
+  const { save, busy } = useSaveSettings(reload);
+  const [name, setName] = useState(settings.profile.name);
+  const [nicknames, setNicknames] = useState(settings.profile.nicknames.join(', '));
+  const list = nicknames
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean);
+  return (
+    <Section
+      title="Über Sie"
+      description="Ihr Name und Ihre Spitznamen helfen Archivist, „ich“, „mir“ und „mich“ im Chat sowie Erwähnungen Ihrer Person richtig zuzuordnen. Sie werden nur als Kontext für die Auswertung Ihrer Chat-Nachrichten verwendet."
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Name" htmlFor="profile-name">
+          <Input id="profile-name" value={name} maxLength={200} onChange={(e) => setName(e.target.value)} data-testid="settings-profile-name" />
+        </Field>
+        <Field label="Spitznamen (durch Komma getrennt)" htmlFor="profile-nicknames">
+          <Input id="profile-nicknames" value={nicknames} onChange={(e) => setNicknames(e.target.value)} data-testid="settings-profile-nicknames" />
+        </Field>
+      </div>
+      <div>
+        <Button disabled={busy} onClick={() => void save({ profile: { name: name.trim(), nicknames: list } })} data-testid="settings-save">
+          <Save aria-hidden /> Speichern
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
 export function NotificationsTab({ settings, reload }: TabProps) {
   const { save } = useSaveSettings(reload);
   return (
