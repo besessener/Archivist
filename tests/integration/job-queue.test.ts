@@ -100,6 +100,27 @@ describe('Wiederholung mit Wartezeit', () => {
     expect(onFailed.mock.calls[0]![0]).toMatchObject({ id: job.id, attempts: 3 });
   });
 
+  it('verliert keine Wiederholung, die fällig wird, während die Queue nach Arbeit sucht', async () => {
+    // A clock that moves on by 1 ms with every reading: the retry becomes due between the queue's check for
+    // due work and its decision about the retry timer. Depending on the wait, this happens at a different
+    // point, so several waits are tried; none of the jobs may get stuck waiting for its retry.
+    let clock = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => clock++);
+    for (let retryBaseDelayMs = 1; retryBaseDelayMs <= 8; retryBaseDelayMs += 1) {
+      const q = await makeQueue(retryBaseDelayMs);
+      let calls = 0;
+      q.register('test.flaky', async () => {
+        calls += 1;
+        if (calls === 1) throw transient();
+        return 'ok';
+      });
+      q.start();
+      const job = q.enqueue('test.flaky', `Wartezeit ${retryBaseDelayMs} ms`);
+      await vi.waitFor(() => expect(q.get(job.id)).toMatchObject({ status: 'succeeded', attempts: 2 }), { timeout: 2_000, interval: 5 });
+      await q.stop();
+    }
+  });
+
   it('wiederholt dauerhafte Fehler nicht und meldet sie sofort', async () => {
     const q = await makeQueue(40);
     const onFailed = vi.fn();
