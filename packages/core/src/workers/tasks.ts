@@ -31,7 +31,14 @@ export interface ScanDirectoryResult {
   entries: ScanEntry[];
   skipped: { path: string; reason: string }[];
   errors: string[];
+  /** True when the walk stopped at `maxFiles` although more matching files exist. */
+  limitReached: boolean;
+  /** Directories and entries that could not be read; whatever lies at or below them was not seen. */
+  unreadable: string[];
 }
+
+/** Default upper bound of files collected per scan root. */
+export const SCAN_MAX_FILES = 20_000;
 
 const ALWAYS_SKIP_DIRS = new Set(['node_modules', '$recycle.bin', 'appdata', '.git', '.svn', '.cache']);
 
@@ -41,24 +48,25 @@ const ALWAYS_SKIP_DIRS = new Set(['node_modules', '$recycle.bin', 'appdata', '.g
  */
 export async function scanDirectory(input: ScanDirectoryInput): Promise<ScanDirectoryResult> {
   const realRoot = await fsp.realpath(input.root);
-  const result: ScanDirectoryResult = { entries: [], skipped: [], errors: [] };
+  const result: ScanDirectoryResult = { entries: [], skipped: [], errors: [], limitReached: false, unreadable: [] };
   const visited = new Set<string>([realRoot]);
   const exts = new Set(input.extensions.map((e) => e.toLowerCase().replace(/^\./, '')));
   const excludedDirs = input.excludedDirs.map((d) => path.resolve(d));
   const excludedFiles = new Set(input.excludedFiles.map((f) => path.resolve(f)));
-  const max = input.maxFiles ?? 20_000;
+  const max = input.maxFiles ?? SCAN_MAX_FILES;
 
   const walk = async (dir: string): Promise<void> => {
-    if (result.entries.length >= max) return;
+    if (result.limitReached) return;
     let names: string[];
     try {
       names = await fsp.readdir(dir);
     } catch (err) {
       result.errors.push(`${dir}: ${(err as Error).message}`);
+      result.unreadable.push(dir);
       return;
     }
     for (const name of names.toSorted()) {
-      if (result.entries.length >= max) return;
+      if (result.limitReached) return;
       const full = path.join(dir, name);
       if (name.startsWith('.') || ALWAYS_SKIP_DIRS.has(name.toLowerCase())) continue;
       try {
@@ -86,10 +94,16 @@ export async function scanDirectory(input: ScanDirectoryInput): Promise<ScanDire
             result.skipped.push({ path: full, reason: 'Datei überschreitet die maximale Größe' });
             continue;
           }
+          if (result.entries.length >= max) {
+            // stop only when another matching file would exceed the limit, so exactly `max` files is not "truncated"
+            result.limitReached = true;
+            return;
+          }
           result.entries.push({ path: full, name, ext, size: st.size, mtimeMs: st.mtimeMs, mime: MIME_BY_EXT[ext] ?? 'application/octet-stream' });
         }
       } catch (err) {
         result.errors.push(`${full}: ${(err as Error).message}`);
+        result.unreadable.push(full);
       }
     }
   };
