@@ -50,7 +50,16 @@ export class UndoService {
       });
       return { undone: true, message, conflicts: [] };
     } catch (err) {
-      this.audit.log({ action: `undo:${row.action}`, actor: 'user', trigger: 'undo', confirmed: true, entityIds: row.entityIds, paths: row.paths, success: false, error: err instanceof Error ? err.message : String(err) });
+      this.audit.log({
+        action: `undo:${row.action}`,
+        actor: 'user',
+        trigger: 'undo',
+        confirmed: true,
+        entityIds: row.entityIds,
+        paths: row.paths,
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
       throw err;
     }
   }

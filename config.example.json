@@ -16,19 +16,7 @@
     "periodic": false,
     "intervalMinutes": 60,
     "maxFileSizeMb": 50,
-    "allowedExtensions": [
-      "pdf",
-      "docx",
-      "pptx",
-      "xlsx",
-      "txt",
-      "md",
-      "markdown",
-      "eml",
-      "png",
-      "jpg",
-      "jpeg"
-    ],
+    "allowedExtensions": ["pdf", "docx", "pptx", "xlsx", "txt", "md", "markdown", "eml", "png", "jpg", "jpeg"],
     "autoAnalyze": false
   },
   "privacy": {

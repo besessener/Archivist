@@ -24,18 +24,23 @@
     "start": "npm run build && npm run start -w archivist",
     "dist": "npm run build && npm run dist -w archivist",
     "dist:win": "npm run build && npm run dist:win -w archivist",
-    "native:check": "node scripts/check-native.mjs"
+    "native:check": "node scripts/check-native.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^5.0.3",
+    "dependency-cruiser": "^18.5.0",
     "esbuild": "^0.28.0",
     "eslint": "^10.11.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-sonarjs": "^4.2.2",
     "globals": "^16.5.0",
+    "knip": "^6.39.0",
+    "prettier": "^3.9.9",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.0.0",
     "vitest": "^5.0.3"

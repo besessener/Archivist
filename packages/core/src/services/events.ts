@@ -26,7 +26,19 @@ export class EventService {
 
   private map(r: Row, names?: Map<string, string>): EventRecord {
     const nm = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
-    return { id: r.id, title: r.title, description: r.description, occurredAt: r.occurredAt, topicId: r.topicId, topicName: nm(r.topicId), projectId: r.projectId, projectName: nm(r.projectId), sourceIds: r.sourceIds, createdAt: r.createdAt, updatedAt: r.updatedAt };
+    return {
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      occurredAt: r.occurredAt,
+      topicId: r.topicId,
+      topicName: nm(r.topicId),
+      projectId: r.projectId,
+      projectName: nm(r.projectId),
+      sourceIds: r.sourceIds,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    };
   }
 
   get(id: string): EventRecord {
@@ -43,7 +55,16 @@ export class EventService {
       .all()
       .filter((r) => (!opts.topicId || r.topicId === opts.topicId) && (!opts.projectId || r.projectId === opts.projectId));
     const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId]).filter((x): x is string => Boolean(x)))];
-    const names = new Map(ids.length ? this.db.select({ id: entities.id, name: entities.name }).from(entities).where(inArray(entities.id, ids)).all().map((e) => [e.id, e.name]) : []);
+    const names = new Map(
+      ids.length
+        ? this.db
+            .select({ id: entities.id, name: entities.name })
+            .from(entities)
+            .where(inArray(entities.id, ids))
+            .all()
+            .map((e) => [e.id, e.name])
+        : [],
+    );
     return rows.map((r) => this.map(r, names));
   }
 
@@ -53,14 +74,31 @@ export class EventService {
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
-    const row: Row = { id: newId(), title: input.title.trim(), description: input.description?.trim() || null, occurredAt, topicId: topic?.id ?? null, projectId: project?.id ?? null, sourceIds: input.sourceIds ?? [], createdAt: now, updatedAt: now };
+    const row: Row = {
+      id: newId(),
+      title: input.title.trim(),
+      description: input.description?.trim() || null,
+      occurredAt,
+      topicId: topic?.id ?? null,
+      projectId: project?.id ?? null,
+      sourceIds: input.sourceIds ?? [],
+      createdAt: now,
+      updatedAt: now,
+    };
     this.db.transaction(() => {
       this.db.insert(events).values(row).run();
       this.graph.registerNode('event', row.id, row.title, row.description);
       if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds });
       if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds });
     });
-    this.audit.log({ action: 'event.create', actor: ctxInfo.actor ?? 'user', trigger: ctxInfo.trigger ?? 'manual', confirmed: true, entityIds: [row.id], after: { title: row.title, occurredAt } });
+    this.audit.log({
+      action: 'event.create',
+      actor: ctxInfo.actor ?? 'user',
+      trigger: ctxInfo.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [row.id],
+      after: { title: row.title, occurredAt },
+    });
     void this.reindex(row.id);
     this.ctx.events.changed('events', 'knowledge', 'status');
     return this.get(row.id);
@@ -85,7 +123,15 @@ export class EventService {
       if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
       if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
     });
-    this.audit.log({ action: 'event.update', actor: 'user', trigger: 'manual', confirmed: true, entityIds: [id], before: { title: cur.title, occurredAt: cur.occurredAt }, after: patch });
+    this.audit.log({
+      action: 'event.update',
+      actor: 'user',
+      trigger: 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { title: cur.title, occurredAt: cur.occurredAt },
+      after: patch,
+    });
     void this.reindex(id);
     this.ctx.events.changed('events', 'knowledge', 'status');
     return this.get(id);
@@ -100,14 +146,34 @@ export class EventService {
       this.graph.removeNode(id);
     });
     this.search.remove(id);
-    this.audit.log({ action: 'event.delete', actor: 'user', trigger: 'manual', confirmed: true, entityIds: [id], before: { title: cur.title, occurredAt: cur.occurredAt } });
+    this.audit.log({
+      action: 'event.delete',
+      actor: 'user',
+      trigger: 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { title: cur.title, occurredAt: cur.occurredAt },
+    });
     this.ctx.events.changed('events', 'knowledge', 'status');
   }
 
   private async reindex(id: string): Promise<void> {
     try {
       const e = this.get(id);
-      await this.search.index({ type: 'event', id, title: e.title, content: [e.title, e.description, `Datum: ${e.occurredAt.slice(0, 10)}`, e.topicName && `Thema: ${e.topicName}`, e.projectName && `Projekt: ${e.projectName}`].filter(Boolean).join('\n') });
+      await this.search.index({
+        type: 'event',
+        id,
+        title: e.title,
+        content: [
+          e.title,
+          e.description,
+          `Datum: ${e.occurredAt.slice(0, 10)}`,
+          e.topicName && `Thema: ${e.topicName}`,
+          e.projectName && `Projekt: ${e.projectName}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      });
     } catch (err) {
       this.ctx.logger.warn('events', 'Indexierung fehlgeschlagen', { error: err });
     }

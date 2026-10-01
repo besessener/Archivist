@@ -11,7 +11,10 @@ beforeAll(() => {
   fs.mkdirSync(path.join(root, 'chat'));
   fs.mkdirSync(path.join(root, '_next'));
   fs.writeFileSync(path.join(root, 'index.html'), '<html><body>root</body></html>');
-  fs.writeFileSync(path.join(root, 'chat', 'index.html'), '<html><head><script src="/_next/a.js"></script></head><body><script>self.__next_f.push([1,"x"])</script></body></html>');
+  fs.writeFileSync(
+    path.join(root, 'chat', 'index.html'),
+    '<html><head><script src="/_next/a.js"></script></head><body><script>self.__next_f.push([1,"x"])</script></body></html>',
+  );
   fs.writeFileSync(path.join(root, 'chat', 'index.txt'), 'rsc');
   fs.writeFileSync(path.join(root, '_next', 'a.js'), 'console.log(1)');
   fs.writeFileSync(path.join(path.dirname(root), 'secret.txt'), 'geheim');
@@ -39,7 +42,14 @@ describe('Auslieferung des Frontends (app://)', () => {
   });
 
   it('blockiert Path Traversal, fremde Ursprünge und Symlink-Ausbrüche', async () => {
-    for (const u of ['app://archivist/../secret.txt', 'app://archivist/%2e%2e/secret.txt', 'app://archivist/chat/..%2f..%2fsecret.txt', 'app://archivist/%00', 'https://evil.example/chat/', 'file:///etc/passwd']) {
+    for (const u of [
+      'app://archivist/../secret.txt',
+      'app://archivist/%2e%2e/secret.txt',
+      'app://archivist/chat/..%2f..%2fsecret.txt',
+      'app://archivist/%00',
+      'https://evil.example/chat/',
+      'file:///etc/passwd',
+    ]) {
       const r = await serveRenderer(root, u);
       expect([400, 403, 404], u).toContain(r.status);
       expect(String(r.body)).not.toContain('geheim');

@@ -1,13 +1,5 @@
 import { z } from 'zod';
-import {
-  AppErrorInfo,
-  EntityType,
-  Id,
-  IsoDate,
-  RelationStatus,
-  SourceReference,
-  type Result,
-} from './common';
+import { AppErrorInfo, EntityType, Id, IsoDate, RelationStatus, SourceReference, type Result } from './common';
 import {
   AgentActionProposal,
   ArchiveItemRequest,
@@ -155,7 +147,13 @@ export const ipcContract = {
   'actions:list': ch(z.object({ status: z.enum(['proposed', 'approved', 'rejected', 'executed', 'failed']).optional() }), z.array(StoredAgentAction)),
   'actions:resolve': ch(
     z.discriminatedUnion('decision', [
-      z.object({ decision: z.literal('approve'), actionId: Id, confirmed: Confirmed, strongConfirmed: z.boolean().default(false), parameterOverrides: z.record(z.string(), z.unknown()).optional() }),
+      z.object({
+        decision: z.literal('approve'),
+        actionId: Id,
+        confirmed: Confirmed,
+        strongConfirmed: z.boolean().default(false),
+        parameterOverrides: z.record(z.string(), z.unknown()).optional(),
+      }),
       z.object({ decision: z.literal('reject'), actionId: Id }),
     ]),
     StoredAgentAction,
@@ -176,8 +174,24 @@ export const ipcContract = {
   'decisions:proposeSupersede': ch(z.object({ oldDecisionId: Id, newDecisionId: Id }), StoredAgentAction),
 
   // --- Dokumente ---
-  'documents:import': ch(z.object({ paths: z.array(z.string().min(1)).min(1).max(200) }), z.object({ imported: z.array(DocumentRecord), duplicates: z.array(z.object({ path: z.string(), existingDocumentId: Id })), rejected: z.array(z.object({ path: z.string(), reason: z.string() })) })),
-  'documents:list': ch(z.object({ status: DocumentStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional(), query: z.string().optional(), limit: z.number().int().min(1).max(1000).default(300) }), z.array(DocumentRecord)),
+  'documents:import': ch(
+    z.object({ paths: z.array(z.string().min(1)).min(1).max(200) }),
+    z.object({
+      imported: z.array(DocumentRecord),
+      duplicates: z.array(z.object({ path: z.string(), existingDocumentId: Id })),
+      rejected: z.array(z.object({ path: z.string(), reason: z.string() })),
+    }),
+  ),
+  'documents:list': ch(
+    z.object({
+      status: DocumentStatus.optional(),
+      topicId: z.string().optional(),
+      projectId: z.string().optional(),
+      query: z.string().optional(),
+      limit: z.number().int().min(1).max(1000).default(300),
+    }),
+    z.array(DocumentRecord),
+  ),
   'documents:get': ch(z.object({ id: Id }), DocumentRecord),
   'documents:classify': ch(z.object({ documentId: Id, allowLlm: z.boolean().default(true) }), z.object({ jobId: Id })),
   'documents:previewArchive': ch(z.object({ items: z.array(ArchiveItemRequest).min(1) }), ArchivePlan),
@@ -226,7 +240,10 @@ export const ipcContract = {
   ),
   'scanner:listDirectories': ch(Empty, z.array(ScanRoot)),
   'scanner:start': ch(z.object({ rootId: Id.optional() }), z.object({ jobId: Id })),
-  'scanner:getResults': ch(z.object({ rootId: Id.optional(), status: ScanFileStatus.optional(), limit: z.number().int().min(1).max(2000).default(500) }), z.object({ files: z.array(ScanFile), lastSummary: ScanSummary.nullable() })),
+  'scanner:getResults': ch(
+    z.object({ rootId: Id.optional(), status: ScanFileStatus.optional(), limit: z.number().int().min(1).max(2000).default(500) }),
+    z.object({ files: z.array(ScanFile), lastSummary: ScanSummary.nullable() }),
+  ),
   'scanner:analyze': ch(z.object({ fileIds: z.array(Id).min(1).max(500), confirmLlm: z.boolean().default(false) }), z.object({ jobId: Id })),
   'scanner:proposals': ch(Empty, z.array(ScanProposalGroup)),
   'scanner:exclude': ch(z.object({ kind: z.enum(['file', 'dir']), path: z.string().min(1) }), ScanExclusion),
@@ -239,7 +256,10 @@ export const ipcContract = {
   'jobs:cancel': ch(z.object({ id: Id }), Job),
 
   // --- Benachrichtigungen ---
-  'notifications:list': ch(z.object({ includeResolved: z.boolean().default(false), limit: z.number().int().min(1).max(500).default(100) }), z.array(AppNotification)),
+  'notifications:list': ch(
+    z.object({ includeResolved: z.boolean().default(false), limit: z.number().int().min(1).max(500).default(100) }),
+    z.array(AppNotification),
+  ),
   'notifications:markRead': ch(z.object({ ids: z.array(Id).min(1) }), Ok),
   'notifications:resolve': ch(z.object({ id: Id }), AppNotification),
   'notifications:snooze': ch(z.object({ id: Id, remindAt: IsoDate }), Reminder),
@@ -268,18 +288,33 @@ export const ipcContract = {
   ),
 
   // --- Erinnerungen ---
-  'reminders:create': ch(z.object({ targetType: z.enum(['open_item', 'insight', 'notification', 'decision', 'document', 'custom']), targetId: z.string().nullable(), title: z.string().min(1), remindAt: IsoDate }), Reminder),
+  'reminders:create': ch(
+    z.object({
+      targetType: z.enum(['open_item', 'insight', 'notification', 'decision', 'document', 'custom']),
+      targetId: z.string().nullable(),
+      title: z.string().min(1),
+      remindAt: IsoDate,
+    }),
+    Reminder,
+  ),
   'reminders:snooze': ch(z.object({ id: Id, remindAt: IsoDate }), Reminder),
   'reminders:dismiss': ch(z.object({ id: Id }), Ok),
   'reminders:list': ch(z.object({ status: z.enum(['pending', 'fired', 'dismissed']).optional() }), z.array(Reminder)),
 
   // --- Offene Punkte ---
-  'openItems:list': ch(z.object({ status: OpenItemStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional(), onlyActive: z.boolean().default(false) }), z.array(OpenItem)),
+  'openItems:list': ch(
+    z.object({ status: OpenItemStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional(), onlyActive: z.boolean().default(false) }),
+    z.array(OpenItem),
+  ),
   'openItems:create': ch(OpenItemInput, OpenItem),
   'openItems:update': ch(
     z.object({
       id: Id,
-      patch: OpenItemInput.partial().extend({ status: OpenItemStatus.optional(), responsibleUnknown: z.boolean().optional(), dueUnknown: z.boolean().optional() }),
+      patch: OpenItemInput.partial().extend({
+        status: OpenItemStatus.optional(),
+        responsibleUnknown: z.boolean().optional(),
+        dueUnknown: z.boolean().optional(),
+      }),
     }),
     OpenItem,
   ),
@@ -287,10 +322,16 @@ export const ipcContract = {
   'openItems:close': ch(z.object({ id: Id, status: z.enum(['resolved', 'dismissed']).default('resolved'), confirmed: Confirmed }), OpenItem),
 
   // --- Wissensgraph ---
-  'knowledge:listEntities': ch(z.object({ type: EntityType.optional(), query: z.string().optional(), limit: z.number().int().min(1).max(1000).default(300) }), z.array(GraphEntity.extend({ relationCount: z.number() }))),
+  'knowledge:listEntities': ch(
+    z.object({ type: EntityType.optional(), query: z.string().optional(), limit: z.number().int().min(1).max(1000).default(300) }),
+    z.array(GraphEntity.extend({ relationCount: z.number() })),
+  ),
   'knowledge:getEntity': ch(z.object({ id: Id }), EntityDetail),
   'knowledge:resolveRelation': ch(z.object({ relationId: Id, status: RelationStatus, confirmed: Confirmed }), Ok),
-  'knowledge:createEntity': ch(z.object({ type: z.enum(['topic', 'project', 'person', 'event', 'note']), name: z.string().min(1), description: z.string().optional() }), GraphEntity),
+  'knowledge:createEntity': ch(
+    z.object({ type: z.enum(['topic', 'project', 'person', 'event', 'note']), name: z.string().min(1), description: z.string().optional() }),
+    GraphEntity,
+  ),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
 
   // --- Ereignisse ---
@@ -301,7 +342,10 @@ export const ipcContract = {
 
   // --- Timeline, Suche ---
   'timeline:get': ch(TimelineQuery, z.array(TimelineEntry)),
-  'search:global': ch(z.object({ query: z.string().min(1).max(500), types: z.array(EntityType).optional(), limit: z.number().int().min(1).max(100).default(30) }), z.array(SearchResult)),
+  'search:global': ch(
+    z.object({ query: z.string().min(1).max(500), types: z.array(EntityType).optional(), limit: z.number().int().min(1).max(100).default(30) }),
+    z.array(SearchResult),
+  ),
 
   // --- Audit / Undo ---
   'audit:list': ch(z.object({ limit: z.number().int().min(1).max(1000).default(200), onlyUndoable: z.boolean().default(false) }), z.array(AuditEntry)),

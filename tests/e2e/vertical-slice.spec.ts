@@ -28,7 +28,13 @@ test.beforeAll(async () => {
   fs.mkdirSync(downloads, { recursive: true });
   // Der Start der Electron-Binärdatei hängt auf CI-Runnern gelegentlich (Chromium/D-Bus/Xvfb-Race) – ein Neustart behebt das,
   // ohne dass Testinhalte übersprungen werden. Es wird höchstens zweimal wiederholt.
-  const env: Record<string, string> = { ...(process.env as Record<string, string>), ELECTRON_ENABLE_LOGGING: '1', ARCHIVIST_DATA_DIR: dataDir, ARCHIVIST_TEST_MODE: '1', ARCHIVIST_TEST_PICK_DIR: downloads };
+  const env: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+    ELECTRON_ENABLE_LOGGING: '1',
+    ARCHIVIST_DATA_DIR: dataDir,
+    ARCHIVIST_TEST_MODE: '1',
+    ARCHIVIST_TEST_PICK_DIR: downloads,
+  };
   delete env.DBUS_SESSION_BUS_ADDRESS; // ein ungültiger Bus verursacht nur Fehlermeldungen von Chromium
   for (let attempt = 1; ; attempt += 1) {
     try {
@@ -61,7 +67,8 @@ test.afterAll(async () => {
 test('vertikaler Slice: Einrichtung → Import → Archivierung → Entscheidung → Scan', async () => {
   // 1) App startet mit Einrichtungsdialog; lokale Verzeichnisstruktur und Datenbank sind angelegt
   await expect(tid('setup-wizard')).toBeVisible();
-  for (const d of ['archive', 'database', 'index', 'config', 'logs', 'backups', 'inbox', 'quarantine']) expect(fs.existsSync(path.join(dataDir, d)), d).toBe(true);
+  for (const d of ['archive', 'database', 'index', 'config', 'logs', 'backups', 'inbox', 'quarantine'])
+    expect(fs.existsSync(path.join(dataDir, d)), d).toBe(true);
   expect(fs.existsSync(path.join(dataDir, 'database', 'archivist.db'))).toBe(true);
 
   // 2) Testkonfiguration über den Einrichtungsdialog (lokaler Fake-Endpunkt)
@@ -107,7 +114,8 @@ test('vertikaler Slice: Einrichtung → Import → Archivierung → Entscheidung
   // 5b) OCR: ein Bild mit Text wird lokal erkannt, der erkannte Text fließt in die Analyse ein
   const sharp = (await import('sharp')).default;
   const scan = path.join(dataDir, 'scan.png'); // bewusst außerhalb des Scan-Ordners
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="260"><rect width="100%" height="100%" fill="white"/><text x="40" y="100" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" fill="black">Rechnung 4711</text><text x="40" y="200" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" fill="black">Zahlungsziel 30 Tage</text></svg>';
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="260"><rect width="100%" height="100%" fill="white"/><text x="40" y="100" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" fill="black">Rechnung 4711</text><text x="40" y="200" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" fill="black">Zahlungsziel 30 Tage</text></svg>';
   await sharp(Buffer.from(svg)).png().toFile(scan);
   await tid('nav-chat').click();
   await tid('file-input').setInputFiles(scan);

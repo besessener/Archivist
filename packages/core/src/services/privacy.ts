@@ -25,11 +25,14 @@ export class PrivacyService {
     if (input.docExcluded) return { allowed: false, status: 'excluded', reason: 'Datei ist von der externen Analyse ausgeschlossen.' };
     if (input.rootLlmAllowed === false) return { allowed: false, status: 'excluded', reason: 'Das Scan-Verzeichnis ist von der LLM-Analyse ausgeschlossen.' };
     const ext = input.ext.toLowerCase().replace(/^\./, '');
-    if (p.neverAnalyzeExtensions.some((e) => e.toLowerCase().replace(/^\./, '') === ext)) return { allowed: false, status: 'excluded', reason: `Dateityp .${ext} wird nie extern analysiert.` };
+    if (p.neverAnalyzeExtensions.some((e) => e.toLowerCase().replace(/^\./, '') === ext))
+      return { allowed: false, status: 'excluded', reason: `Dateityp .${ext} wird nie extern analysiert.` };
     if (input.path) {
       const abs = path.resolve(input.path);
-      if (p.neverAnalyzeFiles.some((f) => path.resolve(f) === abs)) return { allowed: false, status: 'excluded', reason: 'Datei ist von der externen Analyse ausgeschlossen.' };
-      if (p.neverAnalyzeDirs.some((d) => isInside(d, abs))) return { allowed: false, status: 'excluded', reason: 'Verzeichnis ist von der externen Analyse ausgeschlossen.' };
+      if (p.neverAnalyzeFiles.some((f) => path.resolve(f) === abs))
+        return { allowed: false, status: 'excluded', reason: 'Datei ist von der externen Analyse ausgeschlossen.' };
+      if (p.neverAnalyzeDirs.some((d) => isInside(d, abs)))
+        return { allowed: false, status: 'excluded', reason: 'Verzeichnis ist von der externen Analyse ausgeschlossen.' };
     }
     return { allowed: true, status: null, reason: null };
   }

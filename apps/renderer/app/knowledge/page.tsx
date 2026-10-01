@@ -42,11 +42,7 @@ function KnowledgeInner() {
   const [type, setType] = useState<EntityType | ''>('');
   const [search, setSearch] = useState('');
   const q = useDebounced(search.trim(), 300);
-  const list = useQuery(
-    'knowledge:listEntities',
-    { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: 300 },
-    { scopes: ['knowledge'] },
-  );
+  const list = useQuery('knowledge:listEntities', { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: 300 }, { scopes: ['knowledge'] });
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
@@ -64,7 +60,14 @@ function KnowledgeInner() {
         <div className="flex min-w-0 flex-col gap-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Im Wissen suchen …" aria-label="Wissen durchsuchen" className="pl-9" data-testid="knowledge-search" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Im Wissen suchen …"
+              aria-label="Wissen durchsuchen"
+              className="pl-9"
+              data-testid="knowledge-search"
+            />
           </div>
           <Select value={type} onChange={(e) => setType(e.target.value as EntityType | '')} aria-label="Art filtern" data-testid="knowledge-type-filter">
             <option value="">Alle Arten</option>
@@ -76,7 +79,9 @@ function KnowledgeInner() {
           </Select>
           {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
           {!list.data && list.loading && <Loading />}
-          {list.data && list.data.length === 0 && <EmptyState title="Nichts gefunden" description="Legen Sie ein Thema, Projekt oder eine Person an oder ändern Sie den Filter." />}
+          {list.data && list.data.length === 0 && (
+            <EmptyState title="Nichts gefunden" description="Legen Sie ein Thema, Projekt oder eine Person an oder ändern Sie den Filter." />
+          )}
           <ul className="flex max-h-[65vh] flex-col gap-1 overflow-y-auto" data-testid="knowledge-list">
             {(list.data ?? []).map((e) => (
               <li key={e.id}>
@@ -98,7 +103,14 @@ function KnowledgeInner() {
           </ul>
         </div>
         <div className="min-w-0">
-          {id ? <EntityView key={id} id={id} /> : <EmptyState title="Wählen Sie einen Eintrag" description="Klicken Sie links auf ein Thema, Projekt oder eine Person, um die Verknüpfungen zu sehen." />}
+          {id ? (
+            <EntityView key={id} id={id} />
+          ) : (
+            <EmptyState
+              title="Wählen Sie einen Eintrag"
+              description="Klicken Sie links auf ein Thema, Projekt oder eine Person, um die Verknüpfungen zu sehen."
+            />
+          )}
         </div>
       </div>
       <CreateEntityDialog
@@ -136,7 +148,13 @@ function CreateEntityDialog({ open, onOpenChange, onCreated }: { open: boolean; 
           </Select>
         </Field>
         <Field label="Name" htmlFor="new-entity-name">
-          <Input id="new-entity-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={`Name des Eintrags (${label})`} data-testid="knowledge-new-name" />
+          <Input
+            id="new-entity-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={`Name des Eintrags (${label})`}
+            data-testid="knowledge-new-name"
+          />
         </Field>
         <Field label="Beschreibung (optional)" htmlFor="new-entity-desc">
           <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -192,10 +210,26 @@ function EntityView({ id }: { id: string }) {
       <ConfidenceBadge value={r.confidence} />
       {r.status === 'proposed' && (
         <span className="ml-auto flex gap-1.5">
-          <Button size="sm" variant="outline" data-testid="relation-confirm" onClick={() => setPending({ relationId: r.id, status: 'confirmed', label: `„${entity.name}“ ${RELATION_TYPE_LABELS[r.relationType]} „${r.other.name}“ bestätigen` })}>
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="relation-confirm"
+            onClick={() =>
+              setPending({
+                relationId: r.id,
+                status: 'confirmed',
+                label: `„${entity.name}“ ${RELATION_TYPE_LABELS[r.relationType]} „${r.other.name}“ bestätigen`,
+              })
+            }
+          >
             <Check aria-hidden /> Bestätigen
           </Button>
-          <Button size="sm" variant="ghost" data-testid="relation-reject" onClick={() => setPending({ relationId: r.id, status: 'rejected', label: `Verknüpfung zu „${r.other.name}“ ablehnen` })}>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="relation-reject"
+            onClick={() => setPending({ relationId: r.id, status: 'rejected', label: `Verknüpfung zu „${r.other.name}“ ablehnen` })}
+          >
             <X aria-hidden /> Ablehnen
           </Button>
         </span>
@@ -230,11 +264,19 @@ function EntityView({ id }: { id: string }) {
 
       <section>
         <h3 className="mb-2 text-sm font-semibold">Verknüpfungen von hier ({outgoing.length})</h3>
-        {outgoing.length === 0 ? <p className="text-sm text-muted-foreground">Keine ausgehenden Verknüpfungen.</p> : <ul className="flex flex-col gap-2">{outgoing.map(renderRel)}</ul>}
+        {outgoing.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Keine ausgehenden Verknüpfungen.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">{outgoing.map(renderRel)}</ul>
+        )}
       </section>
       <section>
         <h3 className="mb-2 text-sm font-semibold">Verweise hierher ({incoming.length})</h3>
-        {incoming.length === 0 ? <p className="text-sm text-muted-foreground">Keine eingehenden Verknüpfungen.</p> : <ul className="flex flex-col gap-2">{incoming.map(renderRel)}</ul>}
+        {incoming.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Keine eingehenden Verknüpfungen.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">{incoming.map(renderRel)}</ul>
+        )}
       </section>
 
       {isTopic && (
@@ -273,7 +315,9 @@ function EntityView({ id }: { id: string }) {
           }
         }}
       >
-        <p className="text-sm text-muted-foreground">Bestätigte Verknüpfungen fließen in Antworten und Zusammenhänge ein, abgelehnte werden nicht mehr vorgeschlagen.</p>
+        <p className="text-sm text-muted-foreground">
+          Bestätigte Verknüpfungen fließen in Antworten und Zusammenhänge ein, abgelehnte werden nicht mehr vorgeschlagen.
+        </p>
       </ConfirmDialog>
 
       <MergeDialog

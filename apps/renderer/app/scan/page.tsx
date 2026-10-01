@@ -34,13 +34,21 @@ export default function ScanPage() {
     setStarting(false);
   }
 
-  if (error && !settings) return <Page><ErrorNote error={error} onRetry={() => void refetch()} /></Page>;
+  if (error && !settings)
+    return (
+      <Page>
+        <ErrorNote error={error} onRetry={() => void refetch()} />
+      </Page>
+    );
   if (!settings) return <Page>{loading ? <Loading /> : null}</Page>;
   const scan = settings.scan;
 
   return (
     <Page wide>
-      <PageHeader title="Scan" description="Archivist kann Ordner auf diesem Computer nach neuen Dokumenten durchsuchen. Es wird nie etwas verändert, ohne dass Sie zustimmen." />
+      <PageHeader
+        title="Scan"
+        description="Archivist kann Ordner auf diesem Computer nach neuen Dokumenten durchsuchen. Es wird nie etwas verändert, ohne dass Sie zustimmen."
+      />
       <div className="flex flex-col gap-8">
         <Card>
           <CardContent className="flex flex-col gap-4 pt-4">
@@ -50,10 +58,16 @@ export default function ScanPage() {
                   Lokale Dokumentensuche aktivieren
                 </label>
                 <p className="text-sm text-muted-foreground">
-                  Standardmäßig ist die Suche <strong>ausgeschaltet</strong>. Wenn Sie sie einschalten, durchsucht Archivist die unten gewählten Ordner – aber nur, solange die App läuft.
+                  Standardmäßig ist die Suche <strong>ausgeschaltet</strong>. Wenn Sie sie einschalten, durchsucht Archivist die unten gewählten Ordner – aber
+                  nur, solange die App läuft.
                 </p>
               </div>
-              <Switch id="scan-enable" checked={scan.enabled} onCheckedChange={(v) => void patch({ scan: { enabled: v } }, v ? 'Dokumentensuche aktiviert.' : 'Dokumentensuche ausgeschaltet.')} data-testid="scan-enable" />
+              <Switch
+                id="scan-enable"
+                checked={scan.enabled}
+                onCheckedChange={(v) => void patch({ scan: { enabled: v } }, v ? 'Dokumentensuche aktiviert.' : 'Dokumentensuche ausgeschaltet.')}
+                data-testid="scan-enable"
+              />
             </div>
             {!scan.enabled && (
               <Notice tone="warning" data-testid="scan-disabled-hint">
@@ -66,14 +80,24 @@ export default function ScanPage() {
                   <p className="text-sm font-medium">Beim Start der App suchen</p>
                   <p className="text-xs text-muted-foreground">Einmal nach jedem Programmstart.</p>
                 </div>
-                <Switch checked={scan.onStartup} onCheckedChange={(v) => void patch({ scan: { onStartup: v } })} aria-label="Beim Start der App suchen" data-testid="scan-onstartup" />
+                <Switch
+                  checked={scan.onStartup}
+                  onCheckedChange={(v) => void patch({ scan: { onStartup: v } })}
+                  aria-label="Beim Start der App suchen"
+                  data-testid="scan-onstartup"
+                />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">Regelmäßig suchen</p>
                   <p className="text-xs text-muted-foreground">Während die App läuft.</p>
                 </div>
-                <Switch checked={scan.periodic} onCheckedChange={(v) => void patch({ scan: { periodic: v } })} aria-label="Regelmäßig suchen" data-testid="scan-periodic" />
+                <Switch
+                  checked={scan.periodic}
+                  onCheckedChange={(v) => void patch({ scan: { periodic: v } })}
+                  aria-label="Regelmäßig suchen"
+                  data-testid="scan-periodic"
+                />
               </div>
               {scan.periodic && (
                 <Field label="Abstand in Minuten" htmlFor="scan-interval" hint="Mindestens 5 Minuten.">

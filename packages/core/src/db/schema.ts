@@ -32,10 +32,7 @@ export const relations = sqliteTable(
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
-  (t) => [
-    uniqueIndex('relations_unique_idx').on(t.sourceEntityId, t.targetEntityId, t.relationType),
-    index('relations_target_idx').on(t.targetEntityId),
-  ],
+  (t) => [uniqueIndex('relations_unique_idx').on(t.sourceEntityId, t.targetEntityId, t.relationType), index('relations_target_idx').on(t.targetEntityId)],
 );
 
 export const documents = sqliteTable(

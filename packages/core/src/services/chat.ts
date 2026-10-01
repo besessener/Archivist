@@ -12,8 +12,7 @@ import {
   type StoredAgentAction,
 } from '@archivist/shared';
 import { asc, desc, eq } from 'drizzle-orm';
-import type { Conversation ,
-  ChatIntent} from '@archivist/shared';
+import type { Conversation, ChatIntent } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { conversations, messages } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
@@ -148,7 +147,13 @@ export class ChatService {
 
   // ---------- Persistenz ----------
   listConversations(): Conversation[] {
-    return this.db.select().from(conversations).orderBy(desc(conversations.updatedAt)).limit(100).all().map((c) => ({ id: c.id, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt }));
+    return this.db
+      .select()
+      .from(conversations)
+      .orderBy(desc(conversations.updatedAt))
+      .limit(100)
+      .all()
+      .map((c) => ({ id: c.id, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt }));
   }
 
   newConversation(title = 'Neues Gespräch'): Conversation {
@@ -171,7 +176,7 @@ export class ChatService {
   }
 
   private state(id: string): ConvState {
-    return ((this.db.select().from(conversations).where(eq(conversations.id, id)).get()?.pending as ConvState | null) ?? {});
+    return (this.db.select().from(conversations).where(eq(conversations.id, id)).get()?.pending as ConvState | null) ?? {};
   }
 
   private mapMessage(r: MsgRow): ChatMessage {
@@ -192,7 +197,13 @@ export class ChatService {
   }
 
   history(conversationId: string): ChatMessage[] {
-    return this.db.select().from(messages).where(eq(messages.conversationId, conversationId)).orderBy(asc(messages.createdAt)).all().map((r) => this.mapMessage(r));
+    return this.db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(asc(messages.createdAt))
+      .all()
+      .map((r) => this.mapMessage(r));
   }
 
   private saveMessage(conversationId: string, role: 'user' | 'assistant', content: string, reply?: Reply): ChatMessage {
@@ -202,7 +213,9 @@ export class ChatService {
       role,
       content,
       sources: reply?.sources ?? [],
-      context: reply?.context ? ({ topics: [], projects: [], persons: [], decisions: [], openItems: [], documents: [], contradictions: [], ...reply.context }) : null,
+      context: reply?.context
+        ? { topics: [], projects: [], persons: [], decisions: [], openItems: [], documents: [], contradictions: [], ...reply.context }
+        : null,
       actionIds: (reply?.actions ?? []).map((a) => a.id),
       confidence: reply?.confidence ?? null,
       uncertainties: reply?.uncertainties ?? [],
@@ -216,9 +229,17 @@ export class ChatService {
 
   // ---------- Hauptablauf ----------
   async send(conversationId: string | undefined, text: string): Promise<{ conversationId: string; userMessage: ChatMessage; assistantMessage: ChatMessage }> {
-    const conv = conversationId && this.db.select().from(conversations).where(eq(conversations.id, conversationId)).get() ? conversationId : this.newConversation(truncate(text, 60)).id;
+    const conv =
+      conversationId && this.db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
+        ? conversationId
+        : this.newConversation(truncate(text, 60)).id;
     const existing = this.db.select().from(conversations).where(eq(conversations.id, conv)).get();
-    if (existing && existing.title === 'Neues Gespräch') this.db.update(conversations).set({ title: truncate(text, 60) }).where(eq(conversations.id, conv)).run();
+    if (existing && existing.title === 'Neues Gespräch')
+      this.db
+        .update(conversations)
+        .set({ title: truncate(text, 60) })
+        .where(eq(conversations.id, conv))
+        .run();
     const userMessage = this.saveMessage(conv, 'user', text);
     let reply: Reply;
     const state = this.state(conv);
@@ -227,10 +248,20 @@ export class ChatService {
     } catch (err) {
       const info = toErrorInfo(err);
       this.ctx.logger.error('chat', 'Chat-Verarbeitung fehlgeschlagen', { error: err });
-      reply = { intent: 'error', content: `Das konnte ich nicht verarbeiten: ${info.message}${info.retryable ? ' Bitte versuche es gleich noch einmal.' : ''}`, errorMessage: info.message + (info.details ? ` (${info.details})` : ''), confidence: 0, state };
+      reply = {
+        intent: 'error',
+        content: `Das konnte ich nicht verarbeiten: ${info.message}${info.retryable ? ' Bitte versuche es gleich noch einmal.' : ''}`,
+        errorMessage: info.message + (info.details ? ` (${info.details})` : ''),
+        confidence: 0,
+        state,
+      };
     }
     const assistantMessage = this.saveMessage(conv, 'assistant', reply.content, reply);
-    this.db.update(conversations).set({ pending: (reply.state ?? state) as unknown as ArchivistJson, updatedAt: nowIso() }).where(eq(conversations.id, conv)).run();
+    this.db
+      .update(conversations)
+      .set({ pending: (reply.state ?? state) as unknown as ArchivistJson, updatedAt: nowIso() })
+      .where(eq(conversations.id, conv))
+      .run();
     this.ctx.events.changed('chat', 'status');
     return { conversationId: conv, userMessage, assistantMessage };
   }
@@ -246,8 +277,10 @@ export class ChatService {
     if (p.kind === 'reminder') {
       return `Der Agent hat gefragt, WANN er an „${p.title}“ erinnern soll. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum wie „31.10.“ oder „nächsten Montag“ (intent=${p.snooze ? 'reminder_snooze' : 'reminder_create'}, reminder.remindAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
     }
-    if (p.kind === 'event') return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum (intent=event_record, event.occurredAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
-    if (p.kind === 'confirm_save') return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
+    if (p.kind === 'event')
+      return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum (intent=event_record, event.occurredAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
+    if (p.kind === 'confirm_save')
+      return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
     const i = this.openItems.get(p.openItemId);
     return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. Die Nachricht ist wahrscheinlich die Antwort (intent=open_item_update).`;
   }
@@ -266,7 +299,17 @@ export class ChatService {
           schemaName: 'ChatIntent',
           purpose: 'Chat-Intent',
           instructions: INTENT_HELP,
-          input: `Heutiges Datum: ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('de-DE', { weekday: 'long' })})\nOffene Rückfrage: ${this.pendingHint(state)}\nBekannte Themen: ${this.graph.listEntities({ type: 'topic', limit: 40 }).map((e) => e.name).join(', ') || '–'}\nBekannte Projekte: ${this.graph.listEntities({ type: 'project', limit: 40 }).map((e) => e.name).join(', ') || '–'}\n\n${this.historyHint(conv)}Nachricht des Benutzers:\n${text}`,
+          input: `Heutiges Datum: ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('de-DE', { weekday: 'long' })})\nOffene Rückfrage: ${this.pendingHint(state)}\nBekannte Themen: ${
+            this.graph
+              .listEntities({ type: 'topic', limit: 40 })
+              .map((e) => e.name)
+              .join(', ') || '–'
+          }\nBekannte Projekte: ${
+            this.graph
+              .listEntities({ type: 'project', limit: 40 })
+              .map((e) => e.name)
+              .join(', ') || '–'
+          }\n\n${this.historyHint(conv)}Nachricht des Benutzers:\n${text}`,
         });
         return { analysis, viaLlm: true, llmError: null };
       } catch (err) {
@@ -288,7 +331,11 @@ export class ChatService {
       const decision: NonNullable<ChatIntent['decision']> = { participants: [], alternatives: [], unknownFields: unknown, confidence: 0.4 };
       const first = asked[0];
       if (!unknown.length && first === 'decidedAt') decision.decidedAt = parseGermanDate(t);
-      else if (!unknown.length && first === 'participants') decision.participants = t.split(/,|\bund\b|&|;/i).map((s) => s.replace(/^(mit|von|zusammen mit)\s+/i, '').trim()).filter(Boolean);
+      else if (!unknown.length && first === 'participants')
+        decision.participants = t
+          .split(/,|\bund\b|&|;/i)
+          .map((s) => s.replace(/^(mit|von|zusammen mit)\s+/i, '').trim())
+          .filter(Boolean);
       else if (!unknown.length && first === 'topic') decision.topic = t.replace(/^(es\s+geht\s+um|thema:?)\s*/i, '').trim();
       else if (!unknown.length && first === 'decisionText') decision.decisionText = t;
       if (pending.clarifyTopic && TOPIC_KIND_RE.test(t)) decision.topicIsProject = true;
@@ -303,7 +350,11 @@ export class ChatService {
       if (date) return { ...base, intent: 'event_record', event: { title: pending.title, description: pending.description, occurredAt: date } };
     }
     if (pending?.kind === 'open_item') {
-      return { ...base, intent: 'open_item_update', openItem: { dueAt: parseGermanDate(t), responsible: UNKNOWN_RE.test(t) ? null : t.replace(/^(verantwortlich(er)?:?|@)\s*/i, '').trim() } };
+      return {
+        ...base,
+        intent: 'open_item_update',
+        openItem: { dueAt: parseGermanDate(t), responsible: UNKNOWN_RE.test(t) ? null : t.replace(/^(verantwortlich(er)?:?|@)\s*/i, '').trim() },
+      };
     }
     if (/^(ja|jap|ok|okay|passt|bestätig\w*|mach das|gerne|bitte)\b/i.test(t)) return { ...base, intent: 'proposal_confirm' };
     if (/^(nein|nee|ablehn\w*|nicht|lass das)\b/i.test(t)) return { ...base, intent: 'proposal_reject' };
@@ -311,11 +362,33 @@ export class ChatService {
       const known = [...this.graph.listEntities({ type: 'topic', limit: 200 }), ...this.graph.listEntities({ type: 'project', limit: 200 })].map((e) => e.name);
       const lower = ` ${normalizeName(t)} `;
       const topic = known.find((k) => lower.includes(` ${normalizeName(k)} `)) ?? /\b([a-z0-9]+(?:[-_][a-z0-9]+)+)\b/i.exec(t)?.[1] ?? null;
-      return { ...base, intent: 'decision_new', decisionCertainty: 'clear', decision: { decisionText: t.replace(/^wir\s+haben\s+(?:uns\s+)?(?:gemeinsam\s+)?(?:entschieden|beschlossen),?\s*(?:dass\s+)?/i, '').trim() || t, title: truncate(t, 80), decidedAt: parseGermanDate(t), topic, participants: [], alternatives: [], unknownFields: [], confidence: 0.4, topicIsProject: null } };
+      return {
+        ...base,
+        intent: 'decision_new',
+        decisionCertainty: 'clear',
+        decision: {
+          decisionText: t.replace(/^wir\s+haben\s+(?:uns\s+)?(?:gemeinsam\s+)?(?:entschieden|beschlossen),?\s*(?:dass\s+)?/i, '').trim() || t,
+          title: truncate(t, 80),
+          decidedAt: parseGermanDate(t),
+          topic,
+          participants: [],
+          alternatives: [],
+          unknownFields: [],
+          confidence: 0.4,
+          topicIsProject: null,
+        },
+      };
     }
-    if (/\b(erinner\w*)\b/i.test(t)) return { ...base, intent: /verschieb|erneut|wieder/i.test(t) ? 'reminder_snooze' : 'reminder_create', reminder: { relativeText: t, remindAt: parseGermanDate(t) } };
-    if (/\b(schlie(ß|ss)e?\w*|erledigt|abgeschlossen)\b/i.test(t) && /(punkt|aufgabe|todo)/i.test(t)) return { ...base, intent: 'open_item_close', openItem: { targetHint: t } };
-    if (/(offene[rn]?\s+punkt|todo|aufgabe|noch\s+(zu\s+)?klären|muss\s+noch)/i.test(t) && !/\?\s*$/.test(t) && !/^welche/i.test(t)) return { ...base, intent: 'open_item_new', openItem: { title: truncate(t, 120), dueAt: parseGermanDate(t) } };
+    if (/\b(erinner\w*)\b/i.test(t))
+      return {
+        ...base,
+        intent: /verschieb|erneut|wieder/i.test(t) ? 'reminder_snooze' : 'reminder_create',
+        reminder: { relativeText: t, remindAt: parseGermanDate(t) },
+      };
+    if (/\b(schlie(ß|ss)e?\w*|erledigt|abgeschlossen)\b/i.test(t) && /(punkt|aufgabe|todo)/i.test(t))
+      return { ...base, intent: 'open_item_close', openItem: { targetHint: t } };
+    if (/(offene[rn]?\s+punkt|todo|aufgabe|noch\s+(zu\s+)?klären|muss\s+noch)/i.test(t) && !/\?\s*$/.test(t) && !/^welche/i.test(t))
+      return { ...base, intent: 'open_item_new', openItem: { title: truncate(t, 120), dueAt: parseGermanDate(t) } };
     if (/\b(scan|nach\s+neuen\s+dokumenten)\b/i.test(t)) return { ...base, intent: 'scan_start' };
     // eslint-disable-next-line sonarjs/super-linear-regex -- einzelne Chat-Nachricht, Länge begrenzt
     if (/\b(timeline|zeitverlauf|chronolog|was\s+ist\s+.*passiert)\b/i.test(t)) return { ...base, intent: 'timeline_query', query: t };
@@ -336,7 +409,12 @@ export class ChatService {
     const { analysis, viaLlm, llmError } = await this.classify(conv, text, state);
     let reply = await this.runIntents(conv, text, analysis, state, viaLlm);
     if (!viaLlm && llmError) {
-      reply = { ...reply, content: `${reply.content}\n\n_Hinweis: ${llmError} Ich habe die Nachricht regelbasiert ausgewertet – Ergebnisse können ungenauer sein._`, errorMessage: llmError, uncertainties: [...(reply.uncertainties ?? []), 'Ohne LLM nur regelbasierte Auswertung.'] };
+      reply = {
+        ...reply,
+        content: `${reply.content}\n\n_Hinweis: ${llmError} Ich habe die Nachricht regelbasiert ausgewertet – Ergebnisse können ungenauer sein._`,
+        errorMessage: llmError,
+        uncertainties: [...(reply.uncertainties ?? []), 'Ohne LLM nur regelbasierte Auswertung.'],
+      };
     }
     return reply;
   }
@@ -366,9 +444,16 @@ export class ChatService {
       // eine offene Rückfrage gehört zur ersten Absicht; weitere Absichten sehen sie nur, wenn sie dazu passen
       if (this.needsDecisionConfirmation(item.intent, current)) {
         const rest = work.slice(i + 1);
-        const question = analysis.clarification?.trim() || `Ich bin nicht sicher, ob das eine getroffene **Entscheidung** ist${item.intent.segment ? ` („${truncate(item.intent.segment, 140)}“)` : ''}. Soll ich sie als Entscheidung erfassen, als Ereignis in die Timeline eintragen, nur als Notiz festhalten oder nichts speichern?`;
+        const question =
+          analysis.clarification?.trim() ||
+          `Ich bin nicht sicher, ob das eine getroffene **Entscheidung** ist${item.intent.segment ? ` („${truncate(item.intent.segment, 140)}“)` : ''}. Soll ich sie als Entscheidung erfassen, als Ereignis in die Timeline eintragen, nur als Notiz festhalten oder nichts speichern?`;
         current = { ...current, pending: { kind: 'confirm_save', text: item.text, intent: item.intent }, queue: rest };
-        replies.push({ intent: 'clarification', content: `${question}\n\nAntworte mit „Entscheidung“, „Ereignis“, „Notiz“ oder „nichts speichern“.`, confidence: item.intent.confidence, state: current });
+        replies.push({
+          intent: 'clarification',
+          content: `${question}\n\nAntworte mit „Entscheidung“, „Ereignis“, „Notiz“ oder „nichts speichern“.`,
+          confidence: item.intent.confidence,
+          state: current,
+        });
         break;
       }
       const reply = await this.dispatch(conv, item.text, item.intent, current, viaLlm);
@@ -389,7 +474,7 @@ export class ChatService {
     const context: Partial<ChatContext> = {};
     for (const k of contextKeys) {
       const seen = new Map<string, EntityRef>();
-      for (const r of replies) for (const e of (r.context?.[k] ?? [])) seen.set(`${e.type}:${e.id}`, e);
+      for (const r of replies) for (const e of r.context?.[k] ?? []) seen.set(`${e.type}:${e.id}`, e);
       if (seen.size) (context as Record<string, EntityRef[]>)[k] = [...seen.values()];
     }
     const sources = new Map<string, SourceReference>();
@@ -430,7 +515,15 @@ export class ChatService {
     }
     if (/^(als\s+)?(ein\s+)?(ereignis|termin)\b/.test(t)) {
       const seg = pending.intent.segment ?? pending.text;
-      const event = { ...pending.intent, intent: 'event_record' as const, event: { title: pending.intent.decision?.title ?? truncate(seg, 100), description: seg, occurredAt: pending.intent.decision?.decidedAt ?? parseGermanDate(seg) } };
+      const event = {
+        ...pending.intent,
+        intent: 'event_record' as const,
+        event: {
+          title: pending.intent.decision?.title ?? truncate(seg, 100),
+          description: seg,
+          occurredAt: pending.intent.decision?.decidedAt ?? parseGermanDate(seg),
+        },
+      };
       return continueWith(await this.dispatch(conv, pending.text, event, base, true));
     }
     if (/^(als\s+)?(nur\s+)?(eine\s+)?notiz\b|^nur\s+notiz|^(festhalten|merken)\b/.test(t)) {
@@ -443,7 +536,11 @@ export class ChatService {
   private async dispatch(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {
     // eine offene Rückfrage nach dem Erinnerungsdatum gilt nur für die nächste Nachricht
     const carried = state.pending?.kind === 'reminder' && !intent.intent.startsWith('reminder') ? null : (state.pending ?? null);
-    const keep = (extra: Partial<ConvState> = {}): ConvState => ({ pending: carried, last: { ...(state.last ?? {}), ...(extra.last ?? {}) }, ...(extra.pending !== undefined ? { pending: extra.pending } : {}) });
+    const keep = (extra: Partial<ConvState> = {}): ConvState => ({
+      pending: carried,
+      last: { ...(state.last ?? {}), ...(extra.last ?? {}) },
+      ...(extra.pending !== undefined ? { pending: extra.pending } : {}),
+    });
     switch (intent.intent) {
       case 'decision_new':
       case 'decision_amend':
@@ -486,7 +583,8 @@ export class ChatService {
       default:
         return {
           intent: intent.intent,
-          content: 'Ich bin Archivist, dein persönlicher Archivar. Du kannst mir Entscheidungen und Notizen mitteilen („Wir haben entschieden, dass …“), Fragen zum Archiv stellen („Wann haben wir … entschieden?“), Dokumente suchen, offene Punkte erfassen, Erinnerungen setzen oder Dateien hierher ziehen, damit ich sie archiviere.',
+          content:
+            'Ich bin Archivist, dein persönlicher Archivar. Du kannst mir Entscheidungen und Notizen mitteilen („Wir haben entschieden, dass …“), Fragen zum Archiv stellen („Wann haben wir … entschieden?“), Dokumente suchen, offene Punkte erfassen, Erinnerungen setzen oder Dateien hierher ziehen, damit ich sie archiviere.',
           confidence: intent.confidence,
           state: keep(),
         };
@@ -526,8 +624,18 @@ export class ChatService {
     else if (intent.intent === 'decision_amend') {
       const id = state.last?.decisionId;
       const topic = ex.topic ?? intent.topic;
-      target = id ? this.decisions.get(id) : topic ? (this.decisions.list().find((d) => normalizeName(d.topicName ?? '') === normalizeName(topic)) ?? null) : null;
-      if (!target) return { intent: intent.intent, content: 'Zu welcher Entscheidung möchtest du etwas ergänzen? Nenne bitte das Thema oder formuliere die Entscheidung neu.', confidence: 0.4, state };
+      target = id
+        ? this.decisions.get(id)
+        : topic
+          ? (this.decisions.list().find((d) => normalizeName(d.topicName ?? '') === normalizeName(topic)) ?? null)
+          : null;
+      if (!target)
+        return {
+          intent: intent.intent,
+          content: 'Zu welcher Entscheidung möchtest du etwas ergänzen? Nenne bitte das Thema oder formuliere die Entscheidung neu.',
+          confidence: 0.4,
+          state,
+        };
     }
 
     // Antworten auf Rückfragen: „unbekannt“-Angaben erkennen (zusätzlich zur LLM-Auswertung)
@@ -539,14 +647,46 @@ export class ChatService {
     const topic = ex.topic?.trim() || null;
     let project = ex.project?.trim() || null;
     if (ex.topicIsProject === true && topic) project = project ?? topic;
-    const clarify = ex.topicIsProject === null || ex.topicIsProject === undefined ? (isNew && topic && !project && intent.intent === 'decision_new' && ex.topicIsProject === null ? topic : null) : null;
+    const clarify =
+      ex.topicIsProject === null || ex.topicIsProject === undefined
+        ? isNew && topic && !project && intent.intent === 'decision_new' && ex.topicIsProject === null
+          ? topic
+          : null
+        : null;
 
     if (isNew) {
       const created = this.decisions.create(
-        { title: ex.title?.trim() || undefined, decisionText: ex.decisionText?.trim() || text, decidedAt: normalizeDateInput(ex.decidedAt ?? null) ?? undefined, topic, project, participants: ex.participants ?? [], rationale: ex.rationale, consequences: ex.consequences, alternatives: ex.alternatives ?? [], validFrom: ex.validFrom, validUntil: ex.validUntil, unknownFields: [...unknownFields], sourceIds: [], confidence: ex.confidence ?? 0.8, asDraft: false },
+        {
+          title: ex.title?.trim() || undefined,
+          decisionText: ex.decisionText?.trim() || text,
+          decidedAt: normalizeDateInput(ex.decidedAt ?? null) ?? undefined,
+          topic,
+          project,
+          participants: ex.participants ?? [],
+          rationale: ex.rationale,
+          consequences: ex.consequences,
+          alternatives: ex.alternatives ?? [],
+          validFrom: ex.validFrom,
+          validUntil: ex.validUntil,
+          unknownFields: [...unknownFields],
+          sourceIds: [],
+          confidence: ex.confidence ?? 0.8,
+          asDraft: false,
+        },
         { actor: 'user', trigger: 'chat' },
       );
-      return this.afterDecisionChange(conv, created, { asked: [], clarifyTopic: clarify, supersedesHint: intent.intent === 'decision_supersede' ? (intent.topic ?? topic ?? intent.query ?? '') : null, newlyCreated: true }, state, viaLlm);
+      return this.afterDecisionChange(
+        conv,
+        created,
+        {
+          asked: [],
+          clarifyTopic: clarify,
+          supersedesHint: intent.intent === 'decision_supersede' ? (intent.topic ?? topic ?? intent.query ?? '') : null,
+          newlyCreated: true,
+        },
+        state,
+        viaLlm,
+      );
     }
 
     const t = target!;
@@ -568,7 +708,13 @@ export class ChatService {
     if (ex.validUntil) patch.validUntil = ex.validUntil;
     if (unknownFields.size) patch.unknownFields = [...unknownFields];
     const updated = this.decisions.update(t.id, patch, { trigger: 'chat' });
-    return this.afterDecisionChange(conv, updated, { asked: [], clarifyTopic: null, supersedesHint: pending?.supersedes ?? null, newlyCreated: false }, state, viaLlm);
+    return this.afterDecisionChange(
+      conv,
+      updated,
+      { asked: [], clarifyTopic: null, supersedesHint: pending?.supersedes ?? null, newlyCreated: false },
+      state,
+      viaLlm,
+    );
   }
 
   private async afterDecisionChange(
@@ -614,9 +760,26 @@ export class ChatService {
       const older = this.decisions
         .list()
         .filter((o) => o.id !== d.id && ['active', 'confirmed'].includes(o.status))
-        .find((o) => !opts.supersedesHint || normalizeName(o.topicName ?? '').includes(normalizeName(opts.supersedesHint)) || normalizeName(o.title).includes(normalizeName(opts.supersedesHint)) || (d.topicId && o.topicId === d.topicId));
+        .find(
+          (o) =>
+            !opts.supersedesHint ||
+            normalizeName(o.topicName ?? '').includes(normalizeName(opts.supersedesHint)) ||
+            normalizeName(o.title).includes(normalizeName(opts.supersedesHint)) ||
+            (d.topicId && o.topicId === d.topicId),
+        );
       if (older && !actions.some((a) => (a.proposedParameters as { oldDecisionId?: string }).oldDecisionId === older.id)) {
-        actions.push(this.actions.propose({ actionType: 'supersede_decision', label: `„${older.title}“ als überholt markieren`, rationale: 'Du hast angegeben, dass diese Entscheidung eine ältere ersetzt.', confidence: 0.7, affectedEntities: [this.refs(older), this.refs(d)], requiredConfirmation: 'confirm', proposedParameters: { oldDecisionId: older.id, newDecisionId: d.id }, conversationId: conv }));
+        actions.push(
+          this.actions.propose({
+            actionType: 'supersede_decision',
+            label: `„${older.title}“ als überholt markieren`,
+            rationale: 'Du hast angegeben, dass diese Entscheidung eine ältere ersetzt.',
+            confidence: 0.7,
+            affectedEntities: [this.refs(older), this.refs(d)],
+            requiredConfirmation: 'confirm',
+            proposedParameters: { oldDecisionId: older.id, newDecisionId: d.id },
+            conversationId: conv,
+          }),
+        );
         lines.push(`Soll die ältere Entscheidung „${older.title}“ (${older.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) als überholt markiert werden?`);
       }
     }
@@ -640,7 +803,14 @@ export class ChatService {
     if (intent.topic) this.graph.link(note.id, this.graph.ensureEntity('topic', intent.topic).id, 'relates_to', { confidence: 0.8, status: 'confirmed' });
     await this.search.index({ type: 'note', id: note.id, title: note.name, content });
     this.ctx.events.changed('knowledge');
-    return { intent: 'note_capture', content: `Notiz gespeichert${intent.topic ? ` (Thema: ${intent.topic})` : ''}.`, sources: [{ id: note.id, type: 'note', title: note.name, snippet: truncate(content, 200), score: 1, path: null, date: note.createdAt }], context: { topics: intent.topic ? [{ type: 'topic', id: this.graph.ensureEntity('topic', intent.topic).id, label: intent.topic }] : [] }, confidence: intent.confidence, state };
+    return {
+      intent: 'note_capture',
+      content: `Notiz gespeichert${intent.topic ? ` (Thema: ${intent.topic})` : ''}.`,
+      sources: [{ id: note.id, type: 'note', title: note.name, snippet: truncate(content, 200), score: 1, path: null, date: note.createdAt }],
+      context: { topics: intent.topic ? [{ type: 'topic', id: this.graph.ensureEntity('topic', intent.topic).id, label: intent.topic }] : [] },
+      confidence: intent.confidence,
+      state,
+    };
   }
 
   // ---------- Wissensabfragen ----------
@@ -653,14 +823,34 @@ export class ChatService {
         const d = this.docs.getRow(h.id);
         if (d.status !== 'archived' && d.status !== 'indexed_only') continue;
         const allowed = this.privacy.evaluate({ path: d.sourcePath, ext: d.ext, docExcluded: d.llmStatus === 'excluded' }).allowed;
-        const text = allowed ? `${d.summary ?? ''}\nAuszug: ${h.snippet}${d.persons.length ? `\nPersonen: ${d.persons.join(', ')}` : ''}${d.dates.length ? `\nDaten: ${d.dates.slice(0, 4).join(', ')}` : ''}` : '(Inhalt ist von der externen Analyse ausgeschlossen; nur der Titel ist bekannt.)';
-        out.push({ id: h.id, type: 'document', title: d.title, snippet: truncate(d.summary ?? h.snippet, 220), path: d.archiveRelPath ? `${this.settings.get().archiveRoot}/${d.archiveRelPath}` : d.sourcePath, date: d.archivedAt, score: h.score, _text: text });
+        const text = allowed
+          ? `${d.summary ?? ''}\nAuszug: ${h.snippet}${d.persons.length ? `\nPersonen: ${d.persons.join(', ')}` : ''}${d.dates.length ? `\nDaten: ${d.dates.slice(0, 4).join(', ')}` : ''}`
+          : '(Inhalt ist von der externen Analyse ausgeschlossen; nur der Titel ist bekannt.)';
+        out.push({
+          id: h.id,
+          type: 'document',
+          title: d.title,
+          snippet: truncate(d.summary ?? h.snippet, 220),
+          path: d.archiveRelPath ? `${this.settings.get().archiveRoot}/${d.archiveRelPath}` : d.sourcePath,
+          date: d.archivedAt,
+          score: h.score,
+          _text: text,
+        });
       } else if (h.type === 'decision') {
         const d = this.decisions.get(h.id);
         out.push({ ...this.decisionSource(d, h.score), _text: this.decisions.format(d).replace(/\*\*/g, '') });
       } else if (h.type === 'task') {
         const i = this.openItems.get(h.id);
-        out.push({ id: i.id, type: 'task', title: i.title, snippet: `Status: ${i.status}${i.dueAt ? `, fällig ${i.dueAt.slice(0, 10)}` : ''}`, path: null, date: i.createdAt, score: h.score, _text: `Offener Punkt: ${i.title}. ${i.description ?? ''} Status: ${i.status}. Fällig: ${i.dueAt?.slice(0, 10) ?? 'unbekannt'}. Verantwortlich: ${i.responsibleName ?? 'unbekannt'}.` });
+        out.push({
+          id: i.id,
+          type: 'task',
+          title: i.title,
+          snippet: `Status: ${i.status}${i.dueAt ? `, fällig ${i.dueAt.slice(0, 10)}` : ''}`,
+          path: null,
+          date: i.createdAt,
+          score: h.score,
+          _text: `Offener Punkt: ${i.title}. ${i.description ?? ''} Status: ${i.status}. Fällig: ${i.dueAt?.slice(0, 10) ?? 'unbekannt'}. Verantwortlich: ${i.responsibleName ?? 'unbekannt'}.`,
+        });
       } else {
         out.push({ id: h.id, type: h.type, title: h.title, snippet: truncate(h.snippet, 220), path: null, date: h.date, score: h.score, _text: h.snippet });
       }
@@ -698,15 +888,26 @@ export class ChatService {
     if (sources.length === 0) {
       return {
         intent: 'knowledge_question',
-        content: 'Dazu finde ich im Archiv nichts. Es gibt keine archivierten Dokumente, Entscheidungen, offenen Punkte oder Notizen, die zu deiner Frage passen.',
+        content:
+          'Dazu finde ich im Archiv nichts. Es gibt keine archivierten Dokumente, Entscheidungen, offenen Punkte oder Notizen, die zu deiner Frage passen.',
         confidence: 0.2,
-        uncertainties: ['Berücksichtigt werden nur archivierte/indexierte Inhalte – Dateien in Scan-Verzeichnissen oder im Eingang, die noch nicht archiviert sind, fehlen.'],
+        uncertainties: [
+          'Berücksichtigt werden nur archivierte/indexierte Inhalte – Dateien in Scan-Verzeichnissen oder im Eingang, die noch nicht archiviert sind, fehlen.',
+        ],
         state,
       };
     }
     const context = this.contextFromSources(stripped);
     if (!this.llm.canUse()) {
-      return { intent: 'knowledge_question', content: this.localAnswer(numbered), sources: stripped, context, confidence: 0.4, uncertainties: ['Ohne LLM wird nur eine lokale Trefferliste angezeigt – keine ausformulierte Antwort.'], state };
+      return {
+        intent: 'knowledge_question',
+        content: this.localAnswer(numbered),
+        sources: stripped,
+        context,
+        confidence: 0.4,
+        uncertainties: ['Ohne LLM wird nur eine lokale Trefferliste angezeigt – keine ausformulierte Antwort.'],
+        state,
+      };
     }
     const ids = new Map(numbered.map((s, i) => [`S${i + 1}`, s]));
     try {
@@ -723,7 +924,16 @@ export class ChatService {
       return this.composeAnswer(ans, ids, numbered, stripped, context, state);
     } catch (err) {
       const info = toErrorInfo(err);
-      return { intent: 'knowledge_question', content: `${this.localAnswer(numbered)}\n\n_Die ausformulierte Antwort war nicht möglich: ${info.message}_`, sources: stripped, context, confidence: 0.35, uncertainties: ['LLM-Antwort nicht verfügbar – lokale Trefferliste.'], errorMessage: info.message, state };
+      return {
+        intent: 'knowledge_question',
+        content: `${this.localAnswer(numbered)}\n\n_Die ausformulierte Antwort war nicht möglich: ${info.message}_`,
+        sources: stripped,
+        context,
+        confidence: 0.35,
+        uncertainties: ['LLM-Antwort nicht verfügbar – lokale Trefferliste.'],
+        errorMessage: info.message,
+        state,
+      };
     }
   }
 
@@ -750,15 +960,43 @@ export class ChatService {
     if (dropped.length) uncertainties.push(`${dropped.length} Aussage(n) des Modells ohne gültigen Quellenbeleg wurden verworfen.`);
     if (ans.confidence < 0.5) uncertainties.push('Die Antwort ist nur mit geringer Sicherheit belegt.');
     const parts = [ans.answer.trim()];
-    if (facts.length) parts.push(`**Belegte Fakten**\n${facts.map((f) => `• ${f.statement} ${valid(f.sourceIds).map((s) => `[${s.replace('S', '')}]`).join('')}`).join('\n')}`);
+    if (facts.length)
+      parts.push(
+        `**Belegte Fakten**\n${facts
+          .map(
+            (f) =>
+              `• ${f.statement} ${valid(f.sourceIds)
+                .map((s) => `[${s.replace('S', '')}]`)
+                .join('')}`,
+          )
+          .join('\n')}`,
+      );
     if (ans.interpretation?.trim()) parts.push(`**Einschätzung (Interpretation, nicht belegt)**\n${ans.interpretation.trim()}`);
     const contradictions = ans.contradictions.filter((c) => valid(c.sourceIds).length > 0);
-    if (contradictions.length) parts.push(`**Widersprüchliche Quellen**\n${contradictions.map((c) => `• ${c.description} ${valid(c.sourceIds).map((s) => `[${s.replace('S', '')}]`).join('')}`).join('\n')}`);
+    if (contradictions.length)
+      parts.push(
+        `**Widersprüchliche Quellen**\n${contradictions
+          .map(
+            (c) =>
+              `• ${c.description} ${valid(c.sourceIds)
+                .map((s) => `[${s.replace('S', '')}]`)
+                .join('')}`,
+          )
+          .join('\n')}`,
+      );
     if (uncertainties.length) parts.push(`**Unsicherheiten**\n${uncertainties.map((u) => `• ${u}`).join('\n')}`);
     const used = new Set(valid([...ans.usedSourceIds, ...facts.flatMap((f) => f.sourceIds)]));
     const usedSources = numbered.filter((_, i) => used.has(`S${i + 1}`));
     const finalSources = usedSources.length ? usedSources : stripped.slice(0, 3);
-    return { intent: 'knowledge_question', content: parts.join('\n\n'), sources: finalSources, context: this.contextFromSources(finalSources), confidence: ans.confidence, uncertainties, state };
+    return {
+      intent: 'knowledge_question',
+      content: parts.join('\n\n'),
+      sources: finalSources,
+      context: this.contextFromSources(finalSources),
+      confidence: ans.confidence,
+      uncertainties,
+      state,
+    };
   }
 
   private async documentSearch(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
@@ -769,19 +1007,55 @@ export class ChatService {
       const ent = this.graph.findByName('topic', topicName) ?? this.graph.findByName('project', topicName);
       if (ent) {
         const rows = this.docs.list({ [ent.type === 'topic' ? 'topicId' : 'projectId']: ent.id, limit: 50 });
-        docs = rows.filter((d) => d.status === 'archived' || d.status === 'indexed_only').map((d) => ({ id: d.id, type: 'document' as const, title: d.title, snippet: truncate(d.summary ?? d.textPreview, 200), path: d.archivePath ?? d.sourcePath, date: d.archivedAt, score: 1 }));
+        docs = rows
+          .filter((d) => d.status === 'archived' || d.status === 'indexed_only')
+          .map((d) => ({
+            id: d.id,
+            type: 'document' as const,
+            title: d.title,
+            snippet: truncate(d.summary ?? d.textPreview, 200),
+            path: d.archivePath ?? d.sourcePath,
+            date: d.archivedAt,
+            score: 1,
+          }));
       }
     }
     if (docs.length === 0) {
       const hits = await this.search.search(query, { types: ['document'], limit: 15 });
       docs = hits.flatMap((h) => {
         const d = this.docs.get(h.id);
-        return d.status === 'archived' || d.status === 'indexed_only' ? [{ id: d.id, type: 'document' as const, title: d.title, snippet: truncate(d.summary ?? h.snippet, 200), path: d.archivePath ?? d.sourcePath, date: d.archivedAt, score: h.score }] : [];
+        return d.status === 'archived' || d.status === 'indexed_only'
+          ? [
+              {
+                id: d.id,
+                type: 'document' as const,
+                title: d.title,
+                snippet: truncate(d.summary ?? h.snippet, 200),
+                path: d.archivePath ?? d.sourcePath,
+                date: d.archivedAt,
+                score: h.score,
+              },
+            ]
+          : [];
       });
     }
-    if (docs.length === 0) return { intent: 'document_search', content: 'Ich habe dazu keine archivierten Dokumente gefunden.', confidence: 0.3, uncertainties: ['Nicht archivierte Dateien werden nicht durchsucht.'], state };
+    if (docs.length === 0)
+      return {
+        intent: 'document_search',
+        content: 'Ich habe dazu keine archivierten Dokumente gefunden.',
+        confidence: 0.3,
+        uncertainties: ['Nicht archivierte Dateien werden nicht durchsucht.'],
+        state,
+      };
     const numbered = docs.map((d, i) => ({ ...d, title: `${i + 1}. ${d.title}` }));
-    return { intent: 'document_search', content: `Ich habe ${docs.length} Dokument(e) gefunden:\n\n${docs.map((d, i) => `${i + 1}. **${d.title}** – ${d.snippet}`).join('\n')}`, sources: numbered, context: { documents: docs.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })), ...this.contextFromSources(docs) }, confidence: 0.7, state: { ...state, last: { ...(state.last ?? {}), documentIds: docs.map((d) => d.id), topic: topicName ?? null } } };
+    return {
+      intent: 'document_search',
+      content: `Ich habe ${docs.length} Dokument(e) gefunden:\n\n${docs.map((d, i) => `${i + 1}. **${d.title}** – ${d.snippet}`).join('\n')}`,
+      sources: numbered,
+      context: { documents: docs.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })), ...this.contextFromSources(docs) },
+      confidence: 0.7,
+      state: { ...state, last: { ...(state.last ?? {}), documentIds: docs.map((d) => d.id), topic: topicName ?? null } },
+    };
   }
 
   // ---------- Timeline ----------
@@ -807,13 +1081,34 @@ export class ChatService {
         label = `${similar.type === 'topic' ? 'Thema' : 'Projekt'} „${similar.name}“`;
       }
     }
-    const entries = this.timeline.get({ topicId, projectId, from: normalizeDateInput(intent.timeRange?.from ?? null) ?? undefined, to: normalizeDateInput(intent.timeRange?.to ?? null) ?? undefined });
-    if (entries.length === 0) return { intent: 'timeline_query', content: `Für ${label} gibt es im gewählten Zeitraum keine Einträge.`, confidence: 0.4, state };
+    const entries = this.timeline.get({
+      topicId,
+      projectId,
+      from: normalizeDateInput(intent.timeRange?.from ?? null) ?? undefined,
+      to: normalizeDateInput(intent.timeRange?.to ?? null) ?? undefined,
+    });
+    if (entries.length === 0)
+      return { intent: 'timeline_query', content: `Für ${label} gibt es im gewählten Zeitraum keine Einträge.`, confidence: 0.4, state };
     const byYear = new Map<number, typeof entries>();
     for (const e of entries) byYear.set(e.year, [...(byYear.get(e.year) ?? []), e]);
     const body = [...byYear.entries()].map(([y, list]) => `**${y}**\n${list.map((e) => `• ${e.date}: ${e.title}`).join('\n')}`).join('\n\n');
-    const sources: SourceReference[] = entries.slice(0, 25).map((e, i) => ({ id: e.refs[0]?.id ?? e.id, type: e.refs[0]?.type ?? 'note', title: `${i + 1}. ${e.title}`, snippet: truncate(e.description ?? '', 160), path: null, date: e.date, score: 1 }));
-    return { intent: 'timeline_query', content: `Zeitverlauf für ${label}:\n\n${body}`, sources, context: this.contextFromSources(sources), confidence: 0.8, state };
+    const sources: SourceReference[] = entries.slice(0, 25).map((e, i) => ({
+      id: e.refs[0]?.id ?? e.id,
+      type: e.refs[0]?.type ?? 'note',
+      title: `${i + 1}. ${e.title}`,
+      snippet: truncate(e.description ?? '', 160),
+      path: null,
+      date: e.date,
+      score: 1,
+    }));
+    return {
+      intent: 'timeline_query',
+      content: `Zeitverlauf für ${label}:\n\n${body}`,
+      sources,
+      context: this.contextFromSources(sources),
+      confidence: 0.8,
+      state,
+    };
   }
 
   // ---------- Ereignisse ----------
@@ -822,23 +1117,44 @@ export class ChatService {
     const ev = intent.event ?? {};
     const title = (pending?.title ?? ev.title?.trim() ?? truncate(intent.segment ?? text, 100)).slice(0, 160);
     const occurredAt = normalizeDateInput(ev.occurredAt ?? null) ?? parseGermanDate(pending ? text : (intent.segment ?? text));
-    const description = pending?.description ?? ev.description?.trim() ?? ((intent.segment ?? text).trim().length > title.length + 10 ? (intent.segment ?? text).trim().slice(0, 2000) : null);
+    const description =
+      pending?.description ??
+      ev.description?.trim() ??
+      ((intent.segment ?? text).trim().length > title.length + 10 ? (intent.segment ?? text).trim().slice(0, 2000) : null);
     const clear: ConvState = { ...state, pending: null };
     if (!occurredAt) {
       return {
         intent: 'event_record',
         content: `An welchem Datum war das Ereignis „${title}“? Nenne bitte ein Datum, damit ich es in der Timeline einordnen kann.`,
         confidence: 0.4,
-        state: { ...state, pending: { kind: 'event', title, description, topic: pending?.topic ?? intent.topic ?? null, project: pending?.project ?? intent.project ?? null, source: pending?.source ?? text.slice(0, 4000) } },
+        state: {
+          ...state,
+          pending: {
+            kind: 'event',
+            title,
+            description,
+            topic: pending?.topic ?? intent.topic ?? null,
+            project: pending?.project ?? intent.project ?? null,
+            source: pending?.source ?? text.slice(0, 4000),
+          },
+        },
       };
     }
-    const event = this.events.create({ title, description, occurredAt, topic: pending?.topic ?? intent.topic, project: pending?.project ?? intent.project, sourceIds: [] }, { actor: 'user', trigger: 'chat' });
-    const sources: SourceReference[] = [{ id: event.id, type: 'event', title: event.title, snippet: truncate(event.description ?? '', 200), score: 1, path: null, date: event.occurredAt }];
+    const event = this.events.create(
+      { title, description, occurredAt, topic: pending?.topic ?? intent.topic, project: pending?.project ?? intent.project, sourceIds: [] },
+      { actor: 'user', trigger: 'chat' },
+    );
+    const sources: SourceReference[] = [
+      { id: event.id, type: 'event', title: event.title, snippet: truncate(event.description ?? '', 200), score: 1, path: null, date: event.occurredAt },
+    ];
     return {
       intent: 'event_record',
       content: `Ereignis in der Timeline eingetragen: **${event.title}** (${event.occurredAt.slice(0, 10)})${event.topicName ? `, Thema: ${event.topicName}` : ''}${event.projectName ? `, Projekt: ${event.projectName}` : ''}.`,
       sources,
-      context: { topics: event.topicName ? [{ type: 'topic', id: event.topicId!, label: event.topicName }] : [], projects: event.projectName ? [{ type: 'project', id: event.projectId!, label: event.projectName }] : [] },
+      context: {
+        topics: event.topicName ? [{ type: 'topic', id: event.topicId!, label: event.topicName }] : [],
+        projects: event.projectName ? [{ type: 'project', id: event.projectId!, label: event.projectName }] : [],
+      },
       confidence: intent.confidence,
       state: clear,
     };
@@ -848,18 +1164,33 @@ export class ChatService {
   private async openItemNew(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const oi = intent.openItem ?? {};
     const item = this.openItems.create(
-      { title: oi.title?.trim() || truncate(text, 120), description: oi.description ?? undefined, topic: intent.topic, project: intent.project, responsible: oi.responsible, dueAt: normalizeDateInput(oi.dueAt ?? null) ?? undefined, priority: oi.priority ?? 'normal', sourceIds: [], confidence: intent.confidence },
+      {
+        title: oi.title?.trim() || truncate(text, 120),
+        description: oi.description ?? undefined,
+        topic: intent.topic,
+        project: intent.project,
+        responsible: oi.responsible,
+        dueAt: normalizeDateInput(oi.dueAt ?? null) ?? undefined,
+        priority: oi.priority ?? 'normal',
+        sourceIds: [],
+        confidence: intent.confidence,
+      },
       { actor: 'user', trigger: 'chat' },
     );
     const asked: Array<'responsible' | 'due'> = [];
     if (!item.responsiblePersonId) asked.push('responsible');
     if (!item.dueAt) asked.push('due');
-    const q = asked.length ? `\n\nMir fehlt noch: ${asked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann soll das erledigt sein?')).join(' ')} (Du kannst auch „unbekannt“ sagen.)` : '';
+    const q = asked.length
+      ? `\n\nMir fehlt noch: ${asked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann soll das erledigt sein?')).join(' ')} (Du kannst auch „unbekannt“ sagen.)`
+      : '';
     return {
       intent: 'open_item_new',
       content: `Offenen Punkt angelegt: **${item.title}**${item.dueAt ? ` (fällig ${item.dueAt.slice(0, 10)})` : ''}${item.responsibleName ? `, Verantwortlich: ${item.responsibleName}` : ''}.${q}`,
       sources: [{ id: item.id, type: 'task', title: item.title, snippet: item.description ?? '', score: 1, path: null, date: item.createdAt }],
-      context: { openItems: [{ type: 'task', id: item.id, label: item.title }], topics: item.topicId ? [{ type: 'topic', id: item.topicId, label: item.topicName ?? '' }] : [] },
+      context: {
+        openItems: [{ type: 'task', id: item.id, label: item.title }],
+        topics: item.topicId ? [{ type: 'topic', id: item.topicId, label: item.topicName ?? '' }] : [],
+      },
       confidence: item.confidence,
       uncertainties: asked.map((a) => (a === 'responsible' ? 'Verantwortlicher unbekannt' : 'Fälligkeitsdatum unbekannt')),
       state: { pending: asked.length ? { kind: 'open_item', openItemId: item.id, asked } : null, last: { ...(state.last ?? {}), openItemId: item.id } },
@@ -869,7 +1200,9 @@ export class ChatService {
   private async openItemUpdate(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const oi = intent.openItem ?? {};
     const pending = state.pending?.kind === 'open_item' ? state.pending : null;
-    const item = pending ? this.openItems.get(pending.openItemId) : ((oi.targetHint && this.openItems.findByHint(oi.targetHint)) || (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null));
+    const item = pending
+      ? this.openItems.get(pending.openItemId)
+      : (oi.targetHint && this.openItems.findByHint(oi.targetHint)) || (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
     if (!item) return { intent: 'open_item_update', content: 'Welchen offenen Punkt meinst du? Nenne bitte den Titel.', confidence: 0.3, state };
     const patch: Parameters<OpenItemService['update']>[1] = {};
     if (oi.responsible) patch.responsible = oi.responsible;
@@ -880,17 +1213,22 @@ export class ChatService {
     if (oi.description) patch.description = oi.description;
     if (oi.priority) patch.priority = oi.priority;
     if (oi.newStatus && oi.newStatus !== 'resolved' && oi.newStatus !== 'dismissed') patch.status = oi.newStatus;
-    if (oi.newStatus === 'resolved' || oi.newStatus === 'dismissed') return this.openItemClose('', text, { ...intent, openItem: { ...oi, targetHint: item.title } }, state);
+    if (oi.newStatus === 'resolved' || oi.newStatus === 'dismissed')
+      return this.openItemClose('', text, { ...intent, openItem: { ...oi, targetHint: item.title } }, state);
     const updated = Object.keys(patch).length ? this.openItems.update(item.id, patch) : item;
     const stillAsked: Array<'responsible' | 'due'> = [];
-    if (!updated.responsiblePersonId && !updated.responsibleUnknown && pending?.asked.includes('responsible') && !patch.responsible) stillAsked.push('responsible');
+    if (!updated.responsiblePersonId && !updated.responsibleUnknown && pending?.asked.includes('responsible') && !patch.responsible)
+      stillAsked.push('responsible');
     if (!updated.dueAt && !updated.dueUnknown && pending?.asked.includes('due') && !patch.dueAt) stillAsked.push('due');
     return {
       intent: 'open_item_update',
       content: `Offenen Punkt aktualisiert: **${updated.title}**${updated.dueAt ? ` – fällig ${updated.dueAt.slice(0, 10)}` : ''}${updated.responsibleName ? `, Verantwortlich: ${updated.responsibleName}` : updated.responsibleUnknown ? ', Verantwortlicher: unbekannt' : ''}.`,
       context: { openItems: [{ type: 'task', id: updated.id, label: updated.title }] },
       confidence: 0.8,
-      state: { pending: stillAsked.length ? { kind: 'open_item', openItemId: updated.id, asked: stillAsked } : null, last: { ...(state.last ?? {}), openItemId: updated.id } },
+      state: {
+        pending: stillAsked.length ? { kind: 'open_item', openItemId: updated.id, asked: stillAsked } : null,
+        last: { ...(state.last ?? {}), openItemId: updated.id },
+      },
     };
   }
 
@@ -899,8 +1237,24 @@ export class ChatService {
     const item = this.openItems.findByHint(hint) ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
     if (!item) return { intent: 'open_item_close', content: 'Welchen offenen Punkt soll ich schließen? Nenne bitte den Titel.', confidence: 0.3, state };
     const dismiss = intent.openItem?.newStatus === 'dismissed';
-    const action = this.actions.propose({ actionType: 'close_open_item', label: `„${item.title}“ ${dismiss ? 'verwerfen' : 'als erledigt schließen'}`, rationale: 'Das Schließen eines offenen Punkts erfordert deine Bestätigung.', confidence: intent.confidence, affectedEntities: [{ type: 'task', id: item.id, label: item.title }], requiredConfirmation: 'confirm', proposedParameters: { openItemId: item.id, status: dismiss ? 'dismissed' : 'resolved' }, conversationId: conv || null });
-    return { intent: 'open_item_close', content: `Soll ich den offenen Punkt **${item.title}** wirklich ${dismiss ? 'verwerfen' : 'als erledigt schließen'}? Bitte bestätige.`, actions: [action], context: { openItems: [{ type: 'task', id: item.id, label: item.title }] }, confidence: intent.confidence, state: { ...state, last: { ...(state.last ?? {}), openItemId: item.id } } };
+    const action = this.actions.propose({
+      actionType: 'close_open_item',
+      label: `„${item.title}“ ${dismiss ? 'verwerfen' : 'als erledigt schließen'}`,
+      rationale: 'Das Schließen eines offenen Punkts erfordert deine Bestätigung.',
+      confidence: intent.confidence,
+      affectedEntities: [{ type: 'task', id: item.id, label: item.title }],
+      requiredConfirmation: 'confirm',
+      proposedParameters: { openItemId: item.id, status: dismiss ? 'dismissed' : 'resolved' },
+      conversationId: conv || null,
+    });
+    return {
+      intent: 'open_item_close',
+      content: `Soll ich den offenen Punkt **${item.title}** wirklich ${dismiss ? 'verwerfen' : 'als erledigt schließen'}? Bitte bestätige.`,
+      actions: [action],
+      context: { openItems: [{ type: 'task', id: item.id, label: item.title }] },
+      confidence: intent.confidence,
+      state: { ...state, last: { ...(state.last ?? {}), openItemId: item.id } },
+    };
   }
 
   // ---------- Erinnerungen ----------
@@ -910,18 +1264,31 @@ export class ChatService {
     const when = normalizeDateInput(r.remindAt ?? null) ?? parseGermanDate(r.relativeText ?? text);
     if (!when) {
       // Rückfrage merken, damit die Antwort („31.10.“) im Kontext verstanden wird
-      const target = (r.targetHint ? this.openItems.findByHint(r.targetHint) : null) ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+      const target =
+        (r.targetHint ? this.openItems.findByHint(r.targetHint) : null) ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
       const title = pending?.title ?? target?.title ?? r.title?.trim() ?? truncate(text, 80);
       return {
         intent: intent.intent,
         content: 'Wann soll ich dich erinnern? Nenne bitte ein Datum oder z. B. „nächsten Montag“.',
         confidence: 0.4,
-        state: { ...state, pending: { kind: 'reminder', title, targetId: pending?.targetId ?? target?.id ?? null, snooze: intent.intent === 'reminder_snooze', source: pending?.source ?? text.slice(0, 4000) } },
+        state: {
+          ...state,
+          pending: {
+            kind: 'reminder',
+            title,
+            targetId: pending?.targetId ?? target?.id ?? null,
+            snooze: intent.intent === 'reminder_snooze',
+            source: pending?.source ?? text.slice(0, 4000),
+          },
+        },
       };
     }
     state = { ...state, pending: null };
     const hinted = r.targetHint ? this.openItems.findByHint(r.targetHint) : null;
-    const item = (pending?.targetId ? this.openItems.get(pending.targetId) : null) ?? hinted ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+    const item =
+      (pending?.targetId ? this.openItems.get(pending.targetId) : null) ??
+      hinted ??
+      (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
     const existing = item ? this.reminders.list('pending').find((x) => x.targetId === item.id) : undefined;
     if (existing && intent.intent === 'reminder_snooze') {
       this.reminders.snooze(existing.id, when);
@@ -934,7 +1301,16 @@ export class ChatService {
       const source = (pending?.source ?? text).trim();
       const title = (pending?.title ?? r.title?.trim() ?? truncate(source.replace(/\s+/g, ' '), 100)).slice(0, 160);
       target = this.openItems.create(
-        { title, description: source.length > title.length + 10 ? source.slice(0, 2000) : undefined, topic: intent.topic, project: intent.project, dueAt: when, priority: 'normal', sourceIds: [], confidence: 0.7 },
+        {
+          title,
+          description: source.length > title.length + 10 ? source.slice(0, 2000) : undefined,
+          topic: intent.topic,
+          project: intent.project,
+          dueAt: when,
+          priority: 'normal',
+          sourceIds: [],
+          confidence: 0.7,
+        },
         { actor: 'user', trigger: 'chat' },
       );
       let noteTitle: string | null = null;
@@ -946,8 +1322,15 @@ export class ChatService {
       }
       created = { openItem: target.title, note: noteTitle };
     }
-    const rem = this.reminders.create({ targetType: target ? 'open_item' : 'custom', targetId: target?.id ?? null, title: target?.title ?? pending?.title ?? r.title?.trim() ?? truncate(text, 80), remindAt: when });
-    const extra = created ? `\n\nDazu habe ich den offenen Punkt **${created.openItem}** (fällig ${when}) angelegt${created.note ? ' und deinen Text als Notiz gespeichert' : ''}. Eine Entscheidung war in der Nachricht nicht enthalten – deshalb habe ich keine erfasst.` : '';
+    const rem = this.reminders.create({
+      targetType: target ? 'open_item' : 'custom',
+      targetId: target?.id ?? null,
+      title: target?.title ?? pending?.title ?? r.title?.trim() ?? truncate(text, 80),
+      remindAt: when,
+    });
+    const extra = created
+      ? `\n\nDazu habe ich den offenen Punkt **${created.openItem}** (fällig ${when}) angelegt${created.note ? ' und deinen Text als Notiz gespeichert' : ''}. Eine Entscheidung war in der Nachricht nicht enthalten – deshalb habe ich keine erfasst.`
+      : '';
     return {
       intent: 'reminder_create',
       content: `Erinnerung für den ${when} angelegt${target && !created ? ` (Offener Punkt: ${target.title})` : ''}. Du siehst sie dann in der Notification Bell – solange Archivist läuft.${extra}`,
@@ -965,21 +1348,68 @@ export class ChatService {
   // ---------- Vorschläge, Archiv, Scan ----------
   private async proposalDecision(conv: string, confirm: boolean, state: ConvState): Promise<Reply> {
     const a = this.actions.latestProposed(conv) ?? this.actions.latestProposed();
-    if (!a) return { intent: confirm ? 'proposal_confirm' : 'proposal_reject', content: 'Es gibt aktuell keinen offenen Vorschlag, den ich bestätigen oder ablehnen könnte.', confidence: 0.5, state };
-    if (confirm && a.requiredConfirmation === 'strong') return { intent: 'proposal_confirm', content: `Dieser Vorschlag ist besonders kritisch („${a.label}“). Bitte bestätige ihn über die Karte im Chat bzw. in den Insights.`, actions: [a], confidence: 0.5, state };
+    if (!a)
+      return {
+        intent: confirm ? 'proposal_confirm' : 'proposal_reject',
+        content: 'Es gibt aktuell keinen offenen Vorschlag, den ich bestätigen oder ablehnen könnte.',
+        confidence: 0.5,
+        state,
+      };
+    if (confirm && a.requiredConfirmation === 'strong')
+      return {
+        intent: 'proposal_confirm',
+        content: `Dieser Vorschlag ist besonders kritisch („${a.label}“). Bitte bestätige ihn über die Karte im Chat bzw. in den Insights.`,
+        actions: [a],
+        confidence: 0.5,
+        state,
+      };
     const res = await this.actions.resolve(a.id, confirm ? 'approve' : 'reject', { confirmed: true, strongConfirmed: false });
-    return { intent: confirm ? 'proposal_confirm' : 'proposal_reject', content: confirm ? (res.status === 'executed' ? `Erledigt: ${a.label}. ${res.result ?? ''}` : `Die Aktion konnte nicht ausgeführt werden: ${res.result ?? 'unbekannter Fehler'}`) : `Verstanden, ich habe den Vorschlag abgelehnt: ${a.label}.`, confidence: 0.9, state };
+    return {
+      intent: confirm ? 'proposal_confirm' : 'proposal_reject',
+      content: confirm
+        ? res.status === 'executed'
+          ? `Erledigt: ${a.label}. ${res.result ?? ''}`
+          : `Die Aktion konnte nicht ausgeführt werden: ${res.result ?? 'unbekannter Fehler'}`
+        : `Verstanden, ich habe den Vorschlag abgelehnt: ${a.label}.`,
+      confidence: 0.9,
+      state,
+    };
   }
 
   private async archiveExecute(conv: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const ids = state.last?.documentIds?.length ? state.last.documentIds : null;
-    const candidates = (ids ? ids.map((id) => this.docs.get(id)) : this.docs.list({ status: 'proposed', limit: 50 })).filter((d) => d.status === 'proposed' || d.status === 'staged');
-    if (candidates.length === 0) return { intent: 'archive_execute', content: 'Es gibt aktuell keine analysierten Dokumente, die auf Archivierung warten.', confidence: 0.5, state };
+    const candidates = (ids ? ids.map((id) => this.docs.get(id)) : this.docs.list({ status: 'proposed', limit: 50 })).filter(
+      (d) => d.status === 'proposed' || d.status === 'staged',
+    );
+    if (candidates.length === 0)
+      return { intent: 'archive_execute', content: 'Es gibt aktuell keine analysierten Dokumente, die auf Archivierung warten.', confidence: 0.5, state };
     const topic = intent.topic?.trim();
     const project = intent.project?.trim();
-    const items = candidates.map((d) => ({ documentId: d.id, mode: 'copy' as const, categoryPath: d.proposal?.location.categoryPath ?? d.categoryPath ?? undefined, topic: topic ?? d.proposal?.topic ?? null, project: project ?? d.proposal?.project ?? null }));
-    const action = this.actions.propose({ actionType: 'archive_documents', label: `${items.length} Dokument(e) kopieren und archivieren${project ? ` (Projekt ${project})` : topic ? ` (Thema ${topic})` : ''}`, rationale: 'Auf deinen Wunsch vorbereitet. Es wird kopiert; Originale bleiben unverändert.', confidence: Math.min(...candidates.map((d) => d.confidence ?? 0.5)), affectedEntities: candidates.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })), requiredConfirmation: 'confirm', proposedParameters: { items, approveNewCategories: [] }, conversationId: conv });
-    return { intent: 'archive_execute', content: `Ich habe ${items.length} Dokument(e) für die Archivierung vorbereitet (Standard: Kopieren ins Archiv):\n\n${candidates.map((d) => `• ${d.title} → ${d.proposal?.location.categoryPath ?? d.categoryPath ?? '?'}`).join('\n')}\n\nBitte bestätige – vorher kannst du in der Inbox alle Quell- und Zielpfade prüfen.`, actions: [action], context: { documents: candidates.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })) }, confidence: action.confidence, state };
+    const items = candidates.map((d) => ({
+      documentId: d.id,
+      mode: 'copy' as const,
+      categoryPath: d.proposal?.location.categoryPath ?? d.categoryPath ?? undefined,
+      topic: topic ?? d.proposal?.topic ?? null,
+      project: project ?? d.proposal?.project ?? null,
+    }));
+    const action = this.actions.propose({
+      actionType: 'archive_documents',
+      label: `${items.length} Dokument(e) kopieren und archivieren${project ? ` (Projekt ${project})` : topic ? ` (Thema ${topic})` : ''}`,
+      rationale: 'Auf deinen Wunsch vorbereitet. Es wird kopiert; Originale bleiben unverändert.',
+      confidence: Math.min(...candidates.map((d) => d.confidence ?? 0.5)),
+      affectedEntities: candidates.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })),
+      requiredConfirmation: 'confirm',
+      proposedParameters: { items, approveNewCategories: [] },
+      conversationId: conv,
+    });
+    return {
+      intent: 'archive_execute',
+      content: `Ich habe ${items.length} Dokument(e) für die Archivierung vorbereitet (Standard: Kopieren ins Archiv):\n\n${candidates.map((d) => `• ${d.title} → ${d.proposal?.location.categoryPath ?? d.categoryPath ?? '?'}`).join('\n')}\n\nBitte bestätige – vorher kannst du in der Inbox alle Quell- und Zielpfade prüfen.`,
+      actions: [action],
+      context: { documents: candidates.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })) },
+      confidence: action.confidence,
+      state,
+    };
   }
 
   private async archiveStatus(state: ConvState): Promise<Reply> {
@@ -994,7 +1424,12 @@ export class ChatService {
   private async scanStart(state: ConvState): Promise<Reply> {
     try {
       const job = this.scanner.startScan(undefined, 'chat');
-      return { intent: 'scan_start', content: `Der Scan läuft (Job „${job.label}“). Ich melde mich über die Notification Bell, sobald er fertig ist. Es werden nur Dateien aufgelistet – es gehen keine Inhalte an das LLM, bevor du Dateien zur Analyse auswählst.`, confidence: 0.9, state };
+      return {
+        intent: 'scan_start',
+        content: `Der Scan läuft (Job „${job.label}“). Ich melde mich über die Notification Bell, sobald er fertig ist. Es werden nur Dateien aufgelistet – es gehen keine Inhalte an das LLM, bevor du Dateien zur Analyse auswählst.`,
+        confidence: 0.9,
+        state,
+      };
     } catch (err) {
       const info = toErrorInfo(err);
       return { intent: 'scan_start', content: info.message, errorMessage: info.message, confidence: 0.5, state };
@@ -1003,40 +1438,92 @@ export class ChatService {
 
   private async excludePath(conv: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const p = intent.path?.trim();
-    if (!p || !p.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(p)) return { intent: 'exclude_path', content: 'Bitte nenne den vollständigen Pfad der Datei oder des Ordners, den ich künftig ignorieren soll.', confidence: 0.4, state };
+    if (!p || (!p.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(p)))
+      return {
+        intent: 'exclude_path',
+        content: 'Bitte nenne den vollständigen Pfad der Datei oder des Ordners, den ich künftig ignorieren soll.',
+        confidence: 0.4,
+        state,
+      };
     let kind: 'file' | 'dir';
     try {
       kind = fs.statSync(p).isDirectory() ? 'dir' : 'file';
     } catch {
       kind = /[\\/]$/.test(p) || !/\.[a-z0-9]{2,5}$/i.test(p) ? 'dir' : 'file';
     }
-    const action = this.actions.propose({ actionType: 'exclude_path', label: `${kind === 'dir' ? 'Ordner' : 'Datei'} dauerhaft vom Scan ausschließen: ${p}`, rationale: 'Ausschlüsse gelten für alle künftigen Scans.', confidence: 0.9, affectedEntities: [], requiredConfirmation: 'confirm', proposedParameters: { kind, path: p }, conversationId: conv });
-    return { intent: 'exclude_path', content: `Soll ich ${kind === 'dir' ? 'den Ordner' : 'die Datei'} **${p}** dauerhaft von Scans ausschließen?`, actions: [action], confidence: 0.9, state };
+    const action = this.actions.propose({
+      actionType: 'exclude_path',
+      label: `${kind === 'dir' ? 'Ordner' : 'Datei'} dauerhaft vom Scan ausschließen: ${p}`,
+      rationale: 'Ausschlüsse gelten für alle künftigen Scans.',
+      confidence: 0.9,
+      affectedEntities: [],
+      requiredConfirmation: 'confirm',
+      proposedParameters: { kind, path: p },
+      conversationId: conv,
+    });
+    return {
+      intent: 'exclude_path',
+      content: `Soll ich ${kind === 'dir' ? 'den Ordner' : 'die Datei'} **${p}** dauerhaft von Scans ausschließen?`,
+      actions: [action],
+      confidence: 0.9,
+      state,
+    };
   }
 
   private async contradictionCheck(state: ConvState): Promise<Reply> {
     await this.contradictions.scanAll();
     const list = this.contradictions.list('detected');
-    if (list.length === 0) return { intent: 'contradiction_check', content: 'Ich habe keine widersprüchlichen Aussagen gefunden.', confidence: 0.6, uncertainties: ['Die Prüfung erkennt nur eindeutige Gegensätze bei aktiven Entscheidungen zum gleichen Thema.'], state };
+    if (list.length === 0)
+      return {
+        intent: 'contradiction_check',
+        content: 'Ich habe keine widersprüchlichen Aussagen gefunden.',
+        confidence: 0.6,
+        uncertainties: ['Die Prüfung erkennt nur eindeutige Gegensätze bei aktiven Entscheidungen zum gleichen Thema.'],
+        state,
+      };
     const actions = list.flatMap((c) => {
       const ins = this.insights.byDedupeKey(`contradiction:${c.id}`);
       return ins?.recommendedActionId ? [this.actions.get(ins.recommendedActionId)] : [];
     });
-    return { intent: 'contradiction_check', content: `Ich habe ${list.length} mögliche(n) Widerspruch/Widersprüche gefunden:\n\n${list.map((c) => `**${c.title}**\n${c.description}`).join('\n\n')}\n\nDas sind Hinweise, keine festgestellte Wahrheit.`, actions: actions.filter((a) => a.status === 'proposed'), context: { contradictions: list.map((c) => ({ type: 'decision' as const, id: c.id, label: c.title })) }, confidence: Math.max(...list.map((c) => c.confidence)), state };
+    return {
+      intent: 'contradiction_check',
+      content: `Ich habe ${list.length} mögliche(n) Widerspruch/Widersprüche gefunden:\n\n${list.map((c) => `**${c.title}**\n${c.description}`).join('\n\n')}\n\nDas sind Hinweise, keine festgestellte Wahrheit.`,
+      actions: actions.filter((a) => a.status === 'proposed'),
+      context: { contradictions: list.map((c) => ({ type: 'decision' as const, id: c.id, label: c.title })) },
+      confidence: Math.max(...list.map((c) => c.confidence)),
+      state,
+    };
   }
 
   private async relationDecide(conv: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const name = intent.topic ?? intent.project;
     const ent = name ? (this.graph.findByName('topic', name) ?? this.graph.findByName('project', name)) : undefined;
-    const rels = ent ? this.graph.relationsOf(ent.id, { statuses: ['proposed'] }) : this.graph.listEntities({ limit: 200 }).flatMap((e) => this.graph.relationsOf(e.id, { statuses: ['proposed'] })).filter((r, i, a) => a.findIndex((x) => x.id === r.id) === i);
-    if (rels.length === 0) return { intent: 'relation_decide', content: 'Es gibt keine vorgeschlagenen Beziehungen, die auf deine Entscheidung warten.', confidence: 0.5, state };
+    const rels = ent
+      ? this.graph.relationsOf(ent.id, { statuses: ['proposed'] })
+      : this.graph
+          .listEntities({ limit: 200 })
+          .flatMap((e) => this.graph.relationsOf(e.id, { statuses: ['proposed'] }))
+          .filter((r, i, a) => a.findIndex((x) => x.id === r.id) === i);
+    if (rels.length === 0)
+      return { intent: 'relation_decide', content: 'Es gibt keine vorgeschlagenen Beziehungen, die auf deine Entscheidung warten.', confidence: 0.5, state };
     const top = rels.slice(0, 3);
     const actions: StoredAgentAction[] = [];
     const lines = top.map((r) => {
       const a = this.graph.getEntity(r.sourceEntityId)?.name ?? r.sourceEntityId;
       const b = this.graph.getEntity(r.targetEntityId)?.name ?? r.targetEntityId;
       for (const type of ['confirm_relation', 'reject_relation'] as const) {
-        actions.push(this.actions.propose({ actionType: type, label: `${type === 'confirm_relation' ? 'Bestätigen' : 'Ablehnen'}: ${a} → ${r.relationType} → ${b}`, rationale: `Vorgeschlagene Beziehung (Confidence ${Math.round(r.confidence * 100)} %).`, confidence: r.confidence, affectedEntities: [], requiredConfirmation: 'confirm', proposedParameters: { relationId: r.id }, conversationId: conv }));
+        actions.push(
+          this.actions.propose({
+            actionType: type,
+            label: `${type === 'confirm_relation' ? 'Bestätigen' : 'Ablehnen'}: ${a} → ${r.relationType} → ${b}`,
+            rationale: `Vorgeschlagene Beziehung (Confidence ${Math.round(r.confidence * 100)} %).`,
+            confidence: r.confidence,
+            affectedEntities: [],
+            requiredConfirmation: 'confirm',
+            proposedParameters: { relationId: r.id },
+            conversationId: conv,
+          }),
+        );
       }
       return `• ${a} → ${r.relationType} → ${b} (${Math.round(r.confidence * 100)} %)`;
     });

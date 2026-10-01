@@ -46,7 +46,10 @@ export function polarity(text: string): Polarity {
 
 /** Auswahlentscheidung „… für X“ / „… auf X“ → X */
 export function chosenOption(text: string): string | null {
-  const m = /(?:entscheiden\s+uns|entschieden|wählen|wählten|setzen|nutzen|verwenden|bleiben)[^.]*?\b(?:für|auf|bei|mit)\s+(?:das\s+|die\s+|den\s+|dem\s+)?([\p{L}0-9][\p{L}0-9._+-]*(?:\s+[A-Z0-9][\p{L}0-9._+-]*)?)/iu.exec(text);
+  const m =
+    /(?:entscheiden\s+uns|entschieden|wählen|wählten|setzen|nutzen|verwenden|bleiben)[^.]*?\b(?:für|auf|bei|mit)\s+(?:das\s+|die\s+|den\s+|dem\s+)?([\p{L}0-9][\p{L}0-9._+-]*(?:\s+[A-Z0-9][\p{L}0-9._+-]*)?)/iu.exec(
+      text,
+    );
   return m?.[1]?.trim() ?? null;
 }
 
@@ -89,7 +92,13 @@ export class ContradictionService {
   }
 
   list(status?: Contradiction['status']): Contradiction[] {
-    return this.db.select().from(contradictions).where(status ? eq(contradictions.status, status) : undefined).orderBy(desc(contradictions.createdAt)).all().map(map);
+    return this.db
+      .select()
+      .from(contradictions)
+      .where(status ? eq(contradictions.status, status) : undefined)
+      .orderBy(desc(contradictions.createdAt))
+      .all()
+      .map(map);
   }
 
   get(id: string): Contradiction {
@@ -103,11 +112,24 @@ export class ContradictionService {
     const pa = polarity(a.decisionText);
     const pb = polarity(b.decisionText);
     if (pa && pb && pa !== pb) {
-      return { conflict: true, reason: pa === 'go' ? 'Eine Entscheidung führt das Thema weiter, die andere stoppt oder pausiert es.' : 'Eine Entscheidung stoppt oder pausiert das Thema, die andere führt es weiter.', confidence: 0.75 };
+      return {
+        conflict: true,
+        reason:
+          pa === 'go'
+            ? 'Eine Entscheidung führt das Thema weiter, die andere stoppt oder pausiert es.'
+            : 'Eine Entscheidung stoppt oder pausiert das Thema, die andere führt es weiter.',
+        confidence: 0.75,
+      };
     }
     const oa = chosenOption(a.decisionText);
     const ob = chosenOption(b.decisionText);
-    if (oa && ob && normalizeName(oa) !== normalizeName(ob) && !normalizeName(oa).includes(normalizeName(ob)) && !normalizeName(ob).includes(normalizeName(oa))) {
+    if (
+      oa &&
+      ob &&
+      normalizeName(oa) !== normalizeName(ob) &&
+      !normalizeName(oa).includes(normalizeName(ob)) &&
+      !normalizeName(ob).includes(normalizeName(oa))
+    ) {
       return { conflict: true, reason: `Unterschiedliche Auswahl: „${oa}“ vs. „${ob}“.`, confidence: 0.55 };
     }
     return pa || pb || (oa && ob) ? { conflict: false, reason: '', confidence: 0 } : null;
@@ -116,15 +138,13 @@ export class ContradictionService {
   private async confirmWithLlm(a: Decision, b: Decision): Promise<{ isContradiction: boolean; confidence: number; description: string } | null> {
     if (!this.llm.canUse()) return null;
     try {
-      const res = await this.llm.completeJson(
-        ContradictionProposal,
-        {
-          schemaName: 'ContradictionProposal',
-          purpose: 'Widerspruchsprüfung',
-          instructions: 'Du prüfst, ob zwei Entscheidungen zum selben Thema einander widersprechen. Sei zurückhaltend: Ergänzungen oder Präzisierungen sind keine Widersprüche.',
-          input: `Entscheidung A (${a.decidedAt ?? 'ohne Datum'}, id=${a.id}): ${truncate(a.decisionText, 800)}\n\nEntscheidung B (${b.decidedAt ?? 'ohne Datum'}, id=${b.id}): ${truncate(b.decisionText, 800)}`,
-        },
-      );
+      const res = await this.llm.completeJson(ContradictionProposal, {
+        schemaName: 'ContradictionProposal',
+        purpose: 'Widerspruchsprüfung',
+        instructions:
+          'Du prüfst, ob zwei Entscheidungen zum selben Thema einander widersprechen. Sei zurückhaltend: Ergänzungen oder Präzisierungen sind keine Widersprüche.',
+        input: `Entscheidung A (${a.decidedAt ?? 'ohne Datum'}, id=${a.id}): ${truncate(a.decisionText, 800)}\n\nEntscheidung B (${b.decidedAt ?? 'ohne Datum'}, id=${b.id}): ${truncate(b.decisionText, 800)}`,
+      });
       return { isContradiction: res.isContradiction, confidence: res.confidence, description: res.description };
     } catch (err) {
       this.ctx.logger.warn('contradictions', 'LLM-Prüfung nicht möglich, lexikalisches Ergebnis wird verwendet', { error: err });

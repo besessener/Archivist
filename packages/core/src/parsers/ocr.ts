@@ -22,7 +22,10 @@ const nodeRequire = createRequire(typeof __filename === 'string' ? __filename : 
 /** Kopiert die gepackten Sprachdaten (4.0.0_best_int) in den lokalen Ordner – nur wenn sie fehlen. */
 export async function ensureTessdata(dir: string, languages: string): Promise<string[]> {
   await fsp.mkdir(dir, { recursive: true });
-  const langs = languages.split('+').map((l) => l.trim()).filter(Boolean);
+  const langs = languages
+    .split('+')
+    .map((l) => l.trim())
+    .filter(Boolean);
   for (const lang of langs) {
     if (!LANG_RE.test(lang)) throw new Error(`Ungültiger Sprachcode: ${lang}`);
     const target = path.join(dir, `${lang}.traineddata.gz`);
@@ -33,7 +36,9 @@ export async function ensureTessdata(dir: string, languages: string): Promise<st
     } catch {
       throw new Error(`Sprachdaten für „${lang}“ sind nicht installiert (Paket @tesseract.js-data/${lang}).`);
     }
-    const source = [path.join(pkgDir, '4.0.0_best_int', `${lang}.traineddata.gz`), path.join(pkgDir, '4.0.0', `${lang}.traineddata.gz`)].find((p) => fs.existsSync(p));
+    const source = [path.join(pkgDir, '4.0.0_best_int', `${lang}.traineddata.gz`), path.join(pkgDir, '4.0.0', `${lang}.traineddata.gz`)].find((p) =>
+      fs.existsSync(p),
+    );
     if (!source) throw new Error(`Sprachdatei für „${lang}“ nicht gefunden.`);
     const tmp = `${target}.tmp`;
     await fsp.copyFile(source, tmp);
@@ -50,7 +55,12 @@ export async function prepareForOcr(input: string | Buffer): Promise<Buffer> {
   const longest = Math.max(meta.width ?? 0, meta.height ?? 0);
   let pipeline = base.grayscale().normalize();
   if (longest > 0 && longest < 1500) pipeline = pipeline.resize({ width: Math.round((meta.width ?? 1) * 2), kernel: 'lanczos3' });
-  else if (longest > 4500) pipeline = pipeline.resize({ width: meta.width && meta.width >= (meta.height ?? 0) ? 4500 : undefined, height: meta.height && meta.height > (meta.width ?? 0) ? 4500 : undefined, fit: 'inside' });
+  else if (longest > 4500)
+    pipeline = pipeline.resize({
+      width: meta.width && meta.width >= (meta.height ?? 0) ? 4500 : undefined,
+      height: meta.height && meta.height > (meta.width ?? 0) ? 4500 : undefined,
+      fit: 'inside',
+    });
   return pipeline.sharpen().png().toBuffer();
 }
 
@@ -61,7 +71,11 @@ export interface OcrResult {
 }
 
 /** Erkennt Text in mehreren Bildern mit einem gemeinsamen Worker. */
-export async function recognizeImages(images: Array<string | Buffer>, opts: OcrOptions, onProgress?: (done: number, total: number) => void): Promise<OcrResult[]> {
+export async function recognizeImages(
+  images: Array<string | Buffer>,
+  opts: OcrOptions,
+  onProgress?: (done: number, total: number) => void,
+): Promise<OcrResult[]> {
   const langs = await ensureTessdata(opts.tessdataDir, opts.languages);
   const tess = await import('tesseract.js');
   const createWorker = tess.createWorker ?? (tess as unknown as { default: typeof tess }).default.createWorker;

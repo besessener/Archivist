@@ -12,7 +12,12 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
     const tok = m[0];
     const key = `${keyPrefix}-${i++}`;
     if (tok.startsWith('**')) out.push(<strong key={key}>{tok.slice(2, -2)}</strong>);
-    else if (tok.startsWith('`')) out.push(<code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">{tok.slice(1, -1)}</code>);
+    else if (tok.startsWith('`'))
+      out.push(
+        <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
+          {tok.slice(1, -1)}
+        </code>,
+      );
     else out.push(<em key={key}>{tok.slice(1, -1)}</em>);
     last = idx + tok.length;
   }
@@ -27,11 +32,7 @@ function withBreaks(lines: string[], keyPrefix: string): React.ReactNode[] {
   ]);
 }
 
-type Block =
-  | { kind: 'p'; lines: string[] }
-  | { kind: 'ul'; items: string[] }
-  | { kind: 'ol'; items: string[] }
-  | { kind: 'h'; level: number; text: string };
+type Block = { kind: 'p'; lines: string[] } | { kind: 'ul'; items: string[] } | { kind: 'ol'; items: string[] } | { kind: 'h'; level: number; text: string };
 
 function parse(text: string): Block[] {
   const blocks: Block[] = [];

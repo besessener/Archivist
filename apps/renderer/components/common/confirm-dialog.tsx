@@ -50,16 +50,17 @@ export function ConfirmDialog({
       <DialogContent data-testid="confirm-dialog">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description ? <DialogDescription asChild><div>{description}</div></DialogDescription> : <DialogDescription className="sr-only">{title}</DialogDescription>}
+          {description ? (
+            <DialogDescription asChild>
+              <div>{description}</div>
+            </DialogDescription>
+          ) : (
+            <DialogDescription className="sr-only">{title}</DialogDescription>
+          )}
         </DialogHeader>
         {children}
         {requireCheckbox && (
-          <CheckboxField
-            checked={checked}
-            onCheckedChange={(v) => setChecked(v === true)}
-            label={requireCheckbox}
-            data-testid="confirm-dialog-checkbox"
-          />
+          <CheckboxField checked={checked} onCheckedChange={(v) => setChecked(v === true)} label={requireCheckbox} data-testid="confirm-dialog-checkbox" />
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>

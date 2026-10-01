@@ -10,7 +10,9 @@ export function NoBridge() {
           Diese Oberfläche funktioniert nur innerhalb der Archivist-Desktop-App, weil sie dort auf Ihre lokalen Dokumente und Einstellungen zugreift. Im
           normalen Browser ist keine Verbindung zur App vorhanden.
         </p>
-        <p className="mt-4 text-sm text-muted-foreground">Starten Sie Archivist über das Programmsymbol oder mit <code className="rounded bg-muted px-1.5 py-0.5">npm run dev</code> im Projektordner.</p>
+        <p className="mt-4 text-sm text-muted-foreground">
+          Starten Sie Archivist über das Programmsymbol oder mit <code className="rounded bg-muted px-1.5 py-0.5">npm run dev</code> im Projektordner.
+        </p>
       </div>
     </div>
   );

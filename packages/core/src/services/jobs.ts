@@ -104,7 +104,12 @@ export class JobQueueService {
   }
 
   counts(): { pending: number; running: number; failed: number } {
-    const rows = this.db.select({ status: jobs.status, c: sql<number>`count(*)` }).from(jobs).where(inArray(jobs.status, ['pending', 'running', 'failed'])).groupBy(jobs.status).all();
+    const rows = this.db
+      .select({ status: jobs.status, c: sql<number>`count(*)` })
+      .from(jobs)
+      .where(inArray(jobs.status, ['pending', 'running', 'failed']))
+      .groupBy(jobs.status)
+      .all();
     const get = (s: string) => rows.find((r) => r.status === s)?.c ?? 0;
     return { pending: get('pending'), running: get('running'), failed: get('failed') };
   }
@@ -112,8 +117,13 @@ export class JobQueueService {
   retry(id: string): Job {
     const r = this.db.select().from(jobs).where(eq(jobs.id, id)).get();
     if (!r) throw new AppError('validation_error', 'Job nicht gefunden.');
-    if (r.status !== 'failed' && r.status !== 'cancelled') throw new AppError('validation_error', 'Nur fehlgeschlagene oder abgebrochene Jobs können wiederholt werden.');
-    this.db.update(jobs).set({ status: 'pending', error: null, attempts: 0, cancelRequested: false, finishedAt: null, progress: null, progressMessage: null }).where(eq(jobs.id, id)).run();
+    if (r.status !== 'failed' && r.status !== 'cancelled')
+      throw new AppError('validation_error', 'Nur fehlgeschlagene oder abgebrochene Jobs können wiederholt werden.');
+    this.db
+      .update(jobs)
+      .set({ status: 'pending', error: null, attempts: 0, cancelRequested: false, finishedAt: null, progress: null, progressMessage: null })
+      .where(eq(jobs.id, id))
+      .run();
     const row = this.db.select().from(jobs).where(eq(jobs.id, id)).get()!;
     this.notify(row);
     this.kick();
@@ -168,7 +178,14 @@ export class JobQueueService {
   private kick(): void {
     if (!this.started || this.stopping) return;
     while (this.running.size < this.concurrency) {
-      const next = this.db.select().from(jobs).where(eq(jobs.status, 'pending')).orderBy(jobs.createdAt).limit(this.running.size + 1).all().find((j) => !this.running.has(j.id));
+      const next = this.db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.status, 'pending'))
+        .orderBy(jobs.createdAt)
+        .limit(this.running.size + 1)
+        .all()
+        .find((j) => !this.running.has(j.id));
       if (!next) return;
       this.running.add(next.id);
       const p = this.execute(next).finally(() => {
@@ -192,7 +209,11 @@ export class JobQueueService {
       payload: job.payload,
       attempts,
       report: (progress: number | null, message?: string) => {
-        this.db.update(jobs).set({ progress, progressMessage: message ?? null }).where(eq(jobs.id, job.id)).run();
+        this.db
+          .update(jobs)
+          .set({ progress, progressMessage: message ?? null })
+          .where(eq(jobs.id, job.id))
+          .run();
         this.notify({ ...job, status: 'running', progress, progressMessage: message ?? null });
       },
       isCancelled,
@@ -203,7 +224,11 @@ export class JobQueueService {
     try {
       if (!handler) throw new AppError('validation_error', `Kein Handler für Jobtyp „${job.type}“ registriert.`);
       const result = await handler(ctx as never);
-      this.db.update(jobs).set({ status: 'succeeded', progress: 1, result: (result ?? null) as ArchivistJson | null, finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
+      this.db
+        .update(jobs)
+        .set({ status: 'succeeded', progress: 1, result: (result ?? null) as ArchivistJson | null, finishedAt: nowIso() })
+        .where(eq(jobs.id, job.id))
+        .run();
     } catch (err) {
       if (err instanceof JobCancelledError) {
         this.db.update(jobs).set({ status: 'cancelled', finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
@@ -213,7 +238,11 @@ export class JobQueueService {
         this.ctx.logger.error('jobs', `Job fehlgeschlagen: ${job.type}`, { jobId: job.id, error: err, attempts });
         this.db
           .update(jobs)
-          .set({ status: retry ? 'pending' : 'failed', error: `${info.message}${info.details ? ` – ${info.details}` : ''}`, finishedAt: retry ? null : nowIso() })
+          .set({
+            status: retry ? 'pending' : 'failed',
+            error: `${info.message}${info.details ? ` – ${info.details}` : ''}`,
+            finishedAt: retry ? null : nowIso(),
+          })
           .where(eq(jobs.id, job.id))
           .run();
       }

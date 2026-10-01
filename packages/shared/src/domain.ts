@@ -2,16 +2,7 @@ import { z } from 'zod';
 import { Confidence, EntityRef, EntityType, Id, IsoDate, RelationStatus, RelationType, SourceReference } from './common';
 
 // ---------- Dokumente ----------
-export const DocumentStatus = z.enum([
-  'staged',
-  'analyzing',
-  'proposed',
-  'archived',
-  'indexed_only',
-  'ignored',
-  'failed',
-  'quarantined',
-]);
+export const DocumentStatus = z.enum(['staged', 'analyzing', 'proposed', 'archived', 'indexed_only', 'ignored', 'failed', 'quarantined']);
 export type DocumentStatus = z.infer<typeof DocumentStatus>;
 export const ProcessingStatus = z.enum(['pending', 'extracted', 'partial', 'unsupported', 'failed']);
 export const LlmStatus = z.enum(['local_only', 'pending', 'analyzed', 'excluded']);
@@ -122,7 +113,13 @@ export const ArchiveResultItem = z.object({
   message: z.string(),
   auditId: z.string().nullable(),
 });
-export const ArchiveResult = z.object({ items: z.array(ArchiveResultItem), success: z.number(), skipped: z.number(), failed: z.number(), conflicts: z.number() });
+export const ArchiveResult = z.object({
+  items: z.array(ArchiveResultItem),
+  success: z.number(),
+  skipped: z.number(),
+  failed: z.number(),
+  conflicts: z.number(),
+});
 export type ArchiveResult = z.infer<typeof ArchiveResult>;
 
 // ---------- Entscheidungen ----------
@@ -290,7 +287,9 @@ export const AppNotification = z.object({
   type: NotificationType,
   priority: Priority,
   affectedEntityIds: z.array(z.string()),
-  proposedActions: z.array(z.object({ label: z.string(), kind: z.enum(['open', 'resolve', 'snooze', 'ignore', 'confirm_action', 'navigate']), target: z.string().nullish() })),
+  proposedActions: z.array(
+    z.object({ label: z.string(), kind: z.enum(['open', 'resolve', 'snooze', 'ignore', 'confirm_action', 'navigate']), target: z.string().nullish() }),
+  ),
   readAt: IsoDate.nullable(),
   resolvedAt: IsoDate.nullable(),
 });
@@ -469,8 +468,23 @@ export const ActionParamSchemas = {
   exclude_path: z.object({ kind: z.enum(['file', 'dir']), path: z.string() }),
   create_category: z.object({ path: z.string() }),
   set_reminder: z.object({ targetType: z.string(), targetId: z.string().nullable(), title: z.string(), remindAt: IsoDate }),
-  create_open_item: z.object({ title: z.string(), description: z.string().nullish(), dueAt: z.string().nullish(), sourceIds: z.array(z.string()).default([]), topic: z.string().nullish(), project: z.string().nullish() }),
-  record_decision: z.object({ title: z.string(), decisionText: z.string(), decidedAt: z.string().nullish(), participants: z.array(z.string()).default([]), topic: z.string().nullish(), project: z.string().nullish(), sourceIds: z.array(z.string()).default([]) }),
+  create_open_item: z.object({
+    title: z.string(),
+    description: z.string().nullish(),
+    dueAt: z.string().nullish(),
+    sourceIds: z.array(z.string()).default([]),
+    topic: z.string().nullish(),
+    project: z.string().nullish(),
+  }),
+  record_decision: z.object({
+    title: z.string(),
+    decisionText: z.string(),
+    decidedAt: z.string().nullish(),
+    participants: z.array(z.string()).default([]),
+    topic: z.string().nullish(),
+    project: z.string().nullish(),
+    sourceIds: z.array(z.string()).default([]),
+  }),
 } as const;
 
 // ---------- Chat ----------

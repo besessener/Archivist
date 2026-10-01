@@ -18,7 +18,10 @@ export interface ParseOptions {
   tessdataDir?: string;
 }
 
-const ocrOptions = (opts: ParseOptions): OcrOptions => ({ tessdataDir: opts.tessdataDir ?? path.join(process.cwd(), 'tessdata'), languages: opts.ocrLanguages ?? 'deu+eng' });
+const ocrOptions = (opts: ParseOptions): OcrOptions => ({
+  tessdataDir: opts.tessdataDir ?? path.join(process.cwd(), 'tessdata'),
+  languages: opts.ocrLanguages ?? 'deu+eng',
+});
 
 export const MAX_TEXT_CHARS = 400_000;
 const MAX_TEXT_FILE_BYTES = 8 * 1024 * 1024;
@@ -46,7 +49,15 @@ const trimLineEnd = (line: string): string => {
   while (end > 0 && (line[end - 1] === ' ' || line[end - 1] === '\t')) end -= 1;
   return end === line.length ? line : line.slice(0, end);
 };
-const tidy = (s: string) => s.replaceAll('\r\n', '\n').replaceAll('\u0000', '').split('\n').map(trimLineEnd).join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
+const tidy = (s: string) =>
+  s
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\u0000', '')
+    .split('\n')
+    .map(trimLineEnd)
+    .join('\n')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim();
 
 function decodeText(buf: Buffer): string {
   if (buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
@@ -97,7 +108,10 @@ async function ocrPdfPages(doc: { getPage(n: number): Promise<unknown> }, pages:
     page.cleanup();
   }
   const results = await recognizeImages(images, ocrOptions(opts));
-  return results.map((r) => r.text.trim()).filter(Boolean).join('\n\n');
+  return results
+    .map((r) => r.text.trim())
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 async function parsePdf(file: string, opts: ParseOptions): Promise<ParsedDocument> {
@@ -157,7 +171,9 @@ async function parsePdf(file: string, opts: ParseOptions): Promise<ParsedDocumen
     return {
       text: c.text,
       status: empty ? 'partial' : 'extracted',
-      error: empty ? (ocrError ?? (opts.ocrEnabled ? 'OCR fand keinen Text.' : 'Kein Text gefunden (möglicherweise ein gescanntes Dokument; OCR ist deaktiviert).')) : null,
+      error: empty
+        ? (ocrError ?? (opts.ocrEnabled ? 'OCR fand keinen Text.' : 'Kein Text gefunden (möglicherweise ein gescanntes Dokument; OCR ist deaktiviert).'))
+        : null,
       meta,
       truncated: c.truncated || doc.numPages > maxPages,
     };
@@ -176,7 +192,13 @@ async function readZipXml(buf: Buffer, names: RegExp): Promise<Array<{ name: str
   return out;
 }
 
-const decodeXml = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const decodeXml = (s: string) =>
+  s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
 
 function coreProps(xml: string): ParsedDocument['meta'] {
   const meta: ParsedDocument['meta'] = {};
@@ -223,7 +245,13 @@ async function parsePptx(file: string): Promise<ParsedDocument> {
   });
   const core = files.find((f) => f.name === 'docProps/core.xml');
   const c = clip(tidy(parts.join('\n\n')));
-  return { text: c.text, status: c.text ? 'extracted' : 'partial', error: c.text ? null : 'Keine Folientexte gefunden.', meta: { slides: slides.length, ...(core ? coreProps(core.xml) : {}) }, truncated: c.truncated };
+  return {
+    text: c.text,
+    status: c.text ? 'extracted' : 'partial',
+    error: c.text ? null : 'Keine Folientexte gefunden.',
+    meta: { slides: slides.length, ...(core ? coreProps(core.xml) : {}) },
+    truncated: c.truncated,
+  };
 }
 
 /** Spaltenbuchstaben ("AB") → 0-basierter Index. */
@@ -240,11 +268,13 @@ async function parseXlsx(file: string): Promise<ParsedDocument> {
   const byName = new Map(files.map((f) => [f.name, f.xml]));
   const text = (xml: string) => [...xml.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((m) => decodeXml(m[1] ?? '')).join('');
   const shared = [...(byName.get('xl/sharedStrings.xml') ?? '').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => text(m[1] ?? ''));
-  const rels = new Map([...(byName.get('xl/_rels/workbook.xml.rels') ?? '').matchAll(/<Relationship\b[^>]*>/g)].flatMap((m) => {
-    const id = /\bId="([^"]+)"/.exec(m[0])?.[1];
-    const target = /\bTarget="([^"]+)"/.exec(m[0])?.[1];
-    return id && target ? [[id, target.replace(/^\/?(xl\/)?/, 'xl/')] as const] : [];
-  }));
+  const rels = new Map(
+    [...(byName.get('xl/_rels/workbook.xml.rels') ?? '').matchAll(/<Relationship\b[^>]*>/g)].flatMap((m) => {
+      const id = /\bId="([^"]+)"/.exec(m[0])?.[1];
+      const target = /\bTarget="([^"]+)"/.exec(m[0])?.[1];
+      return id && target ? [[id, target.replace(/^\/?(xl\/)?/, 'xl/')] as const] : [];
+    }),
+  );
   const sheets = [...(byName.get('xl/workbook.xml') ?? '').matchAll(/<sheet\b[^>]*>/g)].flatMap((m) => {
     const name = /\bname="([^"]*)"/.exec(m[0])?.[1];
     const rid = /\br:id="([^"]+)"/.exec(m[0])?.[1];
@@ -276,14 +306,21 @@ async function parseXlsx(file: string): Promise<ParsedDocument> {
   const core = byName.get('docProps/core.xml');
   const c = clip(tidy(parts.join('\n\n')));
   const hasData = parts.some((p) => p.includes('\n'));
-  return { text: c.text, status: hasData ? 'extracted' : 'partial', error: hasData ? null : 'Die Arbeitsmappe enthält keine Daten.', meta: { sheets: sheets.length, ...(core ? coreProps(core) : {}) }, truncated: c.truncated };
+  return {
+    text: c.text,
+    status: hasData ? 'extracted' : 'partial',
+    error: hasData ? null : 'Die Arbeitsmappe enthält keine Daten.',
+    meta: { sheets: sheets.length, ...(core ? coreProps(core) : {}) },
+    truncated: c.truncated,
+  };
 }
 
 async function parseEml(file: string): Promise<ParsedDocument> {
   const { simpleParser } = await import('mailparser');
   const mail = await simpleParser(await fsp.readFile(file));
   const addr = (a: unknown) => (a && typeof a === 'object' && 'text' in a ? String((a as { text: string }).text) : '');
-  const body = mail.text ?? (typeof mail.html === 'string' ? mail.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, '').replace(/<[^<>]+>/g, ' ') : '');
+  const body =
+    mail.text ?? (typeof mail.html === 'string' ? mail.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, '').replace(/<[^<>]+>/g, ' ') : '');
   const header = [
     `Betreff: ${mail.subject ?? ''}`,
     `Von: ${addr(mail.from)}`,
@@ -299,7 +336,12 @@ async function parseEml(file: string): Promise<ParsedDocument> {
     text: c.text,
     status: 'extracted',
     error: null,
-    meta: { title: mail.subject ?? null, from: addr(mail.from) || null, date: mail.date ? mail.date.toISOString() : null, attachments: mail.attachments.length },
+    meta: {
+      title: mail.subject ?? null,
+      from: addr(mail.from) || null,
+      date: mail.date ? mail.date.toISOString() : null,
+      attachments: mail.attachments.length,
+    },
     truncated: c.truncated,
   };
 }
@@ -323,7 +365,13 @@ async function parseImage(file: string, opts: ParseOptions): Promise<ParsedDocum
       return { text: '', status: 'partial', error: `OCR fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, meta, truncated: false };
     }
   }
-  return { text: '', status: 'partial', error: 'Bild ohne Textextraktion (OCR ist nicht aktiviert). Technische Metadaten wurden gespeichert.', meta, truncated: false };
+  return {
+    text: '',
+    status: 'partial',
+    error: 'Bild ohne Textextraktion (OCR ist nicht aktiviert). Technische Metadaten wurden gespeichert.',
+    meta,
+    truncated: false,
+  };
 }
 
 /** Extrahiert Text und technische Metadaten. Wirft nicht: Fehler werden als Status zurückgegeben (Datei wird nie verworfen). */
@@ -350,9 +398,21 @@ export async function parseDocument(file: string, opts: ParseOptions = {}): Prom
       case 'jpeg':
         return await parseImage(file, opts);
       default:
-        return { text: '', status: 'unsupported', error: `Dateityp „.${ext}“ wird nicht unterstützt; nur technische Metadaten werden archiviert.`, meta: {}, truncated: false };
+        return {
+          text: '',
+          status: 'unsupported',
+          error: `Dateityp „.${ext}“ wird nicht unterstützt; nur technische Metadaten werden archiviert.`,
+          meta: {},
+          truncated: false,
+        };
     }
   } catch (err) {
-    return { text: '', status: 'failed', error: `Verarbeitung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, meta: {}, truncated: false };
+    return {
+      text: '',
+      status: 'failed',
+      error: `Verarbeitung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+      meta: {},
+      truncated: false,
+    };
   }
 }

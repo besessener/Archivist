@@ -28,11 +28,18 @@ export class CategoryService {
   }
 
   list(): Category[] {
-    return this.db.select().from(categories).orderBy(categories.path).all().map((c) => ({ id: c.id, path: c.path, approved: c.approved, createdAt: c.createdAt }));
+    return this.db
+      .select()
+      .from(categories)
+      .orderBy(categories.path)
+      .all()
+      .map((c) => ({ id: c.id, path: c.path, approved: c.approved, createdAt: c.createdAt }));
   }
 
   mainCategories(): string[] {
-    return this.list().filter((c) => !c.path.includes('/') && c.approved).map((c) => c.path);
+    return this.list()
+      .filter((c) => !c.path.includes('/') && c.approved)
+      .map((c) => c.path);
   }
 
   /** Gibt die Hauptkategorie zurück, falls sie noch nicht bestätigt wurde, sonst null. */

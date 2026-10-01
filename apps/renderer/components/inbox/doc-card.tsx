@@ -108,7 +108,9 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 <ChevronDown className={`size-3.5 transition-transform ${showText ? 'rotate-180' : ''}`} aria-hidden />
                 Textvorschau ({doc.textLength.toLocaleString('de-DE')} Zeichen)
               </button>
-              {showText && <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{doc.textPreview}</p>}
+              {showText && (
+                <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{doc.textPreview}</p>
+              )}
             </div>
           )}
 
@@ -170,7 +172,11 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 <span className="font-medium">Vorschlag: </span>
                 <code>{p.location.categoryPath}</code>
                 {p.location.fileName ? ` / ${p.location.fileName}` : ''}
-                {p.location.newMainCategory && <Badge variant="warning" className="ml-2">Neue Hauptkategorie</Badge>}
+                {p.location.newMainCategory && (
+                  <Badge variant="warning" className="ml-2">
+                    Neue Hauptkategorie
+                  </Badge>
+                )}
               </p>
               {p.location.rationale && <p className="mt-1 text-muted-foreground">{p.location.rationale}</p>}
               <p className="mt-1 text-muted-foreground">Analysiert {p.analyzedBy === 'llm' ? 'per KI' : 'lokal'}.</p>
@@ -180,10 +186,22 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
           {archivable && (
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="Ablageort (Ordnerpfad)" htmlFor={`cat-${doc.id}`}>
-                <Input id={`cat-${doc.id}`} value={edit.categoryPath} onChange={(e) => set('categoryPath', e.target.value)} placeholder="z. B. Arbeit/Projekte/Alpha" data-testid="inbox-category" />
+                <Input
+                  id={`cat-${doc.id}`}
+                  value={edit.categoryPath}
+                  onChange={(e) => set('categoryPath', e.target.value)}
+                  placeholder="z. B. Arbeit/Projekte/Alpha"
+                  data-testid="inbox-category"
+                />
               </Field>
               <Field label="Dateiname" htmlFor={`fn-${doc.id}`}>
-                <Input id={`fn-${doc.id}`} value={edit.fileName} onChange={(e) => set('fileName', e.target.value)} placeholder={doc.originalName} data-testid="inbox-filename" />
+                <Input
+                  id={`fn-${doc.id}`}
+                  value={edit.fileName}
+                  onChange={(e) => set('fileName', e.target.value)}
+                  placeholder={doc.originalName}
+                  data-testid="inbox-filename"
+                />
               </Field>
               <Field label="Thema" htmlFor={`topic-${doc.id}`}>
                 <Input id={`topic-${doc.id}`} value={edit.topic} onChange={(e) => set('topic', e.target.value)} data-testid="inbox-topic" />

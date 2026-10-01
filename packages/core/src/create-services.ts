@@ -99,7 +99,24 @@ function buildServices(opts: CreateServicesOptions) {
   const timeline = new TimelineService(ctx, graph);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, actions);
   const backup = new BackupService(ctx, settings, audit);
-  const chat = new ChatService(ctx, settings, llm, decisions, openItems, reminders, search, graph, documentsSvc, scanner, contradictions, insights, timeline, jobs, privacy, eventsSvc);
+  const chat = new ChatService(
+    ctx,
+    settings,
+    llm,
+    decisions,
+    openItems,
+    reminders,
+    search,
+    graph,
+    documentsSvc,
+    scanner,
+    contradictions,
+    insights,
+    timeline,
+    jobs,
+    privacy,
+    eventsSvc,
+  );
 
   // 5) zyklische Abhängigkeiten auflösen
   actions.wire({ archive, documents: documentsSvc, decisions, openItems, contradictions, graph, scanner, reminders, audit });
@@ -116,8 +133,20 @@ function buildServices(opts: CreateServicesOptions) {
       return res;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      database.db.update(documents).set({ status: 'failed', processingStatus: 'failed', processingError: message, updatedAt: nowIso() }).where(eq(documents.id, job.payload.documentId)).run();
-      notifications.create({ title: 'Dateiimport fehlgeschlagen', description: message, type: 'import_failed', priority: 'high', affectedEntityIds: [job.payload.documentId], proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }], dedupeKey: `analyze-failed:${job.payload.documentId}:${Date.now() / 60000 | 0}` });
+      database.db
+        .update(documents)
+        .set({ status: 'failed', processingStatus: 'failed', processingError: message, updatedAt: nowIso() })
+        .where(eq(documents.id, job.payload.documentId))
+        .run();
+      notifications.create({
+        title: 'Dateiimport fehlgeschlagen',
+        description: message,
+        type: 'import_failed',
+        priority: 'high',
+        affectedEntityIds: [job.payload.documentId],
+        proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
+        dedupeKey: `analyze-failed:${job.payload.documentId}:${(Date.now() / 60000) | 0}`,
+      });
       events.changed('documents');
       throw err;
     }
@@ -127,7 +156,11 @@ function buildServices(opts: CreateServicesOptions) {
     // optional: neue Dateien automatisch analysieren (nur wenn ausdrücklich aktiviert und der Datenschutzmodus es erlaubt)
     const s = settings.get();
     if (s.scan.autoAnalyze && privacy.mode() === 'auto') {
-      const ids = scanner.getResults({ limit: 2000 }).files.filter((f) => f.status === 'new' || f.status === 'changed').filter((f) => f.llmStatus !== 'excluded').map((f) => f.id);
+      const ids = scanner
+        .getResults({ limit: 2000 })
+        .files.filter((f) => f.status === 'new' || f.status === 'changed')
+        .filter((f) => f.llmStatus !== 'excluded')
+        .map((f) => f.id);
       if (ids.length) jobs.enqueue('scanner.analyze', `Analysiere ${ids.length} neue Dateien`, { fileIds: ids, confirmLlm: false });
     }
     return summaries;
@@ -190,7 +223,8 @@ function buildServices(opts: CreateServicesOptions) {
       scanner.startupScan();
       if (settings.get().consistency.onStartup) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'));
-      if (settings.get().backups.autoOnStartup) void backup.create(settings.get().backups.includeArchive).catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
+      if (settings.get().backups.autoOnStartup)
+        void backup.create(settings.get().backups.includeArchive).catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
     },
 
     async shutdown(): Promise<void> {

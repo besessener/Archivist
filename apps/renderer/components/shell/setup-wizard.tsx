@@ -156,13 +156,20 @@ export function SetupWizard() {
               </span>
               <h1 className="text-2xl font-semibold tracking-tight">Willkommen bei Archivist</h1>
               <p className="text-muted-foreground">
-                Archivist ist Ihr persönlicher Archivar: Er merkt sich Entscheidungen, offene Punkte und Dokumente, legt sie ordentlich ab und hilft Ihnen, alles
-                wiederzufinden – im Gespräch, in Worten, die Sie selbst benutzen.
+                Archivist ist Ihr persönlicher Archivar: Er merkt sich Entscheidungen, offene Punkte und Dokumente, legt sie ordentlich ab und hilft Ihnen,
+                alles wiederzufinden – im Gespräch, in Worten, die Sie selbst benutzen.
               </p>
               <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-                <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Alle Daten bleiben auf diesem Computer.</li>
-                <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Nichts wird ohne Ihre Bestätigung verschoben, gelöscht oder umbenannt.</li>
-                <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Die Einrichtung dauert etwa zwei Minuten.</li>
+                <li className="flex gap-2">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Alle Daten bleiben auf diesem Computer.
+                </li>
+                <li className="flex gap-2">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Nichts wird ohne Ihre Bestätigung verschoben, gelöscht oder
+                  umbenannt.
+                </li>
+                <li className="flex gap-2">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Die Einrichtung dauert etwa zwei Minuten.
+                </li>
               </ul>
             </div>
           )}
@@ -177,13 +184,43 @@ export function SetupWizard() {
                 </p>
               </div>
               <Field label="Adresse des Dienstes (Base URL)" htmlFor="setup-baseurl" hint="Beispiel: https://api.openai.com/v1">
-                <Input id="setup-baseurl" data-testid="setup-baseurl" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" autoComplete="off" />
+                <Input
+                  id="setup-baseurl"
+                  data-testid="setup-baseurl"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://…/v1"
+                  autoComplete="off"
+                />
               </Field>
-              <Field label="API-Schlüssel" htmlFor="setup-apikey" hint={hasKey ? 'Es ist bereits ein Schlüssel gespeichert. Leer lassen, um ihn zu behalten.' : 'Wird verschlüsselt auf diesem Computer gespeichert und nie angezeigt.'}>
-                <Input id="setup-apikey" data-testid="setup-apikey" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoComplete="off" placeholder={hasKey ? '••••••••' : ''} />
+              <Field
+                label="API-Schlüssel"
+                htmlFor="setup-apikey"
+                hint={
+                  hasKey
+                    ? 'Es ist bereits ein Schlüssel gespeichert. Leer lassen, um ihn zu behalten.'
+                    : 'Wird verschlüsselt auf diesem Computer gespeichert und nie angezeigt.'
+                }
+              >
+                <Input
+                  id="setup-apikey"
+                  data-testid="setup-apikey"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  autoComplete="off"
+                  placeholder={hasKey ? '••••••••' : ''}
+                />
               </Field>
               <Field label="Modellname" htmlFor="setup-model">
-                <Input id="setup-model" data-testid="setup-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="z. B. gpt-5" autoComplete="off" />
+                <Input
+                  id="setup-model"
+                  data-testid="setup-model"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="z. B. gpt-5"
+                  autoComplete="off"
+                />
               </Field>
               <Field label="Denktiefe (optional)" htmlFor="setup-effort" hint="Nur für Modelle mit „Reasoning“. Im Zweifel leer lassen.">
                 <Select id="setup-effort" value={effort} onChange={(e) => setEffort(e.target.value as Effort | '')}>
@@ -201,7 +238,11 @@ export function SetupWizard() {
                 </Button>
               </div>
               {test && (
-                <Notice tone={test.ok ? 'info' : 'danger'} title={test.ok ? 'Verbindung erfolgreich' : 'Verbindung fehlgeschlagen'} data-testid="setup-test-result">
+                <Notice
+                  tone={test.ok ? 'info' : 'danger'}
+                  title={test.ok ? 'Verbindung erfolgreich' : 'Verbindung fehlgeschlagen'}
+                  data-testid="setup-test-result"
+                >
                   <p>{test.message}</p>
                   {test.ok && test.latencyMs !== null && <p className="mt-1 text-xs">Antwortzeit: {test.latencyMs} ms</p>}
                   {!test.ok && test.error && <p className="mt-1 text-xs">{test.error.message}</p>}
@@ -227,7 +268,8 @@ export function SetupWizard() {
                 <h2 className="text-xl font-semibold">Dokumente auf diesem Computer finden (optional)</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Archivist kann Ordner nach neuen Dokumenten durchsuchen. Das ist <strong>standardmäßig ausgeschaltet</strong> – auch wenn Sie hier Ordner
-                  hinzufügen, wird erst gesucht, wenn Sie es auf der Seite „Scan“ oder in den Einstellungen ausdrücklich einschalten. Gesucht wird nur, solange die App läuft.
+                  hinzufügen, wird erst gesucht, wenn Sie es auf der Seite „Scan“ oder in den Einstellungen ausdrücklich einschalten. Gesucht wird nur, solange
+                  die App läuft.
                 </p>
               </div>
               <Button variant="outline" className="w-fit" onClick={() => void addDir()} disabled={busy} data-testid="setup-add-dir">
@@ -253,13 +295,25 @@ export function SetupWizard() {
           {step === 'privacy' && (
             <fieldset className="flex flex-col gap-3" data-testid="setup-step-privacy">
               <legend className="mb-1 text-xl font-semibold">Datenschutz</legend>
-              <p className="text-sm text-muted-foreground">Wählen Sie, wann Dokumentinhalte an den KI-Dienst gesendet werden dürfen. Sie können das jederzeit ändern.</p>
+              <p className="text-sm text-muted-foreground">
+                Wählen Sie, wann Dokumentinhalte an den KI-Dienst gesendet werden dürfen. Sie können das jederzeit ändern.
+              </p>
               {MODES.map((m) => (
                 <label
                   key={m.id}
-                  className={cn('flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring', mode === m.id ? 'border-primary bg-primary/8' : 'hover:bg-accent/50')}
+                  className={cn(
+                    'flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring',
+                    mode === m.id ? 'border-primary bg-primary/8' : 'hover:bg-accent/50',
+                  )}
                 >
-                  <input type="radio" name="llm-mode" className="mt-1 accent-[var(--primary)]" checked={mode === m.id} onChange={() => setMode(m.id)} data-testid={`setup-mode-${m.id}`} />
+                  <input
+                    type="radio"
+                    name="llm-mode"
+                    className="mt-1 accent-[var(--primary)]"
+                    checked={mode === m.id}
+                    onChange={() => setMode(m.id)}
+                    data-testid={`setup-mode-${m.id}`}
+                  />
                   <span>
                     <span className="block text-sm font-medium">{m.title}</span>
                     <span className="block text-sm text-muted-foreground">{m.text}</span>

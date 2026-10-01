@@ -2,20 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  Archive,
-  Clock,
-  FileText,
-  FolderSearch,
-  Gavel,
-  Inbox,
-  Lightbulb,
-  ListChecks,
-  MessageSquare,
-  Network,
-  Settings,
-  Sparkles,
-} from 'lucide-react';
+import { Archive, Clock, FileText, FolderSearch, Gavel, Inbox, Lightbulb, ListChecks, MessageSquare, Network, Settings, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useApp } from '@/lib/app-context';
 import { useQuery } from '@/lib/use-query';

@@ -7,7 +7,15 @@ import { newId, nowIso } from '../util/ids';
 import type { NotificationService } from './notifications';
 
 type Row = typeof reminders.$inferSelect;
-const map = (r: Row): Reminder => ({ id: r.id, targetType: r.targetType as Reminder['targetType'], targetId: r.targetId, title: r.title, remindAt: r.remindAt, status: r.status as Reminder['status'], createdAt: r.createdAt });
+const map = (r: Row): Reminder => ({
+  id: r.id,
+  targetType: r.targetType as Reminder['targetType'],
+  targetId: r.targetId,
+  title: r.title,
+  remindAt: r.remindAt,
+  status: r.status as Reminder['status'],
+  createdAt: r.createdAt,
+});
 
 /**
  * Erinnerungen werden lokal gespeichert, beim Start geprüft und – solange die Anwendung läuft – zeitgesteuert ausgelöst.
@@ -26,9 +34,18 @@ export class ReminderService {
   }
 
   create(input: { targetType: Reminder['targetType']; targetId: string | null; title: string; remindAt: string }): Reminder {
-    const row: Row = { id: newId(), targetType: input.targetType, targetId: input.targetId, title: input.title, remindAt: input.remindAt, status: 'pending', createdAt: nowIso() };
+    const row: Row = {
+      id: newId(),
+      targetType: input.targetType,
+      targetId: input.targetId,
+      title: input.title,
+      remindAt: input.remindAt,
+      status: 'pending',
+      createdAt: nowIso(),
+    };
     this.db.insert(reminders).values(row).run();
-    if (input.targetType === 'open_item' && input.targetId) this.db.update(openItems).set({ reminderAt: input.remindAt }).where(eq(openItems.id, input.targetId)).run();
+    if (input.targetType === 'open_item' && input.targetId)
+      this.db.update(openItems).set({ reminderAt: input.remindAt }).where(eq(openItems.id, input.targetId)).run();
     this.ctx.events.changed('reminders', 'openItems');
     return map(row);
   }
@@ -40,7 +57,14 @@ export class ReminderService {
   }
 
   list(status?: Reminder['status']): Reminder[] {
-    return this.db.select().from(reminders).where(status ? eq(reminders.status, status) : undefined).orderBy(desc(reminders.remindAt)).limit(500).all().map(map);
+    return this.db
+      .select()
+      .from(reminders)
+      .where(status ? eq(reminders.status, status) : undefined)
+      .orderBy(desc(reminders.remindAt))
+      .limit(500)
+      .all()
+      .map(map);
   }
 
   snooze(id: string, remindAt: string): Reminder {
@@ -58,7 +82,11 @@ export class ReminderService {
 
   /** Löst fällige Erinnerungen aus (Start der Anwendung und periodisch). Gibt die Anzahl zurück. */
   checkDue(now: Date = new Date()): number {
-    const due = this.db.select().from(reminders).where(and(eq(reminders.status, 'pending'), lte(reminders.remindAt, now.toISOString()))).all();
+    const due = this.db
+      .select()
+      .from(reminders)
+      .where(and(eq(reminders.status, 'pending'), lte(reminders.remindAt, now.toISOString())))
+      .all();
     for (const r of due) {
       this.db.update(reminders).set({ status: 'fired' }).where(eq(reminders.id, r.id)).run();
       const link: { label: string; kind: 'navigate' | 'resolve' | 'snooze'; target?: string }[] = [];

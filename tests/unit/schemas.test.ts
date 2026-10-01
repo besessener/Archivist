@@ -48,7 +48,14 @@ describe('Zod-Schemas für strukturierte LLM-Ausgaben', () => {
   });
 
   it('AgentActionProposal: Pflichtfelder und Bestätigungsstufen', () => {
-    const base = { actionType: 'close_open_item', rationale: 'r', confidence: 0.7, affectedEntities: [], requiredConfirmation: 'confirm', proposedParameters: {} };
+    const base = {
+      actionType: 'close_open_item',
+      rationale: 'r',
+      confidence: 0.7,
+      affectedEntities: [],
+      requiredConfirmation: 'confirm',
+      proposedParameters: {},
+    };
     expect(AgentActionProposal.safeParse(base).success).toBe(true);
     expect(AgentActionProposal.safeParse({ ...base, requiredConfirmation: 'never' }).success).toBe(false);
     expect(AgentActionProposal.safeParse({ ...base, actionType: 'delete_everything' }).success).toBe(false);

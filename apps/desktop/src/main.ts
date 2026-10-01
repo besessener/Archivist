@@ -139,7 +139,16 @@ function buildMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
     { role: 'editMenu' },
-    { label: 'Ansicht', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }, ...(isDev ? [{ role: 'toggleDevTools' as const }, { role: 'reload' as const }] : [])] },
+    {
+      label: 'Ansicht',
+      submenu: [
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { role: 'togglefullscreen' },
+        ...(isDev ? [{ role: 'toggleDevTools' as const }, { role: 'reload' as const }] : []),
+      ],
+    },
     { role: 'windowMenu' },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -184,11 +193,14 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow.focus();
     }
   });
-  app.whenReady().then(start).catch((err: unknown) => {
-    process.stderr.write(`[archivist] Start fehlgeschlagen: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
-    dialog.showErrorBox('Archivist konnte nicht gestartet werden', err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err));
-    app.exit(1);
-  });
+  app
+    .whenReady()
+    .then(start)
+    .catch((err: unknown) => {
+      process.stderr.write(`[archivist] Start fehlgeschlagen: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
+      dialog.showErrorBox('Archivist konnte nicht gestartet werden', err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err));
+      app.exit(1);
+    });
   app.on('window-all-closed', () => {
     // Hintergrundbetrieb bei geschlossener Oberfläche ist (noch) nicht implementiert: Anwendung beenden.
     app.quit();

@@ -83,10 +83,13 @@ export class LlmService {
 
   private mapHttpError(status: number, body: string): AppError {
     const snippet = body.replace(/\s+/g, ' ').slice(0, 300);
-    if (status === 401 || status === 403) return new AppError('llm_error', 'Der LLM-Endpunkt hat die Anmeldung abgelehnt (API-Key prüfen).', { details: `HTTP ${status}: ${snippet}` });
-    if (status === 404) return new AppError('llm_error', 'Endpunkt oder Modell wurde nicht gefunden (Base URL und Modellname prüfen).', { details: `HTTP 404: ${snippet}` });
+    if (status === 401 || status === 403)
+      return new AppError('llm_error', 'Der LLM-Endpunkt hat die Anmeldung abgelehnt (API-Key prüfen).', { details: `HTTP ${status}: ${snippet}` });
+    if (status === 404)
+      return new AppError('llm_error', 'Endpunkt oder Modell wurde nicht gefunden (Base URL und Modellname prüfen).', { details: `HTTP 404: ${snippet}` });
     if (status === 429) return new AppError('llm_error', 'Das LLM-Limit wurde erreicht. Bitte später erneut versuchen.', { retryable: true, details: snippet });
-    if (status >= 500) return new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Serverfehler.', { retryable: true, details: `HTTP ${status}: ${snippet}` });
+    if (status >= 500)
+      return new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Serverfehler.', { retryable: true, details: `HTTP ${status}: ${snippet}` });
     return new AppError('llm_error', 'Der LLM-Endpunkt hat die Anfrage abgelehnt.', { details: `HTTP ${status}: ${snippet}` });
   }
 
@@ -102,7 +105,10 @@ export class LlmService {
       });
       return { status: res.status, text: await res.text() };
     } catch (err) {
-      if (controller.signal.aborted) throw new AppError('network_error', `Zeitüberschreitung nach ${Math.round(timeoutMs / 1000)} s – der LLM-Endpunkt antwortet nicht.`, { retryable: true });
+      if (controller.signal.aborted)
+        throw new AppError('network_error', `Zeitüberschreitung nach ${Math.round(timeoutMs / 1000)} s – der LLM-Endpunkt antwortet nicht.`, {
+          retryable: true,
+        });
       const cause = (err as { cause?: { code?: string; message?: string } }).cause;
       throw new AppError('network_error', 'Der LLM-Endpunkt ist nicht erreichbar (Netzwerk oder Base URL prüfen).', {
         retryable: true,
@@ -161,10 +167,17 @@ export class LlmService {
         attempt += 1;
         try {
           let res = await this.post(url, apiKey, body, cfg.timeoutMs);
-          if (res.status === 400 && body === full && /(unsupported|unknown|not supported|invalid).*(parameter|field|store|reasoning|format)|(store|reasoning|format)/i.test(res.text)) {
+          if (
+            res.status === 400 &&
+            body === full &&
+            /(unsupported|unknown|not supported|invalid).*(parameter|field|store|reasoning|format)|(store|reasoning|format)/i.test(res.text)
+          ) {
             // manche kompatible Endpunkte kennen optionale Parameter nicht → ohne diese erneut versuchen
             const { store: _s, reasoning: _r, text: _t, max_output_tokens: _m, ...minimal } = full;
-            void _s; void _r; void _t; void _m;
+            void _s;
+            void _r;
+            void _t;
+            void _m;
             body = minimal;
             res = await this.post(url, apiKey, body, cfg.timeoutMs);
           }
@@ -178,7 +191,13 @@ export class LlmService {
           if (parsed.error?.message) throw new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Fehler.', { details: parsed.error.message });
           const text = this.extractText(parsed);
           if (!text.trim()) {
-            throw new AppError('llm_error', parsed.status === 'incomplete' ? `Die LLM-Antwort ist unvollständig (${parsed.incomplete_details?.reason ?? 'unbekannt'}).` : 'Das LLM lieferte eine leere Antwort.', { retryable: true });
+            throw new AppError(
+              'llm_error',
+              parsed.status === 'incomplete'
+                ? `Die LLM-Antwort ist unvollständig (${parsed.incomplete_details?.reason ?? 'unbekannt'}).`
+                : 'Das LLM lieferte eine leere Antwort.',
+              { retryable: true },
+            );
           }
           success = true;
           this.markStatus(true, null);
@@ -222,13 +241,21 @@ export class LlmService {
     let lastIssues = '';
     let lastRaw = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const input = attempt === 0 ? req.input : `${req.input}\n\n---\nDeine vorige Antwort war ungültig (${lastIssues}). Antworte erneut ausschließlich mit gültigem JSON gemäß Schema.`;
+      const input =
+        attempt === 0
+          ? req.input
+          : `${req.input}\n\n---\nDeine vorige Antwort war ungültig (${lastIssues}). Antworte erneut ausschließlich mit gültigem JSON gemäß Schema.`;
       const raw = await this.complete({ ...req, instructions, input, json: true }, overrides);
       lastRaw = raw;
       const parsed = this.parseJson(raw);
       const result = parsed.ok ? schema.safeParse(parsed.value) : null;
       if (result?.success) return result.data;
-      lastIssues = parsed.ok ? (result as z.ZodSafeParseError<unknown>).error.issues.slice(0, 6).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ') : 'kein gültiges JSON';
+      lastIssues = parsed.ok
+        ? (result as z.ZodSafeParseError<unknown>).error.issues
+            .slice(0, 6)
+            .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+            .join('; ')
+        : 'kein gültiges JSON';
       this.ctx.logger.warn('llm', 'Ungültige strukturierte LLM-Ausgabe', { schema: req.schemaName, issues: lastIssues, attempt });
     }
     throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
@@ -284,7 +311,13 @@ export class LlmService {
     const started = Date.now();
     try {
       const reply = await this.complete(
-        { instructions: 'Du bist ein Verbindungstest. Antworte mit genau einem Wort.', input: 'Antworte mit dem Wort: OK', purpose: 'Verbindungstest', maxOutputTokens: 64, bypassPrivacy: true },
+        {
+          instructions: 'Du bist ein Verbindungstest. Antworte mit genau einem Wort.',
+          input: 'Antworte mit dem Wort: OK',
+          purpose: 'Verbindungstest',
+          maxOutputTokens: 64,
+          bypassPrivacy: true,
+        },
         overrides,
       );
       return { ok: true, latencyMs: Date.now() - started, message: 'Verbindung erfolgreich.', modelReply: reply.trim().slice(0, 80), error: null };
@@ -296,7 +329,10 @@ export class LlmService {
 
   private recordTransmission(t: Omit<LlmTransmission, 'id' | 'at'>): void {
     try {
-      this.ctx.database.db.insert(llmTransmissions).values({ id: newId(), at: nowIso(), ...t }).run();
+      this.ctx.database.db
+        .insert(llmTransmissions)
+        .values({ id: newId(), at: nowIso(), ...t })
+        .run();
       this.ctx.logger.info('llm', 'LLM-Übertragung', { purpose: t.purpose, model: t.model, bytes: t.bytes, redactions: t.redactions, success: t.success });
     } catch {
       /* Protokollierung darf Aufrufe nicht scheitern lassen */

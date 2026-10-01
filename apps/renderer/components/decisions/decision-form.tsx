@@ -87,14 +87,20 @@ export function DecisionFormDialog({
       participants: parseList(participants),
       rationale: nonEmpty(rationale) ?? null,
       consequences: nonEmpty(consequences) ?? null,
-      alternatives: alternatives.split('\n').map((s) => s.trim()).filter(Boolean),
+      alternatives: alternatives
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean),
       validFrom: validFrom || null,
       validUntil: validUntil || null,
       unknownFields,
       asDraft: effectiveDraft,
     };
     const out = await run(
-      () => (decision ? call('decisions:update', { id: decision.id, patch: { ...body, status: effectiveDraft ? 'draft' : status === 'draft' ? 'confirmed' : status } }) : call('decisions:create', body)),
+      () =>
+        decision
+          ? call('decisions:update', { id: decision.id, patch: { ...body, status: effectiveDraft ? 'draft' : status === 'draft' ? 'confirmed' : status } })
+          : call('decisions:create', body),
       { success: decision ? 'Entscheidung gespeichert.' : effectiveDraft ? 'Entwurf gespeichert.' : 'Entscheidung angelegt.' },
     );
     if (out) {
@@ -109,7 +115,9 @@ export function DecisionFormDialog({
         <DialogHeader>
           <DialogTitle>{decision ? 'Entscheidung bearbeiten' : 'Entscheidung festhalten'}</DialogTitle>
           <DialogDescription>
-            Felder mit <span aria-hidden>*</span><span className="sr-only">Stern</span> gehören zu einer vollständigen Entscheidung. Wenn Sie etwas nicht wissen, markieren Sie es als „unbekannt“ – dann wird nicht gefragt.
+            Felder mit <span aria-hidden>*</span>
+            <span className="sr-only">Stern</span> gehören zu einer vollständigen Entscheidung. Wenn Sie etwas nicht wissen, markieren Sie es als „unbekannt“ –
+            dann wird nicht gefragt.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -117,10 +125,24 @@ export function DecisionFormDialog({
             <Input id="d-title" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="decision-title" />
           </Field>
           <Field label={`${DECISION_FIELD_LABELS.decisionText} *`} htmlFor="d-text" className="sm:col-span-2">
-            <Textarea id="d-text" value={text} onChange={(e) => setText(e.target.value)} placeholder="Was wurde entschieden?" data-testid="decision-text" required />
+            <Textarea
+              id="d-text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Was wurde entschieden?"
+              data-testid="decision-text"
+              required
+            />
           </Field>
           <Field label={`${DECISION_FIELD_LABELS.decidedAt} *`} htmlFor="d-date">
-            <Input id="d-date" type="date" value={decidedAt} disabled={unknown.has('decidedAt')} onChange={(e) => setDecidedAt(e.target.value)} data-testid="decision-date" />
+            <Input
+              id="d-date"
+              type="date"
+              value={decidedAt}
+              disabled={unknown.has('decidedAt')}
+              onChange={(e) => setDecidedAt(e.target.value)}
+              data-testid="decision-date"
+            />
             {unknownBox('decidedAt')}
           </Field>
           <Field label={`${DECISION_FIELD_LABELS.topic} *`} htmlFor="d-topic">
@@ -128,7 +150,13 @@ export function DecisionFormDialog({
             {unknownBox('topic')}
           </Field>
           <Field label={`${DECISION_FIELD_LABELS.participants} *`} htmlFor="d-people" hint="Mehrere Namen mit Komma trennen." className="sm:col-span-2">
-            <Input id="d-people" value={participants} disabled={unknown.has('participants')} onChange={(e) => setParticipants(e.target.value)} data-testid="decision-participants" />
+            <Input
+              id="d-people"
+              value={participants}
+              disabled={unknown.has('participants')}
+              onChange={(e) => setParticipants(e.target.value)}
+              data-testid="decision-participants"
+            />
             {unknownBox('participants')}
           </Field>
           <Field label="Projekt" htmlFor="d-project">
@@ -163,10 +191,17 @@ export function DecisionFormDialog({
         </div>
         {missing.length > 0 && !onlyTextMissing && (
           <Notice tone="warning" title="Noch nicht vollständig" data-testid="decision-missing">
-            Es fehlt: {missing.map((f) => DECISION_FIELD_LABELS[f]).join(', ')}. Die Entscheidung wird als Entwurf gespeichert, bis Sie das ergänzen oder als „unbekannt“ markieren.
+            Es fehlt: {missing.map((f) => DECISION_FIELD_LABELS[f]).join(', ')}. Die Entscheidung wird als Entwurf gespeichert, bis Sie das ergänzen oder als
+            „unbekannt“ markieren.
           </Notice>
         )}
-        <CheckboxField checked={effectiveDraft} disabled={missing.length > 0} onCheckedChange={(v) => setDraft(v === true)} label="Als Entwurf speichern" data-testid="decision-draft" />
+        <CheckboxField
+          checked={effectiveDraft}
+          disabled={missing.length > 0}
+          onCheckedChange={(v) => setDraft(v === true)}
+          label="Als Entwurf speichern"
+          data-testid="decision-draft"
+        />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen

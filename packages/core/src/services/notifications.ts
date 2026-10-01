@@ -41,12 +41,22 @@ export class NotificationService {
 
   create(input: NotificationInput): AppNotification {
     if (input.dedupeKey) {
-      const existing = this.db.select().from(notifications).where(and(eq(notifications.dedupeKey, input.dedupeKey))).get();
+      const existing = this.db
+        .select()
+        .from(notifications)
+        .where(and(eq(notifications.dedupeKey, input.dedupeKey)))
+        .get();
       if (existing) {
         if (existing.resolvedAt) return map(existing); // erledigte Hinweise nicht wiederbeleben
         this.db
           .update(notifications)
-          .set({ title: input.title, description: input.description, proposedActions: (input.proposedActions ?? []), affectedEntityIds: input.affectedEntityIds ?? [], priority: input.priority ?? 'normal' })
+          .set({
+            title: input.title,
+            description: input.description,
+            proposedActions: input.proposedActions ?? [],
+            affectedEntityIds: input.affectedEntityIds ?? [],
+            priority: input.priority ?? 'normal',
+          })
           .where(eq(notifications.id, existing.id))
           .run();
         this.ctx.events.changed('notifications');
@@ -60,7 +70,7 @@ export class NotificationService {
       type: input.type,
       priority: input.priority ?? 'normal',
       affectedEntityIds: input.affectedEntityIds ?? [],
-      proposedActions: (input.proposedActions ?? []),
+      proposedActions: input.proposedActions ?? [],
       dedupeKey: input.dedupeKey ?? null,
       createdAt: nowIso(),
       readAt: null,
@@ -91,18 +101,33 @@ export class NotificationService {
   }
 
   unreadCount(): number {
-    return this.db.select({ c: sql<number>`count(*)` }).from(notifications).where(and(isNull(notifications.readAt), isNull(notifications.resolvedAt))).get()?.c ?? 0;
+    return (
+      this.db
+        .select({ c: sql<number>`count(*)` })
+        .from(notifications)
+        .where(and(isNull(notifications.readAt), isNull(notifications.resolvedAt)))
+        .get()?.c ?? 0
+    );
   }
 
   markRead(ids: string[]): void {
     const now = nowIso();
-    for (const id of ids) this.db.update(notifications).set({ readAt: now }).where(and(eq(notifications.id, id), isNull(notifications.readAt))).run();
+    for (const id of ids)
+      this.db
+        .update(notifications)
+        .set({ readAt: now })
+        .where(and(eq(notifications.id, id), isNull(notifications.readAt)))
+        .run();
     this.ctx.events.changed('notifications', 'status');
   }
 
   resolve(id: string): AppNotification {
     const now = nowIso();
-    this.db.update(notifications).set({ resolvedAt: now, readAt: sql`coalesce(${notifications.readAt}, ${now})` }).where(eq(notifications.id, id)).run();
+    this.db
+      .update(notifications)
+      .set({ resolvedAt: now, readAt: sql`coalesce(${notifications.readAt}, ${now})` })
+      .where(eq(notifications.id, id))
+      .run();
     this.ctx.events.changed('notifications', 'status');
     return this.get(id);
   }

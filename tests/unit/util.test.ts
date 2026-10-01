@@ -13,7 +13,9 @@ import { localEmbed } from '../../packages/core/src/services/embedding';
 
 describe('Maskierung von Geheimnissen', () => {
   it('maskiert typische Zugangsdaten', () => {
-    const r = redactSecrets('password: hunter2xx\nkey sk-abcdefghijklmnop1234 AKIAABCDEFGHIJKLMNOP Bearer abcdefghijklmnopqrstuvwxyz1234 postgres://user:geheim123@host/db');
+    const r = redactSecrets(
+      'password: hunter2xx\nkey sk-abcdefghijklmnop1234 AKIAABCDEFGHIJKLMNOP Bearer abcdefghijklmnopqrstuvwxyz1234 postgres://user:geheim123@host/db',
+    );
     expect(r.text).not.toMatch(/hunter2xx|sk-abcdefghijklmnop1234|AKIAABCDEFGHIJKLMNOP|geheim123|abcdefghijklmnopqrstuvwxyz1234/);
     expect(r.count).toBeGreaterThanOrEqual(5);
     expect(redactSecrets('Ganz normaler Text ohne Geheimnis.').count).toBe(0);
@@ -25,7 +27,13 @@ describe('Logging ohne Geheimnisse', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-log-'));
     const log = new Logger(dir, 'debug');
     log.registerSecret('sk-live-TOPSECRET-123456');
-    log.info('llm', 'Anfrage mit sk-live-TOPSECRET-123456 gesendet', { apiKey: 'sk-live-TOPSECRET-123456', authorization: 'Bearer sk-live-TOPSECRET-123456', text: 'VERTRAULICHER DOKUMENTINHALT', note: 'harmlos', nested: { token: 'abc', msg: 'password=supergeheim' } });
+    log.info('llm', 'Anfrage mit sk-live-TOPSECRET-123456 gesendet', {
+      apiKey: 'sk-live-TOPSECRET-123456',
+      authorization: 'Bearer sk-live-TOPSECRET-123456',
+      text: 'VERTRAULICHER DOKUMENTINHALT',
+      note: 'harmlos',
+      nested: { token: 'abc', msg: 'password=supergeheim' },
+    });
     await log.close();
     const content = fs.readFileSync(path.join(dir, fs.readdirSync(dir)[0]!), 'utf8');
     expect(content).not.toContain('TOPSECRET');

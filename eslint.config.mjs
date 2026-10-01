@@ -5,7 +5,19 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import sonarjs from 'eslint-plugin-sonarjs';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/out/**', '**/.next/**', '**/release/**', '**/node_modules/**', '**/migrations/**', '**/next-env.d.ts', 'playwright-report/**', 'test-results/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/out/**',
+      '**/.next/**',
+      '**/release/**',
+      '**/node_modules/**',
+      '**/migrations/**',
+      '**/next-env.d.ts',
+      'playwright-report/**',
+      'test-results/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

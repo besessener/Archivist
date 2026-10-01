@@ -11,13 +11,13 @@ files:
 asar: true
 # Native Module müssen außerhalb des ASAR-Archivs liegen, damit sie geladen werden können.
 asarUnpack:
-  - "**/node_modules/better-sqlite3/**"
-  - "**/node_modules/sharp/**"
-  - "**/node_modules/@img/**"
-  - "**/node_modules/@napi-rs/**"
-  - "**/node_modules/tesseract.js/**"
-  - "**/node_modules/tesseract.js-core/**"
-  - "**/node_modules/@tesseract.js-data/**"
+  - '**/node_modules/better-sqlite3/**'
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+  - '**/node_modules/@napi-rs/**'
+  - '**/node_modules/tesseract.js/**'
+  - '**/node_modules/tesseract.js-core/**'
+  - '**/node_modules/@tesseract.js-data/**'
 # better-sqlite3 (>= 13) und sharp liefern N-API-Prebuilds für alle Zielplattformen → kein Rebuild nötig
 # (damit ist auch das Cross-Packaging, z. B. Windows-Installer unter Linux/macOS, reproduzierbar).
 npmRebuild: false

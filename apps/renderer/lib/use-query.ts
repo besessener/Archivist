@@ -20,11 +20,7 @@ export interface QueryState<T> {
   refetch: () => Promise<void>;
 }
 
-export function useQuery<C extends IpcChannel>(
-  channel: C,
-  input: IpcInput<C> | undefined,
-  opts: UseQueryOptions = {},
-): QueryState<IpcOutput<C>> {
+export function useQuery<C extends IpcChannel>(channel: C, input: IpcInput<C> | undefined, opts: UseQueryOptions = {}): QueryState<IpcOutput<C>> {
   const { scopes, jobs = false, enabled = true } = opts;
   const [data, setData] = useState<IpcOutput<C> | undefined>(undefined);
   const [loading, setLoading] = useState<boolean>(enabled);

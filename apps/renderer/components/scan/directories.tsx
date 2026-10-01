@@ -35,7 +35,10 @@ function DirectoryCard({ root, onChanged, onRemove }: { root: ScanRootRecord; on
           enabled,
           recursive,
           llmAllowed,
-          excludedSubdirs: excluded.split('\n').map((s) => s.trim()).filter(Boolean),
+          excludedSubdirs: excluded
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean),
           extensions: parseList(extensions).map((e) => e.replace(/^\./, '').toLowerCase()),
           ...(Number.isFinite(mb) && mb >= 0.1 ? { maxFileSizeMb: mb } : {}),
         }),
@@ -69,7 +72,13 @@ function DirectoryCard({ root, onChanged, onRemove }: { root: ScanRootRecord; on
         <div className="grid gap-3 sm:grid-cols-2">
           {row('Verzeichnis aktiv', 'Nur aktive Verzeichnisse werden durchsucht.', enabled, setEnabled, 'scan-dir-enabled')}
           {row('Unterordner einbeziehen', 'Auch alle Ordner darin durchsuchen.', recursive, setRecursive, 'scan-dir-recursive')}
-          {row('KI-Analyse erlaubt', 'Inhalte aus diesem Verzeichnis dürfen (nach Bestätigung) an die KI gesendet werden.', llmAllowed, setLlmAllowed, 'scan-dir-llm')}
+          {row(
+            'KI-Analyse erlaubt',
+            'Inhalte aus diesem Verzeichnis dürfen (nach Bestätigung) an die KI gesendet werden.',
+            llmAllowed,
+            setLlmAllowed,
+            'scan-dir-llm',
+          )}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Ausgeschlossene Unterordner" htmlFor={`ex-${root.id}`} hint="Ein Pfad pro Zeile.">
@@ -118,9 +127,16 @@ export function ScanDirectories() {
       </div>
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
-      {data && data.length === 0 && <EmptyState title="Noch keine Verzeichnisse" description="Fügen Sie Ordner hinzu, in denen Archivist nach neuen Dokumenten suchen soll." />}
+      {data && data.length === 0 && (
+        <EmptyState title="Noch keine Verzeichnisse" description="Fügen Sie Ordner hinzu, in denen Archivist nach neuen Dokumenten suchen soll." />
+      )}
       {(data ?? []).map((r) => (
-        <DirectoryCard key={`${r.id}-${r.createdAt}-${r.enabled}-${r.recursive}-${r.llmAllowed}-${r.maxFileSizeMb}`} root={r} onChanged={() => void refetch()} onRemove={() => setRemoving(r)} />
+        <DirectoryCard
+          key={`${r.id}-${r.createdAt}-${r.enabled}-${r.recursive}-${r.llmAllowed}-${r.maxFileSizeMb}`}
+          root={r}
+          onChanged={() => void refetch()}
+          onRemove={() => setRemoving(r)}
+        />
       ))}
       <ConfirmDialog
         open={removing !== null}

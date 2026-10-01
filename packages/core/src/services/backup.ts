@@ -36,8 +36,22 @@ export class BackupService {
       await this.ctx.database.backupTo(path.join(dir, 'archivist.db'));
       const cfg = this.settings.get();
       await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(cfg, null, 2), 'utf8'); // enthält keinen API-Key
-      await fsp.writeFile(path.join(dir, 'manifest.json'), JSON.stringify({ kind: includeArchive ? 'full' : 'metadata', createdAt: new Date().toISOString(), archiveRoot: cfg.archiveRoot, note: 'Enthält Datenbank (inkl. Wissensgraph, Kategorien, Beziehungen, Audit Log) und Einstellungen ohne API-Key.' }, null, 2), 'utf8');
-      if (includeArchive && fs.existsSync(cfg.archiveRoot)) await fsp.cp(cfg.archiveRoot, path.join(dir, 'archive'), { recursive: true, errorOnExist: true, force: false });
+      await fsp.writeFile(
+        path.join(dir, 'manifest.json'),
+        JSON.stringify(
+          {
+            kind: includeArchive ? 'full' : 'metadata',
+            createdAt: new Date().toISOString(),
+            archiveRoot: cfg.archiveRoot,
+            note: 'Enthält Datenbank (inkl. Wissensgraph, Kategorien, Beziehungen, Audit Log) und Einstellungen ohne API-Key.',
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+      if (includeArchive && fs.existsSync(cfg.archiveRoot))
+        await fsp.cp(cfg.archiveRoot, path.join(dir, 'archive'), { recursive: true, errorOnExist: true, force: false });
     } catch (err) {
       await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
       throw fsError('Das Backup ist fehlgeschlagen.', err);

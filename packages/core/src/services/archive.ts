@@ -1,14 +1,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type {
-  ArchiveItemRequest,
-  ArchivePlan,
-  ArchivePlanItem,
-  ArchiveResult,
-  DocumentProposal,
-  VerifyReport,
-} from '@archivist/shared';
+import type { ArchiveItemRequest, ArchivePlan, ArchivePlanItem, ArchiveResult, DocumentProposal, VerifyReport } from '@archivist/shared';
 import { eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
@@ -117,7 +110,11 @@ export class ArchiveService {
     if (req.mode === 'ignore') return { ...base, sourcePath: row.sourcePath };
 
     const dupes = this.docs.findDuplicates(row.sha256, row.id).filter((d) => d.status === 'archived' || d.status === 'indexed_only');
-    base.duplicates = dupes.map((d) => ({ documentId: d.id, title: d.title, archivePath: d.archiveRelPath ? path.join(this.root, ...d.archiveRelPath.split('/')) : null }));
+    base.duplicates = dupes.map((d) => ({
+      documentId: d.id,
+      title: d.title,
+      archivePath: d.archiveRelPath ? path.join(this.root, ...d.archiveRelPath.split('/')) : null,
+    }));
     for (const t of [proposal?.topic, proposal?.project, req.topic, req.project]) {
       if (t) {
         const e = this.graph.findByName(t === proposal?.project || t === req.project ? 'project' : 'topic', t);
@@ -158,7 +155,9 @@ export class ArchiveService {
       targetRelPath: toPosix(path.relative(this.root, target)),
       renamed: collided || name !== row.originalName,
       willRemoveSource: req.mode === 'move' || Boolean(row.stagedPath && source === row.stagedPath),
-      conflicts: collided ? [`Im Zielordner existiert bereits „${name}“ – die Datei wird als „${path.basename(target)}“ abgelegt (nichts wird überschrieben).`] : [],
+      conflicts: collided
+        ? [`Im Zielordner existiert bereits „${name}“ – die Datei wird als „${path.basename(target)}“ abgelegt (nichts wird überschrieben).`]
+        : [],
       newCategories: newMain ? [newMain] : [],
       _cat: cat,
       _name: name,
@@ -204,9 +203,29 @@ export class ArchiveService {
       } catch (err) {
         const info = toErrorInfo(err);
         this.ctx.logger.error('archive', 'Archivierung fehlgeschlagen', { documentId: req.documentId, error: err });
-        this.audit.log({ action: `archive.${req.mode}`, actor: 'user', trigger: opts.trigger ?? 'manual', confirmed: true, entityIds: [req.documentId], success: false, error: `${info.message} ${info.details ?? ''}`.trim() });
-        outcome = { documentId: req.documentId, outcome: 'failed', targetPath: null, message: info.message + (info.details ? ` (${info.details})` : ''), auditId: null };
-        this.notifications.create({ title: 'Archivierung fehlgeschlagen', description: outcome.message, type: 'import_failed', priority: 'high', affectedEntityIds: [req.documentId] });
+        this.audit.log({
+          action: `archive.${req.mode}`,
+          actor: 'user',
+          trigger: opts.trigger ?? 'manual',
+          confirmed: true,
+          entityIds: [req.documentId],
+          success: false,
+          error: `${info.message} ${info.details ?? ''}`.trim(),
+        });
+        outcome = {
+          documentId: req.documentId,
+          outcome: 'failed',
+          targetPath: null,
+          message: info.message + (info.details ? ` (${info.details})` : ''),
+          auditId: null,
+        };
+        this.notifications.create({
+          title: 'Archivierung fehlgeschlagen',
+          description: outcome.message,
+          type: 'import_failed',
+          priority: 'high',
+          affectedEntityIds: [req.documentId],
+        });
       }
       result.items.push(outcome);
       if (outcome.outcome === 'success') result.success += 1;
@@ -222,37 +241,92 @@ export class ArchiveService {
     const plan = await this.planItem(req);
     const row = this.docs.getRow(req.documentId);
     const trigger = opts.trigger ?? 'manual';
-    if (plan.blocked) return { documentId: row.id, outcome: plan.conflicts.some((c) => c.includes('bereits archiviert')) ? 'skipped' : 'conflict', targetPath: null, message: plan.conflicts.join(' '), auditId: null };
+    if (plan.blocked)
+      return {
+        documentId: row.id,
+        outcome: plan.conflicts.some((c) => c.includes('bereits archiviert')) ? 'skipped' : 'conflict',
+        targetPath: null,
+        message: plan.conflicts.join(' '),
+        auditId: null,
+      };
 
     const proposal = row.proposal as DocumentProposal | null;
     const topicName = (req.topic !== undefined ? req.topic : proposal?.topic)?.trim() || null;
     const projectName = (req.project !== undefined ? req.project : proposal?.project)?.trim() || null;
-    const before: UndoData['before'] = { status: row.status, archiveRelPath: row.archiveRelPath, categoryPath: row.categoryPath, topicId: row.topicId, projectId: row.projectId, archiveMode: row.archiveMode, stagedPath: row.stagedPath, archivedAt: row.archivedAt };
+    const before: UndoData['before'] = {
+      status: row.status,
+      archiveRelPath: row.archiveRelPath,
+      categoryPath: row.categoryPath,
+      topicId: row.topicId,
+      projectId: row.projectId,
+      archiveMode: row.archiveMode,
+      stagedPath: row.stagedPath,
+      archivedAt: row.archivedAt,
+    };
 
     // --- Ignorieren ---
     if (req.mode === 'ignore') {
       const updatedAt = nowIso();
       this.db.update(documents).set({ status: 'ignored', archiveMode: 'ignore', updatedAt }).where(eq(documents.id, row.id)).run();
       const auditId = this.audit.log({
-        action: 'archive.ignore', actor: 'user', trigger, confirmed: true, entityIds: [row.id], paths: [row.sourcePath ?? ''].filter(Boolean),
-        before: { status: row.status }, after: { status: 'ignored' },
-        undo: { type: 'archive_file', data: { documentId: row.id, mode: 'ignore', archiveRel: null, sha256: row.sha256, sourcePath: row.sourcePath, stagedPath: row.stagedPath, removedStaged: false, removedSource: false, before, relationIds: [], afterUpdatedAt: updatedAt } satisfies UndoData },
+        action: 'archive.ignore',
+        actor: 'user',
+        trigger,
+        confirmed: true,
+        entityIds: [row.id],
+        paths: [row.sourcePath ?? ''].filter(Boolean),
+        before: { status: row.status },
+        after: { status: 'ignored' },
+        undo: {
+          type: 'archive_file',
+          data: {
+            documentId: row.id,
+            mode: 'ignore',
+            archiveRel: null,
+            sha256: row.sha256,
+            sourcePath: row.sourcePath,
+            stagedPath: row.stagedPath,
+            removedStaged: false,
+            removedSource: false,
+            before,
+            relationIds: [],
+            afterUpdatedAt: updatedAt,
+          } satisfies UndoData,
+        },
       });
       return { documentId: row.id, outcome: 'success', targetPath: null, message: 'Ignoriert (keine Dateiaktion).', auditId };
     }
 
     // --- neue Hauptkategorie braucht ausdrückliche Bestätigung ---
     if (plan.newCategories.length > 0 && !plan.newCategories.every((c) => opts.approveNewCategories.some((a) => a.toLowerCase() === c.toLowerCase()))) {
-      return { documentId: row.id, outcome: 'conflict', targetPath: null, message: `Neue Hauptkategorie „${plan.newCategories.join(', ')}“ wurde nicht bestätigt.`, auditId: null };
+      return {
+        documentId: row.id,
+        outcome: 'conflict',
+        targetPath: null,
+        message: `Neue Hauptkategorie „${plan.newCategories.join(', ')}“ wurde nicht bestätigt.`,
+        auditId: null,
+      };
     }
     if (req.mode === 'move' && !opts.confirmMove) {
-      return { documentId: row.id, outcome: 'skipped', targetPath: null, message: 'Verschieben erfordert eine zusätzliche Bestätigung („Original wird entfernt“).', auditId: null };
+      return {
+        documentId: row.id,
+        outcome: 'skipped',
+        targetPath: null,
+        message: 'Verschieben erfordert eine zusätzliche Bestätigung („Original wird entfernt“).',
+        auditId: null,
+      };
     }
 
     const source = plan.sourcePath!;
     const currentSha = await sha256File(source);
     if (currentSha !== row.sha256) {
-      return { documentId: row.id, outcome: 'conflict', targetPath: null, message: 'Die Quelldatei hat sich seit der Analyse verändert. Bitte erneut analysieren.', auditId: null };
+      return {
+        documentId: row.id,
+        outcome: 'conflict',
+        targetPath: null,
+        message: 'Die Quelldatei hat sich seit der Analyse verändert. Bitte erneut analysieren.',
+        auditId: null,
+      };
     }
 
     let targetAbs: string | null = null;
@@ -301,10 +375,14 @@ export class ArchiveService {
         const keep = (r: { id: string } | null) => r && relationIds.push(r.id);
         if (topic) keep(this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] }));
         if (project) keep(this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] }));
-        if (cat) keep(this.graph.link(row.id, this.graph.ensureEntity('category', cat).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] }));
-        for (const person of (proposal?.persons ?? row.persons).slice(0, 12)) keep(this.graph.link(this.graph.ensureEntity('person', person).id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] }));
-        for (const tag of row.tags.slice(0, 8)) keep(this.graph.link(row.id, this.graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] }));
-        if (proposal?.duplicateOfDocumentId) keep(this.graph.link(row.id, proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] }));
+        if (cat)
+          keep(this.graph.link(row.id, this.graph.ensureEntity('category', cat).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] }));
+        for (const person of (proposal?.persons ?? row.persons).slice(0, 12))
+          keep(this.graph.link(this.graph.ensureEntity('person', person).id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] }));
+        for (const tag of row.tags.slice(0, 8))
+          keep(this.graph.link(row.id, this.graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] }));
+        if (proposal?.duplicateOfDocumentId)
+          keep(this.graph.link(row.id, proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] }));
       });
     } catch (err) {
       if (targetAbs) await fsp.unlink(targetAbs).catch(() => undefined); // keine halbfertige Dateioperation zurücklassen
@@ -337,7 +415,19 @@ export class ArchiveService {
       this.db.update(documents).set({ stagedPath: null, updatedAt: finalUpdatedAt }).where(eq(documents.id, row.id)).run();
     }
 
-    const undoData: UndoData = { documentId: row.id, mode: req.mode, archiveRel, sha256: row.sha256, sourcePath: row.sourcePath, stagedPath: row.stagedPath, removedStaged, removedSource, before, relationIds, afterUpdatedAt: finalUpdatedAt };
+    const undoData: UndoData = {
+      documentId: row.id,
+      mode: req.mode,
+      archiveRel,
+      sha256: row.sha256,
+      sourcePath: row.sourcePath,
+      stagedPath: row.stagedPath,
+      removedStaged,
+      removedSource,
+      before,
+      relationIds,
+      afterUpdatedAt: finalUpdatedAt,
+    };
     const auditId = this.audit.log({
       action: `archive.${req.mode}`,
       actor: trigger === 'agent_action' ? 'agent' : 'user',
@@ -354,7 +444,13 @@ export class ArchiveService {
     this.ctx.events.emit('document:archived', { documentId: row.id, sourcePath: row.sourcePath });
     this.notifications.resolveByDedupePrefix(`classified:${row.id}`);
     this.proposeExtractedItems(row, proposal);
-    return { documentId: row.id, outcome: 'success', targetPath: targetAbs, message: [req.mode === 'index_only' ? 'Nur indexiert.' : req.mode === 'move' ? 'Ins Archiv verschoben.' : 'Ins Archiv kopiert.', ...warnings].join(' '), auditId };
+    return {
+      documentId: row.id,
+      outcome: 'success',
+      targetPath: targetAbs,
+      message: [req.mode === 'index_only' ? 'Nur indexiert.' : req.mode === 'move' ? 'Ins Archiv verschoben.' : 'Ins Archiv kopiert.', ...warnings].join(' '),
+      auditId,
+    };
   }
 
   /** Vorschläge für in Dokumenten erkannte Entscheidungen/offene Punkte (Stufe 1: nur Vorschlag, keine Änderung). */
@@ -367,8 +463,39 @@ export class ArchiveService {
       if (list.length === 0) return;
       const actions = list.map((it) =>
         kind === 'open'
-          ? this.actions.propose({ actionType: 'create_open_item', label: `Offenen Punkt anlegen: ${(it).title}`, rationale: `Im Dokument „${row.title}“ erkannt.`, confidence: 0.6, affectedEntities: [{ type: 'document', id: row.id, label: row.title }], requiredConfirmation: 'confirm', proposedParameters: { title: (it).title, description: (it as { description?: string | null }).description ?? null, dueAt: (it as { dueAt?: string | null }).dueAt ?? null, sourceIds: [row.id], topic, project } })
-          : this.actions.propose({ actionType: 'record_decision', label: `Entscheidung erfassen: ${(it).title}`, rationale: `Im Dokument „${row.title}“ erkannt.`, confidence: 0.55, affectedEntities: [{ type: 'document', id: row.id, label: row.title }], requiredConfirmation: 'confirm', proposedParameters: { title: (it).title, decisionText: (it as { decisionText: string }).decisionText, decidedAt: (it as { decidedAt?: string | null }).decidedAt ?? null, participants: proposal.persons.slice(0, 5), topic, project, sourceIds: [row.id] } }),
+          ? this.actions.propose({
+              actionType: 'create_open_item',
+              label: `Offenen Punkt anlegen: ${it.title}`,
+              rationale: `Im Dokument „${row.title}“ erkannt.`,
+              confidence: 0.6,
+              affectedEntities: [{ type: 'document', id: row.id, label: row.title }],
+              requiredConfirmation: 'confirm',
+              proposedParameters: {
+                title: it.title,
+                description: (it as { description?: string | null }).description ?? null,
+                dueAt: (it as { dueAt?: string | null }).dueAt ?? null,
+                sourceIds: [row.id],
+                topic,
+                project,
+              },
+            })
+          : this.actions.propose({
+              actionType: 'record_decision',
+              label: `Entscheidung erfassen: ${it.title}`,
+              rationale: `Im Dokument „${row.title}“ erkannt.`,
+              confidence: 0.55,
+              affectedEntities: [{ type: 'document', id: row.id, label: row.title }],
+              requiredConfirmation: 'confirm',
+              proposedParameters: {
+                title: it.title,
+                decisionText: (it as { decisionText: string }).decisionText,
+                decidedAt: (it as { decidedAt?: string | null }).decidedAt ?? null,
+                participants: proposal.persons.slice(0, 5),
+                topic,
+                project,
+                sourceIds: [row.id],
+              },
+            }),
       );
       this.notifications.create({
         title: kind === 'open' ? `Dokument enthält ${list.length} mögliche offene Punkte` : `Dokument enthält ${list.length} mögliche Entscheidung(en)`,
@@ -439,13 +566,21 @@ export class ArchiveService {
     });
     await this.docs.indexDocument(d.documentId);
     this.ctx.events.changed('documents', 'knowledge', 'status');
-    return d.mode === 'ignore' ? 'Ignorieren rückgängig gemacht.' : d.mode === 'index_only' ? 'Indexierung rückgängig gemacht.' : 'Archivierung rückgängig gemacht; die Datei liegt wieder am ursprünglichen Ort.';
+    return d.mode === 'ignore'
+      ? 'Ignorieren rückgängig gemacht.'
+      : d.mode === 'index_only'
+        ? 'Indexierung rückgängig gemacht.'
+        : 'Archivierung rückgängig gemacht; die Datei liegt wieder am ursprünglichen Ort.';
   }
 
   // ---------- Archivzustand ----------
   /** Vergleicht Datenbank- und Dateisystemzustand des Archivs. */
   async verify(): Promise<VerifyReport> {
-    const rows = this.db.select().from(documents).where(inArray(documents.status, ['archived'])).all();
+    const rows = this.db
+      .select()
+      .from(documents)
+      .where(inArray(documents.status, ['archived']))
+      .all();
     const report: VerifyReport = { checkedDocuments: rows.length, missingFiles: [], changedFiles: [], untrackedFiles: [], ok: true };
     const known = new Set<string>();
     for (const r of rows) {

@@ -1,12 +1,5 @@
 import path from 'node:path';
-import {
-  ipcContract,
-  type AppStatus,
-  type IpcChannel,
-  type IpcOutput,
-  type IpcParsedInput,
-  type Result,
-} from '@archivist/shared';
+import { ipcContract, type AppStatus, type IpcChannel, type IpcOutput, type IpcParsedInput, type Result } from '@archivist/shared';
 import type { Services } from './create-services';
 import { AppError, permissionError, toErrorInfo } from './util/errors';
 import { isInside } from './util/paths';
@@ -40,14 +33,24 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       archiveRoot: settings.archiveRoot,
       platform: host.platform,
       setupCompleted: settings.setupCompleted,
-      llm: { configured: s.llm.isConfigured(), hasApiKey: s.secrets.hasApiKey(), status: llm.state, lastError: llm.lastError, lastCheckedAt: llm.lastCheckedAt },
+      llm: {
+        configured: s.llm.isConfigured(),
+        hasApiKey: s.secrets.hasApiKey(),
+        status: llm.state,
+        lastError: llm.lastError,
+        lastCheckedAt: llm.lastCheckedAt,
+      },
       secretStorage: sec,
       jobs: counts,
       unreadNotifications: s.notifications.unreadCount(),
       openInsights: s.insights.openCount(),
       services: [
         { name: 'Datenbank', status: s.migration.upToDate ? 'ok' : 'degraded', detail: `Migrationen ${s.migration.applied}/${s.migration.total}` },
-        { name: 'Job-Queue', status: counts.failed > 0 ? 'degraded' : 'ok', detail: `${counts.pending} wartend, ${counts.running} laufend, ${counts.failed} fehlgeschlagen` },
+        {
+          name: 'Job-Queue',
+          status: counts.failed > 0 ? 'degraded' : 'ok',
+          detail: `${counts.pending} wartend, ${counts.running} laufend, ${counts.failed} fehlgeschlagen`,
+        },
         { name: 'Worker', status: 'ok', detail: s.pool.mode === 'thread' ? 'Worker-Threads aktiv' : 'Inline-Modus' },
         { name: 'Sicherer Speicher', status: sec.available ? 'ok' : 'error', detail: sec.backend },
       ],
@@ -56,7 +59,9 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
 
   const documentPath = (id: string): string => {
     const d = s.documents.getRow(id);
-    const candidates = [d.archiveRelPath ? path.join(s.settings.get().archiveRoot, ...d.archiveRelPath.split('/')) : null, d.stagedPath, d.sourcePath].filter((x): x is string => Boolean(x));
+    const candidates = [d.archiveRelPath ? path.join(s.settings.get().archiveRoot, ...d.archiveRelPath.split('/')) : null, d.stagedPath, d.sourcePath].filter(
+      (x): x is string => Boolean(x),
+    );
     const found = candidates.find((c) => s.scanner.fileExists(c));
     if (!found) throw new AppError('filesystem_error', 'Die Datei wurde nicht gefunden (verschoben oder gelöscht?).');
     // nur Orte öffnen, die Archivist selbst kennt: Archiv, Eingang oder das ursprüngliche Dokument
@@ -136,7 +141,10 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         label: `„${o.title}“ durch „${n.title}“ ersetzen`,
         rationale: 'Vom Benutzer vorgeschlagen.',
         confidence: 0.9,
-        affectedEntities: [{ type: 'decision', id: o.id, label: o.title }, { type: 'decision', id: n.id, label: n.title }],
+        affectedEntities: [
+          { type: 'decision', id: o.id, label: o.title },
+          { type: 'decision', id: n.id, label: n.title },
+        ],
         requiredConfirmation: 'confirm',
         proposedParameters: { oldDecisionId: o.id, newDecisionId: n.id },
       });
@@ -147,9 +155,11 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'documents:get': (i) => s.documents.get(i.id),
     'documents:classify': (i) => ({ jobId: s.documents.enqueueAnalysis(i.documentId, i.allowLlm) }),
     'documents:previewArchive': (i) => s.archive.preview(i.items),
-    'documents:archive': (i) => s.archive.execute(i.items, { confirmed: i.confirmed, approveNewCategories: i.approveNewCategories, confirmMove: i.confirmMove, trigger: 'manual' }),
+    'documents:archive': (i) =>
+      s.archive.execute(i.items, { confirmed: i.confirmed, approveNewCategories: i.approveNewCategories, confirmMove: i.confirmMove, trigger: 'manual' }),
     'documents:undoArchive': (i) => s.undo.undo(i.auditId),
-    'documents:updateMetadata': (i) => s.documents.updateMetadata(i.id, { title: i.title, topic: i.topic, project: i.project, tags: i.tags, persons: i.persons }, i.confirmed),
+    'documents:updateMetadata': (i) =>
+      s.documents.updateMetadata(i.id, { title: i.title, topic: i.topic, project: i.project, tags: i.tags, persons: i.persons }, i.confirmed),
     'documents:ignore': (i) => s.documents.ignore(i.id),
     'documents:forTopic': (i) => {
       const e = s.graph.getEntity(i.topicId);
@@ -169,7 +179,10 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'scanner:listDirectories': () => s.scanner.listDirectories(),
     'scanner:start': (i) => ({ jobId: s.scanner.startScan(i.rootId).id }),
     'scanner:getResults': (i) => s.scanner.getResults(i),
-    'scanner:analyze': (i) => ({ jobId: s.jobs.enqueue('scanner.analyze', `Analysiere ${i.fileIds.length} Datei(en)`, { fileIds: i.fileIds, confirmLlm: i.confirmLlm }, { maxAttempts: 1 }).id }),
+    'scanner:analyze': (i) => ({
+      jobId: s.jobs.enqueue('scanner.analyze', `Analysiere ${i.fileIds.length} Datei(en)`, { fileIds: i.fileIds, confirmLlm: i.confirmLlm }, { maxAttempts: 1 })
+        .id,
+    }),
     'scanner:proposals': () => s.scanner.proposals(),
     'scanner:exclude': (i) => s.scanner.exclude(i.kind, i.path),
     'scanner:listExclusions': () => s.scanner.listExclusions(),
@@ -202,7 +215,12 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     },
     'consistency:run': () => ({ jobId: s.enqueueConsistency('manual').id }),
     'contradictions:list': (i) => s.contradictions.list(i.status),
-    'contradictions:resolve': (i) => s.contradictions.resolve(i.id, i.resolution, { confirmed: i.confirmed, supersedeOldDecisionId: i.supersedeOldDecisionId, supersedeNewDecisionId: i.supersedeNewDecisionId }),
+    'contradictions:resolve': (i) =>
+      s.contradictions.resolve(i.id, i.resolution, {
+        confirmed: i.confirmed,
+        supersedeOldDecisionId: i.supersedeOldDecisionId,
+        supersedeNewDecisionId: i.supersedeNewDecisionId,
+      }),
 
     'reminders:create': (i) => s.reminders.create(i),
     'reminders:snooze': (i) => s.reminders.snooze(i.id, i.remindAt),
@@ -234,7 +252,10 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         label: `Themen „${a.name}“ in „${b.name}“ zusammenführen`,
         rationale: 'Vom Benutzer vorgeschlagen.',
         confidence: 0.9,
-        affectedEntities: [{ type: 'topic', id: a.id, label: a.name }, { type: 'topic', id: b.id, label: b.name }],
+        affectedEntities: [
+          { type: 'topic', id: a.id, label: a.name },
+          { type: 'topic', id: b.id, label: b.name },
+        ],
         requiredConfirmation: 'confirm',
         proposedParameters: { sourceTopicId: a.id, targetTopicId: b.id },
       });
@@ -277,7 +298,15 @@ export function createIpcDispatcher(handlers: HandlerMap, onError?: (channel: st
     const spec = ipcContract[c];
     const parsed = spec.input.safeParse(rawInput ?? {});
     if (!parsed.success) {
-      return { ok: false, error: { category: 'validation_error', message: 'Ungültige Eingabe.', retryable: false, details: parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ') } };
+      return {
+        ok: false,
+        error: {
+          category: 'validation_error',
+          message: 'Ungültige Eingabe.',
+          retryable: false,
+          details: parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; '),
+        },
+      };
     }
     try {
       const fn = handlers[c] as (input: unknown) => unknown;
@@ -285,7 +314,18 @@ export function createIpcDispatcher(handlers: HandlerMap, onError?: (channel: st
       const checked = spec.output.safeParse(out);
       if (!checked.success) {
         onError?.(channel, checked.error);
-        return { ok: false, error: { category: 'validation_error', message: 'Interne Antwort entsprach nicht dem Schema.', retryable: false, details: checked.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') } };
+        return {
+          ok: false,
+          error: {
+            category: 'validation_error',
+            message: 'Interne Antwort entsprach nicht dem Schema.',
+            retryable: false,
+            details: checked.error.issues
+              .slice(0, 5)
+              .map((i) => `${i.path.join('.')}: ${i.message}`)
+              .join('; '),
+          },
+        };
       }
       return { ok: true, data: checked.data };
     } catch (err) {

@@ -29,11 +29,7 @@ export function NotificationBell() {
   const [snoozeFor, setSnoozeFor] = useState<string | null>(null);
   const { run, busy } = useRun();
   const { toast } = useToast();
-  const { data, loading, error, refetch } = useQuery(
-    'notifications:list',
-    { includeResolved: false, limit: 50 },
-    { scopes: ['notifications'], enabled: open },
-  );
+  const { data, loading, error, refetch } = useQuery('notifications:list', { includeResolved: false, limit: 50 }, { scopes: ['notifications'], enabled: open });
   const unread = status?.unreadNotifications ?? 0;
 
   useEffect(() => {
@@ -84,7 +80,13 @@ export function NotificationBell() {
     <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label={unread > 0 ? `Benachrichtigungen (${unread} ungelesen)` : 'Benachrichtigungen'} data-testid="bell" className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={unread > 0 ? `Benachrichtigungen (${unread} ungelesen)` : 'Benachrichtigungen'}
+            data-testid="bell"
+            className="relative"
+          >
             <Bell aria-hidden />
             {unread > 0 && (
               <span
@@ -101,7 +103,9 @@ export function NotificationBell() {
           <div className="max-h-[28rem] overflow-y-auto p-2">
             {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
             {!data && loading && <Loading />}
-            {data && data.length === 0 && <EmptyState icon={<BellOff />} title="Alles erledigt" description="Es gibt keine neuen Benachrichtigungen." className="border-0 py-8" />}
+            {data && data.length === 0 && (
+              <EmptyState icon={<BellOff />} title="Alles erledigt" description="Es gibt keine neuen Benachrichtigungen." className="border-0 py-8" />
+            )}
             <ul className="flex flex-col gap-2">
               {(data ?? []).map((n) => (
                 <li key={n.id} className="rounded-lg border p-3 text-sm" data-testid="bell-item" data-read={n.readAt ? 'true' : 'false'}>

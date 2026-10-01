@@ -22,7 +22,7 @@ export function addDays(days: number, from: Date = new Date()): Date {
 /** Nächster Montag (mindestens morgen). */
 export function nextMonday(from: Date = new Date()): Date {
   const d = new Date(from);
-  const diff = ((8 - d.getDay()) % 7) || 7;
+  const diff = (8 - d.getDay()) % 7 || 7;
   d.setDate(d.getDate() + diff);
   return d;
 }

@@ -2,7 +2,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { assertRealInside, isForbiddenScanRoot, isInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../../packages/core/src/util/paths';
+import {
+  assertRealInside,
+  isForbiddenScanRoot,
+  isInside,
+  resolveInside,
+  sanitizeCategoryPath,
+  sanitizeFileName,
+  uniquePath,
+} from '../../packages/core/src/util/paths';
 import { scanDirectory } from '../../packages/core/src/workers/tasks';
 
 let tmp: string;
@@ -84,7 +92,14 @@ describe('Symlink-Ausbruch und Scan-Bereichsbegrenzung', () => {
     fs.symlinkSync(outside, path.join(root, 'escape'));
     fs.symlinkSync(path.join(outside, 'geheim.txt'), path.join(root, 'file-escape.txt'));
     fs.symlinkSync(root, path.join(root, 'sub', 'loop'));
-    const res = await scanDirectory({ root, recursive: true, excludedDirs: [path.join(root, 'skipme')], excludedFiles: [], extensions: ['txt', 'md'], maxSizeBytes: 1000 });
+    const res = await scanDirectory({
+      root,
+      recursive: true,
+      excludedDirs: [path.join(root, 'skipme')],
+      excludedFiles: [],
+      extensions: ['txt', 'md'],
+      maxSizeBytes: 1000,
+    });
     const names = res.entries.map((e) => path.relative(root, e.path)).sort();
     expect(names).toEqual(['ok.txt', path.join('sub', 'tief.md')]);
     expect(res.skipped.some((s) => s.path.endsWith('file-escape.txt'))).toBe(true);
@@ -97,7 +112,14 @@ describe('Symlink-Ausbruch und Scan-Bereichsbegrenzung', () => {
     fs.writeFileSync(path.join(root, 'b.txt'), 'b');
     fs.mkdirSync(path.join(root, 'd'));
     fs.writeFileSync(path.join(root, 'd', 'c.txt'), 'c');
-    const res = await scanDirectory({ root, recursive: false, excludedDirs: [], excludedFiles: [path.join(root, 'b.txt')], extensions: ['txt'], maxSizeBytes: 1e6 });
+    const res = await scanDirectory({
+      root,
+      recursive: false,
+      excludedDirs: [],
+      excludedFiles: [path.join(root, 'b.txt')],
+      extensions: ['txt'],
+      maxSizeBytes: 1e6,
+    });
     expect(res.entries.map((e) => e.name)).toEqual(['a.txt']);
   });
 });

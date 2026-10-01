@@ -35,7 +35,10 @@ export function ArchiveTab({ settings, reload }: TabProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Section title="Archivordner" description="In diesen Ordner legt Archivist Ihre Dokumente ab. Bereits archivierte Dateien werden bei einer Änderung nicht automatisch verschoben.">
+      <Section
+        title="Archivordner"
+        description="In diesen Ordner legt Archivist Ihre Dokumente ab. Bereits archivierte Dateien werden bei einer Änderung nicht automatisch verschoben."
+      >
         <Field label="Pfad des Archivs" htmlFor="s-archive-root">
           <div className="flex gap-2">
             <Input id="s-archive-root" value={root} onChange={(e) => setRoot(e.target.value)} data-testid="settings-archive-root" />
@@ -58,7 +61,10 @@ export function ArchiveTab({ settings, reload }: TabProps) {
         </div>
       </Section>
 
-      <Section title="Kategorien" description="Ordnerstruktur, in die Dokumente einsortiert werden können. Neue Kategorien werden erst nach Ihrer Bestätigung angelegt.">
+      <Section
+        title="Kategorien"
+        description="Ordnerstruktur, in die Dokumente einsortiert werden können. Neue Kategorien werden erst nach Ihrer Bestätigung angelegt."
+      >
         {categories.error && !categories.data && <ErrorNote error={categories.error} onRetry={() => void categories.refetch()} />}
         {!categories.data && categories.loading && <Loading />}
         <ul className="flex flex-wrap gap-1.5" data-testid="category-list">
@@ -73,7 +79,13 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           {categories.data && categories.data.length === 0 && <li className="text-sm text-muted-foreground">Noch keine Kategorien.</li>}
         </ul>
         <div className="flex gap-2">
-          <Input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Neue Kategorie, z. B. Arbeit/Verträge" aria-label="Neue Kategorie" data-testid="category-new" />
+          <Input
+            value={newCat}
+            onChange={(e) => setNewCat(e.target.value)}
+            placeholder="Neue Kategorie, z. B. Arbeit/Verträge"
+            aria-label="Neue Kategorie"
+            data-testid="category-new"
+          />
           <Button variant="outline" disabled={!newCat.trim()} onClick={() => setConfirmCat(true)} data-testid="category-create">
             <Plus aria-hidden /> Anlegen …
           </Button>
@@ -139,7 +151,11 @@ export function ArchiveTab({ settings, reload }: TabProps) {
         )}
         <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
           <SwitchRow label="Beim Start prüfen" hint="Automatische Archivprüfung beim Programmstart.">
-            <Switch checked={settings.consistency.onStartup} onCheckedChange={(v) => void save({ consistency: { onStartup: v } })} aria-label="Beim Start prüfen" />
+            <Switch
+              checked={settings.consistency.onStartup}
+              onCheckedChange={(v) => void save({ consistency: { onStartup: v } })}
+              aria-label="Beim Start prüfen"
+            />
           </SwitchRow>
           <SwitchRow label="Texterkennung in Bildern (OCR)" hint="Liest Text aus Bildern und gescannten PDFs – lokal, ohne Internet.">
             <Switch checked={settings.ocr.enabled} onCheckedChange={(v) => void save({ ocr: { enabled: v } })} aria-label="OCR" data-testid="settings-ocr" />
