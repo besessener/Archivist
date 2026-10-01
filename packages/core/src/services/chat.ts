@@ -15,7 +15,7 @@ import { asc, desc, eq } from 'drizzle-orm';
 import type { Conversation } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { conversations, messages } from '../db/schema';
-import { toErrorInfo } from '../util/errors';
+import { AppError, toErrorInfo } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import type { ArchivistJson } from '../util/json';
 import { normalizeDateInput, parseGermanDate } from '../util/dates';
@@ -41,7 +41,8 @@ type MsgRow = typeof messages.$inferSelect;
 
 type Pending =
   | { kind: 'decision'; decisionId: string; asked: DecisionField[]; clarifyTopic?: string | null; supersedes?: string | null }
-  | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'> };
+  | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'> }
+  | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean };
 
 interface ConvState {
   pending?: Pending | null;
@@ -139,6 +140,17 @@ export class ChatService {
     return { id: row.id, title, createdAt: now, updatedAt: now };
   }
 
+  /** Benennt eine Unterhaltung um (nur der Titel; Inhalte bleiben unverändert). */
+  renameConversation(id: string, title: string): Conversation {
+    const row = this.db.select().from(conversations).where(eq(conversations.id, id)).get();
+    if (!row) throw new AppError('validation_error', 'Unterhaltung nicht gefunden.');
+    const clean = title.trim().replace(/\s+/g, ' ');
+    if (!clean) throw new AppError('validation_error', 'Der Titel darf nicht leer sein.');
+    this.db.update(conversations).set({ title: clean }).where(eq(conversations.id, id)).run();
+    this.ctx.events.changed('chat');
+    return { id, title: clean, createdAt: row.createdAt, updatedAt: row.updatedAt };
+  }
+
   private state(id: string): ConvState {
     return ((this.db.select().from(conversations).where(eq(conversations.id, id)).get()?.pending as ConvState | null) ?? {}) as ConvState;
   }
@@ -212,6 +224,9 @@ export class ChatService {
       const d = this.decisions.get(p.decisionId);
       return `Der Agent hat zur Entscheidung „${d.title}“ nach folgenden Angaben gefragt: ${p.asked.map((f) => DECISION_FIELD_LABELS[f]).join(', ') || '–'}${p.clarifyTopic ? `; außerdem, ob „${p.clarifyTopic}“ ein Thema oder ein Projektname ist` : ''}. Die Nachricht ist sehr wahrscheinlich die Antwort darauf (intent=decision_amend), außer sie enthält erkennbar ein anderes Anliegen.`;
     }
+    if (p.kind === 'reminder') {
+      return `Der Agent hat gefragt, WANN er an „${p.title}“ erinnern soll. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum wie „31.10.“ oder „nächsten Montag“ (intent=${p.snooze ? 'reminder_snooze' : 'reminder_create'}, reminder.remindAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
+    }
     const i = this.openItems.get(p.openItemId);
     return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. Die Nachricht ist wahrscheinlich die Antwort (intent=open_item_update).`;
   }
@@ -252,6 +267,10 @@ export class ChatService {
       if (pending.clarifyTopic && TOPIC_KIND_RE.test(t)) decision.topicIsProject = true;
       return { ...base, intent: 'decision_amend', decision };
     }
+    if (pending?.kind === 'reminder') {
+      const date = parseGermanDate(t);
+      if (date) return { ...base, intent: pending.snooze ? 'reminder_snooze' : 'reminder_create', reminder: { relativeText: t, remindAt: date } };
+    }
     if (pending?.kind === 'open_item') {
       return { ...base, intent: 'open_item_update', openItem: { dueAt: parseGermanDate(t), responsible: UNKNOWN_RE.test(t) ? null : t.replace(/^(verantwortlich(er)?:?|@)\s*/i, '').trim() } };
     }
@@ -285,7 +304,9 @@ export class ChatService {
   }
 
   private async dispatch(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {
-    const keep = (extra: Partial<ConvState> = {}): ConvState => ({ pending: state.pending ?? null, last: { ...(state.last ?? {}), ...(extra.last ?? {}) }, ...(extra.pending !== undefined ? { pending: extra.pending } : {}) });
+    // eine offene Rückfrage nach dem Erinnerungsdatum gilt nur für die nächste Nachricht
+    const carried = state.pending?.kind === 'reminder' && !intent.intent.startsWith('reminder') ? null : (state.pending ?? null);
+    const keep = (extra: Partial<ConvState> = {}): ConvState => ({ pending: carried, last: { ...(state.last ?? {}), ...(extra.last ?? {}) }, ...(extra.pending !== undefined ? { pending: extra.pending } : {}) });
     switch (intent.intent) {
       case 'decision_new':
       case 'decision_amend':
@@ -717,15 +738,28 @@ export class ChatService {
   // ---------- Erinnerungen ----------
   private async reminderFlow(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const r = intent.reminder ?? {};
+    const pending = state.pending?.kind === 'reminder' ? state.pending : null;
     const when = normalizeDateInput(r.remindAt ?? null) ?? parseGermanDate(r.relativeText ?? text);
-    if (!when) return { intent: intent.intent, content: 'Wann soll ich dich erinnern? Nenne bitte ein Datum oder z. B. „nächsten Montag“.', confidence: 0.4, state };
-    const item = (r.targetHint && this.openItems.findByHint(r.targetHint)) || (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+    if (!when) {
+      // Rückfrage merken, damit die Antwort („31.10.“) im Kontext verstanden wird
+      const target = (r.targetHint ? this.openItems.findByHint(r.targetHint) : null) ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+      const title = pending?.title ?? target?.title ?? r.title?.trim() ?? truncate(text, 80);
+      return {
+        intent: intent.intent,
+        content: 'Wann soll ich dich erinnern? Nenne bitte ein Datum oder z. B. „nächsten Montag“.',
+        confidence: 0.4,
+        state: { ...state, pending: { kind: 'reminder', title, targetId: pending?.targetId ?? target?.id ?? null, snooze: intent.intent === 'reminder_snooze' } },
+      };
+    }
+    state = { ...state, pending: null };
+    const hinted = r.targetHint ? this.openItems.findByHint(r.targetHint) : null;
+    const item = (pending?.targetId ? this.openItems.get(pending.targetId) : null) ?? hinted ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
     const existing = item ? this.reminders.list('pending').find((x) => x.targetId === item.id) : undefined;
     if (existing && intent.intent === 'reminder_snooze') {
       this.reminders.snooze(existing.id, when);
       return { intent: 'reminder_snooze', content: `Erinnerung verschoben auf ${when}.`, confidence: 0.9, state };
     }
-    const rem = this.reminders.create({ targetType: item ? 'open_item' : 'custom', targetId: item?.id ?? null, title: item?.title ?? r.title?.trim() ?? truncate(text, 80), remindAt: when });
+    const rem = this.reminders.create({ targetType: item ? 'open_item' : 'custom', targetId: item?.id ?? null, title: item?.title ?? pending?.title ?? r.title?.trim() ?? truncate(text, 80), remindAt: when });
     return { intent: 'reminder_create', content: `Erinnerung für den ${when} angelegt${item ? ` (Offener Punkt: ${item.title})` : ''}. Du siehst sie dann in der Notification Bell – solange Archivist läuft.`, context: item ? { openItems: [{ type: 'task', id: item.id, label: item.title }] } : undefined, confidence: 0.9, uncertainties: ['Erinnerungen werden nur angezeigt, solange Archivist geöffnet ist.'], state: { ...state, last: { ...(state.last ?? {}), openItemId: item?.id ?? state.last?.openItemId } }, sources: [{ id: rem.id, type: 'note', title: rem.title, snippet: `Erinnerung am ${when}`, score: 1, path: null, date: when }] };
   }
 

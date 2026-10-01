@@ -273,3 +273,57 @@ describe('Ungültige LLM-Ausgaben lösen nichts aus', () => {
     ).toThrow(/ungültige Parameter/);
   });
 });
+
+describe('Rückfrage nach dem Erinnerungsdatum behält den Kontext', () => {
+  const note = 'Bezüglich AI und Stackit hatten wir ein Mini-Projekt. Es wurde noch nicht im ACT-Team vorgestellt. Dafür bräuchte ich eine Erinnerung.';
+
+  it('versteht „31.10.“ als Antwort auf „Wann soll ich dich erinnern?“ (mit LLM)', async () => {
+    let n = 0;
+    app.llm.on('ChatIntent', (_s, input) => {
+      n += 1;
+      // der LLM bekommt die offene Rückfrage mitgeteilt
+      if (n === 2) expect(input).toMatch(/WANN er an .* erinnern soll/);
+      return n === 1
+        ? intent({ intent: 'reminder_create', reminder: { title: 'Mini-PoC im ACT-Team vorstellen' } })
+        : intent({ intent: 'reminder_create', reminder: { remindAt: '2026-10-31' } });
+    });
+    const r1 = await app.ok('chat:send', { text: note });
+    expect(r1.assistantMessage.content).toContain('Wann soll ich dich erinnern?');
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: '31.10.' });
+    expect(r2.assistantMessage.content).toContain('2026-10-31');
+    const rem = (await app.ok('reminders:list', {}))[0]!;
+    expect(rem.remindAt).toBe('2026-10-31');
+    expect(rem.title).toBe('Mini-PoC im ACT-Team vorstellen');
+  });
+
+  it('funktioniert auch ohne LLM und verfällt nach einer fremden Nachricht', async () => {
+    app.llm.down = true;
+    const r1 = await app.ok('chat:send', { text: 'Erinnere mich bitte an das Treffen mit dem Team.' });
+    expect(r1.assistantMessage.content).toContain('Wann soll ich dich erinnern?');
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: '31.10.' });
+    expect(r2.assistantMessage.content).toContain('angelegt');
+    expect((await app.ok('reminders:list', {}))[0]!.title).toMatch(/Treffen mit dem Team/);
+
+    const r3 = await app.ok('chat:send', { text: 'Erinnere mich an die Steuererklärung.' });
+    await app.ok('chat:send', { conversationId: r3.conversationId, text: 'Wie viele Dokumente gibt es?' });
+    const r5 = await app.ok('chat:send', { conversationId: r3.conversationId, text: '15.11.' });
+    expect(r5.assistantMessage.content).not.toContain('angelegt'); // Rückfrage ist nicht mehr offen
+    expect(await app.ok('reminders:list', {})).toHaveLength(1);
+  });
+});
+
+describe('Unterhaltungen umbenennen', () => {
+  it('ändert nur den Titel, bereinigt Eingaben und lehnt Leeres ab', async () => {
+    app.llm.down = true;
+    const r = await app.ok('chat:send', { text: 'Hallo Archivist' });
+    const renamed = await app.ok('chat:renameConversation', { id: r.conversationId, title: '  Konferenz   Beitrag  ' });
+    expect(renamed.title).toBe('Konferenz Beitrag');
+    expect((await app.ok('chat:conversations', {}))[0]!.title).toBe('Konferenz Beitrag');
+    expect((await app.ok('chat:history', { conversationId: r.conversationId })).length).toBe(2);
+    // der neue Titel wird von späteren Nachrichten nicht überschrieben
+    await app.ok('chat:send', { conversationId: r.conversationId, text: 'Noch eine Nachricht' });
+    expect((await app.ok('chat:conversations', {}))[0]!.title).toBe('Konferenz Beitrag');
+    expect((await app.call('chat:renameConversation', { id: r.conversationId, title: '   ' })).ok).toBe(false);
+    expect((await app.call('chat:renameConversation', { id: 'gibt-es-nicht', title: 'x' })).ok).toBe(false);
+  });
+});

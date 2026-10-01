@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Archive, Loader2, MessageSquarePlus, Paperclip, SendHorizontal } from 'lucide-react';
+import { Archive, Loader2, MessageSquarePlus, Paperclip, Pencil, SendHorizontal } from 'lucide-react';
 import { ChatBubble } from '@/components/chat/message';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorNote } from '@/components/common/states';
@@ -36,6 +38,10 @@ export default function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initialised = useRef(false);
+  // manuell eingestellte Höhe des Eingabefelds (null = automatisch mit dem Text wachsen)
+  const [manualHeight, setManualHeight] = useState<number | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
 
   const convs = useQuery('chat:conversations', {}, { scopes: ['chat'] });
   const history = useQuery('chat:history', conversationId ? { conversationId } : undefined, {
@@ -50,6 +56,38 @@ export default function ChatPage() {
       if (latest) setConversationId(latest.id);
     }
   }, [convs.data]);
+
+  // Das Eingabefeld wächst mit dem Text (bis zur Höchsthöhe) und lässt sich zusätzlich am Griff unten rechts aufziehen.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el || manualHeight !== null) return;
+    if (text === '') el.style.height = '';
+    else if (el.scrollHeight > el.clientHeight) el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.6)}px`;
+  }, [text, manualHeight]);
+
+  /** Griff über dem Eingabefeld: nach oben ziehen vergrößert, nach unten verkleinert, Doppelklick setzt zurück. */
+  function startResize(e: React.PointerEvent<HTMLDivElement>) {
+    const el = inputRef.current;
+    if (!el) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = el.clientHeight;
+    const max = window.innerHeight * 0.6;
+    const move = (ev: PointerEvent) => setManualHeight(Math.round(Math.max(36, Math.min(max, startH + (startY - ev.clientY)))));
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  function resizeByKey(e: React.KeyboardEvent<HTMLDivElement>) {
+    const el = inputRef.current;
+    if (!el || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault();
+    setManualHeight(Math.round(Math.max(36, Math.min(window.innerHeight * 0.6, el.clientHeight + (e.key === 'ArrowUp' ? 24 : -24)))));
+  }
 
   useEffect(() => {
     if (history.data && !sending) setMessages(history.data);
@@ -114,6 +152,24 @@ export default function ChatPage() {
   }
 
   const conversations = convs.data ?? [];
+  const currentTitle = conversations.find((c) => c.id === conversationId)?.title ?? '';
+
+  function openRename() {
+    setRenameValue(currentTitle);
+    setRenameOpen(true);
+  }
+
+  async function saveRename() {
+    if (!conversationId || !renameValue.trim()) return;
+    const res = await run(() => call('chat:renameConversation', { id: conversationId, title: renameValue.trim() }), {
+      errorTitle: 'Umbenennen fehlgeschlagen',
+      success: 'Unterhaltung umbenannt.',
+    });
+    if (res) {
+      setRenameOpen(false);
+      void convs.refetch();
+    }
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="chat-page">
@@ -141,6 +197,9 @@ export default function ChatPage() {
         </div>
         <Button variant="outline" size="sm" onClick={() => void newConversation()} data-testid="chat-new">
           <MessageSquarePlus aria-hidden /> Neu
+        </Button>
+        <Button variant="outline" size="sm" onClick={openRename} disabled={!conversationId} aria-label="Unterhaltung umbenennen" title="Unterhaltung umbenennen" data-testid="chat-rename">
+          <Pencil aria-hidden /> Umbenennen
         </Button>
       </div>
 
@@ -188,7 +247,21 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <div className="border-t bg-background px-4 py-3">
+      <div className="border-t bg-background px-4 pb-3 pt-1">
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Höhe des Eingabefelds ändern (Pfeiltasten hoch/runter, Doppelklick setzt zurück)"
+          tabIndex={0}
+          title="Ziehen, um das Eingabefeld zu vergrößern oder zu verkleinern (Doppelklick: zurücksetzen)"
+          className="group mx-auto flex h-3 w-full max-w-3xl cursor-row-resize touch-none items-center justify-center focus-visible:outline-2 focus-visible:outline-ring"
+          onPointerDown={startResize}
+          onDoubleClick={() => setManualHeight(null)}
+          onKeyDown={resizeByKey}
+          data-testid="chat-resize"
+        >
+          <span className="h-1 w-10 rounded-full bg-border group-hover:bg-muted-foreground" aria-hidden />
+        </div>
         <form
           className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-2xl border bg-card p-2 shadow-xs focus-within:border-ring"
           onSubmit={(e) => {
@@ -236,7 +309,8 @@ export default function ChatPage() {
             placeholder="Nachricht an Archivist …"
             aria-label="Nachricht"
             data-testid="chat-input"
-            className="max-h-40 min-h-9 flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:outline-none"
+            style={manualHeight !== null ? { height: manualHeight } : undefined}
+            className="max-h-[60vh] min-h-9 flex-1 resize-none overflow-y-auto border-0 bg-transparent shadow-none focus-visible:outline-none"
           />
           <Button type="submit" size="icon" disabled={sending || !text.trim()} aria-label="Senden" data-testid="chat-send">
             <SendHorizontal aria-hidden />
@@ -246,6 +320,31 @@ export default function ChatPage() {
           Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) können Sie auch einfach in das Fenster ziehen.
         </p>
       </div>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent data-testid="rename-dialog">
+          <DialogHeader>
+            <DialogTitle>Unterhaltung umbenennen</DialogTitle>
+            <DialogDescription>Der Titel erscheint in der Auswahl oben. Der Inhalt der Unterhaltung bleibt unverändert.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveRename();
+            }}
+          >
+            <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} maxLength={120} autoFocus aria-label="Neuer Titel" data-testid="rename-input" />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
+                Abbrechen
+              </Button>
+              <Button type="submit" disabled={!renameValue.trim()} data-testid="rename-save">
+                Speichern
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
