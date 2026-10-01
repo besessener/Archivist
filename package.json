@@ -1,0 +1,38 @@
+{
+  "name": "archivist-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Archivist – persönlicher, agentischer AI-Archivar (lokale Desktop-Anwendung)",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tests/tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && playwright test",
+    "db:generate": "npm run db:generate -w @archivist/core",
+    "build": "npm run build -w @archivist/renderer && npm run build -w archivist",
+    "dev": "npm run dev -w archivist",
+    "start": "npm run build && npm run start -w archivist",
+    "dist": "npm run build && npm run dist -w archivist",
+    "dist:win": "npm run build && npm run dist:win -w archivist",
+    "native:check": "node scripts/check-native.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.5.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^5.0.3"
+  }
+}

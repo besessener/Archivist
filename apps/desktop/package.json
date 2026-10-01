@@ -1,0 +1,37 @@
+{
+  "name": "archivist",
+  "productName": "Archivist",
+  "version": "0.1.0",
+  "description": "Archivist – persönlicher, agentischer AI-Archivar (lokal, ein Benutzer)",
+  "author": "Archivist",
+  "license": "MIT",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "start": "electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win nsis portable --x64 --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "pdfjs-dist": "^6.3.289",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@archivist/core": "*",
+    "@archivist/shared": "*",
+    "electron": "44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/besessener/archivist.git"
+  }
+}
