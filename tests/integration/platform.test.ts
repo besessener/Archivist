@@ -346,6 +346,30 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     await app.cleanup();
   });
 
+  it('settings:update with a single field keeps the rest of the section (issue #55)', async () => {
+    const app = await createTestApp({ configured: false });
+    const get = async () => Settings.parse((await app.ok('settings:get', {})).settings);
+    await app.ok('settings:update', {
+      backups: { keep: 4, includeArchive: true },
+      consistency: { intervalHours: 6, staleOpenItemDays: 9 },
+      scan: { periodic: true, intervalMinutes: 15, autoAnalyze: true, onStartup: true, allowedExtensions: ['pdf'] },
+      privacy: { neverAnalyzeDirs: ['/geheim'], neverAnalyzeExtensions: ['eml'], neverAnalyzeFiles: ['/a.pdf'] },
+    });
+    const before = await get();
+    // the same single-field patches the renderer sends (backups tab, archive check, scan switch, setup wizard)
+    await app.ok('settings:update', { backups: { autoOnStartup: true } });
+    await app.ok('settings:update', { consistency: { onStartup: false } });
+    await app.ok('settings:update', { scan: { enabled: true } });
+    await app.ok('settings:update', { scan: { enabled: false } });
+    await app.ok('settings:update', { privacy: { llmMode: 'local_only' } });
+    const after = await get();
+    expect(after.backups).toEqual({ ...before.backups, autoOnStartup: true });
+    expect(after.consistency).toEqual({ ...before.consistency, onStartup: false });
+    expect(after.scan).toEqual(before.scan);
+    expect(after.privacy).toEqual({ ...before.privacy, llmMode: 'local_only' });
+    await app.cleanup();
+  });
+
   it('verhält sich bei nicht konfiguriertem oder fehlerhaftem LLM verständlich', async () => {
     const app = await createTestApp({ configured: false });
     const r = await app.ok('llm:testConnection', {});

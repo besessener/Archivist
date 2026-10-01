@@ -1015,24 +1015,53 @@ export class ArchiveService {
         if (fs.existsSync(d.sourcePath)) conflicts.push(`Am ursprünglichen Ort existiert bereits eine Datei: ${d.sourcePath}`);
         else if (!fs.existsSync(path.dirname(d.sourcePath))) conflicts.push(`Der ursprüngliche Ordner existiert nicht mehr: ${path.dirname(d.sourcePath)}`);
       }
-      const hasOther = (d.sourcePath && !d.removedSource && fs.existsSync(d.sourcePath)) || d.removedStaged || d.removedSource;
-      if (!hasOther) conflicts.push('Es gibt keine weitere Kopie der Datei – Undo würde die einzige Kopie löschen.');
+      if (!(await this.otherCopyRemains(d))) {
+        // The archived version is the only copy left: undo puts it back to its origin instead of deleting it.
+        const origin = this.putBackOrigin(d);
+        if (!origin) conflicts.push('Es gibt keine weitere Kopie der Datei und keinen ursprünglichen Ort – Undo würde die einzige Kopie löschen.');
+        else if (!fs.existsSync(path.dirname(origin))) conflicts.push(`Der ursprüngliche Ordner existiert nicht mehr: ${path.dirname(origin)}`);
+      }
     }
     return conflicts;
   }
 
+  /**
+   * True when, after undo, a file with the archived checksum still exists outside the archive: either a copy that
+   * undo restores itself (removed inbox copy / moved original) or an unchanged file at the source or inbox location.
+   */
+  private async otherCopyRemains(d: UndoData): Promise<boolean> {
+    if (d.removedStaged || d.removedSource) return true;
+    for (const p of [d.sourcePath, d.stagedPath]) if (p && (await hasChecksum(p, d.sha256))) return true;
+    return false;
+  }
+
+  /** Location the archived version returns to when it is the only copy left. */
+  private putBackOrigin(d: UndoData): string | null {
+    return d.sourcePath ?? d.stagedPath;
+  }
+
   private async undoRun(d: UndoData): Promise<string> {
     const abs = d.archiveRel ? path.join(this.root, ...d.archiveRel.split('/')) : null;
+    let putBackPath: string | null = null;
     if ((d.mode === 'copy' || d.mode === 'move') && abs) {
-      const restoreTo = async (dest: string) => {
-        await fsp.copyFile(abs, dest, fs.constants.COPYFILE_EXCL);
+      const verifyRestored = async (dest: string) => {
         if ((await sha256File(dest)) !== d.sha256) {
           await fsp.unlink(dest).catch(() => undefined);
           throw fsError('Wiederherstellung konnte nicht verifiziert werden.');
         }
       };
+      const restoreTo = async (dest: string) => {
+        await fsp.copyFile(abs, dest, fs.constants.COPYFILE_EXCL);
+        await verifyRestored(dest);
+      };
+      const origin = (await this.otherCopyRemains(d)) ? null : this.putBackOrigin(d);
       if (d.removedStaged && d.stagedPath) await restoreTo(d.stagedPath);
       if (d.removedSource && d.sourcePath) await restoreTo(d.sourcePath);
+      if (origin) {
+        // Never overwrite whatever is at the origin now (e.g. the edited original): a taken name becomes "Name (2).ext".
+        putBackPath = await this.copyExclusive(abs, path.dirname(origin), path.basename(origin));
+        await verifyRestored(putBackPath);
+      }
       await fsp.unlink(abs);
       // leere Zwischenordner im Archiv wieder entfernen (nie nicht-leere)
       let dir = path.dirname(abs);
@@ -1048,13 +1077,21 @@ export class ArchiveService {
     this.ctx.database.transaction(() => {
       this.db
         .update(documents)
-        .set({ ...d.before, stagedPath: d.removedStaged ? d.stagedPath : d.before.stagedPath, updatedAt: nowIso() })
+        .set({
+          ...d.before,
+          stagedPath: d.removedStaged ? d.stagedPath : d.before.stagedPath,
+          // the document now refers to the file that actually holds its content
+          ...(putBackPath ? (d.sourcePath ? { sourcePath: putBackPath } : { stagedPath: putBackPath }) : {}),
+          updatedAt: nowIso(),
+        })
         .where(eq(documents.id, d.documentId))
         .run();
       for (const rid of d.relationIds) this.graph.deleteRelation(rid);
     });
     await this.docs.indexDocument(d.documentId);
     this.ctx.events.changed('documents', 'knowledge', 'status');
+    if (putBackPath && path.basename(putBackPath) !== path.basename(this.putBackOrigin(d)!))
+      return `Archivierung rückgängig gemacht. Am ursprünglichen Ort liegt inzwischen eine andere Fassung; sie bleibt unberührt, und die archivierte Fassung liegt jetzt als „${path.basename(putBackPath)}“ daneben. Es wurde nichts gelöscht.`;
     return d.mode === 'ignore'
       ? 'Ignorieren rückgängig gemacht.'
       : d.mode === 'index_only'
