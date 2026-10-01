@@ -200,6 +200,8 @@ export const OpenItem = z.object({
   status: OpenItemStatus,
   priority: Priority,
   sourceIds: z.array(z.string()),
+  /** Unterhaltung, aus der der Punkt stammt (wenn eine Quelle eine Chat-Nachricht ist). */
+  sourceConversationId: z.string().nullable().default(null),
   reminderAt: IsoDate.nullable(),
   confidence: z.number(),
   updatedAt: IsoDate,

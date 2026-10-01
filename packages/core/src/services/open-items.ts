@@ -1,7 +1,7 @@
 import type { OpenItem, OpenItemInput, OpenItemStatus } from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { entities, openItems } from '../db/schema';
+import { entities, messages, openItems } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
@@ -82,6 +82,7 @@ function tokenScore(h: string, tokens: string[]): number {
 export function matchOpenItems<T extends { title: string; description?: string | null }>(
   hint: string,
   items: T[],
+  opts: { threshold?: number } = {},
 ): { status: 'match'; item: T } | { status: 'ambiguous'; items: T[] } | { status: 'none' } {
   const wanted = hintTokens(hint);
   if (!wanted.length) return { status: 'none' };
@@ -92,7 +93,7 @@ export function matchOpenItems<T extends { title: string; description?: string |
       const sum = wanted.reduce((acc, h) => acc + Math.max(tokenScore(h, title), 0.7 * tokenScore(h, desc)), 0);
       return { item, score: sum / wanted.length };
     })
-    .filter((x) => x.score >= MATCH_THRESHOLD)
+    .filter((x) => x.score >= (opts.threshold ?? MATCH_THRESHOLD))
     .sort((a, b) => b.score - a.score);
   if (!scored.length) return { status: 'none' };
   const close = scored.filter((x) => x.score >= scored[0]!.score - AMBIGUITY_MARGIN);
@@ -128,7 +129,21 @@ export class OpenItemService {
     return this.ctx.database.db;
   }
 
-  private map(r: Row, names?: Map<string, string>): OpenItem {
+  /** Chat-Nachrichten unter den Quellen → Unterhaltung (für den Rücksprung aus dem offenen Punkt in den Chat). */
+  private conversationsOf(rows: Row[]): Map<string, string> {
+    const ids = [...new Set(rows.flatMap((r) => r.sourceIds))];
+    if (!ids.length) return new Map();
+    return new Map(
+      this.db
+        .select({ id: messages.id, conversationId: messages.conversationId })
+        .from(messages)
+        .where(inArray(messages.id, ids))
+        .all()
+        .map((m) => [m.id, m.conversationId]),
+    );
+  }
+
+  private map(r: Row, names?: Map<string, string>, convs = this.conversationsOf([r])): OpenItem {
     const nm = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
     return {
       id: r.id,
@@ -147,6 +162,7 @@ export class OpenItemService {
       status: r.status as OpenItemStatus,
       priority: r.priority as OpenItem['priority'],
       sourceIds: r.sourceIds,
+      sourceConversationId: r.sourceIds.map((id) => convs.get(id)).find(Boolean) ?? null,
       reminderAt: r.reminderAt,
       confidence: r.confidence,
       updatedAt: r.updatedAt,
@@ -165,7 +181,8 @@ export class OpenItemService {
             .map((e) => [e.id, e.name])
         : [],
     );
-    return rows.map((r) => this.map(r, names));
+    const convs = this.conversationsOf(rows);
+    return rows.map((r) => this.map(r, names, convs));
   }
 
   get(id: string): OpenItem {
