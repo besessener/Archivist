@@ -188,7 +188,7 @@ export default function TimelinePage() {
         open={deleteId !== null}
         onOpenChange={(o) => !o && setDeleteId(null)}
         title="Ereignis löschen?"
-        description="Das Ereignis wird aus Timeline, Suche und Wissensgraph entfernt."
+        description="Das Ereignis wird aus Timeline, Suche und Wissensgraph entfernt. Rückgängig machen können Sie das unter Einstellungen → Änderungsprotokoll."
         confirmLabel="Löschen"
         destructive
         onConfirm={async () => {

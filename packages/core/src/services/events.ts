@@ -7,7 +7,7 @@ import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
 import { normalizeName } from '../util/text';
 import type { AuditService } from './audit';
-import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import type { KnowledgeGraphService, NodeSnapshot, RelationChangeSet } from './knowledge-graph';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
@@ -19,6 +19,12 @@ interface EventUpdateUndo {
   before: Partial<Row>;
   afterUpdatedAt: string;
   relations: RelationChangeSet;
+}
+
+interface EventDeleteUndo {
+  event: Row;
+  /** Graph node of the event with its relations (`null` if it had none). */
+  node: NodeSnapshot | null;
 }
 
 /** Datierte Ereignisse („habe am 01.10.2026 beim German Testing Day eingereicht“): eigener Typ, erscheinen in Timeline, Suche und Wissensgraph. */
@@ -54,6 +60,13 @@ export class EventService {
         this.ctx.events.changed('events', 'knowledge', 'status');
         return 'Bearbeitung des Ereignisses rückgängig gemacht.';
       },
+    });
+    undo.register('event_delete', {
+      check: async (data) => {
+        const d = data as EventDeleteUndo;
+        return this.db.select({ id: events.id }).from(events).where(eq(events.id, d.event.id)).get() ? ['Das Ereignis ist bereits wiederhergestellt.'] : [];
+      },
+      run: async (data) => this.restore(data as EventDeleteUndo),
     });
   }
 
@@ -206,6 +219,7 @@ export class EventService {
     if (!opts.confirmed) throw new AppError('permission_error', 'Das Löschen eines Ereignisses erfordert eine ausdrückliche Bestätigung.');
     const cur = this.db.select().from(events).where(eq(events.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
+    const undoData: EventDeleteUndo = { event: cur, node: this.graph.snapshotNode(id) };
     this.db.transaction(() => {
       this.db.delete(events).where(eq(events.id, id)).run();
       this.graph.removeNode(id);
@@ -218,8 +232,29 @@ export class EventService {
       confirmed: true,
       entityIds: [id],
       before: { title: cur.title, occurredAt: cur.occurredAt },
+      undo: { type: 'event_delete', data: undoData },
     });
     this.ctx.events.changed('events', 'knowledge', 'status');
+  }
+
+  /** Undo of `delete`: restores the event with its id, graph node, relations and search entry. */
+  private restore(d: EventDeleteUndo): string {
+    const exists = (entityId: string | null) => (entityId && this.graph.getEntity(entityId) ? entityId : null);
+    const row: Row = { ...d.event, topicId: exists(d.event.topicId), projectId: exists(d.event.projectId) };
+    let skipped = 0;
+    this.db.transaction(() => {
+      this.db.insert(events).values(row).run();
+      if (d.node) skipped = this.graph.restoreNode(d.node);
+      else this.graph.registerNode('event', row.id, row.title, row.description);
+    });
+    void this.reindex(row.id);
+    this.ctx.events.changed('events', 'knowledge', 'status');
+    const lost = [
+      d.event.topicId && !row.topicId && 'das Thema',
+      d.event.projectId && !row.projectId && 'das Projekt',
+      skipped > 0 && (skipped === 1 ? 'eine Verknüpfung' : `${skipped} Verknüpfungen`),
+    ].filter(Boolean);
+    return lost.length ? `Ereignis wiederhergestellt. Nicht wiederhergestellt, weil inzwischen entfernt: ${lost.join(', ')}.` : 'Ereignis wiederhergestellt.';
   }
 
   /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
