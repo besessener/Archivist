@@ -378,6 +378,8 @@ Regeln:
 export class ChatService {
   private actions!: ActionService;
   private archive!: ArchiveService;
+  /** Bereits erledigte Anliegen der laufenden Nachricht je Unterhaltung – für die letzte Fehlerbehandlung in send(). */
+  private readonly progress = new Map<string, { replies: Reply[]; state: ConvState }>();
 
   constructor(
     private readonly ctx: AppContext,
@@ -508,18 +510,25 @@ export class ChatService {
     this.ctx.events.changed('chat'); // die Oberfläche zeigt die Nachricht schon, während die Antwort noch entsteht (z. B. nach einem Reiterwechsel)
     let reply: Reply;
     const state = this.state(conv);
+    this.progress.set(conv, { replies: [], state });
     try {
       reply = await this.handle(conv, text, state);
     } catch (err) {
+      // letzte Absicherung für Fehler außerhalb der einzelnen Anliegen (z. B. Einordnung): bereits Erledigtes bleibt
+      // in Antwort und Zustand erhalten; nur wenn noch nichts erledigt ist, gilt der alte Zustand weiter
       const info = toErrorInfo(err);
       this.ctx.logger.error('chat', 'Chat-Verarbeitung fehlgeschlagen', { error: err });
-      reply = {
+      const done = this.progress.get(conv) ?? { replies: [], state };
+      const failed: Reply = {
         intent: 'error',
-        content: `Das konnte ich nicht verarbeiten: ${info.message}${info.retryable ? ' Bitte versuche es gleich noch einmal.' : ''}`,
+        content: `Das konnte ich nicht verarbeiten: ${info.message}${info.retryable && !done.replies.length ? ' Bitte versuche es gleich noch einmal.' : ''}`,
         errorMessage: info.message + (info.details ? ` (${info.details})` : ''),
         confidence: 0,
-        state,
+        state: done.state,
       };
+      reply = done.replies.length ? this.mergeReplies([...done.replies, failed], done.state) : failed;
+    } finally {
+      this.progress.delete(conv);
     }
     const assistantMessage = this.saveMessage(conv, 'assistant', reply.content, reply);
     this.db
@@ -1026,7 +1035,25 @@ export class ChatService {
       // nur die erste passende Absicht der neuen Nachricht beantwortet die alte Rückfrage
       const answers = Boolean(old) && !consumed && i < fresh.length && this.answersPending(item.intent, old!);
       if (answers) consumed = true;
-      const reply = await this.dispatch(conv, item.text, item.intent, { ...current, pending: answers ? old : null }, viaLlm);
+      // jedes Anliegen ist einzeln abgesichert: ein Fehler verschluckt weder die bereits erledigten noch die folgenden
+      // Anliegen; der Zustand bleibt der vor diesem Anliegen (keine halb gesetzte Rückfrage)
+      let reply: Reply;
+      try {
+        reply = await this.dispatch(conv, item.text, item.intent, { ...current, pending: answers ? old : null }, viaLlm);
+      } catch (err) {
+        const info = toErrorInfo(err);
+        this.ctx.logger.error('chat', 'Anliegen fehlgeschlagen', { error: err, intent: item.intent.intent });
+        // die alte Rückfrage ist damit nicht beantwortet
+        if (answers) consumed = false;
+        replies.push({
+          intent: 'error',
+          content: `Das hat nicht geklappt: ${describeIntent(item.intent)} – ${info.message}`,
+          errorMessage: info.message + (info.details ? ` (${info.details})` : ''),
+          confidence: 0,
+          state: current,
+        });
+        continue;
+      }
       replies.push(reply);
       current = { ...(reply.state ?? current), queue: [] };
       // eine unverändert zurückgegebene alte Rückfrage ist erledigt, keine neue
@@ -1034,6 +1061,11 @@ export class ChatService {
       if (current.pending?.kind === 'open_item' && current.pending.optional) {
         optional = current.pending;
         current = { ...current, pending: null };
+      }
+      const done = this.progress.get(conv);
+      if (done) {
+        done.replies.push(reply);
+        done.state = current.pending || !optional ? current : { ...current, pending: optional };
       }
       if (current.pending) {
         deferred = work.slice(i + 1);
