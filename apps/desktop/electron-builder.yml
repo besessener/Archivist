@@ -1,0 +1,48 @@
+# Packaging-Konfiguration für Archivist (electron-builder)
+appId: de.archivist.app
+productName: Archivist
+copyright: Archivist
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+asar: true
+# Native Module müssen außerhalb des ASAR-Archivs liegen, damit sie geladen werden können.
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/sharp/**"
+  - "**/node_modules/@img/**"
+# better-sqlite3 (>= 13) und sharp liefern N-API-Prebuilds für alle Zielplattformen → kein Rebuild nötig
+# (damit ist auch das Cross-Packaging, z. B. Windows-Installer unter Linux/macOS, reproduzierbar).
+npmRebuild: false
+nodeGypRebuild: false
+electronLanguages:
+  - de
+  - en-US
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: Archivist-${version}-${arch}-${target}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+portable:
+  artifactName: Archivist-${version}-portable.${ext}
+mac:
+  target: [dmg]
+  category: public.app-category.productivity
+  icon: build/icon.png
+linux:
+  target: [AppImage, deb]
+  category: Office
+  icon: build/icon.png
+  maintainer: Archivist

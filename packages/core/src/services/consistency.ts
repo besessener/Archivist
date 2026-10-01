@@ -223,7 +223,7 @@ export class ConsistencyService {
     }
 
     const total = Object.values(byKind).reduce((a, b) => a + b, 0);
-    this.notifications.create({
+    if (trigger !== 'startup' || total > 0) this.notifications.create({
       title: 'Archivprüfung abgeschlossen',
       description: total === 0 ? 'Keine Auffälligkeiten gefunden.' : `${total} Hinweis(e): ${Object.entries(byKind).map(([k, v]) => `${v}× ${k}`).join(', ')}.`,
       type: 'consistency_done',
