@@ -37,6 +37,24 @@ interface ResponsesBody {
 }
 
 /**
+ * Eindeutige Meldungen zu unbekannten bzw. nicht unterstützten Parametern: Die Meldung muss einen Parameter
+ * benennen UND ihn als nicht unterstützt/unbekannt bezeichnen. Allgemeine Formatfehler (z. B. „invalid input format“)
+ * lösen keine Ersatzanfrage aus, sondern werden als Fehler sichtbar.
+ */
+const UNSUPPORTED_PARAM_PATTERNS = [
+  // „Unsupported parameter: 'store'“, „Unknown parameter“, „Unrecognized request argument supplied: reasoning“
+  /\b(?:unsupported|unknown|unrecognized)\s+(?:request\s+)?(?:parameter|argument|field)s?\b/i,
+  // „'text.format' is not supported“, „reasoning.effort is unsupported“
+  /['"`]?\b(?:store|reasoning(?:\.effort)?|text(?:\.format)?|max_output_tokens)\b['"`]?\s+(?:is|are)\s+(?:not\s+supported|unsupported|not\s+recognized|unknown)\b/i,
+  // „does not support the 'reasoning' parameter“
+  /\bdoes\s+not\s+support\b[^.\n]{0,80}\b(?:parameters?|arguments?|store|reasoning|text\.format|max_output_tokens)\b/i,
+];
+
+function isUnsupportedParamError(text: string): boolean {
+  return UNSUPPORTED_PARAM_PATTERNS.some((re) => re.test(text));
+}
+
+/**
  * OpenAI-kompatibler Client für die Responses API (typisierter Fetch-Client).
  * - Modell, Base URL, Timeout und reasoning effort sind konfigurierbar.
  * - Jede Übertragung wird (maskiert, gekürzt) protokolliert → Transparenz für den Benutzer.
@@ -167,11 +185,7 @@ export class LlmService {
         attempt += 1;
         try {
           let res = await this.post(url, apiKey, body, cfg.timeoutMs);
-          if (
-            res.status === 400 &&
-            body === full &&
-            /(unsupported|unknown|not supported|invalid).*(parameter|field|store|reasoning|format)|(store|reasoning|format)/i.test(res.text)
-          ) {
+          if (res.status === 400 && body === full && isUnsupportedParamError(res.text)) {
             // manche kompatible Endpunkte kennen optionale Parameter nicht → ohne diese erneut versuchen
             const { store: _s, reasoning: _r, text: _t, max_output_tokens: _m, ...minimal } = full;
             void _s;
