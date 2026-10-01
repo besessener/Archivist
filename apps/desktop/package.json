@@ -1,0 +1,1 @@
+{"name":"@archivist/desktop","version":"0.1.0","private":true,"main":"dist/main.cjs","dependencies":{},"devDependencies":{"electron":"^44.5.1","electron-builder":"^26.15.3","@electron/rebuild":"^4.2.0","esbuild":"^0.25.0"}}

@@ -1,0 +1,38 @@
+{
+  "name": "archivist",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Archivist – persönlicher, agentischer AI-Archivar (lokale Desktop-Anwendung)",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run rebuild:node && vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && npm run rebuild:electron && playwright test",
+    "db:generate": "npm run db:generate -w @archivist/core",
+    "rebuild:node": "node scripts/rebuild-native.mjs node",
+    "rebuild:electron": "node scripts/rebuild-native.mjs electron",
+    "build": "npm run build -w @archivist/renderer && npm run build -w @archivist/desktop",
+    "dev": "npm run rebuild:electron && npm run dev -w @archivist/desktop",
+    "start": "npm run rebuild:electron && npm run start -w @archivist/desktop",
+    "dist": "npm run build && npm run dist -w @archivist/desktop",
+    "dist:win": "npm run build && npm run dist:win -w @archivist/desktop"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^5.0.3"
+  }
+}
