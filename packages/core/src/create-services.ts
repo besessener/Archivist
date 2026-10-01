@@ -28,6 +28,7 @@ import { ScannerService } from './services/scanner';
 import { SearchService } from './services/search';
 import { SecretService, type SecretCipher } from './services/secret';
 import { SettingsService } from './services/settings';
+import { SolutionService } from './services/solutions';
 import { TimelineService } from './services/timeline';
 import { UndoService } from './services/undo';
 import { Logger } from './util/logger';
@@ -99,6 +100,7 @@ function buildServices(opts: CreateServicesOptions) {
   const timeline = new TimelineService(ctx, graph);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, actions);
   const backup = new BackupService(ctx, settings, audit);
+  const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit);
   const chat = new ChatService(
     ctx,
     settings,
@@ -202,6 +204,7 @@ function buildServices(opts: CreateServicesOptions) {
     documents: documentsSvc,
     decisions,
     openItems,
+    solutions,
     eventRecords: eventsSvc,
     insights,
     actions,

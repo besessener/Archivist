@@ -1,4 +1,4 @@
-import type { OpenItem, OpenItemInput, OpenItemStatus } from '@archivist/shared';
+import { OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemStatus } from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems } from '../db/schema';
@@ -166,6 +166,7 @@ export class OpenItemService {
       reminderAt: r.reminderAt,
       confidence: r.confidence,
       updatedAt: r.updatedAt,
+      solution: r.solution ? (OpenItemSolution.safeParse(r.solution).data ?? null) : null,
     };
   }
 
@@ -240,6 +241,7 @@ export class OpenItemService {
       confidence: input.confidence ?? 0.9,
       createdAt: now,
       updatedAt: now,
+      solution: null,
     };
     this.db.transaction(() => {
       this.db.insert(openItems).values(row).run();
@@ -346,6 +348,19 @@ export class OpenItemService {
     });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');
+    return this.get(id);
+  }
+
+  /** Speichert den (neuesten) Lösungsvorschlag am Punkt; ein vorhandener wird ersetzt. */
+  setSolution(id: string, solution: OpenItemSolution): OpenItem {
+    const cur = this.db.select({ id: openItems.id }).from(openItems).where(eq(openItems.id, id)).get();
+    if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
+    this.db
+      .update(openItems)
+      .set({ solution: OpenItemSolution.parse(solution), updatedAt: nowIso() })
+      .where(eq(openItems.id, id))
+      .run();
+    this.ctx.events.changed('openItems');
     return this.get(id);
   }
 

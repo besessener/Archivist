@@ -32,6 +32,7 @@ import {
   ScanRoot,
   ScanSummary,
   SearchResult,
+  SolutionPreview,
   StoredAgentAction,
   TimelineEntry,
   VerifyReport,
@@ -320,6 +321,21 @@ export const ipcContract = {
   ),
   /** Schließen ist eine Stufe-2-Aktion: ausdrückliche Bestätigung nötig. */
   'openItems:close': ch(z.object({ id: Id, status: z.enum(['resolved', 'dismissed']).default('resolved'), confirmed: Confirmed }), OpenItem),
+  /** Was für einen Lösungsvorschlag gesendet würde (ohne LLM-Aufruf) – für den Bestätigungsdialog. */
+  'openItems:solutionPreview': ch(z.object({ id: Id }), SolutionPreview),
+  /** Erzeugt einen Lösungsvorschlag über das LLM; im Modus „vorher fragen“ nur mit Bestätigung. */
+  'openItems:generateSolution': ch(z.object({ id: Id, confirmed: z.boolean().default(false) }), OpenItem),
+  /** Bricht eine laufende Erzeugung ab (nichts wird gespeichert). */
+  'openItems:cancelSolution': ch(z.object({ id: Id }), z.object({ cancelled: z.boolean() })),
+  /** Übernimmt den Lösungsvorschlag: als Ergänzung der Beschreibung, als neue offene Punkte oder als Notiz. */
+  'openItems:applySolution': ch(
+    z.discriminatedUnion('target', [
+      z.object({ target: z.literal('description'), id: Id }),
+      z.object({ target: z.literal('items'), id: Id, stepIndexes: z.array(z.number().int().min(0)).min(1), confirmed: Confirmed }),
+      z.object({ target: z.literal('note'), id: Id }),
+    ]),
+    z.object({ item: OpenItem, created: z.array(OpenItem), noteId: z.string().nullable() }),
+  ),
 
   // --- Wissensgraph ---
   'knowledge:listEntities': ch(

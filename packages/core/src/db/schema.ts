@@ -118,6 +118,8 @@ export const openItems = sqliteTable(
     confidence: real('confidence').notNull().default(0.8),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
+    /** Zuletzt erzeugter Lösungsvorschlag (OpenItemSolution als JSON) */
+    solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
   },
   (t) => [index('open_items_status_idx').on(t.status)],
 );
