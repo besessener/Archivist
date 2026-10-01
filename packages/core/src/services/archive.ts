@@ -160,6 +160,8 @@ export class ArchiveService {
     };
     if (row.status === 'archived') return { ...base, blocked: true, conflicts: ['Das Dokument ist bereits archiviert.'] };
     if (req.mode === 'ignore') return { ...base, sourcePath: row.sourcePath };
+    if (row.status === 'quarantined')
+      return { ...base, blocked: true, conflicts: ['Die Datei liegt in Quarantäne. Bitte zuerst in der Inbox „Trotzdem importieren“ wählen.'] };
 
     const dupes = this.docs.findDuplicates(row.sha256, row.id).filter((d) => d.status === 'archived' || d.status === 'indexed_only');
     base.duplicates = dupes.map((d) => ({

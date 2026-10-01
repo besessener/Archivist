@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -17,6 +18,26 @@ export interface OcrOptions {
 }
 
 const nodeRequire = createRequire(typeof __filename === 'string' ? __filename : path.join(process.cwd(), 'noop.js'));
+
+/**
+ * Copies `source` to `target` via a temporary file with a unique name (PID + random part), so that parallel OCR jobs
+ * (several worker threads share one PID) never touch each other's temporary file. If another job installed the
+ * target in the meantime, that copy is kept and ours is discarded.
+ */
+async function installAtomically(source: string, target: string): Promise<void> {
+  const tmp = `${target}.${process.pid}-${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await fsp.copyFile(source, tmp, fs.constants.COPYFILE_EXCL);
+    try {
+      await fsp.rename(tmp, target);
+    } catch (err) {
+      // Renaming onto an existing target can fail (e.g. EPERM on Windows while another job reads it) – that job was faster, fine.
+      if (!fs.existsSync(target)) throw err;
+    }
+  } finally {
+    await fsp.rm(tmp, { force: true }).catch(() => undefined);
+  }
+}
 
 /** Kopiert die gepackten Sprachdaten (4.0.0_best_int) in den lokalen Ordner – nur wenn sie fehlen. */
 export async function ensureTessdata(dir: string, languages: string): Promise<string[]> {
@@ -39,9 +60,7 @@ export async function ensureTessdata(dir: string, languages: string): Promise<st
       fs.existsSync(p),
     );
     if (!source) throw new Error(`Sprachdatei für „${lang}“ nicht gefunden.`);
-    const tmp = `${target}.tmp`;
-    await fsp.copyFile(source, tmp);
-    await fsp.rename(tmp, target);
+    await installAtomically(source, target);
   }
   return langs;
 }

@@ -11,6 +11,15 @@ export function initInbox(page: Page) {
     buttons: {
       archive: page.getByTestId('inbox-archive'),
     },
+    quarantine: {
+      filter: page.getByTestId('inbox-filter-quarantined'),
+      badge: page.getByTestId('inbox-quarantine-badge'),
+      reason: page.getByTestId('inbox-error'),
+      reveal: page.getByTestId('inbox-quarantine-reveal'),
+      release: page.getByTestId('inbox-quarantine-release'),
+      confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
+      confirm: page.getByTestId('inbox-quarantine-release-confirm'),
+    },
     archivePlan: {
       source: page.getByTestId('archive-plan-source'),
       target: page.getByTestId('archive-plan-target'),
@@ -30,6 +39,13 @@ export function initInbox(page: Page) {
     },
     openArchivePlan: async () => {
       await locators.buttons.archive.first().click();
+    },
+    /** "Trotzdem importieren" for the first quarantined entry, including the confirmation dialog. */
+    releaseFromQuarantine: async () => {
+      await locators.quarantine.release.first().click();
+      await expect(locators.quarantine.confirm).toBeDisabled();
+      await locators.quarantine.confirmCheckbox.click();
+      await locators.quarantine.confirm.click();
     },
     confirmArchive: async () => {
       await locators.archivePlan.confirm.click();

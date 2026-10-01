@@ -135,7 +135,7 @@ Archivist/
 ├── logs/          strukturierte JSON-Logs (ohne Schlüssel/Dokumentinhalte)
 ├── backups/       Datenbank- und Metadaten-Backups
 ├── inbox/         Eingang: eigene Kopien hochgeladener Dateien bis zur Archivierung
-└── quarantine/    Dateien, deren Inhalt nicht zur Endung passt
+└── quarantine/    Dateien, deren Inhalt nicht zur Endung passt (in der Inbox unter „Quarantäne“ sichtbar: „Ordner öffnen“ oder nach Bestätigung „Trotzdem importieren“)
 ```
 
 - Die Ablage bleibt **auch ohne Archivist verständlich**: keine Hash-/UUID-Ordner, keine reinen Dateityp-Ordner (`pdf/`, `docx/` …). Vorgeschlagene Pfade werden bereinigt; Unterkategorien darf der Agent vorschlagen, **neue Hauptkategorien** (erstes Pfadsegment) nur nach Bestätigung.
