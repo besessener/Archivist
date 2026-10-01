@@ -13,8 +13,9 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     permissions:
-      actions: read # die CodeQL-Action liest in privaten Repositories den Workflow-Lauf
+      actions: read
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -24,30 +25,7 @@ jobs:
           languages: javascript-typescript
           build-mode: none
           queries: security-extended
-      # Kein Upload: Code Scanning ist in privaten Repositories nur mit GitHub Code Security verfügbar.
-      # Wird es aktiviert, `upload: never` entfernen, `security-events: write` ergänzen
-      # und die beiden Schritte nach der Analyse streichen.
+      # Ergebnisse erscheinen unter Security → Code scanning (das Repository ist öffentlich, dort ist Code Scanning kostenlos).
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: '/language:javascript-typescript'
-          upload: never
-          output: sarif-results
-      - name: Ergebnisse zusammenfassen und bei Funden der Stufe error fehlschlagen
-        run: |
-          sarif=$(ls sarif-results/*.sarif | head -n1)
-          total=$(jq '[.runs[].results[]] | length' "$sarif")
-          errors=$(jq '[.runs[].results[] | select(.level == "error")] | length' "$sarif")
-          {
-            echo "## CodeQL"
-            echo
-            echo "${total} Funde, davon ${errors} der Stufe error."
-            echo
-            jq -r '.runs[].results[] | "- **\(.level // "warning")** `\(.ruleId)`: \(.message.text) (`\(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)`)"' "$sarif" | head -n 50
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$errors" -eq 0 ]
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: ${{ !cancelled() }}
-        with:
-          name: codeql-sarif
-          path: sarif-results/
-          retention-days: 30
