@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Logger } from '../../packages/core/src/util/logger';
 import { redactSecrets } from '../../packages/core/src/util/redact';
 import { normalizeDateInput, parseGermanDate, promptNow } from '../../packages/core/src/util/dates';
@@ -80,33 +80,29 @@ describe('Datumserkennung', () => {
   });
 
   describe('Ortszeit statt UTC (Europe/Berlin)', () => {
-    const tz = process.env.TZ;
-    beforeAll(() => {
-      process.env.TZ = 'Europe/Berlin';
-    });
-    afterAll(() => {
-      if (tz === undefined) delete process.env.TZ;
-      else process.env.TZ = tz;
-    });
-
     it('nennt um 00:30 Ortszeit das lokale Datum mit passendem Wochentag', () => {
       const at = new Date('2026-09-30T22:30:00Z'); // 01.10.2026, 00:30 MESZ
-      expect(at.toISOString().slice(0, 10)).toBe('2026-09-30');
-      expect(promptNow(at)).toBe('2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
-      expect(parseGermanDate('heute', at)).toBe('2026-10-01');
-      expect(parseGermanDate('morgen', at)).toBe('2026-10-02');
-      expect(parseGermanDate('letzten Mittwoch', at)).toBe('2026-09-30');
+      expect(promptNow(at, 'Europe/Berlin')).toBe('2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
     });
 
     it('bleibt um 23:30 Ortszeit beim selben lokalen Tag', () => {
       const at = new Date('2026-10-01T21:30:00Z'); // 01.10.2026, 23:30 MESZ
-      expect(promptNow(at)).toBe('2026-10-01 (Donnerstag), 23:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
-      expect(parseGermanDate('heute', at)).toBe('2026-10-01');
-      expect(parseGermanDate('morgen', at)).toBe('2026-10-02');
+      expect(promptNow(at, 'Europe/Berlin')).toBe('2026-10-01 (Donnerstag), 23:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
     });
 
-    it('nennt im Winter den Versatz UTC+01:00', () => {
-      expect(promptNow(new Date('2026-12-24T23:15:00Z'))).toBe('2026-12-25 (Freitag), 00:15 Uhr, Zeitzone Europe/Berlin (UTC+01:00)');
+    it('nennt im Winter den Versatz UTC+01:00 und für UTC selbst UTC+00:00', () => {
+      expect(promptNow(new Date('2026-12-24T23:15:00Z'), 'Europe/Berlin')).toBe('2026-12-25 (Freitag), 00:15 Uhr, Zeitzone Europe/Berlin (UTC+01:00)');
+      expect(promptNow(new Date('2026-12-24T23:15:00Z'), 'UTC')).toBe('2026-12-24 (Donnerstag), 23:15 Uhr, Zeitzone UTC (UTC+00:00)');
+    });
+
+    it('„heute“ und „morgen“ beziehen sich auf den lokalen Tag (00:30 und 23:30 Ortszeit)', () => {
+      const early = new Date(2026, 9, 1, 0, 30);
+      const late = new Date(2026, 9, 1, 23, 30);
+      for (const at of [early, late]) {
+        expect(parseGermanDate('heute', at)).toBe('2026-10-01');
+        expect(parseGermanDate('morgen', at)).toBe('2026-10-02');
+      }
+      expect(parseGermanDate('letzten Mittwoch', early)).toBe('2026-09-30');
     });
   });
 });

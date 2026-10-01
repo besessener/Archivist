@@ -93,11 +93,23 @@ function previousWeekday(from: Date, weekday: number): Date {
  * Datum, Wochentag, Uhrzeit und Zeitzone in Ortszeit für LLM-Prompts,
  * z. B. „2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)“.
  */
-export function promptNow(now: Date = new Date()): string {
-  const off = -now.getTimezoneOffset();
-  const offset = `UTC${off < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return `${toIsoDate(now)} (${WEEKDAY_NAMES[now.getDay()]}), ${pad(now.getHours())}:${pad(now.getMinutes())} Uhr, Zeitzone ${zone} (${offset})`;
+export function promptNow(now: Date = new Date(), timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
+  // über Intl statt der lokalen Getter: unabhängig davon, welche Zeitzone der Prozess gerade hat
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    weekday: 'short',
+    timeZoneName: 'longOffset',
+  }).formatToParts(now);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'));
+  const offset = get('timeZoneName').replace(/^GMT$/, 'GMT+00:00').replace('GMT', 'UTC');
+  return `${get('year')}-${get('month')}-${get('day')} (${WEEKDAY_NAMES[weekday]}), ${get('hour')}:${get('minute')} Uhr, Zeitzone ${timeZone} (${offset})`;
 }
 
 /**
