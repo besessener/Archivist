@@ -186,7 +186,15 @@ export class ActionService {
       case 'relocate_documents': {
         const params = ActionParamSchemas.relocate_documents.parse(p);
         const res = await d.archive.relocate(params.items, { confirmed: true, trigger });
-        return `${res.success} verschoben, ${res.skipped} übersprungen, ${res.failed} fehlgeschlagen, ${res.conflicts} Konflikte.`;
+        const summary = `${res.success} verschoben, ${res.skipped} übersprungen, ${res.failed} fehlgeschlagen, ${res.conflicts} Konflikte.`;
+        // Nothing moved although something should have: the action failed (an insight behind it stays open).
+        if (res.success === 0 && res.failed + res.conflicts > 0) {
+          const reasons = res.items.filter((i) => i.outcome === 'failed' || i.outcome === 'conflict').map((i) => i.message);
+          throw new AppError(res.failed > 0 ? 'filesystem_error' : 'archive_conflict', `Es wurde nichts verschoben: ${summary}`, {
+            details: [...new Set(reasons)].join(' '),
+          });
+        }
+        return summary;
       }
       case 'assign_documents': {
         const params = ActionParamSchemas.assign_documents.parse(p);
