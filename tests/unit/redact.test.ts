@@ -136,3 +136,144 @@ describe('Maskierung von Zugangsdaten', () => {
     expect(redactSecrets(`Bearer\n${chars(24)}`).count).toBe(1);
   });
 });
+
+describe('connection strings, Google keys and quoted values (issue #70)', () => {
+  const azureKey = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==';
+  const googleKey = `AIza${chars(35, 'SyB-_9xQ')}`;
+
+  const cases: Array<{ name: string; input: string; expected: string; kind: string }> = [
+    {
+      name: 'Azure Storage: AccountKey',
+      input: `DefaultEndpointsProtocol=https;AccountName=konto;AccountKey=${azureKey};EndpointSuffix=core.windows.net`,
+      expected: 'DefaultEndpointsProtocol=https;AccountName=konto;AccountKey=[REDACTED:secret];EndpointSuffix=core.windows.net',
+      kind: 'assignment',
+    },
+    {
+      name: 'Service Bus: SharedAccessKey at the end, SharedAccessKeyName stays',
+      input: 'Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abc123+/def=',
+      expected: 'Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=[REDACTED:secret]',
+      kind: 'assignment',
+    },
+    {
+      name: 'Azure SAS: SharedAccessSignature',
+      input: 'BlobEndpoint=https://a.blob.core.windows.net/;SharedAccessSignature=sv=2020-08-04&ss=b&sig=abc%2Bdef',
+      expected: 'BlobEndpoint=https://a.blob.core.windows.net/;SharedAccessSignature=[REDACTED:secret]',
+      kind: 'assignment',
+    },
+    {
+      name: 'SQL Server: Password with spaces up to the semicolon',
+      input: 'Server=tcp:db.example.net,1433;User ID=admin;Password=my secret, pass;Encrypt=True',
+      expected: 'Server=tcp:db.example.net,1433;User ID=admin;Password=[REDACTED:secret];Encrypt=True',
+      kind: 'assignment',
+    },
+    { name: 'ODBC: Pwd in braces', input: 'Driver={ODBC};Pwd={my;pass};', expected: 'Driver={ODBC};Pwd={[REDACTED:secret]};', kind: 'assignment' },
+    { name: 'any *Secret key', input: 'AppSecret = Wert12345', expected: 'AppSecret = [REDACTED:secret]', kind: 'assignment' },
+    { name: 'any *Token key', input: 'refresh_token=Wert12345', expected: 'refresh_token=[REDACTED:secret]', kind: 'assignment' },
+    { name: 'header-style *-key', input: 'Ocp-Apim-Subscription-Key: Wert12345', expected: 'Ocp-Apim-Subscription-Key: [REDACTED:secret]', kind: 'assignment' },
+    { name: 'bare Key', input: 'Key=Wert12345', expected: 'Key=[REDACTED:secret]', kind: 'assignment' },
+    {
+      name: 'JSON with a camelCase key',
+      input: '{"storageAccountKey": "abc def"}',
+      expected: '{"storageAccountKey": "[REDACTED:secret]"}',
+      kind: 'assignment',
+    },
+    { name: 'Google API key', input: `key ${googleKey} ok`, expected: 'key [REDACTED:google_api_key] ok', kind: 'google_api_key' },
+    {
+      name: 'double-quoted pass phrase with spaces',
+      input: 'password = "my secret pass phrase"',
+      expected: 'password = "[REDACTED:secret]"',
+      kind: 'assignment',
+    },
+    { name: 'single-quoted pass phrase with spaces', input: "pwd: 'my secret pass'", expected: "pwd: '[REDACTED:secret]'", kind: 'assignment' },
+    {
+      name: 'quoted value with an escaped quote',
+      input: String.raw`secret="ab\"cd ef" weiter`,
+      expected: 'secret="[REDACTED:secret]" weiter',
+      kind: 'assignment',
+    },
+    { name: 'unclosed quote keeps the quote', input: "password='abcd1234", expected: "password='[REDACTED:secret]", kind: 'assignment' },
+    { name: 'unclosed brace keeps the brace', input: 'pwd={abcd1234 x', expected: 'pwd={[REDACTED:secret] x', kind: 'assignment' },
+    { name: 'URL password containing "/"', input: 'https://user:pa/ss1234@host', expected: 'https://user:[REDACTED:password]@host', kind: 'url_credentials' },
+    {
+      name: 'URL password containing ":"',
+      input: 'ftp://user:pa:ss@host/datei',
+      expected: 'ftp://user:[REDACTED:password]@host/datei',
+      kind: 'url_credentials',
+    },
+  ];
+
+  for (const { name, input, expected, kind } of cases) {
+    it(name, () => {
+      expect(redactSecrets(input)).toEqual({ text: expected, count: 1, kinds: [kind] });
+    });
+  }
+
+  it('leaves values below the minimum length and non-secret keys unchanged', () => {
+    for (const text of [
+      'password = "abc"',
+      "pwd='abc'",
+      'Pwd={abc};',
+      'Pwd=abc;',
+      'password=""',
+      'AccountName=konto;EndpointSuffix=core.windows.net',
+      'SharedAccessKeyName=RootManageSharedAccessKey',
+      'Primärschlüssel ist die Spalte id',
+      `AIza${chars(34)}`,
+      `AIza${chars(36)}`,
+      `xAIza${chars(35)}`,
+    ]) {
+      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [] });
+    }
+  });
+
+  it('masks values at exactly the minimum length', () => {
+    expect(redactSecrets('password = "abcd"').text).toBe('password = "[REDACTED:secret]"');
+    expect(redactSecrets("pwd='abcd'").text).toBe("pwd='[REDACTED:secret]'");
+    expect(redactSecrets('Pwd={abcd};').text).toBe('Pwd={[REDACTED:secret]};');
+    expect(redactSecrets('Pwd=ab c;').text).toBe('Pwd=[REDACTED:secret];');
+  });
+
+  it('a value with spaces ends at the line break, not at a semicolon on the next line', () => {
+    expect(redactSecrets('password=abcd efgh\nweiter; ok').text).toBe('password=[REDACTED:secret] efgh\nweiter; ok');
+  });
+
+  it('a quoted value does not extend past the line end', () => {
+    expect(redactSecrets('password="abcd\nefgh"').text).toBe('password="[REDACTED:secret]\nefgh"');
+  });
+
+  it('masks every URL password, regardless of the case of the scheme', () => {
+    expect(redactSecrets('HTTPS://a:pa/ss1@h1 und https://b:pa:ss2@h2')).toEqual({
+      text: 'HTTPS://a:[REDACTED:password]@h1 und https://b:[REDACTED:password]@h2',
+      count: 2,
+      kinds: ['url_credentials'],
+    });
+  });
+
+  it('digits followed by "/" count as a port, other passwords starting with digits are masked', () => {
+    expect(redactSecrets('https://user:1234/ab@host').text).toBe('https://user:1234/ab@host');
+    expect(redactSecrets('https://user:1234ab@host').text).toBe('https://user:[REDACTED:password]@host');
+  });
+
+  it('a port followed by a path and "@" is not a password', () => {
+    for (const text of [
+      'https://example.org:8080/users/@alice',
+      'https://example.org:443/@anna',
+      'https://example.org:8080?mail=a@b.de',
+      'https://example.org:8080#a@b',
+    ]) {
+      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [] });
+    }
+  });
+
+  it('counts a secret only once, even inside an assignment or when masking again', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    expect(redactSecrets(`token=${jwt}`)).toEqual({ text: 'token=[REDACTED:jwt]', count: 1, kinds: ['jwt'] });
+    expect(redactSecrets(`api_key="${googleKey}"`)).toEqual({ text: 'api_key="[REDACTED:google_api_key]"', count: 1, kinds: ['google_api_key'] });
+
+    const input = `AccountKey=${azureKey}; password = "my pass phrase"; https://u:pa/ss1@host; pwd={a;b;c}`;
+    const once = redactSecrets(input);
+    expect(once.count).toBe(4);
+    expect(once.text).toBe('AccountKey=[REDACTED:secret]; password = "[REDACTED:secret]"; https://u:[REDACTED:password]@host; pwd={[REDACTED:secret]}');
+    expect(redactSecrets(once.text)).toEqual({ text: once.text, count: 0, kinds: [] });
+  });
+});

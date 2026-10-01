@@ -1,8 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { eq } from 'drizzle-orm';
 import { DatabaseService, type MigrationStatus } from './db/database';
-import { documents } from './db/schema';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from './context';
 import { ActionService } from './services/actions';
 import { ArchiveService } from './services/archive';
@@ -27,12 +25,11 @@ import { ReminderService } from './services/reminders';
 import { ScannerService } from './services/scanner';
 import { SearchService } from './services/search';
 import { SecretService, type SecretCipher } from './services/secret';
-import { SettingsService } from './services/settings';
+import { SettingsService, settingsLoadNotification } from './services/settings';
 import { SolutionService } from './services/solutions';
 import { TimelineService } from './services/timeline';
 import { UndoService } from './services/undo';
 import { Logger } from './util/logger';
-import { nowIso } from './util/ids';
 import { WorkerPool } from './workers/pool';
 
 export interface CreateServicesOptions {
@@ -80,12 +77,18 @@ function buildServices(opts: CreateServicesOptions) {
   const llm = new LlmService(ctx, settings, secrets, opts.fetchImpl, opts.llmRetryDelayMs);
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
-  const graph = new KnowledgeGraphService(ctx);
+  const graph = new KnowledgeGraphService(ctx, audit, undo);
   const search = new SearchService(ctx, embedding, pool, () => privacy.mode() !== 'local_only' && llm.isConfigured());
   const categories = new CategoryService(ctx);
   const jobs = new JobQueueService(ctx, opts.jobConcurrency ?? 2);
   const notifications = new NotificationService(ctx);
   const reminders = new ReminderService(ctx, notifications);
+  // Settings are loaded before the database exists; report a repaired or unreadable settings.json now.
+  const settingsProblem = settings.takeLoadProblem();
+  if (settingsProblem) {
+    logger.warn('settings', 'settings.json war ungültig und wurde repariert', { ...settingsProblem });
+    notifications.create(settingsLoadNotification(settingsProblem));
+  }
 
   // 4) Fachdienste
   const documentsSvc = new DocumentService(ctx, settings, graph, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
@@ -127,6 +130,14 @@ function buildServices(opts: CreateServicesOptions) {
   archive.wire({ actions, openItems });
   scanner.wire({ actions });
   chat.wire({ actions, archive });
+  graph.setReindexer(async (refs) => {
+    await Promise.all([
+      ...refs.documents.map((id) => documentsSvc.indexDocument(id)),
+      ...refs.decisions.map((id) => decisions.reindex(id)),
+      ...refs.openItems.map((id) => openItems.reindex(id)),
+      ...refs.events.map((id) => eventsSvc.reindex(id)),
+    ]);
+  });
 
   // 6) Job-Handler
   jobs.register<{ documentId: string; allowLlm: boolean }>('document.analyze', async (job) => {
@@ -134,12 +145,8 @@ function buildServices(opts: CreateServicesOptions) {
       const res = await documentsSvc.analyze(job.payload.documentId, { allowLlm: job.payload.allowLlm });
       return res;
     } catch (err) {
+      // analyze() already marked the document as `failed` (with reason); archived documents are never touched.
       const message = err instanceof Error ? err.message : String(err);
-      database.db
-        .update(documents)
-        .set({ status: 'failed', processingStatus: 'failed', processingError: message, updatedAt: nowIso() })
-        .where(eq(documents.id, job.payload.documentId))
-        .run();
       notifications.create({
         title: 'Dateiimport fehlgeschlagen',
         description: message,
@@ -220,6 +227,8 @@ function buildServices(opts: CreateServicesOptions) {
     /** Startet Hintergrundarbeit (nur solange die Anwendung läuft). */
     start(): void {
       logger.prune(settings.get().logs.retentionDays);
+      // before the queue resumes: documents stuck in `analyzing` without a job become `failed` (reprocessable)
+      documentsSvc.recoverInterruptedAnalyses();
       jobs.start();
       reminders.start();
       scanner.applySettings();
@@ -227,7 +236,9 @@ function buildServices(opts: CreateServicesOptions) {
       if (settings.get().consistency.onStartup) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'));
       if (settings.get().backups.autoOnStartup)
-        void backup.create(settings.get().backups.includeArchive).catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
+        void backup
+          .create(settings.get().backups.includeArchive, 'startup')
+          .catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
     },
 
     async shutdown(): Promise<void> {

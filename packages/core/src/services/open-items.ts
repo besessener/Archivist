@@ -447,7 +447,8 @@ export class OpenItemService {
     return this.list({ onlyActive: true }).filter((i) => i.dueAt && i.dueAt.slice(0, 10) < today);
   }
 
-  private async reindex(id: string): Promise<void> {
+  /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
+  async reindex(id: string): Promise<void> {
     try {
       const i = this.get(id);
       await this.search.index({

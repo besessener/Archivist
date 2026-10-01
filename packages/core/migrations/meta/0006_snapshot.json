@@ -1,6 +1,6 @@
 {
-  "id": "cce08735-d6d5-485a-ab09-1f5b6f9cc04c",
-  "prevId": "f572d369-6395-4f52-99b3-1dff0efd78a8",
+  "id": "8dec2296-f18b-4161-a55f-f142d7470ab1",
+  "prevId": "cce08735-d6d5-485a-ab09-1f5b6f9cc04c",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -1736,6 +1736,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'proposed'"
+        },
+        "resolved_by_user": {
+          "name": "resolved_by_user",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

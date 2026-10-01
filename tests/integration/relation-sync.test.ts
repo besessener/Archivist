@@ -159,9 +159,44 @@ describe('field changes remove outdated relations', () => {
     await app.ok('knowledge:resolveRelation', { relationId: rel.id, status: 'confirmed', confirmed: true });
     const sqlite = app.services.database.sqlite;
     sqlite.prepare('UPDATE relations SET resolved_by_user = 0').run();
-    const sql = fs.readFileSync(path.join(MIGRATIONS, '0005_relation_resolved_by_user.sql'), 'utf8').split('--> statement-breakpoint')[1]!;
+    const sql = fs.readFileSync(path.join(MIGRATIONS, '0006_relation_resolved_by_user.sql'), 'utf8').split('--> statement-breakpoint')[1]!;
     sqlite.exec(sql);
     const flagged = sqlite.prepare('SELECT id FROM relations WHERE resolved_by_user = 1').all() as Array<{ id: string }>;
     expect(flagged.map((r) => r.id)).toEqual([rel.id]);
+  });
+
+  it('merge keeps user-rejected relations rejected and user-resolved, undo restores the rows exactly', async () => {
+    const source = topicId('Fassade');
+    const target = topicId('Fassaden');
+    const reject = async (relationId: string) => app.ok('knowledge:resolveRelation', { relationId, status: 'rejected', confirmed: true });
+    // moved in place: only a rejected relation to the source
+    const moved = await app.ok('openItems:create', { title: 'Punkt eins' });
+    const movedRel = graph().link(moved.id, source, 'relates_to', { status: 'proposed' })!;
+    await reject(movedRel.id);
+    // combined: a rejected relation to the source and a system-confirmed one to the target
+    const combined = await app.ok('openItems:create', { title: 'Punkt zwei' });
+    const rejectedRel = graph().link(combined.id, source, 'relates_to', { status: 'proposed' })!;
+    await reject(rejectedRel.id);
+    graph().link(combined.id, target, 'relates_to', { status: 'confirmed' });
+    const rows = () => app.services.database.sqlite.prepare('SELECT * FROM relations ORDER BY id').all();
+    const before = rows();
+
+    const r = await graph().merge({ sourceIds: [source], targetId: target });
+    const flag = (id: string) =>
+      app.services.database.sqlite
+        .prepare('SELECT status, resolved_by_user AS u FROM relations WHERE source_entity_id = ? AND target_entity_id = ?')
+        .get(id, target) as {
+        status: string;
+        u: number;
+      };
+    expect(flag(moved.id)).toEqual({ status: 'rejected', u: 1 });
+    expect(flag(combined.id)).toEqual({ status: 'rejected', u: 1 });
+    // later field sync does not touch them
+    await app.ok('openItems:update', { id: combined.id, patch: { title: 'Punkt zwei', topic: 'Dach' } });
+    expect(flag(combined.id)).toEqual({ status: 'rejected', u: 1 });
+    expect((await app.ok('audit:undo', { auditId: (await latestUndoable('open_item.update')).id })).undone).toBe(true);
+
+    expect((await app.ok('audit:undo', { auditId: r.auditId })).undone).toBe(true);
+    expect(rows()).toEqual(before);
   });
 });
