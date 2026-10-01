@@ -4,6 +4,11 @@ import { Settings, SettingsPatch } from '@archivist/shared';
 import type { EventBus } from '../context';
 import { AppError, validationError } from '../util/errors';
 
+/** Drops fields explicitly set to `undefined`, so they keep their current value instead of falling back to the default. */
+function definedFields(section: object): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(section).filter(([, v]) => v !== undefined));
+}
+
 /** Nicht geheime Anwendungskonfiguration (config/settings.json). API-Keys liegen NICHT hier. */
 export class SettingsService {
   private current: Settings;
@@ -56,7 +61,8 @@ export class SettingsService {
       if (value === undefined) continue;
       const prev = (this.current as Record<string, unknown>)[key];
       // eslint-disable-next-line sonarjs/different-types-comparison -- defensiv: Patch kommt als geparstes JSON über IPC
-      next[key] = value !== null && typeof value === 'object' && !Array.isArray(value) && typeof prev === 'object' ? { ...(prev as object), ...value } : value;
+      const isSection = value !== null && typeof value === 'object' && !Array.isArray(value) && typeof prev === 'object';
+      next[key] = isSection ? { ...(prev as object), ...definedFields(value) } : value;
     }
     const parsed = Settings.safeParse(next);
     if (!parsed.success) throw validationError('Ungültige Einstellungen.', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
