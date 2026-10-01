@@ -126,6 +126,31 @@ describe('Symlink-Ausbruch und Scan-Bereichsbegrenzung', () => {
     });
     expect(res.entries.map((e) => e.name)).toEqual(['a.txt']);
   });
+
+  it('reports the file limit only when a further matching file exists', async () => {
+    const root = fs.mkdtempSync(path.join(tmp, 'limit-'));
+    for (const n of ['a.txt', 'b.txt', 'c.md']) fs.writeFileSync(path.join(root, n), n);
+    const base = { root, recursive: true, excludedDirs: [], excludedFiles: [], maxSizeBytes: 1e6 };
+    // c.md does not match: exactly two matching files at a limit of two is complete
+    const exact = await scanDirectory({ ...base, extensions: ['txt'], maxFiles: 2 });
+    expect(exact.entries.map((e) => e.name)).toEqual(['a.txt', 'b.txt']);
+    expect(exact.limitReached).toBe(false);
+    fs.mkdirSync(path.join(root, 'sub'));
+    fs.writeFileSync(path.join(root, 'sub', 'd.txt'), 'd');
+    const truncated = await scanDirectory({ ...base, extensions: ['txt'], maxFiles: 2 });
+    expect(truncated.entries).toHaveLength(2);
+    expect(truncated.limitReached).toBe(true);
+  });
+
+  it('lists entries that could not be read as unreadable', async () => {
+    const root = fs.mkdtempSync(path.join(tmp, 'unreadable-'));
+    fs.writeFileSync(path.join(root, 'ok.txt'), 'ok');
+    fs.symlinkSync(path.join(root, 'gibt-es-nicht'), path.join(root, 'kaputt'));
+    const res = await scanDirectory({ root, recursive: true, excludedDirs: [], excludedFiles: [], extensions: ['txt'], maxSizeBytes: 1e6 });
+    expect(res.entries.map((e) => e.name)).toEqual(['ok.txt']);
+    expect(res.unreadable).toEqual([path.join(root, 'kaputt')]);
+    expect(res.limitReached).toBe(false);
+  });
 });
 
 describe('Dateinamen bereinigen (Grenzfälle)', () => {
