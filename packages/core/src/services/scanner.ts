@@ -559,8 +559,9 @@ export class ScannerService {
           documentId: r.id,
           mode: 'copy' as const,
           categoryPath: p?.location.categoryPath ?? r.categoryPath ?? undefined,
-          topic: g.topic,
-          project: g.project,
+          // null would mean "explicitly without topic/project"; a group without one only leaves it open.
+          topic: g.topic ?? undefined,
+          project: g.project ?? undefined,
         };
       });
       const label = known ? `${known.type === 'project' ? 'Projekt' : 'Thema'} „${known.name}“` : `„${g.label}“`;

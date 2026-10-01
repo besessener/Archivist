@@ -2269,8 +2269,9 @@ export class ChatService {
       documentId: d.id,
       mode: 'copy' as const,
       categoryPath: d.proposal?.location.categoryPath ?? d.categoryPath ?? undefined,
-      topic: topic ?? d.proposal?.topic ?? null,
-      project: project ?? d.proposal?.project ?? null,
+      // undefined (not null): without a wish the proposal applies; null would mean "explicitly without".
+      topic: topic || undefined,
+      project: project || undefined,
     }));
     const action = this.actions.propose({
       actionType: 'archive_documents',
