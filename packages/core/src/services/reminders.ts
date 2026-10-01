@@ -1,6 +1,7 @@
 import type { Reminder } from '@archivist/shared';
-import { and, desc, eq, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, lte } from 'drizzle-orm';
 import type { AppContext } from '../context';
+import type { Db } from '../db/database';
 import { openItems, reminders } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
@@ -16,6 +17,21 @@ const map = (r: Row): Reminder => ({
   status: r.status as Reminder['status'],
   createdAt: r.createdAt,
 });
+
+/** openItems.reminderAt spiegelt die nächste noch ausstehende Erinnerung des Punkts (oder null). */
+export function syncReminderAt(db: Db, openItemId: string): void {
+  const next = db
+    .select({ remindAt: reminders.remindAt })
+    .from(reminders)
+    .where(and(eq(reminders.targetType, 'open_item'), eq(reminders.targetId, openItemId), eq(reminders.status, 'pending')))
+    .orderBy(asc(reminders.remindAt))
+    .limit(1)
+    .get();
+  db.update(openItems)
+    .set({ reminderAt: next?.remindAt ?? null })
+    .where(eq(openItems.id, openItemId))
+    .run();
+}
 
 /**
  * Erinnerungen werden lokal gespeichert, beim Start geprüft und – solange die Anwendung läuft – zeitgesteuert ausgelöst.
@@ -44,8 +60,7 @@ export class ReminderService {
       createdAt: nowIso(),
     };
     this.db.insert(reminders).values(row).run();
-    if (input.targetType === 'open_item' && input.targetId)
-      this.db.update(openItems).set({ reminderAt: input.remindAt }).where(eq(openItems.id, input.targetId)).run();
+    if (input.targetType === 'open_item' && input.targetId) syncReminderAt(this.db, input.targetId);
     this.ctx.events.changed('reminders', 'openItems');
     return map(row);
   }
@@ -54,6 +69,11 @@ export class ReminderService {
     const r = this.db.select().from(reminders).where(eq(reminders.id, id)).get();
     if (!r) throw new AppError('validation_error', 'Erinnerung nicht gefunden.');
     return map(r);
+  }
+
+  /** Die zuletzt geplante, nicht verworfene Erinnerung eines Ziels (auch bereits ausgelöst) – zum Verschieben. */
+  latestFor(targetId: string): Reminder | null {
+    return this.list().find((r) => r.targetId === targetId && r.status !== 'dismissed') ?? null;
   }
 
   list(status?: Reminder['status']): Reminder[] {
@@ -70,14 +90,16 @@ export class ReminderService {
   snooze(id: string, remindAt: string): Reminder {
     const r = this.get(id);
     this.db.update(reminders).set({ remindAt, status: 'pending' }).where(eq(reminders.id, id)).run();
-    if (r.targetType === 'open_item' && r.targetId) this.db.update(openItems).set({ reminderAt: remindAt }).where(eq(openItems.id, r.targetId)).run();
+    if (r.targetType === 'open_item' && r.targetId) syncReminderAt(this.db, r.targetId);
     this.ctx.events.changed('reminders', 'openItems');
     return { ...r, remindAt, status: 'pending' };
   }
 
   dismiss(id: string): void {
+    const r = this.get(id);
     this.db.update(reminders).set({ status: 'dismissed' }).where(eq(reminders.id, id)).run();
-    this.ctx.events.changed('reminders');
+    if (r.targetType === 'open_item' && r.targetId) syncReminderAt(this.db, r.targetId);
+    this.ctx.events.changed('reminders', 'openItems');
   }
 
   /** Löst fällige Erinnerungen aus (Start der Anwendung und periodisch). Gibt die Anzahl zurück. */
@@ -89,6 +111,7 @@ export class ReminderService {
       .all();
     for (const r of due) {
       this.db.update(reminders).set({ status: 'fired' }).where(eq(reminders.id, r.id)).run();
+      if (r.targetType === 'open_item' && r.targetId) syncReminderAt(this.db, r.targetId);
       const link: { label: string; kind: 'navigate' | 'resolve' | 'snooze'; target?: string }[] = [];
       if (r.targetType === 'open_item') link.push({ label: 'Offene Punkte öffnen', kind: 'navigate', target: '/open-items/' });
       if (r.targetType === 'decision') link.push({ label: 'Entscheidungen öffnen', kind: 'navigate', target: '/decisions/' });
@@ -103,7 +126,7 @@ export class ReminderService {
         dedupeKey: `reminder:${r.id}:${r.remindAt}`,
       });
     }
-    if (due.length) this.ctx.events.changed('reminders');
+    if (due.length) this.ctx.events.changed('reminders', 'openItems');
     return due.length;
   }
 

@@ -261,6 +261,17 @@ export function subjectFromText(text: string): string | null {
   return out.length ? out.join(' ') : null;
 }
 
+/** Welche Angaben nennt eine Antwort als unbekannt? („Anna, Termin unbekannt“ → nur die Fälligkeit) */
+function unknownFieldsIn(text: string): { due: boolean; responsible: boolean; generic: boolean } {
+  const parts = text
+    .split(/[,;]|\bund\b/)
+    .map((p) => p.trim())
+    .filter((p) => UNKNOWN_RE.test(p));
+  const due = parts.some((p) => /(termin|fällig|faellig|datum|frist|wann|zeitpunkt|deadline)/i.test(p));
+  const responsible = parts.some((p) => /(verantwort|zuständig|wer\b|person)/i.test(p));
+  return { due, responsible, generic: parts.length > 0 && !due && !responsible };
+}
+
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 
 const YES_START = new Set([
@@ -1931,11 +1942,13 @@ export class ChatService {
     if (!item) return { intent: 'open_item_update', content: this.noOpenItemQuestion(oi.targetHint, 'meinst du'), confidence: 0.3, state };
     const patch: Parameters<OpenItemService['update']>[1] = {};
     const who = this.responsibleName(oi.responsible);
+    const unknown = unknownFieldsIn(text);
     if (who.name) patch.responsible = who.name;
-    else if (pending?.asked.includes('responsible') && UNKNOWN_RE.test(text)) patch.responsibleUnknown = true;
+    else if (pending?.asked.includes('responsible') && (unknown.responsible || (unknown.generic && !unknown.due))) patch.responsibleUnknown = true;
     const due = normalizeDateInput(oi.dueAt ?? null);
     if (due) patch.dueAt = due;
-    else if (pending?.asked.includes('due') && UNKNOWN_RE.test(text) && !patch.responsible) patch.dueUnknown = true;
+    // „Anna, Termin unbekannt“: Verantwortliche gesetzt und Fälligkeit bewusst unbekannt
+    else if (pending?.asked.includes('due') && (unknown.due || (unknown.generic && !unknown.responsible))) patch.dueUnknown = true;
     // Ergänzungen hängen an die Beschreibung an
     if (oi.description) {
       const merged = appendDescription(item.description, oi.description);
@@ -1950,13 +1963,17 @@ export class ChatService {
     if (!updated.responsiblePersonId && !updated.responsibleUnknown && pending?.asked.includes('responsible') && !patch.responsible)
       stillAsked.push('responsible');
     if (!updated.dueAt && !updated.dueUnknown && pending?.asked.includes('due') && !patch.dueAt) stillAsked.push('due');
+    // was noch fehlt, steht sichtbar in der Antwort – sonst wäre die Rückfrage unsichtbar
+    const open = stillAsked.length
+      ? `\n\nNoch offen: ${stillAsked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann?')).join(' ')} (Du kannst auch „unbekannt“ sagen.)`
+      : '';
     return {
       intent: 'open_item_update',
-      content: `Offenen Punkt aktualisiert: **${updated.title}**${updated.dueAt ? ` – fällig ${updated.dueAt.slice(0, 10)}` : ''}${updated.responsibleName ? `, Verantwortlich: ${updated.responsibleName}` : updated.responsibleUnknown ? ', Verantwortlicher: unbekannt' : ''}.`,
+      content: `Offenen Punkt aktualisiert: **${updated.title}**${updated.dueAt ? ` – fällig ${updated.dueAt.slice(0, 10)}` : updated.dueUnknown ? ', Termin: unbekannt' : ''}${updated.responsibleName ? `, Verantwortlich: ${updated.responsibleName}` : updated.responsibleUnknown ? ', Verantwortlicher: unbekannt' : ''}.${open}`,
       context: { openItems: [{ type: 'task', id: updated.id, label: updated.title }] },
       confidence: 0.8,
       state: {
-        pending: stillAsked.length ? { kind: 'open_item', openItemId: updated.id, asked: stillAsked } : null,
+        pending: stillAsked.length ? { kind: 'open_item', openItemId: updated.id, asked: stillAsked, optional: pending?.optional } : null,
         last: { ...(state.last ?? {}), openItemId: updated.id },
       },
     };
@@ -2021,7 +2038,8 @@ export class ChatService {
     state = { ...state, pending: null };
     const hinted = named.item;
     const item = (pending?.targetId ? this.openItemOrNull(pending.targetId) : null) ?? hinted ?? (pending ? null : this.lastOpenItem(state, named));
-    const existing = item ? this.reminders.list('pending').find((x) => x.targetId === item.id) : undefined;
+    // verschoben wird auch eine bereits ausgelöste Erinnerung (statt eine neue anzulegen)
+    const existing = item ? this.reminders.latestFor(item.id) : null;
     if (existing && intent.intent === 'reminder_snooze') {
       this.reminders.snooze(existing.id, when);
       return { intent: 'reminder_snooze', content: `Erinnerung verschoben auf ${when}.`, confidence: 0.9, state };
