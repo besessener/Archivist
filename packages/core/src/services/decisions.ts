@@ -29,6 +29,14 @@ interface DecisionUpdateUndo {
   relations: RelationChangeSet;
 }
 
+interface DecisionStatusUndo {
+  changes: Array<{ id: string; status: Row['status']; supersedesDecisionId: string | null; afterUpdatedAt: string }>;
+  /** Relation changes of the action (absent in undo data written by older versions). */
+  relations?: RelationChangeSet;
+  /** Older undo data: ids of the relations the action linked, including ones that existed before. */
+  relationIds?: string[];
+}
+
 export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'];
 
 /**
@@ -75,24 +83,28 @@ export class DecisionService {
   ) {
     undo.register('decision_status', {
       check: async (data) => {
-        const d = data as { changes: Array<{ id: string; afterUpdatedAt: string }> };
+        const d = data as DecisionStatusUndo;
         const conflicts: string[] = [];
         for (const c of d.changes) {
           const row = this.db.select().from(decisions).where(eq(decisions.id, c.id)).get();
           if (!row) conflicts.push(`Entscheidung ${c.id} existiert nicht mehr.`);
           else if (row.updatedAt !== c.afterUpdatedAt) conflicts.push(`Entscheidung „${row.title}“ wurde seit der Aktion verändert.`);
         }
-        return conflicts;
+        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
       },
       run: async (data) => {
-        const d = data as { changes: Array<{ id: string; status: DecisionStatus; supersedesDecisionId: string | null }>; relationIds: string[] };
-        for (const c of d.changes)
-          this.db
-            .update(decisions)
-            .set({ status: c.status, supersedesDecisionId: c.supersedesDecisionId, updatedAt: nowIso() })
-            .where(eq(decisions.id, c.id))
-            .run();
-        for (const rid of d.relationIds) this.graph.deleteRelation(rid);
+        const d = data as DecisionStatusUndo;
+        this.db.transaction(() => {
+          for (const c of d.changes)
+            this.db
+              .update(decisions)
+              .set({ status: c.status, supersedesDecisionId: c.supersedesDecisionId, updatedAt: nowIso() })
+              .where(eq(decisions.id, c.id))
+              .run();
+          if (d.relations) this.graph.revertRelationChanges(d.relations);
+          // undo data written before relation tracking existed only lists the linked relations
+          else for (const rid of d.relationIds ?? []) this.graph.deleteRelation(rid);
+        });
         for (const c of d.changes) void this.reindex(c.id);
         this.ctx.events.changed('decisions', 'knowledge');
         return 'Status der Entscheidung(en) wiederhergestellt.';
@@ -401,12 +413,14 @@ export class DecisionService {
     if (oldRow.status === 'superseded' || oldRow.status === 'revoked')
       throw new AppError('validation_error', 'Die ältere Entscheidung ist bereits überholt oder widerrufen.');
     const now = nowIso();
-    let relationId = '';
-    this.db.transaction(() => {
-      this.db.update(decisions).set({ status: 'superseded', updatedAt: now }).where(eq(decisions.id, oldId)).run();
-      this.db.update(decisions).set({ supersedesDecisionId: oldId, updatedAt: now }).where(eq(decisions.id, newId)).run();
-      relationId = this.graph.link(newId, oldId, 'supersedes', { confidence: 0.95, status: 'confirmed' })?.id ?? '';
-    });
+    // an already existing (e.g. user-rejected) supersedes relation is not part of the undo data
+    const { changes: relations } = this.graph.trackRelationChanges(newId, () =>
+      this.db.transaction(() => {
+        this.db.update(decisions).set({ status: 'superseded', updatedAt: now }).where(eq(decisions.id, oldId)).run();
+        this.db.update(decisions).set({ supersedesDecisionId: oldId, updatedAt: now }).where(eq(decisions.id, newId)).run();
+        this.graph.link(newId, oldId, 'supersedes', { confidence: 0.95, status: 'confirmed' });
+      }),
+    );
     this.audit.log({
       action: 'decision.supersede',
       actor: 'user',
@@ -422,8 +436,8 @@ export class DecisionService {
             { id: oldId, status: oldRow.status, supersedesDecisionId: oldRow.supersedesDecisionId, afterUpdatedAt: now },
             { id: newId, status: newRow.status, supersedesDecisionId: newRow.supersedesDecisionId, afterUpdatedAt: now },
           ],
-          relationIds: relationId ? [relationId] : [],
-        },
+          relations,
+        } satisfies DecisionStatusUndo,
       },
     });
     void this.reindex(oldId);
@@ -448,7 +462,10 @@ export class DecisionService {
       after: { status: 'revoked' },
       undo: {
         type: 'decision_status',
-        data: { changes: [{ id, status: cur.status, supersedesDecisionId: cur.supersedesDecisionId, afterUpdatedAt: now }], relationIds: [] },
+        data: {
+          changes: [{ id, status: cur.status, supersedesDecisionId: cur.supersedesDecisionId, afterUpdatedAt: now }],
+          relations: { created: [], changed: [] },
+        } satisfies DecisionStatusUndo,
       },
     });
     void this.reindex(id);
