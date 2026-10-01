@@ -18,6 +18,7 @@ import { InsightService } from './services/insights';
 import { JobQueueService } from './services/jobs';
 import { KnowledgeGraphService } from './services/knowledge-graph';
 import { LlmService, type FetchLike } from './services/llm';
+import { NoteService } from './services/notes';
 import { NotificationService } from './services/notifications';
 import { EventService } from './services/events';
 import { OpenItemService } from './services/open-items';
@@ -96,6 +97,7 @@ function buildServices(opts: CreateServicesOptions) {
   const decisions = new DecisionService(ctx, graph, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, search, audit, undo);
   const eventsSvc = new EventService(ctx, graph, search, audit, undo);
+  const notes = new NoteService(ctx, graph, search);
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
@@ -105,7 +107,7 @@ function buildServices(opts: CreateServicesOptions) {
   const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, entityDuplicates);
   const backup = new BackupService(ctx, settings, audit);
-  const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit);
+  const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit, notes);
   const chat = new ChatService(
     ctx,
     settings,
@@ -123,6 +125,7 @@ function buildServices(opts: CreateServicesOptions) {
     jobs,
     privacy,
     eventsSvc,
+    notes,
   );
 
   // 5) zyklische Abhängigkeiten auflösen
@@ -217,6 +220,7 @@ function buildServices(opts: CreateServicesOptions) {
     openItems,
     solutions,
     eventRecords: eventsSvc,
+    notes,
     insights,
     actions,
     contradictions,
