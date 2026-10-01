@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchOpenItems } from '../../packages/core/src/services/open-items';
+import { hintTokens, matchOpenItems } from '../../packages/core/src/services/open-items';
 
 const items = (...titles: string[]) => titles.map((title) => ({ title, description: null as string | null }));
 const titlesOf = (r: ReturnType<typeof matchOpenItems>) =>
@@ -37,5 +37,16 @@ describe('matchOpenItems (#39)', () => {
       { title: 'Angebot prüfen', description: 'Müller wollte Rabatt' },
     ]);
     expect(titlesOf(r)).toEqual(['Rabatt verhandeln']);
+  });
+});
+
+describe('hintTokens (#40)', () => {
+  it.each([
+    ['Erinnere mich in sieben Tagen wieder daran', []],
+    ['Der Punkt ist erledigt', []],
+    ['Erinnere mich am 15.11. an den Zahnarzt', ['zahnarzt']],
+    ['Die Steuererklärung ist erledigt', ['steuererklarung']],
+  ])('%s → %j', (hint, expected) => {
+    expect(hintTokens(hint)).toEqual(expected);
   });
 });
