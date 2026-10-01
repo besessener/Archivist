@@ -20,6 +20,7 @@ import { JobQueueService } from './services/jobs';
 import { KnowledgeGraphService } from './services/knowledge-graph';
 import { LlmService, type FetchLike } from './services/llm';
 import { NotificationService } from './services/notifications';
+import { EventService } from './services/events';
 import { OpenItemService } from './services/open-items';
 import { PrivacyService } from './services/privacy';
 import { ReminderService } from './services/reminders';
@@ -89,6 +90,7 @@ function buildServices(opts: CreateServicesOptions) {
   const documentsSvc = new DocumentService(ctx, settings, graph, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
   const decisions = new DecisionService(ctx, graph, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, search, audit, undo);
+  const eventsSvc = new EventService(ctx, graph, search, audit);
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
@@ -97,7 +99,7 @@ function buildServices(opts: CreateServicesOptions) {
   const timeline = new TimelineService(ctx, graph);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, actions);
   const backup = new BackupService(ctx, settings, audit);
-  const chat = new ChatService(ctx, settings, llm, decisions, openItems, reminders, search, graph, documentsSvc, scanner, contradictions, insights, timeline, jobs, privacy);
+  const chat = new ChatService(ctx, settings, llm, decisions, openItems, reminders, search, graph, documentsSvc, scanner, contradictions, insights, timeline, jobs, privacy, eventsSvc);
 
   // 5) zyklische Abhängigkeiten auflösen
   actions.wire({ archive, documents: documentsSvc, decisions, openItems, contradictions, graph, scanner, reminders, audit });
@@ -167,6 +169,7 @@ function buildServices(opts: CreateServicesOptions) {
     documents: documentsSvc,
     decisions,
     openItems,
+    eventRecords: eventsSvc,
     insights,
     actions,
     contradictions,

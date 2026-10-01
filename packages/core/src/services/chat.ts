@@ -30,6 +30,7 @@ import type { InsightService } from './insights';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
+import type { EventService } from './events';
 import type { OpenItemService } from './open-items';
 import type { PrivacyService } from './privacy';
 import type { ReminderService } from './reminders';
@@ -44,7 +45,8 @@ type Pending =
   | { kind: 'decision'; decisionId: string; asked: DecisionField[]; clarifyTopic?: string | null; supersedes?: string | null }
   | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'> }
   | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string }
-  | { kind: 'confirm_save'; text: string; intent: ChatIntent };
+  | { kind: 'confirm_save'; text: string; intent: ChatIntent }
+  | { kind: 'event'; title: string; description: string | null; topic: string | null; project: string | null; source: string };
 
 /** Weitere erkannte Absichten, die nach Beantwortung einer Rückfrage noch abgearbeitet werden. */
 interface QueuedIntent {
@@ -83,6 +85,7 @@ Absichten (intent):
 - knowledge_question: Frage zum Archivwissen (Wann/Warum/Wer/Wie/„Haben wir jemals …“/Haltungsänderung/Widersprüche).
 - document_search: Dokumente suchen oder anzeigen.
 - timeline_query: Chronologische Übersicht zu Thema/Projekt/Zeitraum.
+- event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description. Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
 - open_item_new / open_item_update / open_item_close: offene Punkte erfassen/ändern/schließen.
 - reminder_create / reminder_snooze: Erinnerung anlegen bzw. verschieben.
 - proposal_confirm / proposal_reject: Zustimmung bzw. Ablehnung eines offenen Agentenvorschlags („ja, mach das“, „nein“).
@@ -132,6 +135,7 @@ export class ChatService {
     private readonly timeline: TimelineService,
     private readonly jobs: JobQueueService,
     private readonly privacy: PrivacyService,
+    private readonly events: EventService,
   ) {}
 
   wire(deps: { actions: ActionService }): void {
@@ -242,7 +246,8 @@ export class ChatService {
     if (p.kind === 'reminder') {
       return `Der Agent hat gefragt, WANN er an „${p.title}“ erinnern soll. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum wie „31.10.“ oder „nächsten Montag“ (intent=${p.snooze ? 'reminder_snooze' : 'reminder_create'}, reminder.remindAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
     }
-    if (p.kind === 'confirm_save') return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
+    if (p.kind === 'event') return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum (intent=event_record, event.occurredAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
+    if (p.kind === 'confirm_save') return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
     const i = this.openItems.get(p.openItemId);
     return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. Die Nachricht ist wahrscheinlich die Antwort (intent=open_item_update).`;
   }
@@ -292,6 +297,10 @@ export class ChatService {
     if (pending?.kind === 'reminder') {
       const date = parseGermanDate(t);
       if (date) return { ...base, intent: pending.snooze ? 'reminder_snooze' : 'reminder_create', reminder: { relativeText: t, remindAt: date } };
+    }
+    if (pending?.kind === 'event') {
+      const date = parseGermanDate(t);
+      if (date) return { ...base, intent: 'event_record', event: { title: pending.title, description: pending.description, occurredAt: date } };
     }
     if (pending?.kind === 'open_item') {
       return { ...base, intent: 'open_item_update', openItem: { dueAt: parseGermanDate(t), responsible: UNKNOWN_RE.test(t) ? null : t.replace(/^(verantwortlich(er)?:?|@)\s*/i, '').trim() } };
@@ -356,9 +365,9 @@ export class ChatService {
       // eine offene Rückfrage gehört zur ersten Absicht; weitere Absichten sehen sie nur, wenn sie dazu passen
       if (this.needsDecisionConfirmation(item.intent, current)) {
         const rest = work.slice(i + 1);
-        const question = analysis.clarification?.trim() || `Ich bin nicht sicher, ob das eine getroffene **Entscheidung** ist${item.intent.segment ? ` („${truncate(item.intent.segment, 140)}“)` : ''}. Soll ich sie als Entscheidung erfassen, nur als Notiz festhalten oder nichts speichern?`;
+        const question = analysis.clarification?.trim() || `Ich bin nicht sicher, ob das eine getroffene **Entscheidung** ist${item.intent.segment ? ` („${truncate(item.intent.segment, 140)}“)` : ''}. Soll ich sie als Entscheidung erfassen, als Ereignis in die Timeline eintragen, nur als Notiz festhalten oder nichts speichern?`;
         current = { ...current, pending: { kind: 'confirm_save', text: item.text, intent: item.intent }, queue: rest };
-        replies.push({ intent: 'clarification', content: `${question}\n\nAntworte mit „Entscheidung“, „Notiz“ oder „nichts speichern“.`, confidence: item.intent.confidence, state: current });
+        replies.push({ intent: 'clarification', content: `${question}\n\nAntworte mit „Entscheidung“, „Ereignis“, „Notiz“ oder „nichts speichern“.`, confidence: item.intent.confidence, state: current });
         break;
       }
       const reply = await this.dispatch(conv, item.text, item.intent, current, viaLlm);
@@ -418,6 +427,11 @@ export class ChatService {
       const decision = { ...pending.intent, intent: 'decision_new' as const, decisionCertainty: 'clear' as const };
       return continueWith(await this.dispatch(conv, pending.text, decision, base, true));
     }
+    if (/^(als\s+)?(ein\s+)?(ereignis|termin)\b/.test(t)) {
+      const seg = pending.intent.segment ?? pending.text;
+      const event = { ...pending.intent, intent: 'event_record' as const, event: { title: pending.intent.decision?.title ?? truncate(seg, 100), description: seg, occurredAt: pending.intent.decision?.decidedAt ?? parseGermanDate(seg) } };
+      return continueWith(await this.dispatch(conv, pending.text, event, base, true));
+    }
     if (/^(als\s+)?(nur\s+)?(eine\s+)?notiz\b|^nur\s+notiz|^(festhalten|merken)\b/.test(t)) {
       const note = { ...pending.intent, intent: 'note_capture' as const, note: pending.intent.segment ?? pending.text };
       return continueWith(await this.dispatch(conv, pending.text, note, base, true));
@@ -434,6 +448,8 @@ export class ChatService {
       case 'decision_amend':
       case 'decision_supersede':
         return this.decisionFlow(conv, text, intent, state, viaLlm);
+      case 'event_record':
+        return this.eventRecord(text, intent, state);
       case 'note_capture':
         return this.noteCapture(text, intent, keep());
       case 'knowledge_question':
@@ -796,6 +812,34 @@ export class ChatService {
     const body = [...byYear.entries()].map(([y, list]) => `**${y}**\n${list.map((e) => `• ${e.date}: ${e.title}`).join('\n')}`).join('\n\n');
     const sources: SourceReference[] = entries.slice(0, 25).map((e, i) => ({ id: e.refs[0]?.id ?? e.id, type: e.refs[0]?.type ?? 'note', title: `${i + 1}. ${e.title}`, snippet: truncate(e.description ?? '', 160), path: null, date: e.date, score: 1 }));
     return { intent: 'timeline_query', content: `Zeitverlauf für ${label}:\n\n${body}`, sources, context: this.contextFromSources(sources), confidence: 0.8, state };
+  }
+
+  // ---------- Ereignisse ----------
+  private async eventRecord(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
+    const pending = state.pending?.kind === 'event' ? state.pending : null;
+    const ev = intent.event ?? {};
+    const title = (pending?.title ?? ev.title?.trim() ?? truncate(intent.segment ?? text, 100)).slice(0, 160);
+    const occurredAt = normalizeDateInput(ev.occurredAt ?? null) ?? parseGermanDate(pending ? text : (intent.segment ?? text));
+    const description = pending?.description ?? ev.description?.trim() ?? ((intent.segment ?? text).trim().length > title.length + 10 ? (intent.segment ?? text).trim().slice(0, 2000) : null);
+    const clear: ConvState = { ...state, pending: null };
+    if (!occurredAt) {
+      return {
+        intent: 'event_record',
+        content: `An welchem Datum war das Ereignis „${title}“? Nenne bitte ein Datum, damit ich es in der Timeline einordnen kann.`,
+        confidence: 0.4,
+        state: { ...state, pending: { kind: 'event', title, description, topic: pending?.topic ?? intent.topic ?? null, project: pending?.project ?? intent.project ?? null, source: pending?.source ?? text.slice(0, 4000) } },
+      };
+    }
+    const event = this.events.create({ title, description, occurredAt, topic: pending?.topic ?? intent.topic, project: pending?.project ?? intent.project, sourceIds: [] }, { actor: 'user', trigger: 'chat' });
+    const sources: SourceReference[] = [{ id: event.id, type: 'event', title: event.title, snippet: truncate(event.description ?? '', 200), score: 1, path: null, date: event.occurredAt }];
+    return {
+      intent: 'event_record',
+      content: `Ereignis in der Timeline eingetragen: **${event.title}** (${event.occurredAt.slice(0, 10)})${event.topicName ? `, Thema: ${event.topicName}` : ''}${event.projectName ? `, Projekt: ${event.projectName}` : ''}.`,
+      sources,
+      context: { topics: event.topicName ? [{ type: 'topic', id: event.topicId!, label: event.topicName }] : [], projects: event.projectName ? [{ type: 'project', id: event.projectId!, label: event.projectName }] : [] },
+      confidence: intent.confidence,
+      state: clear,
+    };
   }
 
   // ---------- Offene Punkte ----------

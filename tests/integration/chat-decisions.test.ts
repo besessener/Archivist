@@ -421,3 +421,51 @@ describe('Rückfrage in einer Mehrfach-Nachricht stellt weitere Absichten zurüc
     expect(await app.ok('reminders:list', {})).toHaveLength(1);
   });
 });
+
+describe('Ereignisse in der Timeline', () => {
+  const ev = (over: Record<string, unknown> = {}) => intent({ intent: 'event_record', segment: 'am 01.10.2026 eingereicht', event: { title: 'Beitrag beim German Testing Day eingereicht', occurredAt: '2026-10-01' }, topic: 'Konferenzbeitrag', ...over });
+
+  it('trägt ein Ereignis mit Datum direkt ein, es erscheint in Timeline und Suche und lässt sich nur bestätigt löschen', async () => {
+    app.llm.on('ChatIntent', () => ({ intents: [ev()] }));
+    const r = await app.ok('chat:send', { text: 'Ich habe den Beitrag am 01.10.2026 beim German Testing Day eingereicht.' });
+    expect(r.assistantMessage.content).toMatch(/Ereignis in der Timeline eingetragen/);
+    expect(await app.ok('decisions:list', {})).toHaveLength(0);
+    const events = await app.ok('events:list', {});
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ occurredAt: expect.stringMatching(/^2026-10-01/), topicName: 'Konferenzbeitrag' });
+    const entry = (await app.ok('timeline:get', {})).find((e) => e.kind === 'event');
+    expect(entry).toMatchObject({ date: '2026-10-01', title: expect.stringContaining('German Testing Day') });
+    expect((await app.ok('search:global', { query: 'German Testing Day', limit: 5 })).some((h) => h.type === 'event')).toBe(true);
+    await app.ok('events:delete', { id: events[0]!.id, confirmed: true });
+    expect(await app.ok('events:list', {})).toHaveLength(0);
+    expect((await app.ok('timeline:get', {})).some((e) => e.kind === 'event')).toBe(false);
+  });
+
+  it('fragt nach dem Datum, wenn es fehlt, und merkt sich das Ereignis bis zur Antwort', async () => {
+    app.llm.on('ChatIntent', () => ({ intents: [ev({ segment: 'Beitrag eingereicht', event: { title: 'Beitrag eingereicht', occurredAt: null } })] }));
+    const r1 = await app.ok('chat:send', { text: 'Ich habe den Beitrag eingereicht.' });
+    expect(r1.assistantMessage.content).toMatch(/An welchem Datum/);
+    expect(await app.ok('events:list', {})).toHaveLength(0);
+    app.llm.on('ChatIntent', () => ({ intents: [ev({ event: { title: 'Beitrag eingereicht', occurredAt: '2026-10-01' } })] }));
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Am 1. Oktober 2026' });
+    expect(r2.assistantMessage.content).toMatch(/Ereignis in der Timeline eingetragen/);
+    expect(await app.ok('events:list', {})).toHaveLength(1);
+  });
+
+  it('bietet bei unsicherer Entscheidung auch „Ereignis“ an und legt es bei dieser Antwort an', async () => {
+    app.llm.on('ChatIntent', () => ({ intents: [intent({ intent: 'decision_new', segment: 'am 01.10.2026 eingereicht', decisionCertainty: 'unsure', decision: decisionEx({ decisionText: 'Beitrag eingereicht.', title: 'Beitrag eingereicht', decidedAt: '2026-10-01' }) })] }));
+    const r1 = await app.ok('chat:send', { text: 'Ich habe am 01.10.2026 den Beitrag eingereicht.' });
+    expect(r1.assistantMessage.content).toMatch(/Ereignis/);
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Als Ereignis' });
+    expect(r2.assistantMessage.content).toMatch(/Ereignis in der Timeline eingetragen/);
+    expect(await app.ok('decisions:list', {})).toHaveLength(0);
+    expect((await app.ok('events:list', {}))[0]).toMatchObject({ occurredAt: expect.stringMatching(/^2026-10-01/) });
+  });
+
+  it('legt Ereignisse auch manuell an', async () => {
+    const e = await app.ok('events:create', { title: 'Kickoff', occurredAt: '2026-03-03', project: 'Nordlicht', sourceIds: [] });
+    expect(e.projectName).toBe('Nordlicht');
+    await expect(app.call('events:create', { title: 'x', occurredAt: 'kein Datum', sourceIds: [] })).resolves.toMatchObject({ ok: false });
+  });
+});

@@ -221,6 +221,31 @@ export const OpenItemInput = z.object({
 });
 export type OpenItemInput = z.infer<typeof OpenItemInput>;
 
+// ---------- Ereignisse ----------
+export const EventRecord = z.object({
+  id: Id,
+  title: z.string(),
+  description: z.string().nullable(),
+  occurredAt: IsoDate,
+  topicId: z.string().nullable(),
+  topicName: z.string().nullable(),
+  projectId: z.string().nullable(),
+  projectName: z.string().nullable(),
+  sourceIds: z.array(z.string()),
+  createdAt: IsoDate,
+  updatedAt: IsoDate,
+});
+export type EventRecord = z.infer<typeof EventRecord>;
+export const EventInput = z.object({
+  title: z.string().min(1),
+  description: z.string().nullish(),
+  occurredAt: IsoDate,
+  topic: z.string().nullish(),
+  project: z.string().nullish(),
+  sourceIds: z.array(z.string()).default([]),
+});
+export type EventInput = z.infer<typeof EventInput>;
+
 // ---------- Erinnerungen, Benachrichtigungen, Insights ----------
 export const Reminder = z.object({
   id: Id,
