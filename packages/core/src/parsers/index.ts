@@ -177,22 +177,57 @@ async function parsePptx(file: string): Promise<ParsedDocument> {
   return { text: c.text, status: c.text ? 'extracted' : 'partial', error: c.text ? null : 'Keine Folientexte gefunden.', meta: { slides: slides.length, ...(core ? coreProps(core.xml) : {}) }, truncated: c.truncated };
 }
 
+/** Spaltenbuchstaben ("AB") → 0-basierter Index. */
+const colIndex = (ref: string): number => [...ref.replace(/[^A-Z]/gi, '').toUpperCase()].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+
+/**
+ * Eigener, abhängigkeitsarmer XLSX-Leser (ZIP + XML): liest Tabellenblätter als Text.
+ * Bewusst ohne SheetJS (die auf npm verfügbare Version hat bekannte, ungepatchte Schwachstellen).
+ * Datumszellen erscheinen als Excel-Seriennummer.
+ */
 async function parseXlsx(file: string): Promise<ParsedDocument> {
-  const XLSX = await import('xlsx');
-  const lib = (XLSX as unknown as { default?: typeof XLSX }).default ?? XLSX;
-  const wb = lib.read(await fsp.readFile(file), { type: 'buffer', cellDates: true, sheetRows: 3000 });
+  const buf = await fsp.readFile(file);
+  const files = await readZipXml(buf, /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$|^docProps\/core\.xml$/);
+  const byName = new Map(files.map((f) => [f.name, f.xml]));
+  const text = (xml: string) => [...xml.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((m) => decodeXml(m[1] ?? '')).join('');
+  const shared = [...(byName.get('xl/sharedStrings.xml') ?? '').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => text(m[1] ?? ''));
+  const rels = new Map([...(byName.get('xl/_rels/workbook.xml.rels') ?? '').matchAll(/<Relationship\b[^>]*>/g)].flatMap((m) => {
+    const id = /\bId="([^"]+)"/.exec(m[0])?.[1];
+    const target = /\bTarget="([^"]+)"/.exec(m[0])?.[1];
+    return id && target ? [[id, target.replace(/^\/?(xl\/)?/, 'xl/')] as const] : [];
+  }));
+  const sheets = [...(byName.get('xl/workbook.xml') ?? '').matchAll(/<sheet\b[^>]*>/g)].flatMap((m) => {
+    const name = /\bname="([^"]*)"/.exec(m[0])?.[1];
+    const rid = /\br:id="([^"]+)"/.exec(m[0])?.[1];
+    const target = rid ? rels.get(rid) : undefined;
+    return name && target ? [{ name: decodeXml(name), xml: byName.get(target) ?? '' }] : [];
+  });
   const parts: string[] = [];
-  for (const name of wb.SheetNames) {
-    const sheet = wb.Sheets[name];
-    if (!sheet) continue;
-    parts.push(`Tabellenblatt „${name}“:\n${lib.utils.sheet_to_csv(sheet, { FS: ' | ', blankrows: false })}`);
+  for (const sheet of sheets) {
+    const lines: string[] = [];
+    for (const row of sheet.xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+      const cells: string[] = [];
+      for (const c of (row[1] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const attrs = c[1] ?? '';
+        const body = c[2] ?? '';
+        const ref = /\br="([A-Z]+)\d+"/.exec(attrs)?.[1] ?? '';
+        const type = /\bt="([^"]+)"/.exec(attrs)?.[1];
+        const raw = /<v>([^<]*)<\/v>/.exec(body)?.[1];
+        let value = '';
+        if (type === 's' && raw !== undefined) value = shared[Number(raw)] ?? '';
+        else if (type === 'inlineStr') value = text(body);
+        else if (raw !== undefined) value = decodeXml(raw);
+        if (ref && value !== '') cells[colIndex(ref)] = value;
+      }
+      if (cells.length) lines.push(Array.from(cells, (v) => v ?? '').join(' | '));
+      if (lines.length >= 3000) break;
+    }
+    parts.push(`Tabellenblatt „${sheet.name}“:\n${lines.join('\n')}`);
   }
+  const core = byName.get('docProps/core.xml');
   const c = clip(tidy(parts.join('\n\n')));
-  const props = wb.Props ?? {};
-  const meta: ParsedDocument['meta'] = { sheets: wb.SheetNames.length };
-  if (props.Title) meta.title = props.Title;
-  if (props.Author) meta.author = props.Author;
-  return { text: c.text, status: c.text ? 'extracted' : 'partial', error: c.text ? null : 'Die Arbeitsmappe enthält keine Daten.', meta, truncated: c.truncated };
+  const hasData = parts.some((p) => p.includes('\n'));
+  return { text: c.text, status: hasData ? 'extracted' : 'partial', error: hasData ? null : 'Die Arbeitsmappe enthält keine Daten.', meta: { sheets: sheets.length, ...(core ? coreProps(core) : {}) }, truncated: c.truncated };
 }
 
 async function parseEml(file: string): Promise<ParsedDocument> {

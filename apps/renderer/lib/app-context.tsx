@@ -81,7 +81,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const paths: string[] = [];
       const localRejected: ImportResult['rejected'] = [];
       for (const f of files) {
-        let p = '';
+        let p: string;
         try {
           p = bridge.getPathForFile(f);
         } catch {

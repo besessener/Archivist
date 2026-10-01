@@ -51,14 +51,14 @@ export class DatabaseService {
   }
 
   migrationStatus(migrationsFolder: string): MigrationStatus {
-    let total = 0;
+    let total: number;
     try {
       const journal = JSON.parse(fs.readFileSync(path.join(migrationsFolder, 'meta', '_journal.json'), 'utf8')) as { entries: unknown[] };
       total = journal.entries.length;
     } catch {
       total = 0;
     }
-    let applied = 0;
+    let applied: number;
     try {
       applied = (this.sqlite.prepare('SELECT COUNT(*) AS c FROM __drizzle_migrations').get() as { c: number }).c;
     } catch {

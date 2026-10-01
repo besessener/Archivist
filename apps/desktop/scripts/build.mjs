@@ -14,7 +14,7 @@ fs.mkdirSync(dist, { recursive: true });
 
 // Native bzw. nicht bündelbare Module bleiben extern und werden von electron-builder mitgeliefert (siehe package.json dependencies).
 const external = ['electron', 'better-sqlite3', 'sharp', 'pdfjs-dist', 'pdfjs-dist/*', 'tesseract.js', '@napi-rs/canvas'];
-const common = { bundle: true, platform: 'node', target: 'node22', format: 'cjs', sourcemap: true, external, logLevel: 'info', legalComments: 'none' };
+const common = { bundle: true, platform: 'node', target: 'node22', format: 'cjs', sourcemap: true, external, logLevel: 'warning', legalComments: 'none' };
 
 await build({ ...common, entryPoints: [path.join(desktop, 'src/main.ts')], outfile: path.join(dist, 'main.cjs') });
 await build({ ...common, entryPoints: [path.join(desktop, 'src/preload.ts')], outfile: path.join(dist, 'preload.cjs') });

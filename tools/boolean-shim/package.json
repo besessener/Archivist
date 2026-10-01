@@ -1,0 +1,8 @@
+{
+  "name": "boolean",
+  "version": "3.2.0",
+  "description": "Kleiner, gepflegter Ersatz f\u00fcr das nicht mehr unterst\u00fctzte npm-Paket \"boolean\" (Abh\u00e4ngigkeit von global-agent/roarr).",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true
+}
