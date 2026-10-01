@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { subjectFromText } from '../../packages/core/src/services/chat';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 const TOPIC = 'Bildungsurlaub 2026';
@@ -17,7 +18,7 @@ afterEach(async () => {
 const archiveRoot = () => app.services.settings.get().archiveRoot;
 const folderOf = (id: string) => path.posix.dirname(app.services.documents.getRow(id).archiveRelPath!);
 
-async function archived(name: string, loc: string, topic: string | null = TOPIC): Promise<string> {
+async function archived(name: string, loc: string, topic: string | null = TOPIC, content = `Inhalt von ${name}`): Promise<string> {
   app.llm.on('DocumentClassification', () => ({
     docType: 'Notiz',
     title: name,
@@ -33,7 +34,7 @@ async function archived(name: string, loc: string, topic: string | null = TOPIC)
     confidence: 0.7,
     rationale: 'x',
   }));
-  const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, `Inhalt von ${name}`)] });
+  const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
@@ -262,5 +263,118 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
       expect(report.byKind.scattered_documents).toBeUndefined();
       expect(scattered()).toHaveLength(0);
     });
+  });
+});
+
+describe('„Leg alle Dokumente zu X zusammen“ verschiebt genau X (#45)', () => {
+  const proposedIds = (r: Awaited<ReturnType<typeof send>>) =>
+    ((r.assistantMessage.actions[0]?.proposedParameters as { items?: Array<{ documentId: string }> } | undefined)?.items ?? []).map((i) => i.documentId).sort();
+
+  it('ein genanntes Thema schlägt die zuletzt gezeigten Dokumente (LLM liefert nur query)', async () => {
+    const { ids, other } = await scatteredArchive();
+    await archived('Steuer-Beleg', 'private/steuer-2', 'Steuer');
+    app.llm.on('ChatIntent', (_s, input) => {
+      const text = input.split('Nachricht des Benutzers:\n')[1] ?? '';
+      if (/Steuer/.test(text)) return intent({ intent: 'archive_structure', topic: 'Steuer' });
+      return intent({ intent: 'archive_reorganize', query: 'Bildungsurlaub' });
+    });
+    const first = await send('Wie liegen die Steuer-Dokumente?');
+    expect(first.assistantMessage.context?.documents?.map((d) => d.id)).toContain(other);
+
+    const r = await send('leg alle Bildungsurlaub-Dateien zusammen', first.conversationId);
+
+    const moved = proposedIds(r);
+    expect(moved.length).toBeGreaterThan(0);
+    for (const id of moved) expect(ids).toContain(id);
+    expect(moved).not.toContain(other);
+  });
+
+  it('mehrere teilweise passende Themen: fragt nach statt still zu wählen; die Antwort führt das Umlagern aus', async () => {
+    await scatteredArchive();
+    const old = await archived('Antrag 2025', 'private/bu-2025', 'Bildungsurlaub 2025');
+    await archived('Bescheid 2025', 'work/hr/2025', 'Bildungsurlaub 2025');
+    app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: 'Bildungsurlaub' }));
+
+    const r1 = await send('leg alle Dokumente zu Bildungsurlaub in einen Ordner');
+
+    expect(r1.assistantMessage.content).toMatch(/^Meinst du „Bildungsurlaub 202[56]“ oder „Bildungsurlaub 202[56]“\?$/);
+    expect(r1.assistantMessage.actions).toHaveLength(0);
+
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
+    const r2 = await send('Bildungsurlaub 2026', r1.conversationId);
+
+    expect(r2.assistantMessage.actions[0]?.label).toBe('3 Dokument(e) nach „private/bildungsurlaub/2026“ verschieben');
+    expect(proposedIds(r2)).not.toContain(old);
+  });
+
+  it('kein stiller Volltext-Rückfall beim Verschieben: ein fremdes Dokument, das das Wort enthält, bleibt außen vor', async () => {
+    const { ids } = await scatteredArchive();
+    const gehalt = await archived('Gehaltsabrechnung', 'work/gehalt', 'Gehalt', 'Gehaltsabrechnung Oktober, Abzug Bildungsurlaub 2026');
+    app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: 'Bildungsurlaub' }));
+
+    const r = await send('leg alle Bildungsurlaub-Dokumente zusammen');
+
+    const moved = proposedIds(r);
+    expect(moved).not.toContain(gehalt);
+    for (const id of moved) expect(ids).toContain(id);
+
+    app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: 'Kreuzfahrt' }));
+    const none = await send('leg alle Kreuzfahrt-Dokumente zusammen');
+    expect(none.assistantMessage.actions).toHaveLength(0);
+    expect(none.assistantMessage.content).toContain('Zu „Kreuzfahrt“ kenne ich kein Thema');
+  });
+
+  it('ohne LLM: „leg alle Bildungsurlaub-Dateien in einen Ordner“ findet das Thema', async () => {
+    const { ids, other } = await scatteredArchive();
+    app.llm.down = true;
+    const r = await send('leg alle Bildungsurlaub-Dateien in einen Ordner');
+    expect(r.assistantMessage.intent).toBe('archive_reorganize');
+    const moved = proposedIds(r);
+    expect(moved.length).toBe(3);
+    for (const id of moved) expect(ids).toContain(id);
+    expect(moved).not.toContain(other);
+  });
+
+  it('„archivieren“ nutzt Inbox-Dokumente, auch wenn zuletzt archivierte gezeigt wurden', async () => {
+    await scatteredArchive();
+    app.llm.on('DocumentClassification', () => ({
+      docType: 'Rechnung',
+      title: 'Neue Rechnung',
+      summary: 'Rechnung',
+      mainTopic: 'Rechnungen',
+      project: null,
+      persons: [],
+      dates: [],
+      tags: [],
+      location: { categoryPath: 'private/rechnungen', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
+      decisions: [],
+      openItems: [],
+      confidence: 0.7,
+      rationale: 'x',
+    }));
+    const imp = await app.ok('documents:import', { paths: [app.file('in/rechnung.txt', 'Rechnung Nr. 1')] });
+    await app.services.jobs.whenIdle();
+    app.llm.on('ChatIntent', (_s, input) =>
+      /archiviere/i.test(input.split('Nachricht des Benutzers:\n')[1] ?? '')
+        ? intent({ intent: 'archive_execute' })
+        : intent({ intent: 'archive_structure', topic: TOPIC }),
+    );
+    const first = await send('Wie liegen die Bildungsurlaub-Dokumente?');
+
+    const r = await send('archiviere bitte die neuen Dokumente', first.conversationId);
+
+    expect(r.assistantMessage.actions[0]?.actionType).toBe('archive_documents');
+    expect(r.assistantMessage.context?.documents?.map((d) => d.id)).toEqual([imp.imported[0]!.id]);
+  });
+});
+
+describe('subjectFromText (#45)', () => {
+  it.each([
+    ['leg alle Bildungsurlaub-Dateien in einen Ordner', 'Bildungsurlaub'],
+    ['leg alle Dokumente zu Bildungsurlaub 2026 in einen Ordner', 'Bildungsurlaub 2026'],
+    ['können die Unterlagen zum Thema Steuer zusammen?', 'Steuer'],
+    ['können die nicht alle ins selbe Verzeichnis?', null],
+  ])('%s → %s', (text, expected) => {
+    expect(subjectFromText(text)).toBe(expected);
   });
 });

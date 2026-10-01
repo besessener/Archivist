@@ -62,6 +62,7 @@ type Pending =
   | { kind: 'proposal_choice'; confirm: boolean; actionIds: string[] }
   | { kind: 'supersede_choice'; newDecisionId: string; candidateIds: string[] }
   | { kind: 'open_item_choice'; text: string; intent: ChatIntent; candidateIds: string[] }
+  | { kind: 'subject_choice'; text: string; intent: ChatIntent; names: string[] }
   | { kind: 'event'; title: string; description: string | null; topic: string | null; project: string | null; source: string };
 
 /** Kurz-IDs im Intent-Prompt (P1, E1, V1) → echte IDs. Vom LLM gelieferte unbekannte IDs werden verworfen. */
@@ -203,6 +204,61 @@ function appendDescription(current: string | null, addition: string | null | und
   if (!add) return current;
   if (!current?.trim()) return add;
   return normalizeName(current).includes(normalizeName(add)) ? current : `${current.trim()}\n${add}`;
+}
+
+/** Wörter, die in „leg alle Dokumente zu X in einen Ordner“ nichts über das Thema X sagen. */
+const SUBJECT_FILLERS = new Set(
+  'dokument dokumente dokumenten datei dateien unterlagen ordner ordnern verzeichnis verzeichnisse verzeichnissen ablage archiv archivierten archivierte alle alles leg lege legen gemeinsam zusammen zusammenlegen zusammenfuhren selbe selben gleiche gleichen ein einen einem eine ins kannst konnen bitte mach mache diese dieser dieses die sie davon dazu thema projekt bezug liegen liegt abgelegt pruf prufe prufen konsistent verstreut sortieren umsortieren verschieben verschieb umlagern'.split(
+    ' ',
+  ),
+);
+const SUBJECT_STOP = new Set([
+  'in',
+  'ins',
+  'im',
+  'zusammen',
+  'alle',
+  'einen',
+  'ein',
+  'einem',
+  'ordner',
+  'verzeichnis',
+  'legen',
+  'leg',
+  'gemeinsam',
+  'bitte',
+  'und',
+  'liegen',
+]);
+
+/** Hat ein Suchtext ein eigenes Thema (und nicht nur „die“, „alle“, „Dokumente“)? */
+function subjectTokens(text: string): string[] {
+  return tokenize(text).filter((t) => !SUBJECT_FILLERS.has(t));
+}
+
+/** Regelbasiert: Thema aus „X-Dateien“ bzw. „Dokumente zu X“ (ohne LLM). */
+export function subjectFromText(text: string): string | null {
+  const dashed = text
+    .split(/\s+/)
+    .map((w) => w.replace(/[„“"',.;:!?]/g, ''))
+    .find((w) => /-(?:dateien|dokumente|unterlagen)$/i.test(w));
+  if (dashed) return dashed.replace(/-(?:dateien|dokumente|unterlagen)$/i, '') || null;
+  const ws = text.split(/\s+/).map((w) => w.replace(/[„“"]/g, ''));
+  const at = ws.findIndex((w) => /^(zu|zum|zur|für|über)$/i.test(w));
+  if (at < 0) return null;
+  const out: string[] = [];
+  for (const w of ws.slice(at + 1)) {
+    let clean = w;
+    while (/[,.;:!?]$/.test(clean)) clean = clean.slice(0, -1);
+    if (!clean || SUBJECT_STOP.has(clean.toLowerCase()) || /^(dem|der|den|das|thema|projekt)$/i.test(clean)) {
+      if (out.length) break;
+      if (!clean || SUBJECT_STOP.has(clean.toLowerCase())) break;
+      continue;
+    }
+    out.push(clean);
+    if (out.length >= 4 || clean !== w) break;
+  }
+  return out.length ? out.join(' ') : null;
 }
 
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
@@ -477,6 +533,8 @@ export class ChatService {
     if (p.kind === 'event')
       return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum (dann intent=event_record, event.occurredAt als ISO-Datum, ohne eigenen Titel). Ein anderes Ereignis mit eigenem Titel ist keine Antwort.`;
     if (p.kind === 'proposal_choice') return 'keine';
+    if (p.kind === 'subject_choice')
+      return `Der Agent hat gefragt, welches Thema gemeint ist (${p.names.map((n) => `„${n}“`).join(', ')}); die Antwort wertet er selbst aus.`;
     if (p.kind === 'open_item_duplicate')
       return `Der Agent hat gefragt, ob der bestehende offene Punkt „${this.openItemOrNull(p.existingId)?.title ?? '?'}“ ergänzt oder ein neuer angelegt werden soll; die Antwort wertet er selbst aus.`;
     if (p.kind === 'open_item_choice')
@@ -701,8 +759,9 @@ export class ChatService {
       /(verzeichnis|ordner|ablage)/i.test(t) &&
       /(selbe|gleiche|zusammen|alle\s+in|ein(?:en)?\s+(?:verzeichnis|ordner)|verschieb|umlager|zusammenleg|zusammenführ)/i.test(t)
     )
-      return { ...base, intent: 'archive_reorganize' };
-    if (/(konsisten|verzeichnis|ordner|ablage|verstreut|durcheinander|struktur)/i.test(t)) return { ...base, intent: 'archive_structure' };
+      return { ...base, intent: 'archive_reorganize', topic: this.knownSubjectIn(t) ?? subjectFromText(t) };
+    if (/(konsisten|verzeichnis|ordner|ablage|verstreut|durcheinander|struktur)/i.test(t))
+      return { ...base, intent: 'archive_structure', topic: this.knownSubjectIn(t) ?? subjectFromText(t) };
     if (/\bwiderspr/i.test(t)) return { ...base, intent: 'contradiction_check', query: t };
     if (/(dokumente?|dateien?)/i.test(t) && /(such|zeige|finde|gehören|liste)/i.test(t)) return { ...base, intent: 'document_search', query: t };
     if (/\?\s*$/.test(t) || /^(wann|warum|wer|was|welche|wie|haben|gab|gibt|hat)\b/i.test(t)) return { ...base, intent: 'knowledge_question', query: t };
@@ -830,6 +889,25 @@ export class ChatService {
       const chosen = this.answerOpenItemChoice(text, p);
       if (chosen)
         return this.runWork(conv, [{ text: p.text, intent: withOpenItemTarget(p.intent, chosen.id) }], state.queue ?? [], { ...state, queue: [] }, true, null);
+    }
+    // Antwort auf „Meinst du „Bildungsurlaub 2025“ oder „Bildungsurlaub 2026“?“
+    if (state.pending?.kind === 'subject_choice') {
+      const p = state.pending;
+      state = { ...state, pending: null };
+      const t = normalizeName(text);
+      const num = /^(\d+)$/.exec(t)?.[1];
+      const chosen = num
+        ? p.names[Number(num) - 1]
+        : (p.names.find((n) => normalizeName(n) === t) ?? p.names.filter((n) => normalizeName(n).includes(t) && t.length >= 2).at(0));
+      if (chosen && (num || p.names.filter((n) => normalizeName(n).includes(t)).length <= 1))
+        return this.runWork(
+          conv,
+          [{ text: p.text, intent: { ...p.intent, topic: chosen, project: null, query: null } }],
+          state.queue ?? [],
+          { ...state, queue: [] },
+          true,
+          null,
+        );
     }
     // Antwort auf „Gibt es schon: ‚…‘ – ergänzen oder neu anlegen?“
     if (state.pending?.kind === 'open_item_duplicate') {
@@ -2076,10 +2154,19 @@ export class ChatService {
   }
 
   private async archiveExecute(conv: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
-    const ids = state.last?.documentIds?.length ? state.last.documentIds : null;
-    const candidates = (ids ? ids.map((id) => this.docs.get(id)) : this.docs.list({ status: 'proposed', limit: 50 })).filter(
-      (d) => d.status === 'proposed' || d.status === 'staged',
-    );
+    // zuletzt gezeigte Dokumente zählen nur, wenn sie noch in der Inbox liegen; sonst alle wartenden der Inbox
+    const inbox = (d: DocumentRecord) => d.status === 'proposed' || d.status === 'staged';
+    const shown = (state.last?.documentIds ?? []).flatMap((id) => {
+      try {
+        return [this.docs.get(id)];
+      } catch {
+        return [];
+      }
+    });
+    const fromShown = shown.filter(inbox);
+    const candidates = fromShown.length
+      ? fromShown
+      : [...this.docs.list({ status: 'proposed', limit: 50 }), ...this.docs.list({ status: 'staged', limit: 50 })].filter(inbox);
     if (candidates.length === 0)
       return { intent: 'archive_execute', content: 'Es gibt aktuell keine analysierten Dokumente, die auf Archivierung warten.', confidence: 0.5, state };
     const topic = intent.topic?.trim();
@@ -2128,29 +2215,80 @@ export class ChatService {
     );
   }
 
-  /** Welche archivierten Dokumente sind gemeint? Thema/Projekt, sonst die zuletzt gezeigten, sonst die Suche. */
-  private async archivedDocsFor(text: string, intent: ChatIntent, state: ConvState): Promise<{ docs: DocumentRecord[]; subject: string | null }> {
-    const name = (intent.topic ?? intent.project)?.trim() || null;
-    if (name) {
-      const ent = this.graph.findByName('topic', name) ?? this.graph.findByName('project', name);
-      if (ent) {
-        const docs = this.archivedWithFile(this.docs.list({ [ent.type === 'topic' ? 'topicId' : 'projectId']: ent.id, limit: 200 }));
-        if (docs.length) return { docs, subject: ent.name };
-      }
+  /** Bekanntes Thema bzw. Projekt, dessen Name wörtlich in der Nachricht steht (das längste gewinnt). */
+  private knownSubjectIn(text: string): string | null {
+    const lower = ` ${normalizeName(text)} `;
+    return (
+      [...this.graph.listEntities({ type: 'topic', limit: 500 }), ...this.graph.listEntities({ type: 'project', limit: 500 })]
+        .map((e) => e.name)
+        .filter((n) => normalizeName(n) && lower.includes(` ${normalizeName(n)} `))
+        .sort((a, b) => b.length - a.length)[0] ?? null
+    );
+  }
+
+  /** Themen/Projekte mit archivierten Dokumenten zu einem genannten Namen: exakt, sonst alle, die alle Wörter enthalten. */
+  private subjectCandidates(subject: string): Array<{ name: string; docs: DocumentRecord[] }> {
+    const withDocs = (e: { id: string; type: string; name: string }) => ({
+      name: e.name,
+      docs: this.archivedWithFile(this.docs.list({ [e.type === 'topic' ? 'topicId' : 'projectId']: e.id, limit: 200 })),
+    });
+    const exact = this.graph.findByName('topic', subject) ?? this.graph.findByName('project', subject);
+    if (exact) {
+      const hit = withDocs(exact);
+      if (hit.docs.length) return [hit];
     }
-    const last = state.last?.documentIds ?? [];
+    const wanted = subjectTokens(subject);
+    if (!wanted.length) return [];
+    return [...this.graph.listEntities({ type: 'topic', limit: 500 }), ...this.graph.listEntities({ type: 'project', limit: 500 })]
+      .filter((e) => {
+        const have = tokenize(e.name, { keepStopwords: true });
+        return wanted.every((w) => have.some((h) => h === w || (w.length >= 4 && h.startsWith(w))));
+      })
+      .map(withDocs)
+      .filter((c) => c.docs.length > 0);
+  }
+
+  /**
+   * Welche archivierten Dokumente sind gemeint? Ein genanntes Thema/Projekt hat Vorrang; passen mehrere Themen
+   * teilweise, wird gefragt (choices). Nur ohne genanntes Thema gelten die zuletzt gezeigten Dokumente. Eine
+   * Volltextsuche gibt es nur zum Ansehen (nie für Verschiebungen).
+   */
+  private async archivedDocsFor(
+    text: string,
+    intent: ChatIntent,
+    state: ConvState,
+    forMove: boolean,
+  ): Promise<{ docs: DocumentRecord[]; subject: string | null; choices?: string[] }> {
+    const named = (intent.topic ?? intent.project)?.trim() || null;
     const query = intent.query?.trim() || null;
-    // Bezug auf eben gezeigte Dokumente („die“, „alle“, „sie“) hat Vorrang vor einer vom Modell abgeleiteten Suchanfrage
-    if (last.length && !name && (!query || /\b(die|diese[nrs]?|sie|alle|davon|selben?|gleichen?)\b/i.test(text))) {
-      const docs = this.archivedByIds(last);
-      if (docs.length) return { docs, subject: state.last?.topic ?? null };
+    const subject = named ?? (query && subjectTokens(query).length ? query : null);
+    if (subject) {
+      const candidates = this.subjectCandidates(subject);
+      if (candidates.length === 1) return { docs: candidates[0]!.docs, subject: candidates[0]!.name };
+      if (candidates.length > 1) return { docs: [], subject, choices: candidates.map((c) => c.name) };
+      if (forMove) return { docs: [], subject };
+      const hits = await this.search.search(subject, { types: ['document'], limit: 30 });
+      return { docs: this.archivedByIds(hits.map((h) => h.id)), subject };
     }
-    const q = name ?? query;
-    if (q) {
-      const hits = await this.search.search(q, { types: ['document'], limit: 30 });
-      return { docs: this.archivedByIds(hits.map((h) => h.id)), subject: q };
-    }
+    // Bezug auf eben gezeigte Dokumente („die“, „alle“, „sie“) nur ohne genanntes Thema
+    const last = this.archivedByIds(state.last?.documentIds ?? []);
+    if (last.length) return { docs: last, subject: state.last?.topic ?? null };
     return { docs: [], subject: null };
+  }
+
+  /** „Meinst du „Bildungsurlaub 2025“ oder „Bildungsurlaub 2026“?“ – danach läuft das Anliegen mit dem gewählten Thema weiter. */
+  private askWhichSubject(text: string, intent: ChatIntent, names: string[], state: ConvState): Reply {
+    const list = names.slice(0, 6);
+    return {
+      intent: intent.intent,
+      content: `Meinst du ${list
+        .slice(0, -1)
+        .map((n) => `„${n}“`)
+        .join(', ')} oder „${list.at(-1)}“?`,
+      quickReplies: list,
+      confidence: 0.5,
+      state: { ...state, pending: { kind: 'subject_choice', text, intent, names: list } },
+    };
   }
 
   private describeGroups(groups: FolderGroup<DocumentRecord>[]): string {
@@ -2169,7 +2307,8 @@ export class ChatService {
   }
 
   private async archiveStructure(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
-    const { docs, subject } = await this.archivedDocsFor(text, intent, state);
+    const { docs, subject, choices } = await this.archivedDocsFor(text, intent, state, false);
+    if (choices) return this.askWhichSubject(text, intent, choices, state);
     const reply = (content: string, extra: Partial<Reply> = {}): Reply => ({ intent: 'archive_structure', content, confidence: 0.8, state, ...extra });
     if (docs.length === 0 && subject) return reply(`Zu „${subject}“ habe ich keine archivierten Dokumente gefunden.`, { confidence: 0.4 });
     if (docs.length === 0) {
@@ -2209,10 +2348,13 @@ export class ChatService {
 
   private async archiveReorganize(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const reply = (content: string, extra: Partial<Reply> = {}): Reply => ({ intent: 'archive_reorganize', content, confidence: 0.7, state, ...extra });
-    const { docs, subject } = await this.archivedDocsFor(text, intent, state);
+    const { docs, subject, choices } = await this.archivedDocsFor(text, intent, state, true);
+    if (choices) return this.askWhichSubject(text, intent, choices, state);
     if (docs.length === 0)
       return reply(
-        'Welche archivierten Dokumente soll ich zusammenlegen? Nenne mir bitte das Thema (z. B. „Bildungsurlaub 2026“) oder frage zuerst nach der Ablage.',
+        subject
+          ? `Zu „${subject}“ kenne ich kein Thema und kein Projekt mit archivierten Dokumenten. Nenne mir bitte den genauen Namen (z. B. „Bildungsurlaub 2026“) oder frage zuerst nach der Ablage.`
+          : 'Welche archivierten Dokumente soll ich zusammenlegen? Nenne mir bitte das Thema (z. B. „Bildungsurlaub 2026“) oder frage zuerst nach der Ablage.',
         { confidence: 0.3 },
       );
     const groups = groupByFolder(docs);
