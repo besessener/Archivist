@@ -1,5 +1,5 @@
 import type { Job } from '@archivist/shared';
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { jobs } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
@@ -112,6 +112,16 @@ export class JobQueueService {
       .all();
     const get = (s: string) => rows.find((r) => r.status === s)?.c ?? 0;
     return { pending: get('pending'), running: get('running'), failed: get('failed') };
+  }
+
+  /** Payloads of all pending or running jobs of the given type (e.g. to find work that is still queued). */
+  activePayloads<P>(type: string): P[] {
+    return this.db
+      .select({ payload: jobs.payload })
+      .from(jobs)
+      .where(and(eq(jobs.type, type), inArray(jobs.status, ['pending', 'running'])))
+      .all()
+      .map((r) => r.payload as P);
   }
 
   retry(id: string): Job {

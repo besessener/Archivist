@@ -1,8 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { eq } from 'drizzle-orm';
 import { DatabaseService, type MigrationStatus } from './db/database';
-import { documents } from './db/schema';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from './context';
 import { ActionService } from './services/actions';
 import { ArchiveService } from './services/archive';
@@ -32,7 +30,6 @@ import { SolutionService } from './services/solutions';
 import { TimelineService } from './services/timeline';
 import { UndoService } from './services/undo';
 import { Logger } from './util/logger';
-import { nowIso } from './util/ids';
 import { WorkerPool } from './workers/pool';
 
 export interface CreateServicesOptions {
@@ -142,12 +139,8 @@ function buildServices(opts: CreateServicesOptions) {
       const res = await documentsSvc.analyze(job.payload.documentId, { allowLlm: job.payload.allowLlm });
       return res;
     } catch (err) {
+      // analyze() already marked the document as `failed` (with reason); archived documents are never touched.
       const message = err instanceof Error ? err.message : String(err);
-      database.db
-        .update(documents)
-        .set({ status: 'failed', processingStatus: 'failed', processingError: message, updatedAt: nowIso() })
-        .where(eq(documents.id, job.payload.documentId))
-        .run();
       notifications.create({
         title: 'Dateiimport fehlgeschlagen',
         description: message,
@@ -228,6 +221,8 @@ function buildServices(opts: CreateServicesOptions) {
     /** Startet Hintergrundarbeit (nur solange die Anwendung läuft). */
     start(): void {
       logger.prune(settings.get().logs.retentionDays);
+      // before the queue resumes: documents stuck in `analyzing` without a job become `failed` (reprocessable)
+      documentsSvc.recoverInterruptedAnalyses();
       jobs.start();
       reminders.start();
       scanner.applySettings();
