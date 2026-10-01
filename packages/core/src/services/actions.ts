@@ -113,8 +113,13 @@ export class ActionService {
       .map(map);
   }
 
-  latestProposed(conversationId?: string): StoredAgentAction | null {
-    return this.list('proposed').find((a) => !conversationId || a.conversationId === conversationId) ?? null;
+  /**
+   * Offene Vorschläge, die in dieser Unterhaltung als Karte angezeigt wurden und dort entstanden sind (neueste zuerst).
+   * Vorschläge anderer Quellen (Archivprüfung, Insights, andere Unterhaltungen) sind hier nie enthalten.
+   */
+  openInConversation(conversationId: string, shownActionIds: string[]): StoredAgentAction[] {
+    const shown = new Set(shownActionIds);
+    return this.list('proposed').filter((a) => a.conversationId === conversationId && shown.has(a.id));
   }
 
   async resolve(
@@ -127,6 +132,12 @@ export class ActionService {
     const now = nowIso();
     if (decision === 'reject') {
       this.db.update(agentActions).set({ status: 'rejected', resolvedAt: now }).where(eq(agentActions.id, id)).run();
+      // eine Beziehungskarte hat Bestätigen und Ablehnen: Ablehnen verwirft die vorgeschlagene Beziehung
+      if (action.actionType === 'confirm_relation') {
+        const params = ActionParamSchemas.confirm_relation.parse(action.proposedParameters);
+        this.deps.graph.setRelationStatus(params.relationId, 'rejected');
+        this.deps.audit.log({ action: 'relation.reject', actor: 'user', trigger: 'confirmation', confirmed: true, entityIds: [params.relationId] });
+      }
       this.deps.audit.log({
         action: `action.reject:${action.actionType}`,
         actor: 'user',

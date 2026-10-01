@@ -50,6 +50,7 @@ type Pending =
   | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'> }
   | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string }
   | { kind: 'confirm_save'; text: string; intent: ChatIntent }
+  | { kind: 'proposal_choice'; confirm: boolean; actionIds: string[] }
   | { kind: 'event'; title: string; description: string | null; topic: string | null; project: string | null; source: string };
 
 /** Weitere erkannte Absichten, die nach Beantwortung einer Rückfrage noch abgearbeitet werden. */
@@ -78,6 +79,62 @@ interface Reply {
 
 const UNKNOWN_RE = /(wei(ß|ss)\s+(ich|man)\s+(nicht|nich)|unbekannt|keine\s+ahnung|nicht\s+bekannt|k\.?\s?a\.?$|egal|spielt\s+keine\s+rolle)/i;
 const TOPIC_KIND_RE = /\b(projekt|projektname)\b/i;
+
+const YES_START = new Set([
+  'ja',
+  'jap',
+  'jo',
+  'jawohl',
+  'ok',
+  'okay',
+  'passt',
+  'gerne',
+  'gern',
+  'bitte',
+  'bestatigen',
+  'bestatige',
+  'einverstanden',
+  'genau',
+  'klar',
+  'mach',
+  'machen',
+  'ausfuhren',
+  'los',
+]);
+const YES_FILL = new Set([...YES_START, 'das', 'es', 'so', 'gut', 'danke', 'sehr', 'auch', 'aus', 'fuhr', 'ruhig', 'doch', 'na', 'dann', 'sicher', 'gemacht']);
+const NO_START = new Set(['nein', 'nee', 'ne', 'no', 'ablehnen', 'lehne', 'verwerfen', 'lass', 'lieber', 'nicht']);
+const NO_FILL = new Set([
+  ...NO_START,
+  'das',
+  'es',
+  'ab',
+  'sein',
+  'bleiben',
+  'machen',
+  'mach',
+  'nicht',
+  'lieber',
+  'danke',
+  'bitte',
+  'doch',
+  'ausfuhren',
+  'so',
+  'nichts',
+  'tun',
+]);
+
+/**
+ * Kurze Zustimmung bzw. Ablehnung („ja“, „ja, mach das“, „nein danke“) – ohne LLM die einzige Form, die als
+ * Antwort auf einen Vorschlag gilt. „Bitte zeig mir …“ oder „Nicht vergessen: …“ sind keine Antworten.
+ */
+export function shortAnswer(text: string): 'yes' | 'no' | null {
+  const words = normalizeName(text).split(' ').filter(Boolean);
+  if (!words.length || words.length > 6) return null;
+  const fits = (start: Set<string>, fill: Set<string>) => start.has(words[0]!) && words.every((w) => fill.has(w));
+  if (fits(YES_START, YES_FILL)) return 'yes';
+  if (fits(NO_START, NO_FILL)) return 'no';
+  return null;
+}
 
 const INTENT_HELP = `Du bist der Intent-Klassifikator von Archivist, einem persönlichen Archivar. Bestimme die Absicht der Benutzernachricht und extrahiere strukturierte Angaben.
 
@@ -288,6 +345,7 @@ export class ChatService {
     }
     if (p.kind === 'event')
       return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum (intent=event_record, event.occurredAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
+    if (p.kind === 'proposal_choice') return 'keine';
     if (p.kind === 'confirm_save')
       return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
     const i = this.openItems.get(p.openItemId);
@@ -365,8 +423,8 @@ export class ChatService {
         openItem: { dueAt: parseGermanDate(t), responsible: UNKNOWN_RE.test(t) ? null : t.replace(/^(verantwortlich(er)?:?|@)\s*/i, '').trim() },
       };
     }
-    if (/^(ja|jap|ok|okay|passt|bestätig\w*|mach das|gerne|bitte)\b/i.test(t)) return { ...base, intent: 'proposal_confirm' };
-    if (/^(nein|nee|ablehn\w*|nicht|lass das)\b/i.test(t)) return { ...base, intent: 'proposal_reject' };
+    const short = shortAnswer(t);
+    if (short) return { ...base, intent: short === 'yes' ? 'proposal_confirm' : 'proposal_reject' };
     if (/\b(entschieden|beschlossen|entscheidung:)/i.test(t) && !/\?\s*$/.test(t)) {
       const known = [...this.graph.listEntities({ type: 'topic', limit: 200 }), ...this.graph.listEntities({ type: 'project', limit: 200 })].map((e) => e.name);
       const lower = ` ${normalizeName(t)} `;
@@ -415,6 +473,12 @@ export class ChatService {
   }
 
   private async handle(conv: string, text: string, state: ConvState): Promise<Reply> {
+    // Antwort auf „Welchen Vorschlag meinst du?“
+    if (state.pending?.kind === 'proposal_choice') {
+      const chosen = this.answerProposalChoice(text, state.pending);
+      state = { ...state, pending: null };
+      if (chosen) return this.resolveProposal(chosen.action, chosen.confirm, state);
+    }
     // Antwort auf „Entscheidung oder Notiz?“ wird deterministisch ausgewertet
     if (state.pending?.kind === 'confirm_save') {
       const answered = await this.answerConfirmSave(conv, text, state, state.pending);
@@ -524,7 +588,7 @@ export class ChatService {
     if (/^(nichts|nein|nee|lieber nicht|verwerf|vergiss|nicht speichern|kein)/.test(t)) {
       return continueWith({ intent: 'clarification', content: 'Okay, ich speichere dazu nichts.', confidence: 1, state: base });
     }
-    if (/^(als\s+)?(entscheidung|ja|ja,?\s*bitte|ja,?\s*entscheidung|speichern|erfassen)\b/.test(t) && !/notiz/.test(t)) {
+    if (/^(als\s+)?(entscheidung|ja,?\s*(als\s+)?entscheidung|(als\s+entscheidung\s+)?(speichern|erfassen))\b/.test(t) && !/notiz/.test(t)) {
       const decision = { ...pending.intent, intent: 'decision_new' as const, decisionCertainty: 'clear' as const };
       return continueWith(await this.dispatch(conv, pending.text, decision, base, true));
     }
@@ -574,7 +638,7 @@ export class ChatService {
       case 'open_item_new':
         return this.openItemNew(text, intent, state);
       case 'open_item_update':
-        return this.openItemUpdate(text, intent, state);
+        return this.openItemUpdate(conv, text, intent, state);
       case 'open_item_close':
         return this.openItemClose(conv, text, intent, keep());
       case 'reminder_create':
@@ -1216,7 +1280,7 @@ export class ChatService {
     };
   }
 
-  private async openItemUpdate(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
+  private async openItemUpdate(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const oi = intent.openItem ?? {};
     const pending = state.pending?.kind === 'open_item' ? state.pending : null;
     const item = pending
@@ -1233,7 +1297,7 @@ export class ChatService {
     if (oi.priority) patch.priority = oi.priority;
     if (oi.newStatus && oi.newStatus !== 'resolved' && oi.newStatus !== 'dismissed') patch.status = oi.newStatus;
     if (oi.newStatus === 'resolved' || oi.newStatus === 'dismissed')
-      return this.openItemClose('', text, { ...intent, openItem: { ...oi, targetHint: item.title } }, state);
+      return this.openItemClose(conv, text, { ...intent, openItem: { ...oi, targetHint: item.title } }, state);
     const updated = Object.keys(patch).length ? this.openItems.update(item.id, patch) : item;
     const stillAsked: Array<'responsible' | 'due'> = [];
     if (!updated.responsiblePersonId && !updated.responsibleUnknown && pending?.asked.includes('responsible') && !patch.responsible)
@@ -1264,7 +1328,7 @@ export class ChatService {
       affectedEntities: [{ type: 'task', id: item.id, label: item.title }],
       requiredConfirmation: 'confirm',
       proposedParameters: { openItemId: item.id, status: dismiss ? 'dismissed' : 'resolved' },
-      conversationId: conv || null,
+      conversationId: conv,
     });
     return {
       intent: 'open_item_close',
@@ -1365,15 +1429,56 @@ export class ChatService {
   }
 
   // ---------- Vorschläge, Archiv, Scan ----------
+  /** Offene Vorschläge, die in dieser Unterhaltung als Karte angezeigt wurden (neueste zuerst). */
+  private openCards(conv: string): StoredAgentAction[] {
+    const shown = this.db
+      .select({ actionIds: messages.actionIds })
+      .from(messages)
+      .where(eq(messages.conversationId, conv))
+      .all()
+      .flatMap((m) => m.actionIds);
+    return this.actions.openInConversation(conv, shown);
+  }
+
   private async proposalDecision(conv: string, confirm: boolean, state: ConvState): Promise<Reply> {
-    const a = this.actions.latestProposed(conv) ?? this.actions.latestProposed();
-    if (!a)
+    const intent = confirm ? 'proposal_confirm' : 'proposal_reject';
+    const cards = this.openCards(conv);
+    if (cards.length === 0)
       return {
-        intent: confirm ? 'proposal_confirm' : 'proposal_reject',
-        content: 'Es gibt aktuell keinen offenen Vorschlag, den ich bestätigen oder ablehnen könnte.',
+        intent,
+        content: 'Es gibt hier keinen offenen Vorschlag. Bestätigen kann ich nur Vorschläge, die in diesem Gespräch als Karte angezeigt werden.',
         confidence: 0.5,
         state,
       };
+    if (cards.length > 1)
+      return {
+        intent,
+        content: `Welchen Vorschlag meinst du?\n\n${cards.map((a, i) => `${i + 1}. ${a.label}`).join('\n')}\n\nAntworte mit der Nummer oder nutze die Knöpfe an der Karte.`,
+        actions: cards,
+        confidence: 0.5,
+        state: { ...state, pending: { kind: 'proposal_choice', confirm, actionIds: cards.map((a) => a.id) } },
+      };
+    return this.resolveProposal(cards[0]!, confirm, state);
+  }
+
+  /** Wertet die Antwort auf „Welchen Vorschlag meinst du?“ aus: Nummer, Ordinalzahl oder ein Teil der Beschriftung. */
+  private answerProposalChoice(text: string, pending: Extract<Pending, { kind: 'proposal_choice' }>): { action: StoredAgentAction; confirm: boolean } | null {
+    const open = this.actions.getMany(pending.actionIds);
+    const t = normalizeName(text);
+    const ordinals = ['ersten', 'zweiten', 'dritten', 'vierten', 'funften'];
+    const num = /^(?:nummer\s+|nr\s+)?(\d+)\b/.exec(t)?.[1];
+    let idx = num ? Number(num) - 1 : ordinals.findIndex((o) => new RegExp(`\\b${o}\\b`).test(t));
+    if (idx < 0) {
+      const matches = open.filter((a) => t.length >= 4 && normalizeName(a.label).includes(t));
+      if (matches.length === 1) idx = open.indexOf(matches[0]!);
+    }
+    const action = open[idx];
+    if (!action || action.status !== 'proposed') return null;
+    const answer = shortAnswer(text.replace(/^\s*(?:nummer\s+|nr\.?\s+)?\d+[.):,]?\s*/i, ''));
+    return { action, confirm: answer === 'no' ? false : answer === 'yes' ? true : pending.confirm };
+  }
+
+  private async resolveProposal(a: StoredAgentAction, confirm: boolean, state: ConvState): Promise<Reply> {
     if (confirm && a.requiredConfirmation === 'strong')
       return {
         intent: 'proposal_confirm',
@@ -1689,20 +1794,19 @@ export class ChatService {
     const lines = top.map((r) => {
       const a = this.graph.getEntity(r.sourceEntityId)?.name ?? r.sourceEntityId;
       const b = this.graph.getEntity(r.targetEntityId)?.name ?? r.targetEntityId;
-      for (const type of ['confirm_relation', 'reject_relation'] as const) {
-        actions.push(
-          this.actions.propose({
-            actionType: type,
-            label: `${type === 'confirm_relation' ? 'Bestätigen' : 'Ablehnen'}: ${a} → ${r.relationType} → ${b}`,
-            rationale: `Vorgeschlagene Beziehung (Confidence ${Math.round(r.confidence * 100)} %).`,
-            confidence: r.confidence,
-            affectedEntities: [],
-            requiredConfirmation: 'confirm',
-            proposedParameters: { relationId: r.id },
-            conversationId: conv,
-          }),
-        );
-      }
+      // eine Karte pro Beziehung: Bestätigen übernimmt sie, Ablehnen verwirft sie
+      actions.push(
+        this.actions.propose({
+          actionType: 'confirm_relation',
+          label: `Beziehung: ${a} → ${r.relationType} → ${b}`,
+          rationale: `Vorgeschlagene Beziehung (Confidence ${Math.round(r.confidence * 100)} %). Bestätigen übernimmt sie, Ablehnen verwirft sie.`,
+          confidence: r.confidence,
+          affectedEntities: [],
+          requiredConfirmation: 'confirm',
+          proposedParameters: { relationId: r.id },
+          conversationId: conv,
+        }),
+      );
       return `• ${a} → ${r.relationType} → ${b} (${Math.round(r.confidence * 100)} %)`;
     });
     return { intent: 'relation_decide', content: `Diese Beziehungen sind noch ungeklärt:\n\n${lines.join('\n')}`, actions, confidence: 0.7, state };
