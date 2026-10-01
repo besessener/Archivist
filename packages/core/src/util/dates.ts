@@ -28,6 +28,18 @@ const MONTHS: Record<string, number> = {
   dez: 12,
 };
 const WEEKDAYS: Record<string, number> = { sonntag: 0, montag: 1, dienstag: 2, mittwoch: 3, donnerstag: 4, freitag: 5, samstag: 6, sonnabend: 6 };
+const WEEKDAY_NAMES = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+const WEEKDAY = '(sonntag|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonnabend)';
+const LAST_WEEKDAY_RE = new RegExp(`\\b(?:letzte[nrms]?|vergangene[nrms]?|vorige[nrms]?)\\s+${WEEKDAY}\\b`);
+const NEXT_WEEKDAY_RE = new RegExp(`\\b(?:nächste[nrms]?|naechste[nrms]?|kommende[nrms]?)\\s+${WEEKDAY}\\b`);
+const AM_WEEKDAY_RE = new RegExp(`\\bam\\s+${WEEKDAY}\\b`);
+const BARE_WEEKDAY_RE = new RegExp(`\\b${WEEKDAY}\\b`);
+/** Vergangenheitsformen von sein/werden/haben – ein bloßer Wochentag meint dann den letzten. */
+const PAST_AUX_RE = /\b(?:war|waren|warst|wurde|wurden|hatte|hatten|hattest|gewesen)\b/;
+/** Partizip II (eingereicht, gemacht, abgesprochen); nur kleingeschrieben, damit Substantive wie „Angebot“ nicht zählen. */
+const PAST_PARTICIPLE_RE = /\b(?:ab|an|auf|aus|bei|ein|fest|mit|nach|vor|weg|zu|zurück)?ge(?!plant\b)[a-zäöüß]{2,}(?:t|en)\b/;
+/** „für/auf/bis Freitag“ nennt ein Ziel und bleibt auch in der Vergangenheit der nächste Wochentag. */
+const TARGET_WEEKDAY_RE = new RegExp(`\\b(?:für|auf|bis)\\s+(?:den\\s+)?${WEEKDAY}\\b`);
 const NUMBER_WORDS: Record<string, number> = {
   ein: 1,
   eine: 1,
@@ -71,10 +83,41 @@ function nextWeekday(from: Date, weekday: number, strictlyAfter = true): Date {
   return new Date(from.getFullYear(), from.getMonth(), from.getDate() + add);
 }
 
+/** Letzter Wochentag strikt vor `from` (am Freitag ergibt „letzten Freitag“ den vor einer Woche). */
+function previousWeekday(from: Date, weekday: number): Date {
+  const diff = (from.getDay() - weekday + 7) % 7 || 7;
+  return new Date(from.getFullYear(), from.getMonth(), from.getDate() - diff);
+}
+
+/**
+ * Datum, Wochentag, Uhrzeit und Zeitzone in Ortszeit für LLM-Prompts,
+ * z. B. „2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)“.
+ */
+export function promptNow(now: Date = new Date(), timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
+  // über Intl statt der lokalen Getter: unabhängig davon, welche Zeitzone der Prozess gerade hat
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    weekday: 'short',
+    timeZoneName: 'longOffset',
+  }).formatToParts(now);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'));
+  const offset = get('timeZoneName').replace(/^GMT$/, 'GMT+00:00').replace('GMT', 'UTC');
+  return `${get('year')}-${get('month')}-${get('day')} (${WEEKDAY_NAMES[weekday]}), ${get('hour')}:${get('minute')} Uhr, Zeitzone ${timeZone} (${offset})`;
+}
+
 /**
  * Erkennt das erste Datum in einem deutschen Text und liefert ISO (YYYY-MM-DD) oder null.
  * Unterstützt: ISO, 12.06.2026, 12.6.26, 12. Juni (2026), heute/morgen/übermorgen/gestern,
- * "in sieben Tagen/Wochen/Monaten", "nächsten Montag", "nächste Woche", "nächsten Monat".
+ * "in sieben Tagen/Wochen/Monaten", "nächsten Montag", "letzten Freitag", "nächste Woche", "nächsten Monat".
+ * Relative Angaben beziehen sich auf den lokalen Tag von `now`. Ein bloßer Wochentag ist der nächste,
+ * im Kontext der Vergangenheit („war am Montag“, „Freitag eingereicht“) der letzte.
  */
 export function parseGermanDate(input: string, now: Date = new Date()): string | null {
   const text = input.toLowerCase();
@@ -110,10 +153,15 @@ export function parseGermanDate(input: string, now: Date = new Date()): string |
     }
   }
 
-  m = /\b(?:nächste[nrms]?|naechste[nrms]?|kommende[nrms]?|am)\s+(sonntag|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonnabend)\b/.exec(text);
+  m = LAST_WEEKDAY_RE.exec(text);
+  if (m) return toIsoDate(previousWeekday(today, WEEKDAYS[m[1]!]!));
+  m = NEXT_WEEKDAY_RE.exec(text);
   if (m) return toIsoDate(nextWeekday(today, WEEKDAYS[m[1]!]!));
-  m = /\b(sonntag|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonnabend)\b/.exec(text);
-  if (m) return toIsoDate(nextWeekday(today, WEEKDAYS[m[1]!]!));
+  m = AM_WEEKDAY_RE.exec(text) ?? BARE_WEEKDAY_RE.exec(text);
+  if (m) {
+    const past = (PAST_AUX_RE.test(text) || PAST_PARTICIPLE_RE.test(input)) && !TARGET_WEEKDAY_RE.test(text);
+    return toIsoDate(past ? previousWeekday(today, WEEKDAYS[m[1]!]!) : nextWeekday(today, WEEKDAYS[m[1]!]!));
+  }
 
   if (/\bnächste[nrm]?\s+woche\b|\bnaechste[nrm]?\s+woche\b/.test(text)) return toIsoDate(nextWeekday(today, 1));
   if (/\bnächste[nrm]?\s+monat\b|\bnaechste[nrm]?\s+monat\b/.test(text)) return toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, today.getDate()));
