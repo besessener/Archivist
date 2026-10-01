@@ -68,6 +68,7 @@ export function sanitizeFileName(name: string, fallback = 'Dokument'): string {
       // eslint-disable-next-line no-control-regex
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
       .replace(/\s+/g, ' ')
+      .trim()
       .replace(/^\.+/, '')
       .replace(/[. ]+$/g, '')
       .trim();

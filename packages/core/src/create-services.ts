@@ -43,6 +43,8 @@ export interface CreateServicesOptions {
   workerFile?: string | null;
   fetchImpl?: FetchLike;
   jobConcurrency?: number;
+  /** Wartezeit zwischen LLM-Wiederholungen (Tests: 0) */
+  llmRetryDelayMs?: number;
 }
 
 export type Services = ReturnType<typeof buildServices>;
@@ -73,7 +75,7 @@ function buildServices(opts: CreateServicesOptions) {
   const audit = new AuditService(ctx);
   const undo = new UndoService(ctx, audit);
   const pool = new WorkerPool(opts.workerFile ?? null);
-  const llm = new LlmService(ctx, settings, secrets, opts.fetchImpl);
+  const llm = new LlmService(ctx, settings, secrets, opts.fetchImpl, opts.llmRetryDelayMs);
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
   const graph = new KnowledgeGraphService(ctx);

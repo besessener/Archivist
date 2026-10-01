@@ -54,6 +54,7 @@ export class LlmService {
     private readonly settings: SettingsService,
     private readonly secrets: SecretService,
     private readonly fetchImpl: FetchLike = (...args) => fetch(...args),
+    private readonly retryDelayMs = 400,
   ) {}
 
   status() {
@@ -183,7 +184,7 @@ export class LlmService {
           return text;
         } catch (err) {
           if (err instanceof AppError && err.retryable && attempt < 3) {
-            await new Promise((r) => setTimeout(r, 400 * attempt));
+            await new Promise((r) => setTimeout(r, this.retryDelayMs * attempt));
             continue;
           }
           throw err;

@@ -114,8 +114,16 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         ? s.actions.resolve(i.actionId, 'approve', { confirmed: i.confirmed, strongConfirmed: i.strongConfirmed, overrides: i.parameterOverrides })
         : s.actions.resolve(i.actionId, 'reject', {}),
 
-    'decisions:create': (i) => s.decisions.create(i, { actor: 'user', trigger }),
-    'decisions:update': (i) => s.decisions.update(i.id, i.patch, { trigger }),
+    'decisions:create': async (i) => {
+      const d = s.decisions.create(i, { actor: 'user', trigger });
+      if (d.status === 'active') await s.contradictions.checkDecision(d.id); // Widersprüche nur als Hinweis
+      return d;
+    },
+    'decisions:update': async (i) => {
+      const d = s.decisions.update(i.id, i.patch, { trigger });
+      if (d.status === 'active') await s.contradictions.checkDecision(d.id);
+      return d;
+    },
     'decisions:get': (i) => s.decisions.get(i.id),
     'decisions:list': (i) => s.decisions.list(i),
     'decisions:search': (i) => s.decisions.searchDecisions(i.query, i.limit),

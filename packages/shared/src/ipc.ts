@@ -6,6 +6,7 @@ import {
   IsoDate,
   RelationStatus,
   SourceReference,
+  type Result,
 } from './common';
 import {
   AgentActionProposal,
@@ -320,7 +321,7 @@ export type DataChangedPayload = z.infer<typeof DataChangedPayload>;
 
 /** API, die die Preload-Bridge dem Renderer als window.archivist zur Verfügung stellt. */
 export interface ArchivistBridge {
-  invoke<C extends IpcChannel>(channel: C, input?: IpcInput<C>): Promise<import('./common').Result<IpcOutput<C>>>;
+  invoke<C extends IpcChannel>(channel: C, input?: IpcInput<C>): Promise<Result<IpcOutput<C>>>;
   on(channel: EventChannel, listener: (payload: unknown) => void): () => void;
   /** Pfad einer per Drag-and-Drop abgelegten Datei (Electron webUtils). */
   getPathForFile(file: File): string;

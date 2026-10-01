@@ -36,6 +36,7 @@ export const MIME_BY_EXT: Record<string, string> = {
 const clip = (text: string): { text: string; truncated: boolean } =>
   text.length > MAX_TEXT_CHARS ? { text: text.slice(0, MAX_TEXT_CHARS), truncated: true } : { text, truncated: false };
 
+// eslint-disable-next-line no-control-regex
 const tidy = (s: string) => s.replace(/\r\n/g, '\n').replace(/\u0000/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{4,}/g, '\n\n\n').trim();
 
 function decodeText(buf: Buffer): string {

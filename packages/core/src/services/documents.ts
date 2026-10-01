@@ -346,7 +346,6 @@ export class DocumentService {
 
     let warning: string | null = null;
     let usedLlm = false;
-    let proposal: DocumentProposal;
     let title = local.title;
     let docType = local.docType;
     let summary = local.summary;
@@ -422,7 +421,7 @@ export class DocumentService {
       : undefined;
 
     const newMain = this.categories.needsApproval(categoryPath);
-    proposal = {
+    const proposal: DocumentProposal = {
       location: { categoryPath, fileName: fileNameHint, newMainCategory: Boolean(newMain), rationale, confidence },
       topic,
       project,

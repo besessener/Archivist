@@ -19,11 +19,18 @@ type Row = typeof contradictions.$inferSelect;
 
 const STOP = [
   /nicht\s+(?:mehr\s+)?(?:weiter(?:machen|führen|verfolgen|entwickeln)|fortsetzen|fortführen|einführen|starten|umsetzen)/i,
-  /\b(?:pausier\w*|einstell\w*|stopp\w*|beend\w*|abbrech\w*|abgebrochen|aussetz\w*|zurückstell\w*|verwerf\w*|absag\w*|aufgeben|aufgegeben)\b/i,
+  /\b(?:pausier\w*|ein(?:ge)?stell\w*|stopp\w*|beend\w*|abbrech\w*|abgebrochen|aussetz\w*|zurückstell\w*|verwerf\w*|absag\w*|aufgeben|aufgegeben)\b/i,
   /vorerst\s+nicht|erstmal\s+nicht|auf\s+eis/i,
   /\bkein(?:e|en)?\s+(?:weiter\w*|fortsetzung)/i,
+  /\bstell\w*\b[^.]{0,40}\bein\b/i,
+  /\bbrech\w*\b[^.]{0,40}\bab\b/i,
+  /\bsetz\w*\b[^.]{0,40}\baus\b/i,
+  /\bgeb\w*\b[^.]{0,40}\bauf\b/i,
 ];
 const GO = [
+  /\b(?:führ\w*|fuehr\w*|mach\w*|verfolg\w*|entwickl\w*)\b[^.]{0,40}\bweiter\b/i,
+  /\b(?:setz\w*)\b[^.]{0,40}\b(?:um|fort)\b/i,
+  /\bnehm\w*\b[^.]{0,40}\bwieder\s+auf\b/i,
   /\b(?:weiterführen|weiterfuehren|fortsetzen|fortführen|fortfuehren|weitermachen|weiterverfolgen|weiterentwickeln|wiederaufnehmen|aufnehmen)\b/i,
   /\b(?:starten|einführen|einfuehren|beauftragen|freigeben|freigegeben|genehmigt|umsetzen|umgesetzt|fortgeführt|weitergeführt|fortgesetzt|reaktivier\w*)\b/i,
 ];

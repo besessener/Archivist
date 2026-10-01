@@ -97,6 +97,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     fetchImpl: llm.fetch as typeof fetch,
     workerFile: opts.workerFile ?? null,
     jobConcurrency: 1,
+    llmRetryDelayMs: 0,
   });
   if (opts.configured !== false) {
     services.settings.update({ llm: { baseUrl: 'https://llm.example.test/openai/v1', model: 'test-model' }, privacy: { llmMode: opts.privacy ?? 'auto' }, setupCompleted: true });

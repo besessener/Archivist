@@ -7,7 +7,6 @@ import {
   type ChatMessage,
   type Decision,
   type DecisionField,
-  type DocumentProposal,
   type EntityRef,
   type SourceReference,
   type StoredAgentAction,
@@ -278,20 +277,20 @@ export class ChatService {
 
   private async handle(conv: string, text: string, state: ConvState): Promise<Reply> {
     const { intent, viaLlm, llmError } = await this.classify(text, state);
-    let reply = await this.dispatch(conv, text, intent, state);
+    let reply = await this.dispatch(conv, text, intent, state, viaLlm);
     if (!viaLlm && llmError) {
       reply = { ...reply, content: `${reply.content}\n\n_Hinweis: ${llmError} Ich habe die Nachricht regelbasiert ausgewertet – Ergebnisse können ungenauer sein._`, errorMessage: llmError, uncertainties: [...(reply.uncertainties ?? []), 'Ohne LLM nur regelbasierte Auswertung.'] };
     }
     return reply;
   }
 
-  private async dispatch(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
+  private async dispatch(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {
     const keep = (extra: Partial<ConvState> = {}): ConvState => ({ pending: state.pending ?? null, last: { ...(state.last ?? {}), ...(extra.last ?? {}) }, ...(extra.pending !== undefined ? { pending: extra.pending } : {}) });
     switch (intent.intent) {
       case 'decision_new':
       case 'decision_amend':
       case 'decision_supersede':
-        return this.decisionFlow(conv, text, intent, state);
+        return this.decisionFlow(conv, text, intent, state, viaLlm);
       case 'note_capture':
         return this.noteCapture(text, intent, keep());
       case 'knowledge_question':
@@ -356,7 +355,7 @@ export class ChatService {
   }
 
   // ---------- Entscheidungen ----------
-  private async decisionFlow(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
+  private async decisionFlow(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {
     const ex = intent.decision ?? { participants: [], alternatives: [], unknownFields: [], confidence: 0.5 };
     const pending = state.pending?.kind === 'decision' ? state.pending : null;
     const isNew = intent.intent !== 'decision_amend' || !pending;
@@ -377,7 +376,7 @@ export class ChatService {
     if (pending && UNKNOWN_RE.test(text) && unknownFields.size === 0 && asked.length === 1) unknownFields.add(asked[0]!);
 
     // Thema vs. Projekt
-    let topic = ex.topic?.trim() || null;
+    const topic = ex.topic?.trim() || null;
     let project = ex.project?.trim() || null;
     if (ex.topicIsProject === true && topic) project = project ?? topic;
     const clarify = ex.topicIsProject === null || ex.topicIsProject === undefined ? (isNew && topic && !project && intent.intent === 'decision_new' && ex.topicIsProject === null ? topic : null) : null;
@@ -387,7 +386,7 @@ export class ChatService {
         { title: ex.title?.trim() || undefined, decisionText: ex.decisionText?.trim() || text, decidedAt: normalizeDateInput(ex.decidedAt ?? null) ?? undefined, topic, project, participants: ex.participants ?? [], rationale: ex.rationale, consequences: ex.consequences, alternatives: ex.alternatives ?? [], validFrom: ex.validFrom, validUntil: ex.validUntil, unknownFields: [...unknownFields], sourceIds: [], confidence: ex.confidence ?? 0.8, asDraft: false },
         { actor: 'user', trigger: 'chat' },
       );
-      return this.afterDecisionChange(conv, created, { asked: [], clarifyTopic: clarify, supersedesHint: intent.intent === 'decision_supersede' ? (intent.topic ?? topic ?? intent.query ?? '') : null, newlyCreated: true }, state);
+      return this.afterDecisionChange(conv, created, { asked: [], clarifyTopic: clarify, supersedesHint: intent.intent === 'decision_supersede' ? (intent.topic ?? topic ?? intent.query ?? '') : null, newlyCreated: true }, state, viaLlm);
     }
 
     const t = target!;
@@ -409,7 +408,7 @@ export class ChatService {
     if (ex.validUntil) patch.validUntil = ex.validUntil;
     if (unknownFields.size) patch.unknownFields = [...unknownFields];
     const updated = this.decisions.update(t.id, patch, { trigger: 'chat' });
-    return this.afterDecisionChange(conv, updated, { asked: [], clarifyTopic: null, supersedesHint: pending?.supersedes ?? null, newlyCreated: false }, state);
+    return this.afterDecisionChange(conv, updated, { asked: [], clarifyTopic: null, supersedesHint: pending?.supersedes ?? null, newlyCreated: false }, state, viaLlm);
   }
 
   private async afterDecisionChange(
@@ -417,12 +416,13 @@ export class ChatService {
     d: Decision,
     opts: { asked: DecisionField[]; clarifyTopic: string | null; supersedesHint: string | null; newlyCreated: boolean },
     state: ConvState,
+    viaLlm: boolean,
   ): Promise<Reply> {
     const missing = d.missingFields;
     const last = { ...(state.last ?? {}), decisionId: d.id };
     if (missing.length > 0) {
       // gezielte Rückfragen (mit LLM mehrere auf einmal, sonst eine nach der anderen)
-      const askFields = this.llm.canUse() ? missing : [missing[0]!];
+      const askFields = viaLlm ? missing : [missing[0]!];
       const questions = askFields.map((f) => `• ${questionFor(f, { topic: d.topicName })}`);
       if (opts.clarifyTopic) questions.push(`• Ist „${opts.clarifyTopic}“ das Thema oder der Name des Projekts?`);
       const known = this.decisions.format(d);
