@@ -62,6 +62,7 @@ export const DocumentRecord = z.object({
   dates: z.array(z.string()),
   confidence: z.number().nullable(),
   llmStatus: LlmStatus,
+  folderLlmAllowed: z.boolean().describe('false: liegt in einem Scan-Verzeichnis ohne KI-Freigabe'),
   proposal: DocumentProposal.nullable(),
   archiveMode: ArchiveMode.nullable(),
   textLength: z.number(),

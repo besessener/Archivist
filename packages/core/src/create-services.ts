@@ -82,7 +82,8 @@ function buildServices(opts: CreateServicesOptions) {
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
   const graph = new KnowledgeGraphService(ctx, audit, undo);
-  const search = new SearchService(ctx, embedding, pool, () => privacy.mode() !== 'local_only' && llm.isConfigured());
+  // Search queries go to the embedding endpoint only in mode „automatisch“ – „vorher fragen“ uses local vectors only.
+  const search = new SearchService(ctx, embedding, pool, () => privacy.mode() === 'auto' && llm.isConfigured());
   const categories = new CategoryService(ctx);
   const jobs = new JobQueueService(ctx, { concurrency: opts.jobConcurrency ?? 2, retryBaseDelayMs: opts.jobRetryDelayMs });
   const notifications = new NotificationService(ctx);

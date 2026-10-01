@@ -34,6 +34,10 @@ export class FakeLlm {
   down = false;
   status = 200;
   raw: string | null = null;
+  /** Texts sent to /embeddings (one entry per request). */
+  embeddingRequests: string[][] = [];
+  /** Answers /embeddings; without it the endpoint replies 404. */
+  embed: ((texts: string[]) => number[][] | Promise<number[][]>) | null = null;
 
   on(schema: string, fn: Responder) {
     this.responders.set(schema, fn);
@@ -45,6 +49,16 @@ export class FakeLlm {
     const u = url instanceof Request ? url.url : String(url);
     const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown>;
     if (this.status !== 200) return new Response(JSON.stringify({ error: { message: 'nope' } }), { status: this.status });
+    if (u.endsWith('/embeddings')) {
+      const texts = Array.isArray(body.input) ? (body.input as string[]) : [];
+      this.embeddingRequests.push(texts);
+      if (!this.embed) return new Response('not found', { status: 404 });
+      const vectors = await this.embed(texts);
+      return new Response(JSON.stringify({ data: vectors.map((embedding, index) => ({ embedding, index })) }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     if (u.endsWith('/responses')) {
       const instructions = typeof body.instructions === 'string' ? body.instructions : '';
       const input = typeof body.input === 'string' ? body.input : JSON.stringify(body.input ?? '');
