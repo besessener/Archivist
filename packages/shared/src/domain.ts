@@ -404,6 +404,7 @@ export type TimelineEntry = z.infer<typeof TimelineEntry>;
 // ---------- Aktionen (Agentenvorschläge) ----------
 export const AgentActionType = z.enum([
   'archive_documents',
+  'relocate_documents',
   'assign_documents',
   'supersede_decision',
   'revoke_decision',
@@ -447,6 +448,10 @@ export const ActionParamSchemas = {
   archive_documents: z.object({
     items: z.array(ArchiveItemRequest).min(1),
     approveNewCategories: z.array(z.string()).default([]),
+  }),
+  /** Bereits archivierte Dokumente innerhalb des Archivs in einen anderen Ordner verschieben. */
+  relocate_documents: z.object({
+    items: z.array(z.object({ documentId: Id, categoryPath: z.string().min(1) })).min(1),
   }),
   assign_documents: z.object({
     documentIds: z.array(Id).min(1),

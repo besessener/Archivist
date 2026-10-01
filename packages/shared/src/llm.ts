@@ -26,6 +26,8 @@ export const INTENTS = [
   'proposal_reject',
   'archive_execute',
   'archive_status',
+  'archive_structure',
+  'archive_reorganize',
   'scan_start',
   'exclude_path',
   'contradiction_check',

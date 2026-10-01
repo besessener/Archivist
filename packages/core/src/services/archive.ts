@@ -33,6 +33,39 @@ interface UndoData {
   afterUpdatedAt: string;
 }
 
+interface RelocateUndoData {
+  documentId: string;
+  fromRel: string;
+  toRel: string;
+  sha256: string;
+  beforeCategoryPath: string | null;
+  afterUpdatedAt: string;
+  /** Beziehung zur neuen Kategorie, falls sie durch das Umlagern entstand (wird bei Undo wieder entfernt). */
+  addedRelationId: string | null;
+  /** Kategorie, deren Zuordnung beim Umlagern entfernt wurde (wird bei Undo wiederhergestellt). */
+  removedCategory: string | null;
+}
+
+/** Wunsch: ein bereits archiviertes Dokument in einen anderen Archivordner verschieben. */
+export interface RelocateRequest {
+  documentId: string;
+  categoryPath: string;
+}
+
+export interface RelocatePlanItem {
+  documentId: string;
+  title: string;
+  fromRelPath: string | null;
+  toRelPath: string | null;
+  /** Zielordner (relativ zum Archiv), wie er nach der Bereinigung lautet. */
+  categoryPath: string | null;
+  renamed: boolean;
+  /** liegt schon im Zielordner */
+  unchanged: boolean;
+  blocked: boolean;
+  conflicts: string[];
+}
+
 const toPosix = (p: string) => p.split(path.sep).join('/');
 
 export interface ExecuteOptions {
@@ -65,6 +98,7 @@ export class ArchiveService {
     undo: UndoService,
   ) {
     undo.register('archive_file', { check: (d) => this.undoCheck(d as UndoData), run: (d) => this.undoRun(d as UndoData) });
+    undo.register('archive_relocate', { check: (d) => this.relocateUndoCheck(d as RelocateUndoData), run: (d) => this.relocateUndoRun(d as RelocateUndoData) });
   }
 
   wire(deps: { actions: ActionService }): void {
@@ -509,6 +543,267 @@ export class ArchiveService {
     };
     mk('open');
     mk('decision');
+  }
+
+  // ---------- Umlagern innerhalb des Archivs ----------
+  private sameDir(a: string, b: string): boolean {
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+
+  private async planRelocate(req: RelocateRequest): Promise<RelocatePlanItem & { _src?: string; _dir?: string; _name?: string; _cat?: string }> {
+    const row = this.docs.getRow(req.documentId);
+    const base: RelocatePlanItem = {
+      documentId: row.id,
+      title: row.title,
+      fromRelPath: row.archiveRelPath,
+      toRelPath: null,
+      categoryPath: null,
+      renamed: false,
+      unchanged: false,
+      blocked: false,
+      conflicts: [],
+    };
+    const block = (message: string) => ({ ...base, blocked: true, conflicts: [message] });
+    if (row.status !== 'archived' || !row.archiveRelPath || row.archiveMode === 'index_only')
+      return block('Nur archivierte Dokumente mit einer Datei im Archiv lassen sich umlagern.');
+    let cat: string;
+    try {
+      cat = sanitizeCategoryPath(req.categoryPath);
+    } catch (err) {
+      return block(err instanceof AppError ? err.message : 'Ungültiger Zielordner.');
+    }
+    const main = this.categories.needsApproval(cat);
+    if (main) return block(`Die Hauptkategorie „${main}“ gibt es noch nicht. Neue Hauptkategorien müssen vorher ausdrücklich angelegt werden.`);
+    let src: string;
+    let targetDir: string;
+    try {
+      src = resolveInside(this.root, row.archiveRelPath);
+      targetDir = resolveInside(this.root, cat);
+      await assertRealInside(this.root, src);
+      await assertRealInside(this.root, targetDir);
+    } catch (err) {
+      return block(err instanceof AppError ? err.message : 'Pfad ungültig.');
+    }
+    if (!fs.existsSync(src)) return block('Die Datei fehlt am erwarteten Ort im Archiv.');
+    const withCat = { ...base, categoryPath: cat };
+    if (this.sameDir(path.dirname(src), targetDir)) return { ...withCat, unchanged: true, toRelPath: row.archiveRelPath };
+    const name = path.basename(src);
+    const target = await uniquePath(targetDir, name);
+    const collided = path.basename(target) !== name;
+    return {
+      ...withCat,
+      toRelPath: toPosix(path.relative(this.root, target)),
+      renamed: collided,
+      conflicts: collided
+        ? [`Im Zielordner existiert bereits „${name}“ – die Datei wird als „${path.basename(target)}“ abgelegt (nichts wird überschrieben).`]
+        : [],
+      _src: src,
+      _dir: targetDir,
+      _name: name,
+      _cat: cat,
+    };
+  }
+
+  /** Vorschau (ändert nichts): was würde beim Umlagern passieren? */
+  async previewRelocate(items: RelocateRequest[]): Promise<RelocatePlanItem[]> {
+    const planned = await Promise.all(items.map((i) => this.planRelocate(i)));
+    return planned.map(({ _src, _dir, _name, _cat, ...rest }) => (void _src, void _dir, void _name, void _cat, rest));
+  }
+
+  /**
+   * Legt `src` im Ordner `dir` unter `name` ab, ohne etwas zu überschreiben, und entfernt danach `src`.
+   * Bevorzugt ein Hardlink (atomar, schlägt bei vorhandenem Ziel fehl); wo das nicht geht, Kopie mit Prüfsumme.
+   */
+  private async moveExclusive(src: string, dir: string, name: string, sha256: string, exactName = false): Promise<string> {
+    await fsp.mkdir(dir, { recursive: true });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const dest = exactName ? path.join(dir, name) : await uniquePath(dir, name);
+      try {
+        await fsp.link(src, dest);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'EEXIST') {
+          if (exactName) throw new AppError('archive_conflict', `Am Zielort existiert bereits eine Datei: ${dest}`);
+          continue;
+        }
+        // Dateisystem ohne Hardlinks (oder anderes Laufwerk): Kopie, Prüfsumme, erst dann das Original entfernen
+        await fsp.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+        if ((await sha256File(dest)) !== sha256) {
+          await fsp.unlink(dest).catch(() => undefined);
+          throw fsError('Die Prüfsumme der Kopie stimmt nicht überein; nichts wurde verändert.');
+        }
+      }
+      try {
+        await fsp.unlink(src);
+      } catch (err) {
+        await fsp.unlink(dest).catch(() => undefined); // nur den soeben angelegten Eintrag zurücknehmen
+        throw fsError('Die ursprüngliche Datei konnte nicht entfernt werden; nichts wurde verändert.', err);
+      }
+      return dest;
+    }
+    throw new AppError('archive_conflict', 'Es konnte kein freier Zieldateiname gefunden werden.', { retryable: true });
+  }
+
+  /** Entfernt leere Ordner von `dir` aufwärts bis zum Archivwurzelordner (nie nicht-leere, nie die Wurzel). */
+  private async pruneEmptyDirs(dir: string): Promise<void> {
+    while (dir !== this.root && dir.startsWith(this.root)) {
+      try {
+        await fsp.rmdir(dir);
+      } catch {
+        return;
+      }
+      dir = path.dirname(dir);
+    }
+  }
+
+  /** Verschiebt bereits archivierte Dokumente in andere Archivordner. Erfordert ausdrückliche Bestätigung. */
+  async relocate(items: RelocateRequest[], opts: { confirmed: boolean; trigger?: string }): Promise<ArchiveResult> {
+    if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
+    const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
+    for (const req of items) {
+      let outcome: ArchiveResult['items'][number];
+      try {
+        outcome = await this.relocateOne(req, opts);
+      } catch (err) {
+        const info = toErrorInfo(err);
+        this.ctx.logger.error('archive', 'Umlagern fehlgeschlagen', { documentId: req.documentId, error: err });
+        this.audit.log({
+          action: 'archive.relocate',
+          actor: 'user',
+          trigger: opts.trigger ?? 'manual',
+          confirmed: true,
+          entityIds: [req.documentId],
+          success: false,
+          error: `${info.message} ${info.details ?? ''}`.trim(),
+        });
+        outcome = {
+          documentId: req.documentId,
+          outcome: 'failed',
+          targetPath: null,
+          message: info.message + (info.details ? ` (${info.details})` : ''),
+          auditId: null,
+        };
+      }
+      result.items.push(outcome);
+      if (outcome.outcome === 'success') result.success += 1;
+      else if (outcome.outcome === 'skipped') result.skipped += 1;
+      else if (outcome.outcome === 'conflict') result.conflicts += 1;
+      else result.failed += 1;
+    }
+    this.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
+    return result;
+  }
+
+  private async relocateOne(req: RelocateRequest, opts: { trigger?: string }): Promise<ArchiveResult['items'][number]> {
+    const plan = await this.planRelocate(req);
+    const row = this.docs.getRow(req.documentId);
+    const fail = (outcome: 'conflict' | 'skipped', message: string) => ({ documentId: row.id, outcome, targetPath: null, message, auditId: null });
+    if (plan.blocked) return fail('conflict', plan.conflicts.join(' '));
+    if (plan.unchanged) return fail('skipped', 'Die Datei liegt bereits in diesem Ordner.');
+    const src = plan._src!;
+    const cat = plan._cat!;
+    if ((await sha256File(src)) !== row.sha256)
+      return fail('conflict', 'Die Archivdatei wurde seit der Archivierung verändert und wird deshalb nicht verschoben.');
+
+    const newAbs = await this.moveExclusive(src, plan._dir!, plan._name!, row.sha256);
+    const newRel = toPosix(path.relative(this.root, newAbs));
+    const updatedAt = nowIso();
+    let addedRelationId: string | null = null;
+    let removedCategory: string | null = null;
+    try {
+      this.ctx.database.transaction(() => {
+        this.categories.create(cat, false);
+        this.db.update(documents).set({ archiveRelPath: newRel, categoryPath: cat, updatedAt }).where(eq(documents.id, row.id)).run();
+        const newEntity = this.graph.ensureEntity('category', cat);
+        const mine = this.graph.relationsOf(row.id, { types: ['belongs_to'] }).filter((r) => r.sourceEntityId === row.id);
+        if (row.categoryPath) {
+          const oldEntity = this.graph.findByName('category', row.categoryPath);
+          const old = oldEntity ? mine.find((r) => r.targetEntityId === oldEntity.id) : undefined;
+          if (old && oldEntity?.id !== newEntity.id) {
+            this.graph.deleteRelation(old.id);
+            removedCategory = row.categoryPath;
+          }
+        }
+        if (!mine.some((r) => r.targetEntityId === newEntity.id)) {
+          addedRelationId = this.graph.link(row.id, newEntity.id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] })?.id ?? null;
+        }
+      });
+    } catch (err) {
+      // Datenbank nicht angepasst: Datei an den ursprünglichen Ort zurücklegen
+      await this.moveExclusive(newAbs, path.dirname(src), path.basename(src), row.sha256, true).catch((back) =>
+        this.ctx.logger.error('archive', 'Zurücklegen nach Fehler beim Umlagern gescheitert', { error: back }),
+      );
+      throw err;
+    }
+    await this.pruneEmptyDirs(path.dirname(src));
+
+    const undoData: RelocateUndoData = {
+      documentId: row.id,
+      fromRel: row.archiveRelPath!,
+      toRel: newRel,
+      sha256: row.sha256,
+      beforeCategoryPath: row.categoryPath,
+      afterUpdatedAt: updatedAt,
+      addedRelationId,
+      removedCategory,
+    };
+    const trigger = opts.trigger ?? 'manual';
+    const auditId = this.audit.log({
+      action: 'archive.relocate',
+      actor: trigger === 'agent_action' ? 'agent' : 'user',
+      trigger,
+      confirmed: true,
+      entityIds: [row.id],
+      paths: [src, newAbs],
+      before: { path: src, categoryPath: row.categoryPath },
+      after: { path: newAbs, categoryPath: cat },
+      undo: { type: 'archive_relocate', data: undoData },
+    });
+    await this.docs.indexDocument(row.id);
+    return {
+      documentId: row.id,
+      outcome: 'success',
+      targetPath: newAbs,
+      message: plan.renamed ? `Verschoben nach ${cat} (umbenannt, weil der Name belegt war).` : `Verschoben nach ${cat}.`,
+      auditId,
+    };
+  }
+
+  private async relocateUndoCheck(d: RelocateUndoData): Promise<string[]> {
+    const conflicts: string[] = [];
+    const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
+    if (!row) return ['Das Dokument existiert nicht mehr.'];
+    if (row.updatedAt !== d.afterUpdatedAt) conflicts.push('Das Dokument wurde seit dem Umlagern verändert.');
+    const now = resolveInside(this.root, d.toRel);
+    const back = resolveInside(this.root, d.fromRel);
+    if (!fs.existsSync(now)) conflicts.push('Die Datei fehlt am neuen Ort im Archiv.');
+    else if ((await sha256File(now)) !== d.sha256) conflicts.push('Die Datei wurde seit dem Umlagern verändert.');
+    if (fs.existsSync(back)) conflicts.push(`Am ursprünglichen Ort existiert bereits eine Datei: ${back}`);
+    return conflicts;
+  }
+
+  private async relocateUndoRun(d: RelocateUndoData): Promise<string> {
+    const now = resolveInside(this.root, d.toRel);
+    const back = resolveInside(this.root, d.fromRel);
+    await this.moveExclusive(now, path.dirname(back), path.basename(back), d.sha256, true);
+    this.ctx.database.transaction(() => {
+      this.db
+        .update(documents)
+        .set({ archiveRelPath: d.fromRel, categoryPath: d.beforeCategoryPath, updatedAt: nowIso() })
+        .where(eq(documents.id, d.documentId))
+        .run();
+      if (d.addedRelationId) this.graph.deleteRelation(d.addedRelationId);
+      if (d.removedCategory)
+        this.graph.link(d.documentId, this.graph.ensureEntity('category', d.removedCategory).id, 'belongs_to', {
+          confidence: 1,
+          status: 'confirmed',
+          sourceIds: [d.documentId],
+        });
+    });
+    await this.pruneEmptyDirs(path.dirname(now));
+    await this.docs.indexDocument(d.documentId);
+    this.ctx.events.changed('documents', 'knowledge', 'status');
+    return 'Umlagern rückgängig gemacht; die Datei liegt wieder am vorherigen Ort.';
   }
 
   // ---------- Undo ----------

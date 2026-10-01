@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import {
   ChatAnalysis,
   DECISION_FIELD_LABELS,
@@ -6,6 +7,7 @@ import {
   type ChatContext,
   type ChatMessage,
   type Decision,
+  type DocumentRecord,
   type DecisionField,
   type EntityRef,
   type SourceReference,
@@ -19,8 +21,11 @@ import { AppError, toErrorInfo } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import type { ArchivistJson } from '../util/json';
 import { normalizeDateInput, parseGermanDate } from '../util/dates';
+import { isInside, sanitizeCategoryPath } from '../util/paths';
 import { normalizeName, truncate } from '../util/text';
 import type { ActionService } from './actions';
+import type { ArchiveService } from './archive';
+import { chooseTargetFolder, folderLabel, folderOf, groupByFolder, splitSubjects, type FolderGroup } from './archive-structure';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
 import { questionFor } from './decisions';
@@ -82,17 +87,19 @@ Absichten (intent):
 - decision_supersede: Eine neue Entscheidung ersetzt oder widerruft eine ältere.
 - note_capture: Wissen oder eine Notiz festhalten.
 - knowledge_question: Frage zum Archivwissen (Wann/Warum/Wer/Wie/„Haben wir jemals …“/Haltungsänderung/Widersprüche).
-- document_search: Dokumente suchen oder anzeigen.
+- document_search: Dokumente suchen oder anzeigen (nicht, um ihre Verzeichnisse zu bewerten).
 - timeline_query: Chronologische Übersicht zu Thema/Projekt/Zeitraum.
 - event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description. Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
 - open_item_new / open_item_update / open_item_close: offene Punkte erfassen/ändern/schließen.
 - reminder_create / reminder_snooze: Erinnerung anlegen bzw. verschieben.
 - proposal_confirm / proposal_reject: Zustimmung bzw. Ablehnung eines offenen Agentenvorschlags („ja, mach das“, „nein“).
-- archive_execute: Gefundene Dokumente zuordnen/archivieren.
-- archive_status: Zustand des Archivs erfragen.
+- archive_execute: Dokumente, die NOCH NICHT archiviert sind (Inbox, Scan), ins Archiv übernehmen. Bereits archivierte Dateien in andere Verzeichnisse zu legen ist archive_reorganize.
+- archive_status: Zahlen und Zustand des Archivs erfragen (wie viele Dokumente, Jobs, offene Hinweise).
+- archive_structure: Die Ablage prüfen: Sind die Dateien bzw. Verzeichnisse konsistent und sinnvoll geordnet? In welchen Verzeichnissen liegen die Dokumente zu einem Thema? Gemeint sind die Verzeichnisse, nicht die Inhalte. Setze topic/project/query nur, wenn die Nachricht ein Thema nennt (z. B. „Bildungsurlaub 2026“); bezieht sie sich auf eben genannte Dokumente („die“, „alle“, „sie“), lasse sie leer.
+- archive_reorganize: Bereits archivierte Dokumente in EIN gemeinsames Verzeichnis legen, zusammenführen oder umsortieren („können die nicht alle ins selbe Verzeichnis?“, „leg alle Bildungsurlaub-Dateien zusammen“, „gehören alle in einen Ordner“). path nur, wenn ein Zielverzeichnis genannt wird; Thema wie bei archive_structure.
 - scan_start: Manuellen Scan nach neuen Dokumenten starten.
 - exclude_path: Datei oder Verzeichnis von künftigen Scans ausschließen.
-- contradiction_check: Widersprüche prüfen.
+- contradiction_check: Inhaltliche Widersprüche zwischen Entscheidungen prüfen (nicht für Verzeichnisse oder Ordnung der Ablage: das ist archive_structure).
 - relation_decide: Eine vorgeschlagene Beziehung bestätigen oder ablehnen.
 - smalltalk / unknown.
 
@@ -117,6 +124,7 @@ Regeln:
  */
 export class ChatService {
   private actions!: ActionService;
+  private archive!: ArchiveService;
 
   constructor(
     private readonly ctx: AppContext,
@@ -137,8 +145,9 @@ export class ChatService {
     private readonly events: EventService,
   ) {}
 
-  wire(deps: { actions: ActionService }): void {
+  wire(deps: { actions: ActionService; archive: ArchiveService }): void {
     this.actions = deps.actions;
+    this.archive = deps.archive;
   }
 
   private get db() {
@@ -299,7 +308,7 @@ export class ChatService {
           schemaName: 'ChatIntent',
           purpose: 'Chat-Intent',
           instructions: INTENT_HELP,
-          input: `Heutiges Datum: ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('de-DE', { weekday: 'long' })})\nOffene Rückfrage: ${this.pendingHint(state)}\nBekannte Themen: ${
+          input: `Heutiges Datum: ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('de-DE', { weekday: 'long' })})\nOffene Rückfrage: ${this.pendingHint(state)}\nZuletzt gezeigte Dokumente: ${state.last?.documentIds?.length ?? 0}\nBekannte Themen: ${
             this.graph
               .listEntities({ type: 'topic', limit: 40 })
               .map((e) => e.name)
@@ -393,7 +402,13 @@ export class ChatService {
     // eslint-disable-next-line sonarjs/super-linear-regex -- einzelne Chat-Nachricht, Länge begrenzt
     if (/\b(timeline|zeitverlauf|chronolog|was\s+ist\s+.*passiert)\b/i.test(t)) return { ...base, intent: 'timeline_query', query: t };
     if (/\b(archivstatus|zustand\s+des\s+archivs|wie\s+viele\s+dokumente)\b/i.test(t)) return { ...base, intent: 'archive_status' };
-    if (/\bwiderspr\w+/i.test(t)) return { ...base, intent: 'contradiction_check', query: t };
+    if (
+      /(verzeichnis|ordner|ablage)/i.test(t) &&
+      /(selbe|gleiche|zusammen|alle\s+in|ein(?:en)?\s+(?:verzeichnis|ordner)|verschieb|umlager|zusammenleg|zusammenführ)/i.test(t)
+    )
+      return { ...base, intent: 'archive_reorganize' };
+    if (/(konsisten|verzeichnis|ordner|ablage|verstreut|durcheinander|struktur)/i.test(t)) return { ...base, intent: 'archive_structure' };
+    if (/\bwiderspr/i.test(t)) return { ...base, intent: 'contradiction_check', query: t };
     if (/(dokumente?|dateien?)/i.test(t) && /(such|zeige|finde|gehören|liste)/i.test(t)) return { ...base, intent: 'document_search', query: t };
     if (/\?\s*$/.test(t) || /^(wann|warum|wer|was|welche|wie|haben|gab|gibt|hat)\b/i.test(t)) return { ...base, intent: 'knowledge_question', query: t };
     return { ...base, intent: 'note_capture', note: t };
@@ -572,6 +587,10 @@ export class ChatService {
         return this.archiveExecute(conv, intent, keep());
       case 'archive_status':
         return this.archiveStatus(keep());
+      case 'archive_structure':
+        return this.archiveStructure(text, intent, keep());
+      case 'archive_reorganize':
+        return this.archiveReorganize(conv, text, intent, keep());
       case 'scan_start':
         return this.scanStart(keep());
       case 'exclude_path':
@@ -1412,6 +1431,165 @@ export class ChatService {
     };
   }
 
+  // ---------- Ablage im Archiv ----------
+  private archivedWithFile(docs: DocumentRecord[]): DocumentRecord[] {
+    return docs.filter((d) => d.status === 'archived' && d.archiveRelPath);
+  }
+
+  private archivedByIds(ids: string[]): DocumentRecord[] {
+    return this.archivedWithFile(
+      ids.flatMap((id) => {
+        try {
+          return [this.docs.get(id)];
+        } catch {
+          return [];
+        }
+      }),
+    );
+  }
+
+  /** Welche archivierten Dokumente sind gemeint? Thema/Projekt, sonst die zuletzt gezeigten, sonst die Suche. */
+  private async archivedDocsFor(text: string, intent: ChatIntent, state: ConvState): Promise<{ docs: DocumentRecord[]; subject: string | null }> {
+    const name = (intent.topic ?? intent.project)?.trim() || null;
+    if (name) {
+      const ent = this.graph.findByName('topic', name) ?? this.graph.findByName('project', name);
+      if (ent) {
+        const docs = this.archivedWithFile(this.docs.list({ [ent.type === 'topic' ? 'topicId' : 'projectId']: ent.id, limit: 200 }));
+        if (docs.length) return { docs, subject: ent.name };
+      }
+    }
+    const last = state.last?.documentIds ?? [];
+    const query = intent.query?.trim() || null;
+    // Bezug auf eben gezeigte Dokumente („die“, „alle“, „sie“) hat Vorrang vor einer vom Modell abgeleiteten Suchanfrage
+    if (last.length && !name && (!query || /\b(die|diese[nrs]?|sie|alle|davon|selben?|gleichen?)\b/i.test(text))) {
+      const docs = this.archivedByIds(last);
+      if (docs.length) return { docs, subject: state.last?.topic ?? null };
+    }
+    const q = name ?? query;
+    if (q) {
+      const hits = await this.search.search(q, { types: ['document'], limit: 30 });
+      return { docs: this.archivedByIds(hits.map((h) => h.id)), subject: q };
+    }
+    return { docs: [], subject: null };
+  }
+
+  private describeGroups(groups: FolderGroup<DocumentRecord>[]): string {
+    return groups.map((g) => `• **${folderLabel(g.folder)}** (${g.docs.length}): ${g.docs.map((d) => truncate(d.title, 60)).join('; ')}`).join('\n');
+  }
+
+  /** Kurzer Hinweis für andere Antworten, wenn Dokumente zu einem Thema auf mehrere Verzeichnisse verteilt sind. */
+  private scatterHint(): string {
+    const split = splitSubjects(this.archivedWithFile(this.docs.list({ status: 'archived', limit: 1000 })));
+    if (!split.length) return '';
+    const names = split
+      .slice(0, 3)
+      .map((s) => `${s.kind} „${s.name}“ (${s.groups.length} Verzeichnisse)`)
+      .join(', ');
+    return `\n\nZur Ablage: Zu ${names} liegen Dokumente verstreut. Frag mich nach der Ablage, wenn ich das ordnen soll.`;
+  }
+
+  private async archiveStructure(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
+    const { docs, subject } = await this.archivedDocsFor(text, intent, state);
+    const reply = (content: string, extra: Partial<Reply> = {}): Reply => ({ intent: 'archive_structure', content, confidence: 0.8, state, ...extra });
+    if (docs.length === 0 && subject) return reply(`Zu „${subject}“ habe ich keine archivierten Dokumente gefunden.`, { confidence: 0.4 });
+    if (docs.length === 0) {
+      const all = this.archivedWithFile(this.docs.list({ status: 'archived', limit: 1000 }));
+      if (all.length === 0) return reply('Es sind noch keine Dokumente archiviert.', { confidence: 0.6 });
+      const split = splitSubjects(all);
+      const folders = groupByFolder(all).length;
+      if (split.length === 0)
+        return reply(
+          `**Ablage im Archiv**\n${all.length} archivierte Dokument(e) in ${folders} Verzeichnis(sen). Zu keinem Thema und keinem Projekt liegen Dokumente in verschiedenen Verzeichnissen.`,
+          { uncertainties: ['Geprüft wird nur, ob Dokumente zum selben Thema bzw. Projekt im selben Verzeichnis liegen.'] },
+        );
+      const lines = split
+        .slice(0, 8)
+        .map(
+          (s) =>
+            `• ${s.kind} „${s.name}“: ${s.groups.reduce((n, g) => n + g.docs.length, 0)} Dokumente in ${s.groups.length} Verzeichnissen (${s.groups.map((g) => `${folderLabel(g.folder)} (${g.docs.length})`).join(', ')})`,
+        )
+        .join('\n');
+      return reply(
+        `**Ablage im Archiv**\n${all.length} archivierte Dokument(e) in ${folders} Verzeichnis(sen). Bei diesen Themen liegen Dokumente verstreut:\n\n${lines}\n\nSag mir z. B. „leg die Dokumente zu ${split[0]!.name} in einen Ordner“, dann bereite ich das Verschieben vor. Verschoben wird erst nach deiner Bestätigung.`,
+        { uncertainties: ['Geprüft wird nur, ob Dokumente zum selben Thema bzw. Projekt im selben Verzeichnis liegen.'] },
+      );
+    }
+    const groups = groupByFolder(docs);
+    const what = subject ? `„${subject}“` : 'diesen Dokumenten';
+    const next: ConvState = { ...state, last: { ...(state.last ?? {}), documentIds: docs.map((d) => d.id), topic: subject } };
+    const context = { documents: docs.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })) };
+    if (groups.length === 1)
+      return reply(`Alle ${docs.length} Dokument(e) zu ${what} liegen im selben Verzeichnis:\n\n${this.describeGroups(groups)}`, { state: next, context });
+    const target = chooseTargetFolder(groups);
+    return reply(
+      `Die ${docs.length} Dokument(e) zu ${what} liegen in ${groups.length} verschiedenen Verzeichnissen:\n\n${this.describeGroups(groups)}\n\nDas ist nicht konsistent abgelegt. Sag mir z. B. „leg alle in einen Ordner“${target ? ` – ich würde „${target}“ vorschlagen, dort liegen schon die meisten` : ''}. Verschoben wird erst nach deiner Bestätigung.`,
+      { state: next, context },
+    );
+  }
+
+  private async archiveReorganize(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
+    const reply = (content: string, extra: Partial<Reply> = {}): Reply => ({ intent: 'archive_reorganize', content, confidence: 0.7, state, ...extra });
+    const { docs, subject } = await this.archivedDocsFor(text, intent, state);
+    if (docs.length === 0)
+      return reply(
+        'Welche archivierten Dokumente soll ich zusammenlegen? Nenne mir bitte das Thema (z. B. „Bildungsurlaub 2026“) oder frage zuerst nach der Ablage.',
+        { confidence: 0.3 },
+      );
+    const groups = groupByFolder(docs);
+    let target: string | null;
+    const asked = intent.path?.trim();
+    if (asked) {
+      const root = this.settings.get().archiveRoot;
+      const rel = path.isAbsolute(asked) && isInside(root, asked) ? path.relative(root, asked).split(path.sep).join('/') : asked;
+      try {
+        target = sanitizeCategoryPath(rel);
+      } catch (err) {
+        return reply(`Das Zielverzeichnis „${asked}“ kann ich nicht verwenden: ${toErrorInfo(err).message}`, { confidence: 0.3 });
+      }
+    } else target = chooseTargetFolder(groups);
+    if (!target)
+      return reply('Ich weiß nicht, in welches Verzeichnis die Dokumente sollen. Nenne mir bitte einen Zielordner, z. B. „private/bildungsurlaub/2026“.', {
+        confidence: 0.3,
+      });
+    const next: ConvState = { ...state, last: { ...(state.last ?? {}), documentIds: docs.map((d) => d.id), topic: subject } };
+    const context = { documents: docs.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })) };
+    const movable = docs.filter((d) => folderOf(d) !== target);
+    if (movable.length === 0)
+      return reply(`Alle ${docs.length} Dokument(e) liegen schon in „${target}“. Da gibt es nichts zu verschieben.`, { state: next, context, confidence: 0.9 });
+    const plan = await this.archive.previewRelocate(movable.map((d) => ({ documentId: d.id, categoryPath: target })));
+    const byId = new Map(movable.map((d) => [d.id, d]));
+    const ok = plan.filter((p) => !p.blocked && !p.unchanged);
+    const blocked = plan.filter((p) => p.blocked);
+    const blockedText = blocked.length
+      ? `\n\nDiese kann ich nicht verschieben:\n${blocked.map((p) => `• ${truncate(p.title, 60)}: ${p.conflicts.join(' ')}`).join('\n')}`
+      : '';
+    if (ok.length === 0) return reply(`Ich kann keines der Dokumente nach „${target}“ verschieben.${blockedText}`, { state: next, context, confidence: 0.4 });
+    // ein früherer, noch offener Umlager-Vorschlag dieser Unterhaltung wird durch den neuen ersetzt
+    for (const stale of this.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents' && a.conversationId === conv)) {
+      await this.actions.resolve(stale.id, 'reject', {});
+    }
+    const action = this.actions.propose({
+      actionType: 'relocate_documents',
+      label: `${ok.length} Dokument(e) nach „${target}“ verschieben`,
+      rationale: `Alle Dokumente${subject ? ` zu „${subject}“` : ''} sollen im selben Verzeichnis liegen. Es wird verschoben, nichts überschrieben; über das Protokoll lässt es sich rückgängig machen.`,
+      confidence: 0.8,
+      affectedEntities: ok.map((p) => ({ type: 'document' as const, id: p.documentId, label: p.title })),
+      requiredConfirmation: 'confirm',
+      proposedParameters: { items: ok.map((p) => ({ documentId: p.documentId, categoryPath: target })) },
+      conversationId: conv,
+    });
+    const lines = ok
+      .map(
+        (p) =>
+          `• ${truncate(p.title, 60)}: ${folderLabel(folderOf(byId.get(p.documentId)!))} → ${target}${p.renamed ? ' (wird umbenannt, der Name ist dort belegt)' : ''}`,
+      )
+      .join('\n');
+    return reply(
+      `Ich habe vorbereitet, ${ok.length} Dokument(e) nach „${target}“ zu verschieben:\n\n${lines}${blockedText}\n\nBitte bestätige. Vorher ändert sich nichts. Du kannst auch einen anderen Zielordner nennen („nimm stattdessen …“).`,
+      { actions: [action], state: next, context, confidence: action.confidence },
+    );
+  }
+
   private async archiveStatus(state: ConvState): Promise<Reply> {
     const docs = this.docs.list({ limit: 1000 });
     const by = (s: string) => docs.filter((d) => d.status === s).length;
@@ -1476,7 +1654,7 @@ export class ChatService {
     if (list.length === 0)
       return {
         intent: 'contradiction_check',
-        content: 'Ich habe keine widersprüchlichen Aussagen gefunden.',
+        content: `Ich habe keine widersprüchlichen Aussagen gefunden.${this.scatterHint()}`,
         confidence: 0.6,
         uncertainties: ['Die Prüfung erkennt nur eindeutige Gegensätze bei aktiven Entscheidungen zum gleichen Thema.'],
         state,

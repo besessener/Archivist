@@ -42,6 +42,8 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 2. Datei in das Fenster ziehen → Archivist kopiert sie in den Eingang, extrahiert Text, schlägt Kategorie/Zielordner vor → in der **Inbox** Quell- und Zielpfad prüfen → bestätigen.
 3. Im **Chat** Entscheidungen mitteilen („Wir haben entschieden, dass wir mit prod-plat erstmal nicht weitermachen.“); Archivist fragt nach Datum, Beteiligten und Thema und speichert erst dann final.
 4. Später fragen: „Wann haben wir prod-plat pausiert?“ – Antwort mit Quellen.
+   - **Ablage prüfen:** „Sind meine Dateien konsistent?“, „In welchen Verzeichnissen liegen die Dokumente zu Bildungsurlaub 2026?“ – Archivist zeigt, in welchen Verzeichnissen die Dokumente eines Themas oder Projekts liegen, und weist auf verstreute Ablage hin.
+   - **Umlagern:** „Können die nicht alle ins selbe Verzeichnis?“ (optional mit Zielordner) – Archivist schlägt als Ziel den Ordner vor, in dem schon die meisten liegen, und bereitet das Verschieben als Aktionskarte vor. Erst nach „ja“ bzw. Bestätigung wird verschoben: nichts wird überschrieben (bei gleichem Namen `Name (2).ext`), geänderte Dateien bleiben liegen, leere Ordner werden aufgeräumt, und das Protokoll bietet **Rückgängig**.
 5. Unter **Scan** ein Verzeichnis freigeben (z. B. `~/Downloads`), „Jetzt suchen“, Dateien auswählen, analysieren, Zuordnungsvorschläge bestätigen.
 
 ## Schnellstart
@@ -147,8 +149,8 @@ Archivist/
 | Stufe | Beispiele | Verhalten |
 | --- | --- | --- |
 | 1 – automatisch | Dateien in freigegebenen Ordnern auflisten, Metadaten/Prüfsummen, Textextraktion, Suchindex, Vorschläge, Insights, Benachrichtigungen | läuft ohne Rückfrage |
-| 2 – Bestätigung | Kopieren/Verschieben ins Archiv, Umbenennen, neue Hauptkategorie, Entscheidung als überholt markieren, Widerspruch lösen, offenen Punkt schließen, Metadaten überschreiben, Themen zusammenführen | Aktionskarte / Dialog mit Quell- und Zielpfad, Begründung, Confidence; ohne `confirmed: true` abgelehnt |
-| 3 – besonders | Löschen, Überschreiben, Reorganisieren | **nicht implementiert** – Archivist löscht und überschreibt nichts (auch Undo löscht nie die einzige Kopie) |
+| 2 – Bestätigung | Kopieren/Verschieben ins Archiv, **bereits archivierte Dokumente in einen anderen Archivordner verschieben**, Umbenennen, neue Hauptkategorie, Entscheidung als überholt markieren, Widerspruch lösen, offenen Punkt schließen, Metadaten überschreiben, Themen zusammenführen | Aktionskarte / Dialog mit Quell- und Zielpfad, Begründung, Confidence; ohne `confirmed: true` abgelehnt |
+| 3 – besonders | Löschen, Überschreiben, automatisches Umsortieren des ganzen Archivs | **nicht implementiert** – Archivist löscht und überschreibt nichts (auch Undo löscht nie die einzige Kopie). Umlagern ist nur für ausdrücklich genannte Dokumente möglich und wird immer vorher bestätigt. |
 
 **Dateien**: Originale werden nie ohne ausdrückliche Bestätigung verändert. Standard ist *Kopieren*. Zieldateien werden mit `COPYFILE_EXCL` angelegt (kein Überschreiben, bei Namenskollision `Name (2).ext`), per SHA-256 verifiziert und erst danach werden – nur bei „Verschieben“ und zusätzlicher Bestätigung – Quellen entfernt. Pfade werden gegen Traversal (`..`, absolute Pfade, Nullbytes), Symlink-Ausbruch (realpath-Prüfung) und ungültige Dateinamen (Windows-reservierte Namen, Sonderzeichen) abgesichert; Dateien, die sich seit der Analyse geändert haben, werden nicht archiviert.
 
