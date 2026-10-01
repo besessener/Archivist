@@ -57,4 +57,27 @@ test.describe('Import und Archivierung', () => {
     expect(fs.readdirSync(quarantineDir), 'die Datei hat die Quarantäne verlassen').toEqual([]);
     expect(fs.readdirSync(path.join(workspace.dataDir, 'inbox'))).toEqual(['rechnung.pdf']);
   });
+
+  test('respects an emptied project and only announces cleaning up the inbox copy', async ({ on, page, workspace }) => {
+    const app = on(page);
+    const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
+
+    await app.inbox.do.importFile(note);
+    await app.navigation.do.open('inbox');
+    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await expect(app.inbox.locators.fields.project.first()).toHaveValue('Nordlicht');
+    await app.inbox.locators.fields.project.first().fill('');
+
+    await app.inbox.do.openArchivePlan();
+    await expect(app.inbox.locators.archivePlan.inboxCopy.first()).toHaveText('Inbox-Kopie wird aufgeräumt, Original bleibt erhalten');
+    await expect(app.inbox.locators.archivePlan.removesSource).toHaveCount(0);
+    await app.inbox.do.confirmArchive();
+    await app.inbox.locators.archivePlan.close.click();
+    expect(fs.existsSync(note), 'das Original bleibt erhalten').toBe(true);
+
+    await app.navigation.do.open('documents');
+    await expect(app.documents.locators.rows).toHaveCount(1);
+    await expect(app.documents.locators.cell(0, 'Thema')).toHaveText('Nordlicht');
+    await expect(app.documents.locators.cell(0, 'Projekt')).toHaveText('–');
+  });
 });
