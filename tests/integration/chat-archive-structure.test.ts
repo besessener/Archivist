@@ -154,7 +154,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(proposed).toHaveLength(1);
     expect(proposed[0]!.id).toBe(second.assistantMessage.actions[0]!.id);
     expect(proposed[0]!.label).toBe(`${ids.length} Dokument(e) nach „work/hr/bildungsurlaub“ verschieben`);
-    expect(app.services.actions.list('rejected').some((a) => a.id === first.assistantMessage.actions[0]!.id)).toBe(true);
+    expect(app.services.actions.list('withdrawn').some((a) => a.id === first.assistantMessage.actions[0]!.id)).toBe(true);
   });
 
   it('der Benutzer kann den Vorschlag ablehnen: es wird nichts verschoben', async () => {

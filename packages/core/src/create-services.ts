@@ -103,7 +103,7 @@ function buildServices(opts: CreateServicesOptions) {
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
   const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
-  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, actions, entityDuplicates);
+  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, entityDuplicates);
   const backup = new BackupService(ctx, settings, audit);
   const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit);
   const chat = new ChatService(
@@ -130,7 +130,6 @@ function buildServices(opts: CreateServicesOptions) {
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
-  scanner.wire({ actions });
   chat.wire({ actions, archive });
   graph.setReindexer(async (refs) => {
     await Promise.all([

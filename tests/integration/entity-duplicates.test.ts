@@ -154,9 +154,9 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     const second = await check();
 
     expect(first.byKind.similar_entities).toBe(1);
-    expect(second.byKind.similar_entities).toBeUndefined();
+    expect(second.byKind.similar_entities).toBe(1);
     expect(app.services.insights.list().filter((i) => i.kind === 'similar_topics')).toHaveLength(0);
-    expect(app.services.actions.get(legacyAction.id).status).toBe('rejected');
+    expect(app.services.actions.get(legacyAction.id).status).toBe('withdrawn');
     expect(forPair(a.id, b.id)).toHaveLength(1);
     // the proposal is reused, not proposed again on every run
     expect(app.services.actions.list().filter((x) => x.actionType === 'merge_entities')).toHaveLength(1);
@@ -192,7 +192,9 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     });
     await app.services.insights.reject(legacy.id);
     await check();
-    expect(duplicates()).toHaveLength(0);
+    await check();
+    expect(forPair(a.id, b.id).map((i) => i.status)).toEqual(['rejected']);
+    expect(app.services.actions.list().filter((x) => x.actionType === 'merge_entities')).toHaveLength(0);
   });
 
   it('withdraws a question whose entities no longer exist', async () => {
@@ -202,9 +204,12 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     await check();
     const [insight] = forPair(a.id, b.id);
     graph().removeNode(b.id);
+    // confirming the outdated question merges nothing
+    const res = await app.call('insights:respond', { response: 'accept', id: insight!.id, confirmed: true });
+    expect(res.ok).toBe(false);
+    expect(app.services.actions.get(insight!.recommendedActionId!).status).toBe('withdrawn');
     await check();
     expect(duplicates()).toHaveLength(0);
-    expect(app.services.actions.get(insight!.recommendedActionId!).status).toBe('rejected');
   });
 
   it('merges on confirmation and the merge can be undone', async () => {
@@ -233,6 +238,26 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     // the answered question is not asked again after the undo
     await check();
     expect(forPair(source.id, target.id).map((i) => i.status)).toEqual(['accepted']);
+  });
+
+  it('withdraws other questions about an entity that was merged away', async () => {
+    await start();
+    await event('Release', { topic: 'Kundenportal' });
+    const a = graph().findByName('topic', 'Kundenportal')!;
+    const b = graph().ensureEntity('topic', 'Kunden-Portal');
+    const c = graph().ensureEntity('topic', 'Kundenportale');
+    await check();
+    expect(duplicates('open')).toHaveLength(3);
+    const [bc] = forPair(b.id, c.id);
+    const [ab] = forPair(a.id, b.id);
+
+    await app.ok('insights:respond', { response: 'accept', id: ab!.id, confirmed: true });
+
+    expect(graph().getEntity(b.id)).toBeUndefined();
+    expect(app.services.actions.get(bc!.recommendedActionId!).status).toBe('withdrawn');
+    expect(duplicates('open').every((i) => !i.sourceIds.includes(b.id))).toBe(true);
+    await check();
+    expect(duplicates('open').map((i) => [...i.sourceIds].sort())).toEqual([[a.id, c.id].sort()]);
   });
 
   it('adds an optional LLM hint with names only in privacy mode „auto“', async () => {

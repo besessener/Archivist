@@ -5,7 +5,7 @@ import type { AppContext } from '../../context';
 import { decisions, documents, entities, events, openItems, relations } from '../../db/schema';
 import { normalizeName, truncate } from '../../util/text';
 import type { ActionService } from '../actions';
-import type { InsightService } from '../insights';
+import type { InsightInput, InsightService } from '../insights';
 import type { LlmService } from '../llm';
 import type { PrivacyService } from '../privacy';
 
@@ -229,38 +229,41 @@ export class EntityDuplicateCheck {
     private readonly privacy: PrivacyService,
   ) {}
 
+  private tagDocCounts: Map<string, number> | null = null;
+
   private get db() {
     return this.ctx.database.db;
   }
 
-  /** Runs the check; `count` receives one call per newly created insight. */
+  /**
+   * Runs the check; `count` receives one call per open question. Owns the key prefix `similar-entities:`: questions
+   * whose pair no longer qualifies are closed, answered ones („Verschieden“) stay as long as both entities exist.
+   */
   async run(count: (kind: string) => void): Promise<void> {
-    // the former topic-only check is replaced: its pending questions would duplicate the new ones
-    this.insights.retirePending(LEGACY_KEY_PREFIX, new Set(), 'Zurückgezogen: ersetzt durch die gemeinsame Dublettenprüfung.');
-
-    const keep = new Set<string>();
+    this.tagDocCounts = null;
+    const keys = new Set<string>();
     const fresh: Found[] = [];
-    const refresh: Found[] = [];
+    const known: Found[] = [];
     for (const type of CHECKED_TYPES) {
       for (const found of this.candidates(type)) {
+        keys.add(found.key);
         const existing = this.insights.byDedupeKey(found.key);
-        if (existing && existing.status !== 'open' && existing.status !== 'snoozed') continue; // accepted, or „Verschieden“
-        if (!existing && this.rejectedByLegacyCheck(found)) continue;
-        keep.add(found.key);
-        if (!existing) fresh.push(found);
-        else if (existing.status === 'open') refresh.push(found); // a snoozed question stays as it is until it is due
+        if (existing?.status === 'rejected') continue; // „Verschieden“
+        if (!existing && this.rejectedByLegacyCheck(found)) {
+          // a „different“ answered in the former topic-only check is carried over to the new key
+          this.insights.upsert({ ...this.describe(found, null), action: undefined });
+          this.insights.settle(found.key, 'rejected', 'Bereits in der früheren Themen-Prüfung als verschieden markiert.');
+          continue;
+        }
+        (existing ? known : fresh).push(found);
       }
     }
-    // pairs whose entities were merged, renamed or deleted in the meantime
-    this.insights.retirePending(KEY_PREFIX, keep);
-
-    const tagDocs = this.tagDocumentCounts();
-    for (const f of refresh) this.upsert(f, tagDocs, null);
     const hints = await this.llmHints(fresh);
-    for (const [i, f] of fresh.entries()) {
-      this.upsert(f, tagDocs, hints.get(i) ?? null);
-      count('similar_entities');
-    }
+    for (const f of known) if (this.insights.upsert(this.describe(f, null)).status === 'open') count('similar_entities');
+    for (const [i, f] of fresh.entries()) if (this.insights.upsert(this.describe(f, hints.get(i) ?? null)).status === 'open') count('similar_entities');
+    // the former topic-only check is replaced: its questions (and merge_topics proposals) are closed
+    this.insights.reconcile(LEGACY_KEY_PREFIX, new Set());
+    this.insights.reconcile(KEY_PREFIX, keys);
   }
 
   private candidates(type: CheckedType): Found[] {
@@ -286,9 +289,11 @@ export class EntityDuplicateCheck {
     return this.insights.byDedupeKey(`${LEGACY_KEY_PREFIX}${[f.a.id, f.b.id].sort().join('|')}`)?.status === 'rejected';
   }
 
-  /** Number of documents per normalized tag name. */
-  private tagDocumentCounts(): Map<string, number> {
+  /** Number of documents per normalized tag name (computed once per run). */
+  private tagDocs(): Map<string, number> {
+    if (this.tagDocCounts) return this.tagDocCounts;
     const out = new Map<string, number>();
+    this.tagDocCounts = out;
     const rows = this.db
       .select({ tags: documents.tags })
       .from(documents)
@@ -335,7 +340,9 @@ export class EntityDuplicateCheck {
     return ids.has(p.targetId) && p.sourceIds?.length === 1 && ids.has(p.sourceIds[0]!) ? { actionId, targetId: p.targetId } : null;
   }
 
-  private upsert(f: Found, tagDocs: Map<string, number>, hint: string | null): void {
+  /** Insight for a pair, with evidence and the merge proposal (proposed by the insight service only while it is open). */
+  private describe(f: Found, hint: string | null): InsightInput {
+    const tagDocs = this.tagDocs();
     const ea = this.evidence(f.a, tagDocs);
     const eb = this.evidence(f.b, tagDocs);
     const existing = this.existingDirection(f);
@@ -352,17 +359,6 @@ export class EntityDuplicateCheck {
           ? MATCH_TEXT.alias(f.b.name, f.a.name)
           : MATCH_TEXT.alias(f.a.name, f.b.name)
         : MATCH_TEXT[f.match](shorter.name, longer.name);
-    const actionId =
-      existing?.actionId ??
-      this.actions.propose({
-        actionType: 'merge_entities',
-        label: `${label} „${source.name}“ in „${target.name}“ zusammenführen`,
-        rationale: why,
-        confidence: MATCH_CONFIDENCE[f.match],
-        affectedEntities: [ref(source, es), ref(target, et)],
-        requiredConfirmation: 'confirm',
-        proposedParameters: { sourceIds: [source.id], targetId: target.id, allowCrossType: false },
-      }).id;
 
     const reason = referenceCount(et) !== referenceCount(es) ? 'mehr Verweise' : 'klarerer Name';
     const previousHint = this.insights
@@ -381,7 +377,8 @@ export class EntityDuplicateCheck {
       '„Verschieden“ merkt sich dauerhaft, dass die beiden nicht zusammengehören.',
       ...(hintLine ? ['', hintLine] : []),
     ].join('\n');
-    this.insights.upsert({
+    const recommendation = `„${source.name}“ in „${target.name}“ zusammenführen`;
+    return {
       kind: 'similar_entities',
       title:
         f.match === 'prefix'
@@ -391,10 +388,20 @@ export class EntityDuplicateCheck {
       confidence: MATCH_CONFIDENCE[f.match],
       affected: [ref(target, et), ref(source, es)],
       sourceIds: [target.id, source.id],
-      recommendedActionId: actionId,
-      recommendedActionLabel: `„${source.name}“ in „${target.name}“ zusammenführen`,
+      action: {
+        label: recommendation,
+        proposal: {
+          actionType: 'merge_entities',
+          label: `${label} ${recommendation}`,
+          rationale: why,
+          confidence: MATCH_CONFIDENCE[f.match],
+          affectedEntities: [ref(source, es), ref(target, et)],
+          requiredConfirmation: 'confirm',
+          proposedParameters: { sourceIds: [source.id], targetId: target.id, allowCrossType: false },
+        },
+      },
       dedupeKey: f.key,
-    });
+    };
   }
 
   /**
