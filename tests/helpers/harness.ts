@@ -107,6 +107,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     workerFile: opts.workerFile ?? null,
     jobConcurrency: 1,
     llmRetryDelayMs: 0,
+    jobRetryDelayMs: 0,
   });
   if (opts.configured !== false) {
     services.settings.update({

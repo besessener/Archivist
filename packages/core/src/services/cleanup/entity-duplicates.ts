@@ -238,8 +238,9 @@ export class EntityDuplicateCheck {
   /**
    * Runs the check; `count` receives one call per open question. Owns the key prefix `similar-entities:`: questions
    * whose pair no longer qualifies are closed, answered ones („Verschieden“) stay as long as both entities exist.
+   * `signal` cancels the check before the questions are written; it also aborts a running LLM request.
    */
-  async run(count: (kind: string) => void): Promise<void> {
+  async run(count: (kind: string) => void, signal?: AbortSignal): Promise<void> {
     this.tagDocCounts = null;
     const keys = new Set<string>();
     const fresh: Found[] = [];
@@ -258,7 +259,8 @@ export class EntityDuplicateCheck {
         (existing ? known : fresh).push(found);
       }
     }
-    const hints = await this.llmHints(fresh);
+    const hints = await this.llmHints(fresh, signal);
+    signal?.throwIfAborted();
     for (const f of known) if (this.insights.upsert(this.describe(f, null)).status === 'open') count('similar_entities');
     for (const [i, f] of fresh.entries()) if (this.insights.upsert(this.describe(f, hints.get(i) ?? null)).status === 'open') count('similar_entities');
     // the former topic-only check is replaced: its questions (and merge_topics proposals) are closed
@@ -409,7 +411,7 @@ export class EntityDuplicateCheck {
    * privacy mode „auto“: in „vorher fragen“ nobody can confirm a background run, „nur lokal“ sends nothing.
    * The hint never decides anything; failures are ignored.
    */
-  private async llmHints(found: Found[]): Promise<Map<number, string>> {
+  private async llmHints(found: Found[], signal?: AbortSignal): Promise<Map<number, string>> {
     const out = new Map<number, string>();
     if (found.length === 0 || this.privacy.mode() !== 'auto' || !this.llm.canUse()) return out;
     const batch = found.slice(0, MAX_LLM_PAIRS);
@@ -417,6 +419,7 @@ export class EntityDuplicateCheck {
       const res = await this.llm.completeJson(LlmHints, {
         schemaName: 'DuplicateHints',
         purpose: 'Dublettenprüfung (nur Namen)',
+        signal,
         instructions:
           'Du prüfst Paare von Namen aus einem persönlichen Wissensarchiv (Themen, Projekte, Tags). Gib für jedes Paar an, ob beide Namen wahrscheinlich dasselbe meinen ("same"), verschiedene Dinge ("different") oder ob das unklar ist ("unclear"), mit einer kurzen deutschen Begründung. Du entscheidest nichts, der Benutzer entscheidet.',
         input: batch.map((f, i) => `${i + 1}. ${TYPE_LABEL[f.type]}: „${f.a.name}“ / „${f.b.name}“`).join('\n'),
