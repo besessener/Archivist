@@ -28,14 +28,15 @@ test.beforeAll(async () => {
   fs.mkdirSync(downloads, { recursive: true });
   app = await electron.launch({
     executablePath: packaged ? packagedBinary : electronPath,
-    args: [...(packaged ? [] : [appDir]), ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []), '--disable-gpu'],
+    args: [...(packaged ? [] : [appDir]), '--no-sandbox', '--disable-gpu'],
     env: { ...process.env, ARCHIVIST_DATA_DIR: dataDir, ARCHIVIST_TEST_MODE: '1', ARCHIVIST_TEST_PICK_DIR: downloads },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 });
 
-test.afterEach(async (_fixtures, info) => {
+// eslint-disable-next-line no-empty-pattern
+test.afterEach(async ({}, info) => {
   if (info.status !== info.expectedStatus) await page.screenshot({ path: path.join(process.env.E2E_SHOTS ?? os.tmpdir(), 'e2e-failure.png') });
 });
 
