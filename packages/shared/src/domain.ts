@@ -675,6 +675,8 @@ export const ScanSummary = z.object({
   skipped: z.number(),
   duplicates: z.number(),
   errors: z.array(z.string()),
+  /** The per-root file limit stopped the walk; files beyond it were not checked (optional: older stored summaries lack it). */
+  limitReached: z.boolean().optional(),
 });
 export type ScanSummary = z.infer<typeof ScanSummary>;
 
