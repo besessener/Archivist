@@ -191,6 +191,13 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     await app.services.consistency.run('test');
     expect((await dupInsights()).map((i) => i.status)).toEqual(['rejected']);
     expect((await app.ok('openItems:list', { onlyActive: true })).length).toBe(2);
+
+    // still remembered after the pair was temporarily not detected (closed and reopened)
+    await app.ok('openItems:close', { id: a.id, status: 'resolved', confirmed: true });
+    await app.services.consistency.run('test');
+    await app.ok('openItems:update', { id: a.id, patch: { status: 'open' } });
+    await app.services.consistency.run('test');
+    expect((await dupInsights()).map((i) => i.status)).toEqual(['rejected']);
   });
 
   it('ein offener Hinweis verschwindet, wenn die Ursache weg ist', async () => {

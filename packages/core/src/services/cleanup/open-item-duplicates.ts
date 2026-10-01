@@ -234,8 +234,23 @@ export class OpenItemDuplicateService {
       count?.('duplicate_open_item');
       found += 1;
     }
+    for (const key of this.rememberedDifferent()) keepKeys.add(key);
     this.insights.retireOpen(OPEN_ITEM_DUPLICATE_KEY_PREFIX, keepKeys);
     return found;
+  }
+
+  /**
+   * Keys of pairs the user marked as different („Verschieden“ = rejected insight) while both items still exist: they
+   * stay remembered even if the pair is currently not detected (one item closed, renamed, …), so it is never asked again.
+   */
+  private rememberedDifferent(): string[] {
+    const keys: string[] = [];
+    for (const i of this.insights.list('rejected')) {
+      if (i.kind !== 'duplicate' || i.sourceIds.length !== 2) continue;
+      const [a, b] = i.sourceIds as [string, string];
+      if (this.row(a) && this.row(b)) keys.push(duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, a, b));
+    }
+    return keys;
   }
 
   private pendingReminders(openItemId: string) {
