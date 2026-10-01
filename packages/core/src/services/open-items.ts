@@ -5,7 +5,7 @@ import { entities, openItems } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
-import { nameSimilarity, normalizeName } from '../util/text';
+import { levenshtein, tokenize } from '../util/text';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
@@ -34,6 +34,57 @@ export function detectOpenItemSentences(text: string, max = 8): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 8 && s.length < 400);
   return sentences.filter((s) => OPEN_PATTERNS.some((p) => p.test(s))).slice(0, max);
+}
+
+/** Füllwörter in Hinweisen auf offene Punkte („erledigt“, „schließ den Punkt“), die nichts über den Punkt sagen. */
+const HINT_FILLERS = new Set(
+  'erledigt erledige erledigen erledigung schliess schliesse schliessen geschlossen punkt punkte offen offene offenen offener aufgabe aufgaben todo todos bitte mach mache machen kann koennen konnen soll sollte done fertig abgeschlossen abhaken hak hake erinnere erinner erinnern erinnerung mich mir daran dran verschieb verschiebe verschieben aendern andern andere setze setz wieder nochmal mal ok okay ja jetzt heute morgen gerade schon endlich raus damit thema zum zur'.split(
+    ' ',
+  ),
+);
+
+export type HintMatch = { status: 'match'; item: OpenItem } | { status: 'ambiguous'; items: OpenItem[] } | { status: 'none' };
+
+const MATCH_THRESHOLD = 0.5;
+const AMBIGUITY_MARGIN = 0.15;
+
+function tokenScore(h: string, tokens: string[]): number {
+  let best = 0;
+  for (const t of tokens) {
+    if (t === h) return 1;
+    // Abkürzungen und Wortanfänge: „Präsi“ → „Präsentation“, „Steuer“ in „Steuererklärung“
+    if ((h.length >= 3 && t.startsWith(h)) || (t.length >= 4 && h.startsWith(t))) best = Math.max(best, 0.8);
+    else if (h.length >= 5 && t.length >= 5) {
+      const sim = 1 - levenshtein(h, t) / Math.max(h.length, t.length);
+      if (sim >= 0.8) best = Math.max(best, 0.6);
+    }
+  }
+  return best;
+}
+
+/**
+ * Bewertet offene Punkte gegen einen Hinweis: Wort für Wort über Titel und Beschreibung (Füll- und Stoppwörter
+ * zählen nicht, kurze Kürzel wie „TÜV“ nur als ganzes Wort), unscharf nur als letzte Stufe. Liegen die besten
+ * Treffer nah beieinander, ist das Ergebnis mehrdeutig; unter der Schwelle gibt es keinen Treffer.
+ */
+export function matchOpenItems<T extends { title: string; description?: string | null }>(
+  hint: string,
+  items: T[],
+): { status: 'match'; item: T } | { status: 'ambiguous'; items: T[] } | { status: 'none' } {
+  const wanted = [...new Set(tokenize(hint).filter((t) => !HINT_FILLERS.has(t)))];
+  if (!wanted.length) return { status: 'none' };
+  const scored = items
+    .map((item) => {
+      const title = tokenize(item.title, { keepStopwords: true });
+      const desc = tokenize(item.description ?? '', { keepStopwords: true });
+      const sum = wanted.reduce((acc, h) => acc + Math.max(tokenScore(h, title), 0.7 * tokenScore(h, desc)), 0);
+      return { item, score: sum / wanted.length };
+    })
+    .filter((x) => x.score >= MATCH_THRESHOLD)
+    .sort((a, b) => b.score - a.score);
+  if (!scored.length) return { status: 'none' };
+  const close = scored.filter((x) => x.score >= scored[0]!.score - AMBIGUITY_MARGIN);
+  return close.length === 1 ? { status: 'match', item: close[0]!.item } : { status: 'ambiguous', items: close.slice(0, 4).map((x) => x.item) };
 }
 
 /** Offene Punkte (Aufgaben/Fragen) inkl. Verantwortlichen, Fälligkeit und Status. */
@@ -126,13 +177,15 @@ export class OpenItemService {
     return this.mapMany(rows);
   }
 
-  /** Findet einen aktiven offenen Punkt anhand eines Hinweises (Namensähnlichkeit). */
+  /** Findet einen aktiven offenen Punkt anhand eines Hinweises – nur bei eindeutigem Treffer. */
   findByHint(hint: string): OpenItem | null {
-    const active = this.list({ onlyActive: true });
-    const scored = active
-      .map((i) => ({ i, s: Math.max(nameSimilarity(i.title, hint), normalizeName(i.title).includes(normalizeName(hint)) && hint.length > 3 ? 0.9 : 0) }))
-      .sort((a, b) => b.s - a.s);
-    return scored[0] && scored[0].s >= 0.45 ? scored[0].i : null;
+    const m = this.matchByHint(hint);
+    return m.status === 'match' ? m.item : null;
+  }
+
+  /** Treffer, mehrdeutig (mehrere nah beieinander) oder keiner – siehe rankOpenItems. */
+  matchByHint(hint: string): HintMatch {
+    return matchOpenItems(hint, this.list({ onlyActive: true }));
   }
 
   create(input: OpenItemInput, ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {}): OpenItem {
