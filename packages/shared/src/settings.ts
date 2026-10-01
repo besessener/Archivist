@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LOCAL_TIME } from './dates';
 import { SUPPORTED_EXTENSIONS } from './domain';
 
 export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high']);
@@ -53,7 +54,11 @@ export const ProfileSettings = z.object({
   nicknames: z.array(z.string().max(100)).max(20).default([]),
 });
 
-const NotificationSettings = z.object({ desktop: z.boolean().default(false) });
+const NotificationSettings = z.object({
+  desktop: z.boolean().default(false),
+  /** Local time of day at which reminders without a time (date only) fire. */
+  reminderTime: z.string().regex(LOCAL_TIME, 'Erwartet eine Uhrzeit im Format HH:MM.').default('08:00'),
+});
 
 /** One Tesseract language code, e.g. `deu` or `chi_sim` (same rule the OCR module applies). */
 export const OCR_LANGUAGE_CODE = /^[a-z]{3}(?:_[a-z]+)?$/;

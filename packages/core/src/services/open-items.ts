@@ -1,4 +1,4 @@
-import { OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemStatus } from '@archivist/shared';
+import { localDate, localToday, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemStatus } from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
@@ -402,8 +402,9 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  overdue(today = nowIso().slice(0, 10)): OpenItem[] {
-    return this.list({ onlyActive: true }).filter((i) => i.dueAt && i.dueAt.slice(0, 10) < today);
+  /** Active items due before `today` (local calendar day, #77). */
+  overdue(today = localToday()): OpenItem[] {
+    return this.list({ onlyActive: true }).filter((i) => i.dueAt && localDate(i.dueAt) < today);
   }
 
   /** Rebuilds the search index entry (e.g. after a merge changed names or references). */

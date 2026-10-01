@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DECISION_FIELD_LABELS, type DocumentProposal } from '@archivist/shared';
+import { DECISION_FIELD_LABELS, localDate, localToday, type DocumentProposal } from '@archivist/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, relations } from '../db/schema';
@@ -120,7 +120,8 @@ export class ConsistencyService {
     const byKind: Record<string, number> = {};
     let notifs = 0;
     const count = (k: string, n = 1) => (byKind[k] = (byKind[k] ?? 0) + n);
-    const today = new Date().toISOString().slice(0, 10);
+    // local calendar day, otherwise items are "due today" for two more hours after midnight (#77)
+    const today = localToday();
     const staleDays = this.settings.get().consistency.staleOpenItemDays;
 
     // ---- Dokumente ----
@@ -373,10 +374,11 @@ export class ConsistencyService {
       notifs += 1;
     }
     for (const i of active) {
-      if (i.dueAt && i.dueAt.slice(0, 10) < today) {
+      const due = i.dueAt ? localDate(i.dueAt) : null;
+      if (due && due < today) {
         this.notifications.create({
           title: `Überfällig: ${i.title}`,
-          description: `Fällig war der ${i.dueAt.slice(0, 10)}.`,
+          description: `Fällig war der ${due}.`,
           type: 'open_item_overdue',
           priority: 'high',
           affectedEntityIds: [i.id],
@@ -384,11 +386,11 @@ export class ConsistencyService {
             { label: 'Offene Punkte öffnen', kind: 'navigate', target: '/open-items/' },
             { label: 'Morgen erneut', kind: 'snooze' },
           ],
-          dedupeKey: `overdue:${i.id}:${i.dueAt.slice(0, 10)}`,
+          dedupeKey: `overdue:${i.id}:${due}`,
         });
         notifs += 1;
         count('open_item');
-      } else if (i.dueAt && i.dueAt.slice(0, 10) === today) {
+      } else if (due === today) {
         this.notifications.create({
           title: `Heute fällig: ${i.title}`,
           description: 'Dieser offene Punkt ist heute fällig.',

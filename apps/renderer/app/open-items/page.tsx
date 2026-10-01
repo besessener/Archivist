@@ -24,7 +24,7 @@ import { useRun } from '@/lib/use-run';
 import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
 import { nonEmpty, toIsoDay } from '@/lib/utils';
-import type { OpenItemStatus } from '@archivist/shared';
+import { localDate, localToday, type OpenItemStatus } from '@archivist/shared';
 
 type Group = 'overdue' | 'due' | 'open' | 'done';
 const GROUP_LABELS: Record<Group, string> = { overdue: 'Überfällig', due: 'Bald fällig', open: 'Offen', done: 'Erledigt' };
@@ -32,8 +32,8 @@ const GROUP_LABELS: Record<Group, string> = { overdue: 'Überfällig', due: 'Bal
 function groupOf(i: OpenItemRecord): Group {
   if (i.status === 'resolved' || i.status === 'dismissed') return 'done';
   if (i.dueAt) {
-    const today = toIsoDay(new Date());
-    const due = i.dueAt.slice(0, 10);
+    const today = localToday();
+    const due = localDate(i.dueAt);
     if (due < today) return 'overdue';
     const in7 = new Date();
     in7.setDate(in7.getDate() + 7);
@@ -181,7 +181,7 @@ function ItemFormDialog({
   const [description, setDescription] = useState(item?.description ?? '');
   const [responsible, setResponsible] = useState(item?.responsibleName ?? '');
   const [respUnknown, setRespUnknown] = useState(item?.responsibleUnknown ?? false);
-  const [dueAt, setDueAt] = useState(item?.dueAt?.slice(0, 10) ?? '');
+  const [dueAt, setDueAt] = useState(item?.dueAt ? localDate(item.dueAt) : '');
   const [dueUnknown, setDueUnknown] = useState(item?.dueUnknown ?? false);
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>(item?.priority ?? 'normal');
   const [status, setStatus] = useState<OpenItemStatus>(item?.status ?? 'open');
@@ -325,6 +325,8 @@ function CloseDialog({ item, onClose, onDone }: { item: OpenItemRecord | null; o
 
 function ReminderDialog({ item, onClose, onDone }: { item: OpenItemRecord | null; onClose: () => void; onDone: () => void }) {
   const { run, busy } = useRun();
+  const { settings } = useSettings();
+  const reminderTime = settings?.notifications.reminderTime ?? '08:00';
   const reminders = useQuery('reminders:list', { status: 'pending' }, { scopes: ['reminders'], enabled: item !== null });
   const existing = item ? reminders.data?.find((r) => r.targetType === 'open_item' && r.targetId === item.id) : undefined;
   return (
@@ -335,6 +337,9 @@ function ReminderDialog({ item, onClose, onDone }: { item: OpenItemRecord | null
           <DialogDescription>{item?.title}</DialogDescription>
         </DialogHeader>
         {existing && <p className="text-sm text-muted-foreground">Aktuell geplant für {formatDate(existing.remindAt)}.</p>}
+        <p className="text-xs text-muted-foreground" data-testid="reminder-time-hint">
+          Erinnerungen erscheinen am gewählten Tag um {reminderTime} Uhr (Ortszeit, änderbar unter Einstellungen → Benachrichtigungen).
+        </p>
         <QuickDate
           disabled={busy || !item}
           onPick={async (day) => {
@@ -344,7 +349,7 @@ function ReminderDialog({ item, onClose, onDone }: { item: OpenItemRecord | null
                 existing
                   ? call('reminders:snooze', { id: existing.id, remindAt: day })
                   : call('reminders:create', { targetType: 'open_item', targetId: item.id, title: item.title, remindAt: day }),
-              { success: `Erinnerung für den ${formatDate(day)} gesetzt.` },
+              { success: `Erinnerung für den ${formatDate(day)} um ${reminderTime} Uhr gesetzt.` },
             );
             if (out) {
               onDone();

@@ -58,7 +58,7 @@ export class InsightService {
     const existing = this.db.select().from(insights).where(eq(insights.dedupeKey, input.dedupeKey)).get();
     const now = nowIso();
     if (existing) {
-      if (existing.status === 'snoozed' && existing.snoozedUntil && existing.snoozedUntil <= now) {
+      if (existing.status === 'snoozed' && existing.snoozedUntil && this.snoozeOver(existing.snoozedUntil)) {
         this.db.update(insights).set({ status: 'open', snoozedUntil: null, updatedAt: now }).where(eq(insights.id, existing.id)).run();
         this.ctx.events.changed('insights', 'status');
         return map({ ...existing, status: 'open', snoozedUntil: null });
@@ -142,10 +142,15 @@ export class InsightService {
     return this.list('open').length;
   }
 
+  /** A snoozed insight wakes up together with its reminder: a date-only value at the local reminder time (#77). */
+  private snoozeOver(snoozedUntil: string): boolean {
+    return this.reminders.isDue(snoozedUntil);
+  }
+
   private wakeSnoozed(): void {
-    const now = nowIso();
     for (const r of this.db.select().from(insights).where(eq(insights.status, 'snoozed')).all()) {
-      if (r.snoozedUntil && r.snoozedUntil <= now) this.db.update(insights).set({ status: 'open', snoozedUntil: null }).where(eq(insights.id, r.id)).run();
+      if (r.snoozedUntil && this.snoozeOver(r.snoozedUntil))
+        this.db.update(insights).set({ status: 'open', snoozedUntil: null }).where(eq(insights.id, r.id)).run();
     }
   }
 
