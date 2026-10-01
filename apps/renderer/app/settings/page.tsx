@@ -5,7 +5,7 @@ import { Page, PageHeader } from '@/components/common/page-header';
 import { ErrorNote, Loading } from '@/components/common/states';
 import { ArchiveTab } from '@/components/settings/archive-tab';
 import { LlmTab } from '@/components/settings/llm-tab';
-import { AuditTab, BackupsTab, LogsTab, NotificationsTab } from '@/components/settings/misc-tabs';
+import { AuditTab, BackupsTab, LogsTab, NotificationsTab, ProfileTab } from '@/components/settings/misc-tabs';
 import { PrivacyTab } from '@/components/settings/privacy-tab';
 import { Section } from '@/components/settings/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -31,6 +31,9 @@ export default function SettingsPage() {
             </TabsTrigger>
             <TabsTrigger value="privacy" data-testid="tab-privacy">
               Datenschutz
+            </TabsTrigger>
+            <TabsTrigger value="profile" data-testid="tab-profile">
+              Über Sie
             </TabsTrigger>
             <TabsTrigger value="notifications" data-testid="tab-notifications">
               Benachrichtigungen
@@ -61,6 +64,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="privacy">
             <PrivacyTab key={JSON.stringify(settings.privacy)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+          </TabsContent>
+          <TabsContent value="profile">
+            <ProfileTab key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="notifications">
             <NotificationsTab settings={settings} hasApiKey={hasApiKey} reload={reload} />

@@ -47,8 +47,15 @@ const ConsistencySettings = z.object({
   staleOpenItemDays: z.number().int().min(1).default(30),
 });
 
+/** Wer benutzt Archivist? Name und Spitznamen helfen, „ich/mir/mich“ und Erwähnungen der eigenen Person zuzuordnen. */
+export const ProfileSettings = z.object({
+  name: z.string().max(200).default(''),
+  nicknames: z.array(z.string().max(100)).max(20).default([]),
+});
+
 export const Settings = z.object({
   setupCompleted: z.boolean().default(false),
+  profile: ProfileSettings.default(() => ProfileSettings.parse({})),
   language: z.literal('de').default('de'),
   llm: LlmSettings.default(() => LlmSettings.parse({})),
   archiveRoot: z.string().default(''),
@@ -73,6 +80,7 @@ export type Settings = z.infer<typeof Settings>;
 /** Teilweise Aktualisierung (pro Bereich flach zusammengeführt). */
 export const SettingsPatch = z.object({
   setupCompleted: z.boolean().optional(),
+  profile: ProfileSettings.partial().optional(),
   llm: LlmSettings.partial().optional(),
   archiveRoot: z.string().optional(),
   scan: ScanSettings.partial().optional(),

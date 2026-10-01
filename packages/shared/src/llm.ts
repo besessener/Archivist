@@ -51,6 +51,7 @@ export const DecisionExtraction = z.object({
   validFrom: opt(z.string()),
   validUntil: opt(z.string()),
   topicIsProject: opt(z.boolean()).describe('true, wenn das genannte Thema in Wahrheit ein Projektname ist'),
+  supersedesId: opt(z.string()).describe('Bei decision_supersede: ID der ersetzten Entscheidung aus dem Kontext (z. B. „E3“)'),
   unknownFields: z.array(DecisionField).default([]).describe('Felder, die der Benutzer ausdrücklich als unbekannt bezeichnet'),
   confidence: Confidence.default(0.7),
 });
@@ -86,12 +87,13 @@ export const ChatIntent = z.object({
   decision: opt(DecisionExtraction),
   openItem: opt(
     z.object({
-      title: opt(z.string()),
-      description: opt(z.string()),
-      responsible: opt(z.string()),
-      dueAt: opt(z.string()),
+      title: opt(z.string()).describe('Kurzer Titel aus Subjekt und Tätigkeit, z. B. „Angebot Müller prüfen“ – nie die ganze Nachricht'),
+      description: opt(z.string()).describe('Alle Details aus dem zugehörigen Textteil (Hintergrund, Bedingungen, z. B. „er wollte Rabatt“)'),
+      responsible: opt(z.string()).describe('Verantwortliche Person; „ich/mir/mich“ meint den Benutzer'),
+      dueAt: opt(z.string()).describe('Fälligkeit als ISO-Datum YYYY-MM-DD'),
       priority: opt(z.enum(['low', 'normal', 'high'])),
-      targetHint: opt(z.string()).describe('Hinweis, welcher bestehende offene Punkt gemeint ist'),
+      targetId: opt(z.string()).describe('ID eines bestehenden offenen Punkts aus dem Kontext (z. B. „P2“), wenn ein bestehender Punkt gemeint ist'),
+      targetHint: opt(z.string()).describe('Hinweis, welcher bestehende offene Punkt gemeint ist (nur, wenn keine ID passt)'),
       newStatus: opt(z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed'])),
     }),
   ),
@@ -102,7 +104,16 @@ export const ChatIntent = z.object({
       occurredAt: opt(z.string()).describe('ISO-Datum YYYY-MM-DD, an dem das Ereignis stattfand'),
     }),
   ),
-  reminder: opt(z.object({ remindAt: opt(z.string()), relativeText: opt(z.string()), targetHint: opt(z.string()), title: opt(z.string()) })),
+  reminder: opt(
+    z.object({
+      remindAt: opt(z.string()).describe('Zeitpunkt der Erinnerung als ISO-Datum YYYY-MM-DD'),
+      relativeText: opt(z.string()).describe('Die Zeitangabe wörtlich, z. B. „nächsten Montag“'),
+      targetId: opt(z.string()).describe('ID des offenen Punkts aus dem Kontext (z. B. „P2“), an den erinnert werden soll'),
+      targetHint: opt(z.string()).describe('Hinweis auf den offenen Punkt (nur, wenn keine ID passt)'),
+      title: opt(z.string()).describe('Kurzer Titel: woran erinnert werden soll (Subjekt und Tätigkeit)'),
+    }),
+  ),
+  proposalId: opt(z.string()).describe('Bei proposal_confirm/proposal_reject: ID des gemeinten Vorschlags aus dem Kontext (z. B. „V1“)'),
   path: opt(z.string()),
   note: opt(z.string()),
   decisionCertainty: opt(z.enum(['clear', 'unsure'])).describe(
