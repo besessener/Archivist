@@ -120,6 +120,21 @@ test('vertikaler Slice: Einrichtung → Import → Archivierung → Entscheidung
   await expect(tid('chat-message').last()).toContainText('4. Mai 2026');
   await expect(tid('chat-source').first()).toBeVisible();
 
+  // Eingabefeld ist vergrößerbar (Griff ziehen, Doppelklick setzt zurück) und die Unterhaltung lässt sich umbenennen
+  const before = await tid('chat-input').evaluate((e) => e.clientHeight);
+  const grip = (await tid('chat-resize').boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y - 150, { steps: 8 });
+  await page.mouse.up();
+  expect(await tid('chat-input').evaluate((e) => e.clientHeight)).toBeGreaterThan(before + 100);
+  await tid('chat-resize').dblclick();
+  expect(await tid('chat-input').evaluate((e) => e.clientHeight)).toBeLessThan(before + 10);
+  await tid('chat-rename').click();
+  await tid('rename-input').fill('Nordlicht-Entscheidung');
+  await tid('rename-save').click();
+  await expect(tid('conversation-select')).toContainText('Nordlicht-Entscheidung');
+
   // 9) Scan-Verzeichnis freigeben (Dialog wird im Test durch ARCHIVIST_TEST_PICK_DIR ersetzt)
   await tid('nav-scan').click();
   await tid('scan-enable').click();

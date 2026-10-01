@@ -147,6 +147,7 @@ export const ipcContract = {
   'chat:history': ch(z.object({ conversationId: Id }), z.array(ChatMessage)),
   'chat:conversations': ch(Empty, z.array(Conversation)),
   'chat:newConversation': ch(Empty, Conversation),
+  'chat:renameConversation': ch(z.object({ id: Id, title: z.string().trim().min(1).max(120) }), Conversation),
 
   // --- Agentenaktionen ---
   'actions:list': ch(z.object({ status: z.enum(['proposed', 'approved', 'rejected', 'executed', 'failed']).optional() }), z.array(StoredAgentAction)),

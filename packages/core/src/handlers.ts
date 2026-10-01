@@ -107,6 +107,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'chat:history': (i) => s.chat.history(i.conversationId),
     'chat:conversations': () => s.chat.listConversations(),
     'chat:newConversation': () => s.chat.newConversation(),
+    'chat:renameConversation': (i) => s.chat.renameConversation(i.id, i.title),
 
     'actions:list': (i) => s.actions.list(i.status),
     'actions:resolve': (i) =>
