@@ -240,6 +240,13 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       });
     },
 
+    'events:list': (i) => s.eventRecords.list(i),
+    'events:create': (i) => s.eventRecords.create(i),
+    'events:update': (i) => s.eventRecords.update(i.id, i.patch),
+    'events:delete': (i) => {
+      s.eventRecords.delete(i.id, { confirmed: i.confirmed });
+      return { ok: true as const };
+    },
     'timeline:get': (i) => s.timeline.get(i),
     'search:global': (i) => s.search.search(i.query, { types: i.types, limit: i.limit }),
 

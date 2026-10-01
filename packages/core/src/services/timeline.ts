@@ -1,6 +1,6 @@
 import type { EntityRef, TimelineEntry } from '@archivist/shared';
 import type { AppContext } from '../context';
-import { contradictions, decisions, documents, openItems } from '../db/schema';
+import { contradictions, decisions, documents, events, openItems } from '../db/schema';
 import { truncate } from '../util/text';
 import type { KnowledgeGraphService } from './knowledge-graph';
 
@@ -55,6 +55,17 @@ export class TimelineService {
         title: `Entscheidung${d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : ''}: ${d.title}`,
         description: truncate(d.decisionText, 240),
         refs: [{ type: 'decision', id: d.id, label: d.title }, ...ref('topic', d.topicId), ...ref('project', d.projectId)],
+      });
+    }
+    for (const e of db.select().from(events).all()) {
+      if (!match(e.topicId, e.projectId)) continue;
+      push({
+        id: `event:${e.id}`,
+        date: e.occurredAt,
+        kind: 'event',
+        title: `Ereignis: ${e.title}`,
+        description: e.description ? truncate(e.description, 240) : null,
+        refs: [{ type: 'event', id: e.id, label: e.title }, ...ref('topic', e.topicId), ...ref('project', e.projectId)],
       });
     }
     for (const o of db.select().from(openItems).all()) {

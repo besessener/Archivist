@@ -82,7 +82,25 @@ jobs:
           path: apps/renderer/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/renderer/**/*.ts', 'apps/renderer/**/*.tsx') }}
           restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-      - run: npm run dist:win
+      - name: Windows-Pakete bauen (signiert, wenn ein Zertifikat hinterlegt ist)
+        run: npm run dist:win
+        env:
+          # Secrets: WIN_CSC_LINK (Base64-kodierte .pfx) und WIN_CSC_KEY_PASSWORD. Fehlen sie, bleibt der Build unsigniert.
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Signatur prüfen
+        shell: pwsh
+        env:
+          EXPECT_SIGNED: ${{ secrets.WIN_CSC_LINK != '' }}
+        run: |
+          $bad = $false
+          Get-ChildItem apps/desktop/release/*.exe | ForEach-Object {
+            $sig = Get-AuthenticodeSignature $_.FullName
+            "$($_.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if ($env:EXPECT_SIGNED -eq 'true' -and $sig.Status -ne 'Valid') { $bad = $true }
+          }
+          if ($bad) { throw 'Mindestens eine ausgelieferte Datei ist nicht gültig signiert.' }
+          if ($env:EXPECT_SIGNED -ne 'true') { Write-Host '::notice::Kein Signaturzertifikat hinterlegt – die Pakete sind unsigniert.' }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: archivist-windows

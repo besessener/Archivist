@@ -125,6 +125,23 @@ export const openItems = sqliteTable(
   (t) => [index('open_items_status_idx').on(t.status)],
 );
 
+/** Datierte Ereignisse („am 01.10.2026 beim German Testing Day eingereicht“) – erscheinen in der Timeline. */
+export const events = sqliteTable(
+  'events',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    description: text('description'),
+    occurredAt: text('occurred_at').notNull(),
+    topicId: text('topic_id'),
+    projectId: text('project_id'),
+    sourceIds: jsonArr('source_ids'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('events_occurred_idx').on(t.occurredAt)],
+);
+
 export const reminders = sqliteTable(
   'reminders',
   {

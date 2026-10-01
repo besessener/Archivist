@@ -131,6 +131,17 @@ test('vertikaler Slice: Einrichtung → Import → Archivierung → Entscheidung
   await expect(tid('chat-message').last()).toContainText('4. Mai 2026');
   await expect(tid('chat-source').first()).toBeVisible();
 
+  // Ereignis mit Datum erfassen und in der Timeline sehen
+  await tid('nav-timeline').click();
+  await tid('event-add').click();
+  await tid('event-title').fill('Beitrag beim German Testing Day eingereicht');
+  await tid('event-date').fill('2026-10-01');
+  await tid('event-save').click();
+  const eventEntry = tid('timeline-entry').filter({ hasText: 'German Testing Day' });
+  await expect(eventEntry).toBeVisible();
+  await expect(eventEntry).toHaveAttribute('data-kind', 'event');
+  await tid('nav-chat').click();
+
   // Eingabefeld ist vergrößerbar (Griff ziehen, Doppelklick setzt zurück) und die Unterhaltung lässt sich umbenennen
   const before = await tid('chat-input').evaluate((e) => e.clientHeight);
   const grip = (await tid('chat-resize').boundingBox())!;
