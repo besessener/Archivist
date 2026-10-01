@@ -80,7 +80,7 @@ function buildServices(opts: CreateServicesOptions) {
   const llm = new LlmService(ctx, settings, secrets, opts.fetchImpl, opts.llmRetryDelayMs);
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
-  const graph = new KnowledgeGraphService(ctx);
+  const graph = new KnowledgeGraphService(ctx, audit, undo);
   const search = new SearchService(ctx, embedding, pool, () => privacy.mode() !== 'local_only' && llm.isConfigured());
   const categories = new CategoryService(ctx);
   const jobs = new JobQueueService(ctx, opts.jobConcurrency ?? 2);
@@ -127,6 +127,14 @@ function buildServices(opts: CreateServicesOptions) {
   archive.wire({ actions, openItems });
   scanner.wire({ actions });
   chat.wire({ actions, archive });
+  graph.setReindexer(async (refs) => {
+    await Promise.all([
+      ...refs.documents.map((id) => documentsSvc.indexDocument(id)),
+      ...refs.decisions.map((id) => decisions.reindex(id)),
+      ...refs.openItems.map((id) => openItems.reindex(id)),
+      ...refs.events.map((id) => eventsSvc.reindex(id)),
+    ]);
+  });
 
   // 6) Job-Handler
   jobs.register<{ documentId: string; allowLlm: boolean }>('document.analyze', async (job) => {

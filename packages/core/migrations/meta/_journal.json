@@ -36,6 +36,13 @@
       "when": 1790834031730,
       "tag": "0004_open_item_solution",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790834032730,
+      "tag": "0005_entity_aliases",
+      "breakpoints": true
     }
   ]
 }
