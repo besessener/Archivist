@@ -60,6 +60,7 @@
     "@electron/asar": "^4.3.1",
     "rimraf": "^6.0.0",
     "glob": "^13.0.6",
+    "qs": "^6.16.0",
     "boolean": "file:tools/boolean-shim",
     "eslint-plugin-jsx-a11y": {
       "eslint": "$eslint"
