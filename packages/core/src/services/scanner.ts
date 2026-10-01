@@ -179,6 +179,8 @@ export class ScannerService {
     if (patch.maxFileSizeMb !== undefined) set.maxFileSizeMb = patch.maxFileSizeMb;
     if (patch.llmAllowed !== undefined) set.llmAllowed = patch.llmAllowed;
     this.db.update(scanRoots).set(set).where(eq(scanRoots.id, id)).run();
+    // the folder permission is stored on the documents, so every analysis, chat and search path honours it
+    if (patch.llmAllowed !== undefined && patch.llmAllowed !== row.llmAllowed) this.docs.applyFolderPermission(id);
     this.ctx.events.changed('scanner');
     return mapRoot({ ...row, ...set });
   }
@@ -554,6 +556,7 @@ export class ScannerService {
           skipped.push(id);
           continue;
         }
+        const folderLlmAllowed = root.llmAllowed && this.docs.folderLlmAllowedFor(real);
         let doc = f.documentId ? this.db.select().from(documents).where(eq(documents.id, f.documentId)).get() : undefined;
         if (doc && doc.sha256 !== sha && !doc.stagedPath && INBOX_DOC_STATUSES.includes(doc.status)) {
           // The file changed while its entry is still in the inbox: update that entry (re-analyzed below) instead of
@@ -566,8 +569,18 @@ export class ScannerService {
           doc = this.docs.getRow(doc.id);
         }
         if (!doc || doc.sha256 !== sha) {
-          const rec = this.docs.insertDocument({ originalName: f.name, ext: f.ext, size: st.size, sha256: sha, sourcePath: real, stagedPath: null });
+          const rec = this.docs.insertDocument({
+            originalName: f.name,
+            ext: f.ext,
+            size: st.size,
+            sha256: sha,
+            sourcePath: real,
+            stagedPath: null,
+            folderLlmAllowed,
+          });
           doc = this.docs.getRow(rec.id);
+        } else if (doc.folderLlmAllowed !== folderLlmAllowed) {
+          this.db.update(documents).set({ folderLlmAllowed }).where(eq(documents.id, doc.id)).run();
         }
         const decision = this.privacy.evaluate({ path: real, ext: f.ext, rootLlmAllowed: root.llmAllowed });
         const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);

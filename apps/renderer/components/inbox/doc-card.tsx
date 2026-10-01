@@ -4,19 +4,19 @@ import { useState } from 'react';
 import { ChevronDown, EyeOff, FolderOpen, Loader2, RefreshCw, ShieldOff, ArchiveRestore, Ban, FileInput } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Checkbox, CheckboxField } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
-import { Field } from '@/components/common/states';
+import { Field, Notice } from '@/components/common/states';
 import type { ArchiveEdit } from '@/components/common/archive-dialog';
 import { call } from '@/lib/ipc';
 import { formatBytes, formatDate } from '@/lib/format';
 import { ARCHIVE_MODE_LABELS, LLM_STATUS_LABELS } from '@/lib/labels';
 import { useRun } from '@/lib/use-run';
 import type { DocRecord } from '@/lib/types';
-import type { ArchiveMode } from '@archivist/shared';
+import type { ArchiveMode, Settings } from '@archivist/shared';
 
 const MODES: ArchiveMode[] = ['copy', 'move', 'index_only', 'ignore'];
 
@@ -49,17 +49,32 @@ export interface DocCardProps {
   onSelect: (v: boolean) => void;
   onArchive: () => void;
   onChanged: () => void;
+  /** Privacy mode; in „vorher fragen“ (confirm) reprocessing with the AI needs a confirmation. */
+  llmMode: Settings['privacy']['llmMode'];
+  /** Configured AI endpoint (shown in the confirmation). */
+  llmBaseUrl: string;
 }
 
-export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive, onChanged }: DocCardProps) {
+export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive, onChanged, llmMode: mode, llmBaseUrl }: DocCardProps) {
   const { run, busy } = useRun();
   const [showText, setShowText] = useState(false);
+  const [reprocessOpen, setReprocessOpen] = useState(false);
+  const [llmOk, setLlmOk] = useState(false);
+  // May this document's content go to the LLM at all (exclusion, folder permission, privacy mode)?
+  const llmPossible = mode !== 'local_only' && doc.llmStatus !== 'excluded' && doc.folderLlmAllowed;
   const [releaseOpen, setReleaseOpen] = useState(false);
   const quarantined = doc.status === 'quarantined';
   const proc = processingBadge(doc);
   const archivable = doc.status === 'staged' || doc.status === 'proposed';
   const p = doc.proposal;
   const set = <K extends keyof ArchiveEdit>(k: K, v: ArchiveEdit[K]) => onEdit({ ...edit, [k]: v });
+  const reprocess = async (allowLlm: boolean) => {
+    const out = await run(() => call('documents:classify', { documentId: doc.id, allowLlm }), {
+      success: allowLlm ? 'Die Verarbeitung mit KI wurde gestartet.' : 'Die lokale Verarbeitung wurde gestartet.',
+    });
+    onChanged();
+    return out;
+  };
 
   return (
     <li className="rounded-xl border bg-card p-4" data-testid="inbox-item" data-status={doc.status}>
@@ -85,6 +100,11 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
               <Badge variant={llmVariant(doc.llmStatus)} data-testid="inbox-llm-status">
                 {LLM_STATUS_LABELS[doc.llmStatus]}
               </Badge>
+              {!doc.folderLlmAllowed && (
+                <Badge variant="warning" data-testid="inbox-folder-locked" title="Der Ordner dieser Datei ist von der KI-Analyse ausgeschlossen.">
+                  Ordner ohne KI-Freigabe
+                </Badge>
+              )}
               <Badge variant={proc.variant} data-testid="inbox-processing-status">
                 {doc.status === 'analyzing' && <Loader2 className="size-3 animate-spin" aria-hidden />}
                 {proc.label}
@@ -265,10 +285,9 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 disabled={busy}
                 data-testid="inbox-reprocess"
                 onClick={async () => {
-                  await run(() => call('documents:classify', { documentId: doc.id, allowLlm: doc.llmStatus !== 'excluded' }), {
-                    success: 'Die Verarbeitung wurde gestartet.',
-                  });
-                  onChanged();
+                  // „vorher fragen“: every external transfer needs an explicit confirmation
+                  if (llmPossible && mode === 'confirm') setReprocessOpen(true);
+                  else await reprocess(llmPossible);
                 }}
               >
                 <RefreshCw aria-hidden /> Erneut verarbeiten
@@ -306,6 +325,49 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={reprocessOpen}
+        onOpenChange={(o) => {
+          setReprocessOpen(o);
+          if (!o) setLlmOk(false);
+        }}
+        title={`„${doc.title}“ erneut verarbeiten`}
+        confirmLabel={llmOk ? 'Mit KI analysieren' : 'Nur lokal analysieren'}
+        confirmTestId="inbox-reprocess-confirm"
+        onConfirm={async () => {
+          if (await reprocess(llmOk)) {
+            setReprocessOpen(false);
+            setLlmOk(false);
+          }
+        }}
+      >
+        <div className="flex flex-col gap-3 text-sm">
+          <p>
+            <strong>Lokal</strong> liest Archivist den Text nur auf diesem Computer. Dabei verlässt nichts Ihren Rechner.
+          </p>
+          <Notice tone="warning" title="Was bei einer KI-Analyse gesendet wird" data-testid="inbox-reprocess-explain">
+            <p>
+              Der extrahierte <strong>Textinhalt</strong> dieser Datei (gekürzt, erkannte Passwörter und Schlüssel werden maskiert) sowie Dateiname und Typ
+              werden an den eingerichteten KI-Dienst
+              {llmBaseUrl ? (
+                <>
+                  {' '}
+                  (<code className="break-all">{llmBaseUrl}</code>)
+                </>
+              ) : (
+                ''
+              )}{' '}
+              gesendet. Die Originaldatei selbst wird nicht hochgeladen.
+            </p>
+          </Notice>
+          <CheckboxField
+            checked={llmOk}
+            onCheckedChange={(v) => setLlmOk(v === true)}
+            label="Ja, ich erlaube, dass der Textinhalt dieser Datei an den KI-Dienst gesendet wird."
+            data-testid="inbox-reprocess-llm"
+          />
+        </div>
+      </ConfirmDialog>
       {quarantined && (
         <ConfirmDialog
           open={releaseOpen}
