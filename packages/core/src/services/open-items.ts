@@ -246,9 +246,7 @@ export class OpenItemService {
       this.graph.registerNode('task', row.id, row.title, row.description);
       if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
       if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
-      for (const src of row.sourceIds)
-        if (this.graph.getEntity(src)?.type === 'decision')
-          this.graph.link(row.id, src, 'results_from', { confidence: row.confidence, status: 'confirmed', sourceIds: [src] });
+      for (const src of row.sourceIds) this.linkSource(row.id, src, row.confidence);
     });
     this.audit.log({
       action: 'open_item.create',
@@ -297,6 +295,54 @@ export class OpenItemService {
       entityIds: [id],
       before: { status: cur.status, dueAt: cur.dueAt },
       after: patch,
+    });
+    void this.reindex(id);
+    this.ctx.events.changed('openItems', 'knowledge', 'status');
+    return this.get(id);
+  }
+
+  /** Quelle (Entscheidung oder Dokument) im Graph mit dem Punkt verknüpfen: Punkt → results_from → Quelle. */
+  private linkSource(id: string, src: string, confidence: number): void {
+    const type = this.graph.getEntity(src)?.type;
+    if (type === 'decision' || type === 'document') this.graph.link(id, src, 'results_from', { confidence, status: 'confirmed', sourceIds: [src] });
+  }
+
+  /**
+   * Weitere Quelle zu einem bestehenden Punkt hinzufügen (derselbe Punkt in einem weiteren Dokument erkannt).
+   * Fehlende Angaben (Beschreibung, Fälligkeit, Verantwortlicher) werden aus der neuen Quelle ergänzt, vorhandene bleiben.
+   */
+  addSource(
+    id: string,
+    sourceId: string,
+    extra: { description?: string | null; dueAt?: string | null; responsible?: string | null } = {},
+    ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {},
+  ): OpenItem {
+    const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
+    if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
+    const set: Partial<Row> = { updatedAt: nowIso() };
+    if (!cur.sourceIds.includes(sourceId)) set.sourceIds = [...cur.sourceIds, sourceId];
+    if (!cur.description && extra.description?.trim()) set.description = extra.description.trim();
+    if (!cur.dueAt && extra.dueAt) {
+      set.dueAt = normalizeDateInput(extra.dueAt);
+      if (set.dueAt) set.dueUnknown = false;
+    }
+    if (!cur.responsiblePersonId && extra.responsible?.trim()) {
+      set.responsiblePersonId = this.graph.ensureEntity('person', extra.responsible).id;
+      set.responsibleUnknown = false;
+    }
+    this.db.transaction(() => {
+      this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
+      if (set.description) this.graph.registerNode('task', id, cur.title, set.description);
+      this.linkSource(id, sourceId, cur.confidence);
+    });
+    this.audit.log({
+      action: 'open_item.add_source',
+      actor: ctxInfo.actor ?? 'user',
+      trigger: ctxInfo.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [id, sourceId],
+      before: { sourceIds: cur.sourceIds },
+      after: { sourceIds: set.sourceIds ?? cur.sourceIds },
     });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');

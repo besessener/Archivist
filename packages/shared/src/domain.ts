@@ -27,7 +27,9 @@ export const DocumentProposal = z.object({
   persons: z.array(z.string()),
   tags: z.array(z.string()),
   possibleDecisions: z.array(z.object({ title: z.string(), decisionText: z.string(), decidedAt: z.string().nullish() })),
-  possibleOpenItems: z.array(z.object({ title: z.string(), description: z.string().nullish(), dueAt: z.string().nullish() })),
+  possibleOpenItems: z.array(
+    z.object({ title: z.string(), description: z.string().nullish(), dueAt: z.string().nullish(), responsible: z.string().nullish() }),
+  ),
   duplicateOfDocumentId: z.string().nullable(),
   analyzedBy: z.enum(['llm', 'local']),
 });
@@ -420,6 +422,7 @@ export const AgentActionType = z.enum([
   'create_category',
   'set_reminder',
   'create_open_item',
+  'add_open_item_source',
   'record_decision',
 ]);
 export type AgentActionType = z.infer<typeof AgentActionType>;
@@ -480,9 +483,18 @@ export const ActionParamSchemas = {
     title: z.string(),
     description: z.string().nullish(),
     dueAt: z.string().nullish(),
+    responsible: z.string().nullish(),
     sourceIds: z.array(z.string()).default([]),
     topic: z.string().nullish(),
     project: z.string().nullish(),
+  }),
+  /** Bestehenden offenen Punkt um ein weiteres Dokument als Quelle ergänzen (statt ihn doppelt anzulegen). */
+  add_open_item_source: z.object({
+    openItemId: Id,
+    documentId: Id,
+    description: z.string().nullish(),
+    dueAt: z.string().nullish(),
+    responsible: z.string().nullish(),
   }),
   record_decision: z.object({
     title: z.string(),

@@ -122,7 +122,7 @@ function buildServices(opts: CreateServicesOptions) {
   actions.wire({ archive, documents: documentsSvc, decisions, openItems, contradictions, graph, scanner, reminders, audit });
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
-  archive.wire({ actions });
+  archive.wire({ actions, openItems });
   scanner.wire({ actions });
   chat.wire({ actions, archive });
 

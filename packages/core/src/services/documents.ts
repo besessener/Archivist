@@ -452,7 +452,12 @@ export class DocumentService {
         } catch {
           categoryPath = local.categoryPath;
         }
-        openItems = c.openItems.map((o) => ({ title: o.title, description: o.description ?? null, dueAt: normalizeDateInput(o.dueAt ?? null) }));
+        openItems = c.openItems.map((o) => ({
+          title: o.title,
+          description: o.description ?? null,
+          dueAt: normalizeDateInput(o.dueAt ?? null),
+          responsible: o.responsible?.trim() || null,
+        }));
         decisions = c.decisions.map((d) => ({ title: d.title, decisionText: d.decisionText, decidedAt: normalizeDateInput(d.decidedAt ?? null) }));
       } catch (err) {
         warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;

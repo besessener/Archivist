@@ -257,6 +257,7 @@ export class ActionService {
             title: params.title,
             description: params.description,
             dueAt: params.dueAt,
+            responsible: params.responsible,
             sourceIds: params.sourceIds,
             topic: params.topic,
             project: params.project,
@@ -266,6 +267,11 @@ export class ActionService {
           { actor: 'agent', trigger },
         );
         return 'Offener Punkt angelegt.';
+      }
+      case 'add_open_item_source': {
+        const { openItemId, documentId, ...extra } = ActionParamSchemas.add_open_item_source.parse(p);
+        d.openItems.addSource(openItemId, documentId, extra, { actor: 'agent', trigger });
+        return 'Offener Punkt um Quelle ergänzt.';
       }
       case 'record_decision': {
         const params = ActionParamSchemas.record_decision.parse(p);

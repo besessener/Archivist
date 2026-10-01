@@ -7,6 +7,7 @@ import type { AppContext } from '../context';
 import { documents } from '../db/schema';
 import { AppError, fsError, permissionError, toErrorInfo } from '../util/errors';
 import { nowIso } from '../util/ids';
+import { truncate } from '../util/text';
 import { sha256File } from '../util/hash';
 import { assertRealInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
@@ -16,6 +17,7 @@ import type { CategoryService } from './categories';
 import type { DocRow, DocumentService } from './documents';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
+import { matchOpenItems, type OpenItemService } from './open-items';
 import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
 
@@ -85,6 +87,7 @@ export interface ExecuteOptions {
  */
 export class ArchiveService {
   private actions!: ActionService;
+  private openItems!: OpenItemService;
 
   constructor(
     private readonly ctx: AppContext,
@@ -101,8 +104,9 @@ export class ArchiveService {
     undo.register('archive_relocate', { check: (d) => this.relocateUndoCheck(d as RelocateUndoData), run: (d) => this.relocateUndoRun(d as RelocateUndoData) });
   }
 
-  wire(deps: { actions: ActionService }): void {
+  wire(deps: { actions: ActionService; openItems: OpenItemService }): void {
     this.actions = deps.actions;
+    this.openItems = deps.openItems;
   }
 
   private get db() {
@@ -487,52 +491,84 @@ export class ArchiveService {
     };
   }
 
-  /** Vorschläge für in Dokumenten erkannte Entscheidungen/offene Punkte (Stufe 1: nur Vorschlag, keine Änderung). */
+  /**
+   * Vorschläge für in Dokumenten erkannte Entscheidungen/offene Punkte (Stufe 1: nur Vorschlag, keine Änderung).
+   * Offene Punkte werden vorher gegen die aktiven abgeglichen: Bei einem Treffer wird der bestehende Punkt um das
+   * Dokument als Quelle ergänzt statt doppelt angelegt.
+   */
   private proposeExtractedItems(row: DocRow, proposal: DocumentProposal | null): void {
     if (!proposal) return;
     const topic = proposal.topic;
     const project = proposal.project;
-    const mk = (kind: 'open' | 'decision') => {
-      const list = kind === 'open' ? proposal.possibleOpenItems.slice(0, 3) : proposal.possibleDecisions.slice(0, 3);
-      if (list.length === 0) return;
-      const actions = list.map((it) =>
-        kind === 'open'
-          ? this.actions.propose({
-              actionType: 'create_open_item',
-              label: `Offenen Punkt anlegen: ${it.title}`,
-              rationale: `Im Dokument „${row.title}“ erkannt.`,
-              confidence: 0.6,
-              affectedEntities: [{ type: 'document', id: row.id, label: row.title }],
-              requiredConfirmation: 'confirm',
-              proposedParameters: {
-                title: it.title,
-                description: (it as { description?: string | null }).description ?? null,
-                dueAt: (it as { dueAt?: string | null }).dueAt ?? null,
-                sourceIds: [row.id],
-                topic,
-                project,
-              },
-            })
-          : this.actions.propose({
-              actionType: 'record_decision',
-              label: `Entscheidung erfassen: ${it.title}`,
-              rationale: `Im Dokument „${row.title}“ erkannt.`,
-              confidence: 0.55,
-              affectedEntities: [{ type: 'document', id: row.id, label: row.title }],
-              requiredConfirmation: 'confirm',
-              proposedParameters: {
-                title: it.title,
-                decisionText: (it as { decisionText: string }).decisionText,
-                decidedAt: (it as { decidedAt?: string | null }).decidedAt ?? null,
-                participants: proposal.persons.slice(0, 5),
-                topic,
-                project,
-                sourceIds: [row.id],
-              },
-            }),
-      );
+    const docRef = { type: 'document' as const, id: row.id, label: row.title };
+    const rationale = `Im Dokument „${row.title}“ erkannt.`;
+    const active = proposal.possibleOpenItems.length ? this.openItems.list({ onlyActive: true }) : [];
+    const openActions = proposal.possibleOpenItems.slice(0, 3).flatMap((it) => {
+      const m = matchOpenItems(it.title, active, { threshold: 0.75 });
+      if (m.status === 'match') {
+        // Dokument ist bereits Quelle (z. B. erneut archiviert) – nichts vorzuschlagen
+        if (m.item.sourceIds.includes(row.id)) return [];
+        return [
+          this.actions.propose({
+            actionType: 'add_open_item_source',
+            label: `Punkt „${truncate(m.item.title, 60)}“ um Quelle ergänzen`,
+            rationale: `${rationale} Der Punkt ist bereits erfasst.`,
+            confidence: 0.6,
+            affectedEntities: [{ type: 'task', id: m.item.id, label: m.item.title }, docRef],
+            requiredConfirmation: 'confirm',
+            proposedParameters: {
+              openItemId: m.item.id,
+              documentId: row.id,
+              description: it.description ?? null,
+              dueAt: it.dueAt ?? null,
+              responsible: it.responsible ?? null,
+            },
+          }),
+        ];
+      }
+      return [
+        this.actions.propose({
+          actionType: 'create_open_item',
+          label: `Offenen Punkt anlegen: ${it.title}`,
+          rationale,
+          confidence: 0.6,
+          affectedEntities: [docRef],
+          requiredConfirmation: 'confirm',
+          proposedParameters: {
+            title: it.title,
+            description: it.description ?? null,
+            dueAt: it.dueAt ?? null,
+            responsible: it.responsible ?? null,
+            sourceIds: [row.id],
+            topic,
+            project,
+          },
+        }),
+      ];
+    });
+    const decisionActions = proposal.possibleDecisions.slice(0, 3).map((it) =>
+      this.actions.propose({
+        actionType: 'record_decision',
+        label: `Entscheidung erfassen: ${it.title}`,
+        rationale,
+        confidence: 0.55,
+        affectedEntities: [docRef],
+        requiredConfirmation: 'confirm',
+        proposedParameters: {
+          title: it.title,
+          decisionText: it.decisionText,
+          decidedAt: it.decidedAt ?? null,
+          participants: proposal.persons.slice(0, 5),
+          topic,
+          project,
+          sourceIds: [row.id],
+        },
+      }),
+    );
+    const notify = (kind: 'open' | 'decision', actions: Array<{ id: string; label: string }>) => {
+      if (actions.length === 0) return;
       this.notifications.create({
-        title: kind === 'open' ? `Dokument enthält ${list.length} mögliche offene Punkte` : `Dokument enthält ${list.length} mögliche Entscheidung(en)`,
+        title: kind === 'open' ? `Dokument enthält ${actions.length} mögliche offene Punkte` : `Dokument enthält ${actions.length} mögliche Entscheidung(en)`,
         description: `„${row.title}“ – bitte prüfen und bei Bedarf übernehmen.`,
         type: kind === 'open' ? 'file_has_open_item' : 'file_has_decision',
         priority: 'normal',
@@ -541,8 +577,8 @@ export class ArchiveService {
         dedupeKey: `extracted:${kind}:${row.id}`,
       });
     };
-    mk('open');
-    mk('decision');
+    notify('open', openActions);
+    notify('decision', decisionActions);
   }
 
   // ---------- Umlagern innerhalb des Archivs ----------
