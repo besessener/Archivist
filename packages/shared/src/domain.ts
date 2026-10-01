@@ -316,6 +316,8 @@ export const EventRecord = z.object({
   sourceIds: z.array(z.string()),
   createdAt: IsoDate,
   updatedAt: IsoDate,
+  /** Discarded as a duplicate („verworfen (Duplikat)“): the event it was merged into. */
+  duplicateOfId: z.string().nullable(),
 });
 export type EventRecord = z.infer<typeof EventRecord>;
 export const EventInput = z.object({
@@ -438,6 +440,8 @@ export const GraphEntity = z.object({
   description: z.string().nullable(),
   /** Former names of entities merged into this one (resolve later mentions of these names). */
   aliases: z.array(z.string()),
+  /** Discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
+  duplicateOfId: z.string().nullable(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
@@ -500,6 +504,8 @@ export const AgentActionType = z.enum([
   'close_open_item',
   'merge_topics',
   'merge_entities',
+  'merge_notes',
+  'merge_events',
   'confirm_relation',
   'reject_relation',
   'exclude_path',
@@ -573,6 +579,10 @@ export const ActionParamSchemas = {
   merge_topics: z.object({ sourceTopicId: Id, targetTopicId: Id }),
   /** Generic merge (topics, projects, persons, tags); `allowCrossType` merges a topic into a project or vice versa (target type wins). */
   merge_entities: z.object({ sourceIds: z.array(Id).min(1), targetId: Id, allowCrossType: z.boolean().default(false) }),
+  /** Duplicate notes: keep `keepId`, take over its missing links from `duplicateId`, discard that one as a duplicate (undoable). */
+  merge_notes: z.object({ keepId: Id, duplicateId: Id }),
+  /** Duplicate events: keep `keepId`, take over its missing details from `duplicateId`, discard that one as a duplicate (undoable). */
+  merge_events: z.object({ keepId: Id, duplicateId: Id }),
   confirm_relation: z.object({ relationId: Id }),
   reject_relation: z.object({ relationId: Id }),
   exclude_path: z.object({ kind: z.enum(['file', 'dir']), path: z.string() }),

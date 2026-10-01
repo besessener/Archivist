@@ -64,7 +64,8 @@ export class TimelineService {
       });
     }
     for (const e of db.select().from(events).all()) {
-      if (!match(e.topicId, e.projectId)) continue;
+      // a discarded duplicate is represented by the event it was merged into
+      if (e.duplicateOfId || !match(e.topicId, e.projectId)) continue;
       push({
         id: `event:${e.id}`,
         date: e.occurredAt,

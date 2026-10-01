@@ -15,6 +15,7 @@ import { newId, nowIso } from '../util/ids';
 import type { ArchiveService } from './archive';
 import { folderOf } from './archive-structure';
 import type { AuditService } from './audit';
+import type { NoteEventDuplicateService } from './cleanup/note-event-duplicates';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
@@ -49,6 +50,7 @@ export interface ActionDeps {
   openItems: OpenItemService;
   contradictions: ContradictionService;
   graph: KnowledgeGraphService;
+  noteEventDuplicates: NoteEventDuplicateService;
   scanner: ScannerService;
   reminders: ReminderService;
   audit: AuditService;
@@ -290,6 +292,12 @@ export class ActionService {
         if (c.status === 'resolved' || c.status === 'false_positive') return { stale: 'Der Widerspruch ist bereits aufgelöst.' };
         return { params };
       }
+      case 'merge_notes':
+      case 'merge_events': {
+        const p = ActionParamSchemas[type].parse(params);
+        const stale = d.noteEventDuplicates.staleReason(type === 'merge_notes' ? 'note' : 'event', p.keepId, p.duplicateId);
+        return stale ? { stale } : { params };
+      }
       default:
         return { params };
     }
@@ -378,6 +386,16 @@ export class ActionService {
         const params = ActionParamSchemas.merge_entities.parse(p);
         const r = await d.graph.merge({ sourceIds: params.sourceIds, targetId: params.targetId, allowCrossType: params.allowCrossType }, { trigger });
         return `${r.mergedNames.map((n) => `„${n}“`).join(', ')} mit „${r.targetName}“ zusammengeführt (${r.relationsMoved} Beziehungen, ${r.referencesUpdated} Verweise übernommen).`;
+      }
+      case 'merge_notes':
+      case 'merge_events': {
+        const params = ActionParamSchemas[type].parse(p);
+        const opts = { actor: 'user' as const, trigger };
+        const r =
+          type === 'merge_notes'
+            ? d.noteEventDuplicates.mergeNotes(params.keepId, params.duplicateId, opts)
+            : d.noteEventDuplicates.mergeEvents(params.keepId, params.duplicateId, opts);
+        return `„${r.duplicateTitle}“ als Duplikat von „${r.keepTitle}“ verworfen${r.takenOver.length ? `; übernommen: ${r.takenOver.join(', ')}` : ''}.`;
       }
       case 'confirm_relation': {
         const params = ActionParamSchemas.confirm_relation.parse(p);

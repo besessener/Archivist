@@ -15,6 +15,8 @@ export const entities = sqliteTable(
     description: text('description'),
     /** Former names of entities merged into this one (display form); used to resolve later mentions. */
     aliases: jsonArr('aliases'),
+    /** Set when the node was discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
+    duplicateOfId: text('duplicate_of_id'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -141,6 +143,8 @@ export const events = sqliteTable(
     sourceIds: jsonArr('source_ids'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
+    /** Set when the event was discarded as a duplicate („verworfen (Duplikat)“): the event it was merged into. */
+    duplicateOfId: text('duplicate_of_id'),
   },
   (t) => [index('events_occurred_idx').on(t.occurredAt)],
 );
