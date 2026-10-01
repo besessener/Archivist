@@ -167,7 +167,7 @@ export class ChatService {
   }
 
   private state(id: string): ConvState {
-    return ((this.db.select().from(conversations).where(eq(conversations.id, id)).get()?.pending as ConvState | null) ?? {}) as ConvState;
+    return ((this.db.select().from(conversations).where(eq(conversations.id, id)).get()?.pending as ConvState | null) ?? {});
   }
 
   private mapMessage(r: MsgRow): ChatMessage {
@@ -197,8 +197,8 @@ export class ChatService {
       conversationId,
       role,
       content,
-      sources: (reply?.sources ?? []) as unknown as ArchivistJson,
-      context: reply?.context ? ({ topics: [], projects: [], persons: [], decisions: [], openItems: [], documents: [], contradictions: [], ...reply.context } as unknown as ArchivistJson) : null,
+      sources: reply?.sources ?? [],
+      context: reply?.context ? ({ topics: [], projects: [], persons: [], decisions: [], openItems: [], documents: [], contradictions: [], ...reply.context }) : null,
       actionIds: (reply?.actions ?? []).map((a) => a.id),
       confidence: reply?.confidence ?? null,
       uncertainties: reply?.uncertainties ?? [],
@@ -308,6 +308,7 @@ export class ChatService {
     if (/\b(schlie(ß|ss)e?\w*|erledigt|abgeschlossen)\b/i.test(t) && /(punkt|aufgabe|todo)/i.test(t)) return { ...base, intent: 'open_item_close', openItem: { targetHint: t } };
     if (/(offene[rn]?\s+punkt|todo|aufgabe|noch\s+(zu\s+)?klären|muss\s+noch)/i.test(t) && !/\?\s*$/.test(t) && !/^welche/i.test(t)) return { ...base, intent: 'open_item_new', openItem: { title: truncate(t, 120), dueAt: parseGermanDate(t) } };
     if (/\b(scan|nach\s+neuen\s+dokumenten)\b/i.test(t)) return { ...base, intent: 'scan_start' };
+    // eslint-disable-next-line sonarjs/super-linear-regex -- einzelne Chat-Nachricht, Länge begrenzt
     if (/\b(timeline|zeitverlauf|chronolog|was\s+ist\s+.*passiert)\b/i.test(t)) return { ...base, intent: 'timeline_query', query: t };
     if (/\b(archivstatus|zustand\s+des\s+archivs|wie\s+viele\s+dokumente)\b/i.test(t)) return { ...base, intent: 'archive_status' };
     if (/\bwiderspr\w+/i.test(t)) return { ...base, intent: 'contradiction_check', query: t };
@@ -379,7 +380,7 @@ export class ChatService {
     const context: Partial<ChatContext> = {};
     for (const k of contextKeys) {
       const seen = new Map<string, EntityRef>();
-      for (const r of replies) for (const e of (r.context?.[k] ?? []) as EntityRef[]) seen.set(`${e.type}:${e.id}`, e);
+      for (const r of replies) for (const e of (r.context?.[k] ?? [])) seen.set(`${e.type}:${e.id}`, e);
       if (seen.size) (context as Record<string, EntityRef[]>)[k] = [...seen.values()];
     }
     const sources = new Map<string, SourceReference>();
@@ -592,6 +593,7 @@ export class ChatService {
       }
       lines.push(`⚠ ${c.title}: ${c.description.split('\n')[0]}`);
     }
+    // eslint-disable-next-line sonarjs/different-types-comparison -- defensiv: null kann aus gespeichertem JSON stammen
     if (opts.supersedesHint !== null && opts.supersedesHint !== undefined) {
       const older = this.decisions
         .list()

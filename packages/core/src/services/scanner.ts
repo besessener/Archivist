@@ -9,7 +9,6 @@ import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
 import { MIME_BY_EXT } from '../parsers';
 import { AppError, permissionError, validationError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
-import type { ArchivistJson } from '../util/json';
 import { isForbiddenScanRoot, isInside, normalizeFsPath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
 import type { ActionService } from './actions';
@@ -270,7 +269,7 @@ export class ScannerService {
         }
         // verschwundene, noch nicht verarbeitete Dateien aus der Liste nehmen
         for (const [p, f] of known) if (!seen.has(p) && ['new', 'changed', 'known', 'duplicate'].includes(f.status)) this.db.delete(scanFiles).where(eq(scanFiles.id, f.id)).run();
-        this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary as unknown as ArchivistJson }).where(eq(scanRoots.id, root.id)).run();
+        this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary }).where(eq(scanRoots.id, root.id)).run();
         this.notifyScan(root, summary);
       } catch (err) {
         if (err instanceof Error && err.name === 'JobCancelledError') throw err;
@@ -369,7 +368,7 @@ export class ScannerService {
         const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
         const res = await this.docs.analyze(doc.id, { allowLlm });
         const updated = this.docs.getRow(doc.id);
-        this.db.update(scanFiles).set({ status: 'analyzed', documentId: doc.id, sha256: sha, size: st.size, mtimeMs: st.mtimeMs, llmStatus: res.usedLlm ? 'analyzed' : (updated.llmStatus as ScanFile['llmStatus']) }).where(eq(scanFiles.id, id)).run();
+        this.db.update(scanFiles).set({ status: 'analyzed', documentId: doc.id, sha256: sha, size: st.size, mtimeMs: st.mtimeMs, llmStatus: res.usedLlm ? 'analyzed' : (updated.llmStatus) }).where(eq(scanFiles.id, id)).run();
         analyzed.push(doc.id);
       } catch (err) {
         this.ctx.logger.warn('scanner', 'Analyse fehlgeschlagen', { fileId: id, error: err });

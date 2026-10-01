@@ -31,12 +31,12 @@ export async function realpathDeepest(target: string): Promise<string> {
   for (;;) {
     try {
       const real = await fsp.realpath(current);
-      return path.join(real, ...rest.reverse());
+      return path.join(real, ...rest.toReversed());
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT' && code !== 'ENOTDIR') throw err;
       const parent = path.dirname(current);
-      if (parent === current) return path.join(current, ...rest.reverse());
+      if (parent === current) return path.join(current, ...rest.toReversed());
       rest.push(path.basename(current));
       current = parent;
     }
@@ -70,6 +70,7 @@ export function sanitizeFileName(name: string, fallback = 'Dokument'): string {
       .replace(/\s+/g, ' ')
       .trim()
       .replace(/^\.+/, '')
+      // eslint-disable-next-line sonarjs/super-linear-regex -- Dateiname, höchstens 255 Zeichen
       .replace(/[. ]+$/g, '')
       .trim();
   base = clean(base);
@@ -107,6 +108,7 @@ export function isForbiddenScanRoot(dir: string, opts: { home?: string; username
         // Unterhalb des eigenen Home-Verzeichnisses ist alles erlaubt (z. B. /home/me/Downloads)
         if (isInside(home, resolved) && resolved !== path.dirname(home)) return null;
         // /tmp und /var/tmp sind für Tests/temporäre Ordner zulässig, sofern nicht Wurzel
+        // eslint-disable-next-line sonarjs/publicly-writable-directories -- Zulassungsliste: temporäre Ordner sind absichtlich als Scan-Ziel erlaubt
         if (lower.startsWith('/tmp/') || lower.startsWith('/var/tmp/') || lower.startsWith('/var/folders/') || lower.startsWith('/private/var/folders/') || lower.startsWith('/private/tmp/')) return null;
         if (lower.startsWith('/volumes/') || lower.startsWith('/mnt/')) return null;
         return 'Systemverzeichnisse oder Verzeichnisse anderer Benutzer dürfen nicht gescannt werden.';

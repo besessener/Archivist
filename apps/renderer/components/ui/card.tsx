@@ -8,6 +8,7 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
   return <div className={cn('flex flex-col gap-1 p-4 pb-2', className)} {...props} />;
 }
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  // eslint-disable-next-line jsx-a11y/heading-has-content -- Inhalt kommt über die durchgereichten props (children)
   return <h3 className={cn('text-base font-semibold leading-tight', className)} {...props} />;
 }
 export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {

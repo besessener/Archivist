@@ -32,6 +32,7 @@ export function SearchBox() {
     }
     const id = ++seq.current;
     setLoading(true);
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises -- try/catch im Callback, veraltete Antworten werden über seq verworfen
     const t = setTimeout(async () => {
       try {
         const res = await call('search:global', { query: q, limit: 15 });

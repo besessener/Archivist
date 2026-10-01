@@ -33,7 +33,7 @@ export function resolveDataPaths(root: string, archiveOverride?: string): DataPa
 
 /** Legt die Standard-Verzeichnisstruktur an (idempotent). */
 export function ensureDataDirs(paths: DataPaths): void {
-  for (const dir of Object.values(paths)) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of Object.values(paths) as string[]) fs.mkdirSync(dir, { recursive: true });
 }
 
 export type ChangeScope =

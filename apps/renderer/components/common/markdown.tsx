@@ -46,8 +46,11 @@ function parse(text: string): Block[] {
       flush();
       continue;
     }
+    // eslint-disable-next-line sonarjs/super-linear-regex -- am Zeilenanfang verankert, Eingabe ist eine einzelne Zeile
     const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    // eslint-disable-next-line sonarjs/super-linear-regex -- am Zeilenanfang verankert, Eingabe ist eine einzelne Zeile
     const ul = /^\s*[-*•]\s+(.*)$/.exec(line);
+    // eslint-disable-next-line sonarjs/super-linear-regex -- am Zeilenanfang verankert, Eingabe ist eine einzelne Zeile
     const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
     if (heading) {
       flush();

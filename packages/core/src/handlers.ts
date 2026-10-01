@@ -273,7 +273,7 @@ export function createIpcDispatcher(handlers: HandlerMap, onError?: (channel: st
       return { ok: false, error: { category: 'validation_error', message: 'Ungültige Eingabe.', retryable: false, details: parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ') } };
     }
     try {
-      const fn = handlers[c] as (input: unknown) => Promise<unknown> | unknown;
+      const fn = handlers[c] as (input: unknown) => unknown;
       const out = await fn(parsed.data);
       const checked = spec.output.safeParse(out);
       if (!checked.success) {

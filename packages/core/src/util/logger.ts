@@ -55,6 +55,7 @@ export class Logger {
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = this.sanitize(v, depth + 1, k);
       return out;
     }
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- Objekte und Arrays sind oben bereits zerlegt
     return String(value);
   }
 

@@ -52,8 +52,10 @@ export class SettingsService {
     const patch = SettingsPatch.parse(patchInput);
     const next: Record<string, unknown> = { ...this.current };
     for (const [key, value] of Object.entries(patch)) {
+      // eslint-disable-next-line sonarjs/different-types-comparison -- defensiv: Patch kommt als geparstes JSON über IPC
       if (value === undefined) continue;
       const prev = (this.current as Record<string, unknown>)[key];
+      // eslint-disable-next-line sonarjs/different-types-comparison -- defensiv: Patch kommt als geparstes JSON über IPC
       next[key] = value !== null && typeof value === 'object' && !Array.isArray(value) && typeof prev === 'object' ? { ...(prev as object), ...value } : value;
     }
     const parsed = Settings.safeParse(next);
@@ -69,6 +71,7 @@ export class SettingsService {
           throw validationError('Die Base URL muss mit http:// oder https:// beginnen.');
         }
       }
+      // eslint-disable-next-line sonarjs/super-linear-regex -- Base-URL, Länge begrenzt
       settings.llm.baseUrl = url.replace(/\/+$/, '');
     }
     if (patch.archiveRoot !== undefined) {

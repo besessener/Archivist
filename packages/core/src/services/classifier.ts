@@ -103,7 +103,7 @@ export function classifyLocally(input: {
   now?: Date;
 }): LocalClassification {
   const now = input.now ?? new Date();
-  const base = input.fileName.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ');
+  const base = input.fileName.replace(/\.[^.]+$/, '').replace(/_+/g, ' ');
   const hay = `${input.fileName}\n${input.text.slice(0, 20_000)}`;
   const dates = extractDates(input.text, now);
   const year = (dates.find((d) => d.startsWith(String(now.getFullYear()))) ?? dates[0] ?? String(now.getFullYear())).slice(0, 4);

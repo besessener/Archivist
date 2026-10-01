@@ -114,9 +114,6 @@ export class SearchService {
 
     // 2) Semantische Suche (lokale Vektoren und – falls erlaubt – Embedding-Modell des Endpunkts)
     const wantRemote = opts.allowRemoteEmbedding ?? this.remoteAllowed();
-    const models = new Set<string>([this.embedding.currentModel(false)]);
-    const remote = this.embedding.currentModel(wantRemote);
-    if (remote !== LOCAL_MODEL) models.add(remote);
     let rank = 0;
     for (const useRemote of [false, true]) {
       if (useRemote && !wantRemote) continue;

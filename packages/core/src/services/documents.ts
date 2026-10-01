@@ -16,7 +16,6 @@ import { MIME_BY_EXT } from '../parsers';
 import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { sha256File, sha256Text } from '../util/hash';
-import type { ArchivistJson } from '../util/json';
 import { normalizeDateInput } from '../util/dates';
 import { sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
 import { normalizeName, truncate } from '../util/text';
@@ -448,8 +447,8 @@ export class DocumentService {
         extractedText: text,
         processingStatus: parsed.status,
         processingError: parsed.error,
-        technicalMeta: { ...parsed.meta, truncated: parsed.truncated, textHash } as ArchivistJson,
-        proposal: proposal as unknown as ArchivistJson,
+        technicalMeta: { ...parsed.meta, truncated: parsed.truncated, textHash },
+        proposal: proposal,
         llmStatus,
         status: 'proposed',
         updatedAt: nowIso(),

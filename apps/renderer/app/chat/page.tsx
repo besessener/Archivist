@@ -248,10 +248,12 @@ export default function ChatPage() {
       </div>
 
       <div className="border-t bg-background px-4 pb-3 pt-1">
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- fokussierbarer Trenner (WAI-ARIA Window Splitter), bewusst interaktiv */}
         <div
           role="separator"
           aria-orientation="horizontal"
           aria-label="Höhe des Eingabefelds ändern (Pfeiltasten hoch/runter, Doppelklick setzt zurück)"
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Window Splitter ist ein fokussierbares Widget
           tabIndex={0}
           title="Ziehen, um das Eingabefeld zu vergrößern oder zu verkleinern (Doppelklick: zurücksetzen)"
           className="group mx-auto flex h-3 w-full max-w-3xl cursor-row-resize touch-none items-center justify-center focus-visible:outline-2 focus-visible:outline-ring"
@@ -333,6 +335,7 @@ export default function ChatPage() {
               void saveRename();
             }}
           >
+            {/* eslint-disable-next-line jsx-a11y/no-autofocus -- Dialog zum Umbenennen: Fokus gehört ins Feld */}
             <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} maxLength={120} autoFocus aria-label="Neuer Titel" data-testid="rename-input" />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
