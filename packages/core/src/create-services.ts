@@ -227,7 +227,9 @@ function buildServices(opts: CreateServicesOptions) {
       if (settings.get().consistency.onStartup) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'));
       if (settings.get().backups.autoOnStartup)
-        void backup.create(settings.get().backups.includeArchive).catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
+        void backup
+          .create(settings.get().backups.includeArchive, 'startup')
+          .catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
     },
 
     async shutdown(): Promise<void> {

@@ -34,7 +34,7 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 | **Insights, Timeline, Notification Bell, Erinnerungen** | siehe UI; die Timeline zeigt auch **Ereignisse** (per Chat oder „Ereignis hinzufügen“ erfasst, durchsuchbar, im Wissensgraph); Erinnerungen werden beim Start geprüft und zeitgesteuert ausgelöst, **solange die App läuft** |
 | **Job-Queue** | Persistent in SQLite, überlebt Neustarts, Fortschritt, Wiederholen, kooperativer Abbruch; schwere Arbeit in Worker-Threads |
 | **Audit Log + Undo** | Jede relevante Änderung wird protokolliert; Undo prüft vorher, ob seitdem etwas verändert wurde |
-| **Backups** | Konsistenter SQLite-Snapshot (Online-Backup-API) + Einstellungen ohne API-Key; Metadaten- vs. vollständiges Archiv-Backup |
+| **Backups** | Konsistenter SQLite-Snapshot (Online-Backup-API) + Einstellungen ohne API-Key; Metadaten- vs. vollständiges Archiv-Backup; nach jedem Backup werden die ältesten über „Anzahl aufbewahrter Backups“ hinaus entfernt (getrennt je Art) |
 
 ### Bedienung in Kürze
 
