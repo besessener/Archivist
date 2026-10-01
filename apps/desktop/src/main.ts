@@ -185,6 +185,7 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   app.whenReady().then(start).catch((err: unknown) => {
+    process.stderr.write(`[archivist] Start fehlgeschlagen: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
     dialog.showErrorBox('Archivist konnte nicht gestartet werden', err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err));
     app.exit(1);
   });

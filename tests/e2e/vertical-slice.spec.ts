@@ -29,7 +29,8 @@ test.beforeAll(async () => {
   app = await electron.launch({
     executablePath: packaged ? packagedBinary : electronPath,
     args: [...(packaged ? [] : [appDir]), '--no-sandbox', '--disable-gpu'],
-    env: { ...process.env, ARCHIVIST_DATA_DIR: dataDir, ARCHIVIST_TEST_MODE: '1', ARCHIVIST_TEST_PICK_DIR: downloads },
+    timeout: 60_000,
+    env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1', ARCHIVIST_DATA_DIR: dataDir, ARCHIVIST_TEST_MODE: '1', ARCHIVIST_TEST_PICK_DIR: downloads },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
