@@ -1,6 +1,6 @@
 {
-  "id": "4ab5c940-a266-46da-998f-17ccf297b819",
-  "prevId": "8dec2296-f18b-4161-a55f-f142d7470ab1",
+  "id": "8dec2296-f18b-4161-a55f-f142d7470ab1",
+  "prevId": "cce08735-d6d5-485a-ab09-1f5b6f9cc04c",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -1058,21 +1058,6 @@
         },
         "recommended_action_label": {
           "name": "recommended_action_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "choices": {
-          "name": "choices",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'[]'"
-        },
-        "chosen_choice_id": {
-          "name": "chosen_choice_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

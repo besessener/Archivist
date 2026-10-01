@@ -20,7 +20,7 @@ const abs = (id: string) => path.join(archiveRoot(), ...row(id).archiveRelPath!.
 const relocate = (items: Array<{ documentId: string; categoryPath: string }>, confirmed = true) => app.services.archive.relocate(items, { confirmed });
 
 /** Importiert eine Textdatei und archiviert sie (Kopie) in `loc`; `topic` wird dem Dokument zugeordnet. */
-async function archived(name: string, content: string, loc: string, topic: string | null = TOPIC): Promise<string> {
+async function archived(name: string, content: string, loc: string, topic: string | null = TOPIC, mode: 'copy' | 'move' = 'copy'): Promise<string> {
   app.llm.on('DocumentClassification', () => ({
     docType: 'Notiz',
     title: name,
@@ -40,13 +40,19 @@ async function archived(name: string, content: string, loc: string, topic: strin
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: loc, topic }],
+    items: [{ documentId: id, mode, categoryPath: loc, topic }],
     confirmed: true,
     approveNewCategories: [],
-    confirmMove: false,
+    confirmMove: mode === 'move',
   } as never);
   return id;
 }
+
+/** The document's belongs_to relation to the category `name` (any status). */
+const categoryRelation = (id: string, name: string) =>
+  app.services.graph
+    .relationsOf(id, { types: ['belongs_to'] })
+    .find((r) => r.sourceEntityId === id && app.services.graph.getEntity(r.targetEntityId)?.name === name);
 
 const categoryNames = (id: string) =>
   app.services.graph
@@ -224,6 +230,75 @@ describe('Archivierte Dokumente umlagern', () => {
       expect(categoryNames(id)).toContain('work/hr/abwesenheiten');
       expect(categoryNames(id)).not.toContain('private/bildungsurlaub');
       expect(fs.existsSync(path.join(archiveRoot(), 'private', 'bildungsurlaub')), 'der leere neue Ordner wird entfernt').toBe(false);
+    });
+
+    it('relocate, undo relocate, then undo archiving succeeds and puts the moved original back', async () => {
+      const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'work/hr', TOPIC, 'move');
+      const source = row(id).sourcePath!;
+      const archiveAudit = app.services.audit.list().find((e) => e.action === 'archive.move' && e.entityIds.includes(id))!;
+      expect(fs.existsSync(source)).toBe(false);
+      const archivedRelation = categoryRelation(id, 'work/hr')!;
+
+      const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
+      expect(await app.ok('audit:undo', { auditId: res.items[0]!.auditId! })).toMatchObject({ undone: true });
+      expect(categoryRelation(id, 'work/hr'), 'the relation comes back with its id').toEqual(archivedRelation);
+
+      const undo = await app.ok('audit:undo', { auditId: archiveAudit.id });
+
+      expect(undo).toMatchObject({ undone: true, conflicts: [] });
+      expect(fs.readFileSync(source, 'utf8')).toBe('Antrag auf Bildungsurlaub');
+      expect(row(id).status).not.toBe('archived');
+      expect(row(id).archiveRelPath).toBeNull();
+      expect(categoryNames(id), 'archive undo removes the category relation it created').toEqual([]);
+    });
+
+    it('keeps a rejected relation to the old category through relocate and its undo', async () => {
+      const id = await archived('antrag.txt', 'Antrag', 'work/hr');
+      app.services.graph.setRelationStatus(categoryRelation(id, 'work/hr')!.id, 'rejected');
+      const rejected = categoryRelation(id, 'work/hr')!;
+
+      const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
+
+      expect(categoryRelation(id, 'work/hr')).toEqual(rejected);
+      expect(categoryRelation(id, 'work/neu')).toMatchObject({ status: 'confirmed' });
+
+      const undo = await app.ok('audit:undo', { auditId: res.items[0]!.auditId! });
+
+      expect(undo).toMatchObject({ undone: true, conflicts: [] });
+      expect(categoryRelation(id, 'work/hr'), 'still rejected, not recreated as confirmed').toEqual(rejected);
+      expect(categoryRelation(id, 'work/neu')).toBeUndefined();
+    });
+
+    it('confirms an earlier rejected relation to the target category and restores it exactly on undo', async () => {
+      const id = await archived('antrag.txt', 'Antrag', 'work/hr');
+      const target = app.services.graph.ensureEntity('category', 'work/neu');
+      const link = app.services.graph.link(id, target.id, 'belongs_to', { confidence: 0.4, status: 'proposed', sourceIds: [id] })!;
+      app.services.graph.setRelationStatus(link.id, 'rejected');
+      const rejected = app.services.graph.getRelation(link.id)!;
+
+      const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
+
+      expect(app.services.graph.getRelation(link.id)).toMatchObject({ status: 'confirmed' });
+      expect(categoryRelation(id, 'work/hr')).toBeUndefined();
+
+      const undo = await app.ok('audit:undo', { auditId: res.items[0]!.auditId! });
+
+      expect(undo).toMatchObject({ undone: true, conflicts: [] });
+      expect(app.services.graph.getRelation(link.id)).toEqual(rejected);
+      expect(categoryRelation(id, 'work/hr')).toMatchObject({ status: 'confirmed' });
+    });
+
+    it('refuses when the user decided on the new category relation after relocating', async () => {
+      const id = await archived('antrag.txt', 'Antrag', 'work/hr');
+      const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
+      app.services.graph.setRelationStatus(categoryRelation(id, 'work/neu')!.id, 'rejected');
+
+      const undo = await app.ok('audit:undo', { auditId: res.items[0]!.auditId! });
+
+      expect(undo.undone).toBe(false);
+      expect(undo.conflicts.join(' ')).toMatch(/Zuordnung zur Kategorie „work\/neu“/);
+      expect(categoryRelation(id, 'work/neu')).toMatchObject({ status: 'rejected' });
+      expect(row(id).archiveRelPath).toBe('work/neu/antrag.txt');
     });
 
     it('lehnt ab, wenn die Datei seit dem Umlagern verändert wurde oder der alte Platz belegt ist', async () => {

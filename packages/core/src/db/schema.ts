@@ -31,6 +31,8 @@ export const relations = sqliteTable(
     confidence: real('confidence').notNull().default(0.5),
     sourceIds: jsonArr('source_ids'),
     status: text('status').notNull().default('proposed'),
+    /** Set once the user explicitly confirmed or rejected the relation; such relations are never changed by field sync. */
+    resolvedByUser: integer('resolved_by_user', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
