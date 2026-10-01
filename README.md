@@ -158,7 +158,7 @@ Archivist/
 
 **LLM-Datenschutz** (`Einstellungen → Datenschutz`):
 
-- `auto` – Inhalte automatisch analysieren · `confirm` (Standard) – vor jeder externen Analyse ausdrücklich bestätigen · `local_only` – nie extern (keine Klassifikation, keine Chat-Auswertung, keine Embeddings per LLM).
+- `auto` – Inhalte automatisch analysieren · `confirm` (Standard) – vor jeder externen Analyse ausdrücklich bestätigen · `local_only` – nie extern (keine Klassifikation, keine Chat-Auswertung, keine Embeddings per LLM). Die Auswahl wird sofort gespeichert; der aktive Modus wird darunter angezeigt.
 - Verzeichnisse, Dateitypen und einzelne Dateien lassen sich dauerhaft von der LLM-Verarbeitung ausschließen. In der UI sind die Zustände sichtbar: *nur lokal gescannt · zur LLM-Analyse vorgesehen · per LLM analysiert · von externer Analyse ausgeschlossen*.
 - Vor jeder Übertragung werden Zugangsdaten und Geheimnisse (Passwörter, API-Keys, Tokens, JWTs, private Schlüssel, Verbindungsstrings) **maskiert**; jede Übertragung wird mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und gekürzter, maskierter Vorschau protokolliert und ist unter *Datenschutz → Übertragungsprotokoll* einsehbar. Gesendet wird mit `store: false`.
 
