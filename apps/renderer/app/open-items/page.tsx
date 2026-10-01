@@ -24,7 +24,7 @@ import { useRun } from '@/lib/use-run';
 import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
 import { nonEmpty, toIsoDay } from '@/lib/utils';
-import { EditableOpenItemStatus, isEditableOpenItemStatus, localDate, localToday, type OpenItemStatus } from '@archivist/shared';
+import { EditableOpenItemStatus, isEditableOpenItemStatus, localDate, localToday } from '@archivist/shared';
 
 type Group = 'overdue' | 'due' | 'open' | 'done';
 const GROUP_LABELS: Record<Group, string> = { overdue: 'Überfällig', due: 'Bald fällig', open: 'Offen', done: 'Erledigt' };
