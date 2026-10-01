@@ -33,7 +33,7 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 | **Agentische Konsistenzschleife** | Archivprüfung: fehlende Zuordnungen, Duplikate, **Dokumente zum selben Thema in verschiedenen Verzeichnissen (mit Umlager-Vorschlag)**, Widersprüche, unvollständige/überholte Entscheidungen, überfällige/verwaiste offene Punkte, ähnliche Themen, Ablageort vs. Klassifikation, DB-vs-Dateisystem |
 | **Insights, Timeline, Notification Bell, Erinnerungen** | siehe UI; die Timeline zeigt auch **Ereignisse** (per Chat oder „Ereignis hinzufügen“ erfasst, durchsuchbar, im Wissensgraph); Erinnerungen werden beim Start geprüft und zeitgesteuert ausgelöst, **solange die App läuft** |
 | **Job-Queue** | Persistent in SQLite, überlebt Neustarts, Fortschritt, Wiederholen, kooperativer Abbruch; schwere Arbeit in Worker-Threads |
-| **Audit Log + Undo** | Jede relevante Änderung wird protokolliert; Undo prüft vorher, ob seitdem etwas verändert wurde |
+| **Audit Log + Undo** | Jede relevante Änderung wird protokolliert; Undo prüft vorher, ob seitdem etwas verändert wurde, und nimmt nur zurück, was die Aktion selbst getan hat: Beziehungen im Wissensgraph, die schon vorher bestanden (auch von Ihnen bestätigte oder abgelehnte), bleiben erhalten, geänderte erhalten ihren vorherigen Status und ihre vorherige Confidence |
 | **Backups** | Konsistenter SQLite-Snapshot (Online-Backup-API) + Einstellungen ohne API-Key; Metadaten- vs. vollständiges Archiv-Backup; nach jedem Backup werden die ältesten über „Anzahl aufbewahrter Backups“ hinaus entfernt (getrennt je Art) |
 
 ### Bedienung in Kürze
