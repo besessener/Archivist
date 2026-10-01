@@ -121,11 +121,16 @@ const col = (tbl: RefTableShape, name: string): SQLiteColumn => (tbl as unknown 
 const selection = (tbl: RefTableShape, cols: string[]): Record<string, SQLiteColumn> => Object.fromEntries(cols.map((c) => [c, col(tbl, c)]));
 const emptyRefSets = (): RefSets => ({ documents: new Set(), decisions: new Set(), openItems: new Set(), events: new Set() });
 
-/** Explicit user decisions win over proposals when two relations are combined. */
+/**
+ * Explicit user decisions win over proposals when two relations are combined: a relation the user
+ * confirmed or rejected (`resolvedByUser`) keeps its status over a system one, and the flag is kept.
+ */
 const STATUS_RANK: Record<string, number> = { confirmed: 3, rejected: 2, proposed: 1, outdated: 0 };
-function combineRelations(a: RelationRow, b: RelationRow): Pick<RelationRow, 'status' | 'confidence' | 'sourceIds'> {
+function combineRelations(a: RelationRow, b: RelationRow): Pick<RelationRow, 'status' | 'confidence' | 'sourceIds' | 'resolvedByUser'> {
+  const rank = (r: RelationRow) => (r.resolvedByUser ? 10 : 0) + (STATUS_RANK[r.status] ?? 0);
   return {
-    status: (STATUS_RANK[b.status] ?? 0) > (STATUS_RANK[a.status] ?? 0) ? b.status : a.status,
+    status: rank(b) > rank(a) ? b.status : a.status,
+    resolvedByUser: a.resolvedByUser || b.resolvedByUser,
     confidence: Math.max(a.confidence, b.confidence),
     sourceIds: [...new Set([...a.sourceIds, ...b.sourceIds])],
   };
@@ -196,6 +201,29 @@ const mapRelation = (r: RelationRow): GraphRelation => ({
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
+
+/** Mutable state of a relation that field sync may change (restored on undo). */
+export interface RelationState {
+  status: RelationStatus;
+  confidence: number;
+  sourceIds: string[];
+}
+
+/**
+ * Relation changes caused by one edit, stored in the edit's undo data:
+ * relations the edit created (deleted again on undo) and relations whose state it changed.
+ */
+export interface RelationChangeSet {
+  created: Array<{ id: string; status: RelationStatus }>;
+  changed: Array<{ id: string; before: RelationState; after: RelationState }>;
+}
+
+const stateOf = (r: RelationRow): RelationState => ({ status: r.status as RelationStatus, confidence: r.confidence, sourceIds: r.sourceIds });
+const sameState = (a: RelationState, b: RelationState) =>
+  a.status === b.status && a.confidence === b.confidence && JSON.stringify(a.sourceIds) === JSON.stringify(b.sourceIds);
+
+/** Statuses that count as a current, visible assignment. */
+const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 
 /** Wissensgraph über Entitäts- und Beziehungstabellen in SQLite. */
 export class KnowledgeGraphService {
@@ -285,7 +313,7 @@ export class KnowledgeGraphService {
     sourceId: string,
     targetId: string,
     relationType: RelationType,
-    opts: { confidence?: number; status?: RelationStatus; sourceIds?: string[] } = {},
+    opts: { confidence?: number; status?: RelationStatus; sourceIds?: string[]; resolvedByUser?: boolean } = {},
   ): GraphRelation | null {
     if (sourceId === targetId) return null;
     const existing = this.db
@@ -296,7 +324,14 @@ export class KnowledgeGraphService {
     const now = nowIso();
     if (existing) {
       if (existing.status === 'rejected') return mapRelation(existing);
-      const status = existing.status === 'confirmed' ? 'confirmed' : (opts.status ?? existing.status);
+      // user decisions are kept; an outdated relation becomes current again when it is linked anew
+      const status = existing.resolvedByUser
+        ? existing.status
+        : existing.status === 'confirmed'
+          ? 'confirmed'
+          : existing.status === 'outdated'
+            ? (opts.status ?? 'proposed')
+            : (opts.status ?? existing.status);
       const sourceIds = [...new Set([...existing.sourceIds, ...(opts.sourceIds ?? [])])];
       const confidence = Math.max(existing.confidence, opts.confidence ?? 0);
       this.db.update(relations).set({ status, sourceIds, confidence, updatedAt: now }).where(eq(relations.id, existing.id)).run();
@@ -310,6 +345,7 @@ export class KnowledgeGraphService {
       confidence: opts.confidence ?? 0.5,
       sourceIds: opts.sourceIds ?? [],
       status: opts.status ?? 'proposed',
+      resolvedByUser: opts.resolvedByUser ?? false,
       createdAt: now,
       updatedAt: now,
     };
@@ -328,10 +364,15 @@ export class KnowledgeGraphService {
     this.ctx.events.changed('knowledge');
   }
 
-  setRelationStatus(id: string, status: RelationStatus): GraphRelation {
+  /** Sets the status as a user decision (`by: 'user'`), which field sync never overrides afterwards. */
+  setRelationStatus(id: string, status: RelationStatus, by: 'user' | 'system' = 'user'): GraphRelation {
     const r = this.getRelation(id);
     if (!r) throw new AppError('validation_error', 'Beziehung nicht gefunden.');
-    this.db.update(relations).set({ status, updatedAt: nowIso() }).where(eq(relations.id, id)).run();
+    this.db
+      .update(relations)
+      .set({ status, updatedAt: nowIso(), ...(by === 'user' ? { resolvedByUser: true } : {}) })
+      .where(eq(relations.id, id))
+      .run();
     this.ctx.events.changed('knowledge');
     return { ...r, status };
   }
@@ -348,7 +389,7 @@ export class KnowledgeGraphService {
 
   /** Entitäten, die über aktive (nicht abgelehnte) Beziehungen mit `entityId` verbunden sind. */
   neighbors(entityId: string, opts: { types?: EntityType[]; relationTypes?: RelationType[] } = {}): GraphEntity[] {
-    const rels = this.relationsOf(entityId, { statuses: ['proposed', 'confirmed'], types: opts.relationTypes });
+    const rels = this.relationsOf(entityId, { statuses: ACTIVE_STATUSES, types: opts.relationTypes });
     const ids = [...new Set(rels.map((r) => (r.sourceEntityId === entityId ? r.targetEntityId : r.sourceEntityId)))];
     if (ids.length === 0) return [];
     const found = this.db.select().from(entities).where(inArray(entities.id, ids)).all().map(mapEntity);
@@ -372,7 +413,7 @@ export class KnowledgeGraphService {
     const rel = this.db
       .select({ s: relations.sourceEntityId, t: relations.targetEntityId })
       .from(relations)
-      .where(and(or(inArray(relations.sourceEntityId, ids), inArray(relations.targetEntityId, ids)), sql`${relations.status} != 'rejected'`))
+      .where(and(or(inArray(relations.sourceEntityId, ids), inArray(relations.targetEntityId, ids)), sql`${relations.status} NOT IN ('rejected', 'outdated')`))
       .all();
     for (const r of rel) {
       counts.set(r.s, (counts.get(r.s) ?? 0) + 1);
@@ -384,7 +425,8 @@ export class KnowledgeGraphService {
   getDetail(id: string): EntityDetail {
     const entity = this.getEntity(id);
     if (!entity) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
-    const rels = this.relationsOf(id);
+    // outdated relations are history only: the detail view shows current assignments (and user rejections)
+    const rels = this.relationsOf(id).filter((r) => r.status !== 'outdated');
     const otherIds = [...new Set(rels.map((r) => (r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId)))];
     const others = otherIds.length
       ? new Map(
@@ -404,6 +446,109 @@ export class KnowledgeGraphService {
         return other ? [{ ...r, direction: out ? ('out' as const) : ('in' as const), other }] : [];
       }),
     };
+  }
+
+  /**
+   * Marks system-maintained relations of `relationType` between `entityId` and other entities as `outdated`,
+   * except those to `keepIds`. Used when a field (topic, project, participants …) changes so the graph only
+   * shows the current assignment. `direction: 'out'` (default) means `entityId` is the relation source,
+   * `'in'` that it is the target. `otherType` restricts the other end (e.g. only topics, not tags).
+   * Relations the user confirmed or rejected, rejected and already outdated ones stay untouched.
+   * Returns the ids of the relations marked outdated.
+   */
+  unlinkSystemRelations(
+    entityId: string,
+    relationType: RelationType,
+    keepIds: readonly string[],
+    opts: { direction?: 'out' | 'in'; otherType?: EntityType } = {},
+  ): string[] {
+    const out = (opts.direction ?? 'out') === 'out';
+    const rows = this.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          eq(out ? relations.sourceEntityId : relations.targetEntityId, entityId),
+          eq(relations.relationType, relationType),
+          inArray(relations.status, ACTIVE_STATUSES),
+          eq(relations.resolvedByUser, false),
+        ),
+      )
+      .all()
+      .filter((r) => !keepIds.includes(out ? r.targetEntityId : r.sourceEntityId));
+    const otherIds = rows.map((r) => (out ? r.targetEntityId : r.sourceEntityId));
+    const typeOf = new Map(
+      opts.otherType && otherIds.length
+        ? this.db
+            .select({ id: entities.id, type: entities.type })
+            .from(entities)
+            .where(inArray(entities.id, otherIds))
+            .all()
+            .map((e) => [e.id, e.type])
+        : [],
+    );
+    const stale = rows.filter((r) => !opts.otherType || typeOf.get(out ? r.targetEntityId : r.sourceEntityId) === opts.otherType);
+    if (stale.length === 0) return [];
+    const ids = stale.map((r) => r.id);
+    this.db.update(relations).set({ status: 'outdated', updatedAt: nowIso() }).where(inArray(relations.id, ids)).run();
+    this.ctx.events.changed('knowledge');
+    return ids;
+  }
+
+  /**
+   * Runs `fn` and records how the relations touching `entityId` changed (created / state changed),
+   * so an edit's undo can restore the previous relations with `revertRelationChanges`.
+   */
+  trackRelationChanges<T>(entityId: string, fn: () => T): { result: T; changes: RelationChangeSet } {
+    const before = new Map(this.relationRowsOf(entityId).map((r) => [r.id, r]));
+    const result = fn();
+    const changes: RelationChangeSet = { created: [], changed: [] };
+    for (const r of this.relationRowsOf(entityId)) {
+      const prev = before.get(r.id);
+      if (!prev) changes.created.push({ id: r.id, status: r.status as RelationStatus });
+      else if (!sameState(stateOf(prev), stateOf(r))) changes.changed.push({ id: r.id, before: stateOf(prev), after: stateOf(r) });
+    }
+    return { result, changes };
+  }
+
+  /** Conflicts (German) that prevent reverting `changes`: relations changed or removed since the edit. */
+  relationChangeConflicts(changes: RelationChangeSet | undefined): string[] {
+    if (!changes) return [];
+    const conflicts: string[] = [];
+    const current = (id: string) => this.db.select().from(relations).where(eq(relations.id, id)).get();
+    for (const c of changes.created) {
+      const r = current(c.id);
+      if (r && r.status !== c.status) conflicts.push('Eine bei der Bearbeitung angelegte Verknüpfung wurde seitdem bestätigt oder abgelehnt.');
+    }
+    for (const c of changes.changed) {
+      const r = current(c.id);
+      if (!r) conflicts.push('Eine bei der Bearbeitung geänderte Verknüpfung wurde seitdem gelöscht.');
+      else if (r.status !== c.after.status) conflicts.push('Eine bei der Bearbeitung geänderte Verknüpfung wurde seitdem bestätigt oder abgelehnt.');
+    }
+    return [...new Set(conflicts)];
+  }
+
+  /** Restores the relations recorded by `trackRelationChanges` (call inside the undo transaction). */
+  revertRelationChanges(changes: RelationChangeSet | undefined): void {
+    if (!changes || (changes.created.length === 0 && changes.changed.length === 0)) return;
+    const now = nowIso();
+    for (const c of changes.created) this.db.delete(relations).where(eq(relations.id, c.id)).run();
+    for (const c of changes.changed) {
+      this.db
+        .update(relations)
+        .set({ status: c.before.status, confidence: c.before.confidence, sourceIds: c.before.sourceIds, updatedAt: now })
+        .where(eq(relations.id, c.id))
+        .run();
+    }
+    this.ctx.events.changed('knowledge');
+  }
+
+  private relationRowsOf(entityId: string): RelationRow[] {
+    return this.db
+      .select()
+      .from(relations)
+      .where(or(eq(relations.sourceEntityId, entityId), eq(relations.targetEntityId, entityId)))
+      .all();
   }
 
   // ---------------------------------------------------------------------------------------------

@@ -95,7 +95,7 @@ function buildServices(opts: CreateServicesOptions) {
   const documentsSvc = new DocumentService(ctx, settings, graph, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
   const decisions = new DecisionService(ctx, graph, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, search, audit, undo);
-  const eventsSvc = new EventService(ctx, graph, search, audit);
+  const eventsSvc = new EventService(ctx, graph, search, audit, undo);
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
@@ -177,7 +177,10 @@ function buildServices(opts: CreateServicesOptions) {
     return summaries;
   });
   jobs.register<{ fileIds: string[]; confirmLlm: boolean }>('scanner.analyze', (job) => scanner.analyzeFiles(job.payload.fileIds, job.payload.confirmLlm, job));
-  jobs.register<{ trigger?: string }>('consistency.check', (job) => consistency.run(job.payload.trigger ?? 'manual', (p, m) => job.report(p, m)));
+  jobs.register<{ trigger?: string }>('consistency.check', async (job) => {
+    await archive.cleanupInbox(); // retries inbox copies that were locked right after archiving
+    return consistency.run(job.payload.trigger ?? 'manual', (p, m) => job.report(p, m));
+  });
 
   // 7) Reaktion auf geänderte Einstellungen
   events.on('data:changed', (e: { scopes: string[] }) => {
@@ -235,6 +238,7 @@ function buildServices(opts: CreateServicesOptions) {
       reminders.start();
       scanner.applySettings();
       scanner.startupScan();
+      void archive.cleanupInbox();
       if (settings.get().consistency.onStartup) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'));
       if (settings.get().backups.autoOnStartup)

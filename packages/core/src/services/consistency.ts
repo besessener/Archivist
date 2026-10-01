@@ -70,6 +70,10 @@ export class ConsistencyService {
     return this.ctx.database.db;
   }
 
+  private actionFailed(actionId: string | null): boolean {
+    return actionId ? this.actions.getMany([actionId])[0]?.status === 'failed' : false;
+  }
+
   /** Dokumente zum selben Thema oder Projekt, die in verschiedenen Archivverzeichnissen liegen: Hinweis plus Umlager-Vorschlag. */
   private checkScatteredDocuments(archived: Array<typeof documents.$inferSelect>, count: (kind: string) => void): void {
     const entityName = (id: string | null) => (id ? (this.graph.getEntity(id)?.name ?? null) : null);
@@ -82,7 +86,9 @@ export class ConsistencyService {
       // der Schlüssel enthält die Verteilung: ändert sie sich (z. B. nach dem Umlagern), erledigt sich der Hinweis von selbst
       const key = `scattered:${s.kind}:${s.name}:${h(s.groups.flatMap((g) => g.docs.map((d) => `${d.id}@${g.folder}`)))}`;
       keepScattered.add(key);
-      if (this.insights.has(key)) continue;
+      const existing = this.insights.byDedupeKey(key);
+      // an open hint whose move failed (nothing was moved) gets a fresh proposal so it can be retried
+      if (existing && !(existing.status === 'open' && this.actionFailed(existing.recommendedActionId))) continue;
       const target = chooseTargetFolder(s.groups);
       const movable = target ? s.groups.filter((g) => g.folder !== target).flatMap((g) => g.docs) : [];
       const action =

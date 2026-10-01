@@ -1,5 +1,5 @@
 import type { EntityRef } from '@archivist/shared';
-import { and, eq, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppContext } from '../../context';
 import { decisions, documents, entities, events, openItems, relations } from '../../db/schema';
@@ -303,7 +303,7 @@ export class EntityDuplicateCheck {
       this.db
         .select({ c: sql<number>`count(*)` })
         .from(relations)
-        .where(and(or(eq(relations.sourceEntityId, e.id), eq(relations.targetEntityId, e.id)), ne(relations.status, 'rejected')))
+        .where(and(or(eq(relations.sourceEntityId, e.id), eq(relations.targetEntityId, e.id)), inArray(relations.status, ['proposed', 'confirmed'])))
         .get()?.c ?? 0;
     if (e.type === 'tag') return { documents: tagDocs.get(normalizeName(e.name)) ?? 0, decisions: 0, openItems: 0, events: 0, relations: rel };
     const n = (tbl: typeof documents | typeof decisions | typeof openItems | typeof events) =>
