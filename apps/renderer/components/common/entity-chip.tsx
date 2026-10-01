@@ -1,10 +1,25 @@
 import Link from 'next/link';
-import type { EntityType } from '@archivist/shared';
-import { Briefcase, FileText, Gavel, Hash, Folder, HelpCircle, ListChecks, StickyNote, Tag, User, CalendarDays, Lightbulb } from 'lucide-react';
+import type { RefType } from '@archivist/shared';
+import {
+  Bell,
+  Briefcase,
+  FileText,
+  Gavel,
+  Hash,
+  Folder,
+  HelpCircle,
+  ListChecks,
+  ShieldAlert,
+  StickyNote,
+  Tag,
+  User,
+  CalendarDays,
+  Lightbulb,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { entityHref, ENTITY_TYPE_LABELS } from '@/lib/nav';
 
-const ICONS: Record<EntityType, React.ComponentType<{ className?: string }>> = {
+const ICONS: Record<RefType, React.ComponentType<{ className?: string }>> = {
   document: FileText,
   decision: Gavel,
   topic: Lightbulb,
@@ -16,9 +31,11 @@ const ICONS: Record<EntityType, React.ComponentType<{ className?: string }>> = {
   note: StickyNote,
   category: Folder,
   tag: Tag,
+  reminder: Bell,
+  contradiction: ShieldAlert,
 };
 
-export function EntityIcon({ type, className }: { type: EntityType; className?: string }) {
+export function EntityIcon({ type, className }: { type: RefType; className?: string }) {
   const Icon = ICONS[type] ?? Hash;
   return <Icon className={className} />;
 }
@@ -32,7 +49,7 @@ export function EntityChip({
   className,
   suffix,
 }: {
-  type: EntityType;
+  type: RefType;
   id: string;
   label: string;
   detail?: string | null;

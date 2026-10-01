@@ -29,6 +29,11 @@ export class TimelineService {
     };
     const ref = (type: EntityRef['type'], id: string | null, label?: string | null): EntityRef[] =>
       id ? [{ type, id, label: label ?? this.graph.getEntity(id)?.name ?? id }] : [];
+    // Der Widerspruch selbst steht vorn (führt zu den Insights), danach die betroffenen Entscheidungen
+    const contraRefs = (c: { id: string; title: string; affectedEntityIds: string[] }): EntityRef[] => [
+      { type: 'contradiction', id: c.id, label: c.title },
+      ...c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
+    ];
     const push = (e: Omit<TimelineEntry, 'year'>) => {
       const date = e.date.slice(0, 10);
       if (q.from && date < q.from.slice(0, 10)) return;
@@ -99,7 +104,7 @@ export class TimelineService {
           kind: 'contradiction',
           title: c.title,
           description: truncate(c.description, 240),
-          refs: c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
+          refs: contraRefs(c),
         });
       }
     } else {
@@ -120,7 +125,7 @@ export class TimelineService {
             kind: 'contradiction',
             title: c.title,
             description: truncate(c.description, 240),
-            refs: c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
+            refs: contraRefs(c),
           });
         }
       }

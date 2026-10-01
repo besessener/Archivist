@@ -1385,7 +1385,7 @@ export class ChatService {
       intent: 'decision_new',
       content: `Die Entscheidung ist gespeichert.\n\n${this.decisions.format(d)}${lines.length ? `\n\n${lines.join('\n')}` : ''}`,
       sources: [this.decisionSource(d)],
-      context: { ...this.decisionContext(d), contradictions: conflicts.map((c) => ({ type: 'decision' as const, id: c.id, label: c.title })) },
+      context: { ...this.decisionContext(d), contradictions: conflicts.map((c) => ({ type: 'contradiction' as const, id: c.id, label: c.title })) },
       actions,
       confidence: d.confidence,
       uncertainties,
@@ -1541,6 +1541,7 @@ export class ChatService {
       if (s.type === 'document') add(ctx.documents, ref);
       if (s.type === 'decision') add(ctx.decisions, ref);
       if (s.type === 'task') add(ctx.openItems, ref);
+      if (s.type === 'contradiction') add(ctx.contradictions, ref);
       for (const n of this.graph.neighbors(s.id, { types: ['topic', 'project', 'person'] }).slice(0, 6)) {
         const r: EntityRef = { type: n.type, id: n.id, label: n.name };
         add(n.type === 'topic' ? ctx.topics : n.type === 'project' ? ctx.projects : ctx.persons, r);
@@ -2103,7 +2104,7 @@ export class ChatService {
       uncertainties: ['Erinnerungen werden nur angezeigt, solange Archivist geöffnet ist.'],
       state: { ...state, last: { ...(state.last ?? {}), openItemId: target?.id ?? state.last?.openItemId } },
       sources: [
-        { id: rem.id, type: 'note', title: rem.title, snippet: `Erinnerung am ${when}`, score: 1, path: null, date: when },
+        { id: rem.id, type: 'reminder', title: rem.title, snippet: `Erinnerung am ${when}`, score: 1, path: null, date: when },
         ...(target ? [{ id: target.id, type: 'task' as const, title: target.title, snippet: `Fällig ${when}`, score: 1, path: null, date: when }] : []),
       ],
     };
@@ -2521,7 +2522,7 @@ export class ChatService {
       intent: 'contradiction_check',
       content: `Ich habe ${list.length} mögliche(n) Widerspruch/Widersprüche gefunden:\n\n${list.map((c) => `**${c.title}**\n${c.description}`).join('\n\n')}\n\nDas sind Hinweise, keine festgestellte Wahrheit.`,
       actions: actions.filter((a) => a.status === 'proposed'),
-      context: { contradictions: list.map((c) => ({ type: 'decision' as const, id: c.id, label: c.title })) },
+      context: { contradictions: list.map((c) => ({ type: 'contradiction' as const, id: c.id, label: c.title })) },
       confidence: Math.max(...list.map((c) => c.confidence)),
       state,
     };
