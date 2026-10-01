@@ -339,3 +339,85 @@ describe('Unterhaltungen umbenennen', () => {
     expect((await app.call('chat:renameConversation', { id: 'gibt-es-nicht', title: 'x' })).ok).toBe(false);
   });
 });
+
+describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
+  const msg = 'Für den Konferenzbeitrag habe ich es leicht abgewandelt und am 01.10.2026 beim German Testing Day eingereicht. Erinnere mich am 15.11.2026 an das Feedback.';
+  const decisionUnsure = () => intent({ intent: 'decision_new', segment: 'am 01.10.2026 eingereicht', decisionCertainty: 'unsure', decision: decisionEx({ decisionText: 'Beitrag beim German Testing Day eingereicht.', title: 'Beitrag eingereicht', topic: 'Konferenz', decidedAt: '2026-10-01' }) });
+  const reminder = () => intent({ intent: 'reminder_create', segment: 'Erinnere mich am 15.11.2026', reminder: { remindAt: '2026-11-15', title: 'Feedback zum Konferenzbeitrag' } });
+  const multi = (...intents: unknown[]) => ({ intents });
+
+  it('speichert eine unsichere Entscheidung nicht ungefragt, setzt die weitere Absicht danach fort und legt bei „Notiz“ nur eine Notiz an', async () => {
+    app.llm.on('ChatIntent', () => multi(decisionUnsure(), reminder()));
+    const r1 = await app.ok('chat:send', { text: msg });
+    expect(r1.assistantMessage.content).toMatch(/nicht sicher, ob das eine getroffene \*\*Entscheidung\*\*/);
+    expect(await app.ok('decisions:list', {})).toHaveLength(0);
+    expect(await app.ok('reminders:list', {})).toHaveLength(0); // wartet bis zur Antwort
+
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' })); // die Antwort wird nicht per LLM ausgewertet
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Nur als Notiz' });
+    expect(r2.assistantMessage.content).toMatch(/Notiz gespeichert/);
+    expect(await app.ok('decisions:list', {})).toHaveLength(0);
+    expect((await app.ok('reminders:list', {}))[0]).toMatchObject({ remindAt: '2026-11-15' });
+    expect((await app.ok('search:global', { query: 'German Testing Day', limit: 5 })).some((h) => h.type === 'note')).toBe(true);
+  });
+
+  it('erfasst die Entscheidung erst nach ausdrücklicher Bestätigung, „nichts speichern“ verwirft sie', async () => {
+    app.llm.on('ChatIntent', () => multi(decisionUnsure()));
+    const r1 = await app.ok('chat:send', { text: msg });
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Ja, als Entscheidung' });
+    expect(r2.assistantMessage.content).toMatch(/Wer war an der Entscheidung beteiligt|Entscheidung/);
+    expect(await app.ok('decisions:list', {})).toHaveLength(1);
+
+    app.llm.on('ChatIntent', () => multi(decisionUnsure()));
+    const r3 = await app.ok('chat:send', { text: 'Wir sollten vielleicht den Anbieter wechseln.' });
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
+    const r4 = await app.ok('chat:send', { conversationId: r3.conversationId, text: 'nichts speichern' });
+    expect(r4.assistantMessage.content).toMatch(/nichts/);
+    expect(await app.ok('decisions:list', {})).toHaveLength(1);
+  });
+
+  it('führt mehrere eindeutige Absichten einer Nachricht nacheinander aus und fasst die Antwort zusammen', async () => {
+    app.llm.on('ChatIntent', () =>
+      multi(
+        intent({ intent: 'note_capture', segment: 'Notiz', note: 'Stackit-PoC läuft seit Mai.' }),
+        intent({ intent: 'open_item_new', segment: 'offener Punkt', openItem: { title: 'PoC im ACT-Team vorstellen', dueAt: '2026-10-31', responsible: 'Anna' } }),
+        intent({ intent: 'reminder_create', segment: 'Erinnerung', reminder: { remindAt: '2026-10-30', title: 'PoC vorbereiten' } }),
+      ),
+    );
+    const r = await app.ok('chat:send', { text: 'Notiz: Stackit-PoC läuft seit Mai. Offen: PoC im ACT-Team vorstellen bis 31.10. Erinnere mich am 30.10.' });
+    expect(r.assistantMessage.content).toMatch(/Notiz gespeichert/);
+    expect(r.assistantMessage.content).toMatch(/PoC im ACT-Team vorstellen/);
+    expect((await app.ok('openItems:list', {})).length).toBeGreaterThanOrEqual(1);
+    expect((await app.ok('reminders:list', {})).length).toBeGreaterThanOrEqual(1);
+    expect(await app.ok('decisions:list', {})).toHaveLength(0);
+  });
+
+  it('stellt eine Rückfrage statt zu raten, wenn die Absicht unklar ist', async () => {
+    app.llm.on('ChatIntent', () => ({ intents: [intent({ intent: 'unknown', confidence: 0.2 })], clarification: 'Meinst du, dass ich Nordlicht archivieren oder pausieren soll?' }));
+    const r = await app.ok('chat:send', { text: 'Mach das mit Nordlicht.' });
+    expect(r.assistantMessage.content).toContain('archivieren oder pausieren');
+    expect(await app.ok('decisions:list', {})).toHaveLength(0);
+  });
+});
+
+describe('Rückfrage in einer Mehrfach-Nachricht stellt weitere Absichten zurück', () => {
+  it('führt die Erinnerung nach der Antwort auf die Rückfrage zum offenen Punkt aus', async () => {
+    let n = 0;
+    app.llm.on('ChatIntent', () => {
+      n += 1;
+      if (n > 1) return { intents: [intent({ intent: 'open_item_update', openItem: { responsible: 'Anna', dueAt: '2026-10-31' } })] };
+      return {
+        intents: [
+          intent({ intent: 'open_item_new', segment: 'offener Punkt', openItem: { title: 'PoC vorstellen' } }),
+          intent({ intent: 'reminder_create', segment: 'Erinnerung', reminder: { remindAt: '2026-10-30', title: 'PoC vorbereiten' } }),
+        ],
+      };
+    });
+    const r1 = await app.ok('chat:send', { text: 'Offen: PoC vorstellen. Erinnere mich am 30.10. an die Vorbereitung.' });
+    expect(await app.ok('reminders:list', {})).toHaveLength(0);
+    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Anna, bis 31.10.' });
+    expect(r2.assistantMessage.content).toMatch(/Erinnerung/);
+    expect(await app.ok('reminders:list', {})).toHaveLength(1);
+  });
+});

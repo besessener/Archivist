@@ -24,7 +24,7 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 
 | Bereich | Umsetzung |
 | --- | --- |
-| **Chat** (zentrale Schnittstelle) | LLM-gestützte Intent-Erkennung (strukturiert, Zod-validiert) für Entscheidungen, Notizen, Wissensfragen, Dokumentsuche, Timeline, offene Punkte, Erinnerungen, Archivierung, Scan, Ausschlüsse, Widersprüche; Antworten mit Quellen, getrennten Fakten/Interpretation und sichtbaren Unsicherheiten |
+| **Chat** (zentrale Schnittstelle) | LLM-gestützte Intent-Erkennung (strukturiert, Zod-validiert) für Entscheidungen, Notizen, Wissensfragen, Dokumentsuche, Timeline, offene Punkte, Erinnerungen, Archivierung, Scan, Ausschlüsse, Widersprüche; **mehrere Absichten pro Nachricht** (werden nacheinander ausgeführt, Rückfragen stellen die übrigen zurück); Rückfrage statt Raten bei unklarer Absicht und **bevor eine unsichere „Entscheidung“ gespeichert wird** (Entscheidung / Notiz / nichts speichern); Antworten mit Quellen, getrennten Fakten/Interpretation und sichtbaren Unsicherheiten |
 | **Decision Tracking** | Pflichtfelder *Wann, Thema, Beteiligte, Entscheidung*; gezielte Rückfragen; Entwurf, bis alles vollständig ist oder ausdrücklich als „unbekannt“ bestätigt wurde; Ersetzen/Widerrufen nur nach Bestätigung |
 | **Dokumente** | Drag-and-Drop/Dateiauswahl, sicherer Eingang (`inbox/`), Prüfsumme, Duplikaterkennung, Parser für PDF, DOCX, PPTX, XLSX, EML, TXT/MD, PNG/JPG, Klassifikation (LLM oder lokal), menschenlesbarer Zielpfad, Archivierung per Kopieren/Verschieben/nur Indexieren/Ignorieren, Undo |
 | **Wissensgraph** | Entitäten (Document, Decision, Topic, Project, Person, Event, Question→Task, Note, Category, Tag) und Beziehungen mit Confidence/Status (`proposed/confirmed/rejected/outdated`) in SQLite |
