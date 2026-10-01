@@ -406,6 +406,8 @@ export const GraphEntity = z.object({
   type: EntityType,
   name: z.string(),
   description: z.string().nullable(),
+  /** Former names of entities merged into this one (resolve later mentions of these names). */
+  aliases: z.array(z.string()),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
@@ -467,6 +469,7 @@ export const AgentActionType = z.enum([
   'resolve_contradiction',
   'close_open_item',
   'merge_topics',
+  'merge_entities',
   'confirm_relation',
   'reject_relation',
   'exclude_path',
@@ -525,6 +528,8 @@ export const ActionParamSchemas = {
   }),
   close_open_item: z.object({ openItemId: Id, status: z.enum(['resolved', 'dismissed']).default('resolved') }),
   merge_topics: z.object({ sourceTopicId: Id, targetTopicId: Id }),
+  /** Generic merge (topics, projects, persons, tags); `allowCrossType` merges a topic into a project or vice versa (target type wins). */
+  merge_entities: z.object({ sourceIds: z.array(Id).min(1), targetId: Id, allowCrossType: z.boolean().default(false) }),
   confirm_relation: z.object({ relationId: Id }),
   reject_relation: z.object({ relationId: Id }),
   exclude_path: z.object({ kind: z.enum(['file', 'dir']), path: z.string() }),

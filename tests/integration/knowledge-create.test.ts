@@ -23,6 +23,11 @@ describe('knowledge:createEntity ("Neu anlegen" on the knowledge page)', () => {
     expect(again.entity.id).toBe(first.entity.id);
     expect(await app.ok('knowledge:listEntities', { type: 'topic' })).toHaveLength(1);
 
+    // a remembered alias (e.g. from a merge) also counts as existing
+    app.services.graph.addAlias(first.entity.id, 'Hauskauf Musterstraße');
+    const viaAlias = await app.ok('knowledge:createEntity', { type: 'topic', name: 'Hauskauf Musterstrasse' });
+    expect(viaAlias).toMatchObject({ created: false, entity: { id: first.entity.id } });
+
     // the same name with another type is a different entry
     const project = await app.ok('knowledge:createEntity', { type: 'project', name: 'Hauskauf' });
     expect(project.created).toBe(true);

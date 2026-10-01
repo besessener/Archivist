@@ -178,7 +178,8 @@ export class EventService {
     this.ctx.events.changed('events', 'knowledge', 'status');
   }
 
-  private async reindex(id: string): Promise<void> {
+  /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
+  async reindex(id: string): Promise<void> {
     try {
       const e = this.get(id);
       await this.search.index({

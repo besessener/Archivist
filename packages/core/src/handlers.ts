@@ -254,6 +254,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
           type: 'event' as const,
           name: event.title,
           description: event.description,
+          aliases: [],
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
         };
@@ -264,7 +265,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         if (created) s.audit.log({ action: 'note.create', actor: 'user', trigger, confirmed: true, entityIds: [note.id], after: { title: note.name } });
         return { entity: note, created };
       }
-      const existing = s.graph.findByName(i.type, i.name);
+      // a merged-away name (alias) also counts as existing
+      const existing = s.graph.findByNameOrAlias(i.type, i.name);
       if (existing) return { entity: existing, created: false };
       const entity = s.graph.ensureEntity(i.type, i.name, i.description?.trim() || null);
       s.audit.log({ action: `${i.type}.create`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
