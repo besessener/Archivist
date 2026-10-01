@@ -1,0 +1,43 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { expect, test } from './fixture';
+
+function savedMode(dataDir: string): string {
+  const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'settings.json'), 'utf8')) as { privacy: { llmMode: string } };
+  return settings.privacy.llmMode;
+}
+
+test.describe('Datenschutzmodus', () => {
+  test('wird beim Auswählen sofort gespeichert und als aktiv angezeigt', async ({ llm, on, page, workspace }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openPrivacy();
+    await expect(app.settings.locators.privacy.activeMode).toContainText('Automatisch analysieren');
+
+    await app.settings.do.selectMode('local_only');
+
+    await expect(app.settings.locators.privacy.activeMode).toContainText('Aktiver Modus: Nur lokal');
+    await expect.poll(() => savedMode(workspace.dataDir)).toBe('local_only');
+
+    // Leaving the page without pressing any save button keeps the mode.
+    await app.navigation.do.open('timeline');
+    await app.navigation.do.open('settings');
+    await app.settings.do.openPrivacy();
+    await expect(app.settings.locators.privacy.mode('local_only')).toBeChecked();
+    await expect(app.settings.locators.privacy.activeMode).toContainText('Nur lokal');
+  });
+
+  test('verwirft beim Wechseln des Modus keine ungespeicherten Eingaben unter „Nie analysieren“', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openPrivacy();
+    await app.settings.locators.privacy.extensions.fill('xlsx, eml');
+
+    await app.settings.do.selectMode('confirm');
+
+    await expect(app.settings.locators.privacy.activeMode).toContainText('Vor jeder externen Analyse fragen');
+    await expect(app.settings.locators.privacy.extensions).toHaveValue('xlsx, eml');
+  });
+});
