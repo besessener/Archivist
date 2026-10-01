@@ -5,6 +5,7 @@ import type { AppContext } from '../context';
 import { contradictions } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
 import { AppError } from '../util/errors';
+import { sha256Text } from '../util/hash';
 import { newId, nowIso } from '../util/ids';
 import { normalizeName, truncate } from '../util/text';
 import type { ActionService } from './actions';
@@ -73,6 +74,8 @@ const map = (r: Row): Contradiction => ({
  */
 export class ContradictionService {
   private actions!: ActionService;
+  /** pairs (with their texts) the LLM judged not contradictory, so a scan does not ask again for the same texts */
+  private readonly vetoed = new Set<string>();
 
   constructor(
     private readonly ctx: AppContext,
@@ -81,7 +84,21 @@ export class ContradictionService {
     private readonly insights: InsightService,
     private readonly notifications: NotificationService,
     private readonly llm: LlmService,
-  ) {}
+  ) {
+    // rejecting the insight closes the contradiction notice as well (seen, both decisions stay)
+    this.insights.onRejected((key) => {
+      if (!key.startsWith('contradiction:')) return;
+      const c = this.db
+        .select()
+        .from(contradictions)
+        .where(eq(contradictions.id, key.slice('contradiction:'.length)))
+        .get();
+      if (c?.status !== 'detected') return;
+      this.db.update(contradictions).set({ status: 'acknowledged' }).where(eq(contradictions.id, c.id)).run();
+      this.notifications.resolveByDedupePrefix(`contradiction:${c.id}`);
+      this.ctx.events.changed('contradictions');
+    });
+  }
 
   wire(deps: { actions: ActionService }): void {
     this.actions = deps.actions;
@@ -105,6 +122,20 @@ export class ContradictionService {
     const r = this.db.select().from(contradictions).where(eq(contradictions.id, id)).get();
     if (!r) throw new AppError('validation_error', 'Widerspruch nicht gefunden.');
     return map(r);
+  }
+
+  private static pairKey(a: string, b: string): string {
+    return `decision:${[a, b].sort().join('|')}`;
+  }
+
+  /** Der (letzte) Widerspruch zu diesem Entscheidungspaar, gleich welchen Status. */
+  forPair(a: string, b: string): Contradiction | undefined {
+    const r = this.db
+      .select()
+      .from(contradictions)
+      .where(eq(contradictions.dedupeKey, ContradictionService.pairKey(a, b)))
+      .get();
+    return r ? map(r) : undefined;
   }
 
   /** Lexikalische Prüfung zweier Entscheidungen. */
@@ -152,6 +183,21 @@ export class ContradictionService {
     }
   }
 
+  /** Lexical check, then (if available) the LLM's verdict, which may veto a lexical hit. */
+  private async evaluate(a: Decision, b: Decision): Promise<{ reason: string; confidence: number } | null> {
+    const lex = this.compareLexically(a, b);
+    if (!lex) return null;
+    const vetoKey = `${ContradictionService.pairKey(a.id, b.id)}:${sha256Text([a.decisionText, b.decisionText].sort().join('\n'))}`;
+    if (this.vetoed.has(vetoKey)) return null;
+    const llm = await this.confirmWithLlm(a, b);
+    if (!llm) return lex.conflict ? { reason: lex.reason, confidence: lex.confidence } : null;
+    if (!llm.isContradiction) {
+      this.vetoed.add(vetoKey);
+      return null;
+    }
+    return { reason: llm.description || lex.reason, confidence: Math.max(lex.confidence, llm.confidence) };
+  }
+
   /** Prüft eine (neue) Entscheidung gegen aktive Entscheidungen zum gleichen Thema/Projekt. */
   async checkDecision(decisionId: string): Promise<Contradiction[]> {
     const d = this.decisions.get(decisionId);
@@ -159,43 +205,71 @@ export class ContradictionService {
     const others = this.decisions.activeFor(d.topicId, d.projectId, d.id);
     const created: Contradiction[] = [];
     for (const o of others) {
-      const lex = this.compareLexically(d, o);
-      if (!lex) continue;
-      let conflict = lex.conflict;
-      let confidence = lex.confidence;
-      let reason = lex.reason;
-      const llm = await this.confirmWithLlm(d, o);
-      if (llm) {
-        conflict = llm.isContradiction;
-        confidence = llm.isContradiction ? Math.max(confidence, llm.confidence) : 0;
-        reason = llm.description || reason;
-      }
-      if (!conflict) continue;
-      created.push(await this.record(d, o, reason, confidence));
+      const found = await this.evaluate(d, o);
+      if (found) created.push(await this.record(d, o, found.reason, found.confidence));
     }
     return created;
   }
 
-  /** Prüft alle aktiven Entscheidungen paarweise je Thema (Archivprüfung). */
+  /**
+   * Prüft alle aktiven Entscheidungen paarweise je Thema (Archivprüfung). Bereits erfasste Paare werden nicht erneut
+   * bewertet; das Urteil des LLM gilt wie bei `checkDecision`. Offene Widersprüche, deren Entscheidungen nicht mehr
+   * beide aktiv sind, gelten als aufgelöst.
+   */
   async scanAll(): Promise<Contradiction[]> {
+    this.reconcile();
     const active = this.decisions.list().filter((d) => ACTIVE_DECISION_STATUSES.includes(d.status));
     const created: Contradiction[] = [];
     const seen = new Set<string>();
     for (const d of active) {
       for (const o of this.decisions.activeFor(d.topicId, d.projectId, d.id)) {
-        const key = [d.id, o.id].sort().join('|');
+        const key = ContradictionService.pairKey(d.id, o.id);
         if (seen.has(key)) continue;
         seen.add(key);
-        const lex = this.compareLexically(d, o);
-        if (lex?.conflict) created.push(await this.record(d, o, lex.reason, lex.confidence));
+        if (this.forPair(d.id, o.id)) continue;
+        const found = await this.evaluate(d, o);
+        if (found) created.push(await this.record(d, o, found.reason, found.confidence));
       }
     }
     return created;
   }
 
+  /** Open contradictions whose decisions are no longer both active are resolved (with their insight and proposal). */
+  private reconcile(): void {
+    const open = this.db
+      .select()
+      .from(contradictions)
+      .all()
+      .filter((c) => c.status === 'detected' || c.status === 'acknowledged');
+    for (const c of open) {
+      const stillActive = c.affectedEntityIds.every((id) => {
+        try {
+          return ACTIVE_DECISION_STATUSES.includes(this.decisions.get(id).status);
+        } catch {
+          return false;
+        }
+      });
+      if (!stillActive) this.close(c.id, 'resolved', 'Eine der beiden Entscheidungen ist nicht mehr aktiv.');
+    }
+  }
+
+  /** Nach dem Ersetzen der älteren durch die neuere Entscheidung: der Widerspruch des Paares ist aufgelöst. */
+  settlePair(oldId: string, newId: string): void {
+    const c = this.forPair(oldId, newId);
+    if (c && (c.status === 'detected' || c.status === 'acknowledged')) this.close(c.id, 'resolved', 'Die ältere Entscheidung wurde ersetzt.');
+  }
+
+  /** Shared lifecycle: contradiction, its notification, its insight and its proposal are closed together. */
+  private close(id: string, resolution: 'resolved' | 'false_positive', reason: string): void {
+    this.db.update(contradictions).set({ status: resolution, resolvedAt: nowIso() }).where(eq(contradictions.id, id)).run();
+    this.notifications.resolveByDedupePrefix(`contradiction:${id}`);
+    this.insights.settle(`contradiction:${id}`, resolution === 'resolved' ? 'accepted' : 'rejected', `Der Widerspruch wurde bereits aufgelöst: ${reason}`);
+    this.ctx.events.changed('contradictions', 'insights');
+  }
+
   private async record(a: Decision, b: Decision, reason: string, confidence: number): Promise<Contradiction> {
     const [older, newer] = [a, b].sort((x, y) => (x.decidedAt ?? x.createdAt).localeCompare(y.decidedAt ?? y.createdAt)) as [Decision, Decision];
-    const dedupeKey = `decision:${[a.id, b.id].sort().join('|')}`;
+    const dedupeKey = ContradictionService.pairKey(a.id, b.id);
     const existing = this.db.select().from(contradictions).where(eq(contradictions.dedupeKey, dedupeKey)).get();
     if (existing) return map(existing);
     const topic = a.topicName ?? b.topicName ?? a.projectName ?? 'diesem Thema';
@@ -218,6 +292,9 @@ export class ContradictionService {
       resolvedAt: null,
     };
     this.db.insert(contradictions).values(row).run();
+    // one proposal per pair: the contradiction replaces a "possibly superseded" hint of the archive check
+    for (const key of [`superseded:${older.id}:${newer.id}`, `superseded:${newer.id}:${older.id}`])
+      this.insights.retire(key, 'Für diese Entscheidungen wurde ein Widerspruch erkannt; er ersetzt den Hinweis.');
     this.graph.link(newer.id, older.id, 'contradicts', { confidence, status: 'proposed' });
 
     // Vorschlag: neuere Entscheidung ersetzt die ältere – erfordert Bestätigung
@@ -273,12 +350,10 @@ export class ContradictionService {
     if (opts.supersedeOldDecisionId && opts.supersedeNewDecisionId) {
       this.decisions.supersede(opts.supersedeOldDecisionId, opts.supersedeNewDecisionId, { confirmed: true, trigger: 'contradiction' });
     }
-    const resolvedAt = resolution === 'acknowledged' ? null : nowIso();
-    this.db.update(contradictions).set({ status: resolution, resolvedAt }).where(eq(contradictions.id, id)).run();
-    if (resolution !== 'acknowledged') {
-      this.notifications.resolveByDedupePrefix(`contradiction:${id}`);
-    }
-    this.ctx.events.changed('contradictions', 'insights');
-    return { ...c, status: resolution, resolvedAt };
+    if (resolution === 'acknowledged') {
+      this.db.update(contradictions).set({ status: resolution, resolvedAt: null }).where(eq(contradictions.id, id)).run();
+      this.ctx.events.changed('contradictions', 'insights');
+    } else this.close(id, resolution, resolution === 'resolved' ? 'Er wurde als aufgelöst markiert.' : 'Er wurde als Fehlalarm markiert.');
+    return this.get(c.id);
   }
 }

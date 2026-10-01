@@ -142,6 +142,19 @@ export class NotificationService {
     this.ctx.events.changed('notifications', 'status');
   }
 
+  /** Closes open notifications of a key prefix whose cause no longer exists (not in `currentKeys`). */
+  resolveStale(prefix: string, currentKeys: Set<string>): void {
+    const stale = this.db
+      .select({ id: notifications.id, key: notifications.dedupeKey })
+      .from(notifications)
+      .where(and(sql`${notifications.dedupeKey} LIKE ${`${prefix}%`}`, isNull(notifications.resolvedAt)))
+      .all()
+      .filter((n) => n.key !== null && !currentKeys.has(n.key));
+    const now = nowIso();
+    for (const n of stale) this.db.update(notifications).set({ resolvedAt: now }).where(eq(notifications.id, n.id)).run();
+    if (stale.length) this.ctx.events.changed('notifications', 'status');
+  }
+
   /** Reaktiviert eine erledigte Benachrichtigung (nach „Später erinnern“). */
   reopen(id: string): void {
     this.db.update(notifications).set({ resolvedAt: null, readAt: null, createdAt: nowIso() }).where(eq(notifications.id, id)).run();
