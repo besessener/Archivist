@@ -18,7 +18,15 @@ describe('Decision-Workflow mit Rückfragen (LLM)', () => {
     app.llm.on('ChatIntent', (_s, input) => {
       step += 1;
       if (/prod-plat erstmal nicht weitermachen/.test(input) && step === 1) {
-        return intent({ intent: 'decision_new', decision: decisionEx({ decisionText: 'Wir machen mit prod-plat erstmal nicht weiter.', title: 'prod-plat pausiert', topic: 'prod-plat', topicIsProject: null }) });
+        return intent({
+          intent: 'decision_new',
+          decision: decisionEx({
+            decisionText: 'Wir machen mit prod-plat erstmal nicht weiter.',
+            title: 'prod-plat pausiert',
+            topic: 'prod-plat',
+            topicIsProject: null,
+          }),
+        });
       }
       if (/Am 3\. März/.test(input)) {
         return intent({ intent: 'decision_amend', decision: decisionEx({ decidedAt: '2026-03-03', participants: ['Anna', 'Ben'], topicIsProject: true }) });
@@ -78,7 +86,10 @@ describe('Decision-Workflow mit Rückfragen (LLM)', () => {
     app.llm.on('ChatIntent', () => {
       n += 1;
       return n === 1
-        ? intent({ intent: 'decision_new', decision: decisionEx({ decisionText: 'Wir wechseln den Stromanbieter.', topic: 'Strom', topicIsProject: false, decidedAt: '2026-02-01' }) })
+        ? intent({
+            intent: 'decision_new',
+            decision: decisionEx({ decisionText: 'Wir wechseln den Stromanbieter.', topic: 'Strom', topicIsProject: false, decidedAt: '2026-02-01' }),
+          })
         : intent({ intent: 'decision_amend', decision: decisionEx({ unknownFields: ['participants'] }) });
     });
     const r1 = await app.ok('chat:send', { text: 'Wir wechseln den Stromanbieter, seit 1.2.2026.' });
@@ -110,7 +121,18 @@ describe('Decision-Workflow ohne LLM (regelbasierter Fallback)', () => {
   });
 
   it('liefert bei Wissensfragen ohne LLM eine lokale Trefferliste mit Quellen', async () => {
-    await app.ok('decisions:create', { decisionText: 'Wir pausieren prod-plat.', title: 'prod-plat pausiert', topic: 'prod-plat', decidedAt: '2026-03-03', participants: ['Anna'], alternatives: [], unknownFields: [], sourceIds: [], confidence: 0.9, asDraft: false });
+    await app.ok('decisions:create', {
+      decisionText: 'Wir pausieren prod-plat.',
+      title: 'prod-plat pausiert',
+      topic: 'prod-plat',
+      decidedAt: '2026-03-03',
+      participants: ['Anna'],
+      alternatives: [],
+      unknownFields: [],
+      sourceIds: [],
+      confidence: 0.9,
+      asDraft: false,
+    });
     await app.services.search.index({ type: 'note', id: 'x', title: 'x', content: 'x' }).catch(() => undefined);
     app.llm.down = true;
     const r = await app.ok('chat:send', { text: 'Wann haben wir prod-plat pausiert?' });
@@ -127,7 +149,18 @@ describe('Decision-Workflow ohne LLM (regelbasierter Fallback)', () => {
 });
 
 describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
-  const mk = (text: string, date: string) => ({ decisionText: text, title: text.slice(0, 40), topic: 'prod-plat', decidedAt: date, participants: ['Anna'], alternatives: [], unknownFields: [], sourceIds: [], confidence: 0.9, asDraft: false });
+  const mk = (text: string, date: string) => ({
+    decisionText: text,
+    title: text.slice(0, 40),
+    topic: 'prod-plat',
+    decidedAt: date,
+    participants: ['Anna'],
+    alternatives: [],
+    unknownFields: [],
+    sourceIds: [],
+    confidence: 0.9,
+    asDraft: false,
+  });
 
   it('erkennt zwei widersprüchliche Entscheidungen, zeigt Insight + Hinweis und ersetzt erst nach Bestätigung', async () => {
     app.llm.down = true; // rein lexikalische Prüfung mit kontrollierten Beispieldaten
@@ -269,7 +302,15 @@ describe('Ungültige LLM-Ausgaben lösen nichts aus', () => {
 
   it('lehnt Aktionen mit ungültigen Parametern ab', () => {
     expect(() =>
-      app.services.actions.propose({ actionType: 'supersede_decision', rationale: 'x', confidence: 0.5, affectedEntities: [], requiredConfirmation: 'confirm', proposedParameters: { oldDecisionId: 5 }, label: 'x' }),
+      app.services.actions.propose({
+        actionType: 'supersede_decision',
+        rationale: 'x',
+        confidence: 0.5,
+        affectedEntities: [],
+        requiredConfirmation: 'confirm',
+        proposedParameters: { oldDecisionId: 5 },
+        label: 'x',
+      }),
     ).toThrow(/ungültige Parameter/);
   });
 });
@@ -341,9 +382,22 @@ describe('Unterhaltungen umbenennen', () => {
 });
 
 describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
-  const msg = 'Für den Konferenzbeitrag habe ich es leicht abgewandelt und am 01.10.2026 beim German Testing Day eingereicht. Erinnere mich am 15.11.2026 an das Feedback.';
-  const decisionUnsure = () => intent({ intent: 'decision_new', segment: 'am 01.10.2026 eingereicht', decisionCertainty: 'unsure', decision: decisionEx({ decisionText: 'Beitrag beim German Testing Day eingereicht.', title: 'Beitrag eingereicht', topic: 'Konferenz', decidedAt: '2026-10-01' }) });
-  const reminder = () => intent({ intent: 'reminder_create', segment: 'Erinnere mich am 15.11.2026', reminder: { remindAt: '2026-11-15', title: 'Feedback zum Konferenzbeitrag' } });
+  const msg =
+    'Für den Konferenzbeitrag habe ich es leicht abgewandelt und am 01.10.2026 beim German Testing Day eingereicht. Erinnere mich am 15.11.2026 an das Feedback.';
+  const decisionUnsure = () =>
+    intent({
+      intent: 'decision_new',
+      segment: 'am 01.10.2026 eingereicht',
+      decisionCertainty: 'unsure',
+      decision: decisionEx({
+        decisionText: 'Beitrag beim German Testing Day eingereicht.',
+        title: 'Beitrag eingereicht',
+        topic: 'Konferenz',
+        decidedAt: '2026-10-01',
+      }),
+    });
+  const reminder = () =>
+    intent({ intent: 'reminder_create', segment: 'Erinnere mich am 15.11.2026', reminder: { remindAt: '2026-11-15', title: 'Feedback zum Konferenzbeitrag' } });
   const multi = (...intents: unknown[]) => ({ intents });
 
   it('speichert eine unsichere Entscheidung nicht ungefragt, setzt die weitere Absicht danach fort und legt bei „Notiz“ nur eine Notiz an', async () => {
@@ -381,7 +435,11 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
     app.llm.on('ChatIntent', () =>
       multi(
         intent({ intent: 'note_capture', segment: 'Notiz', note: 'Stackit-PoC läuft seit Mai.' }),
-        intent({ intent: 'open_item_new', segment: 'offener Punkt', openItem: { title: 'PoC im ACT-Team vorstellen', dueAt: '2026-10-31', responsible: 'Anna' } }),
+        intent({
+          intent: 'open_item_new',
+          segment: 'offener Punkt',
+          openItem: { title: 'PoC im ACT-Team vorstellen', dueAt: '2026-10-31', responsible: 'Anna' },
+        }),
         intent({ intent: 'reminder_create', segment: 'Erinnerung', reminder: { remindAt: '2026-10-30', title: 'PoC vorbereiten' } }),
       ),
     );
@@ -394,7 +452,10 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
   });
 
   it('stellt eine Rückfrage statt zu raten, wenn die Absicht unklar ist', async () => {
-    app.llm.on('ChatIntent', () => ({ intents: [intent({ intent: 'unknown', confidence: 0.2 })], clarification: 'Meinst du, dass ich Nordlicht archivieren oder pausieren soll?' }));
+    app.llm.on('ChatIntent', () => ({
+      intents: [intent({ intent: 'unknown', confidence: 0.2 })],
+      clarification: 'Meinst du, dass ich Nordlicht archivieren oder pausieren soll?',
+    }));
     const r = await app.ok('chat:send', { text: 'Mach das mit Nordlicht.' });
     expect(r.assistantMessage.content).toContain('archivieren oder pausieren');
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
@@ -423,7 +484,14 @@ describe('Rückfrage in einer Mehrfach-Nachricht stellt weitere Absichten zurüc
 });
 
 describe('Ereignisse in der Timeline', () => {
-  const ev = (over: Record<string, unknown> = {}) => intent({ intent: 'event_record', segment: 'am 01.10.2026 eingereicht', event: { title: 'Beitrag beim German Testing Day eingereicht', occurredAt: '2026-10-01' }, topic: 'Konferenzbeitrag', ...over });
+  const ev = (over: Record<string, unknown> = {}) =>
+    intent({
+      intent: 'event_record',
+      segment: 'am 01.10.2026 eingereicht',
+      event: { title: 'Beitrag beim German Testing Day eingereicht', occurredAt: '2026-10-01' },
+      topic: 'Konferenzbeitrag',
+      ...over,
+    });
 
   it('trägt ein Ereignis mit Datum direkt ein, es erscheint in Timeline und Suche und lässt sich nur bestätigt löschen', async () => {
     app.llm.on('ChatIntent', () => ({ intents: [ev()] }));
@@ -453,7 +521,16 @@ describe('Ereignisse in der Timeline', () => {
   });
 
   it('bietet bei unsicherer Entscheidung auch „Ereignis“ an und legt es bei dieser Antwort an', async () => {
-    app.llm.on('ChatIntent', () => ({ intents: [intent({ intent: 'decision_new', segment: 'am 01.10.2026 eingereicht', decisionCertainty: 'unsure', decision: decisionEx({ decisionText: 'Beitrag eingereicht.', title: 'Beitrag eingereicht', decidedAt: '2026-10-01' }) })] }));
+    app.llm.on('ChatIntent', () => ({
+      intents: [
+        intent({
+          intent: 'decision_new',
+          segment: 'am 01.10.2026 eingereicht',
+          decisionCertainty: 'unsure',
+          decision: decisionEx({ decisionText: 'Beitrag eingereicht.', title: 'Beitrag eingereicht', decidedAt: '2026-10-01' }),
+        }),
+      ],
+    }));
     const r1 = await app.ok('chat:send', { text: 'Ich habe am 01.10.2026 den Beitrag eingereicht.' });
     expect(r1.assistantMessage.content).toMatch(/Ereignis/);
     app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));

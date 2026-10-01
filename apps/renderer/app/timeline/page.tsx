@@ -102,7 +102,9 @@ export default function TimelinePage() {
       </div>
       {tl.error && !tl.data && <ErrorNote error={tl.error} onRetry={() => void tl.refetch()} />}
       {!tl.data && tl.loading && <Loading />}
-      {tl.data && groups.length === 0 && <EmptyState icon={<CalendarDays />} title="Keine Einträge" description="Für diesen Filter gibt es keine Einträge in der Timeline." />}
+      {tl.data && groups.length === 0 && (
+        <EmptyState icon={<CalendarDays />} title="Keine Einträge" description="Für diesen Filter gibt es keine Einträge in der Timeline." />
+      )}
       <div className="flex flex-col gap-8" data-testid="timeline">
         {groups.map(([year, entries]) => (
           <section key={year} aria-labelledby={`year-${year}`}>
@@ -123,7 +125,14 @@ export default function TimelinePage() {
                     <p className="flex items-center gap-2 font-medium">
                       {e.title}
                       {e.kind === 'event' && (
-                        <Button variant="ghost" size="icon" className="size-6" aria-label="Ereignis löschen" onClick={() => setDeleteId(e.id.replace(/^event:/, ''))} data-testid="event-delete">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          aria-label="Ereignis löschen"
+                          onClick={() => setDeleteId(e.id.replace(/^event:/, ''))}
+                          data-testid="event-delete"
+                        >
                           <Trash2 className="size-3.5" />
                         </Button>
                       )}
@@ -170,7 +179,18 @@ function EventFormDialog({ open, onOpenChange, onSaved }: { open: boolean; onOpe
   const [topic, setTopic] = useState('');
   const [project, setProject] = useState('');
   async function save() {
-    const out = await run(() => call('events:create', { title: title.trim(), description: nonEmpty(description) ?? null, occurredAt, topic: nonEmpty(topic) ?? null, project: nonEmpty(project) ?? null, sourceIds: [] }), { success: 'Ereignis eingetragen.' });
+    const out = await run(
+      () =>
+        call('events:create', {
+          title: title.trim(),
+          description: nonEmpty(description) ?? null,
+          occurredAt,
+          topic: nonEmpty(topic) ?? null,
+          project: nonEmpty(project) ?? null,
+          sourceIds: [],
+        }),
+      { success: 'Ereignis eingetragen.' },
+    );
     if (out) {
       onSaved();
       onOpenChange(false);

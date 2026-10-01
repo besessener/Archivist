@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs", "tests/**/*.{test,spec}.ts"],
+      "project": ["scripts/**", "tests/**"],
+      "ignoreDependencies": ["electron"]
+    },
+    "apps/desktop": {
+      "entry": ["src/main.ts", "src/preload.ts", "scripts/*.mjs"],
+      "project": ["src/**", "scripts/**"],
+      "ignoreDependencies": ["@napi-rs/canvas", "@tesseract.js-data/deu", "@tesseract.js-data/eng", "better-sqlite3", "pdfjs-dist", "sharp", "tesseract.js"]
+    },
+    "apps/renderer": {
+      "ignore": ["components/ui/**"]
+    },
+    "packages/core": {
+      "entry": ["src/workers/worker-entry.ts", "drizzle.config.ts"],
+      "project": ["src/**"],
+      "ignoreDependencies": ["@tesseract.js-data/deu", "@tesseract.js-data/eng", "@napi-rs/canvas"]
+    }
+  }
+}

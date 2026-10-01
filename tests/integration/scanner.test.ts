@@ -90,7 +90,12 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     // Ausschlüsse (Datei + Ordner) wirken beim nächsten Scan
     await app.ok('scanner:exclude', { kind: 'dir', path: path.join(dl, 'ignore') });
     await app.ok('scanner:exclude', { kind: 'file', path: path.join(dl, 'b.md') });
-    expect((await app.ok('scanner:getResults', {})).files.filter((f) => f.status === 'excluded').map((f) => f.name).sort()).toEqual(['b.md', 'd.txt']);
+    expect(
+      (await app.ok('scanner:getResults', {})).files
+        .filter((f) => f.status === 'excluded')
+        .map((f) => f.name)
+        .sort(),
+    ).toEqual(['b.md', 'd.txt']);
     fs.appendFileSync(path.join(dl, 'b.md'), '\nmehr');
     await scan();
     res = await app.ok('scanner:getResults', {});
@@ -145,7 +150,9 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     app.file('Downloads/normal.txt', 'Normaler Inhalt zum Archivieren.');
     app.file('Downloads/vertraulich.txt', 'Vertraulicher Inhalt.');
     await app.ok('scanner:addDirectory', { path: dl, recursive: true });
-    app.services.settings.update({ privacy: { neverAnalyzeDirs: [path.join(dl, 'privat')], neverAnalyzeFiles: [path.join(fs.realpathSync(dl), 'vertraulich.txt')] } });
+    app.services.settings.update({
+      privacy: { neverAnalyzeDirs: [path.join(dl, 'privat')], neverAnalyzeFiles: [path.join(fs.realpathSync(dl), 'vertraulich.txt')] },
+    });
     await scan();
     const files = (await app.ok('scanner:getResults', {})).files;
     expect(files.find((f) => f.name === 'tagebuch.txt')!.llmStatus).toBe('excluded');
@@ -186,7 +193,9 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
 
   it('schlägt Dokumente zu einem bestehenden Thema vor und archiviert nur ausgewählte', async () => {
     app.services.settings.update({ scan: { enabled: true } });
-    app.llm.on('DocumentClassification', () => cls('Hauskauf', { decisions: [{ title: 'Kaufentscheidung', decisionText: 'Wir kaufen das Haus.', decidedAt: '2026-05-01', participants: [] }] }));
+    app.llm.on('DocumentClassification', () =>
+      cls('Hauskauf', { decisions: [{ title: 'Kaufentscheidung', decisionText: 'Wir kaufen das Haus.', decidedAt: '2026-05-01', participants: [] }] }),
+    );
     // bestehendes Thema
     await app.ok('knowledge:createEntity', { type: 'topic', name: 'Hauskauf' });
     const dl = path.join(app.home, 'Downloads');
@@ -210,7 +219,12 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
     const chosen = groups[0]!.documentIds.slice(0, 2);
     const plan = await app.ok('documents:previewArchive', { items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })) });
     expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('work', 'projects', 'Hauskauf')))).toBe(true);
-    const res = await app.ok('documents:archive', { items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })), confirmed: true, approveNewCategories: [], confirmMove: false });
+    const res = await app.ok('documents:archive', {
+      items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })),
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    });
     expect(res.success).toBe(2);
     const docs = await app.ok('documents:list', {});
     expect(docs.filter((d) => d.status === 'archived')).toHaveLength(2);
@@ -240,11 +254,21 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
     await app.services.jobs.whenIdle();
     const doc = (await app.ok('documents:list', {}))[0]!;
 
-    const skipped = await app.ok('documents:archive', { items: [{ documentId: doc.id, mode: 'move' }], confirmed: true, approveNewCategories: [], confirmMove: false });
+    const skipped = await app.ok('documents:archive', {
+      items: [{ documentId: doc.id, mode: 'move' }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    });
     expect(skipped.skipped).toBe(1);
     expect(fs.existsSync(src)).toBe(true);
 
-    const moved = await app.ok('documents:archive', { items: [{ documentId: doc.id, mode: 'move' }], confirmed: true, approveNewCategories: [], confirmMove: true });
+    const moved = await app.ok('documents:archive', {
+      items: [{ documentId: doc.id, mode: 'move' }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: true,
+    });
     expect(moved.success).toBe(1);
     expect(fs.existsSync(src)).toBe(false);
     expect(fs.existsSync(moved.items[0]!.targetPath!)).toBe(true);
@@ -267,7 +291,15 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
     const docs = await app.ok('documents:list', {});
     const da = docs.find((d) => d.originalName === 'a.txt')!;
     const db = docs.find((d) => d.originalName === 'b.txt')!;
-    const res = await app.ok('documents:archive', { items: [{ documentId: da.id, mode: 'index_only' }, { documentId: db.id, mode: 'ignore' }], confirmed: true, approveNewCategories: [], confirmMove: false });
+    const res = await app.ok('documents:archive', {
+      items: [
+        { documentId: da.id, mode: 'index_only' },
+        { documentId: db.id, mode: 'ignore' },
+      ],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    });
     expect(res.success).toBe(2);
     expect(fs.existsSync(a) && fs.existsSync(b)).toBe(true);
     expect((await app.ok('documents:get', { id: da.id })).status).toBe('indexed_only');

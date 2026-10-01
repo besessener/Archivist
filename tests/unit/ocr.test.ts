@@ -33,7 +33,17 @@ function imageOnlyPdf(jpeg: Buffer, w: number, h: number): Buffer {
   obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Contents 4 0 R /Resources << /XObject << /Im0 5 0 R >> >> >>`);
   const content = `q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`;
   obj(4, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-  obj(5, Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`, 'latin1'), jpeg, Buffer.from('\nendstream', 'latin1')]));
+  obj(
+    5,
+    Buffer.concat([
+      Buffer.from(
+        `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+        'latin1',
+      ),
+      jpeg,
+      Buffer.from('\nendstream', 'latin1'),
+    ]),
+  );
   const xref = len;
   push(`xref\n0 6\n0000000000 65535 f \n${[1, 2, 3, 4, 5].map((n) => `${String(offsets[n]).padStart(10, '0')} 00000 n \n`).join('')}`);
   push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);

@@ -45,7 +45,10 @@ export class DatabaseService {
       migrate(this.db, { migrationsFolder });
     } catch (err) {
       this.logger.error('migration', 'Migration fehlgeschlagen', { error: err });
-      throw new AppError('database_error', 'Die Datenbankmigration ist fehlgeschlagen.', { cause: err, details: err instanceof Error ? err.message : String(err) });
+      throw new AppError('database_error', 'Die Datenbankmigration ist fehlgeschlagen.', {
+        cause: err,
+        details: err instanceof Error ? err.message : String(err),
+      });
     }
     return this.migrationStatus(migrationsFolder);
   }

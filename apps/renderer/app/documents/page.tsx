@@ -32,11 +32,7 @@ function DocumentsInner() {
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const q = useDebounced(search.trim(), 300);
-  const list = useQuery(
-    'documents:list',
-    { limit: 1000, ...(q ? { query: q } : {}), ...(topicId ? { topicId } : {}) },
-    { scopes: ['documents'] },
-  );
+  const list = useQuery('documents:list', { limit: 1000, ...(q ? { query: q } : {}), ...(topicId ? { topicId } : {}) }, { scopes: ['documents'] });
   const topic = useQuery('knowledge:getEntity', topicId ? { id: topicId } : undefined, { enabled: !!topicId });
 
   const docs = (list.data ?? []).filter((d) => ARCHIVED.includes(d.status));
@@ -49,7 +45,14 @@ function DocumentsInner() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Dokumente durchsuchen …" aria-label="Dokumente durchsuchen" className="pl-9" data-testid="documents-search" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Dokumente durchsuchen …"
+            aria-label="Dokumente durchsuchen"
+            className="pl-9"
+            data-testid="documents-search"
+          />
         </div>
         <div className="w-48">
           <Select value={type} onChange={(e) => setType(e.target.value)} aria-label="Dokumenttyp filtern" data-testid="documents-type-filter">
@@ -64,7 +67,12 @@ function DocumentsInner() {
         {topicId && (
           <Badge variant="info" className="gap-2 py-1" data-testid="documents-topic-filter">
             Thema: {topic.data?.entity.name ?? '…'}
-            <button type="button" aria-label="Themenfilter entfernen" className="rounded-full hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring" onClick={() => router.push('/documents/')}>
+            <button
+              type="button"
+              aria-label="Themenfilter entfernen"
+              className="rounded-full hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={() => router.push('/documents/')}
+            >
               <X className="size-3.5" aria-hidden />
             </button>
           </Badge>
@@ -72,7 +80,9 @@ function DocumentsInner() {
       </div>
       {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
       {!list.data && list.loading && <Loading />}
-      {list.data && shown.length === 0 && <EmptyState title="Keine Dokumente gefunden" description="Archivierte Dokumente erscheinen hier, sobald Sie Inbox-Einträge archiviert haben." />}
+      {list.data && shown.length === 0 && (
+        <EmptyState title="Keine Dokumente gefunden" description="Archivierte Dokumente erscheinen hier, sobald Sie Inbox-Einträge archiviert haben." />
+      )}
       {shown.length > 0 && (
         <div className="rounded-xl border bg-card">
           <Table data-testid="documents-table">
@@ -128,7 +138,16 @@ function DocumentDialog({ id, onClose, onChanged }: { id: string | null; onClose
       <DialogContent className="max-w-2xl" data-testid="document-dialog">
         {!doc && q.error && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}
         {!doc && !q.error && <Loading />}
-        {doc && <DocumentDetail key={doc.id + doc.updatedAt} doc={doc} onChanged={() => { onChanged(); void q.refetch(); }} />}
+        {doc && (
+          <DocumentDetail
+            key={doc.id + doc.updatedAt}
+            doc={doc}
+            onChanged={() => {
+              onChanged();
+              void q.refetch();
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -212,14 +231,28 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
           </Field>
         </div>
       )}
-      {doc.textPreview && !editing && <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{doc.textPreview}</p>}
+      {doc.textPreview && !editing && (
+        <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{doc.textPreview}</p>
+      )}
 
       <DialogFooter className="sm:justify-between">
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" disabled={busy} data-testid="doc-open" onClick={() => void run(() => call('app:openPath', { documentId: doc.id }), { errorTitle: 'Datei konnte nicht geöffnet werden' })}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            data-testid="doc-open"
+            onClick={() => void run(() => call('app:openPath', { documentId: doc.id }), { errorTitle: 'Datei konnte nicht geöffnet werden' })}
+          >
             <ExternalLink aria-hidden /> Datei öffnen
           </Button>
-          <Button variant="outline" size="sm" disabled={busy} data-testid="doc-reveal" onClick={() => void run(() => call('app:revealPath', { documentId: doc.id }), { errorTitle: 'Ordner konnte nicht geöffnet werden' })}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            data-testid="doc-reveal"
+            onClick={() => void run(() => call('app:revealPath', { documentId: doc.id }), { errorTitle: 'Ordner konnte nicht geöffnet werden' })}
+          >
             <FolderOpen aria-hidden /> Im Ordner zeigen
           </Button>
         </div>

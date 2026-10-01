@@ -1,7 +1,7 @@
 const STOPWORDS = new Set(
-  (
-    'der die das den dem des ein eine einer einem einen eines und oder aber auch nicht mit von zu zum zur im in an auf aus bei nach vor für über unter ist sind war waren wird werden wurde wurden hat haben hatte als wie wir ihr sie es ich du man dass daß so noch nur mehr sehr wenn dann dies diese dieser dieses the a an and or of to in on for with is are was were be been this that it as at by from'
-  ).split(' '),
+  'der die das den dem des ein eine einer einem einen eines und oder aber auch nicht mit von zu zum zur im in an auf aus bei nach vor für über unter ist sind war waren wird werden wurde wurden hat haben hatte als wie wir ihr sie es ich du man dass daß so noch nur mehr sehr wenn dann dies diese dieser dieses the a an and or of to in on for with is are was were be been this that it as at by from'.split(
+    ' ',
+  ),
 );
 
 export function stripDiacritics(s: string): string {
@@ -16,7 +16,9 @@ export function normalizeName(s: string): string {
 }
 
 export function tokenize(text: string, opts: { keepStopwords?: boolean } = {}): string[] {
-  const tokens = normalizeName(text).split(' ').filter((t) => t.length > 1);
+  const tokens = normalizeName(text)
+    .split(' ')
+    .filter((t) => t.length > 1);
   return opts.keepStopwords ? tokens : tokens.filter((t) => !STOPWORDS.has(t));
 }
 
@@ -59,7 +61,11 @@ export function nameSimilarity(a: string, b: string): number {
 
 /** Teilt Text an Absatz-/Satzgrenzen in überlappende Stücke. */
 export function chunkText(text: string, size = 900, overlap = 120): string[] {
-  const clean = text.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  const clean = text
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   if (!clean) return [];
   if (clean.length <= size) return [clean];
   const chunks: string[] = [];
@@ -82,8 +88,4 @@ export function firstSentence(text: string, max = 160): string {
   const t = text.trim().replace(/\s+/g, ' ');
   const m = /^(.+?[.!?])(\s|$)/.exec(t);
   return truncate(m?.[1] ?? t, max);
-}
-
-export function titleCase(s: string): string {
-  return s.length ? s[0]!.toUpperCase() + s.slice(1) : s;
 }

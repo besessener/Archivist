@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["DOM", "ES2023"],
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": { "@/*": ["apps/renderer/*"] }
+  },
+  "include": ["packages/*/src/**/*.ts", "apps/desktop/src/**/*.ts", "apps/renderer/**/*.{ts,tsx}", "tests/**/*.ts"],
+  "exclude": ["**/node_modules", "**/.next", "**/out", "**/dist"]
+}

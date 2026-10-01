@@ -28,7 +28,11 @@ const OPEN_PATTERNS = [
 ];
 
 export function detectOpenItemSentences(text: string, max = 8): string[] {
-  const sentences = text.replace(/\r/g, '').split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => s.length > 8 && s.length < 400);
+  const sentences = text
+    .replace(/\r/g, '')
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 8 && s.length < 400);
   return sentences.filter((s) => OPEN_PATTERNS.some((p) => p.test(s))).slice(0, max);
 }
 
@@ -88,7 +92,16 @@ export class OpenItemService {
 
   private mapMany(rows: Row[]): OpenItem[] {
     const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId, r.responsiblePersonId]).filter((x): x is string => Boolean(x)))];
-    const names = new Map(ids.length ? this.db.select({ id: entities.id, name: entities.name }).from(entities).where(inArray(entities.id, ids)).all().map((e) => [e.id, e.name]) : []);
+    const names = new Map(
+      ids.length
+        ? this.db
+            .select({ id: entities.id, name: entities.name })
+            .from(entities)
+            .where(inArray(entities.id, ids))
+            .all()
+            .map((e) => [e.id, e.name])
+        : [],
+    );
     return rows.map((r) => this.map(r, names));
   }
 
@@ -104,14 +117,21 @@ export class OpenItemService {
     if (opts.onlyActive) conds.push(inArray(openItems.status, ACTIVE_STATUSES));
     if (opts.topicId) conds.push(eq(openItems.topicId, opts.topicId));
     if (opts.projectId) conds.push(eq(openItems.projectId, opts.projectId));
-    const rows = this.db.select().from(openItems).where(conds.length ? and(...conds) : undefined).orderBy(desc(openItems.createdAt)).all();
+    const rows = this.db
+      .select()
+      .from(openItems)
+      .where(conds.length ? and(...conds) : undefined)
+      .orderBy(desc(openItems.createdAt))
+      .all();
     return this.mapMany(rows);
   }
 
   /** Findet einen aktiven offenen Punkt anhand eines Hinweises (Namensähnlichkeit). */
   findByHint(hint: string): OpenItem | null {
     const active = this.list({ onlyActive: true });
-    const scored = active.map((i) => ({ i, s: Math.max(nameSimilarity(i.title, hint), normalizeName(i.title).includes(normalizeName(hint)) && hint.length > 3 ? 0.9 : 0) })).sort((a, b) => b.s - a.s);
+    const scored = active
+      .map((i) => ({ i, s: Math.max(nameSimilarity(i.title, hint), normalizeName(i.title).includes(normalizeName(hint)) && hint.length > 3 ? 0.9 : 0) }))
+      .sort((a, b) => b.s - a.s);
     return scored[0] && scored[0].s >= 0.45 ? scored[0].i : null;
   }
 
@@ -144,9 +164,18 @@ export class OpenItemService {
       this.graph.registerNode('task', row.id, row.title, row.description);
       if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
       if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
-      for (const src of row.sourceIds) if (this.graph.getEntity(src)?.type === 'decision') this.graph.link(row.id, src, 'results_from', { confidence: row.confidence, status: 'confirmed', sourceIds: [src] });
+      for (const src of row.sourceIds)
+        if (this.graph.getEntity(src)?.type === 'decision')
+          this.graph.link(row.id, src, 'results_from', { confidence: row.confidence, status: 'confirmed', sourceIds: [src] });
     });
-    this.audit.log({ action: 'open_item.create', actor: ctxInfo.actor ?? 'user', trigger: ctxInfo.trigger ?? 'manual', confirmed: true, entityIds: [row.id], after: { title: row.title, dueAt } });
+    this.audit.log({
+      action: 'open_item.create',
+      actor: ctxInfo.actor ?? 'user',
+      trigger: ctxInfo.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [row.id],
+      after: { title: row.title, dueAt },
+    });
     void this.reindex(row.id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');
     return this.get(row.id);
@@ -178,7 +207,15 @@ export class OpenItemService {
       if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
       if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
     });
-    this.audit.log({ action: 'open_item.update', actor: 'user', trigger: 'manual', confirmed: true, entityIds: [id], before: { status: cur.status, dueAt: cur.dueAt }, after: patch });
+    this.audit.log({
+      action: 'open_item.update',
+      actor: 'user',
+      trigger: 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { status: cur.status, dueAt: cur.dueAt },
+      after: patch,
+    });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');
     return this.get(id);
@@ -217,7 +254,17 @@ export class OpenItemService {
         type: 'task',
         id,
         title: i.title,
-        content: [i.title, i.description, i.topicName && `Thema: ${i.topicName}`, i.projectName && `Projekt: ${i.projectName}`, i.responsibleName && `Verantwortlich: ${i.responsibleName}`, i.dueAt && `Fällig: ${i.dueAt.slice(0, 10)}`, `Status: ${i.status}`].filter(Boolean).join('\n'),
+        content: [
+          i.title,
+          i.description,
+          i.topicName && `Thema: ${i.topicName}`,
+          i.projectName && `Projekt: ${i.projectName}`,
+          i.responsibleName && `Verantwortlich: ${i.responsibleName}`,
+          i.dueAt && `Fällig: ${i.dueAt.slice(0, 10)}`,
+          `Status: ${i.status}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
       });
     } catch (err) {
       this.ctx.logger.warn('open-items', 'Indexierung fehlgeschlagen', { error: err });

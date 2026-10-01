@@ -48,7 +48,10 @@ describe('Dokumentparser', () => {
     expect(p.text).toContain('Meilenstein Q3');
 
     const xlsx = path.join(dir, 'a.xlsx');
-    await makeXlsx(xlsx, [['Posten', 'Betrag'], ['Miete', 1200]]);
+    await makeXlsx(xlsx, [
+      ['Posten', 'Betrag'],
+      ['Miete', 1200],
+    ]);
     const x = await parseDocument(xlsx);
     expect(x.status).toBe('extracted');
     expect(x.text).toContain('Tabellenblatt „Budget“');

@@ -57,7 +57,9 @@ export default function InsightsPage() {
             variant="outline"
             disabled={busy}
             data-testid="consistency-run"
-            onClick={() => void run(() => call('consistency:run'), { success: 'Archivprüfung gestartet. Den Fortschritt sehen Sie oben unter „Verarbeitung“.' })}
+            onClick={() =>
+              void run(() => call('consistency:run'), { success: 'Archivprüfung gestartet. Den Fortschritt sehen Sie oben unter „Verarbeitung“.' })
+            }
           >
             <Play aria-hidden /> Archivprüfung jetzt starten
           </Button>
@@ -75,7 +77,9 @@ export default function InsightsPage() {
 
       {insights.error && !insights.data && <ErrorNote error={insights.error} onRetry={() => void insights.refetch()} />}
       {!insights.data && insights.loading && <Loading />}
-      {insights.data && grouped.length === 0 && <EmptyState icon={<Lightbulb />} title="Keine Hinweise" description="Im Moment gibt es nichts, was Ihre Aufmerksamkeit braucht." />}
+      {insights.data && grouped.length === 0 && (
+        <EmptyState icon={<Lightbulb />} title="Keine Hinweise" description="Im Moment gibt es nichts, was Ihre Aufmerksamkeit braucht." />
+      )}
 
       <div className="flex flex-col gap-8">
         {grouped.map(([kind, list]) => (
@@ -105,7 +109,9 @@ export default function InsightsPage() {
                       {i.recommendedActionLabel}
                     </p>
                   )}
-                  {i.status === 'snoozed' && i.snoozedUntil && <p className="mt-2 text-xs text-muted-foreground">Zurückgestellt bis {formatDate(i.snoozedUntil)}</p>}
+                  {i.status === 'snoozed' && i.snoozedUntil && (
+                    <p className="mt-2 text-xs text-muted-foreground">Zurückgestellt bis {formatDate(i.snoozedUntil)}</p>
+                  )}
                   {i.status === 'open' && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button size="sm" onClick={() => setAccepting(i)} data-testid="insight-accept">
@@ -160,7 +166,9 @@ export default function InsightsPage() {
                     ))}
                   </ul>
                 )}
-                {c.timestamps.length > 0 && <p className="mt-2 text-xs text-muted-foreground">Zeitpunkte: {c.timestamps.map((t) => formatDateTime(t, t)).join(' · ')}</p>}
+                {c.timestamps.length > 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">Zeitpunkte: {c.timestamps.map((t) => formatDateTime(t, t)).join(' · ')}</p>
+                )}
                 <Button size="sm" className="mt-3" onClick={() => setResolving(c)} data-testid="contradiction-resolve">
                   Auflösen …
                 </Button>

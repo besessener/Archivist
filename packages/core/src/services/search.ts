@@ -140,7 +140,14 @@ export class SearchService {
           existing.vectorRank = Math.min(existing.vectorRank ?? rank, rank);
           existing.vectorScore = Math.max(existing.vectorScore ?? 0, t.score);
         } else {
-          hits.set(row.entityId, { entityId: row.entityId, entityType: row.entityType, chunkText: row.text, snippet: truncate(row.text, 200), vectorRank: rank, vectorScore: t.score });
+          hits.set(row.entityId, {
+            entityId: row.entityId,
+            entityType: row.entityType,
+            chunkText: row.text,
+            snippet: truncate(row.text, 200),
+            vectorRank: rank,
+            vectorScore: t.score,
+          });
         }
         rank += 1;
       }
@@ -154,9 +161,37 @@ export class SearchService {
       .slice(0, limit);
     if (scored.length === 0) return [];
     const ids = scored.map((s) => s.h.entityId);
-    const ents = new Map(this.ctx.database.db.select().from(entities).where(inArray(entities.id, ids)).all().map((e) => [e.id, e]));
-    const docs = new Map(this.ctx.database.db.select({ id: documents.id, rel: documents.archiveRelPath, src: documents.sourcePath, at: documents.archivedAt, created: documents.createdAt, status: documents.status }).from(documents).where(inArray(documents.id, ids)).all().map((d) => [d.id, d]));
-    const decs = new Map(this.ctx.database.db.select({ id: decisions.id, at: decisions.decidedAt }).from(decisions).where(inArray(decisions.id, ids)).all().map((d) => [d.id, d]));
+    const ents = new Map(
+      this.ctx.database.db
+        .select()
+        .from(entities)
+        .where(inArray(entities.id, ids))
+        .all()
+        .map((e) => [e.id, e]),
+    );
+    const docs = new Map(
+      this.ctx.database.db
+        .select({
+          id: documents.id,
+          rel: documents.archiveRelPath,
+          src: documents.sourcePath,
+          at: documents.archivedAt,
+          created: documents.createdAt,
+          status: documents.status,
+        })
+        .from(documents)
+        .where(inArray(documents.id, ids))
+        .all()
+        .map((d) => [d.id, d]),
+    );
+    const decs = new Map(
+      this.ctx.database.db
+        .select({ id: decisions.id, at: decisions.decidedAt })
+        .from(decisions)
+        .where(inArray(decisions.id, ids))
+        .all()
+        .map((d) => [d.id, d]),
+    );
     const max = scored[0]?.score || 1;
     return scored.flatMap(({ h, score }) => {
       const ent = ents.get(h.entityId);

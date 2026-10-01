@@ -65,7 +65,13 @@ export default function OpenItemsPage() {
       />
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
-      {data && data.length === 0 && <EmptyState icon={<ListChecks />} title="Keine offenen Punkte" description="Sagen Sie im Chat zum Beispiel „Wir müssen noch klären, …“ oder legen Sie hier einen Punkt an." />}
+      {data && data.length === 0 && (
+        <EmptyState
+          icon={<ListChecks />}
+          title="Keine offenen Punkte"
+          description="Sagen Sie im Chat zum Beispiel „Wir müssen noch klären, …“ oder legen Sie hier einen Punkt an."
+        />
+      )}
       <div className="flex flex-col gap-8">
         {(['overdue', 'due', 'open', 'done'] as const).map((g) =>
           groups[g].length === 0 ? null : (
@@ -92,7 +98,9 @@ export default function OpenItemsPage() {
                       ) : i.responsibleUnknown ? (
                         <Badge variant="secondary">Verantwortlicher bewusst unbekannt</Badge>
                       ) : g !== 'done' ? (
-                        <Badge variant="warning" data-testid="badge-no-owner">Kein Verantwortlicher</Badge>
+                        <Badge variant="warning" data-testid="badge-no-owner">
+                          Kein Verantwortlicher
+                        </Badge>
                       ) : null}
                       {i.dueAt ? (
                         <Badge variant={g === 'overdue' ? 'danger' : 'outline'}>
@@ -101,7 +109,9 @@ export default function OpenItemsPage() {
                       ) : i.dueUnknown ? (
                         <Badge variant="secondary">Termin bewusst unbekannt</Badge>
                       ) : g !== 'done' ? (
-                        <Badge variant="warning" data-testid="badge-no-due">Kein Termin</Badge>
+                        <Badge variant="warning" data-testid="badge-no-due">
+                          Kein Termin
+                        </Badge>
                       ) : null}
                       {i.reminderAt && <Badge variant="info">Erinnerung {formatDate(i.reminderAt)}</Badge>}
                       {i.topicName && <Badge variant="outline">{i.topicName}</Badge>}
@@ -136,7 +146,17 @@ export default function OpenItemsPage() {
   );
 }
 
-function ItemFormDialog({ open, onOpenChange, item, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; item: OpenItemRecord | null; onSaved: () => void }) {
+function ItemFormDialog({
+  open,
+  onOpenChange,
+  item,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  item: OpenItemRecord | null;
+  onSaved: () => void;
+}) {
   const { run, busy } = useRun();
   const [title, setTitle] = useState(item?.title ?? '');
   const [description, setDescription] = useState(item?.description ?? '');
@@ -187,12 +207,37 @@ function ItemFormDialog({ open, onOpenChange, item, onSaved }: { open: boolean; 
             <Textarea id="oi-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
           <Field label="Verantwortlich" htmlFor="oi-resp">
-            <Input id="oi-resp" value={respUnknown ? '' : responsible} disabled={respUnknown} onChange={(e) => setResponsible(e.target.value)} data-testid="open-item-responsible" />
-            <CheckboxField checked={respUnknown} onCheckedChange={(v) => setRespUnknown(v === true)} label="Verantwortlicher unbekannt" className="text-xs" data-testid="open-item-resp-unknown" />
+            <Input
+              id="oi-resp"
+              value={respUnknown ? '' : responsible}
+              disabled={respUnknown}
+              onChange={(e) => setResponsible(e.target.value)}
+              data-testid="open-item-responsible"
+            />
+            <CheckboxField
+              checked={respUnknown}
+              onCheckedChange={(v) => setRespUnknown(v === true)}
+              label="Verantwortlicher unbekannt"
+              className="text-xs"
+              data-testid="open-item-resp-unknown"
+            />
           </Field>
           <Field label="Termin" htmlFor="oi-due">
-            <Input id="oi-due" type="date" value={dueUnknown ? '' : dueAt} disabled={dueUnknown} onChange={(e) => setDueAt(e.target.value)} data-testid="open-item-due" />
-            <CheckboxField checked={dueUnknown} onCheckedChange={(v) => setDueUnknown(v === true)} label="Termin unbekannt" className="text-xs" data-testid="open-item-due-unknown" />
+            <Input
+              id="oi-due"
+              type="date"
+              value={dueUnknown ? '' : dueAt}
+              disabled={dueUnknown}
+              onChange={(e) => setDueAt(e.target.value)}
+              data-testid="open-item-due"
+            />
+            <CheckboxField
+              checked={dueUnknown}
+              onCheckedChange={(v) => setDueUnknown(v === true)}
+              label="Termin unbekannt"
+              className="text-xs"
+              data-testid="open-item-due-unknown"
+            />
           </Field>
           <Field label="Priorität" htmlFor="oi-prio">
             <Select id="oi-prio" value={priority} onChange={(e) => setPriority(e.target.value as 'low' | 'normal' | 'high')}>

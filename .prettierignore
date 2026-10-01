@@ -1,0 +1,13 @@
+# Generiert oder von Werkzeugen verwaltet
+node_modules/
+dist/
+out/
+.next/
+release/
+coverage/
+playwright-report/
+test-results/
+package-lock.json
+packages/core/migrations/
+# Markdown wird von Hand gepflegt (Tabellen, Umbrüche)
+*.md

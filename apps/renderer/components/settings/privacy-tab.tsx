@@ -38,8 +38,21 @@ export function PrivacyTab({ settings, reload }: TabProps) {
         <fieldset className="flex flex-col gap-2">
           <legend className="sr-only">Datenschutzmodus</legend>
           {MODES.map((m) => (
-            <label key={m.id} className={cn('flex cursor-pointer gap-3 rounded-lg border p-3 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring', mode === m.id ? 'border-primary bg-primary/8' : 'hover:bg-accent/50')}>
-              <input type="radio" name="privacy-mode" className="mt-1 accent-[var(--primary)]" checked={mode === m.id} onChange={() => setMode(m.id)} data-testid={`settings-mode-${m.id}`} />
+            <label
+              key={m.id}
+              className={cn(
+                'flex cursor-pointer gap-3 rounded-lg border p-3 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring',
+                mode === m.id ? 'border-primary bg-primary/8' : 'hover:bg-accent/50',
+              )}
+            >
+              <input
+                type="radio"
+                name="privacy-mode"
+                className="mt-1 accent-[var(--primary)]"
+                checked={mode === m.id}
+                onChange={() => setMode(m.id)}
+                data-testid={`settings-mode-${m.id}`}
+              />
               <span>
                 <span className="block text-sm font-medium">{m.title}</span>
                 <span className="block text-sm text-muted-foreground">{m.text}</span>
@@ -94,7 +107,10 @@ export function PrivacyTab({ settings, reload }: TabProps) {
                   llmMode: mode,
                   neverAnalyzeDirs: dirs,
                   neverAnalyzeExtensions: parseList(exts).map((e) => e.replace(/^\./, '').toLowerCase()),
-                  neverAnalyzeFiles: files.split('\n').map((s) => s.trim()).filter(Boolean),
+                  neverAnalyzeFiles: files
+                    .split('\n')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
                 },
               })
             }
@@ -104,7 +120,10 @@ export function PrivacyTab({ settings, reload }: TabProps) {
         </div>
       </Section>
 
-      <Section title="An die KI übertragene Inhalte" description="Protokoll aller Übertragungen. „Maskiert“ zeigt, wie viele Geheimnisse (z. B. Passwörter) vor dem Senden unkenntlich gemacht wurden.">
+      <Section
+        title="An die KI übertragene Inhalte"
+        description="Protokoll aller Übertragungen. „Maskiert“ zeigt, wie viele Geheimnisse (z. B. Passwörter) vor dem Senden unkenntlich gemacht wurden."
+      >
         {tx.error && !tx.data && <ErrorNote error={tx.error} onRetry={() => void tx.refetch()} />}
         {!tx.data && tx.loading && <Loading />}
         {tx.data && tx.data.length === 0 && <EmptyState title="Noch nichts übertragen" description="Bisher wurden keine Inhalte an die KI gesendet." />}
@@ -145,7 +164,9 @@ export function PrivacyTab({ settings, reload }: TabProps) {
                   {open === t.id && (
                     <tr>
                       <td colSpan={7} className="px-3 pb-3">
-                        <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{t.preview || '(keine Vorschau)'}</p>
+                        <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+                          {t.preview || '(keine Vorschau)'}
+                        </p>
                         <p className="mt-1 text-xs text-muted-foreground">Betroffene Dokumente: {t.documentIds.length}</p>
                       </td>
                     </tr>

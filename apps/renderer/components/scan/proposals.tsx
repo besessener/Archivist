@@ -14,7 +14,13 @@ import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import type { ArchiveItemRequest, ArchiveMode, ScanProposalGroup } from '@archivist/shared';
 
-function Group({ group, onArchive }: { group: ScanProposalGroup; onArchive: (ids: string[], mode: ArchiveMode, group: ScanProposalGroup) => void | Promise<void> }) {
+function Group({
+  group,
+  onArchive,
+}: {
+  group: ScanProposalGroup;
+  onArchive: (ids: string[], mode: ArchiveMode, group: ScanProposalGroup) => void | Promise<void>;
+}) {
   const docs = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'] });
   const byId = useMemo(() => new Map((docs.data ?? []).map((d) => [d.id, d])), [docs.data]);
   const [selected, setSelected] = useState<Set<string>>(new Set(group.documentIds));
@@ -27,7 +33,15 @@ function Group({ group, onArchive }: { group: ScanProposalGroup; onArchive: (ids
         <div>
           <h3 className="font-semibold">{group.label}</h3>
           <p className="text-sm text-muted-foreground">
-            {plural(group.documentIds.length, 'Dokument gehört', 'Dokumente gehören')} vermutlich {target ? <>zu <strong>{target}</strong></> : 'zusammen'}.
+            {plural(group.documentIds.length, 'Dokument gehört', 'Dokumente gehören')} vermutlich{' '}
+            {target ? (
+              <>
+                zu <strong>{target}</strong>
+              </>
+            ) : (
+              'zusammen'
+            )}
+            .
           </p>
         </div>
         <Badge variant={group.confidence >= 0.8 ? 'success' : 'warning'}>Sicherheit {formatPercent(group.confidence)}</Badge>
@@ -109,7 +123,11 @@ export function ScanProposals() {
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
       {data && data.length === 0 && (
-        <EmptyState icon={<Layers />} title="Keine Vorschläge" description="Wenn mehrere gefundene Dokumente zusammengehören, schlägt Archivist hier eine gemeinsame Ablage vor." />
+        <EmptyState
+          icon={<Layers />}
+          title="Keine Vorschläge"
+          description="Wenn mehrere gefundene Dokumente zusammengehören, schlägt Archivist hier eine gemeinsame Ablage vor."
+        />
       )}
       <ul className="flex flex-col gap-3">
         {(data ?? []).map((g) => (

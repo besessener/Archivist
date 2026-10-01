@@ -65,7 +65,9 @@ export class ActionService {
     const schema = ActionParamSchemas[input.actionType];
     const parsed = schema.safeParse(input.proposedParameters);
     if (!parsed.success) {
-      throw new AppError('validation_error', 'Die vorgeschlagene Aktion hat ungültige Parameter und wurde verworfen.', { details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });
+      throw new AppError('validation_error', 'Die vorgeschlagene Aktion hat ungültige Parameter und wurde verworfen.', {
+        details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      });
     }
     const row: Row = {
       id: newId(),
@@ -101,7 +103,14 @@ export class ActionService {
   }
 
   list(status?: StoredAgentAction['status']): StoredAgentAction[] {
-    return this.db.select().from(agentActions).where(status ? eq(agentActions.status, status) : undefined).orderBy(desc(agentActions.createdAt)).limit(200).all().map(map);
+    return this.db
+      .select()
+      .from(agentActions)
+      .where(status ? eq(agentActions.status, status) : undefined)
+      .orderBy(desc(agentActions.createdAt))
+      .limit(200)
+      .all()
+      .map(map);
   }
 
   latestProposed(conversationId?: string): StoredAgentAction | null {
@@ -118,7 +127,13 @@ export class ActionService {
     const now = nowIso();
     if (decision === 'reject') {
       this.db.update(agentActions).set({ status: 'rejected', resolvedAt: now }).where(eq(agentActions.id, id)).run();
-      this.deps.audit.log({ action: `action.reject:${action.actionType}`, actor: 'user', trigger: 'confirmation', confirmed: true, entityIds: action.affectedEntities.map((e) => e.id) });
+      this.deps.audit.log({
+        action: `action.reject:${action.actionType}`,
+        actor: 'user',
+        trigger: 'confirmation',
+        confirmed: true,
+        entityIds: action.affectedEntities.map((e) => e.id),
+      });
       this.ctx.events.changed('status', 'insights');
       return this.get(id);
     }
@@ -134,7 +149,11 @@ export class ActionService {
     } catch (err) {
       const info = toErrorInfo(err);
       this.ctx.logger.error('actions', `Aktion fehlgeschlagen: ${action.actionType}`, { error: err });
-      this.db.update(agentActions).set({ status: 'failed', result: info.message + (info.details ? ` (${info.details})` : ''), resolvedAt: nowIso() }).where(eq(agentActions.id, id)).run();
+      this.db
+        .update(agentActions)
+        .set({ status: 'failed', result: info.message + (info.details ? ` (${info.details})` : ''), resolvedAt: nowIso() })
+        .where(eq(agentActions.id, id))
+        .run();
     }
     this.ctx.events.changed('status', 'insights', 'notifications');
     return this.get(id);
@@ -146,7 +165,12 @@ export class ActionService {
     switch (type) {
       case 'archive_documents': {
         const params = ActionParamSchemas.archive_documents.parse(p);
-        const res = await d.archive.execute(params.items, { confirmed: true, approveNewCategories: params.approveNewCategories, confirmMove: params.items.some((i) => i.mode === 'move'), trigger });
+        const res = await d.archive.execute(params.items, {
+          confirmed: true,
+          approveNewCategories: params.approveNewCategories,
+          confirmMove: params.items.some((i) => i.mode === 'move'),
+          trigger,
+        });
         return `${res.success} archiviert, ${res.skipped} übersprungen, ${res.failed} fehlgeschlagen, ${res.conflicts} Konflikte.`;
       }
       case 'assign_documents': {
@@ -166,7 +190,11 @@ export class ActionService {
       }
       case 'resolve_contradiction': {
         const params = ActionParamSchemas.resolve_contradiction.parse(p);
-        d.contradictions.resolve(params.contradictionId, params.resolution, { confirmed: true, supersedeOldDecisionId: params.supersedeOldDecisionId, supersedeNewDecisionId: params.supersedeNewDecisionId });
+        d.contradictions.resolve(params.contradictionId, params.resolution, {
+          confirmed: true,
+          supersedeOldDecisionId: params.supersedeOldDecisionId,
+          supersedeNewDecisionId: params.supersedeNewDecisionId,
+        });
         return 'Widerspruch aufgelöst.';
       }
       case 'close_open_item': {
@@ -209,13 +237,37 @@ export class ActionService {
       }
       case 'create_open_item': {
         const params = ActionParamSchemas.create_open_item.parse(p);
-        d.openItems.create({ title: params.title, description: params.description, dueAt: params.dueAt, sourceIds: params.sourceIds, topic: params.topic, project: params.project, priority: 'normal', confidence: 0.7 }, { actor: 'agent', trigger });
+        d.openItems.create(
+          {
+            title: params.title,
+            description: params.description,
+            dueAt: params.dueAt,
+            sourceIds: params.sourceIds,
+            topic: params.topic,
+            project: params.project,
+            priority: 'normal',
+            confidence: 0.7,
+          },
+          { actor: 'agent', trigger },
+        );
         return 'Offener Punkt angelegt.';
       }
       case 'record_decision': {
         const params = ActionParamSchemas.record_decision.parse(p);
         d.decisions.create(
-          { decisionText: params.decisionText, title: params.title, decidedAt: params.decidedAt, participants: params.participants, topic: params.topic, project: params.project, sourceIds: params.sourceIds, alternatives: [], unknownFields: [], asDraft: false, confidence: 0.7 },
+          {
+            decisionText: params.decisionText,
+            title: params.title,
+            decidedAt: params.decidedAt,
+            participants: params.participants,
+            topic: params.topic,
+            project: params.project,
+            sourceIds: params.sourceIds,
+            alternatives: [],
+            unknownFields: [],
+            asDraft: false,
+            confidence: 0.7,
+          },
           { actor: 'agent', trigger },
         );
         return 'Entscheidung erfasst (ggf. als Entwurf mit offenen Pflichtfeldern).';

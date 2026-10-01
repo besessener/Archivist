@@ -23,20 +23,41 @@ export default function SettingsPage() {
       {settings && (
         <Tabs defaultValue="llm">
           <TabsList aria-label="Einstellungsbereiche">
-            <TabsTrigger value="llm" data-testid="tab-llm">KI</TabsTrigger>
-            <TabsTrigger value="archive" data-testid="tab-archive">Archiv</TabsTrigger>
-            <TabsTrigger value="privacy" data-testid="tab-privacy">Datenschutz</TabsTrigger>
-            <TabsTrigger value="notifications" data-testid="tab-notifications">Benachrichtigungen</TabsTrigger>
-            <TabsTrigger value="logs" data-testid="tab-logs">Protokolle</TabsTrigger>
-            <TabsTrigger value="backups" data-testid="tab-backups">Backups</TabsTrigger>
-            <TabsTrigger value="audit" data-testid="tab-audit">Änderungsprotokoll</TabsTrigger>
-            <TabsTrigger value="jobs" data-testid="tab-jobs">Verarbeitung</TabsTrigger>
+            <TabsTrigger value="llm" data-testid="tab-llm">
+              KI
+            </TabsTrigger>
+            <TabsTrigger value="archive" data-testid="tab-archive">
+              Archiv
+            </TabsTrigger>
+            <TabsTrigger value="privacy" data-testid="tab-privacy">
+              Datenschutz
+            </TabsTrigger>
+            <TabsTrigger value="notifications" data-testid="tab-notifications">
+              Benachrichtigungen
+            </TabsTrigger>
+            <TabsTrigger value="logs" data-testid="tab-logs">
+              Protokolle
+            </TabsTrigger>
+            <TabsTrigger value="backups" data-testid="tab-backups">
+              Backups
+            </TabsTrigger>
+            <TabsTrigger value="audit" data-testid="tab-audit">
+              Änderungsprotokoll
+            </TabsTrigger>
+            <TabsTrigger value="jobs" data-testid="tab-jobs">
+              Verarbeitung
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="llm">
             <LlmTab key={JSON.stringify(settings.llm) + String(hasApiKey)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="archive">
-            <ArchiveTab key={JSON.stringify([settings.archiveRoot, settings.consistency, settings.ocr])} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <ArchiveTab
+              key={JSON.stringify([settings.archiveRoot, settings.consistency, settings.ocr])}
+              settings={settings}
+              hasApiKey={hasApiKey}
+              reload={reload}
+            />
           </TabsContent>
           <TabsContent value="privacy">
             <PrivacyTab key={JSON.stringify(settings.privacy)} settings={settings} hasApiKey={hasApiKey} reload={reload} />

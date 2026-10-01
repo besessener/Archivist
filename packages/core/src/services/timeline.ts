@@ -27,7 +27,8 @@ export class TimelineService {
       if (q.projectId && projectId !== q.projectId) return false;
       return true;
     };
-    const ref = (type: EntityRef['type'], id: string | null, label?: string | null): EntityRef[] => (id ? [{ type, id, label: label ?? this.graph.getEntity(id)?.name ?? id }] : []);
+    const ref = (type: EntityRef['type'], id: string | null, label?: string | null): EntityRef[] =>
+      id ? [{ type, id, label: label ?? this.graph.getEntity(id)?.name ?? id }] : [];
     const push = (e: Omit<TimelineEntry, 'year'>) => {
       const date = e.date.slice(0, 10);
       if (q.from && date < q.from.slice(0, 10)) return;
@@ -71,20 +72,56 @@ export class TimelineService {
     for (const o of db.select().from(openItems).all()) {
       if (!match(o.topicId, o.projectId)) continue;
       const refs: EntityRef[] = [{ type: 'task', id: o.id, label: o.title }, ...ref('topic', o.topicId), ...ref('project', o.projectId)];
-      push({ id: `task:${o.id}:created`, date: o.createdAt, kind: 'open_item', title: `Offener Punkt angelegt: ${o.title}`, description: o.description ? truncate(o.description, 200) : null, refs });
+      push({
+        id: `task:${o.id}:created`,
+        date: o.createdAt,
+        kind: 'open_item',
+        title: `Offener Punkt angelegt: ${o.title}`,
+        description: o.description ? truncate(o.description, 200) : null,
+        refs,
+      });
       if (o.dueAt) push({ id: `task:${o.id}:due`, date: o.dueAt, kind: 'open_item', title: `Fällig: ${o.title}`, description: `Status: ${o.status}`, refs });
-      if (o.status === 'resolved' || o.status === 'dismissed') push({ id: `task:${o.id}:done`, date: o.updatedAt, kind: 'open_item', title: `${o.status === 'resolved' ? 'Erledigt' : 'Verworfen'}: ${o.title}`, description: null, refs });
+      if (o.status === 'resolved' || o.status === 'dismissed')
+        push({
+          id: `task:${o.id}:done`,
+          date: o.updatedAt,
+          kind: 'open_item',
+          title: `${o.status === 'resolved' ? 'Erledigt' : 'Verworfen'}: ${o.title}`,
+          description: null,
+          refs,
+        });
     }
     if (!q.topicId && !q.projectId) {
       for (const c of db.select().from(contradictions).all()) {
-        push({ id: `contra:${c.id}`, date: c.createdAt, kind: 'contradiction', title: c.title, description: truncate(c.description, 240), refs: c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })) });
+        push({
+          id: `contra:${c.id}`,
+          date: c.createdAt,
+          kind: 'contradiction',
+          title: c.title,
+          description: truncate(c.description, 240),
+          refs: c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
+        });
       }
     } else {
       // Widersprüche, die Entscheidungen dieses Themas/Projekts betreffen
-      const decIds = new Set(db.select().from(decisions).all().filter((d) => match(d.topicId, d.projectId)).map((d) => d.id));
+      const decIds = new Set(
+        db
+          .select()
+          .from(decisions)
+          .all()
+          .filter((d) => match(d.topicId, d.projectId))
+          .map((d) => d.id),
+      );
       for (const c of db.select().from(contradictions).all()) {
         if (c.affectedEntityIds.some((id) => decIds.has(id))) {
-          push({ id: `contra:${c.id}`, date: c.createdAt, kind: 'contradiction', title: c.title, description: truncate(c.description, 240), refs: c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })) });
+          push({
+            id: `contra:${c.id}`,
+            date: c.createdAt,
+            kind: 'contradiction',
+            title: c.title,
+            description: truncate(c.description, 240),
+            refs: c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
+          });
         }
       }
     }

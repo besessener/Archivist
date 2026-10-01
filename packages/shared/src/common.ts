@@ -1,25 +1,11 @@
 import { z } from 'zod';
 
 /** ISO-8601 Datum (YYYY-MM-DD) oder Zeitstempel. */
-export const IsoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}([T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/, 'Erwartet ISO-Datum (YYYY-MM-DD)');
+export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}([T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/, 'Erwartet ISO-Datum (YYYY-MM-DD)');
 export const Confidence = z.number().min(0).max(1);
 export const Id = z.string().min(1).max(100);
 
-export const EntityType = z.enum([
-  'document',
-  'decision',
-  'topic',
-  'project',
-  'person',
-  'event',
-  'question',
-  'task',
-  'note',
-  'category',
-  'tag',
-]);
+export const EntityType = z.enum(['document', 'decision', 'topic', 'project', 'person', 'event', 'question', 'task', 'note', 'category', 'tag']);
 export type EntityType = z.infer<typeof EntityType>;
 
 export const RelationType = z.enum([
@@ -66,10 +52,7 @@ export type AppErrorInfo = z.infer<typeof AppErrorInfo>;
 
 /** Antwort-Envelope jedes IPC-Kanals. */
 export const resultSchema = <T extends z.ZodType>(data: T) =>
-  z.discriminatedUnion('ok', [
-    z.object({ ok: z.literal(true), data }),
-    z.object({ ok: z.literal(false), error: AppErrorInfo }),
-  ]);
+  z.discriminatedUnion('ok', [z.object({ ok: z.literal(true), data }), z.object({ ok: z.literal(false), error: AppErrorInfo })]);
 export type Result<T> = { ok: true; data: T } | { ok: false; error: AppErrorInfo };
 
 /** Verweis auf ein Wissensobjekt für Kontextpanel, Quellen und Aktionen. */

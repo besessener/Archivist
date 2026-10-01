@@ -70,7 +70,12 @@ export class AuditService {
   }
 
   list(limit = 200, onlyUndoable = false): AuditEntry[] {
-    const rows = this.ctx.database.db.select().from(auditLog).orderBy(desc(auditLog.at)).limit(limit * (onlyUndoable ? 5 : 1)).all();
+    const rows = this.ctx.database.db
+      .select()
+      .from(auditLog)
+      .orderBy(desc(auditLog.at))
+      .limit(limit * (onlyUndoable ? 5 : 1))
+      .all();
     const mapped = rows.map((r) => this.map(r));
     return (onlyUndoable ? mapped.filter((m) => m.undoable) : mapped).slice(0, limit);
   }

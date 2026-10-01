@@ -19,7 +19,13 @@ export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'
  * Pflichtfelder: Wann, Thema, Beteiligte, Entscheidung.
  * Ein Feld gilt als erfüllt, wenn es vorhanden ist ODER der Benutzer es ausdrücklich als unbekannt bestätigt hat.
  */
-export function computeMissingFields(d: { decisionText?: string | null; decidedAt?: string | null; topic?: string | null; participants?: string[]; unknownFields?: DecisionField[] }): DecisionField[] {
+export function computeMissingFields(d: {
+  decisionText?: string | null;
+  decidedAt?: string | null;
+  topic?: string | null;
+  participants?: string[];
+  unknownFields?: DecisionField[];
+}): DecisionField[] {
   const unknown = new Set(d.unknownFields ?? []);
   const missing: DecisionField[] = [];
   if (!d.decidedAt && !unknown.has('decidedAt')) missing.push('decidedAt');
@@ -64,7 +70,12 @@ export class DecisionService {
       },
       run: async (data) => {
         const d = data as { changes: Array<{ id: string; status: DecisionStatus; supersedesDecisionId: string | null }>; relationIds: string[] };
-        for (const c of d.changes) this.db.update(decisions).set({ status: c.status, supersedesDecisionId: c.supersedesDecisionId, updatedAt: nowIso() }).where(eq(decisions.id, c.id)).run();
+        for (const c of d.changes)
+          this.db
+            .update(decisions)
+            .set({ status: c.status, supersedesDecisionId: c.supersedesDecisionId, updatedAt: nowIso() })
+            .where(eq(decisions.id, c.id))
+            .run();
         for (const rid of d.relationIds) this.graph.deleteRelation(rid);
         for (const c of d.changes) void this.reindex(c.id);
         this.ctx.events.changed('decisions', 'knowledge');
@@ -107,7 +118,16 @@ export class DecisionService {
 
   private mapMany(rows: Row[]): Decision[] {
     const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId]).filter((x): x is string => Boolean(x)))];
-    const names = new Map(ids.length ? this.db.select({ id: entities.id, name: entities.name }).from(entities).where(inArray(entities.id, ids)).all().map((e) => [e.id, e.name]) : []);
+    const names = new Map(
+      ids.length
+        ? this.db
+            .select({ id: entities.id, name: entities.name })
+            .from(entities)
+            .where(inArray(entities.id, ids))
+            .all()
+            .map((e) => [e.id, e.name])
+        : [],
+    );
     return rows.map((r) => this.map(r, names));
   }
 
@@ -122,7 +142,14 @@ export class DecisionService {
     if (opts.status) conds.push(eq(decisions.status, opts.status));
     if (opts.topicId) conds.push(eq(decisions.topicId, opts.topicId));
     if (opts.projectId) conds.push(eq(decisions.projectId, opts.projectId));
-    return this.mapMany(this.db.select().from(decisions).where(conds.length ? and(...conds) : undefined).orderBy(desc(decisions.decidedAt), desc(decisions.createdAt)).all());
+    return this.mapMany(
+      this.db
+        .select()
+        .from(decisions)
+        .where(conds.length ? and(...conds) : undefined)
+        .orderBy(desc(decisions.decidedAt), desc(decisions.createdAt))
+        .all(),
+    );
   }
 
   /** Aktive Entscheidungen zu Thema oder Projekt (für Widerspruchs-/Überholt-Prüfung). */
@@ -139,7 +166,14 @@ export class DecisionService {
     const ordered = ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
     if (ordered.length === 0) {
       const q = `%${query.trim()}%`;
-      return this.mapMany(this.db.select().from(decisions).where(or(like(decisions.title, q), like(decisions.decisionText, q))).limit(limit).all());
+      return this.mapMany(
+        this.db
+          .select()
+          .from(decisions)
+          .where(or(like(decisions.title, q), like(decisions.decisionText, q)))
+          .limit(limit)
+          .all(),
+      );
     }
     return this.mapMany(ordered);
   }
@@ -152,7 +186,13 @@ export class DecisionService {
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
     const decidedAt = normalizeDateInput(input.decidedAt ?? null);
-    const missing = computeMissingFields({ decisionText: input.decisionText, decidedAt, topic: topic?.name ?? null, participants: input.participants, unknownFields: input.unknownFields });
+    const missing = computeMissingFields({
+      decisionText: input.decisionText,
+      decidedAt,
+      topic: topic?.name ?? null,
+      participants: input.participants,
+      unknownFields: input.unknownFields,
+    });
     const status: DecisionStatus = input.asDraft || missing.length > 0 ? 'draft' : 'active';
     const row: Row = {
       id: newId(),
@@ -180,7 +220,14 @@ export class DecisionService {
       this.db.insert(decisions).values(row).run();
       this.syncGraph(row);
     });
-    this.audit.log({ action: 'decision.create', actor: opts.actor ?? 'user', trigger: opts.trigger ?? 'manual', confirmed: status !== 'draft', entityIds: [row.id], after: { title: row.title, status, missing } });
+    this.audit.log({
+      action: 'decision.create',
+      actor: opts.actor ?? 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: status !== 'draft',
+      entityIds: [row.id],
+      after: { title: row.title, status, missing },
+    });
     void this.reindex(row.id);
     this.ctx.events.changed('decisions', 'knowledge', 'status');
     return this.get(row.id);
@@ -202,11 +249,17 @@ export class DecisionService {
     if (patch.validFrom !== undefined) set.validFrom = normalizeDateInput(patch.validFrom ?? null);
     if (patch.validUntil !== undefined) set.validUntil = normalizeDateInput(patch.validUntil ?? null);
     if (patch.sourceIds !== undefined) set.sourceIds = [...new Set([...cur.sourceIds, ...patch.sourceIds])];
-    if (patch.unknownFields !== undefined) set.unknownFields = [...new Set([...(cur.unknownFields), ...patch.unknownFields])];
+    if (patch.unknownFields !== undefined) set.unknownFields = [...new Set([...cur.unknownFields, ...patch.unknownFields])];
 
     const merged = { ...cur, ...set };
-    const topicName = merged.topicId ? this.graph.getEntity(merged.topicId)?.name ?? null : null;
-    const missing = computeMissingFields({ decisionText: merged.decisionText, decidedAt: merged.decidedAt, topic: topicName, participants: merged.participants, unknownFields: merged.unknownFields as DecisionField[] });
+    const topicName = merged.topicId ? (this.graph.getEntity(merged.topicId)?.name ?? null) : null;
+    const missing = computeMissingFields({
+      decisionText: merged.decisionText,
+      decidedAt: merged.decidedAt,
+      topic: topicName,
+      participants: merged.participants,
+      unknownFields: merged.unknownFields as DecisionField[],
+    });
     set.missingFields = missing;
     // Entwurf wird final, sobald alle Pflichtfelder erfüllt sind (oder ausdrücklich als unbekannt bestätigt wurden)
     if (patch.status) set.status = patch.status;
@@ -216,7 +269,15 @@ export class DecisionService {
       this.db.update(decisions).set(set).where(eq(decisions.id, id)).run();
       this.syncGraph({ ...cur, ...set });
     });
-    this.audit.log({ action: 'decision.update', actor: 'user', trigger: opts.trigger ?? 'manual', confirmed: true, entityIds: [id], before: { status: cur.status, decidedAt: cur.decidedAt }, after: { status: set.status ?? cur.status, missing } });
+    this.audit.log({
+      action: 'decision.update',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { status: cur.status, decidedAt: cur.decidedAt },
+      after: { status: set.status ?? cur.status, missing },
+    });
     void this.reindex(id);
     this.ctx.events.changed('decisions', 'knowledge', 'status');
     return this.get(id);
@@ -231,7 +292,8 @@ export class DecisionService {
       this.graph.link(person.id, r.id, 'participated_in', { confidence: r.confidence, status: 'confirmed', sourceIds: r.sourceIds });
     }
     for (const src of r.sourceIds) {
-      if (this.graph.getEntity(src)?.type === 'document') this.graph.link(src, r.id, 'supports', { confidence: Math.min(r.confidence, 0.8), status: 'proposed', sourceIds: [src] });
+      if (this.graph.getEntity(src)?.type === 'document')
+        this.graph.link(src, r.id, 'supports', { confidence: Math.min(r.confidence, 0.8), status: 'proposed', sourceIds: [src] });
     }
   }
 
@@ -310,7 +372,10 @@ export class DecisionService {
       entityIds: [id],
       before: { status: cur.status },
       after: { status: 'revoked' },
-      undo: { type: 'decision_status', data: { changes: [{ id, status: cur.status, supersedesDecisionId: cur.supersedesDecisionId, afterUpdatedAt: now }], relationIds: [] } },
+      undo: {
+        type: 'decision_status',
+        data: { changes: [{ id, status: cur.status, supersedesDecisionId: cur.supersedesDecisionId, afterUpdatedAt: now }], relationIds: [] },
+      },
     });
     void this.reindex(id);
     this.ctx.events.changed('decisions', 'status');
@@ -324,7 +389,18 @@ export class DecisionService {
         type: 'decision',
         id,
         title: d.title,
-        content: [d.decisionText, d.topicName && `Thema: ${d.topicName}`, d.projectName && `Projekt: ${d.projectName}`, d.decidedAt && `Datum: ${d.decidedAt.slice(0, 10)}`, d.participants.length ? `Beteiligte: ${d.participants.join(', ')}` : '', d.rationale && `Begründung: ${d.rationale}`, d.consequences && `Auswirkungen: ${d.consequences}`, `Status: ${d.status}`].filter(Boolean).join('\n'),
+        content: [
+          d.decisionText,
+          d.topicName && `Thema: ${d.topicName}`,
+          d.projectName && `Projekt: ${d.projectName}`,
+          d.decidedAt && `Datum: ${d.decidedAt.slice(0, 10)}`,
+          d.participants.length ? `Beteiligte: ${d.participants.join(', ')}` : '',
+          d.rationale && `Begründung: ${d.rationale}`,
+          d.consequences && `Auswirkungen: ${d.consequences}`,
+          `Status: ${d.status}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
       });
     } catch (err) {
       this.ctx.logger.warn('decisions', 'Indexierung fehlgeschlagen', { error: err });

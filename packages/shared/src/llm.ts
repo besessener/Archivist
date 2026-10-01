@@ -93,11 +93,19 @@ export const ChatIntent = z.object({
       newStatus: opt(z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed'])),
     }),
   ),
-  event: opt(z.object({ title: opt(z.string()), description: opt(z.string()), occurredAt: opt(z.string()).describe('ISO-Datum YYYY-MM-DD, an dem das Ereignis stattfand') })),
+  event: opt(
+    z.object({
+      title: opt(z.string()),
+      description: opt(z.string()),
+      occurredAt: opt(z.string()).describe('ISO-Datum YYYY-MM-DD, an dem das Ereignis stattfand'),
+    }),
+  ),
   reminder: opt(z.object({ remindAt: opt(z.string()), relativeText: opt(z.string()), targetHint: opt(z.string()), title: opt(z.string()) })),
   path: opt(z.string()),
   note: opt(z.string()),
-  decisionCertainty: opt(z.enum(['clear', 'unsure'])).describe('Nur bei decision_new: clear = ausdrücklich getroffene Entscheidung; unsure = könnte auch Plan, Ereignis, Status oder Notiz sein'),
+  decisionCertainty: opt(z.enum(['clear', 'unsure'])).describe(
+    'Nur bei decision_new: clear = ausdrücklich getroffene Entscheidung; unsure = könnte auch Plan, Ereignis, Status oder Notiz sein',
+  ),
   segment: opt(z.string()).describe('Der Teil der Nachricht, auf den sich diese Absicht bezieht'),
 });
 export type ChatIntent = z.infer<typeof ChatIntent>;
@@ -119,7 +127,9 @@ export const DocumentClassification = z.object({
   dates: z.array(z.object({ date: z.string(), label: opt(z.string()) })).default([]),
   tags: z.array(z.string()).default([]),
   location: ArchiveLocationProposal,
-  decisions: z.array(z.object({ title: z.string(), decisionText: z.string(), decidedAt: opt(z.string()), participants: z.array(z.string()).default([]) })).default([]),
+  decisions: z
+    .array(z.object({ title: z.string(), decisionText: z.string(), decidedAt: opt(z.string()), participants: z.array(z.string()).default([]) }))
+    .default([]),
   openItems: z.array(z.object({ title: z.string(), description: opt(z.string()), dueAt: opt(z.string()), responsible: opt(z.string()) })).default([]),
   confidence: Confidence,
   rationale: z.string().default(''),

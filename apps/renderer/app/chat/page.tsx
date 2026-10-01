@@ -198,7 +198,15 @@ export default function ChatPage() {
         <Button variant="outline" size="sm" onClick={() => void newConversation()} data-testid="chat-new">
           <MessageSquarePlus aria-hidden /> Neu
         </Button>
-        <Button variant="outline" size="sm" onClick={openRename} disabled={!conversationId} aria-label="Unterhaltung umbenennen" title="Unterhaltung umbenennen" data-testid="chat-rename">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={openRename}
+          disabled={!conversationId}
+          aria-label="Unterhaltung umbenennen"
+          title="Unterhaltung umbenennen"
+          data-testid="chat-rename"
+        >
           <Pencil aria-hidden /> Umbenennen
         </Button>
       </div>
@@ -335,8 +343,15 @@ export default function ChatPage() {
               void saveRename();
             }}
           >
-            {/* eslint-disable-next-line jsx-a11y/no-autofocus -- Dialog zum Umbenennen: Fokus gehört ins Feld */}
-            <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} maxLength={120} autoFocus aria-label="Neuer Titel" data-testid="rename-input" />
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              maxLength={120}
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- Dialog zum Umbenennen: Fokus gehört ins Feld
+              autoFocus
+              aria-label="Neuer Titel"
+              data-testid="rename-input"
+            />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
                 Abbrechen

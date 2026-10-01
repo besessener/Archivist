@@ -7,6 +7,10 @@ import { permissionError, validationError } from './errors';
 const SEP_RE = /[\\/]/;
 
 /** true, wenn `candidate` gleich `root` ist oder darunter liegt (rein lexikalisch, nach Normalisierung). */
+/** Zulassungsliste: temporäre Ordner sind absichtlich als Scan-Ziel erlaubt (Tests, Wegwerf-Ordner). */
+// eslint-disable-next-line sonarjs/publicly-writable-directories -- keine Nutzung als Ablageort, nur Vergleich von Pfadpräfixen
+const TEMP_PREFIXES = ['/tmp/', '/var/tmp/', '/var/folders/', '/private/var/folders/', '/private/tmp/'];
+
 export function isInside(root: string, candidate: string): boolean {
   const rel = path.relative(path.resolve(root), path.resolve(candidate));
   if (rel === '') return true;
@@ -86,7 +90,10 @@ export function sanitizeFileName(name: string, fallback = 'Dokument'): string {
 export function sanitizeCategoryPath(input: string): string {
   if (input.includes('\0')) throw validationError('Ungültiger Ordnerpfad.');
   if (path.isAbsolute(input) || /^[A-Za-z]:/.test(input)) throw permissionError('Der Zielordner muss relativ zum Archiv sein.', input);
-  const segs = input.split(SEP_RE).map((s) => s.trim()).filter(Boolean);
+  const segs = input
+    .split(SEP_RE)
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (segs.some((s) => s === '..' || s === '.')) throw permissionError('Ungültiger Zielordner (relative Pfadsegmente).', input);
   const clean = segs.map((s) => sanitizeFileName(s, 'Ordner').replace(/\.[a-z0-9]{1,10}$/i, (m) => m)).slice(0, 6);
   if (clean.length === 0) throw validationError('Der Zielordner darf nicht leer sein.');
@@ -100,7 +107,33 @@ export function isForbiddenScanRoot(dir: string, opts: { home?: string; username
   const norm = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p);
   const r = norm(resolved);
   if (path.dirname(resolved) === resolved) return 'Laufwerks- oder Systemwurzeln dürfen nicht gescannt werden.';
-  const posixSystem = ['/etc', '/usr', '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/dev', '/proc', '/sys', '/boot', '/var', '/run', '/srv', '/root', '/system', '/library', '/applications', '/private', '/volumes', '/home', '/users', '/opt', '/snap', '/tmp'];
+  const posixSystem = [
+    '/etc',
+    '/usr',
+    '/bin',
+    '/sbin',
+    '/lib',
+    '/lib32',
+    '/lib64',
+    '/dev',
+    '/proc',
+    '/sys',
+    '/boot',
+    '/var',
+    '/run',
+    '/srv',
+    '/root',
+    '/system',
+    '/library',
+    '/applications',
+    '/private',
+    '/volumes',
+    '/home',
+    '/users',
+    '/opt',
+    '/snap',
+    '/tmp',
+  ];
   if (process.platform !== 'win32') {
     const lower = r.toLowerCase();
     for (const sys of posixSystem) {
@@ -108,8 +141,7 @@ export function isForbiddenScanRoot(dir: string, opts: { home?: string; username
         // Unterhalb des eigenen Home-Verzeichnisses ist alles erlaubt (z. B. /home/me/Downloads)
         if (isInside(home, resolved) && resolved !== path.dirname(home)) return null;
         // /tmp und /var/tmp sind für Tests/temporäre Ordner zulässig, sofern nicht Wurzel
-        // eslint-disable-next-line sonarjs/publicly-writable-directories -- Zulassungsliste: temporäre Ordner sind absichtlich als Scan-Ziel erlaubt
-        if (lower.startsWith('/tmp/') || lower.startsWith('/var/tmp/') || lower.startsWith('/var/folders/') || lower.startsWith('/private/var/folders/') || lower.startsWith('/private/tmp/')) return null;
+        if (TEMP_PREFIXES.some((prefix) => lower.startsWith(prefix))) return null;
         if (lower.startsWith('/volumes/') || lower.startsWith('/mnt/')) return null;
         return 'Systemverzeichnisse oder Verzeichnisse anderer Benutzer dürfen nicht gescannt werden.';
       }

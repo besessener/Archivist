@@ -64,7 +64,11 @@ const SECURITY_HEADERS = {
  * (kein Path Traversal, keine Symlink-Ausbrüche).
  */
 export async function serveRenderer(root: string, requestUrl: string): Promise<ServedFile> {
-  const notFound = (status = 404): ServedFile => ({ status, headers: { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS }, body: status === 404 ? 'Nicht gefunden' : 'Nicht erlaubt' });
+  const notFound = (status = 404): ServedFile => ({
+    status,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS },
+    body: status === 404 ? 'Nicht gefunden' : 'Nicht erlaubt',
+  });
   let url: URL;
   try {
     url = new URL(requestUrl);

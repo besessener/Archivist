@@ -54,12 +54,19 @@ export class FakeLlm {
       if (this.raw !== null) text = this.raw;
       else {
         const fn = this.responders.get(schema);
-        let out = fn ? await fn(schema, input.replace(/Bisheriger Verlauf[\s\S]*?\n\n(?=Nachricht des Benutzers:)/, ''), body) : schema === 'plain' ? 'OK' : { error: `kein Responder für ${schema}` };
+        let out = fn
+          ? await fn(schema, input.replace(/Bisheriger Verlauf[\s\S]*?\n\n(?=Nachricht des Benutzers:)/, ''), body)
+          : schema === 'plain'
+            ? 'OK'
+            : { error: `kein Responder für ${schema}` };
         // Tests liefern der Einfachheit halber eine einzelne Absicht; die Analyse erwartet {intents: [...]}
         if (schema === 'ChatIntent' && out && typeof out === 'object' && 'intent' in out) out = { intents: [out] };
         text = typeof out === 'string' ? out : JSON.stringify(out);
       }
-      return new Response(JSON.stringify({ id: 'resp_1', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({ id: 'resp_1', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     return new Response('not found', { status: 404 });
   };
@@ -102,7 +109,11 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     llmRetryDelayMs: 0,
   });
   if (opts.configured !== false) {
-    services.settings.update({ llm: { baseUrl: 'https://llm.example.test/openai/v1', model: 'test-model' }, privacy: { llmMode: opts.privacy ?? 'auto' }, setupCompleted: true });
+    services.settings.update({
+      llm: { baseUrl: 'https://llm.example.test/openai/v1', model: 'test-model' },
+      privacy: { llmMode: opts.privacy ?? 'auto' },
+      setupCompleted: true,
+    });
     services.secrets.setApiKey('sk-test-SECRET-0123456789abcdef');
   }
   if (opts.scanEnabled) services.settings.update({ scan: { enabled: true } });

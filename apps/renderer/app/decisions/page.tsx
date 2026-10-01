@@ -78,9 +78,21 @@ function DecisionsInner() {
         <div className="flex min-w-0 flex-col gap-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Entscheidungen durchsuchen …" aria-label="Entscheidungen durchsuchen" className="pl-9" data-testid="decision-search" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Entscheidungen durchsuchen …"
+              aria-label="Entscheidungen durchsuchen"
+              className="pl-9"
+              data-testid="decision-search"
+            />
           </div>
-          <Select value={status} onChange={(e) => setStatus(e.target.value as DecisionStatus | '')} aria-label="Status filtern" data-testid="decision-status-filter">
+          <Select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as DecisionStatus | '')}
+            aria-label="Status filtern"
+            data-testid="decision-status-filter"
+          >
             <option value="">Alle Status</option>
             {(Object.keys(DECISION_STATUS_LABELS) as DecisionStatus[]).map((s) => (
               <option key={s} value={s}>
@@ -90,7 +102,12 @@ function DecisionsInner() {
           </Select>
           {active.error && !active.data && <ErrorNote error={active.error} onRetry={() => void active.refetch()} />}
           {!active.data && active.loading && <Loading />}
-          {active.data && sorted.length === 0 && <EmptyState title="Keine Entscheidungen" description="Halten Sie eine Entscheidung fest – im Chat mit „Wir haben entschieden, dass …“ oder hier mit dem Formular." />}
+          {active.data && sorted.length === 0 && (
+            <EmptyState
+              title="Keine Entscheidungen"
+              description="Halten Sie eine Entscheidung fest – im Chat mit „Wir haben entschieden, dass …“ oder hier mit dem Formular."
+            />
+          )}
           <ul className="flex max-h-[68vh] flex-col gap-2 overflow-y-auto" data-testid="decision-list">
             {sorted.map((d) => (
               <li key={d.id}>
@@ -192,13 +209,35 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
         </div>
       )}
       <dl className="rounded-xl border bg-card px-4">
-        <Row label={DECISION_FIELD_LABELS.decidedAt}>{d.decidedAt ? formatLongDate(d.decidedAt) : d.unknownFields.includes('decidedAt') ? 'Bewusst unbekannt' : <span className="text-warning">fehlt</span>}</Row>
+        <Row label={DECISION_FIELD_LABELS.decidedAt}>
+          {d.decidedAt ? (
+            formatLongDate(d.decidedAt)
+          ) : d.unknownFields.includes('decidedAt') ? (
+            'Bewusst unbekannt'
+          ) : (
+            <span className="text-warning">fehlt</span>
+          )}
+        </Row>
         <Row label={DECISION_FIELD_LABELS.topic}>
-          {d.topicName ? <Link className="text-primary hover:underline" href={`/knowledge/?id=${encodeURIComponent(d.topicId ?? '')}`}>{d.topicName}</Link> : d.unknownFields.includes('topic') ? 'Bewusst unbekannt' : <span className="text-warning">fehlt</span>}
+          {d.topicName ? (
+            <Link className="text-primary hover:underline" href={`/knowledge/?id=${encodeURIComponent(d.topicId ?? '')}`}>
+              {d.topicName}
+            </Link>
+          ) : d.unknownFields.includes('topic') ? (
+            'Bewusst unbekannt'
+          ) : (
+            <span className="text-warning">fehlt</span>
+          )}
           {d.projectName && <span className="text-muted-foreground"> · Projekt {d.projectName}</span>}
         </Row>
         <Row label={DECISION_FIELD_LABELS.participants}>
-          {d.participants.length > 0 ? d.participants.join(', ') : d.unknownFields.includes('participants') ? 'Bewusst unbekannt' : <span className="text-warning">fehlt</span>}
+          {d.participants.length > 0 ? (
+            d.participants.join(', ')
+          ) : d.unknownFields.includes('participants') ? (
+            'Bewusst unbekannt'
+          ) : (
+            <span className="text-warning">fehlt</span>
+          )}
         </Row>
         <Row label={DECISION_FIELD_LABELS.decisionText}>
           <span className="whitespace-pre-wrap">{d.decisionText}</span>
@@ -217,12 +256,22 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
           )}
         </Row>
         <Row label="Gültigkeit">
-          {d.validFrom || d.validUntil ? `${d.validFrom ? `ab ${formatLongDate(d.validFrom)}` : ''} ${d.validUntil ? `bis ${formatLongDate(d.validUntil)}` : ''}` : <span className="text-muted-foreground">unbefristet</span>}
+          {d.validFrom || d.validUntil ? (
+            `${d.validFrom ? `ab ${formatLongDate(d.validFrom)}` : ''} ${d.validUntil ? `bis ${formatLongDate(d.validUntil)}` : ''}`
+          ) : (
+            <span className="text-muted-foreground">unbefristet</span>
+          )}
         </Row>
         <Row label="Status">
           {DECISION_STATUS_LABELS[d.status]}
           {d.supersedesDecisionId && (
-            <span className="text-muted-foreground"> · ersetzt <Link className="text-primary hover:underline" href={`/decisions/?id=${encodeURIComponent(d.supersedesDecisionId)}`}>eine frühere Entscheidung</Link></span>
+            <span className="text-muted-foreground">
+              {' '}
+              · ersetzt{' '}
+              <Link className="text-primary hover:underline" href={`/decisions/?id=${encodeURIComponent(d.supersedesDecisionId)}`}>
+                eine frühere Entscheidung
+              </Link>
+            </span>
           )}
         </Row>
         <Row label="Quellen">
@@ -248,7 +297,15 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
           <ActionCard action={action} onResolved={() => void detail.refetch()} />
         </div>
       )}
-      <SupersedeDialog open={supOpen} onOpenChange={setSupOpen} oldId={d.id} onProposed={(a) => { setAction(a); setSupOpen(false); }} />
+      <SupersedeDialog
+        open={supOpen}
+        onOpenChange={setSupOpen}
+        oldId={d.id}
+        onProposed={(a) => {
+          setAction(a);
+          setSupOpen(false);
+        }}
+      />
     </div>
   );
 }

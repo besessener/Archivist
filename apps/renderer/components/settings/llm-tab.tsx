@@ -99,7 +99,11 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           </Button>
         </div>
         {test && (
-          <Notice tone={test.ok ? 'info' : 'danger'} title={test.ok ? 'Verbindung erfolgreich' : 'Verbindung fehlgeschlagen'} data-testid="settings-test-result">
+          <Notice
+            tone={test.ok ? 'info' : 'danger'}
+            title={test.ok ? 'Verbindung erfolgreich' : 'Verbindung fehlgeschlagen'}
+            data-testid="settings-test-result"
+          >
             <p>{test.message}</p>
             {test.latencyMs !== null && <p className="mt-1 text-xs">Antwortzeit: {test.latencyMs} ms</p>}
             {test.modelReply && <p className="mt-1 text-xs">Antwort des Modells: „{test.modelReply}“</p>}

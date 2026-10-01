@@ -51,7 +51,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run format:check
       - run: npm run lint
+      - name: Architekturgrenzen (dependency-cruiser)
+        run: npm run depcruise
+      - name: Toter Code und ungenutzte Abhängigkeiten (Knip)
+        run: npm run knip
       - run: npm run test:coverage
       - name: Coverage in der Job-Zusammenfassung
         if: ${{ !cancelled() }}

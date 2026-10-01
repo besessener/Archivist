@@ -16,7 +16,15 @@ const bridge: ArchivistBridge = {
     try {
       return (await ipcRenderer.invoke(channel, input ?? {})) as never;
     } catch (err) {
-      return { ok: false, error: { category: 'validation_error', message: 'Die Anfrage an den lokalen Dienst ist fehlgeschlagen.', retryable: true, details: err instanceof Error ? err.message : String(err) } } as never;
+      return {
+        ok: false,
+        error: {
+          category: 'validation_error',
+          message: 'Die Anfrage an den lokalen Dienst ist fehlgeschlagen.',
+          retryable: true,
+          details: err instanceof Error ? err.message : String(err),
+        },
+      } as never;
     }
   },
   on(channel: EventChannel, listener: (payload: unknown) => void) {

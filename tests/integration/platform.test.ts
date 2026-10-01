@@ -22,7 +22,30 @@ describe('Datenbankmigrationen', () => {
     expect(s1.applied).toBe(s1.total);
     expect(s1.total).toBeGreaterThanOrEqual(2);
     const tables = (db.sqlite.prepare("select name from sqlite_master where type in ('table') ").all() as { name: string }[]).map((t) => t.name);
-    for (const t of ['entities', 'relations', 'documents', 'decisions', 'open_items', 'reminders', 'notifications', 'insights', 'contradictions', 'jobs', 'audit_log', 'scan_roots', 'scan_files', 'scan_exclusions', 'categories', 'chunks', 'search_fts', 'llm_transmissions', 'agent_actions', 'conversations', 'messages']) expect(tables).toContain(t);
+    for (const t of [
+      'entities',
+      'relations',
+      'documents',
+      'decisions',
+      'open_items',
+      'reminders',
+      'notifications',
+      'insights',
+      'contradictions',
+      'jobs',
+      'audit_log',
+      'scan_roots',
+      'scan_files',
+      'scan_exclusions',
+      'categories',
+      'chunks',
+      'search_fts',
+      'llm_transmissions',
+      'agent_actions',
+      'conversations',
+      'messages',
+    ])
+      expect(tables).toContain(t);
     const s2 = db.migrate(MIGRATIONS);
     expect(s2.applied).toBe(s1.applied);
     // WAL + Foreign Keys + konsistentes Backup über die SQLite-Backup-API
@@ -49,7 +72,8 @@ describe('Datenbankmigrationen', () => {
 describe('Persistente Job-Queue', () => {
   it('setzt unterbrochene Jobs nach einem Neustart fort und kennt Wiederholen/Abbrechen', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-jobs-'));
-    const make = () => createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher(), jobConcurrency: 1, llmRetryDelayMs: 0 });
+    const make = () =>
+      createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher(), jobConcurrency: 1, llmRetryDelayMs: 0 });
 
     const s1 = make();
     const job = s1.jobs.enqueue('test.echo', 'Echo', { n: 7 }); // Queue nicht gestartet → bleibt pending
@@ -152,10 +176,29 @@ describe('Worker-Threads', () => {
 
   it('die komplette Anwendung funktioniert mit Worker-Threads (Import + Suche)', async () => {
     const app = await createTestApp({ privacy: 'auto', workerFile });
-    app.llm.on('DocumentClassification', () => ({ docType: 'Notiz', title: 'Thread', summary: 's', mainTopic: null, project: null, persons: [], dates: [], tags: [], location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 }, decisions: [], openItems: [], confidence: 0.7, rationale: 'x' }));
+    app.llm.on('DocumentClassification', () => ({
+      docType: 'Notiz',
+      title: 'Thread',
+      summary: 's',
+      mainTopic: null,
+      project: null,
+      persons: [],
+      dates: [],
+      tags: [],
+      location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
+      decisions: [],
+      openItems: [],
+      confidence: 0.7,
+      rationale: 'x',
+    }));
     const imp = await app.ok('documents:import', { paths: [app.file('t.txt', 'Dokument verarbeitet im Worker Thread Zebrastreifen')] });
     await app.services.jobs.whenIdle();
-    await app.ok('documents:archive', { items: [{ documentId: imp.imported[0]!.id, mode: 'copy' }], confirmed: true, approveNewCategories: [], confirmMove: false });
+    await app.ok('documents:archive', {
+      items: [{ documentId: imp.imported[0]!.id, mode: 'copy' }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    });
     expect((await app.ok('search:global', { query: 'Zebrastreifen', limit: 3 }))[0]?.id).toBe(imp.imported[0]!.id);
     await app.cleanup();
   });
@@ -168,7 +211,34 @@ describe('IPC-Vertrag und Eingabevalidierung', () => {
       expect(ipcContract[c].input).toBeDefined();
       expect(ipcContract[c].output).toBeDefined();
     }
-    for (const required of ['app:getStatus', 'settings:get', 'settings:update', 'llm:testConnection', 'chat:send', 'decisions:create', 'decisions:update', 'decisions:search', 'documents:import', 'documents:classify', 'documents:archive', 'documents:undoArchive', 'scanner:addDirectory', 'scanner:removeDirectory', 'scanner:start', 'scanner:getResults', 'jobs:list', 'jobs:retry', 'notifications:list', 'notifications:resolve', 'insights:list', 'contradictions:resolve', 'reminders:create', 'reminders:snooze', 'search:global']) expect(IPC_CHANNELS).toContain(required);
+    for (const required of [
+      'app:getStatus',
+      'settings:get',
+      'settings:update',
+      'llm:testConnection',
+      'chat:send',
+      'decisions:create',
+      'decisions:update',
+      'decisions:search',
+      'documents:import',
+      'documents:classify',
+      'documents:archive',
+      'documents:undoArchive',
+      'scanner:addDirectory',
+      'scanner:removeDirectory',
+      'scanner:start',
+      'scanner:getResults',
+      'jobs:list',
+      'jobs:retry',
+      'notifications:list',
+      'notifications:resolve',
+      'insights:list',
+      'contradictions:resolve',
+      'reminders:create',
+      'reminders:snooze',
+      'search:global',
+    ])
+      expect(IPC_CHANNELS).toContain(required);
   });
 
   it('lehnt unbekannte Kanäle, ungültige Eingaben und fehlende Bestätigungen ab', async () => {
@@ -200,9 +270,11 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     await app.ok('llm:testConnection', {});
     await app.services.logger.close();
     const files: string[] = [];
-    const walk = (d: string) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : files.push(path.join(d, e.name))));
+    const walk = (d: string) =>
+      fs.readdirSync(d, { withFileTypes: true }).forEach((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : files.push(path.join(d, e.name))));
     walk(app.services.paths.root);
-    for (const f of files.filter((x) => !x.endsWith('.db') && !x.endsWith('.db-wal') && !x.endsWith('.db-shm'))) expect(fs.readFileSync(f, 'utf8'), f).not.toContain(KEY);
+    for (const f of files.filter((x) => !x.endsWith('.db') && !x.endsWith('.db-wal') && !x.endsWith('.db-shm')))
+      expect(fs.readFileSync(f, 'utf8'), f).not.toContain(KEY);
     // auch die Datenbank enthält ihn nicht
     for (const f of files.filter((x) => x.endsWith('.db') || x.endsWith('-wal'))) expect(fs.readFileSync(f).includes(Buffer.from(KEY)), f).toBe(false);
     const s = await app.ok('settings:get', {});
@@ -223,10 +295,29 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
 
   it('legt konsistente Backups an (Metadaten vs. vollständig) ohne API-Key', async () => {
     const app = await createTestApp({ privacy: 'auto' });
-    app.llm.on('DocumentClassification', () => ({ docType: 'Notiz', title: 'B', summary: 's', mainTopic: null, project: null, persons: [], dates: [], tags: [], location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 }, decisions: [], openItems: [], confidence: 0.7, rationale: 'x' }));
+    app.llm.on('DocumentClassification', () => ({
+      docType: 'Notiz',
+      title: 'B',
+      summary: 's',
+      mainTopic: null,
+      project: null,
+      persons: [],
+      dates: [],
+      tags: [],
+      location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
+      decisions: [],
+      openItems: [],
+      confidence: 0.7,
+      rationale: 'x',
+    }));
     const imp = await app.ok('documents:import', { paths: [app.file('b.txt', 'Backup Dokument Inhalt')] });
     await app.services.jobs.whenIdle();
-    await app.ok('documents:archive', { items: [{ documentId: imp.imported[0]!.id, mode: 'copy' }], confirmed: true, approveNewCategories: [], confirmMove: false });
+    await app.ok('documents:archive', {
+      items: [{ documentId: imp.imported[0]!.id, mode: 'copy' }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    });
     const meta = await app.ok('backup:create', { includeArchive: false });
     await new Promise((r) => setTimeout(r, 1100));
     const full = await app.ok('backup:create', { includeArchive: true });
@@ -249,7 +340,9 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     expect(s.privacy.llmMode).toBe('confirm');
     expect(s.notifications.desktop).toBe(false);
     expect((await app.call('settings:update', { llm: { baseUrl: 'ftp://x' } })).ok).toBe(false);
-    expect(Settings.parse((await app.ok('settings:update', { llm: { baseUrl: 'https://example.openai.azure.com/openai/v1/' } })).settings).llm.baseUrl).toBe('https://example.openai.azure.com/openai/v1');
+    expect(Settings.parse((await app.ok('settings:update', { llm: { baseUrl: 'https://example.openai.azure.com/openai/v1/' } })).settings).llm.baseUrl).toBe(
+      'https://example.openai.azure.com/openai/v1',
+    );
     await app.cleanup();
   });
 

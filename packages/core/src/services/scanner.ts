@@ -134,7 +134,10 @@ export class ScannerService {
     this.ctx.events.changed('scanner');
   }
 
-  updateDirectory(id: string, patch: Partial<Pick<ScanRoot, 'enabled' | 'recursive' | 'excludedSubdirs' | 'extensions' | 'maxFileSizeMb' | 'llmAllowed'>>): ScanRoot {
+  updateDirectory(
+    id: string,
+    patch: Partial<Pick<ScanRoot, 'enabled' | 'recursive' | 'excludedSubdirs' | 'extensions' | 'maxFileSizeMb' | 'llmAllowed'>>,
+  ): ScanRoot {
     const row = this.db.select().from(scanRoots).where(eq(scanRoots.id, id)).get();
     if (!row) throw validationError('Verzeichnis nicht gefunden.');
     const set: Partial<RootRow> = {};
@@ -157,13 +160,30 @@ export class ScannerService {
   exclude(kind: 'file' | 'dir', p: string): ScanExclusion {
     if (!path.isAbsolute(p)) throw validationError('Bitte einen absoluten Pfad angeben.');
     const abs = normalizeFsPath(p);
-    const existing = this.db.select().from(scanExclusions).where(and(eq(scanExclusions.kind, kind), eq(scanExclusions.path, abs))).get();
+    const existing = this.db
+      .select()
+      .from(scanExclusions)
+      .where(and(eq(scanExclusions.kind, kind), eq(scanExclusions.path, abs)))
+      .get();
     const row = existing ?? { id: newId(), kind, path: abs, createdAt: nowIso() };
     if (!existing) this.db.insert(scanExclusions).values(row).run();
-    const files = this.db.select().from(scanFiles).where(kind === 'file' ? eq(scanFiles.path, abs) : like(scanFiles.path, `${abs}${path.sep}%`)).all();
+    const files = this.db
+      .select()
+      .from(scanFiles)
+      .where(kind === 'file' ? eq(scanFiles.path, abs) : like(scanFiles.path, `${abs}${path.sep}%`))
+      .all();
     for (const f of files) this.db.update(scanFiles).set({ status: 'excluded' }).where(eq(scanFiles.id, f.id)).run();
     // noch nicht archivierte Dokumente aus diesem Ort aus dem Eingang nehmen
-    const docs = this.db.select().from(documents).where(and(inArray(documents.status, ['staged', 'proposed']), kind === 'file' ? eq(documents.sourcePath, abs) : like(documents.sourcePath, `${abs}${path.sep}%`))).all();
+    const docs = this.db
+      .select()
+      .from(documents)
+      .where(
+        and(
+          inArray(documents.status, ['staged', 'proposed']),
+          kind === 'file' ? eq(documents.sourcePath, abs) : like(documents.sourcePath, `${abs}${path.sep}%`),
+        ),
+      )
+      .all();
     for (const d of docs) if (!d.stagedPath) this.db.update(documents).set({ status: 'ignored', updatedAt: nowIso() }).where(eq(documents.id, d.id)).run();
     this.audit.log({ action: `scanner.exclude.${kind}`, actor: 'user', trigger: 'manual', confirmed: true, paths: [abs] });
     this.ctx.events.changed('scanner', 'documents');
@@ -171,7 +191,12 @@ export class ScannerService {
   }
 
   listExclusions(): ScanExclusion[] {
-    return this.db.select().from(scanExclusions).orderBy(desc(scanExclusions.createdAt)).all().map((r) => ({ id: r.id, kind: r.kind as 'file' | 'dir', path: r.path, createdAt: r.createdAt }));
+    return this.db
+      .select()
+      .from(scanExclusions)
+      .orderBy(desc(scanExclusions.createdAt))
+      .all()
+      .map((r) => ({ id: r.id, kind: r.kind as 'file' | 'dir', path: r.path, createdAt: r.createdAt }));
   }
 
   removeExclusion(id: string): void {
@@ -179,7 +204,10 @@ export class ScannerService {
     if (!row) return;
     this.db.delete(scanExclusions).where(eq(scanExclusions.id, id)).run();
     // Dateien werden beim nächsten Scan wieder erfasst
-    this.db.delete(scanFiles).where(and(eq(scanFiles.status, 'excluded'), or(eq(scanFiles.path, row.path), like(scanFiles.path, `${row.path}${path.sep}%`)))).run();
+    this.db
+      .delete(scanFiles)
+      .where(and(eq(scanFiles.status, 'excluded'), or(eq(scanFiles.path, row.path), like(scanFiles.path, `${row.path}${path.sep}%`))))
+      .run();
     this.audit.log({ action: 'scanner.removeExclusion', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
     this.ctx.events.changed('scanner');
   }
@@ -187,25 +215,51 @@ export class ScannerService {
   // ---------- Scan ----------
   /** Master-Schalter „Lokale Dokumentensuche“ (standardmäßig aus). */
   startScan(rootId?: string, trigger = 'manual'): Job {
-    if (!this.settings.get().scan.enabled) throw permissionError('Die lokale Dokumentensuche ist deaktiviert. Bitte zuerst in den Scan-Einstellungen aktivieren.');
+    if (!this.settings.get().scan.enabled)
+      throw permissionError('Die lokale Dokumentensuche ist deaktiviert. Bitte zuerst in den Scan-Einstellungen aktivieren.');
     const roots = this.listDirectories().filter((r) => r.enabled && (!rootId || r.id === rootId));
     if (roots.length === 0) throw validationError('Es ist kein freigegebenes Scan-Verzeichnis vorhanden.');
-    return this.jobs.enqueue('scanner.scan', rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse', { rootId: rootId ?? null, trigger }, { maxAttempts: 1 });
+    return this.jobs.enqueue(
+      'scanner.scan',
+      rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
+      { rootId: rootId ?? null, trigger },
+      { maxAttempts: 1 },
+    );
   }
 
   private isDup(sha: string): string | null {
-    return this.db.select({ id: documents.id }).from(documents).where(and(eq(documents.sha256, sha), inArray(documents.status, ['archived', 'indexed_only']))).get()?.id ?? null;
+    return (
+      this.db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(and(eq(documents.sha256, sha), inArray(documents.status, ['archived', 'indexed_only'])))
+        .get()?.id ?? null
+    );
   }
 
   async runScan(rootId: string | null, job?: JobContext): Promise<ScanSummary[]> {
-    const roots = this.db.select().from(scanRoots).where(rootId ? eq(scanRoots.id, rootId) : eq(scanRoots.enabled, true)).all();
+    const roots = this.db
+      .select()
+      .from(scanRoots)
+      .where(rootId ? eq(scanRoots.id, rootId) : eq(scanRoots.enabled, true))
+      .all();
     const summaries: ScanSummary[] = [];
     const exclusions = this.db.select().from(scanExclusions).all();
     let idx = 0;
     for (const root of roots) {
       job?.throwIfCancelled();
       idx += 1;
-      const summary: ScanSummary = { rootId: root.id, scanned: 0, newFiles: 0, changedFiles: 0, unchanged: 0, excluded: 0, skipped: 0, duplicates: 0, errors: [] };
+      const summary: ScanSummary = {
+        rootId: root.id,
+        scanned: 0,
+        newFiles: 0,
+        changedFiles: 0,
+        unchanged: 0,
+        excluded: 0,
+        skipped: 0,
+        duplicates: 0,
+        errors: [],
+      };
       try {
         const real = await fsp.realpath(root.path); // Verzeichnis könnte inzwischen entfernt/ersetzt worden sein
         if (isForbiddenScanRoot(real)) throw permissionError('Verzeichnis ist nicht (mehr) für Scans zulässig.', real);
@@ -225,7 +279,14 @@ export class ScannerService {
         });
         summary.errors.push(...walked.errors.slice(0, 20));
         summary.skipped = walked.skipped.length;
-        const known = new Map(this.db.select().from(scanFiles).where(eq(scanFiles.rootId, root.id)).all().map((f) => [f.path, f]));
+        const known = new Map(
+          this.db
+            .select()
+            .from(scanFiles)
+            .where(eq(scanFiles.rootId, root.id))
+            .all()
+            .map((f) => [f.path, f]),
+        );
         const seen = new Set<string>();
         const now = nowIso();
         for (const e of walked.entries) {
@@ -256,26 +317,64 @@ export class ScannerService {
           if (prev) {
             const wasArchived = prev.status === 'archived' || prev.status === 'analyzed';
             const status: ScanFileStatus = dupOf ? 'duplicate' : 'changed';
-            this.db.update(scanFiles).set({ size: e.size, mtimeMs: e.mtimeMs, sha256: sha, status, llmStatus, duplicateOfDocumentId: dupOf, lastSeenAt: now }).where(eq(scanFiles.id, prev.id)).run();
+            this.db
+              .update(scanFiles)
+              .set({ size: e.size, mtimeMs: e.mtimeMs, sha256: sha, status, llmStatus, duplicateOfDocumentId: dupOf, lastSeenAt: now })
+              .where(eq(scanFiles.id, prev.id))
+              .run();
             summary.changedFiles += 1;
             if (wasArchived && prev.sha256 !== sha) {
-              this.notifications.create({ title: 'Datei seit Archivierung verändert', description: `„${e.name}“ in ${path.dirname(e.path)} wurde nach der Archivierung geändert.`, type: 'file_changed', priority: 'normal', affectedEntityIds: prev.documentId ? [prev.documentId] : [], proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }], dedupeKey: `file-changed:${prev.id}:${sha}` });
+              this.notifications.create({
+                title: 'Datei seit Archivierung verändert',
+                description: `„${e.name}“ in ${path.dirname(e.path)} wurde nach der Archivierung geändert.`,
+                type: 'file_changed',
+                priority: 'normal',
+                affectedEntityIds: prev.documentId ? [prev.documentId] : [],
+                proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
+                dedupeKey: `file-changed:${prev.id}:${sha}`,
+              });
             }
           } else {
-            this.db.insert(scanFiles).values({ id: newId(), rootId: root.id, path: e.path, name: e.name, ext: e.ext, size: e.size, mtimeMs: e.mtimeMs, sha256: sha, mime: MIME_BY_EXT[e.ext] ?? e.mime, status: dupOf ? 'duplicate' : 'new', llmStatus, documentId: null, duplicateOfDocumentId: dupOf, firstSeenAt: now, lastSeenAt: now }).run();
+            this.db
+              .insert(scanFiles)
+              .values({
+                id: newId(),
+                rootId: root.id,
+                path: e.path,
+                name: e.name,
+                ext: e.ext,
+                size: e.size,
+                mtimeMs: e.mtimeMs,
+                sha256: sha,
+                mime: MIME_BY_EXT[e.ext] ?? e.mime,
+                status: dupOf ? 'duplicate' : 'new',
+                llmStatus,
+                documentId: null,
+                duplicateOfDocumentId: dupOf,
+                firstSeenAt: now,
+                lastSeenAt: now,
+              })
+              .run();
             summary.newFiles += 1;
           }
           if (dupOf) summary.duplicates += 1;
         }
         // verschwundene, noch nicht verarbeitete Dateien aus der Liste nehmen
-        for (const [p, f] of known) if (!seen.has(p) && ['new', 'changed', 'known', 'duplicate'].includes(f.status)) this.db.delete(scanFiles).where(eq(scanFiles.id, f.id)).run();
+        for (const [p, f] of known)
+          if (!seen.has(p) && ['new', 'changed', 'known', 'duplicate'].includes(f.status)) this.db.delete(scanFiles).where(eq(scanFiles.id, f.id)).run();
         this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary }).where(eq(scanRoots.id, root.id)).run();
         this.notifyScan(root, summary);
       } catch (err) {
         if (err instanceof Error && err.name === 'JobCancelledError') throw err;
         summary.errors.push(err instanceof Error ? err.message : String(err));
         this.ctx.logger.error('scanner', 'Scan fehlgeschlagen', { root: root.path, error: err });
-        this.notifications.create({ title: 'Scan teilweise fehlgeschlagen', description: `${root.path}: ${summary.errors[summary.errors.length - 1]}`, type: 'scan_partial', priority: 'high', proposedActions: [{ label: 'Scan-Verzeichnis verwalten', kind: 'navigate', target: '/scan/' }] });
+        this.notifications.create({
+          title: 'Scan teilweise fehlgeschlagen',
+          description: `${root.path}: ${summary.errors[summary.errors.length - 1]}`,
+          type: 'scan_partial',
+          priority: 'high',
+          proposedActions: [{ label: 'Scan-Verzeichnis verwalten', kind: 'navigate', target: '/scan/' }],
+        });
       }
       summaries.push(summary);
     }
@@ -296,7 +395,14 @@ export class ScannerService {
       });
     }
     if (s.duplicates > 0) {
-      this.notifications.create({ title: `${s.duplicates} Datei(en) entsprechen bereits archivierten Dokumenten`, description: `In ${path.basename(root.path)} liegen mögliche externe Duplikate.`, type: 'external_duplicate', priority: 'low', proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }], dedupeKey: `scan-dup:${root.id}:${s.duplicates}:${s.scanned}` });
+      this.notifications.create({
+        title: `${s.duplicates} Datei(en) entsprechen bereits archivierten Dokumenten`,
+        description: `In ${path.basename(root.path)} liegen mögliche externe Duplikate.`,
+        type: 'external_duplicate',
+        priority: 'low',
+        proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
+        dedupeKey: `scan-dup:${root.id}:${s.duplicates}:${s.scanned}`,
+      });
     }
     this.notifications.create({
       title: s.errors.length ? 'Scan teilweise fehlgeschlagen' : 'Scan abgeschlossen',
@@ -312,8 +418,20 @@ export class ScannerService {
     const conds = [];
     if (opts.rootId) conds.push(eq(scanFiles.rootId, opts.rootId));
     if (opts.status) conds.push(eq(scanFiles.status, opts.status));
-    const files = this.db.select().from(scanFiles).where(conds.length ? and(...conds) : undefined).orderBy(desc(scanFiles.lastSeenAt), scanFiles.name).limit(opts.limit ?? 500).all().map(mapFile);
-    const latest = this.db.select().from(scanRoots).orderBy(desc(scanRoots.lastScanAt)).all().find((r) => r.lastSummary);
+    const files = this.db
+      .select()
+      .from(scanFiles)
+      .where(conds.length ? and(...conds) : undefined)
+      .orderBy(desc(scanFiles.lastSeenAt), scanFiles.name)
+      .limit(opts.limit ?? 500)
+      .all()
+      .map(mapFile);
+    const latest = this.db
+      .select()
+      .from(scanRoots)
+      .orderBy(desc(scanRoots.lastScanAt))
+      .all()
+      .find((r) => r.lastSummary);
     return { files, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
   }
 
@@ -355,7 +473,11 @@ export class ScannerService {
         const sha = await this.pool.run('hashFile', { path: real });
         const dup = this.isDup(sha);
         if (dup) {
-          this.db.update(scanFiles).set({ status: 'duplicate', duplicateOfDocumentId: dup, sha256: sha, size: st.size, mtimeMs: st.mtimeMs }).where(eq(scanFiles.id, id)).run();
+          this.db
+            .update(scanFiles)
+            .set({ status: 'duplicate', duplicateOfDocumentId: dup, sha256: sha, size: st.size, mtimeMs: st.mtimeMs })
+            .where(eq(scanFiles.id, id))
+            .run();
           skipped.push(id);
           continue;
         }
@@ -368,11 +490,28 @@ export class ScannerService {
         const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
         const res = await this.docs.analyze(doc.id, { allowLlm });
         const updated = this.docs.getRow(doc.id);
-        this.db.update(scanFiles).set({ status: 'analyzed', documentId: doc.id, sha256: sha, size: st.size, mtimeMs: st.mtimeMs, llmStatus: res.usedLlm ? 'analyzed' : (updated.llmStatus) }).where(eq(scanFiles.id, id)).run();
+        this.db
+          .update(scanFiles)
+          .set({
+            status: 'analyzed',
+            documentId: doc.id,
+            sha256: sha,
+            size: st.size,
+            mtimeMs: st.mtimeMs,
+            llmStatus: res.usedLlm ? 'analyzed' : updated.llmStatus,
+          })
+          .where(eq(scanFiles.id, id))
+          .run();
         analyzed.push(doc.id);
       } catch (err) {
         this.ctx.logger.warn('scanner', 'Analyse fehlgeschlagen', { fileId: id, error: err });
-        this.notifications.create({ title: 'Dateianalyse fehlgeschlagen', description: `${f.name}: ${err instanceof Error ? err.message : String(err)}`, type: 'import_failed', priority: 'normal', dedupeKey: `analyze-failed:${id}` });
+        this.notifications.create({
+          title: 'Dateianalyse fehlgeschlagen',
+          description: `${f.name}: ${err instanceof Error ? err.message : String(err)}`,
+          type: 'import_failed',
+          priority: 'normal',
+          dedupeKey: `analyze-failed:${id}`,
+        });
         skipped.push(id);
       }
     }
@@ -390,7 +529,13 @@ export class ScannerService {
 
   /** Zuordnungsvorschläge: gruppiert analysierte Dokumente nach Thema/Projekt und legt Insight, Aktion und Hinweis an. */
   buildProposals(docIds: string[]): void {
-    const rows = docIds.length ? this.db.select().from(documents).where(and(inArray(documents.id, docIds), eq(documents.status, 'proposed'))).all() : [];
+    const rows = docIds.length
+      ? this.db
+          .select()
+          .from(documents)
+          .where(and(inArray(documents.id, docIds), eq(documents.status, 'proposed')))
+          .all()
+      : [];
     const groups = new Map<string, { label: string; topic: string | null; project: string | null; rows: typeof rows }>();
     for (const r of rows) {
       const g = this.groupKey(r.proposal as DocumentProposal | null, r.categoryPath);
@@ -404,7 +549,13 @@ export class ScannerService {
       const dups = g.rows.filter((r) => (r.proposal as DocumentProposal | null)?.duplicateOfDocumentId).length;
       const items = g.rows.map((r) => {
         const p = r.proposal as DocumentProposal | null;
-        return { documentId: r.id, mode: 'copy' as const, categoryPath: p?.location.categoryPath ?? r.categoryPath ?? undefined, topic: g.topic, project: g.project };
+        return {
+          documentId: r.id,
+          mode: 'copy' as const,
+          categoryPath: p?.location.categoryPath ?? r.categoryPath ?? undefined,
+          topic: g.topic,
+          project: g.project,
+        };
       });
       const label = known ? `${known.type === 'project' ? 'Projekt' : 'Thema'} „${known.name}“` : `„${g.label}“`;
       const n = g.rows.length;
@@ -447,10 +598,18 @@ export class ScannerService {
 
   /** Vorschlagsgruppen für die Scan-Ansicht (noch nicht archivierte, analysierte Scan-Dokumente). */
   proposals(): ScanProposalGroup[] {
-    const files = this.db.select().from(scanFiles).where(and(eq(scanFiles.status, 'analyzed'))).all();
+    const files = this.db
+      .select()
+      .from(scanFiles)
+      .where(and(eq(scanFiles.status, 'analyzed')))
+      .all();
     const ids = files.map((f) => f.documentId).filter((x): x is string => Boolean(x));
     if (ids.length === 0) return [];
-    const rows = this.db.select().from(documents).where(and(inArray(documents.id, ids), eq(documents.status, 'proposed'))).all();
+    const rows = this.db
+      .select()
+      .from(documents)
+      .where(and(inArray(documents.id, ids), eq(documents.status, 'proposed')))
+      .all();
     const groups = new Map<string, ScanProposalGroup>();
     for (const r of rows) {
       const g = this.groupKey(r.proposal as DocumentProposal | null, r.categoryPath);

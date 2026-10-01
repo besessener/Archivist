@@ -12,6 +12,5 @@ export type ScanRootRecord = IpcOutput<'scanner:listDirectories'>[number];
 export type ScanFileRecord = IpcOutput<'scanner:getResults'>['files'][number];
 export type ArchivePlanRecord = IpcOutput<'documents:previewArchive'>;
 export type ArchiveResultRecord = IpcOutput<'documents:archive'>;
-export type SettingsRecord = IpcOutput<'settings:get'>['settings'];
 export type ImportResult = IpcOutput<'documents:import'>;
 export type SourceRef = ChatMsg['sources'][number];

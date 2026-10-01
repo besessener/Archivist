@@ -20,9 +20,17 @@ import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 export function NotificationsTab({ settings, reload }: TabProps) {
   const { save } = useSaveSettings(reload);
   return (
-    <Section title="Benachrichtigungen" description="Hinweise erscheinen immer in der Glocke oben rechts. Zusätzlich können Sie Desktop-Hinweise Ihres Betriebssystems erhalten.">
+    <Section
+      title="Benachrichtigungen"
+      description="Hinweise erscheinen immer in der Glocke oben rechts. Zusätzlich können Sie Desktop-Hinweise Ihres Betriebssystems erhalten."
+    >
       <SwitchRow label="Desktop-Benachrichtigungen" hint="Zeigt wichtige Hinweise auch außerhalb des Programmfensters an.">
-        <Switch checked={settings.notifications.desktop} onCheckedChange={(v) => void save({ notifications: { desktop: v } })} aria-label="Desktop-Benachrichtigungen" data-testid="settings-desktop-notifications" />
+        <Switch
+          checked={settings.notifications.desktop}
+          onCheckedChange={(v) => void save({ notifications: { desktop: v } })}
+          aria-label="Desktop-Benachrichtigungen"
+          data-testid="settings-desktop-notifications"
+        />
       </SwitchRow>
     </Section>
   );
@@ -48,7 +56,11 @@ export function LogsTab({ settings, reload }: TabProps) {
         </Field>
       </div>
       <div>
-        <Button disabled={busy || !(Number(days) >= 1)} onClick={() => void save({ logs: { level, retentionDays: Math.round(Number(days)) } })} data-testid="settings-save">
+        <Button
+          disabled={busy || !(Number(days) >= 1)}
+          onClick={() => void save({ logs: { level, retentionDays: Math.round(Number(days)) } })}
+          data-testid="settings-save"
+        >
           <Save aria-hidden /> Speichern
         </Button>
       </div>
@@ -65,7 +77,9 @@ export function BackupsTab({ settings, reload }: TabProps) {
 
   async function create(includeArchive: boolean) {
     setCreating(includeArchive ? 'full' : 'metadata');
-    const b = await run(() => call('backup:create', { includeArchive }), { success: includeArchive ? 'Vollständiges Backup erstellt.' : 'Metadaten-Backup erstellt.' });
+    const b = await run(() => call('backup:create', { includeArchive }), {
+      success: includeArchive ? 'Vollständiges Backup erstellt.' : 'Metadaten-Backup erstellt.',
+    });
     setCreating(null);
     if (b) void list.refetch();
   }
@@ -78,7 +92,9 @@ export function BackupsTab({ settings, reload }: TabProps) {
             <p className="flex items-center gap-2 font-medium">
               <DatabaseBackup className="size-4 text-primary" aria-hidden /> Metadaten-Backup
             </p>
-            <p className="text-sm text-muted-foreground">Sichert Entscheidungen, offene Punkte, Wissen und Einstellungen – <strong>nicht</strong> Ihre Dokumentdateien. Klein und schnell.</p>
+            <p className="text-sm text-muted-foreground">
+              Sichert Entscheidungen, offene Punkte, Wissen und Einstellungen – <strong>nicht</strong> Ihre Dokumentdateien. Klein und schnell.
+            </p>
             <Button variant="outline" disabled={creating !== null} onClick={() => void create(false)} data-testid="backup-metadata">
               {creating === 'metadata' && <Loader2 className="animate-spin" aria-hidden />} Metadaten sichern
             </Button>
@@ -87,7 +103,9 @@ export function BackupsTab({ settings, reload }: TabProps) {
             <p className="flex items-center gap-2 font-medium">
               <HardDriveDownload className="size-4 text-primary" aria-hidden /> Vollständiges Archiv-Backup
             </p>
-            <p className="text-sm text-muted-foreground">Sichert zusätzlich alle archivierten Dokumentdateien. Kann viel Speicherplatz brauchen und länger dauern.</p>
+            <p className="text-sm text-muted-foreground">
+              Sichert zusätzlich alle archivierten Dokumentdateien. Kann viel Speicherplatz brauchen und länger dauern.
+            </p>
             <Button variant="outline" disabled={creating !== null} onClick={() => void create(true)} data-testid="backup-full">
               {creating === 'full' && <Loader2 className="animate-spin" aria-hidden />} Alles sichern
             </Button>
@@ -96,10 +114,18 @@ export function BackupsTab({ settings, reload }: TabProps) {
       </Section>
       <Section title="Optionen">
         <SwitchRow label="Beim Start automatisch sichern">
-          <Switch checked={settings.backups.autoOnStartup} onCheckedChange={(v) => void save({ backups: { autoOnStartup: v } })} aria-label="Beim Start automatisch sichern" />
+          <Switch
+            checked={settings.backups.autoOnStartup}
+            onCheckedChange={(v) => void save({ backups: { autoOnStartup: v } })}
+            aria-label="Beim Start automatisch sichern"
+          />
         </SwitchRow>
         <SwitchRow label="Automatische Backups enthalten das Archiv" hint="Sonst nur Metadaten.">
-          <Switch checked={settings.backups.includeArchive} onCheckedChange={(v) => void save({ backups: { includeArchive: v } })} aria-label="Automatische Backups enthalten das Archiv" />
+          <Switch
+            checked={settings.backups.includeArchive}
+            onCheckedChange={(v) => void save({ backups: { includeArchive: v } })}
+            aria-label="Automatische Backups enthalten das Archiv"
+          />
         </SwitchRow>
         <div className="flex items-end gap-2">
           <Field label="Anzahl aufbewahrter Backups" htmlFor="bk-keep">
@@ -150,7 +176,10 @@ export function AuditTab() {
   const [results, setResults] = useState<Record<string, { message: string; conflicts: string[]; undone: boolean }>>({});
 
   return (
-    <Section title="Änderungsprotokoll" description="Jede Änderung, die Archivist an Ihren Daten oder Dateien vornimmt, wird hier festgehalten. Manche Änderungen lassen sich rückgängig machen.">
+    <Section
+      title="Änderungsprotokoll"
+      description="Jede Änderung, die Archivist an Ihren Daten oder Dateien vornimmt, wird hier festgehalten. Manche Änderungen lassen sich rückgängig machen."
+    >
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
       {data && data.length === 0 && <EmptyState title="Noch keine Einträge" />}
@@ -245,7 +274,9 @@ export function AuditTab() {
           </div>
         )}
       </ConfirmDialog>
-      {data?.some((a) => !a.success) && <Notice tone="warning">Fehlgeschlagene Aktionen haben keine Änderungen hinterlassen, soweit nicht anders vermerkt.</Notice>}
+      {data?.some((a) => !a.success) && (
+        <Notice tone="warning">Fehlgeschlagene Aktionen haben keine Änderungen hinterlassen, soweit nicht anders vermerkt.</Notice>
+      )}
     </Section>
   );
 }

@@ -66,7 +66,15 @@ export class InsightService {
       if (existing.status === 'open') {
         this.db
           .update(insights)
-          .set({ title: input.title, explanation: input.explanation, confidence: input.confidence, affected: (input.affected ?? []), recommendedActionId: input.recommendedActionId ?? existing.recommendedActionId, recommendedActionLabel: input.recommendedActionLabel ?? existing.recommendedActionLabel, updatedAt: now })
+          .set({
+            title: input.title,
+            explanation: input.explanation,
+            confidence: input.confidence,
+            affected: input.affected ?? [],
+            recommendedActionId: input.recommendedActionId ?? existing.recommendedActionId,
+            recommendedActionLabel: input.recommendedActionLabel ?? existing.recommendedActionLabel,
+            updatedAt: now,
+          })
           .where(eq(insights.id, existing.id))
           .run();
       }
@@ -78,7 +86,7 @@ export class InsightService {
       title: input.title,
       explanation: input.explanation,
       confidence: input.confidence,
-      affected: (input.affected ?? []),
+      affected: input.affected ?? [],
       sourceIds: input.sourceIds ?? [],
       recommendedActionId: input.recommendedActionId ?? null,
       recommendedActionLabel: input.recommendedActionLabel ?? null,
@@ -95,7 +103,11 @@ export class InsightService {
 
   /** Entfernt offene Insights eines Schlüsselpräfixes, die nicht mehr zutreffen. */
   retireOpen(prefix: string, keepKeys: Set<string>): void {
-    const rows = this.db.select().from(insights).where(and(like(insights.dedupeKey, `${prefix}%`), eq(insights.status, 'open'))).all();
+    const rows = this.db
+      .select()
+      .from(insights)
+      .where(and(like(insights.dedupeKey, `${prefix}%`), eq(insights.status, 'open')))
+      .all();
     for (const r of rows) if (!keepKeys.has(r.dedupeKey)) this.db.delete(insights).where(eq(insights.id, r.id)).run();
     if (rows.length) this.ctx.events.changed('insights', 'status');
   }
@@ -117,7 +129,13 @@ export class InsightService {
 
   list(status?: Insight['status']): Insight[] {
     this.wakeSnoozed();
-    return this.db.select().from(insights).where(status ? eq(insights.status, status) : undefined).orderBy(desc(insights.updatedAt)).all().map(map);
+    return this.db
+      .select()
+      .from(insights)
+      .where(status ? eq(insights.status, status) : undefined)
+      .orderBy(desc(insights.updatedAt))
+      .all()
+      .map(map);
   }
 
   openCount(): number {

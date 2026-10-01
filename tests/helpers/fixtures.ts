@@ -5,17 +5,29 @@ import sharp from 'sharp';
 
 export async function makeDocx(file: string, paragraphs: string[]): Promise<void> {
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
-  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+  zip.file(
+    '[Content_Types].xml',
+    '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+  );
+  zip.file(
+    '_rels/.rels',
+    '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+  );
   const body = paragraphs.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join('');
-  zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`);
+  zip.file(
+    'word/document.xml',
+    `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`,
+  );
   fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
 }
 
 export async function makePptx(file: string, slides: string[]): Promise<void> {
   const zip = new JSZip();
   slides.forEach((s, i) => {
-    zip.file(`ppt/slides/slide${i + 1}.xml`, `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${s}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`);
+    zip.file(
+      `ppt/slides/slide${i + 1}.xml`,
+      `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${s}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+    );
   });
   fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
 }
@@ -36,7 +48,10 @@ export async function makeXlsx(file: string, rows: (string | number)[][]): Promi
       return `<row r="${r + 1}">${cells}</row>`;
     })
     .join('');
-  zip.file('xl/workbook.xml', '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Budget" sheetId="1" r:id="rId1"/></sheets></workbook>');
+  zip.file(
+    'xl/workbook.xml',
+    '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Budget" sheetId="1" r:id="rId1"/></sheets></workbook>',
+  );
   zip.file('xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>');
   zip.file('xl/sharedStrings.xml', `<sst>${strings.map((s) => `<si><t>${s}</t></si>`).join('')}</sst>`);
   zip.file('xl/worksheets/sheet1.xml', `<worksheet><sheetData>${sheetRows}</sheetData></worksheet>`);
@@ -44,11 +59,16 @@ export async function makeXlsx(file: string, rows: (string | number)[][]): Promi
 }
 
 export function makeEml(file: string, subject: string, body: string): void {
-  fs.writeFileSync(file, `From: Anna <anna@example.com>\r\nTo: Ben <ben@example.com>\r\nSubject: ${subject}\r\nDate: Mon, 01 Jun 2026 10:00:00 +0000\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${body}\r\n`);
+  fs.writeFileSync(
+    file,
+    `From: Anna <anna@example.com>\r\nTo: Ben <ben@example.com>\r\nSubject: ${subject}\r\nDate: Mon, 01 Jun 2026 10:00:00 +0000\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${body}\r\n`,
+  );
 }
 
 export async function makePng(file: string): Promise<void> {
-  await sharp({ create: { width: 32, height: 16, channels: 3, background: '#336699' } }).png().toFile(file);
+  await sharp({ create: { width: 32, height: 16, channels: 3, background: '#336699' } })
+    .png()
+    .toFile(file);
 }
 
 /** Minimales einseitiges PDF mit Text (Helvetica). */

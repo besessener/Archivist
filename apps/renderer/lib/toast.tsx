@@ -93,10 +93,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             key={t.id}
             role={t.variant === 'error' ? 'alert' : 'status'}
             data-testid="toast"
-            className={cn(
-              'pointer-events-auto flex gap-3 rounded-lg border bg-card p-3 text-sm shadow-lg',
-              t.variant === 'error' && 'border-destructive/50',
-            )}
+            className={cn('pointer-events-auto flex gap-3 rounded-lg border bg-card p-3 text-sm shadow-lg', t.variant === 'error' && 'border-destructive/50')}
           >
             <span className="mt-0.5 shrink-0">
               {t.variant === 'error' ? (

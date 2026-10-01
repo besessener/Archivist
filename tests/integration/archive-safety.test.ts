@@ -8,8 +8,19 @@ let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz', title: 'Testdokument', summary: 'Zusammenfassung', mainTopic: 'Test', project: null, persons: [], dates: [], tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 }, decisions: [], openItems: [], confidence: 0.7, rationale: 'x',
+    docType: 'Notiz',
+    title: 'Testdokument',
+    summary: 'Zusammenfassung',
+    mainTopic: 'Test',
+    project: null,
+    persons: [],
+    dates: [],
+    tags: [],
+    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
+    decisions: [],
+    openItems: [],
+    confidence: 0.7,
+    rationale: 'x',
   }));
 });
 afterEach(async () => {
@@ -17,14 +28,31 @@ afterEach(async () => {
 });
 
 async function importOne(name: string, content: string, loc?: string) {
-  if (loc) app.llm.on('DocumentClassification', () => ({ docType: 'Notiz', title: name, summary: 's', mainTopic: null, project: null, persons: [], dates: [], tags: [], location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 }, decisions: [], openItems: [], confidence: 0.7, rationale: 'x' }));
+  if (loc)
+    app.llm.on('DocumentClassification', () => ({
+      docType: 'Notiz',
+      title: name,
+      summary: 's',
+      mainTopic: null,
+      project: null,
+      persons: [],
+      dates: [],
+      tags: [],
+      location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
+      decisions: [],
+      openItems: [],
+      confidence: 0.7,
+      rationale: 'x',
+    }));
   const src = app.file(`in/${name}`, content);
   const imp = await app.ok('documents:import', { paths: [src] });
   await app.services.jobs.whenIdle();
   return { src, id: imp.imported[0]!.id };
 }
-const archive = (items: Array<{ documentId: string; mode: 'copy' | 'move' | 'index_only' | 'ignore'; categoryPath?: string; fileName?: string }>, extra: Record<string, unknown> = {}) =>
-  app.ok('documents:archive', { items, confirmed: true, approveNewCategories: [], confirmMove: false, ...extra } as never);
+const archive = (
+  items: Array<{ documentId: string; mode: 'copy' | 'move' | 'index_only' | 'ignore'; categoryPath?: string; fileName?: string }>,
+  extra: Record<string, unknown> = {},
+) => app.ok('documents:archive', { items, confirmed: true, approveNewCategories: [], confirmMove: false, ...extra } as never);
 
 describe('Archivierung durch Kopieren', () => {
   it('überschreibt nie vorhandene Dateien, sondern vergibt einen freien Namen', async () => {

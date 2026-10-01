@@ -1,6 +1,5 @@
 import type { DocumentProposal } from '@archivist/shared';
 import { normalizeDateInput, parseGermanDate } from '../util/dates';
-import { MIME_BY_EXT } from '../parsers';
 import { firstSentence, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { detectOpenItemSentences } from './open-items';
 
@@ -34,7 +33,25 @@ const RULES: Array<{ re: RegExp; path: (year: string) => string; type: string; w
   { re: /rechnung|invoice|zahlungsziel|rechnungsnummer/i, path: (y) => `private/finance/invoices/${y}`, type: 'Rechnung', weight: 0.6 },
 ];
 
-const TYPE_FOLDERS = new Set(['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'md', 'eml', 'png', 'jpg', 'jpeg', 'images', 'bilder', 'dateien', 'files']);
+const TYPE_FOLDERS = new Set([
+  'pdf',
+  'docx',
+  'doc',
+  'xlsx',
+  'xls',
+  'pptx',
+  'ppt',
+  'txt',
+  'md',
+  'eml',
+  'png',
+  'jpg',
+  'jpeg',
+  'images',
+  'bilder',
+  'dateien',
+  'files',
+]);
 
 /** Entfernt reine Dateityp-Ordner und kryptische Segmente (Hash/UUID) aus einem vorgeschlagenen Pfad. */
 export function humanizeCategoryPath(p: string): string {
@@ -64,7 +81,8 @@ function docTypeFromExt(ext: string): string {
 
 export function extractDates(text: string, now = new Date()): string[] {
   const out = new Set<string>();
-  const re = /\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\.\s?\d{1,2}\.\s?(?:\d{4}|\d{2})\b|\b\d{1,2}\.\s?(?:januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember)\s+\d{4}\b/gi;
+  const re =
+    /\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\.\s?\d{1,2}\.\s?(?:\d{4}|\d{2})\b|\b\d{1,2}\.\s?(?:januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember)\s+\d{4}\b/gi;
   for (const m of text.slice(0, 50_000).matchAll(re)) {
     const iso = parseGermanDate(m[0], now);
     if (iso) out.add(iso);
@@ -76,7 +94,10 @@ export function extractDates(text: string, now = new Date()): string[] {
 export function keywordTags(text: string, max = 5): string[] {
   const freq = new Map<string, number>();
   for (const t of tokenize(text.slice(0, 20_000))) if (t.length > 4 && !/^\d+$/.test(t)) freq.set(t, (freq.get(t) ?? 0) + 1);
-  return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([t]) => t);
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, max)
+    .map(([t]) => t);
 }
 
 /** Findet bekannte Themen/Projekte, die im Text vorkommen. */
@@ -164,6 +185,6 @@ export function snapToKnown(name: string | null | undefined, known: string[], th
   return best?.n ?? clean;
 }
 
-export const normalizeIsoDates = (values: Array<string | null | undefined>): string[] => [...new Set(values.map((v) => normalizeDateInput(v ?? null)).filter((v): v is string => Boolean(v)))];
-
-export const mimeFor = (ext: string): string => MIME_BY_EXT[ext] ?? 'application/octet-stream';
+export const normalizeIsoDates = (values: Array<string | null | undefined>): string[] => [
+  ...new Set(values.map((v) => normalizeDateInput(v ?? null)).filter((v): v is string => Boolean(v))),
+];

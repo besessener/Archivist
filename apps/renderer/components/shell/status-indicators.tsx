@@ -77,7 +77,9 @@ export function ServiceStatus() {
           <ul className="flex flex-col gap-2 text-sm">
             {services.map((s) => (
               <li key={s.name} className="flex items-start gap-2">
-                <span className="mt-1.5"><Dot tone={s.status === 'ok' ? 'ok' : s.status === 'degraded' ? 'warn' : 'error'} /></span>
+                <span className="mt-1.5">
+                  <Dot tone={s.status === 'ok' ? 'ok' : s.status === 'degraded' ? 'warn' : 'error'} />
+                </span>
                 <span>
                   <span className="font-medium">{s.name}</span>
                   {s.detail && <span className="block text-xs text-muted-foreground">{s.detail}</span>}
@@ -86,7 +88,10 @@ export function ServiceStatus() {
             ))}
           </ul>
           <p className="mt-3 text-xs text-muted-foreground">
-            Geheimnisspeicher: {status.secretStorage.available ? `verfügbar (${status.secretStorage.backend})` : 'nicht verfügbar – der API-Schlüssel kann nicht sicher gespeichert werden'}
+            Geheimnisspeicher:{' '}
+            {status.secretStorage.available
+              ? `verfügbar (${status.secretStorage.backend})`
+              : 'nicht verfügbar – der API-Schlüssel kann nicht sicher gespeichert werden'}
           </p>
         </PopoverContent>
       </Popover>

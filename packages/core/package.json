@@ -28,7 +28,6 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
-    "@types/mailparser": "^3.4.0",
-    "esbuild": "^0.28.0"
+    "@types/mailparser": "^3.4.0"
   }
 }

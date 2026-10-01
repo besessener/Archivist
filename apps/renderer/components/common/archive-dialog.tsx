@@ -108,8 +108,7 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
     return [...set];
   }, [plan, includedItems]);
 
-  const canExecute =
-    !!plan && includedItems.length > 0 && (!needsMove || confirmMove) && (!plan.requiresStrongConfirmation || strongAck) && !busy;
+  const canExecute = !!plan && includedItems.length > 0 && (!needsMove || confirmMove) && (!plan.requiresStrongConfirmation || strongAck) && !busy;
 
   async function execute() {
     const sendItems = items.filter((it) => included.has(it.documentId));
@@ -308,7 +307,9 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium">{titleOf(it.documentId)}</span>
                       <Badge
-                        variant={it.outcome === 'success' ? 'success' : it.outcome === 'failed' ? 'danger' : it.outcome === 'conflict' ? 'warning' : 'secondary'}
+                        variant={
+                          it.outcome === 'success' ? 'success' : it.outcome === 'failed' ? 'danger' : it.outcome === 'conflict' ? 'warning' : 'secondary'
+                        }
                       >
                         {{ success: 'Erfolgreich', skipped: 'Übersprungen', failed: 'Fehlgeschlagen', conflict: 'Konflikt' }[it.outcome]}
                       </Badge>

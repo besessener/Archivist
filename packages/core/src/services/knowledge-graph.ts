@@ -47,7 +47,11 @@ export class KnowledgeGraphService {
     const clean = name.trim().replace(/\s+/g, ' ');
     if (!clean) throw new AppError('validation_error', 'Der Name darf nicht leer sein.');
     const norm = normalizeName(clean);
-    const existing = this.db.select().from(entities).where(and(eq(entities.type, type), eq(entities.normalizedName, norm))).get();
+    const existing = this.db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.type, type), eq(entities.normalizedName, norm)))
+      .get();
     if (existing) return mapEntity(existing);
     const now = nowIso();
     const row: EntityRow = { id: newId(), type, name: clean, normalizedName: norm, description: description ?? null, createdAt: now, updatedAt: now };
@@ -57,7 +61,11 @@ export class KnowledgeGraphService {
   }
 
   findByName(type: EntityType, name: string): GraphEntity | undefined {
-    const r = this.db.select().from(entities).where(and(eq(entities.type, type), eq(entities.normalizedName, normalizeName(name)))).get();
+    const r = this.db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.type, type), eq(entities.normalizedName, normalizeName(name))))
+      .get();
     return r ? mapEntity(r) : undefined;
   }
 
@@ -73,7 +81,10 @@ export class KnowledgeGraphService {
   }
 
   removeNode(id: string): void {
-    this.db.delete(relations).where(or(eq(relations.sourceEntityId, id), eq(relations.targetEntityId, id))).run();
+    this.db
+      .delete(relations)
+      .where(or(eq(relations.sourceEntityId, id), eq(relations.targetEntityId, id)))
+      .run();
     this.db.delete(entities).where(eq(entities.id, id)).run();
     this.ctx.events.changed('knowledge');
   }
@@ -187,7 +198,16 @@ export class KnowledgeGraphService {
     if (!entity) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
     const rels = this.relationsOf(id);
     const otherIds = [...new Set(rels.map((r) => (r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId)))];
-    const others = otherIds.length ? new Map(this.db.select().from(entities).where(inArray(entities.id, otherIds)).all().map((e) => [e.id, mapEntity(e)])) : new Map<string, GraphEntity>();
+    const others = otherIds.length
+      ? new Map(
+          this.db
+            .select()
+            .from(entities)
+            .where(inArray(entities.id, otherIds))
+            .all()
+            .map((e) => [e.id, mapEntity(e)]),
+        )
+      : new Map<string, GraphEntity>();
     return {
       entity,
       relations: rels.flatMap((r) => {
@@ -230,9 +250,21 @@ export class KnowledgeGraphService {
       }
       for (const col of ['topicId', 'projectId'] as const) {
         if (source.type !== (col === 'topicId' ? 'topic' : 'project')) continue;
-        this.db.update(documents).set({ [col]: targetId }).where(eq(documents[col], sourceId)).run();
-        this.db.update(decisions).set({ [col]: targetId }).where(eq(decisions[col], sourceId)).run();
-        this.db.update(openItems).set({ [col]: targetId }).where(eq(openItems[col], sourceId)).run();
+        this.db
+          .update(documents)
+          .set({ [col]: targetId })
+          .where(eq(documents[col], sourceId))
+          .run();
+        this.db
+          .update(decisions)
+          .set({ [col]: targetId })
+          .where(eq(decisions[col], sourceId))
+          .run();
+        this.db
+          .update(openItems)
+          .set({ [col]: targetId })
+          .where(eq(openItems[col], sourceId))
+          .run();
       }
       this.db.delete(entities).where(eq(entities.id, sourceId)).run();
     });
