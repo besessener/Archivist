@@ -4,6 +4,8 @@ import type { AddressInfo } from 'node:net';
 export interface FakeLlmServer {
   url: string;
   calls: Array<{ schema: string; input: string }>;
+  /** Verzögerung jeder Antwort in Millisekunden (für eine „langsame KI“); 0 = sofort. */
+  delayMs: number;
   close(): Promise<void>;
 }
 
@@ -12,6 +14,7 @@ const userMessage = (input: string) => input.split('Nachricht des Benutzers:\n')
 /** Minimaler OpenAI-kompatibler Endpunkt (Responses API) für den E2E-Test. */
 export async function startFakeLlm(): Promise<FakeLlmServer> {
   const calls: FakeLlmServer['calls'] = [];
+  const control = { delayMs: 0 };
   const respond = (schema: string, input: string): unknown => {
     if (schema === 'plain') return 'OK';
     if (schema === 'DocumentClassification') {
@@ -94,17 +97,25 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
       calls.push({ schema, input: parsed.input ?? '' });
       let out = respond(schema, parsed.input ?? '');
       if (schema === 'ChatIntent' && out && typeof out === 'object' && 'intent' in out) out = { intents: [out] };
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          id: 'r',
-          status: 'completed',
-          output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: typeof out === 'string' ? out : JSON.stringify(out) }] }],
-        }),
-      );
+      const payload = JSON.stringify({
+        id: 'r',
+        status: 'completed',
+        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: typeof out === 'string' ? out : JSON.stringify(out) }] }],
+      });
+      setTimeout(() => res.writeHead(200, { 'content-type': 'application/json' }).end(payload), control.delayMs);
     });
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const port = (server.address() as AddressInfo).port;
-  return { url: `http://127.0.0.1:${port}/v1`, calls, close: () => new Promise((r) => server.close(() => r())) };
+  return {
+    url: `http://127.0.0.1:${port}/v1`,
+    calls,
+    get delayMs() {
+      return control.delayMs;
+    },
+    set delayMs(ms: number) {
+      control.delayMs = ms;
+    },
+    close: () => new Promise((r) => server.close(() => r())),
+  };
 }

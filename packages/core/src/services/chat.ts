@@ -505,6 +505,7 @@ export class ChatService {
         .where(eq(conversations.id, conv))
         .run();
     const userMessage = this.saveMessage(conv, 'user', text);
+    this.ctx.events.changed('chat'); // die Oberfläche zeigt die Nachricht schon, während die Antwort noch entsteht (z. B. nach einem Reiterwechsel)
     let reply: Reply;
     const state = this.state(conv);
     try {
