@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { initChat } from './chat';
+import { initDecisions } from './decisions';
 import { initInbox } from './inbox';
 import { initNavigation } from './navigation';
 import { initScan } from './scan';
@@ -14,6 +15,9 @@ export function createPageTree(page: Page) {
   return {
     get chat() {
       return initChat(page);
+    },
+    get decisions() {
+      return initDecisions(page);
     },
     get inbox() {
       return initInbox(page);

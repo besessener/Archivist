@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Confidence, EntityRef, EntityType, Id, IsoDate, RelationStatus, RelationType, SourceReference } from './common';
+import { Confidence, EntityRef, EntityType, Id, IsoDate, patchSchema, RelationStatus, RelationType, SourceReference } from './common';
 
 // ---------- Dokumente ----------
 export const DocumentStatus = z.enum(['staged', 'analyzing', 'proposed', 'archived', 'indexed_only', 'ignored', 'failed', 'quarantined']);
@@ -181,6 +181,18 @@ export const DecisionInput = z.object({
 });
 export type DecisionInput = z.infer<typeof DecisionInput>;
 
+/**
+ * Statuses an edit (`decisions:update`) may set. „Ersetzt“ and „Widerrufen“ are stage-2 actions that only happen
+ * through the confirmed paths `decisions:supersede` / `decisions:revoke` (with undo entry).
+ */
+export const EditableDecisionStatus = z.enum(['draft', 'confirmed', 'active', 'unclear']);
+export type EditableDecisionStatus = z.infer<typeof EditableDecisionStatus>;
+export const isEditableDecisionStatus = (s: DecisionStatus): s is EditableDecisionStatus => EditableDecisionStatus.safeParse(s).success;
+
+/** Partial update of a decision: only the given fields change (no defaults, see `patchSchema`). */
+export const DecisionPatch = patchSchema(DecisionInput).extend({ status: EditableDecisionStatus.optional() });
+export type DecisionPatch = z.infer<typeof DecisionPatch>;
+
 // ---------- Offene Punkte ----------
 export const OpenItemStatus = z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed']);
 export type OpenItemStatus = z.infer<typeof OpenItemStatus>;
@@ -272,6 +284,19 @@ export const OpenItemInput = z.object({
   confidence: Confidence.default(0.9),
 });
 export type OpenItemInput = z.infer<typeof OpenItemInput>;
+
+/** Statuses an edit (`openItems:update`) may set. „Erledigt“ and „Verworfen“ only via the confirmed `openItems:close` (with undo). */
+export const EditableOpenItemStatus = z.enum(['open', 'waiting', 'blocked']);
+export type EditableOpenItemStatus = z.infer<typeof EditableOpenItemStatus>;
+export const isEditableOpenItemStatus = (s: OpenItemStatus): s is EditableOpenItemStatus => EditableOpenItemStatus.safeParse(s).success;
+
+/** Partial update of an open item: only the given fields change (no defaults, see `patchSchema`). */
+export const OpenItemPatch = patchSchema(OpenItemInput).extend({
+  status: EditableOpenItemStatus.optional(),
+  responsibleUnknown: z.boolean().optional(),
+  dueUnknown: z.boolean().optional(),
+});
+export type OpenItemPatch = z.infer<typeof OpenItemPatch>;
 
 // ---------- Ereignisse ----------
 export const EventRecord = z.object({
