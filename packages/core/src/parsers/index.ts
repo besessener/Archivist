@@ -1,3 +1,4 @@
+import fsSync from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
@@ -226,8 +227,15 @@ async function parseImage(file: string, opts: ParseOptions): Promise<ParsedDocum
   if (opts.ocrEnabled) {
     try {
       const tess = await import(/* @vite-ignore */ 'tesseract.js' as string).catch(() => null);
-      if (!tess || !opts.tessdataDir) throw new Error('OCR-Komponente (tesseract.js oder lokale Sprachdaten) nicht verfügbar.');
-      const worker = await tess.createWorker('deu+eng', 1, { langPath: opts.tessdataDir, cacheMethod: 'none', gzip: false });
+      if (!tess || !opts.tessdataDir) throw new Error('OCR-Komponente (tesseract.js) ist nicht installiert.');
+      // Alles muss lokal vorliegen – es werden bewusst keine Dateien aus dem Netz nachgeladen.
+      const base = path.join(path.dirname(opts.tessdataDir), 'tesseract');
+      const workerPath = path.join(base, 'worker.min.js');
+      const corePath = path.join(base, 'core');
+      if (![workerPath, corePath, opts.tessdataDir].every((p) => fsSync.existsSync(p))) {
+        throw new Error('Lokale OCR-Dateien fehlen (index/tesseract/worker.min.js, index/tesseract/core/, index/tessdata/).');
+      }
+      const worker = await tess.createWorker('deu+eng', 1, { workerPath, corePath, langPath: opts.tessdataDir, cacheMethod: 'none', gzip: false });
       try {
         const res = await worker.recognize(file);
         const c = clip(tidy(res.data.text));

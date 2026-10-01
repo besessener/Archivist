@@ -28,8 +28,8 @@ win:
     - target: portable
       arch: [x64]
   icon: build/icon.png
-  artifactName: Archivist-${version}-${arch}-${target}.${ext}
 nsis:
+  artifactName: Archivist-Setup-${version}-${arch}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

@@ -11,7 +11,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
-    "start": "npm run build && electron .",
+    "start": "electron .",
     "pack": "npm run build && electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis portable --x64",
@@ -26,8 +26,12 @@
   "devDependencies": {
     "@archivist/core": "*",
     "@archivist/shared": "*",
-    "electron": "^44.5.1",
+    "electron": "44.5.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/besessener/archivist.git"
   }
 }

@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 import { CheckCircle2, CopyX, FileWarning, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +25,11 @@ const STATUS_TEXT: Record<string, string> = {
 /** Fortschritt und Ergebnis des letzten Datei-Imports (Drag-and-Drop oder Dateiauswahl). */
 export function ImportCard() {
   const { importState, dismissImport, importing } = useApp();
+  const pathname = usePathname();
+  // Auf der Inbox-Seite ist der Hinweis überflüssig und würde Bedienelemente verdecken.
+  useEffect(() => {
+    if (importState && pathname.startsWith('/inbox')) dismissImport();
+  }, [importState, pathname, dismissImport]);
   const { data: docs } = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'], jobs: true, enabled: importState !== null });
   if (!importState && !importing) return null;
   if (!importState) {

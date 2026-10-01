@@ -10,10 +10,11 @@ import { CheckboxField } from '@/components/ui/checkbox';
 import { Select } from '@/components/ui/select';
 import { ARCHIVE_MODE_SHORT } from '@/lib/labels';
 import { formatPercent, plural } from '@/lib/format';
+import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import type { ArchiveItemRequest, ArchiveMode, ScanProposalGroup } from '@archivist/shared';
 
-function Group({ group, onArchive }: { group: ScanProposalGroup; onArchive: (ids: string[], mode: ArchiveMode, group: ScanProposalGroup) => void }) {
+function Group({ group, onArchive }: { group: ScanProposalGroup; onArchive: (ids: string[], mode: ArchiveMode, group: ScanProposalGroup) => void | Promise<void> }) {
   const docs = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'] });
   const byId = useMemo(() => new Map((docs.data ?? []).map((d) => [d.id, d])), [docs.data]);
   const [selected, setSelected] = useState<Set<string>>(new Set(group.documentIds));
@@ -81,10 +82,11 @@ export function ScanProposals() {
   const docs = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'] });
   const [items, setItems] = useState<ArchiveItemRequest[] | null>(null);
 
-  function openArchive(ids: string[], mode: ArchiveMode, group: ScanProposalGroup) {
+  async function openArchive(ids: string[], mode: ArchiveMode, group: ScanProposalGroup) {
     const list: ArchiveItemRequest[] = [];
     for (const id of ids) {
-      const d = docs.data?.find((x) => x.id === id);
+      // frisch laden: die Dokumentliste kann direkt nach der Analyse noch veraltet sein
+      const d = docs.data?.find((x) => x.id === id) ?? (await call('documents:get', { id }).catch(() => null));
       if (!d) continue;
       const edit = defaultEdit(d);
       list.push(

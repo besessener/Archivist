@@ -1,5 +1,5 @@
 {
-  "name": "archivist",
+  "name": "archivist-monorepo",
   "version": "0.1.0",
   "private": true,
   "description": "Archivist – persönlicher, agentischer AI-Archivar (lokale Desktop-Anwendung)",
@@ -18,11 +18,11 @@
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
     "db:generate": "npm run db:generate -w @archivist/core",
-    "build": "npm run build -w @archivist/renderer && npm run build -w @archivist/desktop",
-    "dev": "npm run dev -w @archivist/desktop",
-    "start": "npm run build && npm run start -w @archivist/desktop",
-    "dist": "npm run build && npm run dist -w @archivist/desktop",
-    "dist:win": "npm run build && npm run dist:win -w @archivist/desktop",
+    "build": "npm run build -w @archivist/renderer && npm run build -w archivist",
+    "dev": "npm run dev -w archivist",
+    "start": "npm run build && npm run start -w archivist",
+    "dist": "npm run build && npm run dist -w archivist",
+    "dist:win": "npm run build && npm run dist:win -w archivist",
     "native:check": "node scripts/check-native.mjs"
   },
   "devDependencies": {

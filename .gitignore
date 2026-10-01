@@ -11,3 +11,7 @@ playwright-report/
 .env
 .env.*
 !.env.example
+
+node_modules/.cache/
+playwright-report/
+test-results/

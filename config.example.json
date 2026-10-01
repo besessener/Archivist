@@ -1,0 +1,60 @@
+{
+  "setupCompleted": false,
+  "language": "de",
+  "llm": {
+    "baseUrl": "https://example.openai.azure.com/openai/v1",
+    "model": "mein-modell-name",
+    "reasoningEffort": "low",
+    "timeoutMs": 60000,
+    "maxInputChars": 24000,
+    "embeddingModel": ""
+  },
+  "archiveRoot": "~/Documents/Archivist/archive",
+  "scan": {
+    "enabled": false,
+    "onStartup": false,
+    "periodic": false,
+    "intervalMinutes": 60,
+    "maxFileSizeMb": 50,
+    "allowedExtensions": [
+      "pdf",
+      "docx",
+      "pptx",
+      "xlsx",
+      "txt",
+      "md",
+      "markdown",
+      "eml",
+      "png",
+      "jpg",
+      "jpeg"
+    ],
+    "autoAnalyze": false
+  },
+  "privacy": {
+    "llmMode": "confirm",
+    "neverAnalyzeDirs": [],
+    "neverAnalyzeExtensions": [],
+    "neverAnalyzeFiles": []
+  },
+  "notifications": {
+    "desktop": false
+  },
+  "logs": {
+    "level": "info",
+    "retentionDays": 30
+  },
+  "backups": {
+    "keep": 10,
+    "autoOnStartup": false,
+    "includeArchive": false
+  },
+  "consistency": {
+    "onStartup": true,
+    "intervalHours": 24,
+    "staleOpenItemDays": 30
+  },
+  "ocr": {
+    "enabled": false
+  }
+}
