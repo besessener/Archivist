@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, EyeOff, Loader2, RefreshCw, ShieldOff, ArchiveRestore, Ban } from 'lucide-react';
+import { ChevronDown, EyeOff, FolderOpen, Loader2, RefreshCw, ShieldOff, ArchiveRestore, Ban, FileInput } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox, CheckboxField } from '@/components/ui/checkbox';
@@ -26,6 +26,7 @@ function llmVariant(s: DocRecord['llmStatus']) {
 
 export function processingBadge(doc: DocRecord): { label: string; variant: 'secondary' | 'success' | 'warning' | 'danger' | 'info' } {
   if (doc.status === 'analyzing') return { label: 'Wird analysiert …', variant: 'info' };
+  if (doc.status === 'quarantined') return { label: 'Nicht verarbeitet', variant: 'secondary' };
   switch (doc.processingStatus) {
     case 'pending':
       return { label: 'Wird verarbeitet', variant: 'info' };
@@ -61,6 +62,8 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
   const [llmOk, setLlmOk] = useState(false);
   // May this document's content go to the LLM at all (exclusion, folder permission, privacy mode)?
   const llmPossible = mode !== 'local_only' && doc.llmStatus !== 'excluded' && doc.folderLlmAllowed;
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const quarantined = doc.status === 'quarantined';
   const proc = processingBadge(doc);
   const archivable = doc.status === 'staged' || doc.status === 'proposed';
   const p = doc.proposal;
@@ -106,7 +109,11 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 {doc.status === 'analyzing' && <Loader2 className="size-3 animate-spin" aria-hidden />}
                 {proc.label}
               </Badge>
-              {doc.status === 'quarantined' && <Badge variant="danger">In Quarantäne</Badge>}
+              {quarantined && (
+                <Badge variant="danger" data-testid="inbox-quarantine-badge">
+                  In Quarantäne
+                </Badge>
+              )}
               {doc.status === 'failed' && <Badge variant="danger">Fehlgeschlagen</Badge>}
               <ConfidenceBadge value={doc.confidence} />
             </div>
@@ -114,7 +121,14 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
 
           {doc.processingError && (
             <p className="mt-2 rounded-md bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive" data-testid="inbox-error">
+              {quarantined && <span className="font-medium">Grund: </span>}
               {doc.processingError}
+            </p>
+          )}
+          {quarantined && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="inbox-quarantine-note">
+              <Ban className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden />
+              Die Datei wurde aus Sicherheitsgründen zurückgehalten und nicht gelesen. Prüfen Sie sie im Ordner, bevor Sie sie trotzdem importieren.
             </p>
           )}
           {doc.summary && <p className="mt-2 text-sm">{doc.summary}</p>}
@@ -248,7 +262,23 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 <ArchiveRestore aria-hidden /> Archivieren …
               </Button>
             )}
-            {doc.status !== 'analyzing' && (
+            {quarantined && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  data-testid="inbox-quarantine-reveal"
+                  onClick={() => void run(() => call('app:revealPath', { documentId: doc.id }), { errorTitle: 'Ordner konnte nicht geöffnet werden' })}
+                >
+                  <FolderOpen aria-hidden /> Ordner öffnen
+                </Button>
+                <Button size="sm" variant="outline" disabled={busy} data-testid="inbox-quarantine-release" onClick={() => setReleaseOpen(true)}>
+                  <FileInput aria-hidden /> Trotzdem importieren …
+                </Button>
+              </>
+            )}
+            {doc.status !== 'analyzing' && !quarantined && (
               <Button
                 size="sm"
                 variant="outline"
@@ -263,21 +293,23 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 <RefreshCw aria-hidden /> Erneut verarbeiten
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              data-testid="inbox-exclude-llm"
-              onClick={async () => {
-                const excluded = doc.llmStatus !== 'excluded';
-                await run(() => call('documents:setLlmExcluded', { id: doc.id, excluded }), {
-                  success: excluded ? 'Wird nicht mehr extern analysiert.' : 'Externe Analyse wieder erlaubt.',
-                });
-                onChanged();
-              }}
-            >
-              <ShieldOff aria-hidden /> {doc.llmStatus === 'excluded' ? 'Externe Analyse erlauben' : 'Von externer Analyse ausschließen'}
-            </Button>
+            {!quarantined && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                data-testid="inbox-exclude-llm"
+                onClick={async () => {
+                  const excluded = doc.llmStatus !== 'excluded';
+                  await run(() => call('documents:setLlmExcluded', { id: doc.id, excluded }), {
+                    success: excluded ? 'Wird nicht mehr extern analysiert.' : 'Externe Analyse wieder erlaubt.',
+                  });
+                  onChanged();
+                }}
+              >
+                <ShieldOff aria-hidden /> {doc.llmStatus === 'excluded' ? 'Externe Analyse erlauben' : 'Von externer Analyse ausschließen'}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -290,11 +322,6 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
             >
               <EyeOff aria-hidden /> Ignorieren
             </Button>
-            {doc.status === 'quarantined' && (
-              <span className="flex items-center gap-1 text-xs text-destructive">
-                <Ban className="size-3.5" aria-hidden /> Die Datei wurde aus Sicherheitsgründen zurückgehalten.
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -341,6 +368,33 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
           />
         </div>
       </ConfirmDialog>
+      {quarantined && (
+        <ConfirmDialog
+          open={releaseOpen}
+          onOpenChange={setReleaseOpen}
+          title="Datei trotzdem importieren?"
+          description="Der Inhalt dieser Datei passt nicht zu ihrer Endung. Importieren Sie sie nur, wenn Sie der Datei vertrauen. Archivist liest und analysiert sie danach wie jede andere Datei."
+          confirmLabel="Trotzdem importieren"
+          destructive
+          requireCheckbox="Ich habe die Datei geprüft und vertraue ihr."
+          confirmTestId="inbox-quarantine-release-confirm"
+          onConfirm={async () => {
+            const ok = await run(() => call('documents:releaseQuarantine', { id: doc.id, confirmed: true }), {
+              success: 'Die Datei wurde importiert und wird analysiert.',
+              errorTitle: 'Import aus der Quarantäne fehlgeschlagen',
+            });
+            if (ok) {
+              setReleaseOpen(false);
+              onChanged();
+            }
+          }}
+        >
+          <p className="break-all rounded-md border bg-muted/50 p-3 text-xs">
+            <span className="font-medium">{doc.originalName}</span>
+            {doc.processingError ? ` – ${doc.processingError}` : ''}
+          </p>
+        </ConfirmDialog>
+      )}
     </li>
   );
 }
