@@ -1,6 +1,6 @@
 {
-  "id": "e5723ad8-052f-4b8a-9ad8-85ac8f859098",
-  "prevId": "8dec2296-f18b-4161-a55f-f142d7470ab1",
+  "id": "ba2b9d85-cff2-4dff-add4-52151bb98efe",
+  "prevId": "4d427f0a-5138-4ed2-880b-d09b51c14e4a",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -1071,6 +1071,21 @@
           "notNull": false,
           "autoincrement": false
         },
+        "choices": {
+          "name": "choices",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "chosen_choice_id": {
+          "name": "chosen_choice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -1670,6 +1685,13 @@
         },
         "solution": {
           "name": "solution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duplicate_of_id": {
+          "name": "duplicate_of_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -84,6 +84,17 @@ function tokenScore(h: string, tokens: string[]): number {
 }
 
 /**
+ * Share (0..1) of the hint tokens found in an open item: a title word counts fully, a description word 0.7,
+ * abbreviations and near misses less (see tokenScore). `wanted` are {@link hintTokens}.
+ */
+export function scoreHintTokens(wanted: string[], item: { title: string; description?: string | null }): number {
+  if (!wanted.length) return 0;
+  const title = tokenize(item.title, { keepStopwords: true });
+  const desc = tokenize(item.description ?? '', { keepStopwords: true });
+  return wanted.reduce((acc, h) => acc + Math.max(tokenScore(h, title), 0.7 * tokenScore(h, desc)), 0) / wanted.length;
+}
+
+/**
  * Bewertet offene Punkte gegen einen Hinweis: Wort für Wort über Titel und Beschreibung (Füll- und Stoppwörter
  * zählen nicht, kurze Kürzel wie „TÜV“ nur als ganzes Wort), unscharf nur als letzte Stufe. Liegen die besten
  * Treffer nah beieinander, ist das Ergebnis mehrdeutig; unter der Schwelle gibt es keinen Treffer.
@@ -96,12 +107,7 @@ export function matchOpenItems<T extends { title: string; description?: string |
   const wanted = hintTokens(hint);
   if (!wanted.length) return { status: 'none' };
   const scored = items
-    .map((item) => {
-      const title = tokenize(item.title, { keepStopwords: true });
-      const desc = tokenize(item.description ?? '', { keepStopwords: true });
-      const sum = wanted.reduce((acc, h) => acc + Math.max(tokenScore(h, title), 0.7 * tokenScore(h, desc)), 0);
-      return { item, score: sum / wanted.length };
-    })
+    .map((item) => ({ item, score: scoreHintTokens(wanted, item) }))
     .filter((x) => x.score >= (opts.threshold ?? MATCH_THRESHOLD))
     .sort((a, b) => b.score - a.score);
   if (!scored.length) return { status: 'none' };
@@ -206,6 +212,7 @@ export class OpenItemService {
       confidence: r.confidence,
       updatedAt: r.updatedAt,
       solution: r.solution ? (OpenItemSolution.safeParse(r.solution).data ?? null) : null,
+      duplicateOfId: r.duplicateOfId,
     };
   }
 
@@ -281,6 +288,7 @@ export class OpenItemService {
       createdAt: now,
       updatedAt: now,
       solution: null,
+      duplicateOfId: null,
     };
     this.db.transaction(() => {
       this.db.insert(openItems).values(row).run();

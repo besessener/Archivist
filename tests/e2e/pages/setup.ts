@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 import { pageObject } from './page-object';
 
+type PrivacyMode = 'auto' | 'confirm' | 'local_only';
+
 /** Einrichtungsdialog beim ersten Start. */
 export function initSetupWizard(page: Page) {
   const root = page.getByTestId('setup-wizard');
@@ -14,7 +16,7 @@ export function initSetupWizard(page: Page) {
       baseUrl: root.getByTestId('setup-baseurl'),
       apiKey: root.getByTestId('setup-apikey'),
       model: root.getByTestId('setup-model'),
-      modeAuto: root.getByTestId('setup-mode-auto'),
+      mode: (mode: PrivacyMode) => root.getByTestId(`setup-mode-${mode}`),
     },
     texts: {
       testResult: root.getByTestId('setup-test-result'),
@@ -30,18 +32,18 @@ export function initSetupWizard(page: Page) {
       await locators.buttons.testConnection.click();
       await expect(locators.texts.testResult).toContainText('erfolgreich');
     },
-    /** Von der Verbindungsprüfung bis zum Abschluss; Verzeichnisse werden übersprungen, Modus: automatisch. */
-    finish: async () => {
+    /** Von der Verbindungsprüfung bis zum Abschluss; Verzeichnisse werden übersprungen, Modus: automatisch (Standard). */
+    finish: async (mode: PrivacyMode = 'auto') => {
       await locators.buttons.next.click();
       await locators.buttons.next.click();
-      await locators.inputs.modeAuto.check();
+      await locators.inputs.mode(mode).check();
       await locators.buttons.next.click();
       await locators.buttons.finish.click();
       await expect(page.getByTestId('chat-page')).toBeVisible();
     },
-    complete: async (baseUrl: string) => {
+    complete: async (baseUrl: string, mode: PrivacyMode = 'auto') => {
       await interactions.connectLlm(baseUrl);
-      await interactions.finish();
+      await interactions.finish(mode);
     },
   };
   return pageObject(root, locators, interactions);

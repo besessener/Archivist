@@ -18,6 +18,11 @@ import type { IpcOutput } from '@archivist/shared';
 
 type Entry = IpcOutput<'timeline:get'>[number];
 
+/** Entries per page; "Ältere laden" extends the window by another page of older entries. */
+const PAGE_SIZE = 200;
+/** Must not exceed the `limit` maximum of the `timeline:get` channel. */
+const MAX_ENTRIES = 10000;
+
 const KIND: Record<Entry['kind'], { icon: React.ComponentType<{ className?: string }>; label: string }> = {
   document: { icon: FileText, label: 'Dokument' },
   decision: { icon: Gavel, label: 'Entscheidung' },
@@ -32,6 +37,8 @@ export default function TimelinePage() {
   const [projectId, setProjectId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [pages, setPages] = useState(1);
+  const limit = Math.min(pages * PAGE_SIZE, MAX_ENTRIES);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const { run } = useRun();
@@ -44,10 +51,19 @@ export default function TimelinePage() {
       ...(projectId ? { projectId } : {}),
       ...(from ? { from } : {}),
       ...(to ? { to } : {}),
-      limit: 500,
+      limit,
     },
     { scopes: ['documents', 'decisions', 'openItems', 'knowledge', 'contradictions', 'events'] },
   );
+
+  // The service returns the newest `limit` entries; a full page means older ones may exist.
+  // While a larger window is loading the previous (smaller) result is still shown, so keep the button visible.
+  const shown = tl.data?.length ?? 0;
+  const canLoadOlder = limit < MAX_ENTRIES && (shown >= limit || (tl.loading && pages > 1 && shown >= limit - PAGE_SIZE));
+  const filter = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    set(e.target.value);
+    setPages(1);
+  };
 
   const groups = useMemo(() => {
     const map = new Map<number, Entry[]>();
@@ -72,7 +88,7 @@ export default function TimelinePage() {
       />
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Thema" htmlFor="tl-topic">
-          <Select id="tl-topic" value={topicId} onChange={(e) => setTopicId(e.target.value)} data-testid="timeline-topic">
+          <Select id="tl-topic" value={topicId} onChange={filter(setTopicId)} data-testid="timeline-topic">
             <option value="">Alle Themen</option>
             {(topics.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
@@ -82,7 +98,7 @@ export default function TimelinePage() {
           </Select>
         </Field>
         <Field label="Projekt" htmlFor="tl-project">
-          <Select id="tl-project" value={projectId} onChange={(e) => setProjectId(e.target.value)} data-testid="timeline-project">
+          <Select id="tl-project" value={projectId} onChange={filter(setProjectId)} data-testid="timeline-project">
             <option value="">Alle Projekte</option>
             {(projects.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
@@ -92,10 +108,10 @@ export default function TimelinePage() {
           </Select>
         </Field>
         <Field label="Von" htmlFor="tl-from">
-          <Input id="tl-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="timeline-from" />
+          <Input id="tl-from" type="date" value={from} onChange={filter(setFrom)} data-testid="timeline-from" />
         </Field>
         <Field label="Bis" htmlFor="tl-to">
-          <Input id="tl-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} data-testid="timeline-to" />
+          <Input id="tl-to" type="date" value={to} onChange={filter(setTo)} data-testid="timeline-to" />
         </Field>
       </div>
       {tl.error && !tl.data && <ErrorNote error={tl.error} onRetry={() => void tl.refetch()} />}
@@ -150,6 +166,14 @@ export default function TimelinePage() {
           </section>
         ))}
       </div>
+      {tl.data && canLoadOlder && (
+        <div className="mt-8 flex flex-col items-center gap-2">
+          <p className="text-xs text-muted-foreground">Angezeigt werden die neuesten {shown} Einträge.</p>
+          <Button variant="outline" onClick={() => setPages((p) => p + 1)} disabled={tl.loading} data-testid="timeline-load-older">
+            Ältere laden
+          </Button>
+        </div>
+      )}
       <EventFormDialog
         key={`e-${createOpen}`}
         open={createOpen}

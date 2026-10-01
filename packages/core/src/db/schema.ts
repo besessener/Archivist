@@ -65,6 +65,8 @@ export const documents = sqliteTable(
     dates: jsonArr('dates'),
     confidence: real('confidence'),
     llmStatus: text('llm_status').notNull().default('pending'),
+    /** false: the document lies in a scan folder without LLM permission – nothing of it may reach the LLM. */
+    folderLlmAllowed: integer('folder_llm_allowed', { mode: 'boolean' }).notNull().default(true),
     proposal: text('proposal', { mode: 'json' }).$type<ArchivistJson | null>(),
     archiveMode: text('archive_mode'),
     extractedText: text('extracted_text').notNull().default(''),
@@ -124,6 +126,8 @@ export const openItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     /** Zuletzt erzeugter Lösungsvorschlag (OpenItemSolution als JSON) */
     solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
+    /** Set when the item was discarded as a duplicate: the open item it was merged into (status `dismissed`). */
+    duplicateOfId: text('duplicate_of_id'),
   },
   (t) => [index('open_items_status_idx').on(t.status)],
 );
