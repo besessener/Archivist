@@ -51,6 +51,7 @@ type Pending =
   | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string }
   | { kind: 'confirm_save'; text: string; intent: ChatIntent }
   | { kind: 'proposal_choice'; confirm: boolean; actionIds: string[] }
+  | { kind: 'supersede_choice'; newDecisionId: string; candidateIds: string[] }
   | { kind: 'event'; title: string; description: string | null; topic: string | null; project: string | null; source: string };
 
 /** Weitere erkannte Absichten, die nach Beantwortung einer Rückfrage noch abgearbeitet werden. */
@@ -420,6 +421,8 @@ export class ChatService {
     if (p.kind === 'event')
       return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum (dann intent=event_record, event.occurredAt als ISO-Datum, ohne eigenen Titel). Ein anderes Ereignis mit eigenem Titel ist keine Antwort.`;
     if (p.kind === 'proposal_choice') return 'keine';
+    if (p.kind === 'supersede_choice')
+      return `Der Agent hat gefragt, welche ältere Entscheidung durch „${this.decisions.get(p.newDecisionId).title}“ ersetzt wird; die Antwort wertet er selbst aus.`;
     if (p.kind === 'confirm_save')
       return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Beantwortet die Nachricht das (auch frei formuliert, z. B. „lieber als Termin“, „keine Entscheidung, nur merken“), setze saveAs (decision, event, note oder nothing) und liefere für die Antwort selbst keine weitere Absicht. Andere Anliegen in der Nachricht ordnest du wie gewohnt ein; passt die Nachricht nicht zur Rückfrage, setze saveAs=null.`;
     const i = this.openItems.get(p.openItemId);
@@ -631,6 +634,13 @@ export class ChatService {
       const chosen = this.answerProposalChoice(text, state.pending);
       state = { ...state, pending: null };
       if (chosen) return this.resolveProposal(chosen.action, chosen.confirm, state);
+    }
+    // Antwort auf „Welche Entscheidung wird ersetzt?“
+    if (state.pending?.kind === 'supersede_choice') {
+      const p = state.pending;
+      state = { ...state, pending: null };
+      const answered = this.answerSupersedeChoice(conv, text, p, state);
+      if (answered) return answered;
     }
     // Antwort auf „Entscheidung, Ereignis, Notiz oder nichts?“: zuerst deterministisch, sonst mit Hinweis per LLM
     const saving = state.pending?.kind === 'confirm_save' ? state.pending : null;
@@ -1035,32 +1045,28 @@ export class ChatService {
       }
       lines.push(`⚠ ${c.title}: ${c.description.split('\n')[0]}`);
     }
+    let next: Pending | null = null;
     // eslint-disable-next-line sonarjs/different-types-comparison -- defensiv: null kann aus gespeichertem JSON stammen
     if (opts.supersedesHint !== null && opts.supersedesHint !== undefined) {
-      const older = this.decisions
-        .list()
-        .filter((o) => o.id !== d.id && ['active', 'confirmed'].includes(o.status))
-        .find(
-          (o) =>
-            !opts.supersedesHint ||
-            normalizeName(o.topicName ?? '').includes(normalizeName(opts.supersedesHint)) ||
-            normalizeName(o.title).includes(normalizeName(opts.supersedesHint)) ||
-            (d.topicId && o.topicId === d.topicId),
-        );
-      if (older && !actions.some((a) => (a.proposedParameters as { oldDecisionId?: string }).oldDecisionId === older.id)) {
-        actions.push(
-          this.actions.propose({
-            actionType: 'supersede_decision',
-            label: `„${older.title}“ als überholt markieren`,
-            rationale: 'Du hast angegeben, dass diese Entscheidung eine ältere ersetzt.',
-            confidence: 0.7,
-            affectedEntities: [this.refs(older), this.refs(d)],
-            requiredConfirmation: 'confirm',
-            proposedParameters: { oldDecisionId: older.id, newDecisionId: d.id },
-            conversationId: conv,
-          }),
-        );
-        lines.push(`Soll die ältere Entscheidung „${older.title}“ (${older.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) als überholt markiert werden?`);
+      const candidates = this.supersedeCandidates(d, opts.supersedesHint);
+      const proposed = (o: Decision) => actions.some((a) => (a.proposedParameters as { oldDecisionId?: string }).oldDecisionId === o.id);
+      if (candidates.length === 1) {
+        if (!proposed(candidates[0]!)) {
+          actions.push(this.proposeSupersede(conv, candidates[0]!, d));
+          lines.push(
+            `Soll die ältere Entscheidung „${candidates[0]!.title}“ (${candidates[0]!.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) als überholt markiert werden?`,
+          );
+        }
+      } else {
+        // ohne eindeutigen Treffer wird gefragt – nie einfach die erstbeste aktive Entscheidung
+        const list = (candidates.length ? candidates : this.activeDecisions(d.id)).slice(0, 5);
+        if (list.length === 0) lines.push('Eine ältere aktive Entscheidung, die dadurch ersetzt würde, habe ich nicht gefunden.');
+        else {
+          lines.push(
+            `Welche Entscheidung wird ersetzt?\n${list.map((o, i) => `${i + 1}. ${o.title} (${o.decidedAt?.slice(0, 10) ?? 'ohne Datum'})`).join('\n')}\n\nAntworte mit der Nummer oder dem Titel – oder „keine“.`,
+          );
+          next = { kind: 'supersede_choice', newDecisionId: d.id, candidateIds: list.map((o) => o.id) };
+        }
       }
     }
     const uncertainties = d.unknownFields.map((f) => `${DECISION_FIELD_LABELS[f]}: als unbekannt bestätigt`);
@@ -1072,7 +1078,65 @@ export class ChatService {
       actions,
       confidence: d.confidence,
       uncertainties,
-      state: { pending: null, last },
+      state: { pending: next, last },
+    };
+  }
+
+  private activeDecisions(exceptId: string): Decision[] {
+    return this.decisions.list().filter((o) => o.id !== exceptId && ['active', 'confirmed'].includes(o.status));
+  }
+
+  /** Ältere Entscheidungen, die d laut Hinweis (Thema, Titel) bzw. gleichem Thema/Projekt ersetzen könnte. */
+  private supersedeCandidates(d: Decision, hint: string): Decision[] {
+    const active = this.activeDecisions(d.id);
+    const h = normalizeName(hint);
+    if (h)
+      return active.filter((o) => [o.topicName, o.projectName, o.title].some((x) => x && normalizeName(x).includes(h)) || nameSimilarity(o.title, hint) >= 0.6);
+    if (!d.topicId && !d.projectId) return [];
+    return active.filter((o) => (d.topicId && o.topicId === d.topicId) || (d.projectId && o.projectId === d.projectId));
+  }
+
+  private proposeSupersede(conv: string, older: Decision, d: Decision): StoredAgentAction {
+    return this.actions.propose({
+      actionType: 'supersede_decision',
+      label: `„${older.title}“ als überholt markieren`,
+      rationale: 'Du hast angegeben, dass diese Entscheidung eine ältere ersetzt.',
+      confidence: 0.7,
+      affectedEntities: [this.refs(older), this.refs(d)],
+      requiredConfirmation: 'confirm',
+      proposedParameters: { oldDecisionId: older.id, newDecisionId: d.id },
+      conversationId: conv,
+    });
+  }
+
+  /** Antwort auf „Welche Entscheidung wird ersetzt?“: Nummer, „keine“ oder Titel bzw. Thema. Sonst null. */
+  private answerSupersedeChoice(conv: string, text: string, p: Extract<Pending, { kind: 'supersede_choice' }>, state: ConvState): Reply | null {
+    const t = normalizeName(text);
+    const d = this.decisions.get(p.newDecisionId);
+    if (/^(keine|keiner|nichts|gar keine)\b/.test(t) || shortAnswer(text) === 'no')
+      return { intent: 'decision_supersede', content: 'Okay, ich markiere keine Entscheidung als überholt.', confidence: 0.9, state };
+    const num = /^(?:nummer\s+|nr\s+)?(\d+)$/.exec(t)?.[1];
+    const listed = p.candidateIds.flatMap((id) => {
+      try {
+        return [this.decisions.get(id)];
+      } catch {
+        return [];
+      }
+    });
+    let older: Decision | undefined = num ? listed[Number(num) - 1] : undefined;
+    if (!older && t && words(text) <= 10) {
+      const matches = this.supersedeCandidates(d, text);
+      if (matches.length === 1) older = matches[0];
+    }
+    if (!older || !['active', 'confirmed'].includes(older.status)) return null;
+    const action = this.proposeSupersede(conv, older, d);
+    return {
+      intent: 'decision_supersede',
+      content: `Soll die ältere Entscheidung „${older.title}“ (${older.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) als überholt markiert werden? Bitte bestätige.`,
+      actions: [action],
+      context: { decisions: [this.refs(older), this.refs(d)] },
+      confidence: 0.8,
+      state,
     };
   }
 
