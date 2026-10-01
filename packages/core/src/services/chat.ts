@@ -2240,7 +2240,9 @@ export class ChatService {
       content: confirm
         ? res.status === 'executed'
           ? `Erledigt: ${a.label}. ${res.result ?? ''}`
-          : `Die Aktion konnte nicht ausgeführt werden: ${res.result ?? 'unbekannter Fehler'}`
+          : res.status === 'withdrawn'
+            ? `${res.result ?? 'Der Vorschlag ist nicht mehr aktuell.'} Frag mich gern erneut, dann prüfe ich die aktuelle Lage.`
+            : `Die Aktion konnte nicht ausgeführt werden: ${res.result ?? 'unbekannter Fehler'}`
         : `Verstanden, ich habe den Vorschlag abgelehnt: ${a.label}.`,
       confidence: 0.9,
       state,
@@ -2481,10 +2483,15 @@ export class ChatService {
       ? `\n\nDiese kann ich nicht verschieben:\n${blocked.map((p) => `• ${truncate(p.title, 60)}: ${p.conflicts.join(' ')}`).join('\n')}`
       : '';
     if (ok.length === 0) return reply(`Ich kann keines der Dokumente nach „${target}“ verschieben.${blockedText}`, { state: next, context, confidence: 0.4 });
-    // ein früherer, noch offener Umlager-Vorschlag dieser Unterhaltung wird durch den neuen ersetzt
-    for (const stale of this.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents' && a.conversationId === conv)) {
-      await this.actions.resolve(stale.id, 'reject', {});
-    }
+    // the new proposal replaces every open relocate proposal of this conversation and every other open one (archive
+    // check, other conversations) for the same documents, so an older target can never move them back later
+    const replaced = new Set(
+      [
+        ...this.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents' && a.conversationId === conv),
+        ...this.actions.openRelocationsFor(docs.map((d) => d.id)),
+      ].map((a) => a.id),
+    );
+    for (const id of replaced) this.actions.withdraw(id, 'Durch einen neueren Umlager-Vorschlag ersetzt.');
     const action = this.actions.propose({
       actionType: 'relocate_documents',
       label: `${ok.length} Dokument(e) nach „${target}“ verschieben`,
@@ -2492,7 +2499,9 @@ export class ChatService {
       confidence: 0.8,
       affectedEntities: ok.map((p) => ({ type: 'document' as const, id: p.documentId, label: p.title })),
       requiredConfirmation: 'confirm',
-      proposedParameters: { items: ok.map((p) => ({ documentId: p.documentId, categoryPath: target })) },
+      proposedParameters: {
+        items: ok.map((p) => ({ documentId: p.documentId, categoryPath: target, fromRelPath: byId.get(p.documentId)?.archiveRelPath ?? undefined })),
+      },
       conversationId: conv,
     });
     const lines = ok
