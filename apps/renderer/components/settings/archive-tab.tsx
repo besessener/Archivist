@@ -141,7 +141,7 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           <SwitchRow label="Beim Start prüfen" hint="Automatische Archivprüfung beim Programmstart.">
             <Switch checked={settings.consistency.onStartup} onCheckedChange={(v) => void save({ consistency: { onStartup: v } })} aria-label="Beim Start prüfen" />
           </SwitchRow>
-          <SwitchRow label="Texterkennung in Bildern (OCR)" hint="Liest Text aus Bildern und Scans.">
+          <SwitchRow label="Texterkennung in Bildern (OCR)" hint="Liest Text aus Bildern und gescannten PDFs – lokal, ohne Internet.">
             <Switch checked={settings.ocr.enabled} onCheckedChange={(v) => void save({ ocr: { enabled: v } })} aria-label="OCR" data-testid="settings-ocr" />
           </SwitchRow>
           <Field label="Prüfung alle … Stunden" htmlFor="s-interval-h" hint="0 = nur beim Start / manuell.">

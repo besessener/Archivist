@@ -1,6 +1,6 @@
-import fsSync from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { recognizeImages, type OcrOptions } from './ocr';
 
 export type ParseStatus = 'extracted' | 'partial' | 'unsupported' | 'failed';
 
@@ -14,8 +14,11 @@ export interface ParsedDocument {
 
 export interface ParseOptions {
   ocrEnabled?: boolean;
+  ocrLanguages?: string;
   tessdataDir?: string;
 }
+
+const ocrOptions = (opts: ParseOptions): OcrOptions => ({ tessdataDir: opts.tessdataDir ?? path.join(process.cwd(), 'tessdata'), languages: opts.ocrLanguages ?? 'deu+eng' });
 
 export const MAX_TEXT_CHARS = 400_000;
 const MAX_TEXT_FILE_BYTES = 8 * 1024 * 1024;
@@ -63,7 +66,36 @@ async function parsePlain(file: string): Promise<ParsedDocument> {
   }
 }
 
-async function parsePdf(file: string): Promise<ParsedDocument> {
+const MAX_OCR_PAGES = 40;
+
+interface PdfPage {
+  getViewport(o: { scale: number }): { width: number; height: number };
+  render(o: { canvas: never; canvasContext: never; viewport: unknown }): { promise: Promise<void> };
+  cleanup(): void;
+}
+
+/** Rendert PDF-Seiten zu Bildern (@napi-rs/canvas) und erkennt den Text lokal. */
+async function ocrPdfPages(doc: { getPage(n: number): Promise<unknown> }, pages: number, opts: ParseOptions): Promise<string> {
+  const { createCanvas } = await import('@napi-rs/canvas');
+  const images: Buffer[] = [];
+  for (let i = 1; i <= pages; i += 1) {
+    const page = (await doc.getPage(i)) as PdfPage;
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(3, Math.max(1.5, 2000 / Math.max(base.width, 1)));
+    const viewport = page.getViewport({ scale });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvas: canvas as never, canvasContext: ctx as never, viewport }).promise;
+    images.push(canvas.toBuffer('image/png'));
+    page.cleanup();
+  }
+  const results = await recognizeImages(images, ocrOptions(opts));
+  return results.map((r) => r.text.trim()).filter(Boolean).join('\n\n');
+}
+
+async function parsePdf(file: string, opts: ParseOptions): Promise<ParsedDocument> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const data = new Uint8Array(await fsp.readFile(file));
   const task = pdfjs.getDocument({ data, useSystemFonts: false, disableFontFace: true, verbosity: 0 });
@@ -104,12 +136,23 @@ async function parsePdf(file: string): Promise<ParsedDocument> {
       total += pageText.length;
       page.cleanup();
     }
-    const c = clip(tidy(parts.join('\n\n')));
-    const empty = c.text.length < 20;
+    let c = clip(tidy(parts.join('\n\n')));
+    let empty = c.text.length < 20;
+    let ocrError: string | null = null;
+    if (empty && opts.ocrEnabled) {
+      try {
+        const ocrText = await ocrPdfPages(doc, Math.min(doc.numPages, MAX_OCR_PAGES), opts);
+        c = clip(tidy(ocrText));
+        empty = c.text.length < 20;
+        meta.ocr = true;
+      } catch (err) {
+        ocrError = `OCR fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
     return {
       text: c.text,
       status: empty ? 'partial' : 'extracted',
-      error: empty ? 'Kein Text gefunden (möglicherweise ein gescanntes Dokument; OCR ist für PDFs nicht aktiv).' : null,
+      error: empty ? (ocrError ?? (opts.ocrEnabled ? 'OCR fand keinen Text.' : 'Kein Text gefunden (möglicherweise ein gescanntes Dokument; OCR ist deaktiviert).')) : null,
       meta,
       truncated: c.truncated || doc.numPages > maxPages,
     };
@@ -261,23 +304,15 @@ async function parseImage(file: string, opts: ParseOptions): Promise<ParsedDocum
   const meta: ParsedDocument['meta'] = { width: info.width ?? null, height: info.height ?? null, format: info.format ?? null, hasExif: Boolean(info.exif) };
   if (opts.ocrEnabled) {
     try {
-      const tess = await import(/* @vite-ignore */ 'tesseract.js' as string).catch(() => null);
-      if (!tess || !opts.tessdataDir) throw new Error('OCR-Komponente (tesseract.js) ist nicht installiert.');
-      // Alles muss lokal vorliegen – es werden bewusst keine Dateien aus dem Netz nachgeladen.
-      const base = path.join(path.dirname(opts.tessdataDir), 'tesseract');
-      const workerPath = path.join(base, 'worker.min.js');
-      const corePath = path.join(base, 'core');
-      if (![workerPath, corePath, opts.tessdataDir].every((p) => fsSync.existsSync(p))) {
-        throw new Error('Lokale OCR-Dateien fehlen (index/tesseract/worker.min.js, index/tesseract/core/, index/tessdata/).');
-      }
-      const worker = await tess.createWorker('deu+eng', 1, { workerPath, corePath, langPath: opts.tessdataDir, cacheMethod: 'none', gzip: false });
-      try {
-        const res = await worker.recognize(file);
-        const c = clip(tidy(res.data.text));
-        return { text: c.text, status: c.text ? 'extracted' : 'partial', error: c.text ? null : 'OCR fand keinen Text.', meta, truncated: c.truncated };
-      } finally {
-        await worker.terminate();
-      }
+      const [res] = await recognizeImages([file], ocrOptions(opts));
+      const c = clip(tidy(res?.text ?? ''));
+      return {
+        text: c.text,
+        status: c.text ? 'extracted' : 'partial',
+        error: c.text ? null : 'OCR fand keinen Text.',
+        meta: { ...meta, ocr: true, ocrConfidence: Math.round(res?.confidence ?? 0) },
+        truncated: c.truncated,
+      };
     } catch (err) {
       return { text: '', status: 'partial', error: `OCR fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, meta, truncated: false };
     }
@@ -295,7 +330,7 @@ export async function parseDocument(file: string, opts: ParseOptions = {}): Prom
       case 'markdown':
         return await parsePlain(file);
       case 'pdf':
-        return await parsePdf(file);
+        return await parsePdf(file, opts);
       case 'docx':
         return await parseDocx(file);
       case 'pptx':

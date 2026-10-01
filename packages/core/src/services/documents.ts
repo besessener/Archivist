@@ -334,7 +334,7 @@ export class DocumentService {
     this.ctx.events.changed('documents');
 
     const file = this.readablePath(row);
-    const parsed = await this.pool.run('extractDocument', { path: file, options: { ocrEnabled: this.settings.get().ocr.enabled, tessdataDir: path.join(this.ctx.paths.index, 'tessdata') } });
+    const parsed = await this.pool.run('extractDocument', { path: file, options: { ocrEnabled: this.settings.get().ocr.enabled, ocrLanguages: this.settings.get().ocr.languages, tessdataDir: path.join(this.ctx.paths.index, 'tessdata') } });
     const text = parsed.text;
     const textHash = text.length > 200 ? sha256Text(normalizeName(text).slice(0, 20_000)) : null;
 

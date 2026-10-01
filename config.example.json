@@ -55,6 +55,7 @@
     "staleOpenItemDays": 30
   },
   "ocr": {
-    "enabled": false
+    "enabled": true,
+    "languages": "deu+eng"
   }
 }

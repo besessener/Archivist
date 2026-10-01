@@ -19,9 +19,13 @@
     "dist:linux": "electron-builder --linux --publish never"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
+    "@tesseract.js-data/deu": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
     "better-sqlite3": "^13.0.3",
     "pdfjs-dist": "^6.3.289",
-    "sharp": "^0.35.5"
+    "sharp": "^0.35.5",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@archivist/core": "*",

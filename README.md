@@ -128,7 +128,7 @@ Standardmäßig `~/Documents/Archivist/` (überschreibbar mit `ARCHIVIST_DATA_DI
 Archivist/
 ├── archive/       archivierte Dateien in menschenlesbaren Ordnern (work/projects/prod-plat/, private/vacation/2026/ …)
 ├── database/      archivist.db (SQLite, WAL)
-├── index/         lokale Indexdaten (z. B. optionale OCR-Sprachdaten)
+├── index/         lokale Indexdaten (z. B. OCR-Sprachdaten)
 ├── config/        settings.json (nicht geheim) und llm-api-key.enc (verschlüsselt)
 ├── logs/          strukturierte JSON-Logs (ohne Schlüssel/Dokumentinhalte)
 ├── backups/       Datenbank- und Metadaten-Backups
@@ -196,7 +196,7 @@ Testabdeckung (Vitest, `npm test`): Decision-Rückfragen, Zod-Validierung von LL
 - **LLM-Client**: ein typisierter Fetch-Client statt des offiziellen OpenAI-SDKs – volle Kontrolle über Timeouts, Fallbacks für Azure-/kompatible Endpunkte und keine zusätzliche Abhängigkeit. Das Responses-API-Format ist identisch.
 - **Vektorsuche**: `sqlite-vec` wird **nicht** verwendet (Packaging-Risiko über Plattformen hinweg). Stattdessen: Embeddings als BLOB in SQLite, Cosine-Ähnlichkeit im Worker-Thread. Ohne konfiguriertes Embedding-Modell nutzt Archivist **lokale Feature-Hashing-Vektoren** (Wörter + Zeichen-Trigramme): offline, deterministisch und für vertrauliche Dokumente geeignet, aber lexikalisch-morphologisch und kein echtes semantisches Modell. Mit konfiguriertem Embedding-Modell (`/embeddings`) werden zusätzlich echte Embeddings verwendet (sofern der Datenschutzmodus es erlaubt).
 - **XLSX**: Ein eigener, kleiner ZIP/XML-Leser statt SheetJS (die auf npm verfügbare Version hat bekannte, ungepatchte Schwachstellen). Er liest Tabellenblätter als Text; Datumszellen erscheinen als Excel-Seriennummer, Formeln nur mit ihrem zuletzt gespeicherten Wert.
-- **OCR**: optional und standardmäßig aus. Für Bilder werden technische Metadaten gespeichert und der Status „ohne Textextraktion“ angezeigt. Die OCR-Anbindung (`tesseract.js`) lädt bewusst **nichts** aus dem Netz: sie funktioniert nur, wenn `tesseract.js` installiert ist und Worker, Core und Sprachdaten lokal unter `index/tesseract/` bzw. `index/tessdata/` liegen – sonst wird der Grund sichtbar gemeldet. Mitgeliefert wird OCR derzeit nicht. Gescannte PDFs ohne Textebene werden als „partiell“ markiert.
+- **OCR**: eingebaut und standardmäßig aktiv (Einstellungen → Archiv). Bilder (PNG/JPG) und PDFs ohne Textebene (Scans) werden lokal mit `tesseract.js` erkannt – Worker, WASM-Kern und Sprachdaten (Deutsch + Englisch, Pakete `@tesseract.js-data/*`) liegen im Installationspaket, es wird **nichts aus dem Netz geladen**. Die Sprachdaten werden beim ersten Einsatz nach `index/tessdata/` kopiert; weitere Sprachen: `ocr.languages` (z. B. `deu+eng`, Paket `@tesseract.js-data/<code>` muss installiert sein). Bilder werden vor der Erkennung gedreht, kontrastiert und ggf. vergrößert; PDFs werden seitenweise gerendert (max. 40 Seiten). Bei Fehlern wird der Grund sichtbar gemeldet und die Datei trotzdem archivierbar gehalten.
 - **Hintergrundbetrieb**: Scans, Erinnerungen und Archivprüfungen laufen nur, **solange Archivist geöffnet ist**. Es gibt keinen Tray-Prozess, Autostart oder Betriebssystemdienst; die Anwendung behauptet nichts anderes.
 - **Archivpfad ändern**: Der Pfad in den Einstellungen wird validiert, bestehende Dateien werden aber *nicht* automatisch verschoben (Archivist reorganisiert nie unkontrolliert).
 - **Löschen** (Stufe 3) ist bewusst nicht implementiert.
