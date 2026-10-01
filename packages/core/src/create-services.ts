@@ -25,7 +25,7 @@ import { ReminderService } from './services/reminders';
 import { ScannerService } from './services/scanner';
 import { SearchService } from './services/search';
 import { SecretService, type SecretCipher } from './services/secret';
-import { SettingsService } from './services/settings';
+import { SettingsService, settingsLoadNotification } from './services/settings';
 import { SolutionService } from './services/solutions';
 import { TimelineService } from './services/timeline';
 import { UndoService } from './services/undo';
@@ -83,6 +83,12 @@ function buildServices(opts: CreateServicesOptions) {
   const jobs = new JobQueueService(ctx, opts.jobConcurrency ?? 2);
   const notifications = new NotificationService(ctx);
   const reminders = new ReminderService(ctx, notifications);
+  // Settings are loaded before the database exists; report a repaired or unreadable settings.json now.
+  const settingsProblem = settings.takeLoadProblem();
+  if (settingsProblem) {
+    logger.warn('settings', 'settings.json war ungültig und wurde repariert', { ...settingsProblem });
+    notifications.create(settingsLoadNotification(settingsProblem));
+  }
 
   // 4) Fachdienste
   const documentsSvc = new DocumentService(ctx, settings, graph, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
