@@ -1,12 +1,19 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CalendarDays, FileText, Gavel, ListChecks, ShieldAlert, StickyNote } from 'lucide-react';
+import { CalendarDays, FileText, Gavel, ListChecks, Plus, ShieldAlert, StickyNote, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { call } from '@/lib/ipc';
+import { useRun } from '@/lib/use-run';
+import { nonEmpty } from '@/lib/utils';
 import { formatLongDate } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import type { IpcOutput } from '@archivist/shared';
@@ -27,6 +34,9 @@ export default function TimelinePage() {
   const [projectId, setProjectId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const { run } = useRun();
   const topics = useQuery('knowledge:listEntities', { type: 'topic', limit: 1000 }, { scopes: ['knowledge'] });
   const projects = useQuery('knowledge:listEntities', { type: 'project', limit: 1000 }, { scopes: ['knowledge'] });
   const tl = useQuery(
@@ -38,7 +48,7 @@ export default function TimelinePage() {
       ...(to ? { to } : {}),
       limit: 500,
     },
-    { scopes: ['documents', 'decisions', 'openItems', 'knowledge', 'contradictions'] },
+    { scopes: ['documents', 'decisions', 'openItems', 'knowledge', 'contradictions', 'events'] },
   );
 
   const groups = useMemo(() => {
@@ -53,7 +63,15 @@ export default function TimelinePage() {
 
   return (
     <Page>
-      <PageHeader title="Timeline" description="Was wann passiert ist – Dokumente, Entscheidungen, offene Punkte und Ereignisse in zeitlicher Reihenfolge." />
+      <PageHeader
+        title="Timeline"
+        description="Was wann passiert ist – Dokumente, Entscheidungen, offene Punkte und Ereignisse in zeitlicher Reihenfolge."
+        actions={
+          <Button onClick={() => setCreateOpen(true)} data-testid="event-add">
+            <Plus className="size-4" /> Ereignis hinzufügen
+          </Button>
+        }
+      />
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Thema" htmlFor="tl-topic">
           <Select id="tl-topic" value={topicId} onChange={(e) => setTopicId(e.target.value)} data-testid="timeline-topic">
@@ -102,7 +120,14 @@ export default function TimelinePage() {
                     <p className="text-xs text-muted-foreground">
                       {formatLongDate(e.date)} · {k.label}
                     </p>
-                    <p className="font-medium">{e.title}</p>
+                    <p className="flex items-center gap-2 font-medium">
+                      {e.title}
+                      {e.kind === 'event' && (
+                        <Button variant="ghost" size="icon" className="size-6" aria-label="Ereignis löschen" onClick={() => setDeleteId(e.id.replace(/^event:/, ''))} data-testid="event-delete">
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      )}
+                    </p>
                     {e.description && <p className="mt-0.5 text-sm text-muted-foreground">{e.description}</p>}
                     {e.refs.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -118,6 +143,73 @@ export default function TimelinePage() {
           </section>
         ))}
       </div>
+      <EventFormDialog key={`e-${createOpen}`} open={createOpen} onOpenChange={setCreateOpen} onSaved={() => void tl.refetch()} />
+      <ConfirmDialog
+        open={deleteId !== null}
+        onOpenChange={(o) => !o && setDeleteId(null)}
+        title="Ereignis löschen?"
+        description="Das Ereignis wird aus Timeline, Suche und Wissensgraph entfernt."
+        confirmLabel="Löschen"
+        destructive
+        onConfirm={async () => {
+          if (!deleteId) return;
+          await run(() => call('events:delete', { id: deleteId, confirmed: true }), { success: 'Ereignis gelöscht.' });
+          setDeleteId(null);
+          void tl.refetch();
+        }}
+      />
     </Page>
+  );
+}
+
+function EventFormDialog({ open, onOpenChange, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+  const { run, busy } = useRun();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [occurredAt, setOccurredAt] = useState('');
+  const [topic, setTopic] = useState('');
+  const [project, setProject] = useState('');
+  async function save() {
+    const out = await run(() => call('events:create', { title: title.trim(), description: nonEmpty(description) ?? null, occurredAt, topic: nonEmpty(topic) ?? null, project: nonEmpty(project) ?? null, sourceIds: [] }), { success: 'Ereignis eingetragen.' });
+    if (out) {
+      onSaved();
+      onOpenChange(false);
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl" data-testid="event-form">
+        <DialogHeader>
+          <DialogTitle>Ereignis hinzufügen</DialogTitle>
+          <DialogDescription>Ein Ereignis ist etwas, das an einem bestimmten Tag stattgefunden hat, z. B. „Beitrag eingereicht“.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Was ist passiert? *" htmlFor="ev-title" className="sm:col-span-2">
+            <Input id="ev-title" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="event-title" />
+          </Field>
+          <Field label="Datum *" htmlFor="ev-date">
+            <Input id="ev-date" type="date" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} data-testid="event-date" />
+          </Field>
+          <div />
+          <Field label="Beschreibung" htmlFor="ev-desc" className="sm:col-span-2">
+            <Textarea id="ev-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </Field>
+          <Field label="Thema" htmlFor="ev-topic">
+            <Input id="ev-topic" value={topic} onChange={(e) => setTopic(e.target.value)} />
+          </Field>
+          <Field label="Projekt" htmlFor="ev-project">
+            <Input id="ev-project" value={project} onChange={(e) => setProject(e.target.value)} />
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Abbrechen
+          </Button>
+          <Button disabled={busy || !title.trim() || !occurredAt} onClick={() => void save()} data-testid="event-save">
+            Speichern
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

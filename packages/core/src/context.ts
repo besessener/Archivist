@@ -40,6 +40,7 @@ export type ChangeScope =
   | 'documents'
   | 'decisions'
   | 'openItems'
+  | 'events'
   | 'notifications'
   | 'insights'
   | 'jobs'

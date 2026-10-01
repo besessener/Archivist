@@ -29,6 +29,8 @@ import {
   Insight,
   Job,
   LlmTransmission,
+  EventInput,
+  EventRecord,
   OpenItem,
   OpenItemInput,
   OpenItemStatus,
@@ -290,6 +292,12 @@ export const ipcContract = {
   'knowledge:resolveRelation': ch(z.object({ relationId: Id, status: RelationStatus, confirmed: Confirmed }), Ok),
   'knowledge:createEntity': ch(z.object({ type: z.enum(['topic', 'project', 'person', 'event', 'note']), name: z.string().min(1), description: z.string().optional() }), GraphEntity),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
+
+  // --- Ereignisse ---
+  'events:list': ch(z.object({ topicId: z.string().optional(), projectId: z.string().optional() }), z.array(EventRecord)),
+  'events:create': ch(EventInput, EventRecord),
+  'events:update': ch(z.object({ id: Id, patch: EventInput.partial() }), EventRecord),
+  'events:delete': ch(z.object({ id: Id, confirmed: Confirmed }), Ok),
 
   // --- Timeline, Suche ---
   'timeline:get': ch(TimelineQuery, z.array(TimelineEntry)),
