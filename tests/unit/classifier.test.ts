@@ -22,6 +22,29 @@ describe('local classifier keywords (issue #69)', () => {
     expect(classify('Notiz.pdf', 'Hotel-Buchung bestätigt.').docType).toBe('Urlaub/Reise');
   });
 
+  it('matches keywords as the final component of German compounds', () => {
+    expect(classify('Notiz.pdf', 'Termin beim Zahnarzt am Montag.').docType).toBe('Gesundheit');
+    expect(classify('Notiz.pdf', 'Arbeitsvertrag zwischen den Parteien.').docType).toBe('Vertrag');
+    expect(classify('Notiz.pdf', 'Antrag auf Dienstreise nach Berlin.').docType).toBe('Urlaub/Reise');
+    expect(classify('Notiz.pdf', 'Abrechnung der Dienstreisen').docType).toBe('Urlaub/Reise');
+    expect(classify('Notiz.pdf', 'Unterlagen zur Krankenversicherung').docType).toBe('Versicherung');
+    expect(classify('Notiz.pdf', 'Die Stromrechnung für März').docType).toBe('Rechnung');
+  });
+
+  it('does not match after a short prefix or for listed false-positive compounds', () => {
+    for (const text of [
+      'Preise',
+      'Unsere Preisliste',
+      'Die Preisen',
+      'Alle Kaufpreise und Listenpreisen',
+      'Die Landkreise im Norden',
+      'Kostenberechnung',
+      'Kochrezept für Kuchen',
+    ]) {
+      expect(classify('Notiz.pdf', text).categoryPath, text).toBe('private/unsortiert');
+    }
+  });
+
   it('ignores keywords in the middle of a word, including after umlauts', () => {
     expect(classify('Notiz.pdf', 'Die Preisentwicklung und Kreisel.').categoryPath).toBe('private/unsortiert');
     // "ß" is a letter, so "flug" inside "Großflughafen" is no word start

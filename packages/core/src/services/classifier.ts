@@ -21,43 +21,83 @@ export interface LocalClassification {
   rationale: string;
 }
 
-/**
- * Keywords only match at the start of a word ("Reise", "Reisekosten"), never in the middle ("Preise").
- * Letters and digits (including umlauts) count as word characters, so "_" or "-" in file names separate words.
- */
-const keywordPattern = (keywords: string[]): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])(?:${keywords.join('|')})`, 'iu');
+const WORD_CHAR = String.raw`[\p{L}\p{N}]`;
+/** Common German inflection endings a keyword may carry at the end of a word ("Dienstreisen", "Zahnarztes"). */
+const INFLECTION = '(?:en|er|es|e|n|s)?';
 
-const RULES: Array<{ re: RegExp; path: (year: string) => string; type: string; weight: number }> = [
-  { re: keywordPattern(['urlaub', 'reise', 'flug', 'hotel', 'buchungsbest']), path: (y) => `private/vacation/${y}`, type: 'Urlaub/Reise', weight: 0.7 },
-  { re: keywordPattern(['steuer', 'finanzamt', 'steuererkl']), path: (y) => `private/finance/taxes/${y}`, type: 'Steuerdokument', weight: 0.75 },
-  { re: keywordPattern(['versicherung', 'police', 'schadenmeldung']), path: () => 'private/insurance', type: 'Versicherung', weight: 0.7 },
+/**
+ * Builds a keyword test. A keyword matches
+ * - at the start of a word ("Reise", "Reisekosten"), or
+ * - as the final component of a compound whose preceding part has at least three letters ("Dienstreise",
+ *   "Zahnarzt", "Arbeitsvertrag"), optionally inflected.
+ * It never matches in the middle of a word ("Großflughafen") or after a short prefix ("Preise").
+ * Letters and digits (including umlauts and ß) are word characters, so "_" or "-" in file names separate words.
+ * Keywords containing regex syntax only match at the start of a word. `excludedEndings` lists compounds that
+ * end in a keyword but mean something else ("Kaufpreise", "Umsatzsteuer").
+ */
+function keywordMatcher(keywords: string[], excludedEndings: string[] = []): (text: string) => boolean {
+  const compoundable = keywords.filter((k) => /^\p{L}+$/u.test(k));
+  const alternatives = [`(?<start>(?<!${WORD_CHAR})(?:${keywords.join('|')}))`];
+  if (compoundable.length > 0) alternatives.push(`(?<=\\p{L}{3})(?:${compoundable.join('|')})${INFLECTION}(?!${WORD_CHAR})`);
+  const re = new RegExp(alternatives.join('|'), 'giu');
+  const excluded = excludedEndings.length > 0 ? new RegExp(`(?:${excludedEndings.join('|')})${INFLECTION}$`, 'iu') : null;
+  return (text) => {
+    for (const m of text.matchAll(re)) {
+      if (m.groups?.start !== undefined || !excluded) return true;
+      let wordStart = m.index;
+      while (wordStart > 0 && /[\p{L}\p{N}]/u.test(text[wordStart - 1]!)) wordStart -= 1;
+      if (!excluded.test(text.slice(wordStart, m.index + m[0].length))) return true;
+    }
+    return false;
+  };
+}
+
+const RULES: Array<{ matches: (text: string) => boolean; path: (year: string) => string; type: string; weight: number }> = [
   {
-    re: keywordPattern(['miete', 'mietvertrag', 'hauskauf', 'immobilie', 'nebenkosten', 'grundbuch', 'baufinanz']),
+    matches: keywordMatcher(['urlaub', 'reise', 'anreise', 'abreise', 'flug', 'hotel', 'buchungsbest'], ['preise', 'kreise']),
+    path: (y) => `private/vacation/${y}`,
+    type: 'Urlaub/Reise',
+    weight: 0.7,
+  },
+  {
+    matches: keywordMatcher(['steuer', 'finanzamt', 'steuererkl'], ['umsatzsteuer', 'mehrwertsteuer', 'vorsteuer']),
+    path: (y) => `private/finance/taxes/${y}`,
+    type: 'Steuerdokument',
+    weight: 0.75,
+  },
+  { matches: keywordMatcher(['versicherung', 'police', 'schadenmeldung']), path: () => 'private/insurance', type: 'Versicherung', weight: 0.7 },
+  {
+    matches: keywordMatcher(['miete', 'mietvertrag', 'hauskauf', 'immobilie', 'nebenkosten', 'grundbuch', 'baufinanz']),
     path: () => 'private/housing',
     type: 'Wohnen',
     weight: 0.7,
   },
-  { re: keywordPattern(['arzt', 'diagnose', 'rezept', 'krankenkasse', 'befund', 'gesundheit']), path: () => 'private/health', type: 'Gesundheit', weight: 0.7 },
   {
-    re: keywordPattern(['protokoll', 'meeting', 'jour\\s?fixe', 'besprechung', 'agenda', 'teilnehmer']),
+    matches: keywordMatcher(['arzt', 'diagnose', 'rezept', 'krankenkasse', 'befund', 'gesundheit'], ['fehlerdiagnose', 'kochrezept', 'backrezept']),
+    path: () => 'private/health',
+    type: 'Gesundheit',
+    weight: 0.7,
+  },
+  {
+    matches: keywordMatcher(['protokoll', 'meeting', 'jour\\s?fixe', 'besprechung', 'agenda', 'teilnehmer']),
     path: (y) => `work/meetings/${y}`,
     type: 'Protokoll',
     weight: 0.65,
   },
   {
-    re: keywordPattern(['vertrag', 'vereinbarung', 'kündigungsfrist', 'vertragspartner', 'auftragnehmer']),
+    matches: keywordMatcher(['vertrag', 'vereinbarung', 'kündigungsfrist', 'vertragspartner', 'auftragnehmer']),
     path: () => 'work/contracts',
     type: 'Vertrag',
     weight: 0.6,
   },
   {
-    re: keywordPattern(['architektur', 'systemdesign', 'schnittstelle', 'komponenten', 'adr(?![\\p{L}\\p{N}])', 'technische\\s+konzept']),
+    matches: keywordMatcher(['architektur', 'systemdesign', 'schnittstelle', 'komponenten', 'adr(?![\\p{L}\\p{N}])', 'technische\\s+konzept']),
     path: () => 'work/architecture',
     type: 'Architektur',
     weight: 0.6,
   },
   {
-    re: keywordPattern(['rechnung', 'invoice', 'zahlungsziel', 'rechnungsnummer']),
+    matches: keywordMatcher(['rechnung', 'invoice', 'zahlungsziel', 'rechnungsnummer'], ['berechnung', 'hochrechnung', 'verrechnung']),
     path: (y) => `private/finance/invoices/${y}`,
     type: 'Rechnung',
     weight: 0.6,
@@ -161,7 +201,7 @@ export function classifyLocally(input: {
   const year = (dates.find((d) => d.startsWith(String(now.getFullYear()))) ?? dates[0] ?? String(now.getFullYear())).slice(0, 4);
   const project = matchKnownNames(hay, input.knownProjects);
   const topic = matchKnownNames(hay, input.knownTopics) ?? project;
-  const rule = RULES.find((r) => r.re.test(hay));
+  const rule = RULES.find((r) => r.matches(hay));
   let categoryPath: string;
   let docType = docTypeFromExt(input.ext);
   let confidence: number;
