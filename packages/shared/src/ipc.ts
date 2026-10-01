@@ -227,6 +227,8 @@ export const ipcContract = {
   'documents:ignore': ch(z.object({ id: Id }), DocumentRecord),
   'documents:forTopic': ch(z.object({ topicId: Id }), z.array(DocumentRecord)),
   'documents:setLlmExcluded': ch(z.object({ id: Id, excluded: z.boolean() }), DocumentRecord),
+  /** "Trotzdem importieren": holt eine Datei aus der Quarantäne in den Eingang und stößt die Analyse an */
+  'documents:releaseQuarantine': ch(z.object({ id: Id, confirmed: Confirmed }), DocumentRecord),
 
   // --- Scanner ---
   'scanner:addDirectory': ch(z.object({ path: z.string().min(1), recursive: z.boolean().default(true) }), ScanRoot),
