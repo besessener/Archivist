@@ -36,7 +36,7 @@ import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { EventService } from './events';
-import { ACTIVE_STATUSES, matchOpenItems, type OpenItemService } from './open-items';
+import { ACTIVE_STATUSES, hintTokens, matchOpenItems, type OpenItemService } from './open-items';
 import type { PrivacyService } from './privacy';
 import type { ReminderService } from './reminders';
 import type { ScannerService } from './scanner';
@@ -567,12 +567,27 @@ export class ChatService {
   }
 
   /** Gemeinter offener Punkt: ID vom LLM, sonst eindeutiger Treffer zum Hinweis; mehrdeutig → Kandidaten für die Rückfrage. */
-  private targetOpenItem(targetId: string | null | undefined, hint: string | null | undefined): { item: OpenItem | null; ambiguous: OpenItem[] } {
+  private targetOpenItem(
+    targetId: string | null | undefined,
+    hint: string | null | undefined,
+  ): { item: OpenItem | null; ambiguous: OpenItem[]; hinted: boolean } {
     const byId = this.openItemOrNull(targetId);
-    if (byId || !hint?.trim()) return { item: byId, ambiguous: [] };
+    if (byId) return { item: byId, ambiguous: [], hinted: true };
+    // „hinted“: die Nachricht nennt etwas Eigenes – dann gibt es keinen Rückfall auf den zuletzt genannten Punkt
+    if (!hint?.trim() || hintTokens(hint).length === 0) return { item: null, ambiguous: [], hinted: false };
     const m = this.openItems.matchByHint(hint);
-    if (m.status === 'match') return { item: m.item, ambiguous: [] };
-    return { item: null, ambiguous: m.status === 'ambiguous' ? m.items : [] };
+    if (m.status === 'match') return { item: m.item, ambiguous: [], hinted: true };
+    return { item: null, ambiguous: m.status === 'ambiguous' ? m.items : [], hinted: true };
+  }
+
+  /** Der zuletzt genannte Punkt – nur, wenn die Nachricht keinen eigenen Hinweis enthält („der ist erledigt“). */
+  private lastOpenItem(state: ConvState, target: { hinted: boolean }): OpenItem | null {
+    return target.hinted ? null : this.openItemOrNull(state.last?.openItemId);
+  }
+
+  private noOpenItemQuestion(hint: string | null | undefined, verb: string): string {
+    const words = hint ? hintTokens(hint) : [];
+    return `Welchen offenen Punkt ${verb}?${words.length ? ` Zu „${truncate(hint!.trim(), 80)}“ finde ich keinen aktiven Punkt.` : ''} Nenne bitte den Titel.`;
   }
 
   /** „Meinst du ‚A‘ oder ‚B‘?“ – Auswahl per Knopf, Nummer oder Titel; danach läuft das Anliegen weiter. */
@@ -1701,10 +1716,10 @@ export class ChatService {
   private async openItemUpdate(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const oi = intent.openItem ?? {};
     const pending = state.pending?.kind === 'open_item' ? state.pending : null;
-    const target = pending ? { item: this.openItems.get(pending.openItemId), ambiguous: [] } : this.targetOpenItem(oi.targetId, oi.targetHint);
+    const target = pending ? { item: this.openItems.get(pending.openItemId), ambiguous: [], hinted: true } : this.targetOpenItem(oi.targetId, oi.targetHint);
     if (target.ambiguous.length) return this.askWhichOpenItem(text, intent, target.ambiguous, state);
-    const item = target.item ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
-    if (!item) return { intent: 'open_item_update', content: 'Welchen offenen Punkt meinst du? Nenne bitte den Titel.', confidence: 0.3, state };
+    const item = target.item ?? this.lastOpenItem(state, target);
+    if (!item) return { intent: 'open_item_update', content: this.noOpenItemQuestion(oi.targetHint, 'meinst du'), confidence: 0.3, state };
     const patch: Parameters<OpenItemService['update']>[1] = {};
     if (oi.responsible) patch.responsible = oi.responsible;
     else if (pending?.asked.includes('responsible') && UNKNOWN_RE.test(text)) patch.responsibleUnknown = true;
@@ -1737,8 +1752,9 @@ export class ChatService {
     const hint = intent.openItem?.targetHint ?? text;
     const target = this.targetOpenItem(intent.openItem?.targetId, hint);
     if (target.ambiguous.length) return this.askWhichOpenItem(text, intent, target.ambiguous, state);
-    const item = target.item ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
-    if (!item) return { intent: 'open_item_close', content: 'Welchen offenen Punkt soll ich schließen? Nenne bitte den Titel.', confidence: 0.3, state };
+    const item = target.item ?? this.lastOpenItem(state, target);
+    if (!item)
+      return { intent: 'open_item_close', content: this.noOpenItemQuestion(target.hinted ? hint : null, 'soll ich schließen'), confidence: 0.3, state };
     const dismiss = intent.openItem?.newStatus === 'dismissed';
     const action = this.actions.propose({
       actionType: 'close_open_item',
@@ -1764,12 +1780,13 @@ export class ChatService {
   private async reminderFlow(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const r = intent.reminder ?? {};
     const pending = state.pending?.kind === 'reminder' ? state.pending : null;
-    const named = pending?.targetId ? { item: null, ambiguous: [] } : this.targetOpenItem(r.targetId, r.targetHint);
+    // ohne eigenen Hinweis (Ziel, Titel oder Text) gilt „daran“ als Bezug auf den zuletzt genannten Punkt
+    const named = pending?.targetId ? { item: null, ambiguous: [], hinted: true } : this.targetOpenItem(r.targetId, r.targetHint ?? r.title ?? text);
     if (named.ambiguous.length) return this.askWhichOpenItem(text, intent, named.ambiguous, state);
     const when = normalizeDateInput(r.remindAt ?? null) ?? parseGermanDate(r.relativeText ?? text);
     if (!when) {
       // Rückfrage merken, damit die Antwort („31.10.“) im Kontext verstanden wird
-      const target = named.item ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+      const target = named.item ?? this.lastOpenItem(state, named);
       const title = pending?.title ?? target?.title ?? r.title?.trim() ?? truncate(text, 80);
       return {
         intent: intent.intent,
@@ -1789,10 +1806,7 @@ export class ChatService {
     }
     state = { ...state, pending: null };
     const hinted = named.item;
-    const item =
-      (pending?.targetId ? this.openItems.get(pending.targetId) : null) ??
-      hinted ??
-      (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+    const item = (pending?.targetId ? this.openItemOrNull(pending.targetId) : null) ?? hinted ?? (pending ? null : this.lastOpenItem(state, named));
     const existing = item ? this.reminders.list('pending').find((x) => x.targetId === item.id) : undefined;
     if (existing && intent.intent === 'reminder_snooze') {
       this.reminders.snooze(existing.id, when);

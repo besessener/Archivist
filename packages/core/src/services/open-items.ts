@@ -43,6 +43,18 @@ const HINT_FILLERS = new Set(
   ),
 );
 
+/** Zeitangaben sagen nichts darüber, welcher Punkt gemeint ist („erinnere mich in sieben Tagen daran“). */
+const TIME_WORDS = new Set(
+  'tag tage tagen woche wochen monat monaten monate jahr jahren stunde stunden minute minuten montag dienstag mittwoch donnerstag freitag samstag sonntag januar februar marz april mai juni juli august september oktober november dezember naechsten nachsten nachste nachster kommenden kommende uebermorgen ubermorgen am um vom abend abends frueh fruh mittag vormittag nachmittag eins zwei drei vier fuenf funf sechs sieben acht neun zehn elf zwoelf zwolf einer einem einen ein eine bis ab'.split(
+    ' ',
+  ),
+);
+
+/** Wörter eines Hinweises, die tatsächlich etwas über den gemeinten Punkt sagen (ohne Füll-, Stopp- und Zeitwörter). */
+export function hintTokens(hint: string): string[] {
+  return [...new Set(tokenize(hint).filter((t) => !HINT_FILLERS.has(t) && !TIME_WORDS.has(t) && !/^\d+$/.test(t)))];
+}
+
 export type HintMatch = { status: 'match'; item: OpenItem } | { status: 'ambiguous'; items: OpenItem[] } | { status: 'none' };
 
 const MATCH_THRESHOLD = 0.5;
@@ -71,7 +83,7 @@ export function matchOpenItems<T extends { title: string; description?: string |
   hint: string,
   items: T[],
 ): { status: 'match'; item: T } | { status: 'ambiguous'; items: T[] } | { status: 'none' } {
-  const wanted = [...new Set(tokenize(hint).filter((t) => !HINT_FILLERS.has(t)))];
+  const wanted = hintTokens(hint);
   if (!wanted.length) return { status: 'none' };
   const scored = items
     .map((item) => {
