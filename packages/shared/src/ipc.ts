@@ -14,6 +14,7 @@ import {
   Contradiction,
   Decision,
   DecisionInput,
+  DecisionPatch,
   DecisionStatus,
   DocumentRecord,
   DocumentStatus,
@@ -26,6 +27,7 @@ import {
   EventRecord,
   OpenItem,
   OpenItemInput,
+  OpenItemPatch,
   OpenItemStatus,
   Reminder,
   ScanFile,
@@ -63,6 +65,9 @@ export const AppStatus = z.object({
   services: z.array(z.object({ name: z.string(), status: z.enum(['ok', 'degraded', 'error']), detail: z.string().nullable() })),
 });
 export type AppStatus = z.infer<typeof AppStatus>;
+
+export const KnowledgeCreateResult = z.object({ entity: GraphEntity, created: z.boolean() });
+export type KnowledgeCreateResult = z.infer<typeof KnowledgeCreateResult>;
 
 export const LlmTestResult = z.object({
   ok: z.boolean(),
@@ -166,7 +171,7 @@ export const ipcContract = {
   'decisions:update': ch(
     z.object({
       id: Id,
-      patch: DecisionInput.partial().extend({ status: DecisionStatus.optional() }),
+      patch: DecisionPatch,
     }),
     Decision,
   ),
@@ -174,6 +179,10 @@ export const ipcContract = {
   'decisions:list': ch(z.object({ status: DecisionStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional() }), z.array(Decision)),
   'decisions:search': ch(z.object({ query: z.string().min(1), limit: z.number().int().min(1).max(100).default(20) }), z.array(Decision)),
   'decisions:proposeSupersede': ch(z.object({ oldDecisionId: Id, newDecisionId: Id }), StoredAgentAction),
+  /** Ersetzen ist eine Stufe-2-Aktion: ausdrückliche Bestätigung nötig, mit Undo-Eintrag. */
+  'decisions:supersede': ch(z.object({ oldDecisionId: Id, newDecisionId: Id, confirmed: Confirmed }), z.object({ old: Decision, new: Decision })),
+  /** Widerrufen ist eine Stufe-2-Aktion: ausdrückliche Bestätigung nötig, mit Undo-Eintrag. */
+  'decisions:revoke': ch(z.object({ id: Id, confirmed: Confirmed }), Decision),
 
   // --- Dokumente ---
   'documents:import': ch(
@@ -224,6 +233,8 @@ export const ipcContract = {
   'documents:ignore': ch(z.object({ id: Id }), DocumentRecord),
   'documents:forTopic': ch(z.object({ topicId: Id }), z.array(DocumentRecord)),
   'documents:setLlmExcluded': ch(z.object({ id: Id, excluded: z.boolean() }), DocumentRecord),
+  /** "Trotzdem importieren": holt eine Datei aus der Quarantäne in den Eingang und stößt die Analyse an */
+  'documents:releaseQuarantine': ch(z.object({ id: Id, confirmed: Confirmed }), DocumentRecord),
 
   // --- Scanner ---
   'scanner:addDirectory': ch(z.object({ path: z.string().min(1), recursive: z.boolean().default(true) }), ScanRoot),
@@ -312,11 +323,7 @@ export const ipcContract = {
   'openItems:update': ch(
     z.object({
       id: Id,
-      patch: OpenItemInput.partial().extend({
-        status: OpenItemStatus.optional(),
-        responsibleUnknown: z.boolean().optional(),
-        dueUnknown: z.boolean().optional(),
-      }),
+      patch: OpenItemPatch,
     }),
     OpenItem,
   ),
@@ -345,9 +352,16 @@ export const ipcContract = {
   ),
   'knowledge:getEntity': ch(z.object({ id: Id }), EntityDetail),
   'knowledge:resolveRelation': ch(z.object({ relationId: Id, status: RelationStatus, confirmed: Confirmed }), Ok),
+  /**
+   * Creates an entry from the knowledge page: topics/projects/persons as graph nodes, notes as indexed notes,
+   * events as real dated records. `created: false` means an identical entry already existed and is returned instead.
+   */
   'knowledge:createEntity': ch(
-    z.object({ type: z.enum(['topic', 'project', 'person', 'event', 'note']), name: z.string().min(1), description: z.string().optional() }),
-    GraphEntity,
+    z.discriminatedUnion('type', [
+      z.object({ type: z.enum(['topic', 'project', 'person', 'note']), name: z.string().trim().min(1), description: z.string().optional() }),
+      EventInput.extend({ type: z.literal('event') }),
+    ]),
+    KnowledgeCreateResult,
   ),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
 

@@ -11,7 +11,7 @@ import {
 } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { AppError } from '../util/errors';
-import { newId, nowIso } from '../util/ids';
+import { nowIso } from '../util/ids';
 import { truncate } from '../util/text';
 import { ACTIVE_STATUSES, type OpenItemService } from './open-items';
 import type { AuditService } from './audit';
@@ -20,6 +20,7 @@ import type { DocumentService } from './documents';
 import type { EventService } from './events';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
+import type { NoteService } from './notes';
 import type { PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
@@ -84,6 +85,7 @@ export class SolutionService {
     private readonly graph: KnowledgeGraphService,
     private readonly search: SearchService,
     private readonly audit: AuditService,
+    private readonly notes: NoteService,
   ) {}
 
   /** Grund, warum für diesen Punkt (derzeit) kein Vorschlag erzeugt werden kann – oder null. */
@@ -373,16 +375,16 @@ export class SolutionService {
       return { item: this.openItems.get(item.id), created, noteId: null };
     }
 
-    const noteId = newId();
-    const name = truncate(`Lösungsvorschlag: ${item.title}`, 70);
-    const content = `Lösungsvorschlag zum offenen Punkt „${item.title}“\n\n${this.format(sol)}`;
-    this.graph.registerNode('note', noteId, name, content);
-    this.graph.link(noteId, item.id, 'relates_to', { confidence: 1, status: 'confirmed' });
-    if (item.topicId) this.graph.link(noteId, item.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
-    if (item.projectId) this.graph.link(noteId, item.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
-    await this.search.index({ type: 'note', id: noteId, title: name, content });
-    this.audit.log({ action: 'open_item.solution_note', actor: 'user', trigger: 'ui', confirmed: true, entityIds: [noteId, item.id] });
-    this.ctx.events.changed('knowledge');
-    return { item, created: [], noteId };
+    const note = await this.notes.create({
+      title: truncate(`Lösungsvorschlag: ${item.title}`, 70),
+      content: `Lösungsvorschlag zum offenen Punkt „${item.title}“\n\n${this.format(sol)}`,
+      links: [
+        { targetId: item.id, relationType: 'relates_to', confidence: 1 },
+        ...(item.topicId ? [{ targetId: item.topicId, relationType: 'relates_to' as const }] : []),
+        ...(item.projectId ? [{ targetId: item.projectId, relationType: 'belongs_to' as const }] : []),
+      ],
+    });
+    this.audit.log({ action: 'open_item.solution_note', actor: 'user', trigger: 'ui', confirmed: true, entityIds: [note.id, item.id] });
+    return { item, created: [], noteId: note.id };
   }
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { patchSchema } from './common';
 import { LOCAL_TIME } from './dates';
 import { SUPPORTED_EXTENSIONS } from './domain';
 
@@ -89,34 +90,18 @@ export const Settings = z.object({
 });
 export type Settings = z.infer<typeof Settings>;
 
-type WithoutDefault<T> = T extends z.ZodDefault<infer Inner> ? Inner : T;
-type WithoutDefaults<Shape extends z.ZodRawShape> = { [K in keyof Shape]: WithoutDefault<Shape[K]> };
-
-/**
- * Patch schema for one settings section: every field optional and WITHOUT `.default()`.
- * Zod 4 applies defaults even inside `.partial()` / `.optional()`, so `Section.partial()` would
- * fill in every missing field and the merge would reset the rest of the section (issue #55).
- * Defaults are applied only after merging, when the full `Settings` schema is parsed.
- */
-function sectionPatch<Shape extends z.ZodRawShape>(section: z.ZodObject<Shape>) {
-  const shape = Object.fromEntries(
-    Object.entries(section.shape).map(([key, field]) => [key, field instanceof z.ZodDefault ? field.unwrap() : field]),
-  ) as WithoutDefaults<Shape>;
-  return z.object(shape).partial();
-}
-
 /** Teilweise Aktualisierung (pro Bereich flach zusammengeführt). Enthält bewusst keine Defaults. */
 export const SettingsPatch = z.object({
   setupCompleted: z.boolean().optional(),
-  profile: sectionPatch(ProfileSettings).optional(),
-  llm: sectionPatch(LlmSettings).optional(),
+  profile: patchSchema(ProfileSettings).optional(),
+  llm: patchSchema(LlmSettings).optional(),
   archiveRoot: z.string().optional(),
-  scan: sectionPatch(ScanSettings).optional(),
-  privacy: sectionPatch(PrivacySettings).optional(),
-  notifications: sectionPatch(NotificationSettings).optional(),
-  logs: sectionPatch(LogSettings).optional(),
-  backups: sectionPatch(BackupSettings).optional(),
-  consistency: sectionPatch(ConsistencySettings).optional(),
-  ocr: sectionPatch(OcrSettings).optional(),
+  scan: patchSchema(ScanSettings).optional(),
+  privacy: patchSchema(PrivacySettings).optional(),
+  notifications: patchSchema(NotificationSettings).optional(),
+  logs: patchSchema(LogSettings).optional(),
+  backups: patchSchema(BackupSettings).optional(),
+  consistency: patchSchema(ConsistencySettings).optional(),
+  ocr: patchSchema(OcrSettings).optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;
