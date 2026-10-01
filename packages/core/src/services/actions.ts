@@ -186,7 +186,15 @@ export class ActionService {
       case 'relocate_documents': {
         const params = ActionParamSchemas.relocate_documents.parse(p);
         const res = await d.archive.relocate(params.items, { confirmed: true, trigger });
-        return `${res.success} verschoben, ${res.skipped} übersprungen, ${res.failed} fehlgeschlagen, ${res.conflicts} Konflikte.`;
+        const summary = `${res.success} verschoben, ${res.skipped} übersprungen, ${res.failed} fehlgeschlagen, ${res.conflicts} Konflikte.`;
+        // Nothing moved although something should have: the action failed (an insight behind it stays open).
+        if (res.success === 0 && res.failed + res.conflicts > 0) {
+          const reasons = res.items.filter((i) => i.outcome === 'failed' || i.outcome === 'conflict').map((i) => i.message);
+          throw new AppError(res.failed > 0 ? 'filesystem_error' : 'archive_conflict', `Es wurde nichts verschoben: ${summary}`, {
+            details: [...new Set(reasons)].join(' '),
+          });
+        }
+        return summary;
       }
       case 'assign_documents': {
         const params = ActionParamSchemas.assign_documents.parse(p);
@@ -219,9 +227,13 @@ export class ActionService {
       }
       case 'merge_topics': {
         const params = ActionParamSchemas.merge_topics.parse(p);
-        const r = d.graph.mergeEntities(params.sourceTopicId, params.targetTopicId);
-        d.audit.log({ action: 'topics.merge', actor: 'user', trigger, confirmed: true, entityIds: [params.sourceTopicId, params.targetTopicId], after: r });
+        const r = await d.graph.merge({ sourceIds: [params.sourceTopicId], targetId: params.targetTopicId }, { trigger, action: 'topics.merge' });
         return `Themen zusammengeführt (${r.relationsMoved} Beziehungen übernommen).`;
+      }
+      case 'merge_entities': {
+        const params = ActionParamSchemas.merge_entities.parse(p);
+        const r = await d.graph.merge({ sourceIds: params.sourceIds, targetId: params.targetId, allowCrossType: params.allowCrossType }, { trigger });
+        return `${r.mergedNames.map((n) => `„${n}“`).join(', ')} mit „${r.targetName}“ zusammengeführt (${r.relationsMoved} Beziehungen, ${r.referencesUpdated} Verweise übernommen).`;
       }
       case 'confirm_relation': {
         const params = ActionParamSchemas.confirm_relation.parse(p);

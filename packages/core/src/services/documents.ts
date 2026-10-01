@@ -9,9 +9,9 @@ import {
   type DocumentStatus,
   type LlmStatus,
 } from '@archivist/shared';
-import { and, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, ne, notInArray, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents, entities } from '../db/schema';
+import { documents, entities, scanFiles } from '../db/schema';
 import { MIME_BY_EXT } from '../parsers';
 import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
@@ -33,6 +33,12 @@ import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
 
 export type DocRow = typeof documents.$inferSelect;
+
+/** Final states an analysis must never reopen (the file already lives in the archive or index). */
+const ARCHIVED_STATUSES: DocumentStatus[] = ['archived', 'indexed_only'];
+const INTERRUPTED_ANALYSIS_REASON = 'Die Analyse wurde unterbrochen (z. B. weil Archivist beendet wurde). Bitte „Erneut verarbeiten“ wählen.';
+
+type AnalysisResult = { usedLlm: boolean; warning: string | null; skipped?: true };
 
 const MAX_IMPORT_BYTES = 500 * 1024 * 1024;
 const MAGIC: Record<string, (b: Buffer) => boolean> = {
@@ -381,11 +387,71 @@ export class DocumentService {
    * Inhaltliche Analyse: lokal extrahieren, optional per LLM klassifizieren, Zielordner vorschlagen.
    * Schreibt ausschließlich Vorschläge – die Datei selbst wird nicht angefasst.
    */
-  async analyze(id: string, opts: { allowLlm: boolean }): Promise<{ usedLlm: boolean; warning: string | null }> {
+  async analyze(id: string, opts: { allowLlm: boolean }): Promise<AnalysisResult> {
     const row = this.getRow(id);
-    this.db.update(documents).set({ status: 'analyzing', updatedAt: nowIso() }).where(eq(documents.id, id)).run();
+    // Claim the document atomically: an archived or index-only document (e.g. archived while its
+    // analysis job was still queued) stays untouched.
+    const claimed = this.db
+      .update(documents)
+      .set({ status: 'analyzing', updatedAt: nowIso() })
+      .where(and(eq(documents.id, id), notInArray(documents.status, ARCHIVED_STATUSES)))
+      .run();
+    if (!claimed.changes) {
+      this.ctx.logger.info('documents', 'Analyse übersprungen: Dokument ist bereits archiviert', { documentId: id, status: row.status });
+      return { usedLlm: false, warning: null, skipped: true };
+    }
     this.ctx.events.changed('documents');
+    try {
+      return await this.runAnalysis(row, opts);
+    } catch (err) {
+      // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
+      if (this.markAnalysisFailed(id, err)) throw err;
+      this.ctx.logger.info('documents', 'Analysefehler ignoriert: Dokumentstatus hat sich inzwischen geändert', { documentId: id, error: err });
+      return { usedLlm: false, warning: null, skipped: true };
+    }
+  }
 
+  /**
+   * Marks a document whose analysis failed as `failed` (with reason), so the inbox offers „Erneut verarbeiten“.
+   * Only documents still in `analyzing` are touched. Returns whether the document was marked.
+   */
+  private markAnalysisFailed(id: string, err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    const res = this.db
+      .update(documents)
+      .set({ status: 'failed', processingStatus: 'failed', processingError: `Analyse fehlgeschlagen: ${message}`, updatedAt: nowIso() })
+      .where(and(eq(documents.id, id), eq(documents.status, 'analyzing')))
+      .run();
+    if (res.changes) this.ctx.events.changed('documents', 'status');
+    return res.changes > 0;
+  }
+
+  /**
+   * Startup recovery: documents left in `analyzing` by an earlier session that no pending or running job
+   * will pick up again are set to `failed`, so they can be reprocessed. Returns the number of reset documents.
+   */
+  recoverInterruptedAnalyses(): number {
+    const stuck = this.db.select({ id: documents.id }).from(documents).where(eq(documents.status, 'analyzing')).all();
+    if (!stuck.length) return 0;
+    const covered = new Set(this.jobs.activePayloads<{ documentId?: string }>('document.analyze').map((p) => p.documentId));
+    const fileIds = this.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((p) => p.fileIds ?? []);
+    if (fileIds.length)
+      for (const f of this.db.select({ documentId: scanFiles.documentId }).from(scanFiles).where(inArray(scanFiles.id, fileIds)).all())
+        covered.add(f.documentId ?? undefined);
+    const orphaned = stuck.map((d) => d.id).filter((id) => !covered.has(id));
+    if (!orphaned.length) return 0;
+    this.db
+      .update(documents)
+      .set({ status: 'failed', processingStatus: 'failed', processingError: INTERRUPTED_ANALYSIS_REASON, updatedAt: nowIso() })
+      .where(and(inArray(documents.id, orphaned), eq(documents.status, 'analyzing')))
+      .run();
+    this.ctx.logger.info('documents', 'Unterbrochene Analysen zurückgesetzt', { count: orphaned.length });
+    this.ctx.events.changed('documents', 'status');
+    return orphaned.length;
+  }
+
+  private async runAnalysis(row: DocRow, opts: { allowLlm: boolean }): Promise<AnalysisResult> {
+    const id = row.id;
     const file = this.readablePath(row);
     const parsed = await this.pool.run('extractDocument', {
       path: file,
@@ -496,7 +562,7 @@ export class DocumentService {
     };
 
     const llmStatus: LlmStatus = usedLlm ? 'analyzed' : decision.allowed ? 'pending' : (decision.status ?? 'local_only');
-    this.db
+    const stored = this.db
       .update(documents)
       .set({
         title: title.slice(0, 200),
@@ -516,8 +582,13 @@ export class DocumentService {
         status: 'proposed',
         updatedAt: nowIso(),
       })
-      .where(eq(documents.id, id))
+      // Only write the proposal if nobody archived (or ignored) the document while it was being analyzed.
+      .where(and(eq(documents.id, id), eq(documents.status, 'analyzing')))
       .run();
+    if (!stored.changes) {
+      this.ctx.logger.info('documents', 'Analyseergebnis verworfen: Dokumentstatus hat sich währenddessen geändert', { documentId: id });
+      return { usedLlm, warning, skipped: true };
+    }
     this.graph.registerNode('document', id, title.slice(0, 200), summary);
     this.notifications.create({
       title: 'Klassifikation bereit',
@@ -535,6 +606,8 @@ export class DocumentService {
   /** Stößt eine (erneute) Verarbeitung an. `allowLlm=true` entspricht der ausdrücklichen Freigabe durch den Benutzer. */
   enqueueAnalysis(id: string, allowLlm: boolean): string {
     const doc = this.getRow(id);
+    if (ARCHIVED_STATUSES.includes(doc.status as DocumentStatus))
+      throw new AppError('validation_error', 'Archivierte oder nur indexierte Dokumente werden nicht erneut analysiert.');
     return this.jobs.enqueue('document.analyze', `Analysiere ${doc.originalName}`, { documentId: id, allowLlm }).id;
   }
 
