@@ -14,7 +14,7 @@ import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
 import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
-import type { JobContext, JobQueueService } from './jobs';
+import { isJobCancelled, type JobContext, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
@@ -482,7 +482,7 @@ export class ScannerService {
         }
         const decision = this.privacy.evaluate({ path: real, ext: f.ext, rootLlmAllowed: root.llmAllowed });
         const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
-        const res = await this.docs.analyze(doc.id, { allowLlm });
+        const res = await this.docs.analyze(doc.id, { allowLlm, signal: job?.signal });
         if (res.skipped) {
           // the document was archived in the meantime – nothing to propose
           skipped.push(id);
@@ -503,6 +503,7 @@ export class ScannerService {
           .run();
         analyzed.push(doc.id);
       } catch (err) {
+        if (isJobCancelled(err)) throw err; // the whole job was cancelled – no per-file failure
         // analyze() has already set the document to `failed` (reprocessable from the inbox), so it is not stuck in `analyzing`
         this.ctx.logger.warn('scanner', 'Analyse fehlgeschlagen', { fileId: id, error: err });
         this.notifications.create({

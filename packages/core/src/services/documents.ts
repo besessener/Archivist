@@ -23,7 +23,7 @@ import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
 import { classifyLocally, humanizeCategoryPath, normalizeIsoDates, snapToKnown } from './classifier';
-import type { JobQueueService } from './jobs';
+import { isJobCancelled, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { NotificationService } from './notifications';
@@ -47,6 +47,18 @@ interface DocumentMetadataUndo {
 /** Final states an analysis must never reopen (the file already lives in the archive or index). */
 const ARCHIVED_STATUSES: DocumentStatus[] = ['archived', 'indexed_only'];
 const INTERRUPTED_ANALYSIS_REASON = 'Die Analyse wurde unterbrochen (z. B. weil Archivist beendet wurde). Bitte „Erneut verarbeiten“ wählen.';
+const CANCELLED_ANALYSIS_REASON = 'Die Analyse wurde abgebrochen. Bitte „Erneut verarbeiten“ wählen.';
+
+export interface AnalyzeOptions {
+  allowLlm: boolean;
+  /** Cancels the analysis at the next checkpoint (and a running LLM request); the document is then marked as cancelled. */
+  signal?: AbortSignal;
+  /**
+   * On an error, leave the document in `analyzing` instead of marking it `failed` – for callers that retry
+   * (the job queue). They call `markAnalysisFailed` once no attempt is left.
+   */
+  deferFailure?: boolean;
+}
 
 type AnalysisResult = { usedLlm: boolean; warning: string | null; skipped?: true };
 
@@ -495,7 +507,7 @@ export class DocumentService {
    * Inhaltliche Analyse: lokal extrahieren, optional per LLM klassifizieren, Zielordner vorschlagen.
    * Schreibt ausschließlich Vorschläge – die Datei selbst wird nicht angefasst.
    */
-  async analyze(id: string, opts: { allowLlm: boolean }): Promise<AnalysisResult> {
+  async analyze(id: string, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const row = this.getRow(id);
     if (row.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
     // Claim the document atomically: an archived or index-only document (e.g. archived while its
@@ -513,18 +525,40 @@ export class DocumentService {
     try {
       return await this.runAnalysis(row, opts);
     } catch (err) {
+      if (isJobCancelled(err)) {
+        this.markAnalysisCancelled(id);
+        throw err;
+      }
       // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
-      if (this.markAnalysisFailed(id, err)) throw err;
+      if (opts.deferFailure ? this.isAnalyzing(id) : this.markAnalysisFailed(id, err)) throw err;
       this.ctx.logger.info('documents', 'Analysefehler ignoriert: Dokumentstatus hat sich inzwischen geändert', { documentId: id, error: err });
       return { usedLlm: false, warning: null, skipped: true };
     }
+  }
+
+  private isAnalyzing(id: string): boolean {
+    return this.db.select({ status: documents.status }).from(documents).where(eq(documents.id, id)).get()?.status === 'analyzing';
+  }
+
+  /**
+   * A cancelled analysis: the document leaves `analyzing` as `failed` with a reason, so the inbox offers
+   * „Erneut verarbeiten“ (no notification – the user cancelled it). Only documents still in `analyzing` are touched.
+   */
+  markAnalysisCancelled(id: string): boolean {
+    const res = this.db
+      .update(documents)
+      .set({ status: 'failed', processingStatus: 'failed', processingError: CANCELLED_ANALYSIS_REASON, updatedAt: nowIso() })
+      .where(and(eq(documents.id, id), eq(documents.status, 'analyzing')))
+      .run();
+    if (res.changes) this.ctx.events.changed('documents', 'status');
+    return res.changes > 0;
   }
 
   /**
    * Marks a document whose analysis failed as `failed` (with reason), so the inbox offers „Erneut verarbeiten“.
    * Only documents still in `analyzing` are touched. Returns whether the document was marked.
    */
-  private markAnalysisFailed(id: string, err: unknown): boolean {
+  markAnalysisFailed(id: string, err: unknown): boolean {
     const message = err instanceof Error ? err.message : String(err);
     const res = this.db
       .update(documents)
@@ -559,9 +593,11 @@ export class DocumentService {
     return orphaned.length;
   }
 
-  private async runAnalysis(row: DocRow, opts: { allowLlm: boolean }): Promise<AnalysisResult> {
+  private async runAnalysis(row: DocRow, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const id = row.id;
+    const signal = opts.signal;
     const file = this.readablePath(row);
+    signal?.throwIfAborted();
     const parsed = await this.pool.run('extractDocument', {
       path: file,
       options: {
@@ -570,6 +606,7 @@ export class DocumentService {
         tessdataDir: path.join(this.ctx.paths.index, 'tessdata'),
       },
     });
+    signal?.throwIfAborted();
     const text = parsed.text;
     const textHash = text.length > 200 ? sha256Text(normalizeName(text).slice(0, 20_000)) : null;
 
@@ -602,6 +639,7 @@ export class DocumentService {
           schemaName: 'DocumentClassification',
           purpose: `Dokumentklassifikation (${row.originalName})`,
           documentIds: [id],
+          signal,
           instructions:
             'Du bist Archivist, ein sorgfältiger persönlicher Archivar. Analysiere das Dokument: Dokumenttyp, Hauptthema, Projekt, Personen, Datumsangaben, Tags, mögliche Entscheidungen und offene Punkte. ' +
             'Schlage einen menschenlesbaren, relativen Zielordner vor (z. B. work/projects/prod-plat, work/meetings/2026, work/contracts, work/architecture, private/vacation/2026, private/finance/taxes/2026, private/insurance, private/housing, private/health). ' +
@@ -635,6 +673,7 @@ export class DocumentService {
         }));
         decisions = c.decisions.map((d) => ({ title: d.title, decisionText: d.decisionText, decidedAt: normalizeDateInput(d.decidedAt ?? null) }));
       } catch (err) {
+        signal?.throwIfAborted(); // a cancelled request is no LLM problem – stop instead of falling back
         warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
         this.ctx.logger.warn('documents', 'LLM-Klassifikation fehlgeschlagen', { documentId: id, error: err });
         this.notifications.create({
@@ -648,6 +687,7 @@ export class DocumentService {
       }
     }
 
+    signal?.throwIfAborted(); // last checkpoint: after this the proposal is stored
     const duplicate = textHash
       ? this.db
           .select({ id: documents.id, meta: documents.technicalMeta })

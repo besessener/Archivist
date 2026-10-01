@@ -185,7 +185,12 @@ export class ConsistencyService {
     }
   }
 
-  async run(trigger = 'manual', report?: (p: number, m: string) => void): Promise<ConsistencyReport> {
+  /** `signal`: cancels the check between its sections (insights found so far are kept). */
+  async run(trigger = 'manual', report?: (p: number, m: string) => void, signal?: AbortSignal): Promise<ConsistencyReport> {
+    const step = (p: number, m: string) => {
+      signal?.throwIfAborted();
+      report?.(p, m);
+    };
     const byKind: Record<string, number> = {};
     let notifs = 0;
     const count = (k: string, n = 1) => (byKind[k] = (byKind[k] ?? 0) + n);
@@ -193,7 +198,7 @@ export class ConsistencyService {
     const staleDays = this.settings.get().consistency.staleOpenItemDays;
 
     // ---- Dokumente ----
-    report?.(0.1, 'Prüfe Dokumente');
+    step(0.1, 'Prüfe Dokumente');
     const archived = this.db
       .select()
       .from(documents)
@@ -277,7 +282,7 @@ export class ConsistencyService {
     }
 
     // ---- Ablageort vs. Klassifikation (Datenbank gegen Dateisystem) ----
-    report?.(0.3, 'Prüfe Ablageorte');
+    step(0.3, 'Prüfe Ablageorte');
     const root = this.settings.get().archiveRoot;
     for (const d of archived.filter((x) => x.archiveRelPath)) {
       const abs = path.join(root, ...d.archiveRelPath!.split('/'));
@@ -307,11 +312,11 @@ export class ConsistencyService {
     }
 
     // ---- Verstreute Ablage: Dokumente zum selben Thema/Projekt liegen in verschiedenen Verzeichnissen ----
-    report?.(0.4, 'Prüfe Verzeichnisse');
+    step(0.4, 'Prüfe Verzeichnisse');
     this.checkScatteredDocuments(archived, count);
 
     // ---- Themen ----
-    report?.(0.45, 'Prüfe Themen');
+    step(0.45, 'Prüfe Themen');
     for (const { a, b, score } of this.graph.findSimilarTopics()) {
       const key = `similar-topics:${[a.id, b.id].sort().join('|')}`;
       current.add(key);
@@ -346,7 +351,7 @@ export class ConsistencyService {
     }
 
     // ---- Entscheidungen ----
-    report?.(0.6, 'Prüfe Entscheidungen');
+    step(0.6, 'Prüfe Entscheidungen');
     const allDecisions = this.decisions.list();
     for (const d of allDecisions) {
       if (d.status === 'draft' || (d.missingFields.length > 0 && d.status !== 'revoked' && d.status !== 'superseded')) {
@@ -375,13 +380,14 @@ export class ConsistencyService {
       }
     }
     // contradictions first: a pair with a contradiction gets no additional "possibly superseded" hint
-    report?.(0.7, 'Prüfe Widersprüche');
+    step(0.7, 'Prüfe Widersprüche');
     const found = await this.contradictions.scanAll();
+    signal?.throwIfAborted();
     count('contradiction', found.length);
     this.checkSuperseded(allDecisions, current, count);
 
     // ---- Offene Punkte ----
-    report?.(0.85, 'Prüfe offene Punkte');
+    step(0.85, 'Prüfe offene Punkte');
     const active = this.openItems.list({ onlyActive: true });
     // notifications that were dismissed are never revived, so aggregated ones keep their member hash; outdated ones are closed
     const noOwner = active.filter((i) => !i.responsiblePersonId && !i.responsibleUnknown);
@@ -526,6 +532,8 @@ export class ConsistencyService {
       }
     }
 
+    // a cancelled check neither retires insights of sections it did not reach nor announces itself as completed
+    signal?.throwIfAborted();
     for (const prefix of RECONCILED_INSIGHTS) this.insights.reconcile(prefix, current);
     for (const prefix of RECONCILED_NOTIFICATIONS) this.notifications.resolveStale(prefix, currentNotifications);
 
