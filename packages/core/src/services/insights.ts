@@ -2,7 +2,6 @@ import type { EntityRef, Insight, InsightKind } from '@archivist/shared';
 import { and, desc, eq, like } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { insights } from '../db/schema';
-import type { ArchivistJson } from '../util/json';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import type { ActionService } from './actions';
@@ -67,7 +66,7 @@ export class InsightService {
       if (existing.status === 'open') {
         this.db
           .update(insights)
-          .set({ title: input.title, explanation: input.explanation, confidence: input.confidence, affected: (input.affected ?? []) as ArchivistJson, recommendedActionId: input.recommendedActionId ?? existing.recommendedActionId, recommendedActionLabel: input.recommendedActionLabel ?? existing.recommendedActionLabel, updatedAt: now })
+          .set({ title: input.title, explanation: input.explanation, confidence: input.confidence, affected: (input.affected ?? []), recommendedActionId: input.recommendedActionId ?? existing.recommendedActionId, recommendedActionLabel: input.recommendedActionLabel ?? existing.recommendedActionLabel, updatedAt: now })
           .where(eq(insights.id, existing.id))
           .run();
       }
@@ -79,7 +78,7 @@ export class InsightService {
       title: input.title,
       explanation: input.explanation,
       confidence: input.confidence,
-      affected: (input.affected ?? []) as ArchivistJson,
+      affected: (input.affected ?? []),
       sourceIds: input.sourceIds ?? [],
       recommendedActionId: input.recommendedActionId ?? null,
       recommendedActionLabel: input.recommendedActionLabel ?? null,

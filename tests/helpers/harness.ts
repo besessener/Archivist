@@ -25,7 +25,7 @@ export class TestCipher implements SecretCipher {
   }
 }
 
-type Responder = (schema: string, input: string, body: Record<string, unknown>) => unknown | Promise<unknown>;
+type Responder = (schema: string, input: string, body: Record<string, unknown>) => unknown;
 
 /** Skriptbarer Fake-Endpunkt für die Responses API. */
 export class FakeLlm {
@@ -42,12 +42,12 @@ export class FakeLlm {
 
   fetch = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
     if (this.down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
-    const u = String(url);
-    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    const u = url instanceof Request ? url.url : String(url);
+    const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown>;
     if (this.status !== 200) return new Response(JSON.stringify({ error: { message: 'nope' } }), { status: this.status });
     if (u.endsWith('/responses')) {
-      const instructions = String(body.instructions ?? '');
-      const input = String(body.input ?? '');
+      const instructions = typeof body.instructions === 'string' ? body.instructions : '';
+      const input = typeof body.input === 'string' ? body.input : JSON.stringify(body.input ?? '');
       const schema = /JSON-Schema „(\w+)“/.exec(instructions)?.[1] ?? 'plain';
       this.calls.push({ schema, input, instructions });
       let text: string;
@@ -96,7 +96,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     dataRoot: path.join(root, 'Archivist'),
     migrationsFolder: MIGRATIONS,
     cipher: new TestCipher(),
-    fetchImpl: llm.fetch as typeof fetch,
+    fetchImpl: llm.fetch,
     workerFile: opts.workerFile ?? null,
     jobConcurrency: 1,
     llmRetryDelayMs: 0,

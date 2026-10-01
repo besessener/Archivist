@@ -79,6 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <div className="flex min-h-0 flex-1">
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Dropzone für Dateien: Drag-Ereignisse sind die Funktion des Bereichs, Tastaturzugang bietet der Import-Dialog */}
           <main
             id="main"
             data-testid="dropzone"

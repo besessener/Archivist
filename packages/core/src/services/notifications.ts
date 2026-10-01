@@ -2,7 +2,6 @@ import type { AppNotification, NotificationType } from '@archivist/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { notifications } from '../db/schema';
-import type { ArchivistJson } from '../util/json';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 
@@ -47,7 +46,7 @@ export class NotificationService {
         if (existing.resolvedAt) return map(existing); // erledigte Hinweise nicht wiederbeleben
         this.db
           .update(notifications)
-          .set({ title: input.title, description: input.description, proposedActions: (input.proposedActions ?? []) as ArchivistJson, affectedEntityIds: input.affectedEntityIds ?? [], priority: input.priority ?? 'normal' })
+          .set({ title: input.title, description: input.description, proposedActions: (input.proposedActions ?? []), affectedEntityIds: input.affectedEntityIds ?? [], priority: input.priority ?? 'normal' })
           .where(eq(notifications.id, existing.id))
           .run();
         this.ctx.events.changed('notifications');
@@ -61,7 +60,7 @@ export class NotificationService {
       type: input.type,
       priority: input.priority ?? 'normal',
       affectedEntityIds: input.affectedEntityIds ?? [],
-      proposedActions: (input.proposedActions ?? []) as ArchivistJson,
+      proposedActions: (input.proposedActions ?? []),
       dedupeKey: input.dedupeKey ?? null,
       createdAt: nowIso(),
       readAt: null,

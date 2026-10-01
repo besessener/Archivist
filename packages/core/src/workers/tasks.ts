@@ -57,7 +57,7 @@ export async function scanDirectory(input: ScanDirectoryInput): Promise<ScanDire
       result.errors.push(`${dir}: ${(err as Error).message}`);
       return;
     }
-    for (const name of names.sort()) {
+    for (const name of names.toSorted()) {
       if (result.entries.length >= max) return;
       const full = path.join(dir, name);
       if (name.startsWith('.') || ALWAYS_SKIP_DIRS.has(name.toLowerCase())) continue;
@@ -107,7 +107,7 @@ export function cosineTopK(input: { query: Float32Array; matrix: Float32Array; d
     for (let j = 0; j < dim; j += 1) dot += (query[j] ?? 0) * (matrix[off + j] ?? 0);
     if (dot >= minScore) scores.push({ index: i, score: dot });
   }
-  return scores.sort((a, b) => b.score - a.score).slice(0, k);
+  return scores.toSorted((a, b) => b.score - a.score).slice(0, k);
 }
 
 export interface TaskMap {

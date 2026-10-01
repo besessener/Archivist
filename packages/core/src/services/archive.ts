@@ -227,7 +227,7 @@ export class ArchiveService {
     const proposal = row.proposal as DocumentProposal | null;
     const topicName = (req.topic !== undefined ? req.topic : proposal?.topic)?.trim() || null;
     const projectName = (req.project !== undefined ? req.project : proposal?.project)?.trim() || null;
-    const before: UndoData['before'] = { status: row.status as never, archiveRelPath: row.archiveRelPath, categoryPath: row.categoryPath, topicId: row.topicId, projectId: row.projectId, archiveMode: row.archiveMode, stagedPath: row.stagedPath, archivedAt: row.archivedAt };
+    const before: UndoData['before'] = { status: row.status, archiveRelPath: row.archiveRelPath, categoryPath: row.categoryPath, topicId: row.topicId, projectId: row.projectId, archiveMode: row.archiveMode, stagedPath: row.stagedPath, archivedAt: row.archivedAt };
 
     // --- Ignorieren ---
     if (req.mode === 'ignore') {
@@ -367,8 +367,8 @@ export class ArchiveService {
       if (list.length === 0) return;
       const actions = list.map((it) =>
         kind === 'open'
-          ? this.actions.propose({ actionType: 'create_open_item', label: `Offenen Punkt anlegen: ${(it as { title: string }).title}`, rationale: `Im Dokument „${row.title}“ erkannt.`, confidence: 0.6, affectedEntities: [{ type: 'document', id: row.id, label: row.title }], requiredConfirmation: 'confirm', proposedParameters: { title: (it as { title: string }).title, description: (it as { description?: string | null }).description ?? null, dueAt: (it as { dueAt?: string | null }).dueAt ?? null, sourceIds: [row.id], topic, project } })
-          : this.actions.propose({ actionType: 'record_decision', label: `Entscheidung erfassen: ${(it as { title: string }).title}`, rationale: `Im Dokument „${row.title}“ erkannt.`, confidence: 0.55, affectedEntities: [{ type: 'document', id: row.id, label: row.title }], requiredConfirmation: 'confirm', proposedParameters: { title: (it as { title: string }).title, decisionText: (it as { decisionText: string }).decisionText, decidedAt: (it as { decidedAt?: string | null }).decidedAt ?? null, participants: proposal.persons.slice(0, 5), topic, project, sourceIds: [row.id] } }),
+          ? this.actions.propose({ actionType: 'create_open_item', label: `Offenen Punkt anlegen: ${(it).title}`, rationale: `Im Dokument „${row.title}“ erkannt.`, confidence: 0.6, affectedEntities: [{ type: 'document', id: row.id, label: row.title }], requiredConfirmation: 'confirm', proposedParameters: { title: (it).title, description: (it as { description?: string | null }).description ?? null, dueAt: (it as { dueAt?: string | null }).dueAt ?? null, sourceIds: [row.id], topic, project } })
+          : this.actions.propose({ actionType: 'record_decision', label: `Entscheidung erfassen: ${(it).title}`, rationale: `Im Dokument „${row.title}“ erkannt.`, confidence: 0.55, affectedEntities: [{ type: 'document', id: row.id, label: row.title }], requiredConfirmation: 'confirm', proposedParameters: { title: (it).title, decisionText: (it as { decisionText: string }).decisionText, decidedAt: (it as { decidedAt?: string | null }).decidedAt ?? null, participants: proposal.persons.slice(0, 5), topic, project, sourceIds: [row.id] } }),
       );
       this.notifications.create({
         title: kind === 'open' ? `Dokument enthält ${list.length} mögliche offene Punkte` : `Dokument enthält ${list.length} mögliche Entscheidung(en)`,

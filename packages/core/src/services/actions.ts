@@ -2,7 +2,6 @@ import { ActionParamSchemas, type AgentActionProposal, type AgentActionType, typ
 import { desc, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { agentActions } from '../db/schema';
-import type { ArchivistJson } from '../util/json';
 import { AppError, toErrorInfo } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import type { ArchiveService } from './archive';
@@ -75,9 +74,9 @@ export class ActionService {
       label: input.label,
       rationale: input.rationale,
       confidence: input.confidence,
-      affectedEntities: input.affectedEntities as ArchivistJson,
+      affectedEntities: input.affectedEntities,
       requiredConfirmation: input.requiredConfirmation,
-      params: parsed.data as ArchivistJson,
+      params: parsed.data,
       status: 'proposed',
       result: null,
       createdAt: nowIso(),

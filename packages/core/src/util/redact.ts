@@ -12,11 +12,11 @@ interface Rule {
 const rules: Rule[] = [
   { kind: 'private_key', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, replace: () => '[REDACTED:private_key]' },
   { kind: 'aws_key', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replace: () => '[REDACTED:aws_key]' },
-  { kind: 'jwt', re: /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, replace: () => '[REDACTED:jwt]' },
-  { kind: 'github_token', re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{30,}\b/g, replace: () => '[REDACTED:github_token]' },
+  { kind: 'jwt', re: /\beyJ[\w-]{8,}\.eyJ[\w-]{8,}\.[\w-]{8,}\b/g, replace: () => '[REDACTED:jwt]' },
+  { kind: 'github_token', re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}\b|\bgithub_pat_\w{30,}\b/g, replace: () => '[REDACTED:github_token]' },
   { kind: 'slack_token', re: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g, replace: () => '[REDACTED:slack_token]' },
   { kind: 'api_key', re: /\bsk-[A-Za-z0-9_-]{16,}\b/g, replace: () => '[REDACTED:api_key]' },
-  { kind: 'bearer', re: /\b(Bearer)\s+[A-Za-z0-9._~+/=-]{16,}/gi, replace: (_m, b) => `${b} [REDACTED:bearer]` },
+  { kind: 'bearer', re: /\b(Bearer)\s+[\w.~+/=-]{16,}/gi, replace: (_m, b) => `${b} [REDACTED:bearer]` },
   {
     kind: 'url_credentials',
     re: /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+):([^\s@/]{3,})@/gi,

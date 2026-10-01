@@ -42,7 +42,7 @@ export class WorkerPool {
 
   async run<K extends TaskName>(task: K, payload: TaskMap[K]['in']): Promise<TaskMap[K]['out']> {
     if (this.closed) throw new AppError('scan_error', 'Der Worker-Pool wurde beendet.');
-    if (!this.workerFile) return tasks[task](payload as never) as Promise<TaskMap[K]['out']>;
+    if (!this.workerFile) return tasks[task](payload);
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });

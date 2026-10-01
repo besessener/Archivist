@@ -40,8 +40,13 @@ export const MIME_BY_EXT: Record<string, string> = {
 const clip = (text: string): { text: string; truncated: boolean } =>
   text.length > MAX_TEXT_CHARS ? { text: text.slice(0, MAX_TEXT_CHARS), truncated: true } : { text, truncated: false };
 
-// eslint-disable-next-line no-control-regex
-const tidy = (s: string) => s.replace(/\r\n/g, '\n').replace(/\u0000/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{4,}/g, '\n\n\n').trim();
+/** Entfernt Leerzeichen/Tabs am Zeilenende ohne Regex (ein Muster wie `[ \t]+\n` wäre bei langen Leerzeichenfolgen quadratisch). */
+const trimLineEnd = (line: string): string => {
+  let end = line.length;
+  while (end > 0 && (line[end - 1] === ' ' || line[end - 1] === '\t')) end -= 1;
+  return end === line.length ? line : line.slice(0, end);
+};
+const tidy = (s: string) => s.replaceAll('\r\n', '\n').replaceAll('\u0000', '').split('\n').map(trimLineEnd).join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
 
 function decodeText(buf: Buffer): string {
   if (buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
@@ -203,6 +208,7 @@ async function parseDocx(file: string): Promise<ParsedDocument> {
 async function parsePptx(file: string): Promise<ParsedDocument> {
   const buf = await fsp.readFile(file);
   const files = await readZipXml(buf, /^ppt\/(slides|notesSlides)\/[^/]+\.xml$|^docProps\/core\.xml$/);
+  // eslint-disable-next-line sonarjs/super-linear-regex -- Dateiname bzw. HTML-Ausschnitt, Länge begrenzt
   const num = (n: string) => Number(/(\d+)\.xml$/.exec(n)?.[1] ?? 0);
   const textOf = (xml: string) =>
     [...xml.matchAll(/<a:p[ >][\s\S]*?<\/a:p>/g)]
@@ -277,7 +283,7 @@ async function parseEml(file: string): Promise<ParsedDocument> {
   const { simpleParser } = await import('mailparser');
   const mail = await simpleParser(await fsp.readFile(file));
   const addr = (a: unknown) => (a && typeof a === 'object' && 'text' in a ? String((a as { text: string }).text) : '');
-  const body = mail.text ?? (typeof mail.html === 'string' ? mail.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, '').replace(/<[^>]+>/g, ' ') : '');
+  const body = mail.text ?? (typeof mail.html === 'string' ? mail.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, '').replace(/<[^<>]+>/g, ' ') : '');
   const header = [
     `Betreff: ${mail.subject ?? ''}`,
     `Von: ${addr(mail.from)}`,

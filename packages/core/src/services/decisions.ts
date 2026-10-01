@@ -202,7 +202,7 @@ export class DecisionService {
     if (patch.validFrom !== undefined) set.validFrom = normalizeDateInput(patch.validFrom ?? null);
     if (patch.validUntil !== undefined) set.validUntil = normalizeDateInput(patch.validUntil ?? null);
     if (patch.sourceIds !== undefined) set.sourceIds = [...new Set([...cur.sourceIds, ...patch.sourceIds])];
-    if (patch.unknownFields !== undefined) set.unknownFields = [...new Set([...(cur.unknownFields as string[]), ...patch.unknownFields])];
+    if (patch.unknownFields !== undefined) set.unknownFields = [...new Set([...(cur.unknownFields), ...patch.unknownFields])];
 
     const merged = { ...cur, ...set };
     const topicName = merged.topicId ? this.graph.getEntity(merged.topicId)?.name ?? null : null;

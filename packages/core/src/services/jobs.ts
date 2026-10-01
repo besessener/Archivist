@@ -62,7 +62,7 @@ export class JobQueueService {
   }
 
   register<P>(type: string, handler: JobHandler<P>): void {
-    this.handlers.set(type, handler as JobHandler<never>);
+    this.handlers.set(type, handler);
   }
 
   enqueue(type: string, label: string, payload: unknown = {}, opts: { maxAttempts?: number } = {}): Job {

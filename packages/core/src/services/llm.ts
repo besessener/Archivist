@@ -77,6 +77,7 @@ export class LlmService {
   }
 
   private endpoint(baseUrl: string, pathPart: string): string {
+    // eslint-disable-next-line sonarjs/super-linear-regex -- Base-URL bzw. einzelne Modellantwort, Länge begrenzt
     return `${baseUrl.replace(/\/+$/, '')}/${pathPart}`;
   }
 
@@ -237,6 +238,7 @@ export class LlmService {
 
   private parseJson(raw: string): { ok: true; value: unknown } | { ok: false } {
     let text = raw.trim();
+    // eslint-disable-next-line sonarjs/super-linear-regex -- Base-URL bzw. einzelne Modellantwort, Länge begrenzt
     const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
     if (fence?.[1]) text = fence[1].trim();
     const start = text.indexOf('{');

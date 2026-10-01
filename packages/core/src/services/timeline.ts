@@ -88,6 +88,6 @@ export class TimelineService {
         }
       }
     }
-    return out.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(0, q.limit ?? 300);
+    return out.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(0, q.limit ?? 300);
   }
 }

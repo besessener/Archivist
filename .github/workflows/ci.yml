@@ -52,7 +52,21 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      - run: npm run test:coverage
+      - name: Coverage in der Job-Zusammenfassung
+        if: ${{ !cancelled() }}
+        run: |
+          node -e '
+            const t = require("./coverage/coverage-summary.json").total;
+            const row = (k) => `| ${k} | ${t[k].pct} % | ${t[k].covered}/${t[k].total} |`;
+            console.log(["## Testabdeckung", "", "| Metrik | Abdeckung | Zeilen |", "|---|---|---|", ...["statements", "branches", "functions", "lines"].map(row)].join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
       - run: npm run native:check
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:

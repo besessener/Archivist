@@ -5,6 +5,7 @@ import { tasks, type TaskName } from './tasks';
 if (!parentPort) throw new Error('worker-entry muss in einem Worker-Thread laufen');
 const port = parentPort;
 
+// eslint-disable-next-line @typescript-eslint/no-misused-promises -- der Handler fängt alle Fehler selbst ab und antwortet per postMessage
 port.on('message', async (msg: { id: number; task: TaskName; payload: never }) => {
   try {
     const fn = tasks[msg.task] as ((p: never) => Promise<unknown>) | undefined;

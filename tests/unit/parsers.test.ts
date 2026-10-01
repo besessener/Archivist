@@ -19,6 +19,14 @@ describe('Dokumentparser', () => {
     expect(r.text).toContain('Überschrift');
   });
 
+  it('bereinigt Leerraum am Zeilenende, auch bei sehr langen Leerzeichenfolgen, in linearer Zeit', async () => {
+    const f = writeFile(dir, 'blanks.txt', `Zeile eins  \t \r\nZeile zwei\n\n\n\n\n\nEnde${' '.repeat(300_000)}x`);
+    const started = Date.now();
+    const r = await parseDocument(f);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(r.text.startsWith('Zeile eins\nZeile zwei\n\n\nEnde')).toBe(true);
+  });
+
   it('liest PDF-Text', async () => {
     const f = path.join(dir, 'a.pdf');
     makePdf(f, ['Vertrag Hauskauf Musterstrasse', 'Kaufpreis 450000 Euro']);

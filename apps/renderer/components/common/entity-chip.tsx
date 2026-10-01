@@ -35,7 +35,7 @@ export function EntityChip({
   type: EntityType;
   id: string;
   label: string;
-  detail?: string | null | undefined;
+  detail?: string | null;
   className?: string;
   suffix?: React.ReactNode;
 }) {
