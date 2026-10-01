@@ -464,8 +464,8 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
   });
 });
 
-describe('Rückfrage in einer Mehrfach-Nachricht stellt weitere Absichten zurück', () => {
-  it('führt die Erinnerung nach der Antwort auf die Rückfrage zum offenen Punkt aus', async () => {
+describe('Optionale Rückfrage zum offenen Punkt hält weitere Absichten nicht auf (#41)', () => {
+  it('legt die Erinnerung sofort an; die Antwort auf die Rückfrage ergänzt danach den Punkt', async () => {
     let n = 0;
     app.llm.on('ChatIntent', () => {
       n += 1;
@@ -478,10 +478,13 @@ describe('Rückfrage in einer Mehrfach-Nachricht stellt weitere Absichten zurüc
       };
     });
     const r1 = await app.ok('chat:send', { text: 'Offen: PoC vorstellen. Erinnere mich am 30.10. an die Vorbereitung.' });
-    expect(await app.ok('reminders:list', {})).toHaveLength(0);
-    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Anna, bis 31.10.' });
-    expect(r2.assistantMessage.content).toMatch(/Erinnerung/);
+    expect(r1.assistantMessage.content).toMatch(/Wer ist verantwortlich/);
+    expect(r1.assistantMessage.content).not.toContain('Danach erledige ich noch');
     expect(await app.ok('reminders:list', {})).toHaveLength(1);
+    await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Anna, bis 31.10.' });
+    const poc = (await app.ok('openItems:list', {})).find((i) => i.title === 'PoC vorstellen')!;
+    expect(poc.responsibleName).toBe('Anna');
+    expect(poc.dueAt?.slice(0, 10)).toBe('2026-10-31');
   });
 });
 

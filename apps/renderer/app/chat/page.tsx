@@ -56,8 +56,11 @@ export default function ChatPage() {
   useEffect(() => {
     if (!initialised.current && convs.data) {
       initialised.current = true;
+      // ?c=<id>: Rücksprung aus einem offenen Punkt in die Unterhaltung, aus der er stammt
+      const wanted = new URLSearchParams(window.location.search).get('c');
       const latest = [...convs.data].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-      if (latest) setConversationId(latest.id);
+      const target = convs.data.find((c) => c.id === wanted) ?? latest;
+      if (target) setConversationId(target.id);
     }
   }, [convs.data]);
 

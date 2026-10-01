@@ -14,7 +14,7 @@ import {
   type SourceReference,
   type StoredAgentAction,
 } from '@archivist/shared';
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Conversation, ChatIntent } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { conversations, messages } from '../db/schema';
@@ -55,7 +55,8 @@ type Pending =
       supersedes?: string | null;
       supersedesId?: string | null;
     }
-  | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'> }
+  | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'>; optional?: boolean }
+  | { kind: 'open_item_duplicate'; existingId: string; text: string; intent: ChatIntent }
   | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string }
   | { kind: 'confirm_save'; text: string; intent: ChatIntent }
   | { kind: 'proposal_choice'; confirm: boolean; actionIds: string[] }
@@ -170,6 +171,38 @@ export function parseSaveChoice(text: string): SaveChoice | null {
 function withOpenItemTarget(intent: ChatIntent, id: string): ChatIntent {
   if (intent.intent === 'reminder_create' || intent.intent === 'reminder_snooze') return { ...intent, reminder: { ...(intent.reminder ?? {}), targetId: id } };
   return { ...intent, openItem: { ...(intent.openItem ?? {}), targetId: id } };
+}
+
+const OPEN_ITEM_PREFIX_RE = /^\s*(?:offene[rn]?\s+punkte?|offen|todo|to-do|aufgabe|neue\s+aufgabe|merke?\s+dir)\s*[:–-]\s*/i;
+const MUST_RE = /^\s*(?:ich|wir|du|man)\s+(?:muss|müssen|musst|sollte|sollten|sollen|will|wollen|möchte|möchten)\s+(?:noch\s+|unbedingt\s+|bald\s+)*/i;
+const OPEN_TRIGGER_RE = /(offene[rn]?\s+punkt|offen\s*:|todo|to-do|aufgabe|noch\s+(?:zu\s+)?klären|muss\s+noch|müssen\s+noch|sollten?\s+noch)/i;
+const SELF_RE = /^(ich|mir|mich|selbst|ich selbst|mein|meine|me|myself)$/i;
+
+/**
+ * Kurzer Titel und Beschreibung für einen offenen Punkt aus dem zugehörigen Textteil: Präfixe wie „Offener Punkt:“
+ * oder „Ich muss noch …“ fallen weg, der Titel ist der erste Teilsatz, die Details landen in der Beschreibung.
+ */
+export function deriveOpenItem(text: string): { title: string; description: string | null } {
+  const sentences = text
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const sentence = (sentences.find((x) => OPEN_TRIGGER_RE.test(x)) ?? sentences[0] ?? text).trim();
+  let core = sentence.replace(OPEN_ITEM_PREFIX_RE, '').replace(MUST_RE, '').trim();
+  while (core.endsWith('.') || core.endsWith('!')) core = core.slice(0, -1).trimEnd();
+  const first = (core.split(/[,;]| [–-] /)[0] ?? core).trim();
+  const title = truncate(first.charAt(0).toUpperCase() + first.slice(1), 100);
+  const rest = core.length > first.length + 3 ? core : null;
+  return { title: title || truncate(text.trim(), 100), description: rest };
+}
+
+/** Hängt eine Ergänzung an eine Beschreibung an (statt sie zu überschreiben); schon Enthaltenes wird nicht doppelt angehängt. */
+function appendDescription(current: string | null, addition: string | null | undefined): string | null {
+  const add = addition?.trim();
+  if (!add) return current;
+  if (!current?.trim()) return add;
+  return normalizeName(current).includes(normalizeName(add)) ? current : `${current.trim()}\n${add}`;
 }
 
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
@@ -444,6 +477,8 @@ export class ChatService {
     if (p.kind === 'event')
       return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum (dann intent=event_record, event.occurredAt als ISO-Datum, ohne eigenen Titel). Ein anderes Ereignis mit eigenem Titel ist keine Antwort.`;
     if (p.kind === 'proposal_choice') return 'keine';
+    if (p.kind === 'open_item_duplicate')
+      return `Der Agent hat gefragt, ob der bestehende offene Punkt „${this.openItemOrNull(p.existingId)?.title ?? '?'}“ ergänzt oder ein neuer angelegt werden soll; die Antwort wertet er selbst aus.`;
     if (p.kind === 'open_item_choice')
       return `Der Agent hat gefragt, welcher offene Punkt gemeint ist (${p.candidateIds.map((id) => `„${this.openItemOrNull(id)?.title ?? '?'}“`).join(', ')}); die Antwort wertet er selbst aus.`;
     if (p.kind === 'supersede_choice')
@@ -657,7 +692,7 @@ export class ChatService {
     if (/\b(schlie(ß|ss)e?\w*|erledigt|abgeschlossen)\b/i.test(t) && /(punkt|aufgabe|todo)/i.test(t))
       return { ...base, intent: 'open_item_close', openItem: { targetHint: t } };
     if (/(offene[rn]?\s+punkt|todo|aufgabe|noch\s+(zu\s+)?klären|muss\s+noch)/i.test(t) && !/\?\s*$/.test(t) && !/^welche/i.test(t))
-      return { ...base, intent: 'open_item_new', openItem: { title: truncate(t, 120), dueAt: parseGermanDate(t) } };
+      return { ...base, intent: 'open_item_new', openItem: { ...deriveOpenItem(t), dueAt: parseGermanDate(t) } };
     if (/\b(scan|nach\s+neuen\s+dokumenten)\b/i.test(t)) return { ...base, intent: 'scan_start' };
     // eslint-disable-next-line sonarjs/super-linear-regex -- einzelne Chat-Nachricht, Länge begrenzt
     if (/\b(timeline|zeitverlauf|chronolog|was\s+ist\s+.*passiert)\b/i.test(t)) return { ...base, intent: 'timeline_query', query: t };
@@ -772,6 +807,7 @@ export class ChatService {
       case 'event':
         return `Das Ereignis „${truncate(p.title, 80)}“ habe ich ohne Datum nicht eingetragen.`;
       case 'open_item':
+        if (p.optional) return null;
         return `Die fehlenden Angaben zum offenen Punkt „${truncate(this.openItems.get(p.openItemId).title, 80)}“ kannst du jederzeit nachtragen.`;
       case 'confirm_save':
         return `Zu „${truncate(p.intent.segment ?? p.text, 80)}“ habe ich nichts gespeichert.`;
@@ -794,6 +830,13 @@ export class ChatService {
       const chosen = this.answerOpenItemChoice(text, p);
       if (chosen)
         return this.runWork(conv, [{ text: p.text, intent: withOpenItemTarget(p.intent, chosen.id) }], state.queue ?? [], { ...state, queue: [] }, true, null);
+    }
+    // Antwort auf „Gibt es schon: ‚…‘ – ergänzen oder neu anlegen?“
+    if (state.pending?.kind === 'open_item_duplicate') {
+      const p = state.pending;
+      state = { ...state, pending: null };
+      const answered = await this.answerOpenItemDuplicate(conv, text, p, state);
+      if (answered) return answered;
     }
     // Antwort auf „Welche Entscheidung wird ersetzt?“
     if (state.pending?.kind === 'supersede_choice') {
@@ -870,6 +913,8 @@ export class ChatService {
     const replies: Reply[] = [];
     let current: ConvState = { ...state, pending: null, queue: [] };
     let deferred: QueuedIntent[] = [];
+    // optionale Rückfragen (Verantwortlicher/Fälligkeit) halten keine weiteren Anliegen auf
+    let optional: Pending | null = null;
     for (let i = 0; i < work.length; i += 1) {
       const item = work[i]!;
       if (this.needsDecisionConfirmation(item.intent)) {
@@ -896,11 +941,16 @@ export class ChatService {
       current = { ...(reply.state ?? current), queue: [] };
       // eine unverändert zurückgegebene alte Rückfrage ist erledigt, keine neue
       if (current.pending === old) current = { ...current, pending: null };
+      if (current.pending?.kind === 'open_item' && current.pending.optional) {
+        optional = current.pending;
+        current = { ...current, pending: null };
+      }
       if (current.pending) {
         deferred = work.slice(i + 1);
         break;
       }
     }
+    if (!current.pending && optional) current = { ...current, pending: optional };
     if (clarification) replies.push({ intent: 'clarification', content: clarification, confidence: 0.3, state: current });
     if (old && !consumed && old.kind !== 'proposal_choice') {
       const hint = this.droppedHint(old);
@@ -1003,7 +1053,7 @@ export class ChatService {
       case 'timeline_query':
         return this.timelineQuery(text, intent, state);
       case 'open_item_new':
-        return this.openItemNew(text, intent, state);
+        return this.openItemNew(conv, text, intent, state);
       case 'open_item_update':
         return this.openItemUpdate(conv, text, intent, state);
       case 'open_item_close':
@@ -1677,31 +1727,77 @@ export class ChatService {
   }
 
   // ---------- Offene Punkte ----------
-  private async openItemNew(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
+  /** „ich/mir/mich“ als Verantwortlicher ist der Benutzer (Name aus den Einstellungen); ohne Namen bleibt das Feld leer. */
+  private responsibleName(raw: string | null | undefined): { name: string | null; self: boolean } {
+    const v = raw?.trim();
+    if (!v) return { name: null, self: false };
+    if (!SELF_RE.test(v)) return { name: v, self: false };
+    return { name: this.settings.get().profile.name.trim() || null, self: true };
+  }
+
+  /** Die aktuell verarbeitete Benutzernachricht dieser Unterhaltung (Quelle neu angelegter Punkte). */
+  private latestUserMessageId(conv: string): string | null {
+    return (
+      this.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.conversationId, conv), eq(messages.role, 'user')))
+        .orderBy(desc(messages.createdAt))
+        .limit(1)
+        .get()?.id ?? null
+    );
+  }
+
+  private async openItemNew(conv: string, text: string, intent: ChatIntent, state: ConvState, force = false): Promise<Reply> {
     const oi = intent.openItem ?? {};
+    const segment = (intent.segment ?? text).trim();
+    const derived = deriveOpenItem(segment);
+    const llmTitle = oi.title?.replace(OPEN_ITEM_PREFIX_RE, '').trim();
+    // ein „Titel“, der die ganze Nachricht ist, ist keiner
+    const title = llmTitle && llmTitle.length <= 120 && llmTitle !== text.trim() ? llmTitle : derived.title;
+    const description = oi.description?.trim() || (derived.description && derived.description !== title ? derived.description : null);
+    // gibt es schon einen ähnlichen aktiven Punkt? Dann erst fragen.
+    if (!force) {
+      const similar = matchOpenItems(title, this.openItems.list({ onlyActive: true }), { threshold: 0.75 });
+      const existing = similar.status === 'match' ? similar.item : similar.status === 'ambiguous' ? similar.items[0] : null;
+      if (existing)
+        return {
+          intent: 'open_item_new',
+          content: `Gibt es schon: ‚${existing.title}‘ – ergänzen oder neu anlegen?`,
+          quickReplies: ['Ergänzen', 'Neu anlegen'],
+          context: { openItems: [{ type: 'task', id: existing.id, label: existing.title }] },
+          confidence: 0.6,
+          state: {
+            ...state,
+            pending: { kind: 'open_item_duplicate', existingId: existing.id, text, intent: { ...intent, openItem: { ...oi, title, description } } },
+          },
+        };
+    }
+    const who = this.responsibleName(oi.responsible);
+    const source = this.latestUserMessageId(conv);
     const item = this.openItems.create(
       {
-        title: oi.title?.trim() || truncate(text, 120),
-        description: oi.description ?? undefined,
+        title,
+        description,
         topic: intent.topic,
         project: intent.project,
-        responsible: oi.responsible,
+        responsible: who.name,
         dueAt: normalizeDateInput(oi.dueAt ?? null) ?? undefined,
         priority: oi.priority ?? 'normal',
-        sourceIds: [],
+        sourceIds: source ? [source] : [],
         confidence: intent.confidence,
       },
       { actor: 'user', trigger: 'chat' },
     );
     const asked: Array<'responsible' | 'due'> = [];
-    if (!item.responsiblePersonId) asked.push('responsible');
+    if (!item.responsiblePersonId && !who.self) asked.push('responsible');
     if (!item.dueAt) asked.push('due');
-    const q = asked.length
-      ? `\n\nMir fehlt noch: ${asked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann soll das erledigt sein?')).join(' ')} (Du kannst auch „unbekannt“ sagen.)`
-      : '';
+    // kurze, optionale Rückfrage – sie hält keine weiteren Anliegen auf
+    const q = asked.length ? `\n\n_Optional:_ ${asked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann?')).join(' ')}` : '';
+    const selfNote = who.self && !who.name ? ' Verantwortlich: du (hinterlege deinen Namen unter Einstellungen → Über Sie, dann ordne ich dich zu).' : '';
     return {
       intent: 'open_item_new',
-      content: `Offenen Punkt angelegt: **${item.title}**${item.dueAt ? ` (fällig ${item.dueAt.slice(0, 10)})` : ''}${item.responsibleName ? `, Verantwortlich: ${item.responsibleName}` : ''}.${q}`,
+      content: `Offenen Punkt angelegt: **${item.title}**${item.dueAt ? ` (fällig ${item.dueAt.slice(0, 10)})` : ''}${item.responsibleName ? `, Verantwortlich: ${item.responsibleName}` : ''}.${selfNote}${q}`,
       sources: [{ id: item.id, type: 'task', title: item.title, snippet: item.description ?? '', score: 1, path: null, date: item.createdAt }],
       context: {
         openItems: [{ type: 'task', id: item.id, label: item.title }],
@@ -1709,7 +1805,42 @@ export class ChatService {
       },
       confidence: item.confidence,
       uncertainties: asked.map((a) => (a === 'responsible' ? 'Verantwortlicher unbekannt' : 'Fälligkeitsdatum unbekannt')),
-      state: { pending: asked.length ? { kind: 'open_item', openItemId: item.id, asked } : null, last: { ...(state.last ?? {}), openItemId: item.id } },
+      state: {
+        pending: asked.length ? { kind: 'open_item', openItemId: item.id, asked, optional: true } : null,
+        last: { ...(state.last ?? {}), openItemId: item.id },
+      },
+    };
+  }
+
+  /** Antwort auf „Gibt es schon: ‚…‘ – ergänzen oder neu anlegen?“. Sonst null. */
+  private async answerOpenItemDuplicate(
+    conv: string,
+    text: string,
+    p: Extract<Pending, { kind: 'open_item_duplicate' }>,
+    state: ConvState,
+  ): Promise<Reply | null> {
+    const t = normalizeName(text);
+    if (words(text) > 8) return null;
+    if (/\bneu\b|\bneuen?\b|anlegen/.test(t) && !/erganz/.test(t)) return this.openItemNew(conv, p.text, p.intent, state, true);
+    if (!/erganz|hinzufug|dazu|anhang|zusammen|bestehend/.test(t) && shortAnswer(text) !== 'yes') return null;
+    const existing = this.openItemOrNull(p.existingId);
+    if (!existing) return null;
+    const oi = p.intent.openItem ?? {};
+    const addition = [oi.description, oi.title !== existing.title ? oi.title : null].filter(Boolean).join(' – ');
+    const who = this.responsibleName(oi.responsible);
+    const patch: Parameters<OpenItemService['update']>[1] = {};
+    const merged = appendDescription(existing.description, addition);
+    if (merged !== existing.description) patch.description = merged;
+    if (!existing.responsiblePersonId && who.name) patch.responsible = who.name;
+    const due = normalizeDateInput(oi.dueAt ?? null);
+    if (!existing.dueAt && due) patch.dueAt = due;
+    const updated = Object.keys(patch).length ? this.openItems.update(existing.id, patch) : existing;
+    return {
+      intent: 'open_item_update',
+      content: `Ich habe den bestehenden Punkt **${updated.title}** ergänzt.`,
+      context: { openItems: [{ type: 'task', id: updated.id, label: updated.title }] },
+      confidence: 0.8,
+      state: { ...state, last: { ...(state.last ?? {}), openItemId: updated.id } },
     };
   }
 
@@ -1721,12 +1852,17 @@ export class ChatService {
     const item = target.item ?? this.lastOpenItem(state, target);
     if (!item) return { intent: 'open_item_update', content: this.noOpenItemQuestion(oi.targetHint, 'meinst du'), confidence: 0.3, state };
     const patch: Parameters<OpenItemService['update']>[1] = {};
-    if (oi.responsible) patch.responsible = oi.responsible;
+    const who = this.responsibleName(oi.responsible);
+    if (who.name) patch.responsible = who.name;
     else if (pending?.asked.includes('responsible') && UNKNOWN_RE.test(text)) patch.responsibleUnknown = true;
     const due = normalizeDateInput(oi.dueAt ?? null);
     if (due) patch.dueAt = due;
     else if (pending?.asked.includes('due') && UNKNOWN_RE.test(text) && !patch.responsible) patch.dueUnknown = true;
-    if (oi.description) patch.description = oi.description;
+    // Ergänzungen hängen an die Beschreibung an
+    if (oi.description) {
+      const merged = appendDescription(item.description, oi.description);
+      if (merged !== item.description) patch.description = merged;
+    }
     if (oi.priority) patch.priority = oi.priority;
     if (oi.newStatus && oi.newStatus !== 'resolved' && oi.newStatus !== 'dismissed') patch.status = oi.newStatus;
     if (oi.newStatus === 'resolved' || oi.newStatus === 'dismissed')

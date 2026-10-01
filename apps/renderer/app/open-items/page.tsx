@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { BellPlus, Check, ListChecks, Pencil, Plus } from 'lucide-react';
+import Link from 'next/link';
+import { BellPlus, Check, ListChecks, MessageSquare, Pencil, Plus } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { QuickDate } from '@/components/common/quick-date';
@@ -85,7 +86,16 @@ export default function OpenItemsPage() {
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className={g === 'done' ? 'font-medium text-muted-foreground line-through' : 'font-medium'}>{i.title}</p>
-                        {i.description && <p className="mt-0.5 text-sm text-muted-foreground">{i.description}</p>}
+                        {i.description && <p className="mt-0.5 whitespace-pre-line text-sm text-muted-foreground">{i.description}</p>}
+                        {i.sourceConversationId && (
+                          <Link
+                            href={`/chat/?c=${encodeURIComponent(i.sourceConversationId)}`}
+                            className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            data-testid="open-item-chat-link"
+                          >
+                            <MessageSquare className="size-3.5" aria-hidden /> Im Chat ansehen
+                          </Link>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {i.priority === 'high' && <Badge variant="danger">Hohe Priorität</Badge>}

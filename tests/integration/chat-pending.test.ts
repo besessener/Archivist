@@ -33,7 +33,6 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
 
     expect(r2.assistantMessage.content).toContain('Notiz gespeichert');
     expect(r2.assistantMessage.content).toContain('Erinnerung für den 2026-11-15 angelegt');
-    expect(r2.assistantMessage.content).toMatch(/Hinweis: Die fehlenden Angaben zum offenen Punkt „PoC vorstellen“/);
     expect(await app.ok('reminders:list', {})).toHaveLength(1);
     const poc = (await app.ok('openItems:list', {})).find((i) => i.title === 'PoC vorstellen')!;
     // die Rückfrage gilt nur für die nächste Nachricht
