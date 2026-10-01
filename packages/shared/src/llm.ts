@@ -195,3 +195,23 @@ export const KnowledgeAnswer = z.object({
   confidence: Confidence,
 });
 export type KnowledgeAnswer = z.infer<typeof KnowledgeAnswer>;
+
+/** LLM-Ausgabe für „Lösungsvorschlag generieren“ zu einem offenen Punkt. */
+export const SolutionProposal = z.object({
+  assessment: z.string().describe('Kurze Einschätzung der Lage in 2–4 Sätzen'),
+  assessmentSourceIds: z.array(z.string()).default([]).describe('Belege der Einschätzung, z. B. ["S1"]'),
+  nextSteps: z
+    .array(
+      z.object({
+        title: z.string().describe('Konkreter nächster Schritt, kurz – eignet sich als eigener offener Punkt'),
+        detail: opt(z.string()),
+        sourceIds: z.array(z.string()).default([]),
+      }),
+    )
+    .default([]),
+  openQuestions: z.array(z.string()).default([]).describe('Offene Fragen bzw. fehlende Informationen'),
+  risks: z.array(z.object({ description: z.string(), sourceIds: z.array(z.string()).default([]) })).default([]),
+  usedSourceIds: z.array(z.string()).default([]),
+  confidence: Confidence.default(0.6),
+});
+export type SolutionProposal = z.infer<typeof SolutionProposal>;

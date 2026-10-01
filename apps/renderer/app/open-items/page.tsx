@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { BellPlus, Check, ListChecks, MessageSquare, Pencil, Plus } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { SolutionSection } from '@/components/open-items/solution';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { QuickDate } from '@/components/common/quick-date';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
@@ -14,11 +15,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useApp } from '@/lib/app-context';
 import { call } from '@/lib/ipc';
 import { OPEN_ITEM_STATUS_LABELS } from '@/lib/labels';
 import { formatDate, relativeDay } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
+import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
 import { nonEmpty, toIsoDay } from '@/lib/utils';
 import type { OpenItemStatus } from '@archivist/shared';
@@ -45,6 +48,11 @@ export default function OpenItemsPage() {
   const [editItem, setEditItem] = useState<OpenItemRecord | null>(null);
   const [closeItem, setCloseItem] = useState<OpenItemRecord | null>(null);
   const [remindItem, setRemindItem] = useState<OpenItemRecord | null>(null);
+  const { settings } = useSettings();
+  const { status } = useApp();
+  const llmMode = settings?.privacy.llmMode ?? 'confirm';
+  // solange der Status lädt, nicht vorschnell sperren – der Main-Prozess prüft ohnehin
+  const llmConfigured = status ? status.llm.configured : true;
 
   const groups = useMemo(() => {
     const out: Record<Group, OpenItemRecord[]> = { overdue: [], due: [], open: [], done: [] };
@@ -138,6 +146,7 @@ export default function OpenItemsPage() {
                         <Button size="sm" onClick={() => setCloseItem(i)} data-testid="open-item-close">
                           <Check aria-hidden /> Erledigt …
                         </Button>
+                        <SolutionSection item={i} mode={llmMode} llmConfigured={llmConfigured} onChanged={() => void refetch()} />
                       </div>
                     )}
                   </li>

@@ -234,6 +234,10 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'openItems:create': (i) => s.openItems.create(i, { actor: 'user', trigger }),
     'openItems:update': (i) => s.openItems.update(i.id, i.patch),
     'openItems:close': (i) => s.openItems.close(i.id, i.status, { confirmed: i.confirmed, trigger }),
+    'openItems:solutionPreview': (i) => s.solutions.preview(i.id),
+    'openItems:generateSolution': (i) => s.solutions.generate(i.id, { confirmed: i.confirmed }),
+    'openItems:cancelSolution': (i) => ({ cancelled: s.solutions.cancel(i.id) }),
+    'openItems:applySolution': (i) => s.solutions.apply(i),
 
     'knowledge:listEntities': (i) => s.graph.listEntities(i),
     'knowledge:getEntity': (i) => s.graph.getDetail(i.id),

@@ -185,6 +185,43 @@ export type DecisionInput = z.infer<typeof DecisionInput>;
 export const OpenItemStatus = z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed']);
 export type OpenItemStatus = z.infer<typeof OpenItemStatus>;
 export const Priority = z.enum(['low', 'normal', 'high']);
+
+/** Aussage eines Lösungsvorschlags; `uncertain`, wenn kein gültiger Quellenbeleg vorliegt. */
+const SolutionClaim = z.object({
+  text: z.string(),
+  detail: z.string().nullable().default(null),
+  /** Quellenkürzel wie „S1“ (siehe `sources`) */
+  sourceRefs: z.array(z.string()).default([]),
+  uncertain: z.boolean(),
+});
+/** Quelle, die für einen Lösungsvorschlag an das LLM gesendet wurde (bzw. würde). */
+export const SolutionSource = z.object({
+  ref: z.string(),
+  id: Id,
+  type: EntityType,
+  title: z.string(),
+  /** false: nur der Titel wird gesendet (Dokument von der externen Analyse ausgeschlossen) */
+  contentIncluded: z.boolean(),
+  /** im Vorschlag tatsächlich als Beleg genutzt */
+  used: z.boolean().default(false),
+});
+export type SolutionSource = z.infer<typeof SolutionSource>;
+/** Gespeicherter Lösungsvorschlag zu einem offenen Punkt (erneutes Generieren ersetzt ihn). */
+export const OpenItemSolution = z.object({
+  generatedAt: IsoDate,
+  model: z.string(),
+  assessment: z.string(),
+  assessmentSourceRefs: z.array(z.string()).default([]),
+  assessmentUncertain: z.boolean(),
+  nextSteps: z.array(SolutionClaim),
+  openQuestions: z.array(z.string()),
+  risks: z.array(SolutionClaim),
+  uncertainties: z.array(z.string()),
+  sources: z.array(SolutionSource),
+  confidence: z.number(),
+});
+export type OpenItemSolution = z.infer<typeof OpenItemSolution>;
+
 export const OpenItem = z.object({
   id: Id,
   title: z.string(),
@@ -207,8 +244,22 @@ export const OpenItem = z.object({
   reminderAt: IsoDate.nullable(),
   confidence: z.number(),
   updatedAt: IsoDate,
+  /** Zuletzt erzeugter Lösungsvorschlag (mit Datum und Modell) */
+  solution: OpenItemSolution.nullable().default(null),
 });
 export type OpenItem = z.infer<typeof OpenItem>;
+
+/** Was für einen Lösungsvorschlag an das LLM gesendet würde – ohne LLM-Aufruf ermittelt. */
+export const SolutionPreview = z.object({
+  mode: z.enum(['auto', 'confirm', 'local_only']),
+  /** false: Erzeugung derzeit nicht möglich (siehe blockedReason) */
+  available: z.boolean(),
+  blockedReason: z.string().nullable(),
+  /** Angaben des Punkts, die gesendet werden */
+  itemFields: z.array(z.object({ label: z.string(), value: z.string() })),
+  sources: z.array(SolutionSource),
+});
+export type SolutionPreview = z.infer<typeof SolutionPreview>;
 export const OpenItemInput = z.object({
   title: z.string().min(1),
   description: z.string().nullish(),

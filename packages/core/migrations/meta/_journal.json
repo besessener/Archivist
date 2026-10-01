@@ -29,6 +29,13 @@
       "when": 1790834030730,
       "tag": "0003_chat_quick_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790834031730,
+      "tag": "0004_open_item_solution",
+      "breakpoints": true
     }
   ]
 }

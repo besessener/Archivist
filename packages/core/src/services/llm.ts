@@ -20,7 +20,11 @@ export interface LlmRequest {
   /** nur für den ausdrücklichen Verbindungstest (sendet ausschließlich festen Text) */
   bypassPrivacy?: boolean;
   maxOutputTokens?: number;
+  /** Abbruch durch den Benutzer: laufende Anfrage wird beendet, es folgt keine Wiederholung. */
+  signal?: AbortSignal;
 }
+
+const abortedError = () => new AppError('llm_error', 'Die LLM-Anfrage wurde abgebrochen.');
 
 export interface LlmOverrides {
   baseUrl?: string;
@@ -111,9 +115,12 @@ export class LlmService {
     return new AppError('llm_error', 'Der LLM-Endpunkt hat die Anfrage abgelehnt.', { details: `HTTP ${status}: ${snippet}` });
   }
 
-  private async post(url: string, apiKey: string, body: unknown, timeoutMs: number): Promise<{ status: number; text: string }> {
+  private async post(url: string, apiKey: string, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number; text: string }> {
+    if (signal?.aborted) throw abortedError();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
     try {
       const res = await this.fetchImpl(url, {
         method: 'POST',
@@ -123,6 +130,7 @@ export class LlmService {
       });
       return { status: res.status, text: await res.text() };
     } catch (err) {
+      if (signal?.aborted) throw abortedError();
       if (controller.signal.aborted)
         throw new AppError('network_error', `Zeitüberschreitung nach ${Math.round(timeoutMs / 1000)} s – der LLM-Endpunkt antwortet nicht.`, {
           retryable: true,
@@ -134,6 +142,7 @@ export class LlmService {
       });
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
     }
   }
 
@@ -159,6 +168,7 @@ export class LlmService {
     if (!req.bypassPrivacy && this.settings.get().privacy.llmMode === 'local_only') {
       throw new AppError('permission_error', 'Der Datenschutzmodus „nur lokal“ verhindert externe LLM-Aufrufe.');
     }
+    if (req.signal?.aborted) throw abortedError();
 
     let input = req.input;
     if (input.length > cfg.maxInputChars) input = `${input.slice(0, cfg.maxInputChars)}\n[… Eingabe auf ${cfg.maxInputChars} Zeichen gekürzt]`;
@@ -184,7 +194,7 @@ export class LlmService {
       for (;;) {
         attempt += 1;
         try {
-          let res = await this.post(url, apiKey, body, cfg.timeoutMs);
+          let res = await this.post(url, apiKey, body, cfg.timeoutMs, req.signal);
           if (res.status === 400 && body === full && isUnsupportedParamError(res.text)) {
             // manche kompatible Endpunkte kennen optionale Parameter nicht → ohne diese erneut versuchen
             const { store: _s, reasoning: _r, text: _t, max_output_tokens: _m, ...minimal } = full;
@@ -193,7 +203,7 @@ export class LlmService {
             void _t;
             void _m;
             body = minimal;
-            res = await this.post(url, apiKey, body, cfg.timeoutMs);
+            res = await this.post(url, apiKey, body, cfg.timeoutMs, req.signal);
           }
           if (res.status >= 400) throw this.mapHttpError(res.status, res.text);
           let parsed: ResponsesBody;
@@ -217,7 +227,7 @@ export class LlmService {
           this.markStatus(true, null);
           return text;
         } catch (err) {
-          if (err instanceof AppError && err.retryable && attempt < 3) {
+          if (err instanceof AppError && err.retryable && attempt < 3 && !req.signal?.aborted) {
             await new Promise((r) => setTimeout(r, this.retryDelayMs * attempt));
             continue;
           }
@@ -225,7 +235,8 @@ export class LlmService {
         }
       }
     } catch (err) {
-      this.markStatus(false, toErrorInfo(err).message);
+      // ein Abbruch durch den Benutzer sagt nichts über den Zustand des Endpunkts
+      if (!req.signal?.aborted) this.markStatus(false, toErrorInfo(err).message);
       throw err;
     } finally {
       this.recordTransmission({
