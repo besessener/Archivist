@@ -57,6 +57,13 @@
       "when": 1790834034730,
       "tag": "0007_document_folder_llm",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790834035730,
+      "tag": "0008_open_item_duplicate_of",
+      "breakpoints": true
     }
   ]
 }

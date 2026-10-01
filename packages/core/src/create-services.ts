@@ -4,6 +4,7 @@ import { DatabaseService, type MigrationStatus } from './db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from './context';
 import { ActionService } from './services/actions';
 import { ArchiveService } from './services/archive';
+import { ArchiveRootService } from './services/archive-root';
 import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
@@ -21,6 +22,7 @@ import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
 import { NotificationService } from './services/notifications';
 import { EventService } from './services/events';
+import { OpenItemDuplicateService } from './services/cleanup/open-item-duplicates';
 import { OpenItemService } from './services/open-items';
 import { PrivacyService } from './services/privacy';
 import { ReminderService } from './services/reminders';
@@ -105,11 +107,16 @@ function buildServices(opts: CreateServicesOptions) {
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
   const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, audit, notifications, pool, undo);
+  const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
   const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, entityDuplicates);
   const backup = new BackupService(ctx, settings, audit);
+  const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
+  consistency.addCheck((count) => {
+    openItemDuplicates.check(count);
+  });
   const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit, notes);
   const chat = new ChatService(
     ctx,
@@ -132,7 +139,7 @@ function buildServices(opts: CreateServicesOptions) {
   );
 
   // 5) zyklische Abhängigkeiten auflösen
-  actions.wire({ archive, documents: documentsSvc, decisions, openItems, contradictions, graph, scanner, reminders, audit });
+  actions.wire({ archive, documents: documentsSvc, decisions, openItems, openItemDuplicates, contradictions, graph, scanner, reminders, audit });
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
@@ -223,6 +230,7 @@ function buildServices(opts: CreateServicesOptions) {
     documents: documentsSvc,
     decisions,
     openItems,
+    openItemDuplicates,
     solutions,
     eventRecords: eventsSvc,
     notes,
@@ -230,6 +238,7 @@ function buildServices(opts: CreateServicesOptions) {
     actions,
     contradictions,
     archive,
+    archiveRoot,
     scanner,
     timeline,
     consistency,

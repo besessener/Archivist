@@ -1,0 +1,1 @@
+ALTER TABLE `open_items` ADD `duplicate_of_id` text;

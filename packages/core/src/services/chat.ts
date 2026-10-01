@@ -37,6 +37,7 @@ import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { NoteService } from './notes';
 import type { EventService } from './events';
+import { findOpenItemDuplicate } from './cleanup/open-item-duplicates';
 import { ACTIVE_STATUSES, hintTokens, matchOpenItems, type OpenItemService } from './open-items';
 import type { PrivacyService } from './privacy';
 import type { ReminderService } from './reminders';
@@ -1954,10 +1955,20 @@ export class ChatService {
     // ein „Titel“, der die ganze Nachricht ist, ist keiner
     const title = llmTitle && llmTitle.length <= 120 && llmTitle !== text.trim() ? llmTitle : derived.title;
     const description = oi.description?.trim() || (derived.description && derived.description !== title ? derived.description : null);
-    // gibt es schon einen ähnlichen aktiven Punkt? Dann erst fragen.
+    const who = this.responsibleName(oi.responsible);
+    // gibt es schon einen ähnlichen aktiven Punkt? Dann erst fragen (Titel, Beschreibung, Thema/Projekt, Verantwortlicher).
     if (!force) {
-      const similar = matchOpenItems(title, this.openItems.list({ onlyActive: true }), { threshold: 0.75 });
-      const existing = similar.status === 'match' ? similar.item : similar.status === 'ambiguous' ? similar.items[0] : null;
+      // a name without an entity yet is a new, different value (never equal to an existing one)
+      const ref = (type: 'topic' | 'project' | 'person', name: string | null | undefined) =>
+        name?.trim() ? (this.graph.findByNameOrAlias(type, name)?.id ?? `new:${normalizeName(name)}`) : null;
+      const draft = {
+        title,
+        description,
+        topicId: ref('topic', intent.topic),
+        projectId: ref('project', intent.project),
+        responsiblePersonId: ref('person', who.name),
+      };
+      const existing = findOpenItemDuplicate(draft, this.openItems.list({ onlyActive: true }));
       if (existing)
         return {
           intent: 'open_item_new',
@@ -1971,7 +1982,6 @@ export class ChatService {
           },
         };
     }
-    const who = this.responsibleName(oi.responsible);
     const source = this.latestUserMessageId(conv);
     const item = this.openItems.create(
       {

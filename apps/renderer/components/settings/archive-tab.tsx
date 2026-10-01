@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { FolderOpen, Loader2, Plus, Save, ShieldCheck } from 'lucide-react';
+import { Loader2, Plus, ShieldCheck } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { ErrorNote, Field, Loading, Notice } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -12,12 +12,12 @@ import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { IpcOutput } from '@archivist/shared';
+import { ArchiveRootSection } from './archive-root';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 
 export function ArchiveTab({ settings, reload }: TabProps) {
   const { save, busy } = useSaveSettings(reload);
   const { run, busy: runBusy } = useRun();
-  const [root, setRoot] = useState(settings.archiveRoot);
   const categories = useQuery('categories:list', {}, { scopes: ['knowledge', 'settings', 'documents'] });
   const [newCat, setNewCat] = useState('');
   const [confirmCat, setConfirmCat] = useState(false);
@@ -35,31 +35,7 @@ export function ArchiveTab({ settings, reload }: TabProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Section
-        title="Archivordner"
-        description="In diesen Ordner legt Archivist Ihre Dokumente ab. Bereits archivierte Dateien werden bei einer Änderung nicht automatisch verschoben."
-      >
-        <Field label="Pfad des Archivs" htmlFor="s-archive-root">
-          <div className="flex gap-2">
-            <Input id="s-archive-root" value={root} onChange={(e) => setRoot(e.target.value)} data-testid="settings-archive-root" />
-            <Button
-              variant="outline"
-              onClick={async () => {
-                const sel = await run(() => call('app:selectDirectory', { title: 'Archivordner wählen' }));
-                if (sel?.path) setRoot(sel.path);
-              }}
-              data-testid="settings-archive-select"
-            >
-              <FolderOpen aria-hidden /> Wählen …
-            </Button>
-          </div>
-        </Field>
-        <div>
-          <Button disabled={busy || root.trim() === settings.archiveRoot} onClick={() => void save({ archiveRoot: root.trim() })} data-testid="settings-save">
-            <Save aria-hidden /> Speichern
-          </Button>
-        </div>
-      </Section>
+      <ArchiveRootSection archiveRoot={settings.archiveRoot} reload={reload} />
 
       <Section
         title="Kategorien"
