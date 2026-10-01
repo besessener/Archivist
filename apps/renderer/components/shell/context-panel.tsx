@@ -84,7 +84,16 @@ export function ContextPanel() {
                   <li key={a.id} className="rounded-md border bg-background p-2">
                     <p>{a.label}</p>
                     <Badge variant={a.status === 'proposed' ? 'warning' : 'secondary'} className="mt-1">
-                      {{ proposed: 'Offen', approved: 'Bestätigt', rejected: 'Abgelehnt', executed: 'Ausgeführt', failed: 'Fehlgeschlagen' }[a.status]}
+                      {
+                        {
+                          proposed: 'Offen',
+                          approved: 'Bestätigt',
+                          rejected: 'Abgelehnt',
+                          executed: 'Ausgeführt',
+                          failed: 'Fehlgeschlagen',
+                          withdrawn: 'Nicht mehr aktuell',
+                        }[a.status]
+                      }
                     </Badge>
                   </li>
                 ))}

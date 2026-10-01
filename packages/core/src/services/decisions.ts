@@ -7,11 +7,19 @@ import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
 import { firstSentence, normalizeName, truncate } from '../util/text';
 import type { AuditService } from './audit';
-import type { KnowledgeGraphService } from './knowledge-graph';
+import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
 type Row = typeof decisions.$inferSelect;
+
+interface DecisionUpdateUndo {
+  id: string;
+  /** Previous values of the edited columns. */
+  before: Partial<Row>;
+  afterUpdatedAt: string;
+  relations: RelationChangeSet;
+}
 
 export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'];
 
@@ -80,6 +88,31 @@ export class DecisionService {
         for (const c of d.changes) void this.reindex(c.id);
         this.ctx.events.changed('decisions', 'knowledge');
         return 'Status der Entscheidung(en) wiederhergestellt.';
+      },
+    });
+    undo.register('decision_update', {
+      check: async (data) => {
+        const d = data as DecisionUpdateUndo;
+        const row = this.db.select().from(decisions).where(eq(decisions.id, d.id)).get();
+        if (!row) return ['Die Entscheidung existiert nicht mehr.'];
+        const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : [`Entscheidung „${row.title}“ wurde seit der Bearbeitung verändert.`];
+        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
+      },
+      run: async (data) => {
+        const d = data as DecisionUpdateUndo;
+        this.db.transaction(() => {
+          this.db
+            .update(decisions)
+            .set({ ...d.before, updatedAt: nowIso() })
+            .where(eq(decisions.id, d.id))
+            .run();
+          const row = this.db.select().from(decisions).where(eq(decisions.id, d.id)).get();
+          if (row) this.graph.registerNode('decision', row.id, row.title, row.decisionText);
+          this.graph.revertRelationChanges(d.relations);
+        });
+        void this.reindex(d.id);
+        this.ctx.events.changed('decisions', 'knowledge', 'status');
+        return 'Bearbeitung der Entscheidung rückgängig gemacht.';
       },
     });
   }
@@ -265,10 +298,14 @@ export class DecisionService {
     if (patch.status) set.status = patch.status;
     else if (cur.status === 'draft' && missing.length === 0 && !patch.asDraft) set.status = 'active';
 
-    this.db.transaction(() => {
-      this.db.update(decisions).set(set).where(eq(decisions.id, id)).run();
-      this.syncGraph({ ...cur, ...set });
-    });
+    const { changes } = this.graph.trackRelationChanges(id, () =>
+      this.db.transaction(() => {
+        this.db.update(decisions).set(set).where(eq(decisions.id, id)).run();
+        this.syncGraph({ ...cur, ...set });
+      }),
+    );
+    const before = Object.fromEntries(Object.keys(set).flatMap((k) => (k === 'updatedAt' ? [] : [[k, cur[k as keyof Row]]]))) as Partial<Row>;
+    const undoData: DecisionUpdateUndo = { id, before, afterUpdatedAt: set.updatedAt!, relations: changes };
     this.audit.log({
       action: 'decision.update',
       actor: 'user',
@@ -277,6 +314,7 @@ export class DecisionService {
       entityIds: [id],
       before: { status: cur.status, decidedAt: cur.decidedAt },
       after: { status: set.status ?? cur.status, missing },
+      undo: { type: 'decision_update', data: undoData },
     });
     void this.reindex(id);
     this.ctx.events.changed('decisions', 'knowledge', 'status');
@@ -287,10 +325,16 @@ export class DecisionService {
     this.graph.registerNode('decision', r.id, r.title, r.decisionText);
     if (r.topicId) this.graph.link(r.id, r.topicId, 'concerns', { confidence: r.confidence, status: 'confirmed', sourceIds: r.sourceIds });
     if (r.projectId) this.graph.link(r.id, r.projectId, 'affects', { confidence: r.confidence, status: 'confirmed', sourceIds: r.sourceIds });
+    const personIds: string[] = [];
     for (const name of r.participants) {
       const person = this.graph.ensureEntity('person', name);
+      personIds.push(person.id);
       this.graph.link(person.id, r.id, 'participated_in', { confidence: r.confidence, status: 'confirmed', sourceIds: r.sourceIds });
     }
+    // relations to a previous topic, project or participant no longer apply
+    this.graph.unlinkSystemRelations(r.id, 'concerns', r.topicId ? [r.topicId] : [], { otherType: 'topic' });
+    this.graph.unlinkSystemRelations(r.id, 'affects', r.projectId ? [r.projectId] : [], { otherType: 'project' });
+    this.graph.unlinkSystemRelations(r.id, 'participated_in', personIds, { direction: 'in', otherType: 'person' });
     for (const src of r.sourceIds) {
       if (this.graph.getEntity(src)?.type === 'document')
         this.graph.link(src, r.id, 'supports', { confidence: Math.min(r.confidence, 0.8), status: 'proposed', sourceIds: [src] });
@@ -326,6 +370,10 @@ export class DecisionService {
     const oldRow = this.db.select().from(decisions).where(eq(decisions.id, oldId)).get();
     const newRow = this.db.select().from(decisions).where(eq(decisions.id, newId)).get();
     if (!oldRow || !newRow) throw new AppError('validation_error', 'Entscheidung nicht gefunden.');
+    // idempotent: superseding the same pair twice changes nothing (and logs nothing)
+    if (oldRow.status === 'superseded' && newRow.supersedesDecisionId === oldId) return { old: this.get(oldId), new: this.get(newId) };
+    if (oldRow.status === 'superseded' || oldRow.status === 'revoked')
+      throw new AppError('validation_error', 'Die ältere Entscheidung ist bereits überholt oder widerrufen.');
     const now = nowIso();
     let relationId = '';
     this.db.transaction(() => {

@@ -63,7 +63,7 @@ export default function SettingsPage() {
             />
           </TabsContent>
           <TabsContent value="privacy">
-            <PrivacyTab key={JSON.stringify(settings.privacy)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <PrivacyTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="profile">
             <ProfileTab key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
