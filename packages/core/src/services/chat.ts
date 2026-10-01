@@ -36,7 +36,7 @@ import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { EventService } from './events';
-import { ACTIVE_STATUSES, type OpenItemService } from './open-items';
+import { ACTIVE_STATUSES, matchOpenItems, type OpenItemService } from './open-items';
 import type { PrivacyService } from './privacy';
 import type { ReminderService } from './reminders';
 import type { ScannerService } from './scanner';
@@ -60,6 +60,7 @@ type Pending =
   | { kind: 'confirm_save'; text: string; intent: ChatIntent }
   | { kind: 'proposal_choice'; confirm: boolean; actionIds: string[] }
   | { kind: 'supersede_choice'; newDecisionId: string; candidateIds: string[] }
+  | { kind: 'open_item_choice'; text: string; intent: ChatIntent; candidateIds: string[] }
   | { kind: 'event'; title: string; description: string | null; topic: string | null; project: string | null; source: string };
 
 /** Kurz-IDs im Intent-Prompt (P1, E1, V1) → echte IDs. Vom LLM gelieferte unbekannte IDs werden verworfen. */
@@ -163,6 +164,12 @@ export function parseSaveChoice(text: string): SaveChoice | null {
   if (chosen.length > 1) return null;
   if (/\b(nichts|gar nicht|nicht speichern|verwerf\w*|vergiss)\b/.test(t)) return 'nothing';
   return shortAnswer(text) === 'no' ? 'nothing' : null;
+}
+
+/** Setzt den gewählten offenen Punkt als Ziel eines Anliegens (offener Punkt bzw. Erinnerung). */
+function withOpenItemTarget(intent: ChatIntent, id: string): ChatIntent {
+  if (intent.intent === 'reminder_create' || intent.intent === 'reminder_snooze') return { ...intent, reminder: { ...(intent.reminder ?? {}), targetId: id } };
+  return { ...intent, openItem: { ...(intent.openItem ?? {}), targetId: id } };
 }
 
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
@@ -437,6 +444,8 @@ export class ChatService {
     if (p.kind === 'event')
       return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum (dann intent=event_record, event.occurredAt als ISO-Datum, ohne eigenen Titel). Ein anderes Ereignis mit eigenem Titel ist keine Antwort.`;
     if (p.kind === 'proposal_choice') return 'keine';
+    if (p.kind === 'open_item_choice')
+      return `Der Agent hat gefragt, welcher offene Punkt gemeint ist (${p.candidateIds.map((id) => `„${this.openItemOrNull(id)?.title ?? '?'}“`).join(', ')}); die Antwort wertet er selbst aus.`;
     if (p.kind === 'supersede_choice')
       return `Der Agent hat gefragt, welche ältere Entscheidung durch „${this.decisions.get(p.newDecisionId).title}“ ersetzt wird; die Antwort wertet er selbst aus.`;
     if (p.kind === 'confirm_save')
@@ -555,6 +564,39 @@ export class ChatService {
     } catch {
       return null;
     }
+  }
+
+  /** Gemeinter offener Punkt: ID vom LLM, sonst eindeutiger Treffer zum Hinweis; mehrdeutig → Kandidaten für die Rückfrage. */
+  private targetOpenItem(targetId: string | null | undefined, hint: string | null | undefined): { item: OpenItem | null; ambiguous: OpenItem[] } {
+    const byId = this.openItemOrNull(targetId);
+    if (byId || !hint?.trim()) return { item: byId, ambiguous: [] };
+    const m = this.openItems.matchByHint(hint);
+    if (m.status === 'match') return { item: m.item, ambiguous: [] };
+    return { item: null, ambiguous: m.status === 'ambiguous' ? m.items : [] };
+  }
+
+  /** „Meinst du ‚A‘ oder ‚B‘?“ – Auswahl per Knopf, Nummer oder Titel; danach läuft das Anliegen weiter. */
+  private askWhichOpenItem(text: string, intent: ChatIntent, candidates: OpenItem[], state: ConvState): Reply {
+    const names = candidates.map((c) => `‚${c.title}‘`);
+    return {
+      intent: intent.intent,
+      content: `Meinst du ${names.slice(0, -1).join(', ')} oder ${names.at(-1)}?`,
+      quickReplies: candidates.map((c) => c.title),
+      context: { openItems: candidates.map((c) => ({ type: 'task' as const, id: c.id, label: c.title })) },
+      confidence: 0.5,
+      state: { ...state, pending: { kind: 'open_item_choice', text, intent, candidateIds: candidates.map((c) => c.id) } },
+    };
+  }
+
+  private answerOpenItemChoice(text: string, p: Extract<Pending, { kind: 'open_item_choice' }>): OpenItem | null {
+    const candidates = p.candidateIds.map((id) => this.openItemOrNull(id)).filter((x): x is OpenItem => Boolean(x));
+    const t = normalizeName(text);
+    const num = /^(?:nummer\s+|nr\s+)?(\d+)$/.exec(t)?.[1];
+    if (num) return candidates[Number(num) - 1] ?? null;
+    const exact = candidates.find((c) => normalizeName(c.title) === t);
+    if (exact) return exact;
+    const m = matchOpenItems(text, candidates);
+    return m.status === 'match' ? m.item : null;
   }
 
   /** Notfall-Fallback ohne LLM (nur wenn der Endpunkt nicht erreichbar/konfiguriert ist). */
@@ -729,6 +771,14 @@ export class ChatService {
       const chosen = this.answerProposalChoice(text, state.pending);
       state = { ...state, pending: null };
       if (chosen) return this.resolveProposal(chosen.action, chosen.confirm, state);
+    }
+    // Antwort auf „Meinst du ‚A‘ oder ‚B‘?“: das ursprüngliche Anliegen läuft mit dem gewählten Punkt weiter
+    if (state.pending?.kind === 'open_item_choice') {
+      const p = state.pending;
+      state = { ...state, pending: null };
+      const chosen = this.answerOpenItemChoice(text, p);
+      if (chosen)
+        return this.runWork(conv, [{ text: p.text, intent: withOpenItemTarget(p.intent, chosen.id) }], state.queue ?? [], { ...state, queue: [] }, true, null);
     }
     // Antwort auf „Welche Entscheidung wird ersetzt?“
     if (state.pending?.kind === 'supersede_choice') {
@@ -1651,11 +1701,9 @@ export class ChatService {
   private async openItemUpdate(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const oi = intent.openItem ?? {};
     const pending = state.pending?.kind === 'open_item' ? state.pending : null;
-    const item = pending
-      ? this.openItems.get(pending.openItemId)
-      : this.openItemOrNull(oi.targetId) ||
-        (oi.targetHint && this.openItems.findByHint(oi.targetHint)) ||
-        (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+    const target = pending ? { item: this.openItems.get(pending.openItemId), ambiguous: [] } : this.targetOpenItem(oi.targetId, oi.targetHint);
+    if (target.ambiguous.length) return this.askWhichOpenItem(text, intent, target.ambiguous, state);
+    const item = target.item ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
     if (!item) return { intent: 'open_item_update', content: 'Welchen offenen Punkt meinst du? Nenne bitte den Titel.', confidence: 0.3, state };
     const patch: Parameters<OpenItemService['update']>[1] = {};
     if (oi.responsible) patch.responsible = oi.responsible;
@@ -1687,10 +1735,9 @@ export class ChatService {
 
   private async openItemClose(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const hint = intent.openItem?.targetHint ?? text;
-    const item =
-      this.openItemOrNull(intent.openItem?.targetId) ??
-      this.openItems.findByHint(hint) ??
-      (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+    const target = this.targetOpenItem(intent.openItem?.targetId, hint);
+    if (target.ambiguous.length) return this.askWhichOpenItem(text, intent, target.ambiguous, state);
+    const item = target.item ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
     if (!item) return { intent: 'open_item_close', content: 'Welchen offenen Punkt soll ich schließen? Nenne bitte den Titel.', confidence: 0.3, state };
     const dismiss = intent.openItem?.newStatus === 'dismissed';
     const action = this.actions.propose({
@@ -1717,13 +1764,12 @@ export class ChatService {
   private async reminderFlow(text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const r = intent.reminder ?? {};
     const pending = state.pending?.kind === 'reminder' ? state.pending : null;
+    const named = pending?.targetId ? { item: null, ambiguous: [] } : this.targetOpenItem(r.targetId, r.targetHint);
+    if (named.ambiguous.length) return this.askWhichOpenItem(text, intent, named.ambiguous, state);
     const when = normalizeDateInput(r.remindAt ?? null) ?? parseGermanDate(r.relativeText ?? text);
     if (!when) {
       // Rückfrage merken, damit die Antwort („31.10.“) im Kontext verstanden wird
-      const target =
-        this.openItemOrNull(r.targetId) ??
-        (r.targetHint ? this.openItems.findByHint(r.targetHint) : null) ??
-        (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
+      const target = named.item ?? (state.last?.openItemId ? this.openItems.get(state.last.openItemId) : null);
       const title = pending?.title ?? target?.title ?? r.title?.trim() ?? truncate(text, 80);
       return {
         intent: intent.intent,
@@ -1742,7 +1788,7 @@ export class ChatService {
       };
     }
     state = { ...state, pending: null };
-    const hinted = this.openItemOrNull(r.targetId) ?? (r.targetHint ? this.openItems.findByHint(r.targetHint) : null);
+    const hinted = named.item;
     const item =
       (pending?.targetId ? this.openItems.get(pending.targetId) : null) ??
       hinted ??
