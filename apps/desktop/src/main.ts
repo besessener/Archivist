@@ -2,6 +2,7 @@ import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
 import { createHandlers, createIpcDispatcher, createServices, type HostApi, type SecretCipher, type Services } from '@archivist/core';
 import { IPC_CHANNELS, type AppNotification } from '@archivist/shared';
+import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
 /**
@@ -17,7 +18,17 @@ if (process.env.ARCHIVIST_DATA_DIR) app.setPath('userData', path.join(process.en
 
 let services: Services | null = null;
 let mainWindow: BrowserWindow | null = null;
-let shuttingDown = false;
+
+/** Quitting interrupts running jobs (they resume after the next start) and exits after a bounded time. */
+const quitter = new QuitController({
+  shutdown: () => services?.shutdown({ jobTimeoutMs: JOB_INTERRUPT_TIMEOUT_MS }) ?? Promise.resolve(),
+  exit: (code) => app.exit(code),
+  relaunch: () => app.relaunch(),
+  log: (message, error) =>
+    process.stderr.write(
+      `[archivist] ${message}${error === undefined ? '' : `: ${error instanceof Error ? (error.stack ?? error.message) : JSON.stringify(error)}`}\n`,
+    ),
+});
 
 const dataRoot = () => process.env.ARCHIVIST_DATA_DIR ?? path.join(app.getPath('documents'), 'Archivist');
 const resource = (...p: string[]) => path.join(__dirname, ...p);
@@ -89,10 +100,7 @@ function forwardEvents(svc: Services): void {
     send('notification:new', n);
     if (svc.settings.get().notifications.desktop && Notification.isSupported()) {
       const note = new Notification({ title: n.title, body: n.description.slice(0, 200), silent: n.priority === 'low' });
-      note.on('click', () => {
-        mainWindow?.show();
-        mainWindow?.focus();
-      });
+      note.on('click', showMainWindow);
       note.show();
     }
   });
@@ -133,6 +141,18 @@ function createWindow(): void {
     mainWindow = null;
   });
   void mainWindow.loadURL(isDev ? process.env.ARCHIVIST_DEV_URL! : `${APP_ORIGIN}/chat/`);
+}
+
+/** Brings the main window to the front, or opens a new one if there is none (e.g. after it was closed). */
+function showMainWindow(): void {
+  if (quitter.quitting || !services) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 function buildMenu(): void {
@@ -188,10 +208,9 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    // started again while quitting: the new instance has already given up, so start anew once this one has exited
+    if (quitter.quitting) quitter.requestRelaunch();
+    else showMainWindow(); // before `start` has run (services not ready) the window opens there anyway
   });
   app
     .whenReady()
@@ -206,16 +225,12 @@ if (!app.requestSingleInstanceLock()) {
     app.quit();
   });
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && services) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) showMainWindow();
   });
   app.on('before-quit', (e) => {
-    if (shuttingDown || !services) return;
+    if (!services) return;
     e.preventDefault();
-    shuttingDown = true;
-    services
-      .shutdown()
-      .catch(() => undefined)
-      .finally(() => app.exit(0));
+    void quitter.quit();
   });
   process.on('uncaughtException', (err) => services?.logger.error('process', 'uncaughtException', { error: err }));
   process.on('unhandledRejection', (err) => services?.logger.error('process', 'unhandledRejection', { error: err }));

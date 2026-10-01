@@ -23,7 +23,7 @@ import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
 import { classifyLocally, humanizeCategoryPath, normalizeIsoDates, snapToKnown } from './classifier';
-import { isJobCancelled, type JobQueueService } from './jobs';
+import { isJobCancelled, isJobInterrupted, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { NotificationService } from './notifications';
@@ -526,7 +526,8 @@ export class DocumentService {
       return await this.runAnalysis(row, opts);
     } catch (err) {
       if (isJobCancelled(err)) {
-        this.markAnalysisCancelled(id);
+        // interrupted on quit: the document stays `analyzing`, its job runs again after the next start
+        if (!isJobInterrupted(err)) this.markAnalysisCancelled(id);
         throw err;
       }
       // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
