@@ -21,16 +21,47 @@ export interface LocalClassification {
   rationale: string;
 }
 
+/**
+ * Keywords only match at the start of a word ("Reise", "Reisekosten"), never in the middle ("Preise").
+ * Letters and digits (including umlauts) count as word characters, so "_" or "-" in file names separate words.
+ */
+const keywordPattern = (keywords: string[]): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])(?:${keywords.join('|')})`, 'iu');
+
 const RULES: Array<{ re: RegExp; path: (year: string) => string; type: string; weight: number }> = [
-  { re: /urlaub|reise|flug|hotel|buchungsbest/i, path: (y) => `private/vacation/${y}`, type: 'Urlaub/Reise', weight: 0.7 },
-  { re: /steuer|finanzamt|steuererkl/i, path: (y) => `private/finance/taxes/${y}`, type: 'Steuerdokument', weight: 0.75 },
-  { re: /versicherung|police|schadenmeldung/i, path: () => 'private/insurance', type: 'Versicherung', weight: 0.7 },
-  { re: /miete|mietvertrag|hauskauf|immobilie|nebenkosten|grundbuch|baufinanz/i, path: () => 'private/housing', type: 'Wohnen', weight: 0.7 },
-  { re: /arzt|diagnose|rezept|krankenkasse|befund|gesundheit/i, path: () => 'private/health', type: 'Gesundheit', weight: 0.7 },
-  { re: /protokoll|meeting|jour\s?fixe|besprechung|agenda|teilnehmer/i, path: (y) => `work/meetings/${y}`, type: 'Protokoll', weight: 0.65 },
-  { re: /vertrag|vereinbarung|kündigungsfrist|vertragspartner|auftragnehmer/i, path: () => 'work/contracts', type: 'Vertrag', weight: 0.6 },
-  { re: /architektur|systemdesign|schnittstelle|komponenten|adr\b|technische\s+konzept/i, path: () => 'work/architecture', type: 'Architektur', weight: 0.6 },
-  { re: /rechnung|invoice|zahlungsziel|rechnungsnummer/i, path: (y) => `private/finance/invoices/${y}`, type: 'Rechnung', weight: 0.6 },
+  { re: keywordPattern(['urlaub', 'reise', 'flug', 'hotel', 'buchungsbest']), path: (y) => `private/vacation/${y}`, type: 'Urlaub/Reise', weight: 0.7 },
+  { re: keywordPattern(['steuer', 'finanzamt', 'steuererkl']), path: (y) => `private/finance/taxes/${y}`, type: 'Steuerdokument', weight: 0.75 },
+  { re: keywordPattern(['versicherung', 'police', 'schadenmeldung']), path: () => 'private/insurance', type: 'Versicherung', weight: 0.7 },
+  {
+    re: keywordPattern(['miete', 'mietvertrag', 'hauskauf', 'immobilie', 'nebenkosten', 'grundbuch', 'baufinanz']),
+    path: () => 'private/housing',
+    type: 'Wohnen',
+    weight: 0.7,
+  },
+  { re: keywordPattern(['arzt', 'diagnose', 'rezept', 'krankenkasse', 'befund', 'gesundheit']), path: () => 'private/health', type: 'Gesundheit', weight: 0.7 },
+  {
+    re: keywordPattern(['protokoll', 'meeting', 'jour\\s?fixe', 'besprechung', 'agenda', 'teilnehmer']),
+    path: (y) => `work/meetings/${y}`,
+    type: 'Protokoll',
+    weight: 0.65,
+  },
+  {
+    re: keywordPattern(['vertrag', 'vereinbarung', 'kündigungsfrist', 'vertragspartner', 'auftragnehmer']),
+    path: () => 'work/contracts',
+    type: 'Vertrag',
+    weight: 0.6,
+  },
+  {
+    re: keywordPattern(['architektur', 'systemdesign', 'schnittstelle', 'komponenten', 'adr(?![\\p{L}\\p{N}])', 'technische\\s+konzept']),
+    path: () => 'work/architecture',
+    type: 'Architektur',
+    weight: 0.6,
+  },
+  {
+    re: keywordPattern(['rechnung', 'invoice', 'zahlungsziel', 'rechnungsnummer']),
+    path: (y) => `private/finance/invoices/${y}`,
+    type: 'Rechnung',
+    weight: 0.6,
+  },
 ];
 
 const TYPE_FOLDERS = new Set([
