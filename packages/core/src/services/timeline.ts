@@ -9,10 +9,14 @@ export interface TimelineQuery {
   projectId?: string;
   from?: string;
   to?: string;
+  /** Maximum number of entries; the newest ones are kept (default 300). */
   limit?: number;
 }
 
-/** Chronologische Sicht auf Dokumente, Entscheidungen, offene Punkte und Widersprüche – jeder Eintrag verweist auf seine Objekte. */
+/**
+ * Chronologische Sicht auf Dokumente, Entscheidungen, offene Punkte und Widersprüche – jeder Eintrag verweist auf seine Objekte.
+ * Returns the newest `limit` entries matching the filter, sorted oldest first.
+ */
 export class TimelineService {
   constructor(
     private readonly ctx: AppContext,
@@ -130,6 +134,9 @@ export class TimelineService {
         }
       }
     }
-    return out.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(0, q.limit ?? 300);
+    // Filter first (above), then keep the NEWEST `limit` entries; the result stays in chronological order.
+    const sorted = out.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    const limit = q.limit ?? 300;
+    return sorted.length > limit ? sorted.slice(sorted.length - limit) : sorted;
   }
 }

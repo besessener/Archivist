@@ -148,6 +148,8 @@ const SAVE_ANSWER_INTENTS = new Set<ChatIntent['intent']>([
   'decision_amend',
   'event_record',
 ]);
+/** Timeline queries in chat show at most this many (newest) entries. */
+const CHAT_TIMELINE_LIMIT = 300;
 const SAVE_QUICK_REPLIES = ['Entscheidung', 'Ereignis', 'Notiz', 'Nichts speichern'];
 const SAVE_OPTIONS: Array<[Exclude<SaveChoice, 'nothing'>, string]> = [
   ['decision', 'entscheidung'],
@@ -1820,13 +1822,15 @@ export class ChatService {
       projectId,
       from: normalizeDateInput(intent.timeRange?.from ?? null) ?? undefined,
       to: normalizeDateInput(intent.timeRange?.to ?? null) ?? undefined,
+      limit: CHAT_TIMELINE_LIMIT,
     });
     if (entries.length === 0)
       return { intent: 'timeline_query', content: `Für ${label} gibt es im gewählten Zeitraum keine Einträge.`, confidence: 0.4, state };
     const byYear = new Map<number, typeof entries>();
     for (const e of entries) byYear.set(e.year, [...(byYear.get(e.year) ?? []), e]);
     const body = [...byYear.entries()].map(([y, list]) => `**${y}**\n${list.map((e) => `• ${e.date}: ${e.title}`).join('\n')}`).join('\n\n');
-    const sources: SourceReference[] = entries.slice(0, 25).map((e, i) => ({
+    // The newest entries are the most relevant context for follow-up questions.
+    const sources: SourceReference[] = entries.slice(-25).map((e, i) => ({
       id: e.refs[0]?.id ?? e.id,
       type: e.refs[0]?.type ?? 'note',
       title: `${i + 1}. ${e.title}`,
@@ -1837,7 +1841,7 @@ export class ChatService {
     }));
     return {
       intent: 'timeline_query',
-      content: `Zeitverlauf für ${label}:\n\n${body}`,
+      content: `Zeitverlauf für ${label}${entries.length >= CHAT_TIMELINE_LIMIT ? ` (die neuesten ${CHAT_TIMELINE_LIMIT} Einträge)` : ''}:\n\n${body}`,
       sources,
       context: this.contextFromSources(sources),
       confidence: 0.8,

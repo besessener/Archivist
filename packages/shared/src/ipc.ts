@@ -104,7 +104,8 @@ export const TimelineQuery = z.object({
   projectId: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-  limit: z.number().int().min(1).max(1000).default(300),
+  /** Maximum number of entries; the newest ones are returned (chronologically sorted). */
+  limit: z.number().int().min(1).max(10000).default(300),
 });
 
 const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benutzers (Pflicht)');
