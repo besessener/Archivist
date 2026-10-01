@@ -27,6 +27,10 @@ const PROMPTS = [
 
 const ACCEPT = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.markdown,.eml,.png,.jpg,.jpeg';
 
+const MIN_INPUT_HEIGHT = 36;
+/** Höchsthöhe des Eingabefelds: 60 % der Fensterhöhe (beim Vorab-Rendern ohne Fenster ein fester Wert). */
+const maxInputHeight = () => (typeof window === 'undefined' ? 600 : Math.round(window.innerHeight * 0.6));
+
 export default function ChatPage() {
   const { importFiles, setContextMessage } = useApp();
   const { run } = useRun();
@@ -72,8 +76,8 @@ export default function ChatPage() {
     e.preventDefault();
     const startY = e.clientY;
     const startH = el.clientHeight;
-    const max = window.innerHeight * 0.6;
-    const move = (ev: PointerEvent) => setManualHeight(Math.round(Math.max(36, Math.min(max, startH + (startY - ev.clientY)))));
+    const max = maxInputHeight();
+    const move = (ev: PointerEvent) => setManualHeight(Math.round(Math.max(MIN_INPUT_HEIGHT, Math.min(max, startH + (startY - ev.clientY)))));
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -86,7 +90,7 @@ export default function ChatPage() {
     const el = inputRef.current;
     if (!el || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
     e.preventDefault();
-    setManualHeight(Math.round(Math.max(36, Math.min(window.innerHeight * 0.6, el.clientHeight + (e.key === 'ArrowUp' ? 24 : -24)))));
+    setManualHeight(Math.round(Math.max(MIN_INPUT_HEIGHT, Math.min(maxInputHeight(), el.clientHeight + (e.key === 'ArrowUp' ? 24 : -24)))));
   }
 
   useEffect(() => {
@@ -260,6 +264,10 @@ export default function ChatPage() {
         <div
           role="separator"
           aria-orientation="horizontal"
+          // Ein fokussierbarer Trenner braucht aria-valuenow; ohne manuelle Einstellung wächst das Feld automatisch (Mindesthöhe).
+          aria-valuemin={MIN_INPUT_HEIGHT}
+          aria-valuemax={maxInputHeight()}
+          aria-valuenow={manualHeight ?? MIN_INPUT_HEIGHT}
           aria-label="Höhe des Eingabefelds ändern (Pfeiltasten hoch/runter, Doppelklick setzt zurück)"
           // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Window Splitter ist ein fokussierbares Widget
           tabIndex={0}
