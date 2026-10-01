@@ -155,6 +155,71 @@ describe('Archivierung durch Kopieren', () => {
   });
 });
 
+describe('Undo nach Archivierung einer gescannten Datei (Original bleibt am Quellort)', () => {
+  async function scanOne(name: string, content: string) {
+    app.services.settings.update({ scan: { enabled: true } });
+    const dl = path.join(app.home, 'Downloads');
+    const src = app.file(`Downloads/${name}`, content);
+    await app.ok('scanner:addDirectory', { path: dl, recursive: true });
+    await app.ok('scanner:start', {});
+    await app.services.jobs.whenIdle();
+    const f = (await app.ok('scanner:getResults', {})).files.find((x) => x.name === name)!;
+    await app.ok('scanner:analyze', { fileIds: [f.id], confirmLlm: true });
+    await app.services.jobs.whenIdle();
+    const doc = (await app.ok('documents:list', {})).find((d) => d.originalName === name)!;
+    return { src, dl, id: doc.id };
+  }
+
+  it('Original unverändert: Undo entfernt nur die Archivkopie', async () => {
+    const a = await scanOne('gleich.txt', 'Unveränderter Inhalt aus den Downloads');
+    const res = await archive([{ documentId: a.id, mode: 'copy' }]);
+    const target = res.items[0]!.targetPath!;
+    const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
+    expect(undo.undone).toBe(true);
+    expect(fs.existsSync(target)).toBe(false);
+    expect(fs.readdirSync(a.dl)).toEqual(['gleich.txt']);
+  });
+
+  it('Original nach dem Kopieren bearbeitet: Undo legt die archivierte Fassung als „Name (2).ext“ zurück und löscht nichts', async () => {
+    const a = await scanOne('bericht.txt', 'Archivierte Fassung des Berichts');
+    const res = await archive([{ documentId: a.id, mode: 'copy' }]);
+    const target = res.items[0]!.targetPath!;
+    fs.writeFileSync(a.src, 'Später bearbeitete Fassung des Berichts');
+    const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
+    expect(undo.undone).toBe(true);
+    expect(undo.message).toContain('bericht (2).txt');
+    // the edited original stays untouched, the archived version is not lost
+    expect(fs.readFileSync(a.src, 'utf8')).toBe('Später bearbeitete Fassung des Berichts');
+    const restored = path.join(a.dl, 'bericht (2).txt');
+    expect(fs.readFileSync(restored, 'utf8')).toBe('Archivierte Fassung des Berichts');
+    expect(fs.existsSync(target)).toBe(false);
+    const doc = await app.ok('documents:get', { id: a.id });
+    expect(doc.status).not.toBe('archived');
+    expect(doc.archiveRelPath).toBeNull();
+    expect(doc.sourcePath).toBe(fs.realpathSync(restored));
+  });
+
+  it('Original nach dem Kopieren gelöscht: Undo legt die archivierte Fassung unter dem ursprünglichen Namen zurück', async () => {
+    const a = await scanOne('weg.txt', 'Inhalt, dessen Original gelöscht wird');
+    const res = await archive([{ documentId: a.id, mode: 'copy' }]);
+    fs.unlinkSync(a.src);
+    const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
+    expect(undo.undone).toBe(true);
+    expect(fs.readFileSync(a.src, 'utf8')).toBe('Inhalt, dessen Original gelöscht wird');
+    expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(false);
+  });
+
+  it('Ursprünglicher Ordner fehlt: Undo wird abgelehnt und die archivierte Fassung bleibt erhalten', async () => {
+    const a = await scanOne('ordner.txt', 'Inhalt, dessen Ordner verschwindet');
+    const res = await archive([{ documentId: a.id, mode: 'copy' }]);
+    fs.rmSync(a.dl, { recursive: true });
+    const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
+    expect(undo.undone).toBe(false);
+    expect(undo.conflicts.join(' ')).toMatch(/ursprüngliche Ordner existiert nicht mehr/);
+    expect(fs.readFileSync(res.items[0]!.targetPath!, 'utf8')).toBe('Inhalt, dessen Ordner verschwindet');
+  });
+});
+
 describe('Archivzustand und Verarbeitungsstatus', () => {
   it('vergleicht Datenbank und Dateisystem', async () => {
     const a = await importOne('v.txt', 'Verifikationsdokument Inhalt');
