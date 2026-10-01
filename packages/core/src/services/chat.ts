@@ -1435,6 +1435,7 @@ export class ChatService {
       .select({ actionIds: messages.actionIds })
       .from(messages)
       .where(eq(messages.conversationId, conv))
+      .orderBy(asc(messages.createdAt))
       .all()
       .flatMap((m) => m.actionIds);
     return this.actions.openInConversation(conv, shown);

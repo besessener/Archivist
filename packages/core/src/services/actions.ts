@@ -114,12 +114,11 @@ export class ActionService {
   }
 
   /**
-   * Offene Vorschläge, die in dieser Unterhaltung als Karte angezeigt wurden und dort entstanden sind (neueste zuerst).
-   * Vorschläge anderer Quellen (Archivprüfung, Insights, andere Unterhaltungen) sind hier nie enthalten.
+   * Offene Vorschläge, die in dieser Unterhaltung als Karte angezeigt wurden und dort entstanden sind – in der
+   * Reihenfolge der Anzeige. Vorschläge anderer Quellen (Archivprüfung, Insights, andere Unterhaltungen) sind nie enthalten.
    */
   openInConversation(conversationId: string, shownActionIds: string[]): StoredAgentAction[] {
-    const shown = new Set(shownActionIds);
-    return this.list('proposed').filter((a) => a.conversationId === conversationId && shown.has(a.id));
+    return this.getMany([...new Set(shownActionIds)]).filter((a) => a.status === 'proposed' && a.conversationId === conversationId);
   }
 
   async resolve(
