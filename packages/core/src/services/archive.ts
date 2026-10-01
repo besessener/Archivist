@@ -124,6 +124,10 @@ export interface ExecuteOptions {
 export class ArchiveService {
   private actions!: ActionService;
   private openItems!: OpenItemService;
+  /** Archive file operations (archive, relocate) currently running. */
+  private inFlight = 0;
+  /** True while the archive root is being changed; file operations are refused meanwhile. */
+  private rootChangeActive = false;
 
   constructor(
     private readonly ctx: AppContext,
@@ -136,8 +140,11 @@ export class ArchiveService {
     private readonly pool: WorkerPool,
     undo: UndoService,
   ) {
-    undo.register('archive_file', { check: (d) => this.undoCheck(d as UndoData), run: (d) => this.undoRun(d as UndoData) });
-    undo.register('archive_relocate', { check: (d) => this.relocateUndoCheck(d as RelocateUndoData), run: (d) => this.relocateUndoRun(d as RelocateUndoData) });
+    undo.register('archive_file', { check: (d) => this.undoCheck(d as UndoData), run: (d) => this.guarded(() => this.undoRun(d as UndoData)) });
+    undo.register('archive_relocate', {
+      check: (d) => this.relocateUndoCheck(d as RelocateUndoData),
+      run: (d) => this.guarded(() => this.relocateUndoRun(d as RelocateUndoData)),
+    });
   }
 
   wire(deps: { actions: ActionService; openItems: OpenItemService }): void {
@@ -151,6 +158,42 @@ export class ArchiveService {
 
   private get root() {
     return this.settings.get().archiveRoot;
+  }
+
+  /**
+   * Blocks archive file operations while the archive root is changed (moved or switched).
+   * Refuses while operations are still running; returns the function that lifts the block again.
+   */
+  beginRootChange(): () => void {
+    if (this.rootChangeActive) throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.');
+    if (this.inFlight > 0)
+      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuchen Sie es gleich noch einmal.', {
+        retryable: true,
+      });
+    this.rootChangeActive = true;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.rootChangeActive = false;
+    };
+  }
+
+  /** True while the archive root is being changed. */
+  isRootChangeActive(): boolean {
+    return this.rootChangeActive;
+  }
+
+  /** Runs an archive file operation unless the archive root is being changed right now. */
+  private async guarded<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.rootChangeActive)
+      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.', { retryable: true });
+    this.inFlight += 1;
+    try {
+      return await fn();
+    } finally {
+      this.inFlight -= 1;
+    }
   }
 
   createCategory(p: string, confirmed: boolean) {
@@ -298,6 +341,10 @@ export class ArchiveService {
 
   async execute(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
     if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
+    return this.guarded(() => this.executeAll(items, opts));
+  }
+
+  private async executeAll(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
     await this.cleanupInbox();
     const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
     for (const req of items) {
@@ -867,6 +914,10 @@ export class ArchiveService {
   /** Verschiebt bereits archivierte Dokumente in andere Archivordner. Erfordert ausdrückliche Bestätigung. */
   async relocate(items: RelocateRequest[], opts: { confirmed: boolean; trigger?: string }): Promise<ArchiveResult> {
     if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
+    return this.guarded(() => this.relocateAll(items, opts));
+  }
+
+  private async relocateAll(items: RelocateRequest[], opts: { trigger?: string }): Promise<ArchiveResult> {
     const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
     for (const req of items) {
       let outcome: ArchiveResult['items'][number];
@@ -1006,6 +1057,7 @@ export class ArchiveService {
   }
 
   private async relocateUndoCheck(d: RelocateUndoData): Promise<string[]> {
+    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
     const conflicts: string[] = [];
     const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
     if (!row) return ['Das Dokument existiert nicht mehr.'];
@@ -1083,6 +1135,7 @@ export class ArchiveService {
 
   // ---------- Undo ----------
   private async undoCheck(d: UndoData): Promise<string[]> {
+    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
     const conflicts: string[] = [];
     const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
     if (!row) return ['Das Dokument existiert nicht mehr.'];
