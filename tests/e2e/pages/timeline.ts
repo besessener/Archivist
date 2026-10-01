@@ -6,6 +6,7 @@ export function initTimeline(page: Page) {
     buttons: {
       addEvent: page.getByTestId('event-add'),
       saveEvent: page.getByTestId('event-save'),
+      loadOlder: page.getByTestId('timeline-load-older'),
     },
     inputs: {
       eventTitle: page.getByTestId('event-title'),
@@ -21,6 +22,19 @@ export function initTimeline(page: Page) {
       await locators.inputs.eventDate.fill(isoDate);
       await locators.buttons.saveEvent.click();
       await expect(entry(title)).toBeVisible();
+    },
+    /** Creates many dated events directly through the IPC bridge (much faster than the dialog). */
+    seedEvents: async (events: Array<{ title: string; occurredAt: string }>) => {
+      await page.evaluate(async (list) => {
+        const bridge = (window as unknown as { archivist: { invoke: (channel: string, input: unknown) => Promise<{ ok: boolean }> } }).archivist;
+        for (const e of list) {
+          const r = await bridge.invoke('events:create', e);
+          if (!r.ok) throw new Error(`events:create failed for ${e.title}`);
+        }
+      }, events);
+    },
+    loadOlder: async () => {
+      await locators.buttons.loadOlder.click();
     },
   };
   return Object.assign(pageObject(locators.entries, locators, interactions), { entry });
