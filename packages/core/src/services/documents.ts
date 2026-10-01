@@ -11,7 +11,7 @@ import {
 } from '@archivist/shared';
 import { and, desc, eq, inArray, like, ne, notInArray, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents, entities, scanFiles } from '../db/schema';
+import { documents, entities, scanFiles, scanRoots } from '../db/schema';
 import { MIME_BY_EXT } from '../parsers';
 import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
@@ -168,6 +168,7 @@ export class DocumentService {
       dates: r.dates,
       confidence: r.confidence,
       llmStatus: r.llmStatus as LlmStatus,
+      folderLlmAllowed: r.folderLlmAllowed,
       proposal: (r.proposal as DocumentProposal | null) ?? null,
       archiveMode: (r.archiveMode as DocumentRecord['archiveMode']) ?? null,
       textLength: r.extractedText.length,
@@ -320,7 +321,15 @@ export class DocumentService {
           });
           continue;
         }
-        const doc = this.insertDocument({ originalName: path.basename(real), ext, size: st.size, sha256: sha, sourcePath: real, stagedPath: staged });
+        const doc = this.insertDocument({
+          originalName: path.basename(real),
+          ext,
+          size: st.size,
+          sha256: sha,
+          sourcePath: real,
+          stagedPath: staged,
+          folderLlmAllowed: this.folderLlmAllowedFor(real),
+        });
         this.audit.log({
           action: 'document.import',
           actor: 'user',
@@ -378,6 +387,7 @@ export class DocumentService {
       stagedPath: q,
       status: 'quarantined',
       processingError: quarantineReason(ext),
+      folderLlmAllowed: this.folderLlmAllowedFor(real),
     });
     this.audit.log({
       action: 'document.quarantine',
@@ -450,6 +460,8 @@ export class DocumentService {
     sourcePath: string | null;
     stagedPath: string | null;
     llmStatus?: LlmStatus;
+    /** false: the file comes from a scan folder without LLM permission */
+    folderLlmAllowed?: boolean;
     status?: Extract<DocumentStatus, 'staged' | 'quarantined'>;
     processingError?: string | null;
   }): DocumentRecord {
@@ -478,6 +490,7 @@ export class DocumentService {
       dates: [],
       confidence: null,
       llmStatus: input.llmStatus ?? 'pending',
+      folderLlmAllowed: input.folderLlmAllowed ?? true,
       proposal: null,
       archiveMode: null,
       extractedText: '',
@@ -610,7 +623,7 @@ export class DocumentService {
     const text = parsed.text;
     const textHash = text.length > 200 ? sha256Text(normalizeName(text).slice(0, 20_000)) : null;
 
-    const decision = this.privacy.evaluate({ path: row.sourcePath ?? file, ext: row.ext, docExcluded: row.llmStatus === 'excluded' });
+    const decision = this.privacy.evaluateDocument({ ...row, sourcePath: row.sourcePath ?? file });
     const canUseLlm = opts.allowLlm && decision.allowed && this.llm.isConfigured() && text.trim().length > 0;
     const knownTopics = this.knownNames('topic');
     const knownProjects = this.knownNames('project');
@@ -710,7 +723,11 @@ export class DocumentService {
       analyzedBy: usedLlm ? 'llm' : 'local',
     };
 
-    const llmStatus: LlmStatus = usedLlm ? 'analyzed' : decision.allowed ? 'pending' : (decision.status ?? 'local_only');
+    // A folder lock is stored separately (folderLlmAllowed) and must not turn into a sticky per-document exclusion,
+    // otherwise releasing the folder again would not restore the document.
+    const folderLockOnly = !row.folderLlmAllowed && row.llmStatus !== 'excluded';
+    const blockedStatus = decision.status === 'excluded' && folderLockOnly ? 'local_only' : (decision.status ?? 'local_only');
+    const llmStatus: LlmStatus = usedLlm ? 'analyzed' : decision.allowed ? 'pending' : blockedStatus;
     const stored = this.db
       .update(documents)
       .set({
@@ -869,8 +886,50 @@ export class DocumentService {
       .where(eq(documents.id, id))
       .run();
     this.audit.log({ action: 'document.llmExclusion', actor: 'user', trigger: 'manual', confirmed: true, entityIds: [id], after: { excluded } });
+    // drop remote vectors of a now excluded document
+    if (excluded) void this.indexDocument(id);
     this.ctx.events.changed('documents');
     return this.get(id);
+  }
+
+  // ---------- Folder permission ----------
+  /** false if `p` lies inside a scan folder whose LLM permission is withdrawn. */
+  folderLlmAllowedFor(p: string): boolean {
+    const locked = this.db.select({ path: scanRoots.path }).from(scanRoots).where(eq(scanRoots.llmAllowed, false)).all();
+    return !locked.some((r) => this.privacy.paths.inside(r.path, p));
+  }
+
+  /**
+   * Stores the LLM permission of a scan folder on all documents found in it (via scan results or by path).
+   * When a folder is released again, documents that also lie in another locked folder stay locked.
+   * Remote vectors of newly locked documents are replaced by local ones. Returns the number of changed documents.
+   */
+  applyFolderPermission(rootId: string): number {
+    const root = this.db.select().from(scanRoots).where(eq(scanRoots.id, rootId)).get();
+    if (!root) return 0;
+    const linked = new Set(
+      this.db
+        .select({ documentId: scanFiles.documentId })
+        .from(scanFiles)
+        .where(eq(scanFiles.rootId, rootId))
+        .all()
+        .flatMap((f) => (f.documentId ? [f.documentId] : [])),
+    );
+    const rows = this.db
+      .select({ id: documents.id, sourcePath: documents.sourcePath, folderLlmAllowed: documents.folderLlmAllowed })
+      .from(documents)
+      .all()
+      .filter((d) => linked.has(d.id) || (d.sourcePath !== null && this.privacy.paths.inside(root.path, d.sourcePath)));
+    let changed = 0;
+    for (const d of rows) {
+      const allowed = root.llmAllowed && (d.sourcePath === null || this.folderLlmAllowedFor(d.sourcePath));
+      if (allowed === d.folderLlmAllowed) continue;
+      this.db.update(documents).set({ folderLlmAllowed: allowed }).where(eq(documents.id, d.id)).run();
+      if (!allowed) void this.indexDocument(d.id);
+      changed += 1;
+    }
+    if (changed) this.ctx.events.changed('documents');
+    return changed;
   }
 
   /** Aktualisiert den Suchindex für archivierte/indexierte Dokumente. */
@@ -893,13 +952,13 @@ export class DocumentService {
       ]
         .filter(Boolean)
         .join('\n');
-      const privacy = this.privacy.evaluate({ path: r.sourcePath, ext: r.ext, docExcluded: r.llmStatus === 'excluded' });
       await this.search.index({
         type: 'document',
         id,
         title: r.title,
         content: `${meta}\n\n${r.extractedText}`,
-        allowRemoteEmbedding: privacy.allowed && this.privacy.mode() !== 'local_only' && r.llmStatus === 'analyzed',
+        // Remote vectors only in mode „automatisch“; in „vorher fragen“ the index stays local (no unconfirmed transfer).
+        allowRemoteEmbedding: this.privacy.mode() === 'auto' && r.llmStatus === 'analyzed' && this.privacy.evaluateDocument(r).allowed,
       });
     } catch (err) {
       this.ctx.logger.warn('documents', 'Indexierung fehlgeschlagen', { documentId: id, error: err });

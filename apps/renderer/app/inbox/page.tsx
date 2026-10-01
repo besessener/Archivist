@@ -12,6 +12,7 @@ import { CheckboxField } from '@/components/ui/checkbox';
 import { Select } from '@/components/ui/select';
 import { ARCHIVE_MODE_SHORT } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
+import { useSettings } from '@/lib/use-settings';
 import type { DocRecord } from '@/lib/types';
 import type { ArchiveItemRequest, ArchiveMode, DocumentStatus } from '@archivist/shared';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,7 @@ export default function InboxPage() {
   const [edits, setEdits] = useState<Record<string, ArchiveEdit>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogItems, setDialogItems] = useState<ArchiveItemRequest[] | null>(null);
+  const { settings } = useSettings();
 
   const docs = useMemo(() => (data ?? []).filter((d) => INBOX_STATUSES.includes(d.status)), [data]);
   const shown = docs.filter((d) => filter === 'all' || d.status === filter);
@@ -140,6 +142,8 @@ export default function InboxPage() {
             }
             onArchive={() => openFor([d])}
             onChanged={() => void refetch()}
+            llmMode={settings?.privacy.llmMode ?? 'confirm'}
+            llmBaseUrl={settings?.llm.baseUrl ?? ''}
           />
         ))}
       </ul>
