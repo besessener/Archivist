@@ -4,6 +4,7 @@ import { DatabaseService, type MigrationStatus } from './db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from './context';
 import { ActionService } from './services/actions';
 import { ArchiveService } from './services/archive';
+import { ArchiveRootService } from './services/archive-root';
 import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
@@ -81,7 +82,8 @@ function buildServices(opts: CreateServicesOptions) {
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
   const graph = new KnowledgeGraphService(ctx, audit, undo);
-  const search = new SearchService(ctx, embedding, pool, () => privacy.mode() !== 'local_only' && llm.isConfigured());
+  // Search queries go to the embedding endpoint only in mode „automatisch“ – „vorher fragen“ uses local vectors only.
+  const search = new SearchService(ctx, embedding, pool, () => privacy.mode() === 'auto' && llm.isConfigured());
   const categories = new CategoryService(ctx);
   const jobs = new JobQueueService(ctx, { concurrency: opts.jobConcurrency ?? 2, retryBaseDelayMs: opts.jobRetryDelayMs });
   const notifications = new NotificationService(ctx);
@@ -103,6 +105,7 @@ function buildServices(opts: CreateServicesOptions) {
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
   const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, audit, notifications, pool, undo);
+  const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications);
@@ -229,6 +232,7 @@ function buildServices(opts: CreateServicesOptions) {
     actions,
     contradictions,
     archive,
+    archiveRoot,
     scanner,
     timeline,
     consistency,
