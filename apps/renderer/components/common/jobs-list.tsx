@@ -49,7 +49,15 @@ export function JobRow({ job, onChanged }: { job: JobRecord; onChanged?: () => v
       {job.status === 'running' &&
         (job.progress !== null ? <Progress value={Math.round(job.progress * 100)} aria-label={`Fortschritt ${job.label}`} /> : <ProgressIndeterminate />)}
       {job.progressMessage && active && <p className="text-xs text-muted-foreground">{job.progressMessage}</p>}
-      {job.error && <p className="break-words text-xs text-destructive">{job.error}</p>}
+      {job.error &&
+        (job.status === 'failed' ? (
+          <p className="break-words text-xs text-destructive">{job.error}</p>
+        ) : (
+          // an earlier attempt failed, but the job is not lost: a retry is waiting (or it was cancelled meanwhile)
+          <p className="break-words text-xs text-muted-foreground" data-testid="job-last-error">
+            Letzter Versuch fehlgeschlagen: {job.error}
+          </p>
+        ))}
       <div className="flex gap-2">
         {(job.status === 'failed' || job.status === 'cancelled') && (
           <Button

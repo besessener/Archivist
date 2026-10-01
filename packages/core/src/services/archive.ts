@@ -1165,6 +1165,7 @@ export class ArchiveService {
       for (const rid of d.relationIds) this.graph.deleteRelation(rid);
     });
     await this.docs.indexDocument(d.documentId);
+    this.ctx.events.emit('document:unarchived', { documentId: d.documentId });
     this.ctx.events.changed('documents', 'knowledge', 'status');
     if (putBackPath && path.basename(putBackPath) !== path.basename(this.putBackOrigin(d)!))
       return `Archivierung rückgängig gemacht. Am ursprünglichen Ort liegt inzwischen eine andere Fassung; sie bleibt unberührt, und die archivierte Fassung liegt jetzt als „${path.basename(putBackPath)}“ daneben. Es wurde nichts gelöscht.`;
