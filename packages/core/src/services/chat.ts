@@ -54,6 +54,8 @@ type Pending =
       clarifyTopic?: string | null;
       supersedes?: string | null;
       supersedesId?: string | null;
+      /** nur noch „Thema oder Projekt?“ offen – hält keine weiteren Anliegen auf */
+      optional?: boolean;
     }
   | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'>; optional?: boolean }
   | { kind: 'open_item_duplicate'; existingId: string; text: string; intent: ChatIntent }
@@ -98,6 +100,8 @@ interface Reply {
 
 const UNKNOWN_RE = /(wei(ß|ss)\s+(ich|man)\s+(nicht|nich)|unbekannt|keine\s+ahnung|nicht\s+bekannt|k\.?\s?a\.?$|egal|spielt\s+keine\s+rolle)/i;
 const TOPIC_KIND_RE = /\b(projekt|projektname)\b/i;
+const TOPIC_KIND_THEMA_RE = /\b(thema|themas)\b/i;
+const TOPIC_KIND_QUICK_REPLIES = ['Thema', 'Projekt'];
 
 const PENDING_ONLY_IF_FITS =
   'Die Nachricht KANN die Antwort darauf sein – aber nur, wenn sie inhaltlich dazu passt. Enthält sie ein anderes Anliegen, ignoriere die Rückfrage und ordne die Nachricht ganz normal ein.';
@@ -525,6 +529,8 @@ export class ChatService {
     if (!p) return 'keine';
     if (p.kind === 'decision') {
       const d = this.decisions.get(p.decisionId);
+      if (!p.asked.length && p.clarifyTopic)
+        return `Der Agent hat zur Entscheidung „${d.title}“ gefragt, ob „${p.clarifyTopic}“ ein Thema oder ein Projektname ist. ${PENDING_ONLY_IF_FITS} (dann intent=decision_amend mit decision.topicIsProject)`;
       return `Der Agent hat zur Entscheidung „${d.title}“ nach folgenden Angaben gefragt: ${p.asked.map((f) => DECISION_FIELD_LABELS[f]).join(', ') || '–'}${p.clarifyTopic ? `; außerdem, ob „${p.clarifyTopic}“ ein Thema oder ein Projektname ist` : ''}. ${PENDING_ONLY_IF_FITS} (dann intent=decision_amend)`;
     }
     if (p.kind === 'reminder') {
@@ -780,9 +786,14 @@ export class ChatService {
       const decision: NonNullable<ChatIntent['decision']> = { participants: [], alternatives: [], unknownFields: unknown ? asked : [], confidence: 0.4 };
       const first = asked[0];
       let fits = unknown;
-      if (pending.clarifyTopic && TOPIC_KIND_RE.test(t) && words(t) <= 8) {
-        decision.topicIsProject = true;
-        fits = true;
+      if (pending.clarifyTopic && words(t) <= 8) {
+        const isProject = TOPIC_KIND_RE.test(t);
+        const isTopic = TOPIC_KIND_THEMA_RE.test(t);
+        // nur eindeutige Antworten: „Projekt“ oder „Thema“, nicht beides
+        if (isProject !== isTopic) {
+          decision.topicIsProject = isProject;
+          fits = true;
+        }
       }
       if (!unknown && first === 'decidedAt' && words(t) <= 8) {
         decision.decidedAt = parseGermanDate(t);
@@ -991,7 +1002,7 @@ export class ChatService {
     const replies: Reply[] = [];
     let current: ConvState = { ...state, pending: null, queue: [] };
     let deferred: QueuedIntent[] = [];
-    // optionale Rückfragen (Verantwortlicher/Fälligkeit) halten keine weiteren Anliegen auf
+    // optionale Rückfragen (Verantwortlicher/Fälligkeit, „Thema oder Projekt?“) halten keine weiteren Anliegen auf
     let optional: Pending | null = null;
     for (let i = 0; i < work.length; i += 1) {
       const item = work[i]!;
@@ -1019,8 +1030,9 @@ export class ChatService {
       current = { ...(reply.state ?? current), queue: [] };
       // eine unverändert zurückgegebene alte Rückfrage ist erledigt, keine neue
       if (current.pending === old) current = { ...current, pending: null };
-      if (current.pending?.kind === 'open_item' && current.pending.optional) {
-        optional = current.pending;
+      if ((current.pending?.kind === 'open_item' || current.pending?.kind === 'decision') && current.pending.optional) {
+        // „Thema oder Projekt?“ hat Vorrang: die Frage bleibt gestellt, bis sie beantwortet ist
+        if (optional?.kind !== 'decision') optional = current.pending;
         current = { ...current, pending: null };
       }
       if (current.pending) {
@@ -1028,7 +1040,9 @@ export class ChatService {
         break;
       }
     }
-    if (!current.pending && optional) current = { ...current, pending: optional };
+    // eine noch unbeantwortete Frage „Thema oder Projekt?“ bleibt bestehen, auch wenn die Nachricht ein anderes Anliegen hatte
+    const keep = old?.kind === 'decision' && old.optional && !consumed ? old : null;
+    if (!current.pending && (optional || keep)) current = { ...current, pending: optional?.kind === 'decision' ? optional : (keep ?? optional) };
     if (clarification) replies.push({ intent: 'clarification', content: clarification, confidence: 0.3, state: current });
     if (old && !consumed && old.kind !== 'proposal_choice') {
       const hint = this.droppedHint(old);
@@ -1225,12 +1239,12 @@ export class ChatService {
     const topic = ex.topic?.trim() || null;
     let project = ex.project?.trim() || null;
     if (ex.topicIsProject === true && topic) project = project ?? topic;
-    const clarify =
-      ex.topicIsProject === null || ex.topicIsProject === undefined
-        ? isNew && topic && !project && intent.intent === 'decision_new' && ex.topicIsProject === null
-          ? topic
-          : null
-        : null;
+    let clarify = isNew && topic && !project && intent.intent === 'decision_new' && ex.topicIsProject === null ? topic : null;
+    // schon bekannte Namen nicht erfragen, sondern den vorhandenen Eintrag verwenden
+    if (clarify && this.graph.findByName('project', clarify)) {
+      project = clarify;
+      clarify = null;
+    } else if (clarify && this.graph.findByName('topic', clarify)) clarify = null;
 
     if (isNew) {
       const created = this.decisions.create(
@@ -1287,10 +1301,17 @@ export class ChatService {
     if (ex.validUntil) patch.validUntil = ex.validUntil;
     if (unknownFields.size) patch.unknownFields = [...unknownFields];
     const updated = this.decisions.update(t.id, patch, { trigger: 'chat' });
+    // „Thema oder Projekt?“ bleibt gestellt, bis sie beantwortet ist (oder ein anderes Thema genannt wurde)
+    const stillClarify =
+      pending?.clarifyTopic &&
+      (ex.topicIsProject === null || ex.topicIsProject === undefined) &&
+      (!topic || normalizeName(topic) === normalizeName(pending.clarifyTopic))
+        ? pending.clarifyTopic
+        : null;
     return this.afterDecisionChange(
       conv,
       updated,
-      { asked: [], clarifyTopic: null, supersedesHint: pending?.supersedes ?? null, supersedesId: pending?.supersedesId ?? null, newlyCreated: false },
+      { asked: [], clarifyTopic: stillClarify, supersedesHint: pending?.supersedes ?? null, supersedesId: pending?.supersedesId ?? null, newlyCreated: false },
       state,
       viaLlm,
     );
@@ -1369,10 +1390,17 @@ export class ChatService {
         }
       }
     }
+    // „Thema oder Projekt?“ auch bei sonst vollständiger Entscheidung – die Frage blockiert keine weiteren Anliegen
+    const clarify = !next && opts.clarifyTopic ? opts.clarifyTopic : null;
+    if (clarify) {
+      lines.push(`Ist „${clarify}“ das Thema oder der Name des Projekts?`);
+      next = { kind: 'decision', decisionId: d.id, asked: [], clarifyTopic: clarify, optional: true };
+    }
     const uncertainties = d.unknownFields.map((f) => `${DECISION_FIELD_LABELS[f]}: als unbekannt bestätigt`);
     return {
       intent: 'decision_new',
       content: `Die Entscheidung ist gespeichert.\n\n${this.decisions.format(d)}${lines.length ? `\n\n${lines.join('\n')}` : ''}`,
+      ...(clarify ? { quickReplies: TOPIC_KIND_QUICK_REPLIES } : {}),
       sources: [this.decisionSource(d)],
       context: { ...this.decisionContext(d), contradictions: conflicts.map((c) => ({ type: 'decision' as const, id: c.id, label: c.title })) },
       actions,
