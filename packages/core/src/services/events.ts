@@ -1,10 +1,11 @@
 import type { EventInput, EventRecord } from '@archivist/shared';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray, like } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, events } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
+import { normalizeName } from '../util/text';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
@@ -102,6 +103,26 @@ export class EventService {
     void this.reindex(row.id);
     this.ctx.events.changed('events', 'knowledge', 'status');
     return this.get(row.id);
+  }
+
+  /** Finds an event with the same (normalised) title on the same day. */
+  findIdentical(title: string, occurredAt: string): EventRecord | undefined {
+    const day = normalizeDateInput(occurredAt)?.slice(0, 10);
+    const norm = normalizeName(title);
+    if (!day || !norm) return undefined;
+    const hit = this.db
+      .select()
+      .from(events)
+      .where(like(events.occurredAt, `${day}%`))
+      .all()
+      .find((r) => normalizeName(r.title) === norm);
+    return hit ? this.map(hit) : undefined;
+  }
+
+  /** Like `create`, but returns an identical existing event (same title, same day) instead of a duplicate. */
+  createUnlessExists(input: EventInput, ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {}): { event: EventRecord; created: boolean } {
+    const existing = this.findIdentical(input.title, input.occurredAt);
+    return existing ? { event: existing, created: false } : { event: this.create(input, ctxInfo), created: true };
   }
 
   update(id: string, patch: Partial<EventInput>): EventRecord {
