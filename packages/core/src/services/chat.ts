@@ -22,7 +22,7 @@ import { newId, nowIso } from '../util/ids';
 import type { ArchivistJson } from '../util/json';
 import { normalizeDateInput, parseGermanDate } from '../util/dates';
 import { isInside, sanitizeCategoryPath } from '../util/paths';
-import { normalizeName, truncate } from '../util/text';
+import { nameSimilarity, normalizeName, truncate } from '../util/text';
 import type { ActionService } from './actions';
 import type { ArchiveService } from './archive';
 import { chooseTargetFolder, folderLabel, folderOf, groupByFolder, splitSubjects, type FolderGroup } from './archive-structure';
@@ -79,6 +79,40 @@ interface Reply {
 
 const UNKNOWN_RE = /(wei(ß|ss)\s+(ich|man)\s+(nicht|nich)|unbekannt|keine\s+ahnung|nicht\s+bekannt|k\.?\s?a\.?$|egal|spielt\s+keine\s+rolle)/i;
 const TOPIC_KIND_RE = /\b(projekt|projektname)\b/i;
+
+const PENDING_ONLY_IF_FITS =
+  'Die Nachricht KANN die Antwort darauf sein – aber nur, wenn sie inhaltlich dazu passt. Enthält sie ein anderes Anliegen, ignoriere die Rückfrage und ordne die Nachricht ganz normal ein.';
+
+const INTENT_LABELS: Partial<Record<ChatIntent['intent'], string>> = {
+  decision_new: 'Entscheidung',
+  decision_amend: 'Entscheidung ergänzen',
+  decision_supersede: 'Entscheidung ersetzen',
+  note_capture: 'Notiz',
+  knowledge_question: 'Frage',
+  document_search: 'Dokumentsuche',
+  timeline_query: 'Zeitverlauf',
+  event_record: 'Ereignis',
+  open_item_new: 'offener Punkt',
+  open_item_update: 'offenen Punkt ändern',
+  open_item_close: 'offenen Punkt schließen',
+  reminder_create: 'Erinnerung',
+  reminder_snooze: 'Erinnerung verschieben',
+  archive_execute: 'Archivieren',
+  archive_status: 'Archivstatus',
+  archive_structure: 'Ablage prüfen',
+  archive_reorganize: 'Dokumente umlagern',
+  scan_start: 'Scan',
+  exclude_path: 'Ausschluss',
+  contradiction_check: 'Widerspruchsprüfung',
+  relation_decide: 'Beziehungen',
+};
+
+function describeIntent(i: ChatIntent): string {
+  const label = INTENT_LABELS[i.intent] ?? i.intent;
+  return i.segment?.trim() ? `${label}: „${truncate(i.segment.trim(), 80)}“` : label;
+}
+
+const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 
 const YES_START = new Set([
   'ja',
@@ -338,18 +372,18 @@ export class ChatService {
     if (!p) return 'keine';
     if (p.kind === 'decision') {
       const d = this.decisions.get(p.decisionId);
-      return `Der Agent hat zur Entscheidung „${d.title}“ nach folgenden Angaben gefragt: ${p.asked.map((f) => DECISION_FIELD_LABELS[f]).join(', ') || '–'}${p.clarifyTopic ? `; außerdem, ob „${p.clarifyTopic}“ ein Thema oder ein Projektname ist` : ''}. Die Nachricht ist sehr wahrscheinlich die Antwort darauf (intent=decision_amend), außer sie enthält erkennbar ein anderes Anliegen.`;
+      return `Der Agent hat zur Entscheidung „${d.title}“ nach folgenden Angaben gefragt: ${p.asked.map((f) => DECISION_FIELD_LABELS[f]).join(', ') || '–'}${p.clarifyTopic ? `; außerdem, ob „${p.clarifyTopic}“ ein Thema oder ein Projektname ist` : ''}. ${PENDING_ONLY_IF_FITS} (dann intent=decision_amend)`;
     }
     if (p.kind === 'reminder') {
-      return `Der Agent hat gefragt, WANN er an „${p.title}“ erinnern soll. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum wie „31.10.“ oder „nächsten Montag“ (intent=${p.snooze ? 'reminder_snooze' : 'reminder_create'}, reminder.remindAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
+      return `Der Agent hat gefragt, WANN er an „${p.title}“ erinnern soll. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum wie „31.10.“ oder „nächsten Montag“ (dann intent=${p.snooze ? 'reminder_snooze' : 'reminder_create'}, reminder.remindAt als ISO-Datum, ohne eigenen Titel).`;
     }
     if (p.kind === 'event')
-      return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. Die Nachricht ist sehr wahrscheinlich die Antwort darauf, meist nur ein Datum (intent=event_record, event.occurredAt als ISO-Datum), außer sie enthält erkennbar ein anderes Anliegen.`;
+      return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${p.title}“ stattfand. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum (dann intent=event_record, event.occurredAt als ISO-Datum, ohne eigenen Titel). Ein anderes Ereignis mit eigenem Titel ist keine Antwort.`;
     if (p.kind === 'proposal_choice') return 'keine';
     if (p.kind === 'confirm_save')
       return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Die Nachricht ist wahrscheinlich die Antwort darauf; sie wird vom Agenten gesondert ausgewertet.`;
     const i = this.openItems.get(p.openItemId);
-    return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. Die Nachricht ist wahrscheinlich die Antwort (intent=open_item_update).`;
+    return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. ${PENDING_ONLY_IF_FITS} (dann intent=open_item_update ohne targetHint)`;
   }
 
   private historyHint(conv: string): string {
@@ -391,38 +425,13 @@ export class ChatService {
   ruleBased(text: string, state: ConvState): ChatIntent {
     const t = text.trim();
     const base = { confidence: 0.45, rationale: 'Regelbasierte Erkennung (LLM nicht verfügbar).' };
-    const pending = state.pending;
-    if (pending?.kind === 'decision') {
-      const unknown = UNKNOWN_RE.test(t) ? pending.asked : [];
-      const asked = pending.asked;
-      const decision: NonNullable<ChatIntent['decision']> = { participants: [], alternatives: [], unknownFields: unknown, confidence: 0.4 };
-      const first = asked[0];
-      if (!unknown.length && first === 'decidedAt') decision.decidedAt = parseGermanDate(t);
-      else if (!unknown.length && first === 'participants')
-        decision.participants = t
-          .split(/,|\bund\b|&|;/i)
-          .map((s) => s.replace(/^(mit|von|zusammen mit)\s+/i, '').trim())
-          .filter(Boolean);
-      else if (!unknown.length && first === 'topic') decision.topic = t.replace(/^(es\s+geht\s+um|thema:?)\s*/i, '').trim();
-      else if (!unknown.length && first === 'decisionText') decision.decisionText = t;
-      if (pending.clarifyTopic && TOPIC_KIND_RE.test(t)) decision.topicIsProject = true;
-      return { ...base, intent: 'decision_amend', decision };
-    }
-    if (pending?.kind === 'reminder') {
-      const date = parseGermanDate(t);
-      if (date) return { ...base, intent: pending.snooze ? 'reminder_snooze' : 'reminder_create', reminder: { relativeText: t, remindAt: date } };
-    }
-    if (pending?.kind === 'event') {
-      const date = parseGermanDate(t);
-      if (date) return { ...base, intent: 'event_record', event: { title: pending.title, description: pending.description, occurredAt: date } };
-    }
-    if (pending?.kind === 'open_item') {
-      return {
-        ...base,
-        intent: 'open_item_update',
-        openItem: { dueAt: parseGermanDate(t), responsible: UNKNOWN_RE.test(t) ? null : t.replace(/^(verantwortlich(er)?:?|@)\s*/i, '').trim() },
-      };
-    }
+    const generic = this.ruleBasedIntent(t, base);
+    // als Antwort auf die Rückfrage gilt die Nachricht nur, wenn sie kein eigenes erkennbares Anliegen hat
+    const answer = state.pending && generic.intent === 'note_capture' ? this.ruleBasedAnswer(t, state.pending) : null;
+    return answer ? { ...base, ...answer } : generic;
+  }
+
+  private ruleBasedIntent(t: string, base: Pick<ChatIntent, 'confidence' | 'rationale'>): ChatIntent {
     const short = shortAnswer(t);
     if (short) return { ...base, intent: short === 'yes' ? 'proposal_confirm' : 'proposal_reject' };
     if (/\b(entschieden|beschlossen|entscheidung:)/i.test(t) && !/\?\s*$/.test(t)) {
@@ -472,6 +481,110 @@ export class ChatService {
     return { ...base, intent: 'note_capture', note: t };
   }
 
+  /**
+   * Ohne LLM gilt eine Nachricht nur dann als Antwort auf die offene Rückfrage, wenn sie kurz ist und dazu passt
+   * (Datum, Name, „unbekannt“). Sonst null: die Nachricht wird ganz normal eingeordnet.
+   */
+  private ruleBasedAnswer(t: string, pending: Pending): Omit<ChatIntent, 'confidence' | 'rationale'> | null {
+    const unknown = UNKNOWN_RE.test(t) && words(t) <= 8;
+    const looksLikeAnswer = words(t) <= 8 && !shortAnswer(t) && !/\?\s*$/.test(t);
+    if (pending.kind === 'decision') {
+      const asked = pending.asked;
+      const decision: NonNullable<ChatIntent['decision']> = { participants: [], alternatives: [], unknownFields: unknown ? asked : [], confidence: 0.4 };
+      const first = asked[0];
+      let fits = unknown;
+      if (pending.clarifyTopic && TOPIC_KIND_RE.test(t) && words(t) <= 8) {
+        decision.topicIsProject = true;
+        fits = true;
+      }
+      if (!unknown && first === 'decidedAt' && words(t) <= 8) {
+        decision.decidedAt = parseGermanDate(t);
+        fits = fits || Boolean(decision.decidedAt);
+      } else if (!unknown && first === 'participants' && looksLikeAnswer) {
+        decision.participants = t
+          .split(/,|\bund\b|&|;/i)
+          .map((x) => x.replace(/^(mit|von|zusammen mit)\s+/i, '').trim())
+          .filter(Boolean);
+        fits = fits || decision.participants.length > 0;
+      } else if (!unknown && first === 'topic' && looksLikeAnswer) {
+        decision.topic = t.replace(/^(es\s+geht\s+um|thema:?)\s*/i, '').trim();
+        fits = fits || Boolean(decision.topic);
+      } else if (!unknown && first === 'decisionText' && words(t) <= 60 && !shortAnswer(t) && !/\?\s*$/.test(t)) {
+        decision.decisionText = t;
+        fits = true;
+      }
+      return fits ? { intent: 'decision_amend', decision } : null;
+    }
+    if (pending.kind === 'reminder' || pending.kind === 'event') {
+      const date = words(t) <= 8 ? parseGermanDate(t) : null;
+      if (!date) return null;
+      return pending.kind === 'reminder'
+        ? { intent: pending.snooze ? 'reminder_snooze' : 'reminder_create', reminder: { relativeText: t, remindAt: date } }
+        : { intent: 'event_record', event: { title: pending.title, description: pending.description, occurredAt: date } };
+    }
+    if (pending.kind === 'open_item') {
+      if (words(t) > 10 || shortAnswer(t) || /\?\s*$/.test(t)) return null;
+      const parts = t
+        .split(/[,;]|\bund\b/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      const dueAt = parts.map((x) => parseGermanDate(x)).find(Boolean) ?? null;
+      const name = parts
+        .filter((x) => !parseGermanDate(x) && !UNKNOWN_RE.test(x))
+        .map((x) => x.replace(/^(verantwortlich(er)?:?|@)\s*/i, '').trim())
+        .find((x) => x && words(x) <= 4);
+      if (!dueAt && !name && !unknown) return null;
+      return { intent: 'open_item_update', openItem: { dueAt, responsible: name ?? null } };
+    }
+    return null;
+  }
+
+  /** Beantwortet diese Absicht die offene Rückfrage? Neue Ereignisse/Erinnerungen mit eigenem Titel tun das nicht. */
+  private answersPending(intent: ChatIntent, p: Pending): boolean {
+    const same = (a: string | null | undefined, b: string) => !a?.trim() || nameSimilarity(a, b) >= 0.6;
+    switch (p.kind) {
+      case 'decision':
+        return intent.intent === 'decision_amend';
+      case 'reminder':
+        return (
+          (intent.intent === 'reminder_create' || intent.intent === 'reminder_snooze') &&
+          same(intent.reminder?.title, p.title) &&
+          same(intent.reminder?.targetHint, p.title)
+        );
+      case 'event':
+        return intent.intent === 'event_record' && same(intent.event?.title, p.title);
+      case 'open_item': {
+        if (intent.intent !== 'open_item_update') return false;
+        const hint = intent.openItem?.targetHint;
+        return !hint?.trim() || this.openItems.findByHint(hint)?.id === p.openItemId;
+      }
+      default:
+        return false;
+    }
+  }
+
+  /** Sichtbarer Hinweis, wenn eine offene Rückfrage mit dieser Nachricht nicht beantwortet wurde und verfällt. */
+  private droppedHint(p: Pending): string | null {
+    switch (p.kind) {
+      case 'decision': {
+        const d = this.decisions.get(p.decisionId);
+        return d.status === 'draft'
+          ? `Die Entscheidung „${truncate(d.title, 80)}“ bleibt als Entwurf gespeichert; fehlende Angaben kannst du jederzeit ergänzen.`
+          : null;
+      }
+      case 'reminder':
+        return `Die Frage, wann ich an „${truncate(p.title, 80)}“ erinnern soll, habe ich verworfen – dazu ist keine Erinnerung angelegt.`;
+      case 'event':
+        return `Das Ereignis „${truncate(p.title, 80)}“ habe ich ohne Datum nicht eingetragen.`;
+      case 'open_item':
+        return `Die fehlenden Angaben zum offenen Punkt „${truncate(this.openItems.get(p.openItemId).title, 80)}“ kannst du jederzeit nachtragen.`;
+      case 'confirm_save':
+        return `Zu „${truncate(p.intent.segment ?? p.text, 80)}“ habe ich nichts gespeichert.`;
+      default:
+        return null;
+    }
+  }
+
   private async handle(conv: string, text: string, state: ConvState): Promise<Reply> {
     // Antwort auf „Welchen Vorschlag meinst du?“
     if (state.pending?.kind === 'proposal_choice') {
@@ -483,7 +596,6 @@ export class ChatService {
     if (state.pending?.kind === 'confirm_save') {
       const answered = await this.answerConfirmSave(conv, text, state, state.pending);
       if (answered) return answered;
-      state = { ...state, pending: null };
     }
     const { analysis, viaLlm, llmError } = await this.classify(conv, text, state);
     let reply = await this.runIntents(conv, text, analysis, state, viaLlm);
@@ -499,50 +611,83 @@ export class ChatService {
   }
 
   /** Ist es unklar, ob eine Entscheidung gespeichert werden soll? */
-  private needsDecisionConfirmation(intent: ChatIntent, state: ConvState): boolean {
-    if (intent.intent !== 'decision_new' || state.pending?.kind === 'decision') return false;
+  private needsDecisionConfirmation(intent: ChatIntent): boolean {
+    if (intent.intent !== 'decision_new') return false;
     return intent.decisionCertainty === 'unsure' || (intent.confidence < 0.55 && intent.decisionCertainty !== 'clear');
   }
 
   /**
-   * Führt alle erkannten Absichten nacheinander aus. Entsteht dabei eine Rückfrage, werden die übrigen Absichten
-   * zurückgestellt und nach der Antwort abgearbeitet. Unklare Entscheidungen werden nie ungefragt gespeichert.
+   * Führt alle erkannten Absichten nacheinander aus, danach die aus der letzten Nachricht zurückgestellten.
+   * Eine offene Rückfrage gilt nur für diese Nachricht und nur für die Absicht, die sie beantwortet; alle anderen
+   * Absichten sehen sie nicht. Entsteht eine neue Rückfrage, werden höchstens die Absichten danach zurückgestellt –
+   * mit sichtbarem Hinweis. Unklare Entscheidungen werden nie ungefragt gespeichert.
    */
   private async runIntents(conv: string, text: string, analysis: ChatAnalysis, state: ConvState, viaLlm: boolean): Promise<Reply> {
-    const intents = analysis.intents.filter((i, idx, all) => all.findIndex((o) => o.intent === i.intent && (o.segment ?? '') === (i.segment ?? '')) === idx);
-    const queue: QueuedIntent[] = (state.queue ?? []).slice();
-    const work: QueuedIntent[] = [...intents.map((intent) => ({ text, intent })), ...queue];
-    // Rückfrage statt Raten, wenn gar nichts erkannt wurde
-    if (analysis.clarification && intents.every((i) => i.intent === 'unknown' || i.intent === 'smalltalk')) {
-      return { intent: 'clarification', content: analysis.clarification, confidence: 0.3, state: { ...state, queue: [] } };
-    }
+    const intents = analysis.intents
+      .filter((i, idx, all) => all.findIndex((o) => o.intent === i.intent && (o.segment ?? '') === (i.segment ?? '')) === idx)
+      .filter((i) => !(analysis.clarification && (i.intent === 'unknown' || i.intent === 'smalltalk')));
+    const fresh: QueuedIntent[] = intents.map((intent) => ({ text, intent }));
+    return this.runWork(conv, fresh, state.queue ?? [], state, viaLlm, analysis.clarification ?? null);
+  }
+
+  private async runWork(
+    conv: string,
+    fresh: QueuedIntent[],
+    queued: QueuedIntent[],
+    state: ConvState,
+    viaLlm: boolean,
+    clarification: string | null,
+  ): Promise<Reply> {
+    const work = [...fresh, ...queued];
+    const old = state.pending ?? null;
+    let consumed = false;
     const replies: Reply[] = [];
-    let current: ConvState = { ...state, queue: [] };
+    let current: ConvState = { ...state, pending: null, queue: [] };
+    let deferred: QueuedIntent[] = [];
     for (let i = 0; i < work.length; i += 1) {
       const item = work[i]!;
-      // eine offene Rückfrage gehört zur ersten Absicht; weitere Absichten sehen sie nur, wenn sie dazu passen
-      if (this.needsDecisionConfirmation(item.intent, current)) {
-        const rest = work.slice(i + 1);
+      if (this.needsDecisionConfirmation(item.intent)) {
         const question =
-          analysis.clarification?.trim() ||
+          clarification?.trim() ||
           `Ich bin nicht sicher, ob das eine getroffene **Entscheidung** ist${item.intent.segment ? ` („${truncate(item.intent.segment, 140)}“)` : ''}. Soll ich sie als Entscheidung erfassen, als Ereignis in die Timeline eintragen, nur als Notiz festhalten oder nichts speichern?`;
-        current = { ...current, pending: { kind: 'confirm_save', text: item.text, intent: item.intent }, queue: rest };
+        clarification = null;
+        current = { ...current, pending: { kind: 'confirm_save', text: item.text, intent: item.intent } };
         replies.push({
           intent: 'clarification',
           content: `${question}\n\nAntworte mit „Entscheidung“, „Ereignis“, „Notiz“ oder „nichts speichern“.`,
           confidence: item.intent.confidence,
           state: current,
         });
+        deferred = work.slice(i + 1);
         break;
       }
-      const reply = await this.dispatch(conv, item.text, item.intent, current, viaLlm);
+      // nur die erste passende Absicht der neuen Nachricht beantwortet die alte Rückfrage
+      const answers = Boolean(old) && !consumed && i < fresh.length && this.answersPending(item.intent, old!);
+      if (answers) consumed = true;
+      const reply = await this.dispatch(conv, item.text, item.intent, { ...current, pending: answers ? old : null }, viaLlm);
       replies.push(reply);
       current = { ...(reply.state ?? current), queue: [] };
-      if (current.pending && i < work.length - 1) {
-        current = { ...current, queue: work.slice(i + 1) };
+      // eine unverändert zurückgegebene alte Rückfrage ist erledigt, keine neue
+      if (current.pending === old) current = { ...current, pending: null };
+      if (current.pending) {
+        deferred = work.slice(i + 1);
         break;
       }
     }
+    if (clarification) replies.push({ intent: 'clarification', content: clarification, confidence: 0.3, state: current });
+    if (old && !consumed && old.kind !== 'proposal_choice') {
+      const hint = this.droppedHint(old);
+      if (hint) replies.push({ intent: 'clarification', content: `_Hinweis: ${hint}_`, state: current });
+    }
+    if (deferred.length) {
+      current = { ...current, queue: deferred };
+      replies.push({
+        intent: 'clarification',
+        content: `Danach erledige ich noch:\n${deferred.map((d) => `• ${describeIntent(d.intent)}`).join('\n')}`,
+        state: current,
+      });
+    }
+    if (!replies.length) return { intent: 'unknown', content: 'Okay.', confidence: 0.3, state: current };
     return this.mergeReplies(replies, current);
   }
 
@@ -579,11 +724,11 @@ export class ChatService {
     const t = text.trim().toLowerCase();
     const rest = state.queue ?? [];
     const base: ConvState = { ...state, pending: null, queue: [] };
-    const continueWith = async (first: Reply | null): Promise<Reply> => {
-      const followUps = first?.state?.pending ? { ...first.state, queue: rest } : null;
-      if (followUps || !rest.length) return first ? { ...first, state: followUps ?? first.state } : { intent: 'clarification', content: 'Okay.', state: base };
-      const more = await this.runIntents(conv, '', { intents: rest.map((r) => r.intent) }, first?.state ?? base, true);
-      return first ? this.mergeReplies([first, more], more.state ?? base) : more;
+    const continueWith = async (first: Reply): Promise<Reply> => {
+      // die übrigen Absichten der ursprünglichen Nachricht laufen mit ihrem Originaltext weiter
+      if (first.state?.pending || !rest.length) return { ...first, state: { ...(first.state ?? base), queue: first.state?.pending ? rest : [] } };
+      const more = await this.runWork(conv, [], rest, { ...(first.state ?? base), pending: null, queue: [] }, true, null);
+      return this.mergeReplies([first, more], more.state ?? base);
     };
     if (/^(nichts|nein|nee|lieber nicht|verwerf|vergiss|nicht speichern|kein)/.test(t)) {
       return continueWith({ intent: 'clarification', content: 'Okay, ich speichere dazu nichts.', confidence: 1, state: base });
@@ -613,13 +758,7 @@ export class ChatService {
   }
 
   private async dispatch(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {
-    // eine offene Rückfrage nach dem Erinnerungsdatum gilt nur für die nächste Nachricht
-    const carried = state.pending?.kind === 'reminder' && !intent.intent.startsWith('reminder') ? null : (state.pending ?? null);
-    const keep = (extra: Partial<ConvState> = {}): ConvState => ({
-      pending: carried,
-      last: { ...(state.last ?? {}), ...(extra.last ?? {}) },
-      ...(extra.pending !== undefined ? { pending: extra.pending } : {}),
-    });
+    // state.pending ist nur gesetzt, wenn diese Absicht die offene Rückfrage beantwortet (siehe runWork)
     switch (intent.intent) {
       case 'decision_new':
       case 'decision_amend':
@@ -628,48 +767,48 @@ export class ChatService {
       case 'event_record':
         return this.eventRecord(text, intent, state);
       case 'note_capture':
-        return this.noteCapture(text, intent, keep());
+        return this.noteCapture(text, intent, state);
       case 'knowledge_question':
-        return this.knowledgeQuestion(text, intent, keep());
+        return this.knowledgeQuestion(text, intent, state);
       case 'document_search':
-        return this.documentSearch(text, intent, keep());
+        return this.documentSearch(text, intent, state);
       case 'timeline_query':
-        return this.timelineQuery(text, intent, keep());
+        return this.timelineQuery(text, intent, state);
       case 'open_item_new':
         return this.openItemNew(text, intent, state);
       case 'open_item_update':
         return this.openItemUpdate(conv, text, intent, state);
       case 'open_item_close':
-        return this.openItemClose(conv, text, intent, keep());
+        return this.openItemClose(conv, text, intent, state);
       case 'reminder_create':
       case 'reminder_snooze':
-        return this.reminderFlow(text, intent, keep());
+        return this.reminderFlow(text, intent, state);
       case 'proposal_confirm':
       case 'proposal_reject':
-        return this.proposalDecision(conv, intent.intent === 'proposal_confirm', keep());
+        return this.proposalDecision(conv, intent.intent === 'proposal_confirm', state);
       case 'archive_execute':
-        return this.archiveExecute(conv, intent, keep());
+        return this.archiveExecute(conv, intent, state);
       case 'archive_status':
-        return this.archiveStatus(keep());
+        return this.archiveStatus(state);
       case 'archive_structure':
-        return this.archiveStructure(text, intent, keep());
+        return this.archiveStructure(text, intent, state);
       case 'archive_reorganize':
-        return this.archiveReorganize(conv, text, intent, keep());
+        return this.archiveReorganize(conv, text, intent, state);
       case 'scan_start':
-        return this.scanStart(keep());
+        return this.scanStart(state);
       case 'exclude_path':
-        return this.excludePath(conv, intent, keep());
+        return this.excludePath(conv, intent, state);
       case 'contradiction_check':
-        return this.contradictionCheck(keep());
+        return this.contradictionCheck(state);
       case 'relation_decide':
-        return this.relationDecide(conv, intent, keep());
+        return this.relationDecide(conv, intent, state);
       default:
         return {
           intent: intent.intent,
           content:
             'Ich bin Archivist, dein persönlicher Archivar. Du kannst mir Entscheidungen und Notizen mitteilen („Wir haben entschieden, dass …“), Fragen zum Archiv stellen („Wann haben wir … entschieden?“), Dokumente suchen, offene Punkte erfassen, Erinnerungen setzen oder Dateien hierher ziehen, damit ich sie archiviere.',
           confidence: intent.confidence,
-          state: keep(),
+          state: state,
         };
     }
   }
