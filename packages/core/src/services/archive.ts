@@ -78,6 +78,17 @@ export interface RelocatePlanItem {
 
 const toPosix = (p: string) => p.split(path.sep).join('/');
 
+/**
+ * Topic/project the user chose: an omitted field falls back to the proposal,
+ * an explicit `null` or empty string means "without topic/project".
+ */
+function assignmentNames(req: ArchiveItemRequest, proposal: DocumentProposal | null): { topicName: string | null; projectName: string | null } {
+  return {
+    topicName: (req.topic !== undefined ? req.topic : proposal?.topic)?.trim() || null,
+    projectName: (req.project !== undefined ? req.project : proposal?.project)?.trim() || null,
+  };
+}
+
 /** True when `p` is a readable file whose content has the given checksum. */
 async function hasChecksum(p: string, sha256: string): Promise<boolean> {
   try {
@@ -158,6 +169,7 @@ export class ArchiveService {
       targetRelPath: null,
       renamed: false,
       willRemoveSource: false,
+      removesInboxCopy: false,
       duplicates: [],
       conflicts: [],
       newCategories: [],
@@ -175,11 +187,13 @@ export class ArchiveService {
       title: d.title,
       archivePath: d.archiveRelPath ? path.join(this.root, ...d.archiveRelPath.split('/')) : null,
     }));
-    for (const t of [proposal?.topic, proposal?.project, req.topic, req.project]) {
-      if (t) {
-        const e = this.graph.findByName(t === proposal?.project || t === req.project ? 'project' : 'topic', t);
-        if (e) base.affected.push({ type: e.type, id: e.id, label: e.name });
-      }
+    const assigned = assignmentNames(req, proposal);
+    for (const [type, name] of [
+      ['topic', assigned.topicName],
+      ['project', assigned.projectName],
+    ] as const) {
+      const e = name ? this.graph.findByName(type, name) : null;
+      if (e) base.affected.push({ type: e.type, id: e.id, label: e.name });
     }
 
     let source: string;
@@ -214,7 +228,9 @@ export class ArchiveService {
       targetPath: target,
       targetRelPath: toPosix(path.relative(this.root, target)),
       renamed: collided || name !== row.originalName,
-      willRemoveSource: req.mode === 'move' || Boolean(row.stagedPath && source === row.stagedPath),
+      // Only the user's original counts as "removed"; Archivist's own inbox copy is merely cleaned up.
+      willRemoveSource: req.mode === 'move' && Boolean(row.sourcePath && row.sourcePath !== row.stagedPath && fs.existsSync(row.sourcePath)),
+      removesInboxCopy: Boolean(row.stagedPath && fs.existsSync(row.stagedPath)),
       conflicts: collided
         ? [`Im Zielordner existiert bereits „${name}“ – die Datei wird als „${path.basename(target)}“ abgelegt (nichts wird überschrieben).`]
         : [],
@@ -334,8 +350,7 @@ export class ArchiveService {
       };
 
     const proposal = row.proposal as DocumentProposal | null;
-    const topicName = (req.topic !== undefined ? req.topic : proposal?.topic)?.trim() || null;
-    const projectName = (req.project !== undefined ? req.project : proposal?.project)?.trim() || null;
+    const { topicName, projectName } = assignmentNames(req, proposal);
     const before: UndoData['before'] = {
       status: row.status,
       archiveRelPath: row.archiveRelPath,
@@ -451,8 +466,9 @@ export class ArchiveService {
             archiveRelPath: archiveRel,
             categoryPath: cat ?? row.categoryPath,
             archiveMode: req.mode,
-            topicId: topic?.id ?? row.topicId,
-            projectId: project?.id ?? row.projectId,
+            // An explicitly emptied field means "without topic/project" and clears an earlier assignment.
+            topicId: topic ? topic.id : req.topic !== undefined ? null : row.topicId,
+            projectId: project ? project.id : req.project !== undefined ? null : row.projectId,
             archivedAt: updatedAt,
             updatedAt,
           })

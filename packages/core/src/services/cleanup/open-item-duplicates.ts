@@ -5,7 +5,6 @@ import { openItems, relations, reminders } from '../../db/schema';
 import { AppError } from '../../util/errors';
 import { nowIso } from '../../util/ids';
 import { normalizeName, tokenize, truncate } from '../../util/text';
-import type { ActionService } from '../actions';
 import type { AuditService } from '../audit';
 import type { InsightService } from '../insights';
 import type { KnowledgeGraphService } from '../knowledge-graph';
@@ -155,7 +154,6 @@ export class OpenItemDuplicateService {
     private readonly audit: AuditService,
     undo: UndoService,
     private readonly insights: InsightService,
-    private readonly actions: ActionService,
   ) {
     undo.register(OPEN_ITEM_MERGE_UNDO_TYPE, {
       check: async (data) => this.undoConflicts(data as MergeUndoData),
@@ -187,18 +185,14 @@ export class OpenItemDuplicateService {
     return pairs;
   }
 
-  /** Archive check step: one insight (with a merge proposal) per duplicate pair; insights whose cause is gone are retired. */
+  /** Archive check step: one insight (with a merge proposal) per duplicate pair; insights whose cause is gone are reconciled away. */
   check(count?: (kind: string) => void): number {
     const keepKeys = new Set<string>();
     let found = 0;
     for (const { keep, duplicate, assessment } of this.findPairs()) {
       const key = duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, keep.id, duplicate.id);
       keepKeys.add(key);
-      // already shown, merged or rejected („Verschieden“): never proposed again – unless the open hint's merge failed
-      const existing = this.insights.byDedupeKey(key);
-      const failed =
-        existing?.status === 'open' && existing.recommendedActionId && this.actions.getMany([existing.recommendedActionId])[0]?.status === 'failed';
-      if (existing && !failed) continue;
+      // a rejected hint („Verschieden“) stays rejected: upsert neither reopens it nor proposes its action again
       const keepRow = this.row(keep.id)!;
       const dupRow = this.row(duplicate.id)!;
       const fields = takeOverMissing(keepRow, dupRow, TAKE_OVER).fields.map((f) => FIELD_LABELS[f] ?? f);
@@ -207,15 +201,6 @@ export class OpenItemDuplicateService {
         { type: 'task', id: keep.id, label: keep.title },
         { type: 'task', id: duplicate.id, label: duplicate.title },
       ];
-      const action = this.actions.propose({
-        actionType: 'merge_open_items',
-        label: `„${truncate(duplicate.title, 60)}“ als Duplikat von „${truncate(keep.title, 60)}“ verwerfen`,
-        rationale: `Die offenen Punkte ähneln sich (Titel/Beschreibung ${Math.round(assessment.similarity * 100)} %${assessment.reasons.length ? `, ${assessment.reasons.join(', ')}` : ''}).`,
-        confidence: Math.min(0.95, assessment.score),
-        affectedEntities: affected,
-        requiredConfirmation: 'confirm',
-        proposedParameters: { keepId: keep.id, duplicateId: duplicate.id },
-      });
       this.insights.upsert({
         kind: 'duplicate',
         title: `Doppelter offener Punkt: „${truncate(keep.title, 70)}“`,
@@ -227,15 +212,26 @@ export class OpenItemDuplicateService {
         confidence: Math.min(0.95, assessment.score),
         affected,
         sourceIds: [keep.id, duplicate.id],
-        recommendedActionId: action.id,
-        recommendedActionLabel: 'Zusammenführen',
+        action: {
+          proposal: {
+            actionType: 'merge_open_items',
+            label: `„${truncate(duplicate.title, 60)}“ als Duplikat von „${truncate(keep.title, 60)}“ verwerfen`,
+            rationale: `Die offenen Punkte ähneln sich (Titel/Beschreibung ${Math.round(assessment.similarity * 100)} %${assessment.reasons.length ? `, ${assessment.reasons.join(', ')}` : ''}).`,
+            confidence: Math.min(0.95, assessment.score),
+            affectedEntities: affected,
+            requiredConfirmation: 'confirm',
+            proposedParameters: { keepId: keep.id, duplicateId: duplicate.id },
+          },
+          label: 'Zusammenführen',
+        },
         dedupeKey: key,
       });
       count?.('duplicate_open_item');
       found += 1;
     }
+    // hints whose cause is gone are removed (their proposals withdrawn); „Verschieden“ is kept while both items exist
     for (const key of this.rememberedDifferent()) keepKeys.add(key);
-    this.insights.retireOpen(OPEN_ITEM_DUPLICATE_KEY_PREFIX, keepKeys);
+    this.insights.reconcile(OPEN_ITEM_DUPLICATE_KEY_PREFIX, keepKeys);
     return found;
   }
 
@@ -272,18 +268,27 @@ export class OpenItemDuplicateService {
     return !exists && rel ? rel.id : null;
   }
 
+  /** Why `keepId` and `duplicateId` can no longer be merged (null: they can) – also re-checked before a proposal runs. */
+  staleReason(keepId: string, duplicateId: string): string | null {
+    if (keepId === duplicateId) return 'Ein offener Punkt kann nicht mit sich selbst zusammengeführt werden.';
+    const keep = this.row(keepId);
+    const dup = this.row(duplicateId);
+    if (!keep || !dup) return 'Offener Punkt nicht gefunden.';
+    if (!ACTIVE_STATUSES.includes(keep.status as OpenItem['status']) || !ACTIVE_STATUSES.includes(dup.status as OpenItem['status']))
+      return 'Nur aktive offene Punkte können zusammengeführt werden.';
+    return null;
+  }
+
   /**
    * Keeps `keepId`, takes over the details it lacks from `duplicateId` (description is appended, due date, responsible
    * person, topic and project are filled, sources united, pending reminders moved) and marks the duplicate as
    * `dismissed` with `duplicateOfId`. One audit entry, undoable while neither item changed.
    */
   merge(keepId: string, duplicateId: string, opts: { actor?: 'user' | 'agent'; trigger?: string } = {}): OpenItemMergeResult {
-    if (keepId === duplicateId) throw new AppError('validation_error', 'Ein offener Punkt kann nicht mit sich selbst zusammengeführt werden.');
-    const keep = this.row(keepId);
-    const dup = this.row(duplicateId);
-    if (!keep || !dup) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
-    if (!ACTIVE_STATUSES.includes(keep.status as OpenItem['status']) || !ACTIVE_STATUSES.includes(dup.status as OpenItem['status']))
-      throw new AppError('validation_error', 'Nur aktive offene Punkte können zusammengeführt werden.');
+    const stale = this.staleReason(keepId, duplicateId);
+    if (stale) throw new AppError('validation_error', stale);
+    const keep = this.row(keepId)!;
+    const dup = this.row(duplicateId)!;
     const { patch, before, fields } = takeOverMissing(keep, dup, TAKE_OVER);
     const set: Partial<Row> = { ...patch };
     const keepBefore: Partial<Row> = { ...before };

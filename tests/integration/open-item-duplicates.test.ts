@@ -133,9 +133,10 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
       .get(a.id, decision.id);
     expect(rel).toEqual({ status: 'confirmed' });
 
-    // the pair is gone from the archive check; the accepted insight is never recreated
+    // the cause is gone: the next run closes the hint and proposes nothing new
     await app.services.consistency.run('test');
-    expect((await dupInsights()).map((i) => i.status)).toEqual(['accepted']);
+    expect(await dupInsights()).toHaveLength(0);
+    expect(app.services.actions.list('proposed').filter((x) => x.actionType === 'merge_open_items')).toHaveLength(0);
   });
 
   it('Undo stellt beide Punkte, Erinnerungen und Beziehungen exakt wieder her', async () => {
@@ -205,9 +206,26 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     await item({ title: 'Angebot Müller prüfen' }, '2026-02-01T00:00:00.000Z');
     await app.services.consistency.run('test');
     expect(await dupInsights()).toHaveLength(1);
+    const [insight] = await dupInsights();
     await app.ok('openItems:close', { id: a.id, status: 'resolved', confirmed: true });
     await app.services.consistency.run('test');
     expect(await dupInsights()).toHaveLength(0);
+    expect(app.services.actions.get(insight!.recommendedActionId!).status).toBe('withdrawn');
+  });
+
+  it('ein veralteter Vorschlag wird nicht ausgeführt, sondern zurückgezogen', async () => {
+    const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
+    const b = await item({ title: 'Angebot Müller prüfen', description: 'er wollte Rabatt' }, '2026-02-01T00:00:00.000Z');
+    await app.services.consistency.run('test');
+    const [insight] = await dupInsights();
+    await app.ok('openItems:close', { id: b.id, status: 'dismissed', confirmed: true });
+
+    const res = await app.services.actions.resolve(insight!.recommendedActionId!, 'approve', { confirmed: true });
+    expect(res.status).toBe('withdrawn');
+    expect(res.result).toContain('Nur aktive offene Punkte');
+    const items = await app.ok('openItems:list', {});
+    expect(items.find((i) => i.id === a.id)!.description).toBeNull();
+    expect(items.find((i) => i.id === b.id)!.duplicateOfId).toBeNull();
   });
 });
 

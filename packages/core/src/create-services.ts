@@ -102,9 +102,9 @@ function buildServices(opts: CreateServicesOptions) {
   const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, audit, notifications, pool, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
-  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, actions);
+  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications);
   const backup = new BackupService(ctx, settings, audit);
-  const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights, actions);
+  const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
   consistency.addCheck((count) => {
     openItemDuplicates.check(count);
   });
@@ -133,7 +133,6 @@ function buildServices(opts: CreateServicesOptions) {
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
-  scanner.wire({ actions });
   chat.wire({ actions, archive });
   graph.setReindexer(async (refs) => {
     await Promise.all([
