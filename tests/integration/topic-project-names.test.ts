@@ -80,13 +80,27 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(app.services.decisions.get(dec.id)).toMatchObject({ topicId: null, projectId: project.id });
     expect(app.services.openItems.get(item.id)).toMatchObject({ projectId: project.id });
     // the alternative answer's action is withdrawn
-    expect(app.services.actions.get(topicChoice.actionId!).status).toBe('rejected');
+    expect(app.services.actions.get(topicChoice.actionId!).status).toBe('withdrawn');
 
     const merge = (await app.ok('audit:list', { onlyUndoable: true })).find((e) => e.action === 'entity.merge')!;
     expect(merge).toBeDefined();
     expect((await app.ok('audit:undo', { auditId: merge.id })).undone).toBe(true);
     expect(graph().getEntity(topic.id)).toMatchObject({ type: 'topic', name: 'prod-plat' });
     expect(app.services.decisions.get(dec.id)).toMatchObject({ topicId: topic.id, projectId: null });
+  });
+
+  it('nach dem Rückgängigmachen wird erneut gefragt, sobald eine Prüfung die Zusammenführung gesehen hat', async () => {
+    await seed();
+    const q = await askedQuestion();
+    await app.ok('insights:respond', { response: 'choose', id: q.id, choiceId: 'project', confirmed: true, strongConfirmed: false });
+    await check(); // the pair is gone: the answered question is closed
+
+    const merge = (await app.ok('audit:list', { onlyUndoable: true })).find((e) => e.action === 'entity.merge')!;
+    await app.ok('audit:undo', { auditId: merge.id });
+
+    const again = await askedQuestion();
+    expect(again.id).not.toBe(q.id);
+    expect(again.choices.every((c) => c.actionId === null || app.services.actions.get(c.actionId).status === 'proposed')).toBe(true);
   });
 
   it('„Thema“ führt beide zum Thema zusammen', async () => {
@@ -112,7 +126,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(answered).toMatchObject({ status: 'rejected', chosenChoiceId: 'different' });
     expect(graph().getEntity(topic.id)).toBeDefined();
     expect(graph().getEntity(project.id)).toBeDefined();
-    for (const c of q.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('rejected');
+    for (const c of q.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('withdrawn');
     await check();
     await check();
     expect(await questions('open')).toHaveLength(0);
@@ -143,13 +157,44 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(again.ok).toBe(false);
   });
 
-  it('eine Frage, deren Paar es nicht mehr gibt, verschwindet', async () => {
+  it('eine Frage, deren Paar es nicht mehr gibt, verschwindet samt ihren Vorschlägen', async () => {
     const { topic, project } = await seed();
-    await askedQuestion();
+    const q = await askedQuestion();
 
     await graph().merge({ sourceIds: [topic.id], targetId: project.id, allowCrossType: true });
     await check();
 
     expect(await questions()).toHaveLength(0);
+    for (const c of q.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('withdrawn');
+  });
+
+  it('eine veraltete Antwort wird nicht ausgeführt: die Frage verschwindet, die nächste Prüfung bewertet neu', async () => {
+    const { topic, project } = await seed();
+    const q = await askedQuestion();
+    // merged elsewhere before the user answers
+    await graph().merge({ sourceIds: [project.id], targetId: topic.id, allowCrossType: true });
+
+    const res = await app.call('insights:respond', { response: 'choose', id: q.id, choiceId: 'project', confirmed: true, strongConfirmed: false });
+
+    expect(res.ok).toBe(false);
+    expect(graph().getEntity(topic.id)).toMatchObject({ type: 'topic' });
+    expect(await questions()).toHaveLength(0);
+    for (const c of q.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('withdrawn');
+  });
+
+  it('eine fehlgeschlagene Antwort lässt sich erneut wählen', async () => {
+    await seed();
+    const q = await askedQuestion();
+    const graphService = graph();
+    const original = graphService.merge.bind(graphService);
+    graphService.merge = () => Promise.reject(new Error('Datenbank gesperrt'));
+
+    const failed = await app.call('insights:respond', { response: 'choose', id: q.id, choiceId: 'project', confirmed: true, strongConfirmed: false });
+    graphService.merge = original;
+    const retried = await app.ok('insights:respond', { response: 'choose', id: q.id, choiceId: 'project', confirmed: true, strongConfirmed: false });
+
+    expect(failed.ok).toBe(false);
+    expect(retried).toMatchObject({ status: 'accepted', chosenChoiceId: 'project' });
+    expect(retried.choices.find((c) => c.id === 'project')!.actionId).not.toBe(q.choices.find((c) => c.id === 'project')!.actionId);
   });
 });

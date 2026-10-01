@@ -1,13 +1,23 @@
-import { ActionParamSchemas, type AgentActionProposal, type AgentActionType, type EntityRef, type StoredAgentAction } from '@archivist/shared';
+import {
+  ActionParamSchemas,
+  type AgentActionProposal,
+  type AgentActionStatus,
+  type AgentActionType,
+  type EntityRef,
+  type StoredAgentAction,
+} from '@archivist/shared';
 import { desc, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { agentActions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
+import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
 import type { ArchiveService } from './archive';
+import { folderOf } from './archive-structure';
 import type { AuditService } from './audit';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
+import { ACTIVE_DECISION_STATUSES } from './decisions';
 import type { DocumentService } from './documents';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { OpenItemService } from './open-items';
@@ -26,7 +36,7 @@ const map = (r: Row): StoredAgentAction => ({
   affectedEntities: r.affectedEntities as EntityRef[],
   requiredConfirmation: r.requiredConfirmation as StoredAgentAction['requiredConfirmation'],
   proposedParameters: r.params as Record<string, unknown>,
-  status: r.status as StoredAgentAction['status'],
+  status: r.status as AgentActionStatus,
   result: r.result,
   createdAt: r.createdAt,
   resolvedAt: r.resolvedAt,
@@ -50,6 +60,7 @@ export interface ActionDeps {
  */
 export class ActionService {
   private deps!: ActionDeps;
+  private readonly withdrawnListeners: Array<(action: StoredAgentAction) => void> = [];
 
   constructor(private readonly ctx: AppContext) {}
 
@@ -61,14 +72,24 @@ export class ActionService {
     return this.ctx.database.db;
   }
 
-  propose(input: AgentActionProposal & { label: string; conversationId?: string | null }): StoredAgentAction {
-    const schema = ActionParamSchemas[input.actionType];
-    const parsed = schema.safeParse(input.proposedParameters);
+  /** Called whenever a proposal is withdrawn (e.g. so that the insight recommending it disappears as well). */
+  onWithdrawn(listener: (action: StoredAgentAction) => void): void {
+    this.withdrawnListeners.push(listener);
+  }
+
+  /** Validated parameters of a proposal, in the shape they are stored with. */
+  normalizeParams(actionType: AgentActionType, params: Record<string, unknown>): Record<string, unknown> {
+    const parsed = ActionParamSchemas[actionType].safeParse(params);
     if (!parsed.success) {
       throw new AppError('validation_error', 'Die vorgeschlagene Aktion hat ungültige Parameter und wurde verworfen.', {
         details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       });
     }
+    return parsed.data;
+  }
+
+  propose(input: AgentActionProposal & { label: string; conversationId?: string | null }): StoredAgentAction {
+    const params = this.normalizeParams(input.actionType, input.proposedParameters);
     const row: Row = {
       id: newId(),
       conversationId: input.conversationId ?? null,
@@ -78,7 +99,7 @@ export class ActionService {
       confidence: input.confidence,
       affectedEntities: input.affectedEntities,
       requiredConfirmation: input.requiredConfirmation,
-      params: parsed.data,
+      params: params as ArchivistJson,
       status: 'proposed',
       result: null,
       createdAt: nowIso(),
@@ -121,6 +142,44 @@ export class ActionService {
     return this.getMany([...new Set(shownActionIds)]).filter((a) => a.status === 'proposed' && a.conversationId === conversationId);
   }
 
+  /**
+   * Retracts an undecided proposal without executing it (status `withdrawn`), e.g. because its cause is gone or a newer
+   * proposal replaces it. Returns false if the proposal was already decided.
+   */
+  withdraw(id: string, reason: string): boolean {
+    const r = this.db.select().from(agentActions).where(eq(agentActions.id, id)).get();
+    if (!r || r.status !== 'proposed') return false;
+    this.db.update(agentActions).set({ status: 'withdrawn', result: reason, resolvedAt: nowIso() }).where(eq(agentActions.id, id)).run();
+    const withdrawn = this.get(id);
+    for (const listener of this.withdrawnListeners) listener(withdrawn);
+    this.ctx.events.changed('status', 'insights');
+    return true;
+  }
+
+  /** Open relocate proposals that would move at least one of these documents. */
+  openRelocationsFor(documentIds: Iterable<string>): StoredAgentAction[] {
+    const ids = new Set(documentIds);
+    return this.list('proposed').filter(
+      (a) =>
+        a.actionType === 'relocate_documents' && ActionParamSchemas.relocate_documents.parse(a.proposedParameters).items.some((i) => ids.has(i.documentId)),
+    );
+  }
+
+  /** A fresh, undecided copy of a failed or rejected proposal, so that it can be decided (and executed) again. */
+  repropose(id: string): StoredAgentAction {
+    const a = this.get(id);
+    return this.propose({
+      actionType: a.actionType,
+      label: a.label,
+      rationale: a.rationale,
+      confidence: a.confidence,
+      affectedEntities: a.affectedEntities,
+      requiredConfirmation: a.requiredConfirmation,
+      proposedParameters: a.proposedParameters,
+      conversationId: a.conversationId,
+    });
+  }
+
   async resolve(
     id: string,
     decision: 'approve' | 'reject',
@@ -151,11 +210,30 @@ export class ActionService {
     if (action.requiredConfirmation === 'strong' && !opts.strongConfirmed) {
       throw new AppError('permission_error', 'Diese Aktion ist besonders kritisch und erfordert eine zweite, ausdrückliche Bestätigung.');
     }
+    const parsed = ActionParamSchemas[action.actionType].safeParse({ ...action.proposedParameters, ...(opts.overrides ?? {}) });
+    let params: Record<string, unknown> | null = parsed.success ? parsed.data : null; // invalid parameters fail below
+    if (params) {
+      let stale: string | null;
+      try {
+        const checked = this.revalidate(action.actionType, params);
+        stale = 'stale' in checked ? checked.stale : null;
+        if ('params' in checked) params = checked.params;
+      } catch (err) {
+        stale = toErrorInfo(err).message;
+      }
+      if (stale !== null) {
+        // the world changed since the proposal: never execute outdated parameters (e.g. move a document back)
+        this.withdraw(id, `Nicht ausgeführt, der Vorschlag ist nicht mehr aktuell: ${stale}`);
+        return this.get(id);
+      }
+    }
     this.db.update(agentActions).set({ status: 'approved' }).where(eq(agentActions.id, id)).run();
+    let executed: Record<string, unknown> | null = null;
     try {
-      const params = ActionParamSchemas[action.actionType].parse({ ...action.proposedParameters, ...(opts.overrides ?? {}) });
-      const result = await this.execute(action.actionType, params as never);
+      const run = params ?? ActionParamSchemas[action.actionType].parse({ ...action.proposedParameters, ...(opts.overrides ?? {}) });
+      const result = await this.execute(action.actionType, run as never);
       this.db.update(agentActions).set({ status: 'executed', result, resolvedAt: nowIso() }).where(eq(agentActions.id, id)).run();
+      executed = run;
     } catch (err) {
       const info = toErrorInfo(err);
       this.ctx.logger.error('actions', `Aktion fehlgeschlagen: ${action.actionType}`, { error: err });
@@ -165,8 +243,80 @@ export class ActionService {
         .where(eq(agentActions.id, id))
         .run();
     }
+    if (executed) {
+      try {
+        this.afterExecuted(id, action.actionType, executed);
+      } catch (err) {
+        this.ctx.logger.warn('actions', 'Überholte Vorschläge konnten nicht zurückgezogen werden', { error: err });
+      }
+    }
     this.ctx.events.changed('status', 'insights', 'notifications');
     return this.get(id);
+  }
+
+  /**
+   * Re-checks a proposal against the current state right before it is executed. Returns the parameters to execute
+   * (possibly reduced) or why the proposal is outdated.
+   */
+  private revalidate(type: AgentActionType, params: Record<string, unknown>): { params: Record<string, unknown> } | { stale: string } {
+    const d = this.deps;
+    switch (type) {
+      case 'relocate_documents': {
+        const p = ActionParamSchemas.relocate_documents.parse(params);
+        const items: Array<{ documentId: string; categoryPath: string }> = [];
+        for (const item of p.items) {
+          const row = d.documents.getRow(item.documentId);
+          if (row.status !== 'archived' || !row.archiveRelPath) return { stale: `„${row.title}“ ist nicht mehr archiviert.` };
+          if (item.fromRelPath !== undefined && row.archiveRelPath !== item.fromRelPath)
+            return { stale: `„${row.title}“ wurde inzwischen an einen anderen Ort verschoben.` };
+          if (folderOf(row) !== item.categoryPath.split('/').filter(Boolean).join('/'))
+            items.push({ documentId: item.documentId, categoryPath: item.categoryPath });
+        }
+        if (items.length === 0) return { stale: 'Die Dokumente liegen bereits im Zielordner.' };
+        return { params: { items } };
+      }
+      case 'supersede_decision': {
+        const p = ActionParamSchemas.supersede_decision.parse(params);
+        const older = d.decisions.get(p.oldDecisionId);
+        const newer = d.decisions.get(p.newDecisionId);
+        if (older.status === 'superseded' && newer.supersedesDecisionId === older.id) return { params }; // already done: no-op
+        if (!ACTIVE_DECISION_STATUSES.includes(older.status) || !ACTIVE_DECISION_STATUSES.includes(newer.status))
+          return { stale: 'Eine der beiden Entscheidungen ist inzwischen nicht mehr aktiv.' };
+        return { params };
+      }
+      case 'resolve_contradiction': {
+        const p = ActionParamSchemas.resolve_contradiction.parse(params);
+        const c = d.contradictions.get(p.contradictionId);
+        if (c.status === 'resolved' || c.status === 'false_positive') return { stale: 'Der Widerspruch ist bereits aufgelöst.' };
+        return { params };
+      }
+      case 'merge_entities': {
+        // an entry merged away or deleted in the meantime: the proposal no longer describes the current state
+        const p = ActionParamSchemas.merge_entities.parse(params);
+        if ([p.targetId, ...p.sourceIds].some((id) => !d.graph.getEntity(id))) return { stale: 'Einer der Einträge existiert nicht mehr.' };
+        return { params };
+      }
+      default:
+        return { params };
+    }
+  }
+
+  /** Other open proposals that the executed action made obsolete are withdrawn, so nothing outdated can run later. */
+  private afterExecuted(id: string, type: AgentActionType, params: Record<string, unknown>): void {
+    if (type === 'relocate_documents') {
+      const p = ActionParamSchemas.relocate_documents.parse(params);
+      for (const other of this.openRelocationsFor(p.items.map((i) => i.documentId)))
+        if (other.id !== id) this.withdraw(other.id, 'Die Dokumente wurden inzwischen durch einen anderen Vorschlag verschoben.');
+    }
+    if (type === 'supersede_decision') {
+      const p = ActionParamSchemas.supersede_decision.parse(params);
+      for (const other of this.list('proposed')) {
+        if (other.id === id || other.actionType !== 'supersede_decision') continue;
+        const o = ActionParamSchemas.supersede_decision.parse(other.proposedParameters);
+        if (o.oldDecisionId === p.oldDecisionId) this.withdraw(other.id, 'Die ältere Entscheidung wurde bereits als überholt markiert.');
+      }
+      this.deps.contradictions.settlePair(p.oldDecisionId, p.newDecisionId);
+    }
   }
 
   private async execute(type: AgentActionType, p: Record<string, never> & Record<string, unknown>): Promise<string> {

@@ -1,7 +1,6 @@
 import type { GraphEntity } from '@archivist/shared';
 import { normalizeName } from '../../util/text';
-import type { ActionService } from '../actions';
-import type { InsightService } from '../insights';
+import type { InsightChoiceSpec, InsightService } from '../insights';
 import type { KnowledgeGraphService } from '../knowledge-graph';
 
 /** Dedupe key prefix of the „Projekt oder Thema?“ questions. */
@@ -28,23 +27,23 @@ const links = (n: number) => `${n} ${n === 1 ? 'Verknüpfung' : 'Verknüpfungen'
 /**
  * Archive check: asks for every topic/project pair with the same name whether it is a project or a topic. The answers
  * „Projekt“/„Thema“ merge both into one entry of the chosen type (undoable); „Beides ist richtig“ rejects the insight,
- * which is remembered permanently via the stable dedupe key. Open questions whose pair no longer exists are retired.
+ * which stays rejected while the pair exists (stable dedupe key). Questions whose pair no longer exists are removed
+ * together with the proposals of their answers.
  */
-export function checkTopicProjectNames(
-  deps: { graph: KnowledgeGraphService; insights: InsightService; actions: ActionService },
-  count: (kind: string) => void,
-): void {
-  const keep = new Set<string>();
+export function checkTopicProjectNames(deps: { graph: KnowledgeGraphService; insights: InsightService }, count: (kind: string) => void): void {
+  const current = new Set<string>();
   for (const { topic, project } of findTopicProjectPairs(deps.graph)) {
     const key = pairKey(topic.id, project.id);
-    keep.add(key);
-    if (deps.insights.has(key)) continue;
+    current.add(key);
     const affected = [
       { type: 'topic' as const, id: topic.id, label: topic.name, detail: 'Thema' },
       { type: 'project' as const, id: project.id, label: project.name, detail: 'Projekt' },
     ];
-    const merge = (source: Counted, target: Counted, typeLabel: string) =>
-      deps.actions.propose({
+    const mergeInto = (source: Counted, target: Counted, id: string, typeLabel: string): InsightChoiceSpec => ({
+      id,
+      label: typeLabel,
+      description: `Thema und Projekt werden zum ${typeLabel} „${target.name}“ zusammengeführt. Dokumente, Entscheidungen, offene Punkte, Ereignisse und Beziehungen werden übernommen. Das lässt sich rückgängig machen.`,
+      proposal: {
         actionType: 'merge_entities',
         label: `„${source.name}“ und „${target.name}“ zu einem ${typeLabel} zusammenführen`,
         rationale: `Derselbe Name existiert als Thema und als Projekt; gewählt wurde „${typeLabel}“.`,
@@ -52,30 +51,26 @@ export function checkTopicProjectNames(
         affectedEntities: affected,
         requiredConfirmation: 'confirm',
         proposedParameters: { sourceIds: [source.id], targetId: target.id, allowCrossType: true },
-      });
-    const asProject = merge(topic, project, 'Projekt');
-    const asTopic = merge(project, topic, 'Thema');
-    const consequence = (target: Counted, typeLabel: string) =>
-      `Thema und Projekt werden zum ${typeLabel} „${target.name}“ zusammengeführt. Dokumente, Entscheidungen, offene Punkte, Ereignisse und Beziehungen werden übernommen. Das lässt sich rückgängig machen.`;
-    deps.insights.upsert({
+      },
+    });
+    const shown = deps.insights.upsert({
       kind: 'topic_project_name',
       title: `Ist ‚${topic.name}‘ ein Projekt oder ein Thema?`,
       explanation: `Es gibt das Thema „${topic.name}“ (${links(topic.relationCount)}) und das Projekt „${project.name}“ (${links(project.relationCount)}). Bei „Projekt“ oder „Thema“ werden beide zu einem Eintrag zusammengeführt. Bei „Beides ist richtig“ bleiben beide bestehen, und die Frage wird nicht erneut gestellt.`,
       confidence: 0.9,
       affected,
       choices: [
-        { id: 'project', label: 'Projekt', description: consequence(project, 'Projekt'), actionId: asProject.id },
-        { id: 'topic', label: 'Thema', description: consequence(topic, 'Thema'), actionId: asTopic.id },
+        mergeInto(topic, project, 'project', 'Projekt'),
+        mergeInto(project, topic, 'topic', 'Thema'),
         {
           id: 'different',
           label: 'Beides ist richtig (verschieden)',
           description: 'Thema und Projekt bleiben getrennt. Diese Frage wird nicht erneut gestellt.',
-          actionId: null,
         },
       ],
       dedupeKey: key,
     });
-    count('topic_project_name');
+    if (shown.status === 'open') count('topic_project_name');
   }
-  deps.insights.retireOpen(KEY_PREFIX, keep);
+  deps.insights.reconcile(KEY_PREFIX, current);
 }
