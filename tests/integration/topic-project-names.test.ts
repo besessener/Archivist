@@ -103,6 +103,20 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(again.choices.every((c) => c.actionId === null || app.services.actions.get(c.actionId).status === 'proposed')).toBe(true);
   });
 
+  it('eine beantwortete Frage, deren Ursache nach 7 Tagen noch besteht, wird unbeantwortet mit frischen Vorschlägen erneut gestellt', async () => {
+    await seed();
+    const q = await askedQuestion();
+    await app.ok('insights:respond', { response: 'choose', id: q.id, choiceId: 'project', confirmed: true, strongConfirmed: false });
+    const merge = (await app.ok('audit:list', { onlyUndoable: true })).find((e) => e.action === 'entity.merge')!;
+    await app.ok('audit:undo', { auditId: merge.id }); // undone before any check saw the merge
+    app.services.database.sqlite.prepare('UPDATE insights SET updated_at = ? WHERE id = ?').run(new Date(Date.now() - 8 * 86_400_000).toISOString(), q.id);
+
+    const reopened = await askedQuestion();
+
+    expect(reopened).toMatchObject({ id: q.id, status: 'open', chosenChoiceId: null });
+    for (const c of reopened.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('proposed');
+  });
+
   it('„Thema“ führt beide zum Thema zusammen', async () => {
     const { ev, item, topic, project } = await seed();
     const q = await askedQuestion();

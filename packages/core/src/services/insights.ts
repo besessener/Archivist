@@ -130,6 +130,8 @@ export class InsightService {
           recommendedActionId: actionId,
           recommendedActionLabel: actionLabel,
           choices: answers.choices,
+          // a reopened question is unanswered again
+          chosenChoiceId: null,
           status: 'open',
           snoozedUntil: null,
           updatedAt: now,
