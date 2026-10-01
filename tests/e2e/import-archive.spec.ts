@@ -38,6 +38,26 @@ test.describe('Import und Archivierung', () => {
     expect(fs.existsSync(note), 'das Original bleibt erhalten').toBe(true);
   });
 
+  test('zeigt Dateien in Quarantäne mit Grund und importiert sie erst nach Bestätigung', async ({ on, page, workspace }) => {
+    const app = on(page);
+    const fake = workspace.addDownload('rechnung.pdf', 'MZ das ist keine PDF-Datei');
+
+    await app.inbox.do.importFile(fake);
+    await app.navigation.do.open('inbox');
+    await app.inbox.locators.quarantine.filter.click();
+    await expect(app.inbox.locators.quarantine.filter).toContainText('(1)');
+    await expect(app.inbox.locators.quarantine.badge).toBeVisible();
+    await expect(app.inbox.locators.quarantine.reason).toContainText('Der Dateiinhalt passt nicht zur Endung „.pdf“.');
+    await expect(app.inbox.locators.quarantine.reveal).toBeVisible();
+    const quarantineDir = path.join(workspace.dataDir, 'quarantine');
+    expect(fs.readdirSync(quarantineDir)).toEqual(['rechnung.pdf']);
+
+    await app.inbox.do.releaseFromQuarantine();
+    await expect(app.inbox.locators.quarantine.filter).toContainText('(0)');
+    expect(fs.readdirSync(quarantineDir), 'die Datei hat die Quarantäne verlassen').toEqual([]);
+    expect(fs.readdirSync(path.join(workspace.dataDir, 'inbox'))).toEqual(['rechnung.pdf']);
+  });
+
   test('respects an emptied project and only announces cleaning up the inbox copy', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');

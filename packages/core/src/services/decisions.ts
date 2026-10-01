@@ -1,4 +1,12 @@
-import { DECISION_FIELD_LABELS, type Decision, type DecisionField, type DecisionInput, type DecisionStatus } from '@archivist/shared';
+import {
+  DECISION_FIELD_LABELS,
+  isEditableDecisionStatus,
+  type Decision,
+  type DecisionField,
+  type DecisionInput,
+  type DecisionPatch,
+  type DecisionStatus,
+} from '@archivist/shared';
 import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { decisions, entities } from '../db/schema';
@@ -278,9 +286,27 @@ export class DecisionService {
     return this.get(row.id);
   }
 
-  update(id: string, patch: Partial<DecisionInput> & { status?: DecisionStatus }, opts: { trigger?: string } = {}): Decision {
+  /**
+   * Partial update: only fields present in `patch` change. `unknownFields` replaces the stored list (a field the
+   * user no longer marks as unknown is removed); `sourceIds` are added. `status` may only move between the
+   * editable statuses – superseding and revoking need `supersede()` / `revoke()` with confirmation.
+   */
+  update(id: string, patch: DecisionPatch, opts: { trigger?: string } = {}): Decision {
     const cur = this.db.select().from(decisions).where(eq(decisions.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Entscheidung nicht gefunden.');
+    if (patch.status !== undefined && patch.status !== cur.status) {
+      // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
+      if (!isEditableDecisionStatus(patch.status))
+        throw new AppError(
+          'permission_error',
+          'Ersetzen und Widerrufen einer Entscheidung gehen nur über die jeweilige Aktion mit ausdrücklicher Bestätigung.',
+        );
+      if (!isEditableDecisionStatus(cur.status as DecisionStatus))
+        throw new AppError(
+          'permission_error',
+          'Eine ersetzte oder widerrufene Entscheidung lässt sich nicht durch Bearbeiten wieder in Kraft setzen. Machen Sie das Ersetzen bzw. Widerrufen im Änderungsprotokoll rückgängig.',
+        );
+    }
     const set: Partial<Row> = { updatedAt: nowIso() };
     if (patch.title !== undefined) set.title = patch.title.trim() || cur.title;
     if (patch.decisionText !== undefined) set.decisionText = patch.decisionText.trim();
@@ -294,7 +320,7 @@ export class DecisionService {
     if (patch.validFrom !== undefined) set.validFrom = normalizeDateInput(patch.validFrom ?? null);
     if (patch.validUntil !== undefined) set.validUntil = normalizeDateInput(patch.validUntil ?? null);
     if (patch.sourceIds !== undefined) set.sourceIds = [...new Set([...cur.sourceIds, ...patch.sourceIds])];
-    if (patch.unknownFields !== undefined) set.unknownFields = [...new Set([...cur.unknownFields, ...patch.unknownFields])];
+    if (patch.unknownFields !== undefined) set.unknownFields = [...new Set(patch.unknownFields)];
 
     const merged = { ...cur, ...set };
     const topicName = merged.topicId ? (this.graph.getEntity(merged.topicId)?.name ?? null) : null;
@@ -307,8 +333,8 @@ export class DecisionService {
     });
     set.missingFields = missing;
     // Entwurf wird final, sobald alle Pflichtfelder erfüllt sind (oder ausdrücklich als unbekannt bestätigt wurden)
-    if (patch.status) set.status = patch.status;
-    else if (cur.status === 'draft' && missing.length === 0 && !patch.asDraft) set.status = 'active';
+    if (patch.status && patch.status !== cur.status) set.status = patch.status;
+    else if (!patch.status && cur.status === 'draft' && missing.length === 0 && !patch.asDraft) set.status = 'active';
 
     const { changes } = this.graph.trackRelationChanges(id, () =>
       this.db.transaction(() => {

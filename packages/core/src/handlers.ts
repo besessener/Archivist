@@ -57,15 +57,19 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     };
   };
 
-  const documentPath = (id: string): string => {
+  const documentPath = (id: string, opts: { allowQuarantine?: boolean } = {}): string => {
     const d = s.documents.getRow(id);
+    // a quarantined file is suspicious: never open it, only reveal it in the file manager
+    if (d.status === 'quarantined' && !opts.allowQuarantine)
+      throw permissionError('Dateien in Quarantäne werden nicht geöffnet. Nutzen Sie „Ordner öffnen“, um sie im Dateimanager zu prüfen.');
     const candidates = [d.archiveRelPath ? path.join(s.settings.get().archiveRoot, ...d.archiveRelPath.split('/')) : null, d.stagedPath, d.sourcePath].filter(
       (x): x is string => Boolean(x),
     );
     const found = candidates.find((c) => s.scanner.fileExists(c));
     if (!found) throw new AppError('filesystem_error', 'Die Datei wurde nicht gefunden (verschoben oder gelöscht?).');
     // nur Orte öffnen, die Archivist selbst kennt: Archiv, Eingang oder das ursprüngliche Dokument
-    const allowed = [s.settings.get().archiveRoot, s.paths.inbox].some((root) => isInside(root, found)) || found === d.sourcePath;
+    const roots = [s.settings.get().archiveRoot, s.paths.inbox, ...(opts.allowQuarantine ? [s.paths.quarantine] : [])];
+    const allowed = roots.some((root) => isInside(root, found)) || found === d.sourcePath;
     if (!allowed) throw permissionError('Dieser Pfad darf nicht geöffnet werden.');
     return found;
   };
@@ -83,7 +87,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return { ok: true as const };
     },
     'app:revealPath': (i) => {
-      host.revealPath(documentPath(i.documentId));
+      host.revealPath(documentPath(i.documentId, { allowQuarantine: true }));
       return { ok: true as const };
     },
     'app:openScanFile': async (i) => {
@@ -149,6 +153,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         proposedParameters: { oldDecisionId: o.id, newDecisionId: n.id },
       });
     },
+    'decisions:supersede': (i) => s.decisions.supersede(i.oldDecisionId, i.newDecisionId, { confirmed: i.confirmed, trigger }),
+    'decisions:revoke': (i) => s.decisions.revoke(i.id, { confirmed: i.confirmed, trigger }),
 
     'documents:import': async (i) => s.documents.importPaths(i.paths),
     'documents:list': (i) => s.documents.list(i),
@@ -166,6 +172,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return s.documents.list({ [e?.type === 'project' ? 'projectId' : 'topicId']: i.topicId, limit: 500 });
     },
     'documents:setLlmExcluded': (i) => s.documents.setLlmExcluded(i.id, i.excluded),
+    'documents:releaseQuarantine': (i) => s.documents.releaseFromQuarantine(i.id, i.confirmed),
 
     'scanner:addDirectory': (i) => s.scanner.addDirectory(i.path, i.recursive),
     'scanner:removeDirectory': (i) => {
