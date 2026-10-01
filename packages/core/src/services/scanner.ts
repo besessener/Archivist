@@ -11,6 +11,7 @@ import { AppError, permissionError, validationError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { isForbiddenScanRoot, isInside, normalizeFsPath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
+import { SCAN_MAX_FILES, type ScanEntry } from '../workers/tasks';
 import type { AuditService } from './audit';
 import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
@@ -23,6 +24,11 @@ import type { SettingsService } from './settings';
 
 type RootRow = typeof scanRoots.$inferSelect;
 type FileRow = typeof scanFiles.$inferSelect;
+
+/** Scan file states of files nobody has processed yet (their duplicate state is re-evaluated on every scan). */
+const PENDING_FILE_STATUSES: ScanFileStatus[] = ['new', 'changed', 'known', 'duplicate'];
+/** Document states in which a changed source file updates the existing inbox entry instead of creating a second one. */
+const INBOX_DOC_STATUSES = ['staged', 'proposed', 'failed'];
 
 const mapRoot = (r: RootRow): ScanRoot => ({
   id: r.id,
@@ -62,6 +68,8 @@ const mapFile = (r: FileRow): ScanFile => ({
 export class ScannerService {
   /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
   private readonly schedule: IntervalSchedule;
+  /** Upper bound of files collected per scan root (lowered in tests). */
+  maxFilesPerRoot = SCAN_MAX_FILES;
 
   constructor(
     private readonly ctx: AppContext,
@@ -81,6 +89,35 @@ export class ScannerService {
       this.db.update(scanFiles).set({ status: 'archived', documentId: e.documentId }).where(eq(scanFiles.path, e.sourcePath)).run();
       this.ctx.events.changed('scanner');
     });
+    ctx.events.on('document:unarchived', (e: { documentId: string }) => this.resetAfterUnarchive(e.documentId));
+  }
+
+  /**
+   * Undo of an archiving: scan files marked `archived` for the document go back to a processable state, so they
+   * show up in the assignment proposals again (analyzed source of a proposed document) or can be analyzed anew.
+   */
+  private resetAfterUnarchive(documentId: string): void {
+    const doc = this.db.select().from(documents).where(eq(documents.id, documentId)).get();
+    const files = this.db
+      .select()
+      .from(scanFiles)
+      .where(and(eq(scanFiles.documentId, documentId), eq(scanFiles.status, 'archived')))
+      .all();
+    if (!files.length) return;
+    for (const f of files) {
+      // undo may have put the archived version back under another name: the file at f.path is then a different one
+      const sameFile = doc?.sourcePath === f.path;
+      this.db
+        .update(scanFiles)
+        .set({
+          status: sameFile && doc?.status === 'proposed' ? 'analyzed' : 'new',
+          documentId: sameFile ? documentId : null,
+          duplicateOfDocumentId: null,
+        })
+        .where(eq(scanFiles.id, f.id))
+        .run();
+    }
+    this.ctx.events.changed('scanner');
   }
 
   private get db() {
@@ -224,14 +261,21 @@ export class ScannerService {
     );
   }
 
-  private isDup(sha: string): string | null {
-    return (
-      this.db
-        .select({ id: documents.id })
-        .from(documents)
-        .where(and(eq(documents.sha256, sha), inArray(documents.status, ['archived', 'indexed_only'])))
-        .get()?.id ?? null
-    );
+  /**
+   * Existing document with this content in any active state (inbox or archive), apart from the document the scan
+   * file itself belongs to. Uses the same rule as the upload, so a file is neither scanned nor uploaded twice.
+   */
+  private isDup(sha: string, ownDocumentId?: string | null): string | null {
+    return this.docs.findDuplicates(sha, ownDocumentId ?? undefined)[0]?.id ?? null;
+  }
+
+  /** Re-evaluates the duplicate state of a not yet processed file whose content did not change. */
+  private recheckDuplicate(prev: FileRow): Pick<FileRow, 'status' | 'duplicateOfDocumentId'> | null {
+    if (!prev.sha256 || !PENDING_FILE_STATUSES.includes(prev.status as ScanFileStatus)) return null;
+    const dupOf = this.isDup(prev.sha256, prev.documentId);
+    if (dupOf) return dupOf === prev.duplicateOfDocumentId && prev.status === 'duplicate' ? null : { status: 'duplicate', duplicateOfDocumentId: dupOf };
+    // the document it duplicated is gone (ignored, deleted): the file is open again
+    return prev.status === 'duplicate' ? { status: 'new', duplicateOfDocumentId: null } : null;
   }
 
   async runScan(rootId: string | null, job?: JobContext): Promise<ScanSummary[]> {
@@ -273,9 +317,11 @@ export class ScannerService {
           excludedFiles: exclusions.filter((e) => e.kind === 'file').map((e) => e.path),
           extensions: root.extensions,
           maxSizeBytes: root.maxFileSizeMb * 1024 * 1024,
+          maxFiles: this.maxFilesPerRoot,
         });
         summary.errors.push(...walked.errors.slice(0, 20));
         summary.skipped = walked.skipped.length;
+        if (walked.limitReached) summary.limitReached = true;
         const known = new Map(
           this.db
             .select()
@@ -290,75 +336,14 @@ export class ScannerService {
           job?.throwIfCancelled();
           seen.add(e.path);
           summary.scanned += 1;
-          const prev = known.get(e.path);
-          if (prev?.status === 'excluded') {
-            summary.excluded += 1;
-            continue;
-          }
-          // bekannt und unverändert → nicht erneut hashen/analysieren
-          if (prev && prev.size === e.size && prev.mtimeMs === e.mtimeMs) {
-            this.db.update(scanFiles).set({ lastSeenAt: now }).where(eq(scanFiles.id, prev.id)).run();
-            summary.unchanged += 1;
-            continue;
-          }
-          let sha: string;
-          try {
-            sha = await this.pool.run('hashFile', { path: e.path });
-          } catch (err) {
-            summary.errors.push(`${e.path}: ${(err as Error).message}`);
-            continue;
-          }
-          const decision = this.privacy.evaluate({ path: e.path, ext: e.ext, rootLlmAllowed: root.llmAllowed });
-          const llmStatus = decision.allowed ? 'local_only' : (decision.status ?? 'local_only');
-          const dupOf = this.isDup(sha);
-          if (prev) {
-            const wasArchived = prev.status === 'archived' || prev.status === 'analyzed';
-            const status: ScanFileStatus = dupOf ? 'duplicate' : 'changed';
-            this.db
-              .update(scanFiles)
-              .set({ size: e.size, mtimeMs: e.mtimeMs, sha256: sha, status, llmStatus, duplicateOfDocumentId: dupOf, lastSeenAt: now })
-              .where(eq(scanFiles.id, prev.id))
-              .run();
-            summary.changedFiles += 1;
-            if (wasArchived && prev.sha256 !== sha) {
-              this.notifications.create({
-                title: 'Datei seit Archivierung verändert',
-                description: `„${e.name}“ in ${path.dirname(e.path)} wurde nach der Archivierung geändert.`,
-                type: 'file_changed',
-                priority: 'normal',
-                affectedEntityIds: prev.documentId ? [prev.documentId] : [],
-                proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
-                dedupeKey: `file-changed:${prev.id}:${sha}`,
-              });
-            }
-          } else {
-            this.db
-              .insert(scanFiles)
-              .values({
-                id: newId(),
-                rootId: root.id,
-                path: e.path,
-                name: e.name,
-                ext: e.ext,
-                size: e.size,
-                mtimeMs: e.mtimeMs,
-                sha256: sha,
-                mime: MIME_BY_EXT[e.ext] ?? e.mime,
-                status: dupOf ? 'duplicate' : 'new',
-                llmStatus,
-                documentId: null,
-                duplicateOfDocumentId: dupOf,
-                firstSeenAt: now,
-                lastSeenAt: now,
-              })
-              .run();
-            summary.newFiles += 1;
-          }
-          if (dupOf) summary.duplicates += 1;
+          await this.scanEntry(root, e, known.get(e.path), summary, now);
         }
-        // verschwundene, noch nicht verarbeitete Dateien aus der Liste nehmen
-        for (const [p, f] of known)
-          if (!seen.has(p) && ['new', 'changed', 'known', 'duplicate'].includes(f.status)) this.db.delete(scanFiles).where(eq(scanFiles.id, f.id)).run();
+        // Verschwundene, noch nicht verarbeitete Dateien aus der Liste nehmen. Was hinter dem Dateilimit oder in einem
+        // nicht lesbaren Bereich liegt, wurde nur nicht gesehen und gilt nicht als verschwunden.
+        if (!walked.limitReached)
+          for (const [p, f] of known)
+            if (!seen.has(p) && PENDING_FILE_STATUSES.includes(f.status as ScanFileStatus) && !walked.unreadable.some((u) => isInside(u, p)))
+              this.db.delete(scanFiles).where(eq(scanFiles.id, f.id)).run();
         this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary }).where(eq(scanRoots.id, root.id)).run();
         this.notifyScan(root, summary);
       } catch (err) {
@@ -379,6 +364,90 @@ export class ScannerService {
     return summaries;
   }
 
+  /** Content of a known file is unchanged: refresh it (and its duplicate state) without touching its status otherwise. */
+  private markUnchanged(prev: FileRow, set: Partial<FileRow>, summary: ScanSummary): void {
+    const dup = this.recheckDuplicate(prev);
+    this.db
+      .update(scanFiles)
+      .set({ ...set, ...dup })
+      .where(eq(scanFiles.id, prev.id))
+      .run();
+    if (dup?.status === 'duplicate') summary.duplicates += 1;
+    summary.unchanged += 1;
+  }
+
+  /** Records one walked file: unchanged files are only refreshed, new or changed ones are hashed and checked for duplicates. */
+  private async scanEntry(root: RootRow, e: ScanEntry, prev: FileRow | undefined, summary: ScanSummary, now: string): Promise<void> {
+    if (prev?.status === 'excluded') {
+      summary.excluded += 1;
+      return;
+    }
+    // bekannt und unverändert → nicht erneut hashen/analysieren
+    if (prev && prev.size === e.size && prev.mtimeMs === e.mtimeMs) {
+      this.markUnchanged(prev, { lastSeenAt: now }, summary);
+      return;
+    }
+    let sha: string;
+    try {
+      sha = await this.pool.run('hashFile', { path: e.path });
+    } catch (err) {
+      summary.errors.push(`${e.path}: ${(err as Error).message}`);
+      return;
+    }
+    if (prev && prev.sha256 === sha) {
+      // only the timestamp changed (touched, or restored by an undo): same content, the status stays
+      this.markUnchanged(prev, { size: e.size, mtimeMs: e.mtimeMs, lastSeenAt: now }, summary);
+      return;
+    }
+    const decision = this.privacy.evaluate({ path: e.path, ext: e.ext, rootLlmAllowed: root.llmAllowed });
+    const llmStatus = decision.allowed ? 'local_only' : (decision.status ?? 'local_only');
+    const dupOf = this.isDup(sha, prev?.documentId);
+    if (prev) {
+      const wasArchived = prev.status === 'archived' || prev.status === 'analyzed';
+      const status: ScanFileStatus = dupOf ? 'duplicate' : 'changed';
+      this.db
+        .update(scanFiles)
+        .set({ size: e.size, mtimeMs: e.mtimeMs, sha256: sha, status, llmStatus, duplicateOfDocumentId: dupOf, lastSeenAt: now })
+        .where(eq(scanFiles.id, prev.id))
+        .run();
+      summary.changedFiles += 1;
+      if (wasArchived) {
+        this.notifications.create({
+          title: 'Datei seit Archivierung verändert',
+          description: `„${e.name}“ in ${path.dirname(e.path)} wurde nach der Archivierung geändert.`,
+          type: 'file_changed',
+          priority: 'normal',
+          affectedEntityIds: prev.documentId ? [prev.documentId] : [],
+          proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
+          dedupeKey: `file-changed:${prev.id}:${sha}`,
+        });
+      }
+    } else {
+      this.db
+        .insert(scanFiles)
+        .values({
+          id: newId(),
+          rootId: root.id,
+          path: e.path,
+          name: e.name,
+          ext: e.ext,
+          size: e.size,
+          mtimeMs: e.mtimeMs,
+          sha256: sha,
+          mime: MIME_BY_EXT[e.ext] ?? e.mime,
+          status: dupOf ? 'duplicate' : 'new',
+          llmStatus,
+          documentId: null,
+          duplicateOfDocumentId: dupOf,
+          firstSeenAt: now,
+          lastSeenAt: now,
+        })
+        .run();
+      summary.newFiles += 1;
+    }
+    if (dupOf) summary.duplicates += 1;
+  }
+
   private notifyScan(root: RootRow, s: ScanSummary): void {
     const fresh = s.newFiles + s.changedFiles;
     if (fresh > 0) {
@@ -391,9 +460,19 @@ export class ScannerService {
         dedupeKey: `scan-new:${root.id}:${s.scanned}:${fresh}:${s.duplicates}`,
       });
     }
+    if (s.limitReached) {
+      this.notifications.create({
+        title: 'Scan-Limit erreicht',
+        description: `${path.basename(root.path)}: Es wurden nur die ersten ${this.maxFilesPerRoot.toLocaleString('de-DE')} passenden Dateien geprüft; weitere Dateien wurden nicht erfasst. Bitte Unterordner ausschließen oder kleinere Verzeichnisse einzeln freigeben.`,
+        type: 'scan_partial',
+        priority: 'normal',
+        proposedActions: [{ label: 'Scan-Verzeichnis verwalten', kind: 'navigate', target: '/scan/' }],
+        dedupeKey: `scan-limit:${root.id}`,
+      });
+    }
     if (s.duplicates > 0) {
       this.notifications.create({
-        title: `${s.duplicates} Datei(en) entsprechen bereits archivierten Dokumenten`,
+        title: `${s.duplicates} Datei(en) entsprechen bereits vorhandenen Dokumenten`,
         description: `In ${path.basename(root.path)} liegen mögliche externe Duplikate.`,
         type: 'external_duplicate',
         priority: 'low',
@@ -468,7 +547,7 @@ export class ScannerService {
         if (!isInside(await fsp.realpath(root.path), real)) throw permissionError('Symbolischer Link führt aus dem freigegebenen Verzeichnis heraus.');
         const st = await fsp.stat(real);
         const sha = await this.pool.run('hashFile', { path: real });
-        const dup = this.isDup(sha);
+        const dup = this.isDup(sha, f.documentId);
         if (dup) {
           this.db
             .update(scanFiles)
@@ -479,6 +558,16 @@ export class ScannerService {
           continue;
         }
         let doc = f.documentId ? this.db.select().from(documents).where(eq(documents.id, f.documentId)).get() : undefined;
+        if (doc && doc.sha256 !== sha && !doc.stagedPath && INBOX_DOC_STATUSES.includes(doc.status)) {
+          // The file changed while its entry is still in the inbox: update that entry (re-analyzed below) instead of
+          // leaving the stale proposal next to a second document. The conditional update skips an entry archived meanwhile.
+          this.db
+            .update(documents)
+            .set({ sha256: sha, size: st.size, sourcePath: real, updatedAt: nowIso() })
+            .where(and(eq(documents.id, doc.id), inArray(documents.status, INBOX_DOC_STATUSES)))
+            .run();
+          doc = this.docs.getRow(doc.id);
+        }
         if (!doc || doc.sha256 !== sha) {
           const rec = this.docs.insertDocument({ originalName: f.name, ext: f.ext, size: st.size, sha256: sha, sourcePath: real, stagedPath: null });
           doc = this.docs.getRow(rec.id);
