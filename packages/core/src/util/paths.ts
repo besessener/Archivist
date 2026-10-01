@@ -6,11 +6,11 @@ import { permissionError, validationError } from './errors';
 
 const SEP_RE = /[\\/]/;
 
-/** true, wenn `candidate` gleich `root` ist oder darunter liegt (rein lexikalisch, nach Normalisierung). */
 /** Zulassungsliste: temporäre Ordner sind absichtlich als Scan-Ziel erlaubt (Tests, Wegwerf-Ordner). */
 // eslint-disable-next-line sonarjs/publicly-writable-directories -- keine Nutzung als Ablageort, nur Vergleich von Pfadpräfixen
 const TEMP_PREFIXES = ['/tmp/', '/var/tmp/', '/var/folders/', '/private/var/folders/', '/private/tmp/'];
 
+/** true, wenn `candidate` gleich `root` ist oder darunter liegt (rein lexikalisch, nach Normalisierung). */
 export function isInside(root: string, candidate: string): boolean {
   const rel = path.relative(path.resolve(root), path.resolve(candidate));
   if (rel === '') return true;
@@ -95,7 +95,7 @@ export function sanitizeCategoryPath(input: string): string {
     .map((s) => s.trim())
     .filter(Boolean);
   if (segs.some((s) => s === '..' || s === '.')) throw permissionError('Ungültiger Zielordner (relative Pfadsegmente).', input);
-  const clean = segs.map((s) => sanitizeFileName(s, 'Ordner').replace(/\.[a-z0-9]{1,10}$/i, (m) => m)).slice(0, 6);
+  const clean = segs.map((s) => sanitizeFileName(s, 'Ordner')).slice(0, 6);
   if (clean.length === 0) throw validationError('Der Zielordner darf nicht leer sein.');
   return clean.join('/');
 }

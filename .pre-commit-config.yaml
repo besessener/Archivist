@@ -11,6 +11,8 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=1024']
       - id: detect-private-key
+        # enthält absichtlich einen Beispiel-Schlüsselblock als Testeingabe für die Maskierung
+        exclude: '^tests/unit/redact\.test\.ts$'
       - id: mixed-line-ending
         args: ['--fix=no']
   - repo: https://github.com/gitleaks/gitleaks

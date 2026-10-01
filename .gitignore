@@ -15,3 +15,7 @@ playwright-report/
 node_modules/.cache/
 playwright-report/
 test-results/
+
+# Stryker
+reports/
+.stryker-tmp/
