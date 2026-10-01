@@ -37,8 +37,9 @@ export function toArchiveItem(doc: DocRecord, edit: ArchiveEdit): ArchiveItemReq
   const item: ArchiveItemRequest = { documentId: doc.id, mode: edit.mode };
   if (edit.categoryPath.trim()) item.categoryPath = edit.categoryPath.trim();
   if (edit.fileName.trim()) item.fileName = edit.fileName.trim();
-  if (edit.topic.trim()) item.topic = edit.topic.trim();
-  if (edit.project.trim()) item.project = edit.project.trim();
+  // An emptied field explicitly means "without topic/project" – send null so the backend does not fall back to the proposal.
+  item.topic = edit.topic.trim() || null;
+  item.project = edit.project.trim() || null;
   return item;
 }
 
@@ -193,7 +194,16 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
                   )}
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {it.renamed && <Badge variant="info">Wird umbenannt</Badge>}
-                    {it.willRemoveSource && <Badge variant="warning">Original wird entfernt</Badge>}
+                    {it.willRemoveSource && (
+                      <Badge variant="warning" data-testid="archive-plan-removes-source">
+                        Original wird entfernt
+                      </Badge>
+                    )}
+                    {it.removesInboxCopy && (
+                      <Badge variant="secondary" data-testid="archive-plan-inbox-copy">
+                        {it.willRemoveSource ? 'Inbox-Kopie wird aufgeräumt' : 'Inbox-Kopie wird aufgeräumt, Original bleibt erhalten'}
+                      </Badge>
+                    )}
                     {it.blocked && <Badge variant="danger">Blockiert</Badge>}
                   </div>
                   {it.rationale && <p className="mt-2 text-xs text-muted-foreground">{it.rationale}</p>}

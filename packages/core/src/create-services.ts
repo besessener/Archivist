@@ -96,14 +96,14 @@ function buildServices(opts: CreateServicesOptions) {
   const documentsSvc = new DocumentService(ctx, settings, graph, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
   const decisions = new DecisionService(ctx, graph, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, search, audit, undo);
-  const eventsSvc = new EventService(ctx, graph, search, audit);
+  const eventsSvc = new EventService(ctx, graph, search, audit, undo);
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
   const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, audit, notifications, pool, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
-  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, actions);
+  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications);
   const backup = new BackupService(ctx, settings, audit);
   const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit);
   const chat = new ChatService(
@@ -130,7 +130,6 @@ function buildServices(opts: CreateServicesOptions) {
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
-  scanner.wire({ actions });
   chat.wire({ actions, archive });
   graph.setReindexer(async (refs) => {
     await Promise.all([

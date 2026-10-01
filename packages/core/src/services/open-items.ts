@@ -8,11 +8,19 @@ import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
 import { levenshtein, tokenize } from '../util/text';
 import type { AuditService } from './audit';
-import type { KnowledgeGraphService } from './knowledge-graph';
+import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
 type Row = typeof openItems.$inferSelect;
+
+interface OpenItemUpdateUndo {
+  id: string;
+  /** Previous values of the edited columns. */
+  before: Partial<Row>;
+  afterUpdatedAt: string;
+  relations: RelationChangeSet;
+}
 export const ACTIVE_STATUSES: OpenItemStatus[] = ['open', 'waiting', 'blocked'];
 
 /** Erkennt typische „offener Punkt“-Formulierungen lokal (ohne LLM). */
@@ -127,6 +135,31 @@ export class OpenItemService {
         });
         this.ctx.events.changed('openItems', 'reminders');
         return 'Status des offenen Punkts wiederhergestellt.';
+      },
+    });
+    undo.register('open_item_update', {
+      check: async (data) => {
+        const d = data as OpenItemUpdateUndo;
+        const row = this.db.select().from(openItems).where(eq(openItems.id, d.id)).get();
+        if (!row) return ['Der offene Punkt existiert nicht mehr.'];
+        const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : ['Der offene Punkt wurde seit der Bearbeitung verändert.'];
+        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
+      },
+      run: async (data) => {
+        const d = data as OpenItemUpdateUndo;
+        this.db.transaction(() => {
+          this.db
+            .update(openItems)
+            .set({ ...d.before, updatedAt: nowIso() })
+            .where(eq(openItems.id, d.id))
+            .run();
+          const row = this.db.select().from(openItems).where(eq(openItems.id, d.id)).get();
+          if (row) this.graph.registerNode('task', row.id, row.title, row.description);
+          this.graph.revertRelationChanges(d.relations);
+        });
+        void this.reindex(d.id);
+        this.ctx.events.changed('openItems', 'knowledge', 'status');
+        return 'Bearbeitung des offenen Punkts rückgängig gemacht.';
       },
     });
   }
@@ -289,12 +322,19 @@ export class OpenItemService {
     }
     if (patch.responsibleUnknown !== undefined) set.responsibleUnknown = patch.responsibleUnknown;
     if (patch.dueUnknown !== undefined) set.dueUnknown = patch.dueUnknown;
-    this.db.transaction(() => {
-      this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
-      if (set.title) this.graph.registerNode('task', id, set.title, set.description ?? cur.description);
-      if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
-      if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
-    });
+    const { changes } = this.graph.trackRelationChanges(id, () =>
+      this.db.transaction(() => {
+        this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
+        if (set.title) this.graph.registerNode('task', id, set.title, set.description ?? cur.description);
+        if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
+        if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
+        // the previous topic/project no longer applies
+        if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
+        if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+      }),
+    );
+    const before = Object.fromEntries(Object.keys(set).flatMap((k) => (k === 'updatedAt' ? [] : [[k, cur[k as keyof Row]]]))) as Partial<Row>;
+    const undoData: OpenItemUpdateUndo = { id, before, afterUpdatedAt: set.updatedAt!, relations: changes };
     this.audit.log({
       action: 'open_item.update',
       actor: 'user',
@@ -303,6 +343,7 @@ export class OpenItemService {
       entityIds: [id],
       before: { status: cur.status, dueAt: cur.dueAt },
       after: patch,
+      undo: { type: 'open_item_update', data: undoData },
     });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');

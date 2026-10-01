@@ -11,7 +11,6 @@ import { AppError, permissionError, validationError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { isForbiddenScanRoot, isInside, normalizeFsPath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
-import type { ActionService } from './actions';
 import type { AuditService } from './audit';
 import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
@@ -61,7 +60,6 @@ const mapFile = (r: FileRow): ScanFile => ({
  */
 export class ScannerService {
   private timers: NodeJS.Timeout[] = [];
-  private actions!: ActionService;
 
   constructor(
     private readonly ctx: AppContext,
@@ -80,10 +78,6 @@ export class ScannerService {
       this.db.update(scanFiles).set({ status: 'archived', documentId: e.documentId }).where(eq(scanFiles.path, e.sourcePath)).run();
       this.ctx.events.changed('scanner');
     });
-  }
-
-  wire(deps: { actions: ActionService }): void {
-    this.actions = deps.actions;
   }
 
   private get db() {
@@ -560,32 +554,33 @@ export class ScannerService {
           documentId: r.id,
           mode: 'copy' as const,
           categoryPath: p?.location.categoryPath ?? r.categoryPath ?? undefined,
-          topic: g.topic,
-          project: g.project,
+          // null would mean "explicitly without topic/project"; a group without one only leaves it open.
+          topic: g.topic ?? undefined,
+          project: g.project ?? undefined,
         };
       });
       const label = known ? `${known.type === 'project' ? 'Projekt' : 'Thema'} „${known.name}“` : `„${g.label}“`;
       const n = g.rows.length;
-      const action = this.actions.propose({
-        actionType: 'archive_documents',
+      const proposal = {
+        actionType: 'archive_documents' as const,
         label: `${n} Dokument(e) archivieren und zuordnen (${g.label})`,
         rationale: `${n} analysierte Datei(en) gehören vermutlich zu ${label}.`,
         confidence: Math.min(...g.rows.map((r) => r.confidence ?? 0.4)),
         affectedEntities: g.rows.map((r) => ({ type: 'document' as const, id: r.id, label: r.title })),
-        requiredConfirmation: 'confirm',
+        requiredConfirmation: 'confirm' as const,
         proposedParameters: { items, approveNewCategories: [] },
-      });
+      };
       const ids = g.rows.map((r) => r.id).sort();
       const dedupeKey = `scan-group:${key}:${ids.join(',').slice(0, 120)}`;
       this.insights.upsert({
         kind: known ? 'assignment' : 'archive_proposal',
         title: `${n} Dokument${n === 1 ? '' : 'e'} ${known ? 'gehören vermutlich zu' : 'passen zu'} ${label}`,
         explanation: `${g.rows.map((r) => `• ${r.title} → ${(r.proposal as DocumentProposal | null)?.location.categoryPath ?? r.categoryPath}`).join('\n')}${decisions ? `\n${decisions} enthalten mögliche Entscheidungen.` : ''}${dups ? `\n${dups} scheinen Duplikate zu sein.` : ''}`,
-        confidence: action.confidence,
-        affected: action.affectedEntities,
+        confidence: proposal.confidence,
+        affected: proposal.affectedEntities,
         sourceIds: ids,
-        recommendedActionId: action.id,
-        recommendedActionLabel: 'Alle kopieren und archivieren',
+        // proposed only if the insight is (still) open: no orphaned proposals when the group is analyzed again
+        action: { proposal, label: 'Alle kopieren und archivieren' },
         dedupeKey,
       });
       this.notifications.create({

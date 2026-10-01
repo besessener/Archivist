@@ -24,7 +24,7 @@ import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
 import { classifyLocally, humanizeCategoryPath, normalizeIsoDates, snapToKnown } from './classifier';
 import { isJobCancelled, type JobQueueService } from './jobs';
-import type { KnowledgeGraphService } from './knowledge-graph';
+import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
@@ -33,6 +33,16 @@ import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
 
 export type DocRow = typeof documents.$inferSelect;
+
+interface DocumentMetadataUndo {
+  id: string;
+  before: { title: string; topicId: string | null; projectId: string | null; tags: string[]; persons: string[] };
+  /** Relation changes of the edit (absent in undo data written by older versions). */
+  relations?: RelationChangeSet;
+  /** Older undo data: relations created by the edit. */
+  relationIds?: string[];
+  afterUpdatedAt: string;
+}
 
 /** Final states an analysis must never reopen (the file already lives in the archive or index). */
 const ARCHIVED_STATUSES: DocumentStatus[] = ['archived', 'indexed_only'];
@@ -86,23 +96,26 @@ export class DocumentService {
   ) {
     undo.register('document_metadata', {
       check: async (data) => {
-        const d = data as { id: string; afterUpdatedAt: string };
+        const d = data as DocumentMetadataUndo;
         const row = this.db.select().from(documents).where(eq(documents.id, d.id)).get();
         if (!row) return ['Das Dokument existiert nicht mehr.'];
-        return row.updatedAt === d.afterUpdatedAt ? [] : ['Das Dokument wurde seit der Änderung erneut verändert.'];
+        const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : ['Das Dokument wurde seit der Änderung erneut verändert.'];
+        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
       },
       run: async (data) => {
-        const d = data as {
-          id: string;
-          before: { title: string; topicId: string | null; projectId: string | null; tags: string[]; persons: string[] };
-          relationIds: string[];
-        };
-        this.db
-          .update(documents)
-          .set({ ...d.before, updatedAt: nowIso() })
-          .where(eq(documents.id, d.id))
-          .run();
-        for (const rid of d.relationIds) this.graph.deleteRelation(rid);
+        const d = data as DocumentMetadataUndo;
+        this.db.transaction(() => {
+          this.db
+            .update(documents)
+            .set({ ...d.before, updatedAt: nowIso() })
+            .where(eq(documents.id, d.id))
+            .run();
+          if (this.graph.getEntity(d.id))
+            this.graph.registerNode('document', d.id, d.before.title, this.db.select().from(documents).where(eq(documents.id, d.id)).get()?.summary ?? null);
+          if (d.relations) this.graph.revertRelationChanges(d.relations);
+          // undo data written before relation tracking existed only lists the created relations
+          else for (const rid of d.relationIds ?? []) this.graph.deleteRelation(rid);
+        });
         await this.indexDocument(d.id);
         this.ctx.events.changed('documents', 'knowledge');
         return 'Metadaten wiederhergestellt.';
@@ -656,20 +669,14 @@ export class DocumentService {
   assign(id: string, target: { topic?: string; project?: string }, opts: { trigger?: string } = {}): DocumentRecord {
     const row = this.getRow(id);
     const set: Partial<DocRow> = { updatedAt: nowIso() };
-    const relationIds: string[] = [];
-    if (target.topic?.trim()) {
-      const t = this.graph.ensureEntity('topic', target.topic);
-      set.topicId = t.id;
-      const rel = this.graph.link(id, t.id, 'relates_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
-      if (rel) relationIds.push(rel.id);
-    }
-    if (target.project?.trim()) {
-      const p = this.graph.ensureEntity('project', target.project);
-      set.projectId = p.id;
-      const rel = this.graph.link(id, p.id, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
-      if (rel) relationIds.push(rel.id);
-    }
-    this.db.update(documents).set(set).where(eq(documents.id, id)).run();
+    if (target.topic?.trim()) set.topicId = this.graph.ensureEntity('topic', target.topic).id;
+    if (target.project?.trim()) set.projectId = this.graph.ensureEntity('project', target.project).id;
+    const { changes } = this.graph.trackRelationChanges(id, () =>
+      this.ctx.database.transaction(() => {
+        this.db.update(documents).set(set).where(eq(documents.id, id)).run();
+        this.syncAssignment(id, set);
+      }),
+    );
     this.audit.log({
       action: 'document.assign',
       actor: 'user',
@@ -678,15 +685,7 @@ export class DocumentService {
       entityIds: [id],
       before: { topicId: row.topicId, projectId: row.projectId },
       after: { topicId: set.topicId ?? row.topicId, projectId: set.projectId ?? row.projectId },
-      undo: {
-        type: 'document_metadata',
-        data: {
-          id,
-          before: { title: row.title, topicId: row.topicId, projectId: row.projectId, tags: row.tags, persons: row.persons },
-          relationIds,
-          afterUpdatedAt: set.updatedAt,
-        },
-      },
+      undo: { type: 'document_metadata', data: this.metadataUndo(row, set, changes) },
     });
     void this.indexDocument(id);
     this.ctx.events.changed('documents', 'knowledge');
@@ -701,26 +700,18 @@ export class DocumentService {
     if (!confirmed) throw new AppError('permission_error', 'Das Überschreiben von Metadaten erfordert eine Bestätigung.');
     const row = this.getRow(id);
     const set: Partial<DocRow> = { updatedAt: nowIso() };
-    const relationIds: string[] = [];
     if (patch.title !== undefined && patch.title.trim()) set.title = patch.title.trim().slice(0, 200);
     if (patch.tags) set.tags = patch.tags;
     if (patch.persons) set.persons = patch.persons;
-    if (patch.topic !== undefined) {
-      set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
-      if (set.topicId) {
-        const rel = this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
-        if (rel) relationIds.push(rel.id);
-      }
-    }
-    if (patch.project !== undefined) {
-      set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
-      if (set.projectId) {
-        const rel = this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
-        if (rel) relationIds.push(rel.id);
-      }
-    }
-    this.db.update(documents).set(set).where(eq(documents.id, id)).run();
-    if (set.title) this.graph.registerNode('document', id, set.title, row.summary);
+    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
+    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    const { changes } = this.graph.trackRelationChanges(id, () =>
+      this.ctx.database.transaction(() => {
+        this.db.update(documents).set(set).where(eq(documents.id, id)).run();
+        if (set.title) this.graph.registerNode('document', id, set.title, row.summary);
+        this.syncAssignment(id, set);
+      }),
+    );
     this.audit.log({
       action: 'document.updateMetadata',
       actor: 'user',
@@ -729,19 +720,31 @@ export class DocumentService {
       entityIds: [id],
       before: { title: row.title, topicId: row.topicId, projectId: row.projectId },
       after: patch,
-      undo: {
-        type: 'document_metadata',
-        data: {
-          id,
-          before: { title: row.title, topicId: row.topicId, projectId: row.projectId, tags: row.tags, persons: row.persons },
-          relationIds,
-          afterUpdatedAt: set.updatedAt,
-        },
-      },
+      undo: { type: 'document_metadata', data: this.metadataUndo(row, set, changes) },
     });
     void this.indexDocument(id);
     this.ctx.events.changed('documents', 'knowledge');
     return this.get(id);
+  }
+
+  /**
+   * Links the document to its (changed) topic/project and marks the relations to the previous
+   * topic/project as outdated, so the graph matches `topicId`/`projectId`.
+   */
+  private syncAssignment(id: string, set: Partial<DocRow>): void {
+    if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
+    if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
+    if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
+    if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+  }
+
+  private metadataUndo(row: DocRow, set: Partial<DocRow>, relations: RelationChangeSet): DocumentMetadataUndo {
+    return {
+      id: row.id,
+      before: { title: row.title, topicId: row.topicId, projectId: row.projectId, tags: row.tags, persons: row.persons },
+      relations,
+      afterUpdatedAt: set.updatedAt!,
+    };
   }
 
   ignore(id: string): DocumentRecord {
