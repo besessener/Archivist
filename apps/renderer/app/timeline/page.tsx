@@ -3,17 +3,15 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, FileText, Gavel, ListChecks, Plus, ShieldAlert, StickyNote, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { EventFormDialog } from '@/components/events/event-form-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
-import { nonEmpty } from '@/lib/utils';
 import { formatLongDate } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import type { IpcOutput } from '@archivist/shared';
@@ -152,7 +150,16 @@ export default function TimelinePage() {
           </section>
         ))}
       </div>
-      <EventFormDialog key={`e-${createOpen}`} open={createOpen} onOpenChange={setCreateOpen} onSaved={() => void tl.refetch()} />
+      <EventFormDialog
+        key={`e-${createOpen}`}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSubmit={async (input) => {
+          const out = await run(() => call('events:create', input), { success: 'Ereignis eingetragen.' });
+          if (out) void tl.refetch();
+          return out !== undefined;
+        }}
+      />
       <ConfirmDialog
         open={deleteId !== null}
         onOpenChange={(o) => !o && setDeleteId(null)}
@@ -168,68 +175,5 @@ export default function TimelinePage() {
         }}
       />
     </Page>
-  );
-}
-
-function EventFormDialog({ open, onOpenChange, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
-  const { run, busy } = useRun();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [occurredAt, setOccurredAt] = useState('');
-  const [topic, setTopic] = useState('');
-  const [project, setProject] = useState('');
-  async function save() {
-    const out = await run(
-      () =>
-        call('events:create', {
-          title: title.trim(),
-          description: nonEmpty(description) ?? null,
-          occurredAt,
-          topic: nonEmpty(topic) ?? null,
-          project: nonEmpty(project) ?? null,
-          sourceIds: [],
-        }),
-      { success: 'Ereignis eingetragen.' },
-    );
-    if (out) {
-      onSaved();
-      onOpenChange(false);
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl" data-testid="event-form">
-        <DialogHeader>
-          <DialogTitle>Ereignis hinzufügen</DialogTitle>
-          <DialogDescription>Ein Ereignis ist etwas, das an einem bestimmten Tag stattgefunden hat, z. B. „Beitrag eingereicht“.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Was ist passiert? *" htmlFor="ev-title" className="sm:col-span-2">
-            <Input id="ev-title" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="event-title" />
-          </Field>
-          <Field label="Datum *" htmlFor="ev-date">
-            <Input id="ev-date" type="date" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} data-testid="event-date" />
-          </Field>
-          <div />
-          <Field label="Beschreibung" htmlFor="ev-desc" className="sm:col-span-2">
-            <Textarea id="ev-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
-          </Field>
-          <Field label="Thema" htmlFor="ev-topic">
-            <Input id="ev-topic" value={topic} onChange={(e) => setTopic(e.target.value)} />
-          </Field>
-          <Field label="Projekt" htmlFor="ev-project">
-            <Input id="ev-project" value={project} onChange={(e) => setProject(e.target.value)} />
-          </Field>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Abbrechen
-          </Button>
-          <Button disabled={busy || !title.trim() || !occurredAt} onClick={() => void save()} data-testid="event-save">
-            Speichern
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
