@@ -181,7 +181,7 @@ describe('Startup-Bereinigung verwaister Analysen', () => {
     app.services.database.db.update(documents).set({ status: 'analyzing' }).run();
     // the orphan's job is gone (e.g. finished as failed in an earlier session)
     const orphanJob = analyzeJobs().find((j) => j.label.includes('verwaist.txt'))!;
-    app.services.jobs.cancel(orphanJob.id);
+    app.services.database.sqlite.prepare("update jobs set status = 'failed' where id = ?").run(orphanJob.id);
 
     expect(app.services.documents.recoverInterruptedAnalyses()).toBe(1);
     const o = await app.ok('documents:get', { id: orphan.id });

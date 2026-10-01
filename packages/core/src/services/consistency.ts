@@ -116,7 +116,12 @@ export class ConsistencyService {
     this.insights.retireOpen('scattered:', keepScattered);
   }
 
-  async run(trigger = 'manual', report?: (p: number, m: string) => void): Promise<ConsistencyReport> {
+  /** `signal`: cancels the check between its sections (insights found so far are kept). */
+  async run(trigger = 'manual', report?: (p: number, m: string) => void, signal?: AbortSignal): Promise<ConsistencyReport> {
+    const step = (p: number, m: string) => {
+      signal?.throwIfAborted();
+      report?.(p, m);
+    };
     const byKind: Record<string, number> = {};
     let notifs = 0;
     const count = (k: string, n = 1) => (byKind[k] = (byKind[k] ?? 0) + n);
@@ -124,7 +129,7 @@ export class ConsistencyService {
     const staleDays = this.settings.get().consistency.staleOpenItemDays;
 
     // ---- Dokumente ----
-    report?.(0.1, 'Prüfe Dokumente');
+    step(0.1, 'Prüfe Dokumente');
     const archived = this.db
       .select()
       .from(documents)
@@ -201,7 +206,7 @@ export class ConsistencyService {
     }
 
     // ---- Ablageort vs. Klassifikation (Datenbank gegen Dateisystem) ----
-    report?.(0.3, 'Prüfe Ablageorte');
+    step(0.3, 'Prüfe Ablageorte');
     const root = this.settings.get().archiveRoot;
     for (const d of archived.filter((x) => x.archiveRelPath)) {
       const abs = path.join(root, ...d.archiveRelPath!.split('/'));
@@ -229,11 +234,11 @@ export class ConsistencyService {
     }
 
     // ---- Verstreute Ablage: Dokumente zum selben Thema/Projekt liegen in verschiedenen Verzeichnissen ----
-    report?.(0.4, 'Prüfe Verzeichnisse');
+    step(0.4, 'Prüfe Verzeichnisse');
     this.checkScatteredDocuments(archived, count);
 
     // ---- Themen ----
-    report?.(0.45, 'Prüfe Themen');
+    step(0.45, 'Prüfe Themen');
     for (const { a, b, score } of this.graph.findSimilarTopics()) {
       if (this.insights.has(`similar-topics:${[a.id, b.id].sort().join('|')}`)) continue;
       const action = this.actions.propose({
@@ -266,7 +271,7 @@ export class ConsistencyService {
     }
 
     // ---- Entscheidungen ----
-    report?.(0.6, 'Prüfe Entscheidungen');
+    step(0.6, 'Prüfe Entscheidungen');
     const allDecisions = this.decisions.list();
     for (const d of allDecisions) {
       if (d.status === 'draft' || (d.missingFields.length > 0 && d.status !== 'revoked' && d.status !== 'superseded')) {
@@ -331,12 +336,13 @@ export class ConsistencyService {
         count('possibly_superseded');
       }
     }
-    report?.(0.75, 'Prüfe Widersprüche');
+    step(0.75, 'Prüfe Widersprüche');
     const found = await this.contradictions.scanAll();
+    signal?.throwIfAborted();
     count('contradiction', found.length);
 
     // ---- Offene Punkte ----
-    report?.(0.85, 'Prüfe offene Punkte');
+    step(0.85, 'Prüfe offene Punkte');
     const active = this.openItems.list({ onlyActive: true });
     const noOwner = active.filter((i) => !i.responsiblePersonId && !i.responsibleUnknown);
     if (noOwner.length) {
@@ -470,6 +476,7 @@ export class ConsistencyService {
       }
     }
 
+    signal?.throwIfAborted(); // a cancelled check does not announce itself as completed
     const total = Object.values(byKind).reduce((a, b) => a + b, 0);
     if (trigger !== 'startup' || total > 0)
       this.notifications.create({

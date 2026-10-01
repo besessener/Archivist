@@ -42,6 +42,8 @@ export interface CreateServicesOptions {
   workerFile?: string | null;
   fetchImpl?: FetchLike;
   jobConcurrency?: number;
+  /** Wait before the first job retry; doubles with every further attempt (default 5 s, tests: 0) */
+  jobRetryDelayMs?: number;
   /** Wartezeit zwischen LLM-Wiederholungen (Tests: 0) */
   llmRetryDelayMs?: number;
 }
@@ -80,7 +82,7 @@ function buildServices(opts: CreateServicesOptions) {
   const graph = new KnowledgeGraphService(ctx, audit, undo);
   const search = new SearchService(ctx, embedding, pool, () => privacy.mode() !== 'local_only' && llm.isConfigured());
   const categories = new CategoryService(ctx);
-  const jobs = new JobQueueService(ctx, opts.jobConcurrency ?? 2);
+  const jobs = new JobQueueService(ctx, { concurrency: opts.jobConcurrency ?? 2, retryBaseDelayMs: opts.jobRetryDelayMs });
   const notifications = new NotificationService(ctx);
   const reminders = new ReminderService(ctx, notifications);
   // Settings are loaded before the database exists; report a repaired or unreadable settings.json now.
@@ -140,26 +142,28 @@ function buildServices(opts: CreateServicesOptions) {
   });
 
   // 6) Job-Handler
-  jobs.register<{ documentId: string; allowLlm: boolean }>('document.analyze', async (job) => {
-    try {
-      const res = await documentsSvc.analyze(job.payload.documentId, { allowLlm: job.payload.allowLlm });
-      return res;
-    } catch (err) {
-      // analyze() already marked the document as `failed` (with reason); archived documents are never touched.
-      const message = err instanceof Error ? err.message : String(err);
-      notifications.create({
-        title: 'Dateiimport fehlgeschlagen',
-        description: message,
-        type: 'import_failed',
-        priority: 'high',
-        affectedEntityIds: [job.payload.documentId],
-        proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
-        dedupeKey: `analyze-failed:${job.payload.documentId}:${(Date.now() / 60000) | 0}`,
-      });
-      events.changed('documents');
-      throw err;
-    }
-  });
+  // A failed attempt keeps the document in `analyzing` while a retry follows; only after the last attempt
+  // it becomes `failed` and the user is notified. Archived documents are never touched.
+  jobs.register<{ documentId: string; allowLlm: boolean }>(
+    'document.analyze',
+    (job) => documentsSvc.analyze(job.payload.documentId, { allowLlm: job.payload.allowLlm, signal: job.signal, deferFailure: true }),
+    {
+      onFailed: (job, err) => {
+        if (!documentsSvc.markAnalysisFailed(job.payload.documentId, err)) return;
+        notifications.create({
+          title: 'Dateiimport fehlgeschlagen',
+          description: err instanceof Error ? err.message : String(err),
+          type: 'import_failed',
+          priority: 'high',
+          affectedEntityIds: [job.payload.documentId],
+          proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
+          dedupeKey: `analyze-failed:${job.payload.documentId}:${(Date.now() / 60000) | 0}`,
+        });
+      },
+      // e.g. cancelled while waiting for a retry: the document must not stay in `analyzing`
+      onCancelled: (job) => void documentsSvc.markAnalysisCancelled(job.payload.documentId),
+    },
+  );
   jobs.register<{ rootId: string | null }>('scanner.scan', async (job) => {
     const summaries = await scanner.runScan(job.payload.rootId, job);
     // optional: neue Dateien automatisch analysieren (nur wenn ausdrücklich aktiviert und der Datenschutzmodus es erlaubt)
@@ -177,7 +181,7 @@ function buildServices(opts: CreateServicesOptions) {
   jobs.register<{ fileIds: string[]; confirmLlm: boolean }>('scanner.analyze', (job) => scanner.analyzeFiles(job.payload.fileIds, job.payload.confirmLlm, job));
   jobs.register<{ trigger?: string }>('consistency.check', async (job) => {
     await archive.cleanupInbox(); // retries inbox copies that were locked right after archiving
-    return consistency.run(job.payload.trigger ?? 'manual', (p, m) => job.report(p, m));
+    return consistency.run(job.payload.trigger ?? 'manual', (p, m) => job.report(p, m), job.signal);
   });
 
   // 7) Reaktion auf geänderte Einstellungen

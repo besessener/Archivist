@@ -32,7 +32,7 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 | **Verzeichnisscan** | Nur ausdrücklich freigegebene Ordner, zweistufig (1. technischer Scan ohne LLM, 2. Analyse nur für neue/geänderte/ausgewählte Dateien), Ausschlüsse, manuell / beim Start / periodisch (nur bei laufender App) |
 | **Agentische Konsistenzschleife** | Archivprüfung: fehlende Zuordnungen, Duplikate, **Dokumente zum selben Thema in verschiedenen Verzeichnissen (mit Umlager-Vorschlag)**, Widersprüche, unvollständige/überholte Entscheidungen, überfällige/verwaiste offene Punkte, ähnliche Themen, Ablageort vs. Klassifikation, DB-vs-Dateisystem |
 | **Insights, Timeline, Notification Bell, Erinnerungen** | siehe UI; die Timeline zeigt auch **Ereignisse** (per Chat oder „Ereignis hinzufügen“ erfasst, durchsuchbar, im Wissensgraph); Erinnerungen werden beim Start geprüft und zeitgesteuert ausgelöst, **solange die App läuft** |
-| **Job-Queue** | Persistent in SQLite, überlebt Neustarts, Fortschritt, Wiederholen, kooperativer Abbruch; schwere Arbeit in Worker-Threads |
+| **Job-Queue** | Persistent in SQLite, überlebt Neustarts, Fortschritt, Wiederholen; vorübergehende Fehler werden mit zunehmender Wartezeit erneut versucht, Fehlermeldungen erst nach dem letzten Versuch; Abbrechen wirkt auch bei Analyse und Archivprüfung (Status „abgebrochen“); schwere Arbeit in Worker-Threads |
 | **Audit Log + Undo** | Jede relevante Änderung wird protokolliert; Undo prüft vorher, ob seitdem etwas verändert wurde |
 | **Backups** | Konsistenter SQLite-Snapshot (Online-Backup-API) + Einstellungen ohne API-Key; Metadaten- vs. vollständiges Archiv-Backup; nach jedem Backup werden die ältesten über „Anzahl aufbewahrter Backups“ hinaus entfernt (getrennt je Art) |
 
