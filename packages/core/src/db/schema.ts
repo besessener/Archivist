@@ -122,6 +122,8 @@ export const openItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     /** Zuletzt erzeugter Lösungsvorschlag (OpenItemSolution als JSON) */
     solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
+    /** Set when the item was discarded as a duplicate: the open item it was merged into (status `dismissed`). */
+    duplicateOfId: text('duplicate_of_id'),
   },
   (t) => [index('open_items_status_idx').on(t.status)],
 );

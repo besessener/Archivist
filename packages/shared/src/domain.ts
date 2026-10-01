@@ -246,6 +246,8 @@ export const OpenItem = z.object({
   updatedAt: IsoDate,
   /** Zuletzt erzeugter Lösungsvorschlag (mit Datum und Modell) */
   solution: OpenItemSolution.nullable().default(null),
+  /** Discarded as a duplicate („verworfen (Duplikat)“, status `dismissed`): the open item it was merged into. */
+  duplicateOfId: z.string().nullable().default(null),
 });
 export type OpenItem = z.infer<typeof OpenItem>;
 
@@ -477,6 +479,7 @@ export const AgentActionType = z.enum([
   'set_reminder',
   'create_open_item',
   'add_open_item_source',
+  'merge_open_items',
   'record_decision',
 ]);
 export type AgentActionType = z.infer<typeof AgentActionType>;
@@ -552,6 +555,8 @@ export const ActionParamSchemas = {
     dueAt: z.string().nullish(),
     responsible: z.string().nullish(),
   }),
+  /** Duplicate open items: keep `keepId`, take over its missing details from `duplicateId`, discard that one as a duplicate (undoable). */
+  merge_open_items: z.object({ keepId: Id, duplicateId: Id }),
   record_decision: z.object({
     title: z.string(),
     decisionText: z.string(),
