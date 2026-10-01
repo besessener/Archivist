@@ -757,3 +757,71 @@ export const VerifyReport = z.object({
   ok: z.boolean(),
 });
 export type VerifyReport = z.infer<typeof VerifyReport>;
+
+// ---------- Archive root change ----------
+/** `migrate`: copy the archive to the new folder, verify and switch; `pathOnly`: only switch (the files are already there). */
+export const ArchiveRootChangeMode = z.enum(['migrate', 'pathOnly']);
+export type ArchiveRootChangeMode = z.infer<typeof ArchiveRootChangeMode>;
+
+/** Where the archived documents would be found under a (new) archive root. */
+export const ArchiveRootPresence = z.object({
+  /** Archived documents (status `archived` with an archive path). */
+  documents: z.number(),
+  /** Found at the same relative path with the expected size. */
+  present: z.number(),
+  /** No file at the expected path. */
+  missing: z.number(),
+  /** A file exists there but its size differs from the archived one. */
+  different: z.number(),
+  /** Titles of some missing or different documents (at most 5). */
+  examples: z.array(z.string()),
+});
+export type ArchiveRootPresence = z.infer<typeof ArchiveRootPresence>;
+
+export const ArchiveRootPreview = z.object({
+  from: z.string(),
+  to: z.string(),
+  /** Presence of the archived documents in the new folder as it is now. */
+  atTarget: ArchiveRootPresence,
+  migrate: z.object({
+    /** Files in the current archive folder that the move copies (or finds already present). */
+    files: z.number(),
+    bytes: z.number(),
+    /** Files that already exist in the new folder with the same size (verified by checksum during the move). */
+    alreadyPresent: z.number(),
+    /** Reasons why moving the archive is not possible (empty = possible). */
+    blockers: z.array(z.string()),
+  }),
+  /** Reasons why only changing the path is not possible (empty = possible). */
+  pathOnlyBlockers: z.array(z.string()),
+});
+export type ArchiveRootPreview = z.infer<typeof ArchiveRootPreview>;
+
+export const ArchiveRootStatus = z.object({
+  root: z.string(),
+  /** Presence of the archived documents under the current archive root. */
+  current: ArchiveRootPresence,
+  /** Most recent archive root change (if any). */
+  lastChange: z
+    .object({
+      auditId: Id,
+      at: IsoDate,
+      from: z.string(),
+      to: z.string(),
+      mode: ArchiveRootChangeMode,
+      undoable: z.boolean(),
+    })
+    .nullable(),
+});
+export type ArchiveRootStatus = z.infer<typeof ArchiveRootStatus>;
+
+export const ArchiveRootChangeResult = z.object({
+  mode: ArchiveRootChangeMode,
+  /** Background job of a move (`migrate`), null for `pathOnly`. */
+  jobId: Id.nullable(),
+  /** Audit entry of a `pathOnly` change (undoable), null while a move is still running. */
+  auditId: Id.nullable(),
+  /** Archived documents that are not reachable under the new path (`pathOnly` only). */
+  unreachable: z.number(),
+});
+export type ArchiveRootChangeResult = z.infer<typeof ArchiveRootChangeResult>;

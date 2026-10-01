@@ -4,6 +4,7 @@ import { DatabaseService, type MigrationStatus } from './db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from './context';
 import { ActionService } from './services/actions';
 import { ArchiveService } from './services/archive';
+import { ArchiveRootService } from './services/archive-root';
 import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
@@ -103,6 +104,7 @@ function buildServices(opts: CreateServicesOptions) {
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
   const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, audit, notifications, pool, undo);
+  const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications);
@@ -227,6 +229,7 @@ function buildServices(opts: CreateServicesOptions) {
     actions,
     contradictions,
     archive,
+    archiveRoot,
     scanner,
     timeline,
     consistency,
