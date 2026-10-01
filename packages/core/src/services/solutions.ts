@@ -124,7 +124,7 @@ export class SolutionService {
         case 'document': {
           const d = this.documents.getRow(id);
           if (SKIPPED_DOC_STATUSES.has(d.status)) return null;
-          const allowed = this.privacy.evaluate({ path: d.sourcePath, ext: d.ext, docExcluded: d.llmStatus === 'excluded' }).allowed;
+          const allowed = this.privacy.evaluateDocument(d).allowed;
           const text = allowed
             ? [
                 d.docType && `Typ: ${d.docType}`,
