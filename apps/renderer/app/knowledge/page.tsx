@@ -3,12 +3,13 @@
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { EntityType, RelationStatus } from '@archivist/shared';
+import type { EntityType, KnowledgeCreateResult, RelationStatus } from '@archivist/shared';
 import { Check, GitMerge, Plus, Search, X } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
+import { EventFormDialog } from '@/components/events/event-form-dialog';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ import { formatDate } from '@/lib/format';
 import { useDebounced } from '@/lib/use-debounced';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
+import { useToast } from '@/lib/toast';
 import type { ActionRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -44,6 +46,19 @@ function KnowledgeInner() {
   const q = useDebounced(search.trim(), 300);
   const list = useQuery('knowledge:listEntities', { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: 300 }, { scopes: ['knowledge'] });
   const [createOpen, setCreateOpen] = useState(false);
+  const [createKey, setCreateKey] = useState(0);
+  /** Initial title of the open event dialog; null = closed. */
+  const [eventSeed, setEventSeed] = useState<string | null>(null);
+  const { run } = useRun();
+  const { toast } = useToast();
+
+  const showResult = ({ entity, created }: KnowledgeCreateResult) => {
+    const label = ENTITY_TYPE_LABELS[entity.type];
+    if (created) toast({ variant: 'success', title: `${label} angelegt.` });
+    else toast({ variant: 'info', title: `${label} „${entity.name}“ existiert bereits.`, description: 'Der vorhandene Eintrag wurde geöffnet.' });
+    void list.refetch();
+    router.push(`/knowledge/?id=${encodeURIComponent(entity.id)}`);
+  };
 
   return (
     <Page wide>
@@ -51,7 +66,13 @@ function KnowledgeInner() {
         title="Wissen"
         description="Alles, was Archivist über Ihre Themen, Projekte und Personen weiß – und wie es zusammenhängt."
         actions={
-          <Button onClick={() => setCreateOpen(true)} data-testid="knowledge-create">
+          <Button
+            onClick={() => {
+              setCreateKey((k) => k + 1);
+              setCreateOpen(true);
+            }}
+            data-testid="knowledge-create"
+          >
             <Plus aria-hidden /> Neu anlegen
           </Button>
         }
@@ -114,32 +135,66 @@ function KnowledgeInner() {
         </div>
       </div>
       <CreateEntityDialog
+        key={`c-${createKey}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(newId) => {
-          void list.refetch();
-          router.push(`/knowledge/?id=${encodeURIComponent(newId)}`);
+        onResult={showResult}
+        onPickEvent={(title) => {
+          setCreateOpen(false);
+          setEventSeed(title);
+        }}
+      />
+      <EventFormDialog
+        key={`e-${eventSeed ?? ''}`}
+        open={eventSeed !== null}
+        onOpenChange={(o) => !o && setEventSeed(null)}
+        initialTitle={eventSeed ?? ''}
+        onSubmit={async (input) => {
+          const r = await run(() => call('knowledge:createEntity', { type: 'event', ...input }));
+          if (r) showResult(r);
+          return r !== undefined;
         }}
       />
     </Page>
   );
 }
 
-function CreateEntityDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: (id: string) => void }) {
-  const [type, setType] = useState<Creatable>('topic');
+function CreateEntityDialog({
+  open,
+  onOpenChange,
+  onResult,
+  onPickEvent,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onResult: (r: KnowledgeCreateResult) => void;
+  onPickEvent: (title: string) => void;
+}) {
+  const [type, setType] = useState<Exclude<Creatable, 'event'>>('topic');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const { run, busy } = useRun();
   const label = ENTITY_TYPE_LABELS[type];
+  const isNote = type === 'note';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Neu anlegen</DialogTitle>
-          <DialogDescription>Legen Sie ein neues Thema, Projekt oder eine Person an.</DialogDescription>
+          <DialogDescription>Legen Sie ein neues Thema, Projekt, eine Person, eine Notiz oder ein Ereignis (mit Datum) an.</DialogDescription>
         </DialogHeader>
         <Field label="Art" htmlFor="new-entity-type">
-          <Select id="new-entity-type" value={type} onChange={(e) => setType(e.target.value as Creatable)} data-testid="knowledge-new-type">
+          <Select
+            id="new-entity-type"
+            value={type}
+            onChange={(e) => {
+              const next = e.target.value as Creatable;
+              // Events need a date: hand over to the same dialog the timeline uses.
+              if (next === 'event') onPickEvent(name.trim());
+              else setType(next);
+            }}
+            data-testid="knowledge-new-type"
+          >
             {CREATABLE.map((t) => (
               <option key={t} value={t}>
                 {ENTITY_TYPE_LABELS[t]}
@@ -147,17 +202,17 @@ function CreateEntityDialog({ open, onOpenChange, onCreated }: { open: boolean; 
             ))}
           </Select>
         </Field>
-        <Field label="Name" htmlFor="new-entity-name">
+        <Field label={isNote ? 'Titel' : 'Name'} htmlFor="new-entity-name">
           <Input
             id="new-entity-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={`Name des Eintrags (${label})`}
+            placeholder={isNote ? 'Titel der Notiz' : `Name des Eintrags (${label})`}
             data-testid="knowledge-new-name"
           />
         </Field>
-        <Field label="Beschreibung (optional)" htmlFor="new-entity-desc">
-          <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Field label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'} htmlFor="new-entity-desc">
+          <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="knowledge-new-description" />
         </Field>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -167,15 +222,14 @@ function CreateEntityDialog({ open, onOpenChange, onCreated }: { open: boolean; 
             disabled={busy || !name.trim()}
             data-testid="knowledge-new-save"
             onClick={async () => {
-              const e = await run(
-                () => call('knowledge:createEntity', { type, name: name.trim(), ...(description.trim() ? { description: description.trim() } : {}) }),
-                { success: `${label} angelegt.` },
+              const r = await run(() =>
+                call('knowledge:createEntity', { type, name: name.trim(), ...(description.trim() ? { description: description.trim() } : {}) }),
               );
-              if (e) {
+              if (r) {
                 setName('');
                 setDescription('');
                 onOpenChange(false);
-                onCreated(e.id);
+                onResult(r);
               }
             }}
           >

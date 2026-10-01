@@ -247,7 +247,32 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });
       return { ok: true as const };
     },
-    'knowledge:createEntity': (i) => s.graph.ensureEntity(i.type, i.name, i.description),
+    'knowledge:createEntity': async (i) => {
+      if (i.type === 'event') {
+        const { event, created } = s.eventRecords.createUnlessExists(i, { actor: 'user', trigger });
+        const entity = s.graph.getEntity(event.id) ?? {
+          id: event.id,
+          type: 'event' as const,
+          name: event.title,
+          description: event.description,
+          aliases: [],
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt,
+        };
+        return { entity, created };
+      }
+      if (i.type === 'note') {
+        const { note, created } = await s.notes.createUnlessExists({ title: i.name, content: i.description?.trim() || i.name });
+        if (created) s.audit.log({ action: 'note.create', actor: 'user', trigger, confirmed: true, entityIds: [note.id], after: { title: note.name } });
+        return { entity: note, created };
+      }
+      // a merged-away name (alias) also counts as existing
+      const existing = s.graph.findByNameOrAlias(i.type, i.name);
+      if (existing) return { entity: existing, created: false };
+      const entity = s.graph.ensureEntity(i.type, i.name, i.description?.trim() || null);
+      s.audit.log({ action: `${i.type}.create`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
+      return { entity, created: true };
+    },
     'knowledge:proposeMerge': (i) => {
       const a = s.graph.getEntity(i.sourceTopicId);
       const b = s.graph.getEntity(i.targetTopicId);
