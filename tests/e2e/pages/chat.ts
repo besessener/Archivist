@@ -13,6 +13,8 @@ export function initChat(page: Page) {
     },
     resizeHandle: root.getByTestId('chat-resize'),
     messages: root.getByTestId('chat-message'),
+    /** „Archivist denkt nach …“, solange eine Anfrage läuft. */
+    thinking: root.getByTestId('chat-loading'),
     sources: root.getByTestId('chat-source'),
     conversationSelect: root.getByTestId('conversation-select'),
     rename: {

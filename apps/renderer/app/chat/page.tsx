@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Archive, Loader2, MessageSquarePlus, Paperclip, Pencil, SendHorizontal } from 'lucide-react';
 import { ChatBubble } from '@/components/chat/message';
 import { Button } from '@/components/ui/button';
@@ -10,12 +10,12 @@ import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorNote } from '@/components/common/states';
 import { useApp } from '@/lib/app-context';
+import { chatRequests, mergeChatMessages, requestsFor } from '@/lib/chat-requests';
 import { call } from '@/lib/ipc';
 import { SUPPORTED_TYPES_TEXT } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { formatDateTime } from '@/lib/format';
-import type { ChatMsg } from '@/lib/types';
 
 const PROMPTS = [
   'Wir haben entschieden, dass …',
@@ -34,10 +34,10 @@ const maxInputHeight = () => (typeof window === 'undefined' ? 600 : Math.round(w
 export default function ChatPage() {
   const { importFiles, setContextMessage } = useApp();
   const { run } = useRun();
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  // Laufende Anfragen und die gewählte Unterhaltung liegen außerhalb der Seite, damit sie einen Reiterwechsel überdauern.
+  const { requests, activeConversationId } = useSyncExternalStore(chatRequests.subscribe, chatRequests.getSnapshot, chatRequests.getSnapshot);
+  const conversationId = activeConversationId ?? null;
   const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -59,10 +59,25 @@ export default function ChatPage() {
       // ?c=<id>: Rücksprung aus einem offenen Punkt in die Unterhaltung, aus der er stammt
       const wanted = new URLSearchParams(window.location.search).get('c');
       const latest = [...convs.data].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-      const target = convs.data.find((c) => c.id === wanted) ?? latest;
-      if (target) setConversationId(target.id);
+      const target = convs.data.find((c) => c.id === wanted);
+      // Ohne Rücksprung bleibt die zuvor gewählte Unterhaltung (z. B. nach einem Reiterwechsel), beim ersten Öffnen die zuletzt aktive.
+      if (target) chatRequests.setActiveConversation(target.id);
+      else if (chatRequests.getSnapshot().activeConversationId === undefined) chatRequests.setActiveConversation(latest?.id ?? null);
     }
   }, [convs.data]);
+
+  const pendingHere = useMemo(() => requestsFor(requests, conversationId), [requests, conversationId]);
+  // Eine Anfrage läuft noch (auch wenn sie vor einem Reiterwechsel abgeschickt wurde)
+  const sending = pendingHere.some((r) => r.result === null);
+  const messages = useMemo(() => {
+    // Bis die Historie der neu gewählten Unterhaltung geladen ist, keine Nachrichten der vorherigen zeigen
+    const loaded = conversationId ? (history.data ?? []).filter((m) => m.conversationId === conversationId) : [];
+    return mergeChatMessages(loaded, pendingHere);
+  }, [history.data, conversationId, pendingHere]);
+
+  useEffect(() => {
+    if (history.data) chatRequests.settle(history.data);
+  }, [history.data]);
 
   // Das Eingabefeld wächst mit dem Text (bis zur Höchsthöhe) und lässt sich zusätzlich am Griff unten rechts aufziehen.
   useEffect(() => {
@@ -97,10 +112,6 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    if (history.data && !sending) setMessages(history.data);
-  }, [history.data, sending]);
-
-  useEffect(() => {
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant') ?? null;
     setContextMessage(lastAssistant);
   }, [messages, setContextMessage]);
@@ -115,36 +126,16 @@ export default function ChatPage() {
     async (raw: string) => {
       const content = raw.trim();
       if (!content || sending) return;
-      setSending(true);
       setText('');
-      const temp: ChatMsg = {
-        id: `pending-${Date.now()}`,
-        conversationId: conversationId ?? 'pending',
-        role: 'user',
-        content,
-        createdAt: new Date().toISOString(),
-        sources: [],
-        context: null,
-        actions: [],
-        confidence: null,
-        uncertainties: [],
-        intent: null,
-        errorMessage: null,
-        quickReplies: [],
-      };
-      setMessages((prev) => [...prev, temp]);
-      const res = await run(() => call('chat:send', { text: content, ...(conversationId ? { conversationId } : {}) }), {
-        errorTitle: 'Nachricht konnte nicht gesendet werden',
-      });
-      if (res) {
-        setMessages((prev) => [...prev.filter((m) => m.id !== temp.id), res.userMessage, res.assistantMessage]);
-        if (res.conversationId !== conversationId) setConversationId(res.conversationId);
-        void convs.refetch();
-      } else {
-        setMessages((prev) => prev.filter((m) => m.id !== temp.id));
-        setText(content);
-      }
-      setSending(false);
+      // Die Anfrage läuft im Hauptprozess weiter und bleibt im gemeinsamen Speicher, auch wenn die Seite zwischendurch verlassen wird.
+      const res = await chatRequests.send(conversationId, content, () =>
+        run(() => call('chat:send', { text: content, ...(conversationId ? { conversationId } : {}) }), {
+          errorTitle: 'Nachricht konnte nicht gesendet werden',
+        }),
+      );
+      if (res) void convs.refetch();
+      // Fehler: den Text zurück ins Eingabefeld, sofern dort nicht schon etwas Neues steht
+      else setText((current) => current || content);
     },
     [conversationId, sending, run, convs],
   );
@@ -152,8 +143,7 @@ export default function ChatPage() {
   async function newConversation() {
     const c = await run(() => call('chat:newConversation'));
     if (c) {
-      setMessages([]);
-      setConversationId(c.id);
+      chatRequests.setActiveConversation(c.id);
       void convs.refetch();
       inputRef.current?.focus();
     }
@@ -190,10 +180,7 @@ export default function ChatPage() {
             id="conversation-select"
             data-testid="conversation-select"
             value={conversationId ?? ''}
-            onChange={(e) => {
-              setMessages([]);
-              setConversationId(e.target.value || null);
-            }}
+            onChange={(e) => chatRequests.setActiveConversation(e.target.value || null)}
           >
             <option value="">Neue Unterhaltung</option>
             {conversations.map((c) => (
