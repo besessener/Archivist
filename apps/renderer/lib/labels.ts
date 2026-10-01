@@ -25,6 +25,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   external_file: 'Dateien außerhalb des Archivs',
   possibly_superseded: 'Möglicherweise überholt',
   misplaced_file: 'Falsch abgelegte Dateien',
+  scattered_documents: 'Verstreut abgelegte Dokumente',
   low_confidence_relation: 'Unsichere Verknüpfungen',
 };
 

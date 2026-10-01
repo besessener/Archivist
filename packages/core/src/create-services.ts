@@ -124,7 +124,7 @@ function buildServices(opts: CreateServicesOptions) {
   contradictions.wire({ actions });
   archive.wire({ actions });
   scanner.wire({ actions });
-  chat.wire({ actions });
+  chat.wire({ actions, archive });
 
   // 6) Job-Handler
   jobs.register<{ documentId: string; allowLlm: boolean }>('document.analyze', async (job) => {

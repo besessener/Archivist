@@ -173,6 +173,11 @@ export class ActionService {
         });
         return `${res.success} archiviert, ${res.skipped} übersprungen, ${res.failed} fehlgeschlagen, ${res.conflicts} Konflikte.`;
       }
+      case 'relocate_documents': {
+        const params = ActionParamSchemas.relocate_documents.parse(p);
+        const res = await d.archive.relocate(params.items, { confirmed: true, trigger });
+        return `${res.success} verschoben, ${res.skipped} übersprungen, ${res.failed} fehlgeschlagen, ${res.conflicts} Konflikte.`;
+      }
       case 'assign_documents': {
         const params = ActionParamSchemas.assign_documents.parse(p);
         for (const id of params.documentIds) d.documents.assign(id, { topic: params.topic ?? undefined, project: params.project ?? undefined }, { trigger });
