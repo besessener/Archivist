@@ -21,6 +21,7 @@ import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
 import { NotificationService } from './services/notifications';
 import { EventService } from './services/events';
+import { OpenItemDuplicateService } from './services/cleanup/open-item-duplicates';
 import { OpenItemService } from './services/open-items';
 import { PrivacyService } from './services/privacy';
 import { ReminderService } from './services/reminders';
@@ -110,6 +111,10 @@ function buildServices(opts: CreateServicesOptions) {
   const timeline = new TimelineService(ctx, graph);
   const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications);
   const backup = new BackupService(ctx, settings, audit);
+  const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
+  consistency.addCheck((count) => {
+    openItemDuplicates.check(count);
+  });
   const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit, notes);
   const chat = new ChatService(
     ctx,
@@ -132,7 +137,7 @@ function buildServices(opts: CreateServicesOptions) {
   );
 
   // 5) zyklische Abhängigkeiten auflösen
-  actions.wire({ archive, documents: documentsSvc, decisions, openItems, contradictions, graph, scanner, reminders, audit });
+  actions.wire({ archive, documents: documentsSvc, decisions, openItems, openItemDuplicates, contradictions, graph, scanner, reminders, audit });
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
@@ -225,6 +230,7 @@ function buildServices(opts: CreateServicesOptions) {
     documents: documentsSvc,
     decisions,
     openItems,
+    openItemDuplicates,
     solutions,
     eventRecords: eventsSvc,
     notes,

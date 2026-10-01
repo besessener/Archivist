@@ -39,7 +39,11 @@ const KIND_LABELS: Record<string, string> = {
   outdated_info: 'widersprüchliche Status',
   low_confidence_relation: 'ungeklärte Beziehungen',
   external_file: 'externe Dateien mit Archivbezug',
+  duplicate_open_item: 'doppelte offene Punkte',
 };
+
+/** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */
+export type ConsistencyCheck = (count: (kind: string) => void) => void | Promise<void>;
 
 /** Key prefixes of the hints this check owns; a hint whose cause no longer exists is closed after each run. */
 const RECONCILED_INSIGHTS = [
@@ -68,6 +72,7 @@ export class ConsistencyService {
   /** Periodic check; every completed run (also manual or on startup) restarts the interval */
   private readonly schedule: IntervalSchedule;
   private enqueueInterval: (() => void) | null = null;
+  private readonly extraChecks: ConsistencyCheck[] = [];
 
   constructor(
     private readonly ctx: AppContext,
@@ -84,6 +89,11 @@ export class ConsistencyService {
 
   private get db() {
     return this.ctx.database.db;
+  }
+
+  /** Registers an additional check step; it runs after the open-item checks of every archive check. */
+  addCheck(check: ConsistencyCheck): void {
+    this.extraChecks.push(check);
   }
 
   /** Dokumente zum selben Thema oder Projekt, die in verschiedenen Archivverzeichnissen liegen: Hinweis plus Umlager-Vorschlag. */
@@ -495,6 +505,8 @@ export class ConsistencyService {
         count('outdated_info');
       }
     }
+
+    for (const check of this.extraChecks) await check(count);
 
     // ---- Beziehungen mit niedriger Confidence ----
     const lowRelIds = this.db
