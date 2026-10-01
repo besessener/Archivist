@@ -1530,5 +1530,3 @@ export class ChatService {
     return { intent: 'relation_decide', content: `Diese Beziehungen sind noch ungeklärt:\n\n${lines.join('\n')}`, actions, confidence: 0.7, state };
   }
 }
-
-export type { Pending as ChatPending };

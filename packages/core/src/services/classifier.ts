@@ -1,6 +1,5 @@
 import type { DocumentProposal } from '@archivist/shared';
 import { normalizeDateInput, parseGermanDate } from '../util/dates';
-import { MIME_BY_EXT } from '../parsers';
 import { firstSentence, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { detectOpenItemSentences } from './open-items';
 
@@ -189,5 +188,3 @@ export function snapToKnown(name: string | null | undefined, known: string[], th
 export const normalizeIsoDates = (values: Array<string | null | undefined>): string[] => [
   ...new Set(values.map((v) => normalizeDateInput(v ?? null)).filter((v): v is string => Boolean(v))),
 ];
-
-export const mimeFor = (ext: string): string => MIME_BY_EXT[ext] ?? 'application/octet-stream';

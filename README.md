@@ -190,6 +190,7 @@ Testabdeckung (Vitest, `npm test`): Decision-Rückfragen, Zod-Validierung von LL
 | Secret-Scan über die gesamte Historie (gitleaks, Konfiguration `.gitleaks.toml`) | `hygiene`-Job; lokal als pre-commit-Hook |
 | Hygiene-Hooks (YAML/JSON, Merge-Konflikte, private Schlüssel, große Dateien) und Workflow-Linter zizmor | `.pre-commit-config.yaml`; lokal mit `pip install pre-commit && pre-commit install` (oder `prek install`) |
 | Typecheck, ESLint (type-aware, `jsx-a11y`, `sonarjs`, `--max-warnings 0`), Vitest mit Coverage-Schwellen (`vitest.config.mts`), Build, Electron-E2E, Windows-Installer | `test`- bzw. `windows-installer`-Job |
+| Formatierung (Prettier), Architekturgrenzen (dependency-cruiser: Renderer kennt nur `shared`, Core ohne Electron/UI, keine Laufzeit-Zyklen), toter Code (Knip) | `test`-Job; lokal `npm run format`, `npm run depcruise`, `npm run knip` |
 | Statische Sicherheitsanalyse (CodeQL, `security-extended`) | `codeql.yml`, bei PR, Push auf `main` und wöchentlich |
 | Aktualisierung von Actions, Hook-Revisionen und npm-Abhängigkeiten | Dependabot (`.github/dependabot.yml`); Electron und native Module werden nie automatisch gemergt |
 

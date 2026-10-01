@@ -89,7 +89,3 @@ export function firstSentence(text: string, max = 160): string {
   const m = /^(.+?[.!?])(\s|$)/.exec(t);
   return truncate(m?.[1] ?? t, max);
 }
-
-export function titleCase(s: string): string {
-  return s.length ? s[0]!.toUpperCase() + s.slice(1) : s;
-}

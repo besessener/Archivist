@@ -56,15 +56,6 @@ export function toIsoDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export function todayIso(now: Date = new Date()): string {
-  return toIsoDate(now);
-}
-
-export function addDaysIso(iso: string, days: number): string {
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number) as [number, number, number];
-  return toIsoDate(new Date(y, m - 1, d + days));
-}
-
 function validDate(y: number, m: number, d: number): string | null {
   const dt = new Date(y, m - 1, d);
   if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
