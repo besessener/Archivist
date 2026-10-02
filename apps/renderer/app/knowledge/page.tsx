@@ -10,6 +10,7 @@ import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
+import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -223,7 +224,7 @@ function CreateEntityDialog({
             data-testid="knowledge-new-name"
           />
         </Field>
-        <Field label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'} htmlFor="new-entity-desc">
+        <Field label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'} htmlFor="new-entity-desc" hint={MARKDOWN_HINT}>
           <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="knowledge-new-description" />
         </Field>
         <DialogFooter>
@@ -332,7 +333,7 @@ function EntityView({ id }: { id: string }) {
           <span className="text-xs text-muted-foreground">Aktualisiert {formatDate(entity.updatedAt)}</span>
         </div>
         <h2 className="mt-1 text-2xl font-semibold tracking-tight">{entity.name}</h2>
-        {entity.description && <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{entity.description}</p>}
+        {entity.description && <Markdown text={entity.description} className="mt-2 text-muted-foreground" testId="entity-description" />}
         {entity.roles.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Rollen: {entity.roles.join(', ')}</p>}
         {entity.unconfirmed && (
           <div className="mt-3 rounded-md border border-dashed p-3 text-sm" data-testid="entity-unconfirmed-note">

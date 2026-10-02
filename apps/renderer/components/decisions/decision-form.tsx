@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { DECISION_FIELD_LABELS, EditableDecisionStatus, isEditableDecisionStatus, localDate, type DecisionField, type DecisionStatus } from '@archivist/shared';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { MARKDOWN_HINT } from '@/components/common/markdown';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -181,7 +182,7 @@ export function DecisionFormDialog({
           <Field label="Kurztitel (optional)" htmlFor="d-title" className="sm:col-span-2">
             <Input id="d-title" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="decision-title" />
           </Field>
-          <Field label={`${DECISION_FIELD_LABELS.decisionText} *`} htmlFor="d-text" className="sm:col-span-2">
+          <Field label={`${DECISION_FIELD_LABELS.decisionText} *`} htmlFor="d-text" hint={MARKDOWN_HINT} className="sm:col-span-2">
             <Textarea
               id="d-text"
               value={text}
@@ -222,7 +223,7 @@ export function DecisionFormDialog({
           <Field label="Begründung" htmlFor="d-why">
             <Input id="d-why" value={rationale} onChange={(e) => setRationale(e.target.value)} />
           </Field>
-          <Field label="Auswirkungen" htmlFor="d-cons" className="sm:col-span-2">
+          <Field label="Auswirkungen" htmlFor="d-cons" hint={MARKDOWN_HINT} className="sm:col-span-2">
             <Textarea id="d-cons" value={consequences} onChange={(e) => setConsequences(e.target.value)} />
           </Field>
           <Field label="Alternativen" htmlFor="d-alt" hint="Eine pro Zeile." className="sm:col-span-2">

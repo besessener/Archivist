@@ -5,6 +5,7 @@ import { CalendarDays, FileText, Gavel, ListChecks, Pencil, Plus, ShieldAlert, S
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EventFormDialog, eventPatch } from '@/components/events/event-form-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
+import { Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
@@ -126,7 +127,7 @@ export default function TimelinePage() {
             </Button>
           )}
         </p>
-        {e.description && <p className="mt-0.5 text-sm text-muted-foreground">{e.description}</p>}
+        {e.description && <Markdown text={e.description} className="mt-0.5 text-sm text-muted-foreground" testId="timeline-description" />}
         {e.refs.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {e.refs.map((r) => (

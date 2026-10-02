@@ -1,4 +1,8 @@
 import { Fragment } from 'react';
+import { cn } from '@/lib/utils';
+
+/** Hint shown under text fields whose content is rendered with {@link Markdown}. */
+export const MARKDOWN_HINT = 'Markdown möglich: **fett**, *kursiv*, `Code`, Listen mit „-“ oder „1.“, Überschriften mit „#“.';
 
 /** Inline: **bold**, *italic*, `code`. React elements only, no HTML. */
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
@@ -81,10 +85,10 @@ function parse(text: string): Block[] {
 }
 
 /** Lightweight, safe Markdown rendering (paragraphs, lists, headings, bold, italic, code). */
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, className, testId }: { text: string; className?: string; testId?: string }) {
   const blocks = parse(text);
   return (
-    <div className="space-y-2 break-words">
+    <div className={cn('space-y-2 break-words', className)} data-testid={testId}>
       {blocks.map((b, i) => {
         const key = `b${i}`;
         switch (b.kind) {
