@@ -88,6 +88,7 @@ export class EventService {
       sourceIds: r.sourceIds,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
+      duplicateOfId: r.duplicateOfId,
     };
   }
 
@@ -134,6 +135,7 @@ export class EventService {
       sourceIds: input.sourceIds ?? [],
       createdAt: now,
       updatedAt: now,
+      duplicateOfId: null,
     };
     this.db.transaction(() => {
       this.db.insert(events).values(row).run();
@@ -154,7 +156,7 @@ export class EventService {
     return this.get(row.id);
   }
 
-  /** Finds an event with the same (normalised) title on the same day. */
+  /** Finds an event with the same (normalised) title on the same day (events discarded as duplicates do not count). */
   findIdentical(title: string, occurredAt: string): EventRecord | undefined {
     const day = normalizeDateInput(occurredAt)?.slice(0, 10);
     const norm = normalizeName(title);
@@ -164,7 +166,7 @@ export class EventService {
       .from(events)
       .where(like(events.occurredAt, `${day}%`))
       .all()
-      .find((r) => normalizeName(r.title) === norm);
+      .find((r) => !r.duplicateOfId && normalizeName(r.title) === norm);
     return hit ? this.map(hit) : undefined;
   }
 
@@ -240,7 +242,13 @@ export class EventService {
   /** Undo of `delete`: restores the event with its id, graph node, relations and search entry. */
   private restore(d: EventDeleteUndo): string {
     const exists = (entityId: string | null) => (entityId && this.graph.getEntity(entityId) ? entityId : null);
-    const row: Row = { ...d.event, topicId: exists(d.event.topicId), projectId: exists(d.event.projectId) };
+    const keptEvent = d.event.duplicateOfId && this.db.select({ id: events.id }).from(events).where(eq(events.id, d.event.duplicateOfId)).get();
+    const row: Row = {
+      ...d.event,
+      topicId: exists(d.event.topicId),
+      projectId: exists(d.event.projectId),
+      duplicateOfId: keptEvent ? d.event.duplicateOfId : null,
+    };
     let skipped = 0;
     this.db.transaction(() => {
       this.db.insert(events).values(row).run();
@@ -257,10 +265,14 @@ export class EventService {
     return lost.length ? `Ereignis wiederhergestellt. Nicht wiederhergestellt, weil inzwischen entfernt: ${lost.join(', ')}.` : 'Ereignis wiederhergestellt.';
   }
 
-  /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
+  /** Rebuilds the search index entry (e.g. after a merge changed names or references); a discarded duplicate is not searchable. */
   async reindex(id: string): Promise<void> {
     try {
       const e = this.get(id);
+      if (e.duplicateOfId) {
+        this.search.remove(id);
+        return;
+      }
       await this.search.index({
         type: 'event',
         id,

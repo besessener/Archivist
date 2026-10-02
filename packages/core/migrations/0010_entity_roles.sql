@@ -1,0 +1,1 @@
+ALTER TABLE `entities` ADD `roles` text DEFAULT '[]' NOT NULL;

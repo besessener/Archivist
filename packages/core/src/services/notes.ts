@@ -1,5 +1,5 @@
 import type { GraphEntity, RelationType } from '@archivist/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities } from '../db/schema';
 import { AppError } from '../util/errors';
@@ -39,13 +39,13 @@ export class NoteService {
     return { title, content };
   }
 
-  /** Finds a note with the same title and the same content (whitespace and case are ignored). */
+  /** Finds a note with the same title and the same content (whitespace and case are ignored); discarded duplicates do not count. */
   findIdentical(input: NoteInput): GraphEntity | undefined {
     const { title, content } = this.resolve(input);
     const candidates = this.ctx.database.db
       .select({ id: entities.id, name: entities.name, description: entities.description })
       .from(entities)
-      .where(and(eq(entities.type, 'note'), eq(entities.normalizedName, normalizeName(title))))
+      .where(and(eq(entities.type, 'note'), eq(entities.normalizedName, normalizeName(title)), isNull(entities.duplicateOfId)))
       .all();
     const hit = candidates.find((c) => sameText(c.description ?? c.name, content));
     return hit ? this.graph.getEntity(hit.id) : undefined;
@@ -68,6 +68,21 @@ export class NoteService {
     if (!existing) return { note: await this.create(input), created: true };
     this.applyLinks(existing.id, input);
     return { note: existing, created: false };
+  }
+
+  /** Rebuilds the search index entry of a note; a note discarded as a duplicate is not searchable. */
+  async reindex(id: string): Promise<void> {
+    const note = this.graph.getEntity(id);
+    if (!note || note.type !== 'note') return;
+    if (note.duplicateOfId) {
+      this.search.remove(id);
+      return;
+    }
+    try {
+      await this.search.index({ type: 'note', id, title: note.name, content: note.description ?? note.name });
+    } catch (err) {
+      this.ctx.logger.warn('notes', 'Indexierung fehlgeschlagen', { error: err });
+    }
   }
 
   private applyLinks(noteId: string, input: NoteInput): void {

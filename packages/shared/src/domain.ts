@@ -264,6 +264,8 @@ export const OpenItem = z.object({
   updatedAt: IsoDate,
   /** Zuletzt erzeugter Lösungsvorschlag (mit Datum und Modell) */
   solution: OpenItemSolution.nullable().default(null),
+  /** Discarded as a duplicate („verworfen (Duplikat)“, status `dismissed`): the open item it was merged into. */
+  duplicateOfId: z.string().nullable().default(null),
 });
 export type OpenItem = z.infer<typeof OpenItem>;
 
@@ -317,6 +319,8 @@ export const EventRecord = z.object({
   sourceIds: z.array(z.string()),
   createdAt: IsoDate,
   updatedAt: IsoDate,
+  /** Discarded as a duplicate („verworfen (Duplikat)“): the event it was merged into. */
+  duplicateOfId: z.string().nullable(),
 });
 export type EventRecord = z.infer<typeof EventRecord>;
 export const EventInput = z.object({
@@ -389,6 +393,7 @@ export const InsightKind = z.enum([
   'incomplete_decision',
   'duplicate',
   'similar_topics',
+  'similar_entities',
   'orphan_document',
   'outdated_info',
   'missing_metadata',
@@ -397,8 +402,24 @@ export const InsightKind = z.enum([
   'misplaced_file',
   'scattered_documents',
   'low_confidence_relation',
+  'topic_project_name',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
+/**
+ * One answer option of a question insight (e.g. „Projekt“ / „Thema“ / „Beides ist richtig“). Choosing an option with an
+ * `actionId` executes that agent action (with the user's confirmation) and accepts the insight; choosing an option
+ * without an action („verschieden“, „keine davon“) rejects the insight, which is remembered permanently via its dedupe key.
+ */
+export const InsightChoice = z.object({
+  /** Stable id within the insight (e.g. `project`, `topic`, `different`, an entity id). */
+  id: z.string().min(1).max(100),
+  label: z.string(),
+  /** What happens when this option is chosen (shown before confirming). */
+  description: z.string().nullable(),
+  /** Agent action executed on this choice; `null` = nothing changes, the insight is rejected and remembered. */
+  actionId: z.string().nullable(),
+});
+export type InsightChoice = z.infer<typeof InsightChoice>;
 export const Insight = z.object({
   id: Id,
   kind: InsightKind,
@@ -409,6 +430,10 @@ export const Insight = z.object({
   sourceIds: z.array(z.string()),
   recommendedActionId: z.string().nullable(),
   recommendedActionLabel: z.string().nullable(),
+  /** Answer options; non-empty turns the insight into a question that is answered via `insights:respond` `choose`. */
+  choices: z.array(InsightChoice),
+  /** The option the user picked (set once the question was answered). */
+  chosenChoiceId: z.string().nullable(),
   status: z.enum(['open', 'accepted', 'rejected', 'snoozed']),
   snoozedUntil: IsoDate.nullable(),
   createdAt: IsoDate,
@@ -439,6 +464,10 @@ export const GraphEntity = z.object({
   description: z.string().nullable(),
   /** Former names of entities merged into this one (resolve later mentions of these names). */
   aliases: z.array(z.string()),
+  /** Roles of a person taken from mentions ("Chefin", "Führungskraft"); info only, not part of the name. */
+  roles: z.array(z.string()),
+  /** Discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
+  duplicateOfId: z.string().nullable(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
@@ -501,6 +530,8 @@ export const AgentActionType = z.enum([
   'close_open_item',
   'merge_topics',
   'merge_entities',
+  'merge_notes',
+  'merge_events',
   'confirm_relation',
   'reject_relation',
   'exclude_path',
@@ -508,6 +539,7 @@ export const AgentActionType = z.enum([
   'set_reminder',
   'create_open_item',
   'add_open_item_source',
+  'merge_open_items',
   'record_decision',
 ]);
 export type AgentActionType = z.infer<typeof AgentActionType>;
@@ -574,6 +606,10 @@ export const ActionParamSchemas = {
   merge_topics: z.object({ sourceTopicId: Id, targetTopicId: Id }),
   /** Generic merge (topics, projects, persons, tags); `allowCrossType` merges a topic into a project or vice versa (target type wins). */
   merge_entities: z.object({ sourceIds: z.array(Id).min(1), targetId: Id, allowCrossType: z.boolean().default(false) }),
+  /** Duplicate notes: keep `keepId`, take over its missing links from `duplicateId`, discard that one as a duplicate (undoable). */
+  merge_notes: z.object({ keepId: Id, duplicateId: Id }),
+  /** Duplicate events: keep `keepId`, take over its missing details from `duplicateId`, discard that one as a duplicate (undoable). */
+  merge_events: z.object({ keepId: Id, duplicateId: Id }),
   confirm_relation: z.object({ relationId: Id }),
   reject_relation: z.object({ relationId: Id }),
   exclude_path: z.object({ kind: z.enum(['file', 'dir']), path: z.string() }),
@@ -596,6 +632,8 @@ export const ActionParamSchemas = {
     dueAt: z.string().nullish(),
     responsible: z.string().nullish(),
   }),
+  /** Duplicate open items: keep `keepId`, take over its missing details from `duplicateId`, discard that one as a duplicate (undoable). */
+  merge_open_items: z.object({ keepId: Id, duplicateId: Id }),
   record_decision: z.object({
     title: z.string(),
     decisionText: z.string(),

@@ -1,15 +1,16 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { pageObject } from './page-object';
 
 type PrivacyMode = 'auto' | 'confirm' | 'local_only';
 
-/** Settings page: the "Datenschutz" area and the archive root in the "Archiv" area. */
+/** Settings page: the "Datenschutz" area, the archive root in the "Archiv" area and the reminder time in "Benachrichtigungen". */
 export function initSettings(page: Page) {
   const dialog = page.getByTestId('archive-root-dialog');
   const locators = {
     tabs: {
       privacy: page.getByTestId('tab-privacy'),
       archive: page.getByTestId('tab-archive'),
+      notifications: page.getByTestId('tab-notifications'),
     },
     privacy: {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
@@ -31,6 +32,10 @@ export function initSettings(page: Page) {
         cancel: dialog.getByTestId('archive-root-cancel'),
       },
     },
+    notifications: {
+      reminderTime: page.getByTestId('settings-reminder-time'),
+      saveReminderTime: page.getByTestId('settings-reminder-time-save'),
+    },
   };
   const interactions = {
     openPrivacy: async () => {
@@ -47,6 +52,14 @@ export function initSettings(page: Page) {
       await locators.archiveRoot.input.fill(root);
       await locators.archiveRoot.change.click();
       await locators.archiveRoot.dialog.root.waitFor();
+    },
+    openNotifications: async () => {
+      await locators.tabs.notifications.click();
+    },
+    setReminderTime: async (time: string) => {
+      await locators.notifications.reminderTime.fill(time);
+      await locators.notifications.saveReminderTime.click();
+      await expect(locators.notifications.saveReminderTime).toBeDisabled();
     },
   };
   return pageObject(page.getByRole('tablist', { name: 'Einstellungsbereiche' }), locators, interactions);

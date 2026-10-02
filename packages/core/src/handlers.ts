@@ -226,6 +226,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'insights:respond': async (i) => {
       if (i.response === 'accept') return s.insights.accept(i.id, { strongConfirmed: i.strongConfirmed });
       if (i.response === 'reject') return s.insights.reject(i.id);
+      if (i.response === 'choose') return s.insights.choose(i.id, i.choiceId, { strongConfirmed: i.strongConfirmed });
       return s.insights.remindLater(i.id, i.remindAt);
     },
     'consistency:run': () => ({ jobId: s.enqueueConsistency('manual').id }),
@@ -270,6 +271,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
           name: event.title,
           description: event.description,
           aliases: [],
+          roles: [],
+          duplicateOfId: event.duplicateOfId,
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
         };
@@ -279,6 +282,15 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         const { note, created } = await s.notes.createUnlessExists({ title: i.name, content: i.description?.trim() || i.name });
         if (created) s.audit.log({ action: 'note.create', actor: 'user', trigger, confirmed: true, entityIds: [note.id], after: { title: note.name } });
         return { entity: note, created };
+      }
+      if (i.type === 'person') {
+        // persons go through the central resolution (roles, spellings, no pronouns or answer words)
+        const person = s.persons.resolve(i.name, { context: 'manual', description: i.description?.trim() || null });
+        if (!person.entity) throw new AppError('validation_error', `„${i.name.trim()}“ ist kein Personenname.`);
+        const created = person.matchedBy === 'created';
+        if (created)
+          s.audit.log({ action: 'person.create', actor: 'user', trigger, confirmed: true, entityIds: [person.entity.id], after: { name: person.entity.name } });
+        return { entity: person.entity, created };
       }
       // a merged-away name (alias) also counts as existing
       const existing = s.graph.findByNameOrAlias(i.type, i.name);

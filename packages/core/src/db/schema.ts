@@ -15,6 +15,10 @@ export const entities = sqliteTable(
     description: text('description'),
     /** Former names of entities merged into this one (display form); used to resolve later mentions. */
     aliases: jsonArr('aliases'),
+    /** Roles of a person found in mentions ("Chefin", "Führungskraft"); stored as info, never part of the name. */
+    roles: jsonArr('roles'),
+    /** Set when the node was discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
+    duplicateOfId: text('duplicate_of_id'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -126,6 +130,8 @@ export const openItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     /** Zuletzt erzeugter Lösungsvorschlag (OpenItemSolution als JSON) */
     solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
+    /** Set when the item was discarded as a duplicate: the open item it was merged into (status `dismissed`). */
+    duplicateOfId: text('duplicate_of_id'),
   },
   (t) => [index('open_items_status_idx').on(t.status)],
 );
@@ -143,6 +149,8 @@ export const events = sqliteTable(
     sourceIds: jsonArr('source_ids'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
+    /** Set when the event was discarded as a duplicate („verworfen (Duplikat)“): the event it was merged into. */
+    duplicateOfId: text('duplicate_of_id'),
   },
   (t) => [index('events_occurred_idx').on(t.occurredAt)],
 );
@@ -191,6 +199,10 @@ export const insights = sqliteTable(
     sourceIds: jsonArr('source_ids'),
     recommendedActionId: text('recommended_action_id'),
     recommendedActionLabel: text('recommended_action_label'),
+    /** Answer options of a question insight (`InsightChoice[]`); empty for classic accept/reject insights. */
+    choices: text('choices', { mode: 'json' }).$type<ArchivistJson>().notNull().default([]),
+    /** Id of the choice the user picked (only for insights with choices). */
+    chosenChoiceId: text('chosen_choice_id'),
     status: text('status').notNull().default('open'),
     snoozedUntil: text('snoozed_until'),
     dedupeKey: text('dedupe_key').notNull(),

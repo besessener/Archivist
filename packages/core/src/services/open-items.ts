@@ -1,4 +1,13 @@
-import { isEditableOpenItemStatus, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
+import {
+  isEditableOpenItemStatus,
+  localDate,
+  localToday,
+  OpenItemSolution,
+  type OpenItem,
+  type OpenItemInput,
+  type OpenItemPatch,
+  type OpenItemStatus,
+} from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
@@ -9,6 +18,7 @@ import { normalizeDateInput } from '../util/dates';
 import { levenshtein, tokenize } from '../util/text';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import { mentionContext, type PersonService } from './persons';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
@@ -84,6 +94,17 @@ function tokenScore(h: string, tokens: string[]): number {
 }
 
 /**
+ * Share (0..1) of the hint tokens found in an open item: a title word counts fully, a description word 0.7,
+ * abbreviations and near misses less (see tokenScore). `wanted` are {@link hintTokens}.
+ */
+export function scoreHintTokens(wanted: string[], item: { title: string; description?: string | null }): number {
+  if (!wanted.length) return 0;
+  const title = tokenize(item.title, { keepStopwords: true });
+  const desc = tokenize(item.description ?? '', { keepStopwords: true });
+  return wanted.reduce((acc, h) => acc + Math.max(tokenScore(h, title), 0.7 * tokenScore(h, desc)), 0) / wanted.length;
+}
+
+/**
  * Bewertet offene Punkte gegen einen Hinweis: Wort für Wort über Titel und Beschreibung (Füll- und Stoppwörter
  * zählen nicht, kurze Kürzel wie „TÜV“ nur als ganzes Wort), unscharf nur als letzte Stufe. Liegen die besten
  * Treffer nah beieinander, ist das Ergebnis mehrdeutig; unter der Schwelle gibt es keinen Treffer.
@@ -96,12 +117,7 @@ export function matchOpenItems<T extends { title: string; description?: string |
   const wanted = hintTokens(hint);
   if (!wanted.length) return { status: 'none' };
   const scored = items
-    .map((item) => {
-      const title = tokenize(item.title, { keepStopwords: true });
-      const desc = tokenize(item.description ?? '', { keepStopwords: true });
-      const sum = wanted.reduce((acc, h) => acc + Math.max(tokenScore(h, title), 0.7 * tokenScore(h, desc)), 0);
-      return { item, score: sum / wanted.length };
-    })
+    .map((item) => ({ item, score: scoreHintTokens(wanted, item) }))
     .filter((x) => x.score >= (opts.threshold ?? MATCH_THRESHOLD))
     .sort((a, b) => b.score - a.score);
   if (!scored.length) return { status: 'none' };
@@ -114,6 +130,7 @@ export class OpenItemService {
   constructor(
     private readonly ctx: AppContext,
     private readonly graph: KnowledgeGraphService,
+    private readonly persons: PersonService,
     private readonly search: SearchService,
     private readonly audit: AuditService,
     undo: UndoService,
@@ -206,6 +223,7 @@ export class OpenItemService {
       confidence: r.confidence,
       updatedAt: r.updatedAt,
       solution: r.solution ? (OpenItemSolution.safeParse(r.solution).data ?? null) : null,
+      duplicateOfId: r.duplicateOfId,
     };
   }
 
@@ -261,7 +279,7 @@ export class OpenItemService {
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
-    const person = input.responsible?.trim() ? this.graph.ensureEntity('person', input.responsible) : null;
+    const person = input.responsible?.trim() ? this.persons.resolve(input.responsible, { context: mentionContext(ctxInfo.trigger, 'open_item') }).entity : null;
     const dueAt = normalizeDateInput(input.dueAt ?? null);
     const row: Row = {
       id: newId(),
@@ -281,6 +299,7 @@ export class OpenItemService {
       createdAt: now,
       updatedAt: now,
       solution: null,
+      duplicateOfId: null,
     };
     this.db.transaction(() => {
       this.db.insert(openItems).values(row).run();
@@ -306,7 +325,7 @@ export class OpenItemService {
    * Partial update: only fields present in `patch` change. `status` may only move between open, waiting and
    * blocked – closing needs `close()` with confirmation, reopening goes through undo.
    */
-  update(id: string, patch: OpenItemPatch): OpenItem {
+  update(id: string, patch: OpenItemPatch, opts: { trigger?: string } = {}): OpenItem {
     const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
     if (patch.status !== undefined && patch.status !== cur.status) {
@@ -327,7 +346,9 @@ export class OpenItemService {
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
     if (patch.responsible !== undefined) {
-      set.responsiblePersonId = patch.responsible?.trim() ? this.graph.ensureEntity('person', patch.responsible).id : null;
+      // a pronoun or answer word ("ja", "unbekannt") is not a person and leaves the responsible person unchanged
+      const resolved = patch.responsible?.trim() ? this.persons.resolve(patch.responsible, { context: mentionContext(opts.trigger, 'open_item') }) : null;
+      if (!resolved?.rejected) set.responsiblePersonId = resolved?.entity?.id ?? null;
       if (set.responsiblePersonId) set.responsibleUnknown = false;
     }
     if (patch.dueAt !== undefined) {
@@ -389,8 +410,9 @@ export class OpenItemService {
       set.dueAt = normalizeDateInput(extra.dueAt);
       if (set.dueAt) set.dueUnknown = false;
     }
-    if (!cur.responsiblePersonId && extra.responsible?.trim()) {
-      set.responsiblePersonId = this.graph.ensureEntity('person', extra.responsible).id;
+    const responsible = !cur.responsiblePersonId && extra.responsible?.trim() ? this.persons.resolve(extra.responsible, { context: 'open_item' }).entity : null;
+    if (responsible) {
+      set.responsiblePersonId = responsible.id;
       set.responsibleUnknown = false;
     }
     this.db.transaction(() => {
@@ -457,8 +479,9 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  overdue(today = nowIso().slice(0, 10)): OpenItem[] {
-    return this.list({ onlyActive: true }).filter((i) => i.dueAt && i.dueAt.slice(0, 10) < today);
+  /** Active items due before `today` (local calendar day, #77). */
+  overdue(today = localToday()): OpenItem[] {
+    return this.list({ onlyActive: true }).filter((i) => i.dueAt && localDate(i.dueAt) < today);
   }
 
   /** Rebuilds the search index entry (e.g. after a merge changed names or references). */

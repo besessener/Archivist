@@ -15,6 +15,8 @@ import { newId, nowIso } from '../util/ids';
 import type { ArchiveService } from './archive';
 import { folderOf } from './archive-structure';
 import type { AuditService } from './audit';
+import type { NoteEventDuplicateService } from './cleanup/note-event-duplicates';
+import type { OpenItemDuplicateService } from './cleanup/open-item-duplicates';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
@@ -42,13 +44,25 @@ const map = (r: Row): StoredAgentAction => ({
   resolvedAt: r.resolvedAt,
 });
 
+/** Entity ids named by a merge proposal (sources and target). */
+function mergedIds(type: 'merge_entities' | 'merge_topics', params: Record<string, unknown>): string[] {
+  if (type === 'merge_topics') {
+    const p = ActionParamSchemas.merge_topics.parse(params);
+    return [p.sourceTopicId, p.targetTopicId];
+  }
+  const p = ActionParamSchemas.merge_entities.parse(params);
+  return [...p.sourceIds, p.targetId];
+}
+
 export interface ActionDeps {
   archive: ArchiveService;
   documents: DocumentService;
   decisions: DecisionService;
   openItems: OpenItemService;
+  openItemDuplicates: OpenItemDuplicateService;
   contradictions: ContradictionService;
   graph: KnowledgeGraphService;
+  noteEventDuplicates: NoteEventDuplicateService;
   scanner: ScannerService;
   reminders: ReminderService;
   audit: AuditService;
@@ -290,6 +304,23 @@ export class ActionService {
         if (c.status === 'resolved' || c.status === 'false_positive') return { stale: 'Der Widerspruch ist bereits aufgelöst.' };
         return { params };
       }
+      case 'merge_entities':
+      case 'merge_topics': {
+        if (mergedIds(type, params).some((id) => !d.graph.getEntity(id)))
+          return { stale: 'Einer der Einträge wurde inzwischen zusammengeführt oder gelöscht.' };
+        return { params };
+      }
+      case 'merge_open_items': {
+        const p = ActionParamSchemas.merge_open_items.parse(params);
+        const stale = d.openItemDuplicates.staleReason(p.keepId, p.duplicateId);
+        return stale ? { stale } : { params };
+      }
+      case 'merge_notes':
+      case 'merge_events': {
+        const p = ActionParamSchemas[type].parse(params);
+        const stale = d.noteEventDuplicates.staleReason(type === 'merge_notes' ? 'note' : 'event', p.keepId, p.duplicateId);
+        return stale ? { stale } : { params };
+      }
       default:
         return { params };
     }
@@ -297,6 +328,15 @@ export class ActionService {
 
   /** Other open proposals that the executed action made obsolete are withdrawn, so nothing outdated can run later. */
   private afterExecuted(id: string, type: AgentActionType, params: Record<string, unknown>): void {
+    if (type === 'merge_entities' || type === 'merge_topics') {
+      // proposals that still name a merged-away entity can no longer run; the next archive check asks anew
+      const gone = new Set(mergedIds(type, params).filter((x) => !this.deps.graph.getEntity(x)));
+      for (const other of this.list('proposed')) {
+        if (other.id === id || (other.actionType !== 'merge_entities' && other.actionType !== 'merge_topics')) continue;
+        if (mergedIds(other.actionType, other.proposedParameters).some((x) => gone.has(x)))
+          this.withdraw(other.id, 'Einer der Einträge wurde inzwischen mit einem anderen zusammengeführt.');
+      }
+    }
     if (type === 'relocate_documents') {
       const p = ActionParamSchemas.relocate_documents.parse(params);
       for (const other of this.openRelocationsFor(p.items.map((i) => i.documentId)))
@@ -379,6 +419,16 @@ export class ActionService {
         const r = await d.graph.merge({ sourceIds: params.sourceIds, targetId: params.targetId, allowCrossType: params.allowCrossType }, { trigger });
         return `${r.mergedNames.map((n) => `„${n}“`).join(', ')} mit „${r.targetName}“ zusammengeführt (${r.relationsMoved} Beziehungen, ${r.referencesUpdated} Verweise übernommen).`;
       }
+      case 'merge_notes':
+      case 'merge_events': {
+        const params = ActionParamSchemas[type].parse(p);
+        const opts = { actor: 'user' as const, trigger };
+        const r =
+          type === 'merge_notes'
+            ? d.noteEventDuplicates.mergeNotes(params.keepId, params.duplicateId, opts)
+            : d.noteEventDuplicates.mergeEvents(params.keepId, params.duplicateId, opts);
+        return `„${r.duplicateTitle}“ als Duplikat von „${r.keepTitle}“ verworfen${r.takenOver.length ? `; übernommen: ${r.takenOver.join(', ')}` : ''}.`;
+      }
       case 'confirm_relation': {
         const params = ActionParamSchemas.confirm_relation.parse(p);
         d.graph.setRelationStatus(params.relationId, 'confirmed');
@@ -428,6 +478,11 @@ export class ActionService {
         const { openItemId, documentId, ...extra } = ActionParamSchemas.add_open_item_source.parse(p);
         d.openItems.addSource(openItemId, documentId, extra, { actor: 'agent', trigger });
         return 'Offener Punkt um Quelle ergänzt.';
+      }
+      case 'merge_open_items': {
+        const params = ActionParamSchemas.merge_open_items.parse(p);
+        const r = d.openItemDuplicates.merge(params.keepId, params.duplicateId, { trigger });
+        return `„${r.duplicate.title}“ als Duplikat von „${r.keep.title}“ verworfen${r.takenOver.length ? `; übernommen: ${r.takenOver.join(', ')}` : ''}.`;
       }
       case 'record_decision': {
         const params = ActionParamSchemas.record_decision.parse(p);

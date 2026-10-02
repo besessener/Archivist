@@ -5,7 +5,8 @@ import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { decisions, documents, entities, events, openItems, relations } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
-import { nameSimilarity, normalizeName } from '../util/text';
+import { personNameKey } from '../util/person-names';
+import { normalizeName } from '../util/text';
 import type { AuditService } from './audit';
 import type { UndoService } from './undo';
 
@@ -181,12 +182,27 @@ function mergeAliases(row: Pick<EntityRow, 'normalizedName' | 'aliases'>, names:
   return out;
 }
 
+function mergeRoles(existing: string[], added: string[]): string[] {
+  const seen = new Set(existing.map(personNameKey));
+  const out = [...existing];
+  for (const r of added) {
+    const role = r.trim().replace(/\s+/g, ' ');
+    const key = personNameKey(role);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(role);
+  }
+  return out;
+}
+
 const mapEntity = (r: EntityRow): GraphEntity => ({
   id: r.id,
   type: r.type as EntityType,
   name: r.name,
   description: r.description,
   aliases: r.aliases,
+  roles: r.roles,
+  duplicateOfId: r.duplicateOfId,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -277,6 +293,8 @@ export class KnowledgeGraphService {
       normalizedName: norm,
       description: description ?? null,
       aliases: [],
+      roles: [],
+      duplicateOfId: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -587,19 +605,6 @@ export class KnowledgeGraphService {
       .all();
   }
 
-  /** Paare ähnlich benannter Themen (Kandidaten für eine Zusammenführung). */
-  findSimilarTopics(threshold = 0.82): Array<{ a: GraphEntity; b: GraphEntity; score: number }> {
-    const topics = this.db.select().from(entities).where(eq(entities.type, 'topic')).all().map(mapEntity);
-    const out: Array<{ a: GraphEntity; b: GraphEntity; score: number }> = [];
-    for (let i = 0; i < topics.length; i += 1) {
-      for (let j = i + 1; j < topics.length; j += 1) {
-        const score = nameSimilarity(topics[i]!.name, topics[j]!.name);
-        if (score >= threshold) out.push({ a: topics[i]!, b: topics[j]!, score });
-      }
-    }
-    return out.sort((x, y) => y.score - x.score);
-  }
-
   // ---------------------------------------------------------------------------------------------
   // Aliases
   // ---------------------------------------------------------------------------------------------
@@ -634,6 +639,18 @@ export class KnowledgeGraphService {
     return mapEntity({ ...row, aliases, updatedAt });
   }
 
+  /** Stores roles as info on the entity ("Chefin"); roles already known (case/umlaut-insensitive) are skipped. */
+  addRoles(entityId: string, roles: string[]): GraphEntity {
+    const row = this.db.select().from(entities).where(eq(entities.id, entityId)).get();
+    if (!row) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
+    const merged = mergeRoles(row.roles, roles);
+    if (merged.length === row.roles.length) return mapEntity(row);
+    const updatedAt = nowIso();
+    this.db.update(entities).set({ roles: merged, updatedAt }).where(eq(entities.id, entityId)).run();
+    this.ctx.events.changed('knowledge');
+    return mapEntity({ ...row, roles: merged, updatedAt });
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Merge
   // ---------------------------------------------------------------------------------------------
@@ -654,7 +671,7 @@ export class KnowledgeGraphService {
    * Each merge re-hangs relations (status/confidence/sources are kept, duplicates combined), `topicId`/`projectId`
    * of documents, decisions, open items and events, responsible persons and the name lists `decisions.participants`,
    * `documents.persons` and `documents.tags` (canonical target name, deduplicated). Merged-away names become aliases
-   * of the target; the affected records are reindexed afterwards.
+   * of the target, their roles are added to the target's roles; the affected records are reindexed afterwards.
    */
   async mergeMany(requests: MergeRequest[], opts: MergeOptions = {}): Promise<MergeBatchResult> {
     if (requests.length === 0) throw new AppError('validation_error', 'Zusammenführung: Keine Einträge angegeben.');
@@ -725,7 +742,11 @@ export class KnowledgeGraphService {
       sources.flatMap((s) => [s.name, ...s.aliases]),
     );
     const description = target.description ?? sources.find((s) => s.description)?.description ?? null;
-    this.db.update(entities).set({ aliases, description, updatedAt: now }).where(eq(entities.id, target.id)).run();
+    const roles = mergeRoles(
+      target.roles,
+      sources.flatMap((s) => s.roles),
+    );
+    this.db.update(entities).set({ aliases, roles, description, updatedAt: now }).where(eq(entities.id, target.id)).run();
     touched.add(`entity:${target.id}`);
 
     this.db.delete(entities).where(inArray(entities.id, sourceIds)).run();
