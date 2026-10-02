@@ -1301,7 +1301,7 @@ export class ChatService {
         return this.reminderFlow(text, intent, state);
       case 'proposal_confirm':
       case 'proposal_reject':
-        return this.proposalDecision(conv, intent.intent === 'proposal_confirm', state, intent.proposalId ?? null);
+        return this.proposalDecision(conv, intent.intent === 'proposal_confirm', state, intent.proposalId ?? null, text);
       case 'archive_execute':
         return this.archiveExecute(conv, intent, state);
       case 'archive_status':
@@ -2491,12 +2491,25 @@ export class ChatService {
     return this.actions.openInConversation(conv, shown);
   }
 
-  private async proposalDecision(conv: string, confirm: boolean, state: ConvState, proposalId: string | null = null): Promise<Reply> {
+  /**
+   * Approval or refusal of the open cards of this conversation. A card is only executed on a clear local „ja“
+   * (or a click / an explicit choice) – never because the classifier (an LLM that also reads document text)
+   * labelled a message as approval (#199).
+   */
+  private async proposalDecision(conv: string, confirm: boolean, state: ConvState, proposalId: string | null, text: string): Promise<Reply> {
     const intent = confirm ? 'proposal_confirm' : 'proposal_reject';
     const all = this.openCards(conv);
-    // a card of this conversation named by the LLM takes precedence; otherwise all open cards apply
-    const named = proposalId ? all.filter((a) => a.id === proposalId) : [];
+    // a card named by the LLM only narrows a refusal; an approval of one of several cards is always asked back
+    const named = proposalId && !confirm ? all.filter((a) => a.id === proposalId) : [];
     const cards = named.length ? named : all;
+    if (confirm && cards.length === 1 && shortAnswer(text) !== 'yes')
+      return {
+        intent,
+        content: `Soll ich „${cards[0]!.label}“ ausführen? Antworte mit „ja“ oder „nein“ – oder nutze die Knöpfe an der Karte.`,
+        actions: cards,
+        confidence: 0.5,
+        state: { ...state, pending: { kind: 'proposal_choice', confirm: false, actionIds: cards.map((a) => a.id) } },
+      };
     if (cards.length === 0)
       return {
         intent,
@@ -2526,6 +2539,8 @@ export class ChatService {
       const matches = open.filter((a) => t.length >= 4 && normalizeName(a.label).includes(t));
       if (matches.length === 1) idx = open.indexOf(matches[0]!);
     }
+    // „Soll ich X ausführen?“ (a single card): only a clear „ja“ or „nein“ answers it
+    if (idx < 0 && open.length === 1 && shortAnswer(text)) idx = 0;
     const action = open[idx];
     if (!action || action.status !== 'proposed') return null;
     const answer = shortAnswer(text.replace(/^\s*(?:nummer\s+|nr\.?\s+)?\d+[.):,]?\s*/i, ''));

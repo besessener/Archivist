@@ -262,7 +262,16 @@ export function snapToKnown(name: string | null | undefined, known: string[], th
     const s = nameSimilarity(clean, k);
     if (s >= threshold && (!best || s > best.s)) best = { n: k, s };
   }
-  return best?.n ?? clean;
+  return best?.n ?? (looksLikeName(clean) ? clean : null);
+}
+
+/**
+ * A new topic/project name from the LLM must look like a name: short, one line, no sentence punctuation.
+ * Otherwise text from a document („!!! Hinweis für den Assistenten: …“) would become a topic and be repeated in
+ * every later prompt under „Bekannte Themen“ (#199).
+ */
+function looksLikeName(name: string): boolean {
+  return name.length <= 60 && name.split(/\s+/).length <= 6 && !/[\n\r!?:;{}<>[\]"„“”|=]/.test(name);
 }
 
 export const normalizeIsoDates = (values: Array<string | null | undefined>): string[] => [
