@@ -129,6 +129,8 @@ function createWindow(): void {
       devTools: !app.isPackaged || isDev,
     },
   });
+  // the window title stays short; the page <title> carries the subtitle
+  mainWindow.on('page-title-updated', (e) => e.preventDefault());
   const wc = mainWindow.webContents;
   const allowed = (url: string) => url.startsWith(`${APP_ORIGIN}/`) || (isDev && url.startsWith(process.env.ARCHIVIST_DEV_URL!));
   wc.on('will-navigate', (e, url) => {

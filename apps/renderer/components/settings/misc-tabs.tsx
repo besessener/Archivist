@@ -27,8 +27,8 @@ export function ProfileTab({ settings, reload }: TabProps) {
     .filter(Boolean);
   return (
     <Section
-      title="Über Sie"
-      description="Ihr Name und Ihre Spitznamen helfen Archivist, „ich“, „mir“ und „mich“ im Chat sowie Erwähnungen Ihrer Person richtig zuzuordnen. Sie werden nur als Kontext für die Auswertung Ihrer Chat-Nachrichten verwendet."
+      title="Über dich"
+      description="Dein Name und deine Spitznamen helfen Archivist, „ich“, „mir“ und „mich“ im Chat sowie Erwähnungen deiner Person richtig zuzuordnen. Sie werden nur als Kontext für die Auswertung deiner Chat-Nachrichten verwendet."
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Name" htmlFor="profile-name">
@@ -54,7 +54,7 @@ export function NotificationsTab({ settings, reload }: TabProps) {
   return (
     <Section
       title="Benachrichtigungen"
-      description="Hinweise erscheinen immer in der Glocke oben rechts. Zusätzlich können Sie Desktop-Hinweise Ihres Betriebssystems erhalten."
+      description="Hinweise erscheinen immer in der Glocke oben rechts. Zusätzlich kannst du Desktop-Hinweise deines Betriebssystems erhalten."
     >
       <Field label="Uhrzeit für Erinnerungen (Ortszeit)" htmlFor="reminder-time" hint="Erinnerungen für einen Tag ohne Uhrzeit erscheinen zu dieser Uhrzeit.">
         <div className="flex flex-wrap items-center gap-2">
@@ -93,7 +93,7 @@ export function LogsTab({ settings, reload }: TabProps) {
   const [level, setLevel] = useState(settings.logs.level);
   const [days, setDays] = useState(String(settings.logs.retentionDays));
   return (
-    <Section title="Protokolle" description="Technische Protokolle helfen bei der Fehlersuche. Inhalte Ihrer Dokumente werden dort nicht gespeichert.">
+    <Section title="Protokolle" description="Technische Protokolle helfen bei der Fehlersuche. Inhalte deiner Dokumente werden dort nicht gespeichert.">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Detailgrad" htmlFor="log-level">
           <Select id="log-level" value={level} onChange={(e) => setLevel(e.target.value as typeof level)} data-testid="settings-log-level">
@@ -145,7 +145,7 @@ export function BackupsTab({ settings, reload }: TabProps) {
               <DatabaseBackup className="size-4 text-primary" aria-hidden /> Metadaten-Backup
             </p>
             <p className="text-sm text-muted-foreground">
-              Sichert Entscheidungen, offene Punkte, Wissen und Einstellungen – <strong>nicht</strong> Ihre Dokumentdateien. Klein und schnell.
+              Sichert Entscheidungen, offene Punkte, Wissen und Einstellungen – <strong>nicht</strong> deine Dokumentdateien. Klein und schnell.
             </p>
             <Button variant="outline" disabled={creating !== null} onClick={() => void create(false)} data-testid="backup-metadata">
               {creating === 'metadata' && <Loader2 className="animate-spin" aria-hidden />} Metadaten sichern
@@ -230,7 +230,7 @@ export function AuditTab() {
   return (
     <Section
       title="Änderungsprotokoll"
-      description="Jede Änderung, die Archivist an Ihren Daten oder Dateien vornimmt, wird hier festgehalten. Manche Änderungen lassen sich rückgängig machen."
+      description="Jede Änderung, die Archivist an deinen Daten oder Dateien vornimmt, wird hier festgehalten. Manche Änderungen lassen sich rückgängig machen."
     >
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
@@ -259,7 +259,7 @@ export function AuditTab() {
                     {a.action}
                     {!a.confirmed && a.actor === 'agent' && <span className="block text-xs text-muted-foreground">ohne Rückfrage</span>}
                   </TD>
-                  <TD>{a.actor === 'user' ? 'Sie' : 'Archivist'}</TD>
+                  <TD>{a.actor === 'user' ? 'Du' : 'Archivist'}</TD>
                   <TD className="max-w-xs">
                     {a.paths.slice(0, 3).map((p) => (
                       <code key={p} className="block break-all text-xs">

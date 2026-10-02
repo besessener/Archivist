@@ -173,7 +173,7 @@ export class ContradictionService {
         schemaName: 'ContradictionProposal',
         purpose: 'Widerspruchsprüfung',
         instructions:
-          'Du prüfst, ob zwei Entscheidungen zum selben Thema einander widersprechen. Sei zurückhaltend: Ergänzungen oder Präzisierungen sind keine Widersprüche.',
+          'Du prüfst, ob zwei Entscheidungen zum selben Thema einander widersprechen. Sei zurückhaltend: Ergänzungen oder Präzisierungen sind keine Widersprüche. Sprichst du den Benutzer in der Beschreibung an, dann mit „du“.',
         input: `Entscheidung A (${a.decidedAt ?? 'ohne Datum'}, id=${a.id}): ${truncate(a.decisionText, 800)}\n\nEntscheidung B (${b.decidedAt ?? 'ohne Datum'}, id=${b.id}): ${truncate(b.decisionText, 800)}`,
       });
       return { isContradiction: res.isContradiction, confidence: res.confidence, description: res.description };

@@ -105,7 +105,7 @@ function DecisionsInner() {
           {active.data && sorted.length === 0 && (
             <EmptyState
               title="Keine Entscheidungen"
-              description="Halten Sie eine Entscheidung fest – im Chat mit „Wir haben entschieden, dass …“ oder hier mit dem Formular."
+              description="Halte eine Entscheidung fest – im Chat mit „Wir haben entschieden, dass …“ oder hier mit dem Formular."
             />
           )}
           <ul className="flex max-h-[68vh] flex-col gap-2 overflow-y-auto" data-testid="decision-list">
@@ -150,7 +150,7 @@ function DecisionsInner() {
               }}
             />
           ) : (
-            <EmptyState title="Wählen Sie eine Entscheidung" description="Klicken Sie links auf einen Eintrag, um alle Einzelheiten zu sehen." />
+            <EmptyState title="Wähle eine Entscheidung" description="Klicke links auf einen Eintrag, um alle Einzelheiten zu sehen." />
           )}
         </div>
       </div>
@@ -329,7 +329,7 @@ function SupersedeDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Wodurch wird diese Entscheidung ersetzt?</DialogTitle>
-          <DialogDescription>Wählen Sie die neuere Entscheidung. Es wird ein Vorschlag erstellt, den Sie anschließend bestätigen.</DialogDescription>
+          <DialogDescription>Wähle die neuere Entscheidung. Es wird ein Vorschlag erstellt, den du anschließend bestätigst.</DialogDescription>
         </DialogHeader>
         <Field label="Neuere Entscheidung" htmlFor="sup-target">
           <Select id="sup-target" value={target} onChange={(e) => setTarget(e.target.value)} data-testid="supersede-target">

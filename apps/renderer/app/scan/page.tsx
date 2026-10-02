@@ -30,7 +30,7 @@ export default function ScanPage() {
 
   async function start() {
     setStarting(true);
-    await run(() => call('scanner:start', {}), { success: 'Die Suche läuft. Den Fortschritt sehen Sie oben unter „Verarbeitung“.' });
+    await run(() => call('scanner:start', {}), { success: 'Die Suche läuft. Den Fortschritt siehst du oben unter „Verarbeitung“.' });
     setStarting(false);
   }
 
@@ -47,7 +47,7 @@ export default function ScanPage() {
     <Page wide>
       <PageHeader
         title="Scan"
-        description="Archivist kann Ordner auf diesem Computer nach neuen Dokumenten durchsuchen. Es wird nie etwas verändert, ohne dass Sie zustimmen."
+        description="Archivist kann Ordner auf diesem Computer nach neuen Dokumenten durchsuchen. Es wird nie etwas verändert, ohne dass du zustimmst."
       />
       <div className="flex flex-col gap-8">
         <Card>
@@ -58,7 +58,7 @@ export default function ScanPage() {
                   Lokale Dokumentensuche aktivieren
                 </label>
                 <p className="text-sm text-muted-foreground">
-                  Standardmäßig ist die Suche <strong>ausgeschaltet</strong>. Wenn Sie sie einschalten, durchsucht Archivist die unten gewählten Ordner – aber
+                  Standardmäßig ist die Suche <strong>ausgeschaltet</strong>. Wenn du sie einschaltest, durchsucht Archivist die unten gewählten Ordner – aber
                   nur, solange die App läuft.
                 </p>
               </div>

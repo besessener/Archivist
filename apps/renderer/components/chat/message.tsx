@@ -124,7 +124,7 @@ export function ChatBubble({
                 <ConfidenceBadge value={message.confidence} />
                 {message.confidence < 0.5 && (
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <HelpCircle className="size-3.5" aria-hidden /> Bitte prüfen Sie diese Antwort.
+                    <HelpCircle className="size-3.5" aria-hidden /> Bitte prüfe diese Antwort.
                   </span>
                 )}
               </div>

@@ -335,7 +335,7 @@ export class OpenItemService {
       if (!isEditableOpenItemStatus(cur.status as OpenItemStatus))
         throw new AppError(
           'permission_error',
-          'Ein abgeschlossener Punkt lässt sich nicht durch Bearbeiten wieder öffnen. Machen Sie das Schließen im Änderungsprotokoll rückgängig.',
+          'Ein abgeschlossener Punkt lässt sich nicht durch Bearbeiten wieder öffnen. Mache das Schließen im Änderungsprotokoll rückgängig.',
         );
     }
     const set: Partial<Row> = { updatedAt: nowIso() };

@@ -128,7 +128,7 @@ export function ScanDirectories() {
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
       {data && data.length === 0 && (
-        <EmptyState title="Noch keine Verzeichnisse" description="Fügen Sie Ordner hinzu, in denen Archivist nach neuen Dokumenten suchen soll." />
+        <EmptyState title="Noch keine Verzeichnisse" description="Füge Ordner hinzu, in denen Archivist nach neuen Dokumenten suchen soll." />
       )}
       {(data ?? []).map((r) => (
         <DirectoryCard
@@ -142,7 +142,7 @@ export function ScanDirectories() {
         open={removing !== null}
         onOpenChange={(o) => !o && setRemoving(null)}
         title="Verzeichnis entfernen?"
-        description="Archivist durchsucht diesen Ordner nicht mehr. Ihre Dateien bleiben unverändert."
+        description="Archivist durchsucht diesen Ordner nicht mehr. Deine Dateien bleiben unverändert."
         confirmLabel="Entfernen"
         destructive
         onConfirm={async () => {

@@ -39,7 +39,7 @@ export function ArchiveTab({ settings, reload }: TabProps) {
 
       <Section
         title="Kategorien"
-        description="Ordnerstruktur, in die Dokumente einsortiert werden können. Neue Kategorien werden erst nach Ihrer Bestätigung angelegt."
+        description="Ordnerstruktur, in die Dokumente einsortiert werden können. Neue Kategorien werden erst nach deiner Bestätigung angelegt."
       >
         {categories.error && !categories.data && <ErrorNote error={categories.error} onRetry={() => void categories.refetch()} />}
         {!categories.data && categories.loading && <Loading />}

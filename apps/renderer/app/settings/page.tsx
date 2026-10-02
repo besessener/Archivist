@@ -33,7 +33,7 @@ export default function SettingsPage() {
               Datenschutz
             </TabsTrigger>
             <TabsTrigger value="profile" data-testid="tab-profile">
-              Über Sie
+              Über dich
             </TabsTrigger>
             <TabsTrigger value="notifications" data-testid="tab-notifications">
               Benachrichtigungen
@@ -81,7 +81,7 @@ export default function SettingsPage() {
             <AuditTab />
           </TabsContent>
           <TabsContent value="jobs">
-            <Section title="Verarbeitung" description="Analysen, Importe und Suchläufe. Fehlgeschlagene Aufgaben können Sie hier erneut starten.">
+            <Section title="Verarbeitung" description="Analysen, Importe und Suchläufe. Fehlgeschlagene Aufgaben kannst du hier erneut starten.">
               <JobsList limit={100} />
             </Section>
           </TabsContent>

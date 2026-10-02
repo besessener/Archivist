@@ -49,7 +49,7 @@ export default function InboxPage() {
     <Page>
       <PageHeader
         title="Inbox"
-        description="Neue Dokumente warten hier auf Ihre Entscheidung. Archivist macht Vorschläge – es wird nichts verschoben, bevor Sie es bestätigen."
+        description="Neue Dokumente warten hier auf deine Entscheidung. Archivist macht Vorschläge – es wird nichts verschoben, bevor du es bestätigst."
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter">
@@ -116,7 +116,7 @@ export default function InboxPage() {
         <EmptyState
           icon={<InboxIcon />}
           title="Die Inbox ist leer"
-          description="Ziehen Sie Dateien in das Fenster oder wählen Sie im Chat „Dateien auswählen“, um Dokumente hinzuzufügen."
+          description="Zieh Dateien in das Fenster oder wähle im Chat „Dateien auswählen“, um Dokumente hinzuzufügen."
           action={
             <Button asChild variant="outline">
               <Link href="/chat/">Zum Chat</Link>

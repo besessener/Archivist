@@ -2,7 +2,7 @@
   "name": "archivist-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Archivist – persönlicher, agentischer AI-Archivar (lokale Desktop-Anwendung)",
+  "description": "Archivist – dein persönlicher Archivar (lokale Desktop-Anwendung für Windows)",
   "license": "MIT",
   "workspaces": [
     "packages/*",

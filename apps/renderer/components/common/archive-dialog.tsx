@@ -147,9 +147,7 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
         <DialogHeader>
           <DialogTitle>{result ? 'Ergebnis' : 'Archivierung prüfen'}</DialogTitle>
           <DialogDescription>
-            {result
-              ? 'So wurde Ihre Auswahl verarbeitet.'
-              : 'Bitte prüfen Sie, was passieren wird. Es wird erst etwas geändert, wenn Sie „Jetzt ausführen“ wählen.'}
+            {result ? 'So wurde deine Auswahl verarbeitet.' : 'Bitte prüfe, was passieren wird. Es wird erst etwas geändert, wenn du „Jetzt ausführen“ wählst.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -242,7 +240,7 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
 
             {categories.length > 0 && (
               <Notice tone="info" title="Neue Hauptkategorien">
-                <p className="mb-2">Dafür werden neue Ordner angelegt. Bitte bestätigen Sie jede Neuanlage einzeln.</p>
+                <p className="mb-2">Dafür werden neue Ordner angelegt. Bitte bestätige jede Neuanlage einzeln.</p>
                 <div className="flex flex-col gap-1.5">
                   {categories.map((c) => (
                     <CheckboxField

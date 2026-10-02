@@ -128,7 +128,7 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
           {quarantined && (
             <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="inbox-quarantine-note">
               <Ban className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden />
-              Die Datei wurde aus Sicherheitsgründen zurückgehalten und nicht gelesen. Prüfen Sie sie im Ordner, bevor Sie sie trotzdem importieren.
+              Die Datei wurde aus Sicherheitsgründen zurückgehalten und nicht gelesen. Prüfe sie im Ordner, bevor du sie trotzdem importierst.
             </p>
           )}
           {doc.summary && <p className="mt-2 text-sm">{doc.summary}</p>}
@@ -343,7 +343,7 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
       >
         <div className="flex flex-col gap-3 text-sm">
           <p>
-            <strong>Lokal</strong> liest Archivist den Text nur auf diesem Computer. Dabei verlässt nichts Ihren Rechner.
+            <strong>Lokal</strong> liest Archivist den Text nur auf diesem Computer. Dabei verlässt nichts deinen Rechner.
           </p>
           <Notice tone="warning" title="Was bei einer KI-Analyse gesendet wird" data-testid="inbox-reprocess-explain">
             <p>
@@ -373,7 +373,7 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
           open={releaseOpen}
           onOpenChange={setReleaseOpen}
           title="Datei trotzdem importieren?"
-          description="Der Inhalt dieser Datei passt nicht zu ihrer Endung. Importieren Sie sie nur, wenn Sie der Datei vertrauen. Archivist liest und analysiert sie danach wie jede andere Datei."
+          description="Der Inhalt dieser Datei passt nicht zu ihrer Endung. Importiere sie nur, wenn du der Datei vertraust. Archivist liest und analysiert sie danach wie jede andere Datei."
           confirmLabel="Trotzdem importieren"
           destructive
           requireCheckbox="Ich habe die Datei geprüft und vertraue ihr."

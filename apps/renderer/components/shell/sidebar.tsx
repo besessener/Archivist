@@ -38,11 +38,14 @@ export function Sidebar() {
 
   return (
     <nav aria-label="Hauptnavigation" className="flex h-full w-16 shrink-0 flex-col border-r bg-sidebar md:w-56">
-      <div className="flex h-14 items-center gap-2 px-3 md:px-4">
+      <div className="flex h-14 items-center gap-2 px-3">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Archive className="size-4" aria-hidden />
         </span>
-        <span className="hidden text-base font-semibold tracking-tight md:inline">Archivist</span>
+        <span className="hidden min-w-0 flex-col md:flex">
+          <span className="text-base font-semibold leading-tight tracking-tight">Archivist</span>
+          <span className="truncate text-xs leading-tight tracking-tight text-muted-foreground">dein persönlicher Archivar</span>
+        </span>
       </div>
       <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
         {ITEMS.map((item) => {

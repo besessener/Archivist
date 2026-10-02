@@ -421,7 +421,7 @@ export class EntityDuplicateCheck {
         purpose: 'Dublettenprüfung (nur Namen)',
         signal,
         instructions:
-          'Du prüfst Paare von Namen aus einem persönlichen Wissensarchiv (Themen, Projekte, Tags). Gib für jedes Paar an, ob beide Namen wahrscheinlich dasselbe meinen ("same"), verschiedene Dinge ("different") oder ob das unklar ist ("unclear"), mit einer kurzen deutschen Begründung. Du entscheidest nichts, der Benutzer entscheidet.',
+          'Du prüfst Paare von Namen aus einem persönlichen Wissensarchiv (Themen, Projekte, Tags). Gib für jedes Paar an, ob beide Namen wahrscheinlich dasselbe meinen ("same"), verschiedene Dinge ("different") oder ob das unklar ist ("unclear"), mit einer kurzen deutschen Begründung. Du entscheidest nichts, der Benutzer entscheidet. Sprichst du den Benutzer an, dann mit „du“.',
         input: batch.map((f, i) => `${i + 1}. ${TYPE_LABEL[f.type]}: „${f.a.name}“ / „${f.b.name}“`).join('\n'),
       });
       for (const p of res.pairs) {

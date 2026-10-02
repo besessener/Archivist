@@ -80,7 +80,7 @@ export default function OpenItemsPage() {
         <EmptyState
           icon={<ListChecks />}
           title="Keine offenen Punkte"
-          description="Sagen Sie im Chat zum Beispiel „Wir müssen noch klären, …“ oder legen Sie hier einen Punkt an."
+          description="Sag im Chat zum Beispiel „Wir müssen noch klären, …“ oder lege hier einen Punkt an."
         />
       )}
       <div className="flex flex-col gap-8">
@@ -228,7 +228,7 @@ function ItemFormDialog({
       <DialogContent className="max-w-xl" data-testid="open-item-form">
         <DialogHeader>
           <DialogTitle>{item ? 'Offenen Punkt bearbeiten' : 'Neuer offener Punkt'}</DialogTitle>
-          <DialogDescription>Wenn Verantwortlicher oder Termin nicht feststehen, können Sie das ausdrücklich so markieren.</DialogDescription>
+          <DialogDescription>Wenn Verantwortlicher oder Termin nicht feststehen, kannst du das ausdrücklich so markieren.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Was ist offen? *" htmlFor="oi-title" className="sm:col-span-2">
@@ -278,7 +278,7 @@ function ItemFormDialog({
             </Select>
           </Field>
           {statusEditable && (
-            <Field label="Status" htmlFor="oi-status" hint="Zum Abschließen nutzen Sie „Erledigt …“.">
+            <Field label="Status" htmlFor="oi-status" hint="Zum Abschließen nutze „Erledigt …“.">
               <Select id="oi-status" value={status} onChange={(e) => setStatus(e.target.value as EditableOpenItemStatus)}>
                 {EditableOpenItemStatus.options.map((s) => (
                   <option key={s} value={s}>

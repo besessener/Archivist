@@ -32,12 +32,12 @@ const MODES: Array<{ id: Mode; title: string; text: string }> = [
   {
     id: 'confirm',
     title: 'Vor jeder externen Analyse fragen (empfohlen)',
-    text: 'Archivist analysiert Dokumentinhalte nur mit der KI, nachdem Sie es jeweils bestätigt haben. Erkannte Geheimnisse wie Passwörter werden vorher maskiert.',
+    text: 'Archivist analysiert Dokumentinhalte nur mit der KI, nachdem du es jeweils bestätigt hast. Erkannte Geheimnisse wie Passwörter werden vorher maskiert.',
   },
   {
     id: 'auto',
     title: 'Automatisch analysieren',
-    text: 'Inhalte importierter Dokumente werden ohne Rückfrage an Ihren KI-Dienst gesendet, damit Vorschläge sofort bereitstehen.',
+    text: 'Inhalte importierter Dokumente werden ohne Rückfrage an deinen KI-Dienst gesendet, damit Vorschläge sofort bereitstehen.',
   },
   {
     id: 'local_only',
@@ -156,15 +156,15 @@ export function SetupWizard() {
               </span>
               <h1 className="text-2xl font-semibold tracking-tight">Willkommen bei Archivist</h1>
               <p className="text-muted-foreground">
-                Archivist ist Ihr persönlicher Archivar: Er merkt sich Entscheidungen, offene Punkte und Dokumente, legt sie ordentlich ab und hilft Ihnen,
-                alles wiederzufinden – im Gespräch, in Worten, die Sie selbst benutzen.
+                Archivist ist dein persönlicher Archivar: Er merkt sich Entscheidungen, offene Punkte und Dokumente, legt sie ordentlich ab und hilft dir, alles
+                wiederzufinden – im Gespräch, in Worten, die du selbst benutzt.
               </p>
               <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
                 <li className="flex gap-2">
                   <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Alle Daten bleiben auf diesem Computer.
                 </li>
                 <li className="flex gap-2">
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Nichts wird ohne Ihre Bestätigung verschoben, gelöscht oder
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Nichts wird ohne deine Bestätigung verschoben, gelöscht oder
                   umbenannt.
                 </li>
                 <li className="flex gap-2">
@@ -179,8 +179,8 @@ export function SetupWizard() {
               <div>
                 <h2 className="text-xl font-semibold">Verbindung zur KI</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Archivist nutzt einen KI-Dienst, der die OpenAI-Schnittstelle versteht (z. B. OpenAI oder ein eigener Server). Die Zugangsdaten bekommen Sie
-                  von Ihrem Anbieter oder Ihrer IT.
+                  Archivist nutzt einen KI-Dienst, der die OpenAI-Schnittstelle versteht (z. B. OpenAI oder ein eigener Server). Die Zugangsdaten bekommst du
+                  von deinem Anbieter oder deiner IT.
                 </p>
               </div>
               <Field label="Adresse des Dienstes (Base URL)" htmlFor="setup-baseurl" hint="Beispiel: https://api.openai.com/v1">
@@ -253,7 +253,7 @@ export function SetupWizard() {
                   <span className="flex gap-2">
                     <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
                     <span>
-                      Sie können den Test überspringen. Dann kann Archivist Dokumente und Fragen vorerst nicht mit der KI auswerten – Sie können die Verbindung
+                      Du kannst den Test überspringen. Dann kann Archivist Dokumente und Fragen vorerst nicht mit der KI auswerten – du kannst die Verbindung
                       jederzeit in den Einstellungen nachholen.
                     </span>
                   </span>
@@ -267,8 +267,8 @@ export function SetupWizard() {
               <div>
                 <h2 className="text-xl font-semibold">Dokumente auf diesem Computer finden (optional)</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Archivist kann Ordner nach neuen Dokumenten durchsuchen. Das ist <strong>standardmäßig ausgeschaltet</strong> – auch wenn Sie hier Ordner
-                  hinzufügen, wird erst gesucht, wenn Sie es auf der Seite „Scan“ oder in den Einstellungen ausdrücklich einschalten. Gesucht wird nur, solange
+                  Archivist kann Ordner nach neuen Dokumenten durchsuchen. Das ist <strong>standardmäßig ausgeschaltet</strong> – auch wenn du hier Ordner
+                  hinzufügst, wird erst gesucht, wenn du es auf der Seite „Scan“ oder in den Einstellungen ausdrücklich einschaltest. Gesucht wird nur, solange
                   die App läuft.
                 </p>
               </div>
@@ -287,7 +287,7 @@ export function SetupWizard() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted-foreground">Noch keine Verzeichnisse – Sie können diesen Schritt überspringen.</p>
+                <p className="text-sm text-muted-foreground">Noch keine Verzeichnisse – du kannst diesen Schritt überspringen.</p>
               )}
             </div>
           )}
@@ -296,7 +296,7 @@ export function SetupWizard() {
             <fieldset className="flex flex-col gap-3" data-testid="setup-step-privacy">
               <legend className="mb-1 text-xl font-semibold">Datenschutz</legend>
               <p className="text-sm text-muted-foreground">
-                Wählen Sie, wann Dokumentinhalte an den KI-Dienst gesendet werden dürfen. Sie können das jederzeit ändern.
+                Wähle, wann Dokumentinhalte an den KI-Dienst gesendet werden dürfen. Du kannst das jederzeit ändern.
               </p>
               {MODES.map((m) => (
                 <label
@@ -330,10 +330,10 @@ export function SetupWizard() {
               </span>
               <h2 className="text-xl font-semibold">Alles bereit</h2>
               <p className="text-muted-foreground">
-                Sie können jetzt im Chat Entscheidungen festhalten, Fragen stellen oder Dateien per Drag-and-Drop in das Fenster ziehen. Änderungen am Archiv
-                passieren immer erst nach Ihrer Bestätigung.
+                Du kannst jetzt im Chat Entscheidungen festhalten, Fragen stellen oder Dateien per Drag-and-Drop in das Fenster ziehen. Änderungen am Archiv
+                passieren immer erst nach deiner Bestätigung.
               </p>
-              {!test?.ok && <Notice tone="warning">Die KI-Verbindung wurde nicht erfolgreich getestet. Prüfen Sie sie später unter Einstellungen → KI.</Notice>}
+              {!test?.ok && <Notice tone="warning">Die KI-Verbindung wurde nicht erfolgreich getestet. Prüfe sie später unter Einstellungen → KI.</Notice>}
             </div>
           )}
 

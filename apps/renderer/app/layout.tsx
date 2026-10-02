@@ -3,8 +3,8 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
-  title: 'Archivist',
-  description: 'Ihr persönlicher AI-Archivar',
+  title: 'Archivist – dein persönlicher Archivar',
+  description: 'Archivist – dein persönlicher Archivar: Dokumente, Entscheidungen und Wissen lokal ordnen und wiederfinden.',
 };
 
 export const viewport: Viewport = {

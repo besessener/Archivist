@@ -128,7 +128,7 @@ export function ScanResults() {
       {data && files.length === 0 && (
         <EmptyState
           title="Noch keine Dateien gefunden"
-          description="Starten Sie oben eine Suche, nachdem Sie Verzeichnisse hinzugefügt und die Dokumentensuche aktiviert haben."
+          description="Starte oben eine Suche, nachdem du Verzeichnisse hinzugefügt und die Dokumentensuche aktiviert hast."
         />
       )}
       {files.length > 0 && (
@@ -243,7 +243,7 @@ export function ScanResults() {
       >
         <div className="flex flex-col gap-3 text-sm">
           <p>
-            <strong>Lokal</strong> liest Archivist die Texte nur auf diesem Computer und schlägt einfache Zuordnungen vor. Dabei verlässt nichts Ihren Rechner.
+            <strong>Lokal</strong> liest Archivist die Texte nur auf diesem Computer und schlägt einfache Zuordnungen vor. Dabei verlässt nichts deinen Rechner.
           </p>
           <Notice tone="warning" title="Was bei einer KI-Analyse gesendet wird" data-testid="scan-llm-explain">
             <p>
@@ -260,11 +260,11 @@ export function ScanResults() {
               gesendet. Die Originaldateien selbst werden nicht hochgeladen.
             </p>
             <p className="mt-1">
-              {llmFiles.length} von {selectedFiles.length} Dateien dürfen laut Ihren Einstellungen an die KI gesendet werden
+              {llmFiles.length} von {selectedFiles.length} Dateien dürfen laut deinen Einstellungen an die KI gesendet werden
               {selectedFiles.length - llmFiles.length > 0 ? '; die übrigen werden nur lokal analysiert.' : '.'}
             </p>
             {mode === 'local_only' && (
-              <p className="mt-1 font-medium text-foreground">Ihr Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.</p>
+              <p className="mt-1 font-medium text-foreground">Dein Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.</p>
             )}
           </Notice>
           <CheckboxField

@@ -17,7 +17,7 @@ import { Section, useSaveSettings, type TabProps } from './shared';
 
 type Mode = 'auto' | 'confirm' | 'local_only';
 const MODES: Array<{ id: Mode; title: string; text: string }> = [
-  { id: 'confirm', title: 'Vor jeder externen Analyse fragen', text: 'Dokumentinhalte gehen erst nach Ihrer Bestätigung an die KI.' },
+  { id: 'confirm', title: 'Vor jeder externen Analyse fragen', text: 'Dokumentinhalte gehen erst nach deiner Bestätigung an die KI.' },
   { id: 'auto', title: 'Automatisch analysieren', text: 'Inhalte werden ohne Rückfrage an die KI gesendet.' },
   { id: 'local_only', title: 'Nur lokal', text: 'Es wird nie etwas an die KI gesendet. Vorschläge sind weniger genau.' },
 ];

@@ -173,8 +173,8 @@ export function DecisionFormDialog({
           <DialogTitle>{decision ? 'Entscheidung bearbeiten' : 'Entscheidung festhalten'}</DialogTitle>
           <DialogDescription>
             Felder mit <span aria-hidden>*</span>
-            <span className="sr-only">Stern</span> gehören zu einer vollständigen Entscheidung. Wenn Sie etwas nicht wissen, markieren Sie es als „unbekannt“ –
-            dann wird nicht gefragt.
+            <span className="sr-only">Stern</span> gehören zu einer vollständigen Entscheidung. Wenn du etwas nicht weißt, markiere es als „unbekannt“ – dann
+            wird nicht gefragt.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -240,9 +240,9 @@ export function DecisionFormDialog({
               htmlFor="d-status"
               hint={
                 statusLocked
-                  ? 'Rückgängig machen können Sie das unter Einstellungen → Änderungsprotokoll.'
+                  ? 'Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.'
                   : pendingCritical
-                    ? 'Wird erst nach Ihrer Bestätigung übernommen und lässt sich im Änderungsprotokoll rückgängig machen.'
+                    ? 'Wird erst nach deiner Bestätigung übernommen und lässt sich im Änderungsprotokoll rückgängig machen.'
                     : undefined
               }
             >
@@ -286,7 +286,7 @@ export function DecisionFormDialog({
         </div>
         {missing.length > 0 && !onlyTextMissing && (
           <Notice tone="warning" title="Noch nicht vollständig" data-testid="decision-missing">
-            Es fehlt: {missing.map((f) => DECISION_FIELD_LABELS[f]).join(', ')}. Die Entscheidung wird als Entwurf gespeichert, bis Sie das ergänzen oder als
+            Es fehlt: {missing.map((f) => DECISION_FIELD_LABELS[f]).join(', ')}. Die Entscheidung wird als Entwurf gespeichert, bis du das ergänzt oder als
             „unbekannt“ markieren.
           </Notice>
         )}
@@ -320,7 +320,7 @@ export function DecisionFormDialog({
           onConfirm={persist}
         >
           <p className="text-sm text-muted-foreground">
-            {fieldsChanged ? 'Ihre übrigen Änderungen werden vorher gespeichert. ' : ''}Das lässt sich unter Einstellungen → Änderungsprotokoll rückgängig
+            {fieldsChanged ? 'Deine übrigen Änderungen werden vorher gespeichert. ' : ''}Das lässt sich unter Einstellungen → Änderungsprotokoll rückgängig
             machen.
           </p>
         </ConfirmDialog>

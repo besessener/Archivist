@@ -308,7 +308,7 @@ export class DecisionService {
       if (!isEditableDecisionStatus(cur.status as DecisionStatus))
         throw new AppError(
           'permission_error',
-          'Eine ersetzte oder widerrufene Entscheidung lässt sich nicht durch Bearbeiten wieder in Kraft setzen. Machen Sie das Ersetzen bzw. Widerrufen im Änderungsprotokoll rückgängig.',
+          'Eine ersetzte oder widerrufene Entscheidung lässt sich nicht durch Bearbeiten wieder in Kraft setzen. Mache das Ersetzen bzw. Widerrufen im Änderungsprotokoll rückgängig.',
         );
     }
     const set: Partial<Row> = { updatedAt: nowIso() };

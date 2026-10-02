@@ -36,7 +36,7 @@ export function ContextPanel() {
     <aside aria-label="Kontext" className="hidden w-72 shrink-0 overflow-y-auto border-l bg-sidebar p-4 xl:block" data-testid="context-panel">
       <h2 className="mb-3 text-sm font-semibold">Kontext der Antwort</h2>
       {!hasAny && (
-        <p className="text-sm text-muted-foreground">Hier sehen Sie, welche Themen, Personen, Entscheidungen und Dokumente zur letzten Antwort gehören.</p>
+        <p className="text-sm text-muted-foreground">Hier siehst du, welche Themen, Personen, Entscheidungen und Dokumente zur letzten Antwort gehören.</p>
       )}
       {m && hasAny && (
         <>
