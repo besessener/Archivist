@@ -17,6 +17,12 @@ export function initDocuments(page: Page) {
       rename: page.getByTestId('bulk-rename'),
       result: page.getByTestId('bulk-result'),
     },
+    /** The detail dialog of a document, with „In den Papierkorb“. */
+    dialog: {
+      root: page.getByTestId('document-dialog'),
+      trash: page.getByTestId('doc-trash'),
+      confirmTrash: page.getByTestId('doc-trash-confirm'),
+    },
     renameDialog: {
       root: page.getByTestId('bulk-rename-dialog'),
       pattern: page.getByTestId('bulk-rename-pattern'),
@@ -26,6 +32,18 @@ export function initDocuments(page: Page) {
     },
   };
   const interactions = {
+    /** Opens the detail dialog of a row by its title. */
+    open: async (row: number) => {
+      await locators.cell(row, 'Titel').getByRole('button').click();
+      await locators.dialog.root.waitFor();
+    },
+    /** Moves the document of a row into the trash, after the confirmation. */
+    moveToTrash: async (row: number) => {
+      await interactions.open(row);
+      await locators.dialog.trash.click();
+      await locators.dialog.confirmTrash.click();
+      await expect(locators.dialog.root).toBeHidden();
+    },
     /** Renames all listed documents by a scheme: preview first, then rename. */
     renameAll: async (pattern: string, expectedName: string) => {
       await locators.bulk.selectAll.click();

@@ -18,6 +18,7 @@ import { useRun } from '@/lib/use-run';
 import type { DocRecord } from '@/lib/types';
 import { parseList } from '@/lib/utils';
 import { DocumentEditFields, DocumentMeta, type MetadataForm } from './document-meta';
+import { TrashDocumentButton } from './trash-document';
 
 type Change = [label: string, before: string, after: string];
 
@@ -37,6 +38,10 @@ export function DocumentDialog({ id, onClose, onChanged }: { id: string | null; 
               onChanged();
               void query.refetch();
             }}
+            onTrashed={() => {
+              onChanged();
+              onClose();
+            }}
           />
         )}
       </DialogContent>
@@ -49,7 +54,7 @@ function statusLabel(status: DocRecord['status']): string {
   return status === 'archived' ? 'Archiviert' : status;
 }
 
-function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => void }) {
+function DocumentDetail({ doc, onChanged, onTrashed }: { doc: DocRecord; onChanged: () => void; onTrashed: () => void }) {
   const { run, busy } = useRun();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(doc.title);
@@ -145,6 +150,7 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
           >
             <FolderOpen aria-hidden /> Im Ordner zeigen
           </Button>
+          <TrashDocumentButton doc={doc} onTrashed={onTrashed} />
         </div>
         {!editing ? (
           <Button size="sm" onClick={() => setEditing(true)} data-testid="doc-edit">
