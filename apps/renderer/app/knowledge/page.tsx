@@ -4,13 +4,14 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { EntityType, KnowledgeCreateResult, RelationStatus } from '@archivist/shared';
-import { Check, GitMerge, Link2, Plus, Search, Unlink, X } from 'lucide-react';
+import { Check, GitMerge, Link2, Pencil, Plus, Search, Unlink, X } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
 import { LinkDialog, LinkSuggestions, RelatedEntries, RelationProvenance } from '@/components/knowledge/related';
+import { NoteEditDialog } from '@/components/knowledge/note-edit-dialog';
 import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
@@ -272,6 +273,7 @@ function EntityView({ id }: { id: string }) {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeAction, setMergeAction] = useState<ActionRecord | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [unlinking, setUnlinking] = useState<{ relationId: string; label: string } | null>(null);
 
   if (detail.error && !detail.data) return <ErrorNote error={detail.error} onRetry={() => void detail.refetch()} />;
@@ -381,6 +383,11 @@ function EntityView({ id }: { id: string }) {
           <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="knowledge-link">
             <Link2 aria-hidden /> Verknüpfen
           </Button>
+          {entity.type === 'note' && !entity.duplicateOfId && (
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} data-testid="note-edit">
+              <Pencil aria-hidden /> Bearbeiten
+            </Button>
+          )}
           {entity.type === 'topic' && (
             <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)} data-testid="knowledge-merge">
               <GitMerge aria-hidden /> Mit anderem Thema zusammenführen vorschlagen
@@ -476,6 +483,18 @@ function EntityView({ id }: { id: string }) {
           }
         }}
       />
+
+      {entity.type === 'note' && (
+        <NoteEditDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          note={entity}
+          onSaved={() => {
+            setEditOpen(false);
+            void detail.refetch();
+          }}
+        />
+      )}
 
       <LinkDialog
         open={linkOpen}

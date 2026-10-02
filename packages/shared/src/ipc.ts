@@ -506,6 +506,8 @@ export const ipcContract = {
     GraphRelation,
   ),
   'knowledge:unlink': ch(z.object({ relationId: Id, confirmed: Confirmed }), Ok),
+  /** Edits a note's title and/or text; it is analysed again afterwards (#273). Undoable. */
+  'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
   /** Related entries with the reason (#276, #289). */
   'knowledge:related': ch(z.object({ id: Id, depth: z.number().int().min(1).max(2).default(1) }), z.array(RelatedEntry)),
   /** Link proposals for an entry: similar entries and mentioned topics/projects (#283); the same function as the agent's suggest_links. */

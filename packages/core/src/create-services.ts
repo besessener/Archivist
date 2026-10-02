@@ -27,6 +27,7 @@ import { KnowledgeGraphService } from './services/knowledge-graph';
 import { LinkMethodsService } from './services/link-methods';
 import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
+import { NoteAnalysisService } from './services/note-analysis';
 import { NotificationService } from './services/notifications';
 import { EventService } from './services/events';
 import { NoteEventDuplicateService } from './services/cleanup/note-event-duplicates';
@@ -73,6 +74,8 @@ export type Services = ReturnType<typeof buildServices>;
 
 /** Job of the retroactive link run (#279). */
 const LINK_RUN_JOB = 'links.run';
+/** Job that analyses a new or edited note (#273). */
+const NOTE_ANALYZE_JOB = 'notes.analyze';
 /** Job that proposes similar entries for newly indexed ones (#271). */
 const LINK_SIMILAR_JOB = 'links.similar';
 
@@ -131,7 +134,8 @@ function buildServices(opts: CreateServicesOptions) {
   const decisions = new DecisionService(ctx, graph, persons, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, persons, search, audit, undo);
   const eventsSvc = new EventService(ctx, graph, search, audit, persons, undo);
-  const notes = new NoteService(ctx, graph, search);
+  const notes = new NoteService(ctx, graph, search, audit, undo);
+  const noteAnalysis = new NoteAnalysisService(ctx, graph, persons, llm, privacy);
   const memory = new MemoryService(ctx);
   const agentRuns = new AgentRunService(ctx, audit, undo);
   registerCreatedUndo(ctx, undo, graph, search);
@@ -275,6 +279,18 @@ function buildServices(opts: CreateServicesOptions) {
         links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] });
     },
   });
+  // a new or edited note is analysed like a document, in a job of its own (#273)
+  const enqueueNoteAnalysis = (entry: { id: string; type: string }) => {
+    if (entry.type !== 'note' || !settings.get().links.autoPropose) return;
+    jobs.enqueue(
+      NOTE_ANALYZE_JOB,
+      'Notiz analysieren',
+      { noteId: entry.id },
+      { maxAttempts: 2, sameAs: (p, status) => status === 'pending' && p.noteId === entry.id },
+    );
+  };
+  events.on('entry:created', enqueueNoteAnalysis);
+  events.on('entry:updated', enqueueNoteAnalysis);
   // entries extracted from the same document belong together (#272)
   events.on('entry:created', (entry: { id: string }) => {
     if (!settings.get().links.autoPropose) return;
@@ -382,6 +398,10 @@ function buildServices(opts: CreateServicesOptions) {
       });
     return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${clusters.length} Themen vorgeschlagen` };
   });
+  jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, async (job) => {
+    const r = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
+    return { summary: r ? `${r.proposed} Verknüpfungen vorgeschlagen, ${r.outdated} veraltet` : 'Notiz nicht (mehr) vorhanden' };
+  });
   jobs.register(LINK_SIMILAR_JOB, async (job) => {
     const r = await links.runPendingSimilar({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
     job.throwIfCancelled();
@@ -435,6 +455,7 @@ function buildServices(opts: CreateServicesOptions) {
     solutions,
     eventRecords: eventsSvc,
     notes,
+    noteAnalysis,
     noteEventDuplicates,
     personDuplicates,
     personQuestions,
