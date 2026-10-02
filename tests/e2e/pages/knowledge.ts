@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { pageObject } from './page-object';
 
-type CreatableType = 'topic' | 'project' | 'person' | 'note';
+type CreatableType = 'topic' | 'project' | 'case' | 'person' | 'note';
 
 export function initKnowledge(page: Page) {
   const locators = {

@@ -134,6 +134,7 @@ export class WikiLinks {
       }
       const r = this.graph.link(noteId, target.id, 'relates_to', {
         status: 'confirmed',
+        confidence: 1,
         resolvedByUser: true,
         origin: 'user',
         method: 'wikilink',

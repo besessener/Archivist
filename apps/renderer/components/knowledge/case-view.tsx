@@ -76,7 +76,7 @@ export function CaseView({ id }: { id: string }) {
           <ol className="relative flex flex-col gap-2 border-l pl-4" data-testid="case-timeline">
             {entries.map((e) => (
               <li key={e.id} className="relative flex flex-wrap items-center gap-2" data-testid="case-entry" data-proposed={e.proposed}>
-                <span className="absolute top-1.5 -left-[1.3rem] size-2 rounded-full bg-muted-foreground" aria-hidden />
+                <span className="absolute top-1.5 -left-[1.28rem] size-2 rounded-full bg-muted-foreground" aria-hidden />
                 <span className="w-24 shrink-0 text-xs tabular-nums text-muted-foreground">{formatDate(e.date)}</span>
                 <EntityChip type={e.type} id={e.id} label={e.name} />
                 {e.proposed && <Badge variant="outline">vorgeschlagen</Badge>}

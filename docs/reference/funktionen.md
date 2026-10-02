@@ -104,6 +104,8 @@ Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von 
 
 **Vorschläge beim Erfassen im Chat**: Nach dem Speichern einer Notiz, Entscheidung, eines offenen Punkts oder Ereignisses erscheinen unter der Antwort bis zu drei Knöpfe wie „Das klingt nach Projekt „Hausbau“ – verknüpfen?“ – aus der Ähnlichkeitssuche, genannten Themen und Projekten und der Notiz-Analyse. Sie werden in einem eigenen Job ermittelt, die Antwort wartet nicht darauf. Ein Klick bestätigt die Verknüpfung (rückgängig im Änderungsprotokoll); ignorierte Vorschläge bleiben in den Verknüpfungsvorschlägen.
 
+**Graph-Ansicht**: „Graph“ in der Detailansicht der Wissen-Seite zeigt die Umgebung eines Eintrags – 1 oder 2 Schritte, filterbar nach Art der Beziehung, Art des Eintrags und Status (bestätigt durchgezogen, vorgeschlagen gestrichelt). Ein Klick wählt einen Knoten: „Öffnen“ führt zum Eintrag, „Erweitern“ holt seine Nachbarn dazu. Höchstens 60 Knoten; mehr als 12 Nachbarn einer Art erscheinen als ein Sammelknoten („20 Notizen“), und der zweite Schritt läuft nicht über solche großen Knoten. Gezeichnet wird lokal als SVG, ohne Bibliothek aus dem Netz; „Als Tabelle“ listet dieselben Verknüpfungen als Text.
+
 **Manuell verknüpfen**: „Verknüpfen“ wählt per Suche einen Eintrag beliebiger Art und die Art der Beziehung (verwandt, folgt aus, ersetzt, blockiert …). Manuelle Verknüpfungen sind sofort bestätigt, stehen im Änderungsprotokoll, lassen sich rückgängig machen und wieder entfernen. Im Chat verknüpft der Agent auf Wunsch („Verknüpfe das mit dem Mietvertrag“) und fragt bei mehreren Treffern nach.
 
 **Vorgänge** (z. B. „Steuererklärung 2025“, „Autokauf“) sammeln Dokumente, Entscheidungen, offene Punkte, Ereignisse und Notizen zu einer Sache:

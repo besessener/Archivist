@@ -279,6 +279,26 @@ const clipEvidence = (e: string | null | undefined): string | null => {
   return t.length > EVIDENCE_MAX ? `${t.slice(0, EVIDENCE_MAX - 1)}…` : t;
 };
 
+/** Neighbours of one kind beyond this many are shown as one group node in the graph view (#288). */
+const HUB_GROUP = 12;
+
+/** The surroundings of an entry for the graph view (#288). */
+export interface NeighborhoodGraph {
+  centerId: string;
+  nodes: Array<{ id: string; type: EntityType; name: string; depth: number; count: number | null; status: string | null }>;
+  edges: Array<{ id: string; source: string; target: string; relationType: RelationType; status: RelationStatus; grouped?: boolean }>;
+  /** More nodes exist than were returned. */
+  truncated: boolean;
+}
+
+const toEdge = (r: GraphRelation): NeighborhoodGraph['edges'][number] => ({
+  id: r.id,
+  source: r.sourceEntityId,
+  target: r.targetEntityId,
+  relationType: r.relationType,
+  status: r.status,
+});
+
 /** What can be a subtopic of what (#282). */
 const SUBJECT_TYPES = new Set<EntityType>(['topic', 'project']);
 
@@ -1053,6 +1073,73 @@ export class KnowledgeGraphService {
         )
         .all(id) as Array<{ id: string }>
     ).map((r) => r.id);
+  }
+
+  /**
+   * The surroundings of an entry as a graph (#288): nodes and relations up to `depth` (1–2) steps away, filtered by
+   * relation type, kind of entry and status. Stays readable with many nodes: at most `maxNodes`; a node with more than
+   * {@link HUB_GROUP} neighbours of one kind shows them as one group node („12 Dokumente“), and the second step does not
+   * go through such big hubs. Rejected and outdated relations are never shown.
+   */
+  neighborhood(
+    id: string,
+    opts: { depth?: number; relationTypes?: RelationType[]; entityTypes?: EntityType[]; statuses?: Array<'proposed' | 'confirmed'>; maxNodes?: number } = {},
+  ): NeighborhoodGraph {
+    const center = this.getEntity(id);
+    if (!center) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
+    const depth = Math.min(Math.max(opts.depth ?? 1, 1), 2);
+    const maxNodes = Math.min(Math.max(opts.maxNodes ?? 60, 5), 200);
+    const statuses = opts.statuses?.length ? opts.statuses : (['proposed', 'confirmed'] as const);
+    const nodes = new Map<string, NeighborhoodGraph['nodes'][number]>();
+    const edges = new Map<string, NeighborhoodGraph['edges'][number]>();
+    let truncated = false;
+    const addNode = (e: GraphEntity, d: number) => {
+      if (!nodes.has(e.id)) nodes.set(e.id, { id: e.id, type: e.type, name: e.name, depth: d, count: null, status: e.status ?? null });
+    };
+    addNode(center, 0);
+    let frontier = [center.id];
+    for (let d = 1; d <= depth; d += 1) {
+      const next: string[] = [];
+      for (const from of frontier) {
+        const rels = this.relationsOf(from, { statuses: [...statuses] }).filter(
+          (r) => r.relationType !== 'duplicate_of' && (!opts.relationTypes?.length || opts.relationTypes.includes(r.relationType)),
+        );
+        const others = rels.flatMap((r) => {
+          const otherId = r.sourceEntityId === from ? r.targetEntityId : r.sourceEntityId;
+          const other = this.getEntity(otherId);
+          return other && !other.duplicateOfId && (!opts.entityTypes?.length || opts.entityTypes.includes(other.type) || nodes.has(otherId))
+            ? [{ r, other }]
+            : [];
+        });
+        // big hubs: per kind more than HUB_GROUP neighbours become one group node
+        const byType = new Map<EntityType, typeof others>();
+        for (const o of others) byType.set(o.other.type, [...(byType.get(o.other.type) ?? []), o]);
+        for (const [type, list] of byType) {
+          const fresh = list.filter((o) => !nodes.has(o.other.id));
+          if (fresh.length > HUB_GROUP) {
+            const groupId = `group:${from}:${type}`;
+            nodes.set(groupId, { id: groupId, type, name: `${fresh.length} weitere`, depth: d, count: fresh.length, status: null });
+            edges.set(groupId, { id: groupId, source: from, target: groupId, relationType: list[0]!.r.relationType, status: 'confirmed', grouped: true });
+            for (const o of list.filter((x) => nodes.has(x.other.id))) edges.set(o.r.id, toEdge(o.r));
+            continue;
+          }
+          for (const o of list) {
+            if (!nodes.has(o.other.id)) {
+              if (nodes.size >= maxNodes) {
+                truncated = true;
+                continue;
+              }
+              addNode(o.other, d);
+              // the second step never runs through a big hub (a tag on every document says little)
+              if (this.relationsOf(o.other.id, { statuses: [...statuses] }).length <= HUB_GROUP * 4) next.push(o.other.id);
+            }
+            edges.set(o.r.id, toEdge(o.r));
+          }
+        }
+      }
+      frontier = next;
+    }
+    return { centerId: center.id, nodes: [...nodes.values()], edges: [...edges.values()], truncated };
   }
 
   /** Every confirmed „Unterthema von“ (#282): child and parent – for the tree on the knowledge page. */

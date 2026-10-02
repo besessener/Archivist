@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppErrorInfo, EntityType, Id, IsoDate, RelationMethod, RelationStatus, SourceReference, type Result } from './common';
+import { AppErrorInfo, EntityType, Id, IsoDate, RelationMethod, RelationStatus, RelationType, SourceReference, type Result } from './common';
 import {
   AgentActionProposal,
   AgentActionStatus,
@@ -163,6 +163,26 @@ const EntrySubjects = z.object({
   extraProjects: z.array(SubjectRef),
 });
 export type EntrySubjects = z.infer<typeof EntrySubjects>;
+
+/** The surroundings of an entry for the graph view (#288). */
+export const NeighborhoodGraph = z.object({
+  centerId: z.string(),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      type: EntityType,
+      name: z.string(),
+      depth: z.number().int(),
+      count: z.number().int().nullable(),
+      status: z.string().nullable(),
+    }),
+  ),
+  edges: z.array(
+    z.object({ id: z.string(), source: z.string(), target: z.string(), relationType: RelationType, status: RelationStatus, grouped: z.boolean().optional() }),
+  ),
+  truncated: z.boolean(),
+});
+export type NeighborhoodGraph = z.infer<typeof NeighborhoodGraph>;
 
 /** A case („Vorgang“) with its numbers (#286). */
 const CaseSummary = z.object({
@@ -593,6 +613,18 @@ export const ipcContract = {
   'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
   /** Related entries with the reason (#276, #289). */
   /** Related entries of an entry, strongest first, paged (#276). */
+  /** The surroundings of an entry as a graph, 1–2 steps, filtered; big hubs grouped (#288). */
+  'knowledge:neighborhood': ch(
+    z.object({
+      id: Id,
+      depth: z.number().int().min(1).max(2).default(1),
+      relationTypes: z.array(RelationType).optional(),
+      entityTypes: z.array(EntityType).optional(),
+      statuses: z.array(z.enum(['proposed', 'confirmed'])).optional(),
+      maxNodes: z.number().int().min(5).max(200).default(60),
+    }),
+    NeighborhoodGraph,
+  ),
   /** Every confirmed „Unterthema von“ (child, parent) – the topic tree of the knowledge page (#282). */
   'knowledge:hierarchy': ch(Empty, z.array(z.object({ childId: z.string(), parentId: z.string() }))),
   /** Autocomplete after `[[` in a note (#285): entries by name or alias. */

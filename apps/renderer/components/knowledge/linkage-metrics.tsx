@@ -32,7 +32,7 @@ function Tile({ label, value, hint, onClick, testId }: { label: string; value: s
 /** Share of orphaned entries over the archive checks: one line, hover shows the point; the table below is the text view. */
 function Trend({ history }: { history: Metrics['history'] }) {
   const [hover, setHover] = useState<number | null>(null);
-  if (history.length < 2) return <p className="text-xs text-muted-foreground">Der Verlauf erscheint nach der zweiten Archivprüfung.</p>;
+  if (history.length < 2) return <p className="mt-3 text-xs text-muted-foreground">Der Verlauf erscheint nach der zweiten Archivprüfung.</p>;
   const W = 600;
   const H = 120;
   const PAD = 8;
@@ -188,7 +188,7 @@ export function LinkageMetrics() {
         />
       </div>
       {methods && (
-        <table className="mt-3 w-full text-left text-sm tabular-nums" data-testid="linkage-methods">
+        <table className="mt-3 mb-2 w-full text-left text-sm tabular-nums" data-testid="linkage-methods">
           <thead className="text-xs text-muted-foreground">
             <tr>
               <th className="font-normal">Methode</th>
