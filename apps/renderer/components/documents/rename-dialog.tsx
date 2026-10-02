@@ -29,7 +29,7 @@ export function RenameDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onC
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-testid="bulk-rename-dialog">
         <DialogHeader>
-          <DialogTitle>{plural(ids.length, 'Datei', 'Dateien')} umbenennen</DialogTitle>
+          <DialogTitle>{plural(ids.length, ['Datei', 'Dateien'])} umbenennen</DialogTitle>
           <DialogDescription>
             Platzhalter: {'{datum}'}, {'{jahr}'}, {'{monat}'}, {'{typ}'}, {'{absender}'}, {'{titel}'}, {'{thema}'}, {'{projekt}'}, {'{original}'}. Nichts wird
             überschrieben; jede Umbenennung lässt sich rückgängig machen.
@@ -37,7 +37,7 @@ export function RenameDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onC
         </DialogHeader>
         {ids.length < docs.length && (
           <Notice tone="warning">
-            {plural(docs.length - ids.length, 'Dokument ist', 'Dokumente sind')} nicht archiviert und {docs.length - ids.length === 1 ? 'bleibt' : 'bleiben'}{' '}
+            {plural(docs.length - ids.length, ['Dokument ist', 'Dokumente sind'])} nicht archiviert und {docs.length - ids.length === 1 ? 'bleibt' : 'bleiben'}{' '}
             unverändert.
           </Notice>
         )}
@@ -80,7 +80,7 @@ export function RenameDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onC
               if (out) onDone(out);
             }}
           >
-            {ready ? `${plural(ready, 'Datei', 'Dateien')} umbenennen` : 'Umbenennen'}
+            {ready ? `${plural(ready, ['Datei', 'Dateien'])} umbenennen` : 'Umbenennen'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -45,7 +45,7 @@ export function CaseAssignDialog({
       <DialogContent data-testid="case-assign-dialog">
         <DialogHeader>
           <DialogTitle>
-            {entryIds.length === 1 ? 'Zu einem Vorgang hinzufügen' : `${plural(entryIds.length, 'Eintrag', 'Einträge')} zu einem Vorgang hinzufügen`}
+            {entryIds.length === 1 ? 'Zu einem Vorgang hinzufügen' : `${plural(entryIds.length, ['Eintrag', 'Einträge'])} zu einem Vorgang hinzufügen`}
           </DialogTitle>
           <DialogDescription>
             Ein Vorgang sammelt, was zu einer Sache gehört – z. B. „Steuererklärung 2025“ oder „Autokauf“. Ein Eintrag kann zu mehreren Vorgängen gehören.
@@ -57,7 +57,7 @@ export function CaseAssignDialog({
             <Select id="case-assign-choice" value={choice} onChange={(e) => setChoice(e.target.value)} data-testid="case-assign-choice">
               {cases.data.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} ({plural(c.entries, 'Eintrag', 'Einträge')})
+                  {c.name} ({plural(c.entries, ['Eintrag', 'Einträge'])})
                 </option>
               ))}
               <option value={NEW}>Neuer Vorgang …</option>

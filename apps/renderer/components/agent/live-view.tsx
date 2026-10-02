@@ -11,8 +11,8 @@ import { RUN_STATUS, StepList, usageLine } from './run-utils';
 type Progress = AgentProgress;
 
 function parseProgress(payload: unknown): Progress | null {
-  const res = AgentProgress.safeParse(payload);
-  return res.success ? res.data : null;
+  const result = AgentProgress.safeParse(payload);
+  return result.success ? result.data : null;
 }
 
 /** Live state of a conversation's agent run (#300); while `pending` in a new conversation, the first running chat run is adopted. */
@@ -99,7 +99,7 @@ export function AgentLiveView({ progress, onStop, stopping }: { progress: Progre
         <span className="flex-1">{running ? (steps.length > 0 ? 'Archivist arbeitet …' : 'Archivist denkt nach …') : RUN_STATUS[progress.status].label}</span>
         {progress && (
           <span className="text-[11px]" data-testid="agent-live-usage">
-            {usageLine(progress.usage, progress.costUsd)}
+            {usageLine({ usage: progress.usage, costUsd: progress.costUsd })}
           </span>
         )}
         <Button variant="ghost" size="sm" onClick={onStop} disabled={stopping || !running} data-testid="chat-cancel">

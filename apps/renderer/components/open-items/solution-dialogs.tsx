@@ -58,7 +58,7 @@ export function PreviewDialog({ preview, onClose, onConfirm }: { preview: Previe
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {titleOnly > 0 && `${plural(titleOnly, 'ausgeschlossenes Dokument wird', 'ausgeschlossene Dokumente werden')} nur mit Titel gesendet. `}
+              {titleOnly > 0 && `${plural(titleOnly, ['ausgeschlossenes Dokument wird', 'ausgeschlossene Dokumente werden'])} nur mit Titel gesendet. `}
               Geheimnisse wie Passwörter oder API-Keys werden vor dem Senden maskiert; die Übertragung erscheint im Übertragungsprotokoll.
             </p>
             {!preview.available && preview.blockedReason && <p className="text-sm text-destructive">{preview.blockedReason}</p>}
@@ -100,13 +100,13 @@ export function StepsDialog({
       onOpenChange={(open) => !open && onClose()}
       title="Schritte als offene Punkte anlegen?"
       description={`Jeder ausgewählte Schritt wird ein eigener offener Punkt (Thema und Projekt wie „${item.title}“).`}
-      confirmLabel={count ? `${plural(count, 'Punkt', 'Punkte')} anlegen` : 'Nichts ausgewählt'}
+      confirmLabel={count ? `${plural(count, ['Punkt', 'Punkte'])} anlegen` : 'Nichts ausgewählt'}
       confirmTestId="solution-steps-confirm"
       onConfirm={async () => {
         if (!count) return;
         const created = await run(
           () => call('openItems:applySolution', { target: 'items', id: item.id, stepIndexes: [...selected].sort((a, b) => a - b), confirmed: true }),
-          { success: `${plural(count, 'offener Punkt', 'offene Punkte')} angelegt.` },
+          { success: `${plural(count, ['offener Punkt', 'offene Punkte'])} angelegt.` },
         );
         if (!created) return;
         onDone();

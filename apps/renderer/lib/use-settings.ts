@@ -11,12 +11,12 @@ export function normalizeSettings(raw: unknown): Settings {
 }
 
 export async function loadSettings(): Promise<{ settings: Settings; hasApiKey: boolean }> {
-  const res = await call('settings:get');
-  return { settings: normalizeSettings(res.settings), hasApiKey: res.hasApiKey };
+  const result = await call('settings:get');
+  return { settings: normalizeSettings(result.settings), hasApiKey: result.hasApiKey };
 }
 
 export function useSettings() {
-  const q = useQuery('settings:get', {}, { scopes: ['settings'] });
-  const settings = useMemo(() => (q.data ? normalizeSettings(q.data.settings) : undefined), [q.data]);
-  return { settings, hasApiKey: q.data?.hasApiKey ?? false, loading: q.loading, error: q.error, refetch: q.refetch };
+  const query = useQuery('settings:get', {}, { scopes: ['settings'] });
+  const settings = useMemo(() => (query.data ? normalizeSettings(query.data.settings) : undefined), [query.data]);
+  return { settings, hasApiKey: query.data?.hasApiKey ?? false, loading: query.loading, error: query.error, refetch: query.refetch };
 }

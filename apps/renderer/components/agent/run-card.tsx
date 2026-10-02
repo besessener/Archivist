@@ -63,8 +63,8 @@ export function RunCard({ run, initiallyOpen }: { run: AgentRun; initiallyOpen: 
               duration,
               formatTokens(totalTokens(run.usage)),
               cost,
-              plural(run.steps.length, 'Schritt', 'Schritte'),
-              run.undoable > 0 ? `${plural(run.undoable, 'Änderung', 'Änderungen')} rückgängig machbar` : null,
+              plural(run.steps.length, ['Schritt', 'Schritte']),
+              run.undoable > 0 ? `${plural(run.undoable, ['Änderung', 'Änderungen'])} rückgängig machbar` : null,
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -111,7 +111,7 @@ export function RunCard({ run, initiallyOpen }: { run: AgentRun; initiallyOpen: 
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Lauf rückgängig machen?"
-        description={`${plural(run.undoable, 'Änderung wird', 'Änderungen werden')} zurückgenommen. Was seitdem anders geändert wurde, wird als Konflikt gemeldet.`}
+        description={`${plural(run.undoable, ['Änderung wird', 'Änderungen werden'])} zurückgenommen. Was seitdem anders geändert wurde, wird als Konflikt gemeldet.`}
         confirmLabel="Rückgängig machen"
         onConfirm={async () => {
           const undone = await undo.undoRun();

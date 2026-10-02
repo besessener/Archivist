@@ -59,7 +59,7 @@ export function GraphView({ id }: { id: string }) {
       errorTitle: 'Erweitern fehlgeschlagen',
     });
     if (!more) return;
-    setGraph(mergeGraphs(graph, more, node.depth));
+    setGraph(mergeGraphs({ shown: graph, expansion: more, depthOffset: node.depth }));
     setExpanded((ids) => new Set(ids).add(node.id));
   };
 

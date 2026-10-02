@@ -67,7 +67,7 @@ export function LinkMethodsSection() {
           ? 'Zähle Einträge ohne Verknüpfung …'
           : total === 0
             ? 'Alle Einträge sind verknüpft.'
-            : `${plural(total, 'Eintrag', 'Einträge')} ohne Verknüpfung.`}
+            : `${plural(total, ['Eintrag', 'Einträge'])} ohne Verknüpfung.`}
       </p>
       <div>
         <Button

@@ -121,22 +121,22 @@ function Trend({ history }: { history: Metrics['history'] }) {
 }
 
 function OrphanList({ onClose }: { onClose: () => void }) {
-  const q = useQuery('links:unlinked', { limit: 100, offset: 0 }, { scopes: ['knowledge'] });
+  const query = useQuery('links:unlinked', { limit: 100, offset: 0 }, { scopes: ['knowledge'] });
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-testid="orphan-list">
         <DialogHeader>
           <DialogTitle>Einträge ohne Verknüpfung</DialogTitle>
           <DialogDescription>
-            {q.data ? `${q.data.total} Einträge haben weder eine bestätigte noch eine vorgeschlagene Verknüpfung` : 'Lade …'}
-            {q.data && q.data.total > q.data.items.length ? ` – hier die ältesten ${q.data.items.length}.` : '.'} Öffne einen, um ihn unter „Verwandte Einträge“
-            zu verknüpfen.
+            {query.data ? `${query.data.total} Einträge haben weder eine bestätigte noch eine vorgeschlagene Verknüpfung` : 'Lade …'}
+            {query.data && query.data.total > query.data.items.length ? ` – hier die ältesten ${query.data.items.length}.` : '.'} Öffne einen, um ihn unter
+            „Verwandte Einträge“ zu verknüpfen.
           </DialogDescription>
         </DialogHeader>
-        {q.error && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}
-        {q.data && (
+        {query.error && <ErrorNote error={query.error} onRetry={() => void query.refetch()} />}
+        {query.data && (
           <div className="flex max-h-80 flex-wrap gap-1.5 overflow-y-auto">
-            {q.data.items.map((e) => (
+            {query.data.items.map((e) => (
               <EntityChip key={e.id} type={e.type} id={e.id} label={e.name} />
             ))}
           </div>
@@ -148,14 +148,14 @@ function OrphanList({ onClose }: { onClose: () => void }) {
 
 /** How well the archive is linked (#292), with the history of the archive checks; every figure leads to its list. */
 export function LinkageMetrics() {
-  const q = useQuery('links:metrics', {}, { scopes: ['knowledge', 'insights'] });
+  const query = useQuery('links:metrics', {}, { scopes: ['knowledge', 'insights'] });
   const [orphans, setOrphans] = useState(false);
   const [methods, setMethods] = useState(false);
-  if (q.error && !q.data) return <ErrorNote error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data) return q.loading ? <Loading /> : null;
-  const { current, history } = q.data;
+  if (query.error && !query.data) return <ErrorNote error={query.error} onRetry={() => void query.refetch()} />;
+  if (!query.data) return query.loading ? <Loading /> : null;
+  const { current, history } = query.data;
   if (current.entries === 0) return null;
-  const decided = q.data.methods.filter((m) => m.rate !== null);
+  const decided = query.data.methods.filter((m) => m.rate !== null);
   return (
     <section aria-labelledby="linkage-title" className="mb-8" data-testid="linkage-metrics">
       <h2 id="linkage-title" className="mb-2 flex items-center gap-2 text-sm font-semibold">
@@ -196,7 +196,7 @@ export function LinkageMetrics() {
             </tr>
           </thead>
           <tbody>
-            {q.data.methods.map((m) => (
+            {query.data.methods.map((m) => (
               <tr key={m.method}>
                 <td>{m.label}</td>
                 <td>{m.confirmed}</td>

@@ -54,12 +54,12 @@ export function formatDuration(ms: number | null | undefined): string | null {
 
 export function runDurationMs(startedAt: string, finishedAt: string | null): number | null {
   if (!finishedAt) return null;
-  const d = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
-  return Number.isNaN(d) ? null : d;
+  const duration = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+  return Number.isNaN(duration) ? null : duration;
 }
 
 /** Discreet usage line: „1,2k Tokens · ~0,01 $ · 12 s“ */
-export function usageLine(usage: UsageLike, costUsd: number | null | undefined, durationMs?: number | null): string {
+export function usageLine({ usage, costUsd, durationMs }: { usage: UsageLike; costUsd: number | null | undefined; durationMs?: number | null }): string {
   return [formatTokens(totalTokens(usage)), formatCost(costUsd), formatDuration(durationMs)].filter(Boolean).join(' · ');
 }
 

@@ -307,9 +307,9 @@ export function AuditTab() {
         confirmTestId="audit-undo-confirm"
         onConfirm={async () => {
           if (!undoing) return;
-          const res = await run(() => call('audit:undo', { auditId: undoing.id }));
-          if (res) {
-            setResults((prev) => ({ ...prev, [undoing.id]: res }));
+          const result = await run(() => call('audit:undo', { auditId: undoing.id }));
+          if (result) {
+            setResults((prev) => ({ ...prev, [undoing.id]: result }));
             setUndoing(null);
             void refetch();
           }

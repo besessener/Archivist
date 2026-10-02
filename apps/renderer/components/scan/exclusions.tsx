@@ -14,9 +14,9 @@ export function ScanExclusions() {
   const { run, busy } = useRun();
 
   async function addDir() {
-    const sel = await run(() => call('app:selectDirectory', { title: 'Ordner ausschließen' }));
-    if (!sel?.path) return;
-    await run(() => call('scanner:exclude', { kind: 'dir', path: sel.path as string }), { success: 'Ordner ausgeschlossen.' });
+    const selection = await run(() => call('app:selectDirectory', { title: 'Ordner ausschließen' }));
+    if (!selection?.path) return;
+    await run(() => call('scanner:exclude', { kind: 'dir', path: selection.path as string }), { success: 'Ordner ausgeschlossen.' });
     void refetch();
   }
 

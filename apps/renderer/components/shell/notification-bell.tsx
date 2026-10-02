@@ -72,8 +72,8 @@ export function NotificationBell() {
   }
 
   async function clearAll() {
-    const res = await run(() => call('notifications:resolveAll', {}), { success: 'Benachrichtigungen geleert.' });
-    if (res) {
+    const result = await run(() => call('notifications:resolveAll', {}), { success: 'Benachrichtigungen geleert.' });
+    if (result) {
       setSnoozeFor(null);
       void refetch();
       void refreshStatus();

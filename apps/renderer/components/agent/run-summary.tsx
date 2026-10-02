@@ -37,12 +37,12 @@ function Group({ title, steps, renderAction }: { title: string; steps: AgentStep
 
 /** Compact summary of the run behind a chat answer (#300): changes, proposals, failures, undo, usage. */
 export function RunSummary({ runId }: { runId: string }) {
-  const q = useQuery('agent:run', { id: runId }, { scopes: ['agent'] });
+  const query = useQuery('agent:run', { id: runId }, { scopes: ['agent'] });
   const undo = useAgentUndo(runId);
   const { run } = useRun();
   const [open, setOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const r = useMemo(() => (q.data ? normalizeRun(q.data) : null), [q.data]);
+  const r = useMemo(() => (query.data ? normalizeRun(query.data) : null), [query.data]);
   if (!r) return null;
 
   const changed = r.steps.filter(isChange);
@@ -99,7 +99,7 @@ export function RunSummary({ runId }: { runId: string }) {
           </Button>
         )}
         <span className="ml-auto text-[11px] text-muted-foreground" data-testid="agent-run-usage">
-          {usageLine(r.usage, r.costUsd, runDurationMs(r.startedAt, r.finishedAt))}
+          {usageLine({ usage: r.usage, costUsd: r.costUsd, durationMs: runDurationMs(r.startedAt, r.finishedAt) })}
         </span>
       </div>
       {open && <StepList steps={r.steps} renderAction={stepAction} />}

@@ -168,7 +168,7 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
   const migration = jobs.data?.find((j) => j.type === MIGRATE_JOB && (j.status === 'pending' || j.status === 'running'));
   const lastMigration = jobs.data?.find((j) => j.type === MIGRATE_JOB);
   const target = root.trim();
-  const st = status.data;
+  const rootStatus = status.data;
 
   async function openDialog() {
     const p = await run(() => call('archive:previewRootChange', { root: target }));
@@ -176,10 +176,10 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
   }
 
   async function undo(auditId: string) {
-    const res = await run(() => call('audit:undo', { auditId }));
-    if (!res) return;
-    setUndoConflicts(res.conflicts);
-    if (res.undone) reload();
+    const result = await run(() => call('audit:undo', { auditId }));
+    if (!result) return;
+    setUndoConflicts(result.conflicts);
+    if (result.undone) reload();
   }
 
   return (
@@ -187,16 +187,16 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
       title="Archivordner"
       description="In diesen Ordner legt Archivist deine Dokumente ab. Beim Ändern kannst du das Archiv umziehen lassen oder nur den Pfad umstellen, wenn die Dateien schon dort liegen."
     >
-      {st && unreachableOf(st.current) > 0 && (
-        <Notice tone="danger" title={`${docs(unreachableOf(st.current))} nicht erreichbar`}>
+      {rootStatus && unreachableOf(rootStatus.current) > 0 && (
+        <Notice tone="danger" title={`${docs(unreachableOf(rootStatus.current))} nicht erreichbar`}>
           <span data-testid="archive-root-unreachable">
-            Im aktuellen Archivordner {unreachableOf(st.current) === 1 ? 'fehlt' : 'fehlen'} {unreachableOf(st.current)} von {docs(st.current.documents)} oder{' '}
-            {unreachableOf(st.current) === 1 ? 'weicht' : 'weichen'} ab
-            <Examples presence={st.current} />. Lege die Dateien dorthin oder stelle den bisherigen Archivordner wieder her.
+            Im aktuellen Archivordner {unreachableOf(rootStatus.current) === 1 ? 'fehlt' : 'fehlen'} {unreachableOf(rootStatus.current)} von{' '}
+            {docs(rootStatus.current.documents)} oder {unreachableOf(rootStatus.current) === 1 ? 'weicht' : 'weichen'} ab
+            <Examples presence={rootStatus.current} />. Lege die Dateien dorthin oder stelle den bisherigen Archivordner wieder her.
           </span>
         </Notice>
       )}
-      {status.error && !st && <ErrorNote error={status.error} onRetry={() => void status.refetch()} />}
+      {status.error && !rootStatus && <ErrorNote error={status.error} onRetry={() => void status.refetch()} />}
 
       <Field label="Pfad des Archivs" htmlFor="s-archive-root">
         <div className="flex gap-2">
@@ -205,8 +205,8 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
             variant="outline"
             disabled={!!migration}
             onClick={async () => {
-              const sel = await run(() => call('app:selectDirectory', { title: 'Archivordner wählen' }));
-              if (sel?.path) setRoot(sel.path);
+              const selection = await run(() => call('app:selectDirectory', { title: 'Archivordner wählen' }));
+              if (selection?.path) setRoot(selection.path);
             }}
             data-testid="settings-archive-select"
           >
@@ -242,21 +242,21 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
           </div>
         </div>
       )}
-      {!migration && lastMigration?.status === 'failed' && (!st?.lastChange || (lastMigration.finishedAt ?? '') > st.lastChange.at) && (
+      {!migration && lastMigration?.status === 'failed' && (!rootStatus?.lastChange || (lastMigration.finishedAt ?? '') > rootStatus.lastChange.at) && (
         <Notice tone="warning" title="Archivumzug fehlgeschlagen">
           {lastMigration.error} Der bisherige Archivordner bleibt aktiv.
         </Notice>
       )}
 
-      {!st && status.loading && <Loading />}
-      {st?.lastChange && (
+      {!rootStatus && status.loading && <Loading />}
+      {rootStatus?.lastChange && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm" data-testid="archive-root-last-change">
           <p className="text-muted-foreground">
-            Zuletzt geändert am {formatDateTime(st.lastChange.at)} ({st.lastChange.mode === 'migrate' ? 'umgezogen' : 'nur Pfad geändert'}): von{' '}
-            <code className="break-all">{st.lastChange.from}</code> nach <code className="break-all">{st.lastChange.to}</code>
+            Zuletzt geändert am {formatDateTime(rootStatus.lastChange.at)} ({rootStatus.lastChange.mode === 'migrate' ? 'umgezogen' : 'nur Pfad geändert'}): von{' '}
+            <code className="break-all">{rootStatus.lastChange.from}</code> nach <code className="break-all">{rootStatus.lastChange.to}</code>
           </p>
-          {st.lastChange.undoable && !migration && (
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => void undo(st.lastChange!.auditId)} data-testid="archive-root-undo">
+          {rootStatus.lastChange.undoable && !migration && (
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void undo(rootStatus.lastChange!.auditId)} data-testid="archive-root-undo">
               <Undo2 aria-hidden /> Rückgängig
             </Button>
           )}

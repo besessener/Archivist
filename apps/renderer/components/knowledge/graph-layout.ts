@@ -2,6 +2,8 @@ import type { NeighborhoodGraph } from '@archivist/shared';
 
 type Node = NeighborhoodGraph['nodes'][number];
 type Body = { x: number; y: number; vx: number; vy: number };
+/** The bodies in node order (the order the forces are summed in) and the ideal edge length. */
+type Layout = { bodies: Map<string, Body>; ids: string[]; spacing: number };
 export type Point = { x: number; y: number };
 
 export const GRAPH_WIDTH = 720;
@@ -9,7 +11,15 @@ export const GRAPH_HEIGHT = 440;
 const STEPS = 220;
 
 /** Merges an expansion into the graph shown so far (nodes keep their first depth). */
-export function mergeGraphs(shown: NeighborhoodGraph, expansion: NeighborhoodGraph, depthOffset: number): NeighborhoodGraph {
+export function mergeGraphs({
+  shown,
+  expansion,
+  depthOffset,
+}: {
+  shown: NeighborhoodGraph;
+  expansion: NeighborhoodGraph;
+  depthOffset: number;
+}): NeighborhoodGraph {
   const nodes = new Map(shown.nodes.map((node) => [node.id, node]));
   for (const node of expansion.nodes) if (!nodes.has(node.id)) nodes.set(node.id, { ...node, depth: node.depth + depthOffset });
   const edges = new Map(shown.edges.map((edge) => [edge.id, edge]));
@@ -30,7 +40,7 @@ function placeOnRings(nodes: Node[]): Map<string, Body> {
   return bodies;
 }
 
-function repel(bodies: Map<string, Body>, ids: string[], spacing: number) {
+function repel({ bodies, ids, spacing }: Layout) {
   for (let i = 0; i < ids.length; i += 1)
     for (let j = i + 1; j < ids.length; j += 1) {
       const a = bodies.get(ids[i]!)!;
@@ -45,7 +55,7 @@ function repel(bodies: Map<string, Body>, ids: string[], spacing: number) {
     }
 }
 
-function attract(bodies: Map<string, Body>, edges: NeighborhoodGraph['edges'], spacing: number) {
+function attract({ bodies, spacing }: Layout, edges: NeighborhoodGraph['edges']) {
   for (const edge of edges) {
     const a = bodies.get(edge.source);
     const b = bodies.get(edge.target);
@@ -78,10 +88,10 @@ function pinToCenter(body: Body) {
 export function layoutGraph(graph: NeighborhoodGraph): Map<string, Point> {
   const bodies = placeOnRings(graph.nodes);
   const ids = graph.nodes.map((node) => node.id);
-  const spacing = Math.sqrt((GRAPH_WIDTH * GRAPH_HEIGHT) / Math.max(ids.length, 1)) * 0.55;
+  const layout: Layout = { bodies, ids, spacing: Math.sqrt((GRAPH_WIDTH * GRAPH_HEIGHT) / Math.max(ids.length, 1)) * 0.55 };
   for (let step = 0; step < STEPS; step += 1) {
-    repel(bodies, ids, spacing);
-    attract(bodies, graph.edges, spacing);
+    repel(layout);
+    attract(layout, graph.edges);
     for (const [id, body] of bodies) {
       if (id === graph.centerId) pinToCenter(body);
       else move(body, 1 - step / STEPS);

@@ -25,10 +25,10 @@ type Group = LinkProposalPage['groups'][number];
 export function LinkProposals() {
   const [groupBy, setGroupBy] = useState<GroupBy>('method');
   const [page, setPage] = useState(0);
-  const q = useQuery('links:proposals', { groupBy, limit: PAGE, offset: page * PAGE }, { scopes: ['knowledge'] });
+  const query = useQuery('links:proposals', { groupBy, limit: PAGE, offset: page * PAGE }, { scopes: ['knowledge'] });
   const { run, busy } = useRun();
   const [confirmGroup, setConfirmGroup] = useState<Group | null>(null);
-  const data = q.data;
+  const data = query.data;
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE));
   // the last page emptied by decisions: go back one page
@@ -40,11 +40,11 @@ export function LinkProposals() {
     const out = await run(() => call('links:decide', { relationIds, decision, confirmed: true }), {
       success: decision === 'confirmed' ? 'Verknüpfung bestätigt. Rückgängig im Änderungsprotokoll.' : 'Abgelehnt – wird nicht wieder vorgeschlagen.',
     });
-    if (out) void q.refetch();
+    if (out) void query.refetch();
   };
 
-  if (q.error && !data) return <ErrorNote error={q.error} onRetry={() => void q.refetch()} />;
-  if (!data) return q.loading ? <Loading /> : null;
+  if (query.error && !data) return <ErrorNote error={query.error} onRetry={() => void query.refetch()} />;
+  if (!data) return query.loading ? <Loading /> : null;
   if (total === 0 && page === 0) return null;
 
   const byGroup = new Map<string, LinkProposalPage['items']>();
@@ -149,7 +149,7 @@ export function LinkProposals() {
         open={confirmGroup !== null}
         onOpenChange={(o) => !o && setConfirmGroup(null)}
         title="Alle Vorschläge der Gruppe bestätigen?"
-        description={confirmGroup ? `${confirmGroup.label}: ${plural(confirmGroup.count, 'Vorschlag', 'Vorschläge')}` : undefined}
+        description={confirmGroup ? `${confirmGroup.label}: ${plural(confirmGroup.count, ['Vorschlag', 'Vorschläge'])}` : undefined}
         confirmLabel="Alle bestätigen"
         confirmTestId="link-proposals-confirm-all-ok"
         onConfirm={async () => {
@@ -160,7 +160,7 @@ export function LinkProposals() {
           if (out) {
             setConfirmGroup(null);
             setPage(0);
-            void q.refetch();
+            void query.refetch();
           }
         }}
       >
