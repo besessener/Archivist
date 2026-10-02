@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessOpenItemPair, findOpenItemDuplicate } from '../../packages/core/src/services/cleanup/open-item-duplicates';
+import { assessOpenItemPair, findOpenItemDuplicate } from '../../packages/core/src/services/cleanup/open-item-assessment';
 import { appendText, chooseKept, duplicatePairKey, takeOverMissing, titleSimilarity } from '../../packages/core/src/services/cleanup/record-merge';
 
 describe('assessOpenItemPair (#35)', () => {
