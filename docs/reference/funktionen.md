@@ -90,6 +90,8 @@ Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von 
 
 **Verknüpfungsvorschläge prüfen** (Insights, ganz oben): alle offenen Vorschläge der Methoden, gruppiert nach Methode oder Eintrag, je mit Beleg; 20 je Seite mit Gesamtzahl. „Bestätigen“, „Ablehnen“ und „Alle bestätigen“ (die ganze Gruppe, auch über die Seite hinaus) sind je ein Rückgängig-Schritt. Widersprüche, Versionen und Dubletten haben eigene Abläufe und erscheinen dort nicht. Benachrichtigt wird nur bei neuen Vorschlägen: eine Benachrichtigung, die sich aktualisiert, solange sie ungelesen ist.
 
+**Verknüpfungsgrad** (Insights, über den Vorschlägen): Anteil verwaister Einträge, Zahl offener Vorschläge und die Bestätigungsquote deiner Entscheidungen – gesamt und je Methode. Jede Archivprüfung speichert einen Messpunkt (die letzten 400); der Verlauf zeigt den Anteil verwaister Einträge, als Tabelle auch alle Werte. Ein Klick auf eine Kennzahl öffnet die verwaisten Einträge, die Vorschlagsliste bzw. die Quoten je Methode.
+
 **Verwandte Einträge** in Dokument- und Entscheidungsdetails, auf der Wissen-Seite und als „Zusammenhänge“ bei offenen Punkten:
 
 - direkte Beziehungen und Verbindungen über gemeinsame Projekte, Vorgänge, Themen, Personen (nicht die eigene) und Tags;

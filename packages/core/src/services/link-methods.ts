@@ -85,6 +85,24 @@ export interface OrphanPage {
   items: Array<{ id: string; type: EntityType; name: string; createdAt: string }>;
 }
 
+/** How well the archive is linked (#292): one point of the history. */
+export interface LinkageSnapshot {
+  at: string;
+  entries: number;
+  orphans: number;
+  openProposals: number;
+  /** Share of user decisions that confirmed a proposal (all methods), null without decisions. */
+  confirmationRate: number | null;
+}
+
+export interface LinkageMetrics {
+  current: LinkageSnapshot;
+  /** Per method of the automatic proposals: decisions of the user and open proposals. */
+  methods: Array<{ method: RelationMethod; label: string; confirmed: number; rejected: number; open: number; rate: number | null }>;
+  /** One point per archive check, oldest first. */
+  history: LinkageSnapshot[];
+}
+
 export interface TopicCluster {
   /** Stable for the same members: a rejected proposal („Nein“) is remembered under it. */
   key: string;
@@ -101,6 +119,12 @@ export interface BackfillResult {
 }
 
 const BACKFILL_CURSOR = 'links.backfill.cursor';
+/** History of the linkage metrics (#292), one point per archive check. */
+const METRICS_HISTORY = 'links.metrics.history';
+/** Points kept in the history (with a daily check about a year). */
+const MAX_METRICS_POINTS = 400;
+/** Methods of the automatic proposals whose confirmation rate is measured (#292). */
+const MEASURED_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent'];
 /** Where the orphan check of the archive check continues (#290). */
 const ORPHAN_CURSOR = 'links.orphans.cursor';
 /** The one bundled hint about entries without a link (#290). */
@@ -444,6 +468,61 @@ export class LinkMethodsService {
       dedupeKey: ORPHAN_INSIGHT,
     });
     return { pending: pending.length, proposed };
+  }
+
+  /** Decisions of the user and open proposals per method of the automatic proposals (#292, from the provenance of #270). */
+  private methodCounts(): LinkageMetrics['methods'] {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT r.method AS method,
+           sum(CASE WHEN r.status = 'confirmed' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS confirmed,
+           sum(CASE WHEN r.status = 'rejected' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS rejected,
+           sum(CASE WHEN r.status = 'proposed' THEN 1 ELSE 0 END) AS open
+         FROM relations r WHERE r.method IN (${MEASURED_METHODS.map((m) => `'${m}'`).join(',')}) AND r.relation_type NOT IN (${OWN_FLOW_TYPES.map((t) => `'${t}'`).join(',')})
+         GROUP BY r.method`,
+      )
+      .all() as Array<{ method: RelationMethod; confirmed: number; rejected: number; open: number }>;
+    const by = new Map(rows.map((r) => [r.method, r]));
+    return MEASURED_METHODS.map((method) => {
+      const r = by.get(method) ?? { confirmed: 0, rejected: 0, open: 0 };
+      const decided = r.confirmed + r.rejected;
+      return { method, label: RELATION_METHOD_LABELS[method], confirmed: r.confirmed, rejected: r.rejected, open: r.open, rate: decided ? r.confirmed / decided : null };
+    });
+  }
+
+  private snapshot(methods: LinkageMetrics['methods']): LinkageSnapshot {
+    const entries = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${ENTRY_SQL('e', LINK_ENTRY_TYPES)}`).get() as { c: number }).c;
+    const confirmed = methods.reduce((n, m) => n + m.confirmed, 0);
+    const decided = confirmed + methods.reduce((n, m) => n + m.rejected, 0);
+    return {
+      at: new Date().toISOString(),
+      entries,
+      orphans: this.orphans({ limit: 1 }).total,
+      openProposals: this.proposals({ limit: 1 }).total,
+      confirmationRate: decided ? confirmed / decided : null,
+    };
+  }
+
+  private metricsHistory(): LinkageSnapshot[] {
+    try {
+      const v = JSON.parse(this.appState.get(METRICS_HISTORY) ?? '[]') as unknown;
+      return Array.isArray(v) ? (v as LinkageSnapshot[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** How well the archive is linked right now, with the history of the archive checks (#292). Counts only, no texts. */
+  metrics(): LinkageMetrics {
+    const methods = this.methodCounts();
+    return { current: this.snapshot(methods), methods, history: this.metricsHistory() };
+  }
+
+  /** Stores the current metrics as one point of the history; called by every archive check (#292). */
+  recordMetrics(): LinkageSnapshot {
+    const point = this.snapshot(this.methodCounts());
+    this.appState.set(METRICS_HISTORY, JSON.stringify([...this.metricsHistory(), point].slice(-MAX_METRICS_POINTS)));
+    return point;
   }
 
   /** Entries without a topic and without a project (candidates for a new topic, #281), newest first. */

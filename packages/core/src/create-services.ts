@@ -203,6 +203,8 @@ function buildServices(opts: CreateServicesOptions) {
     const r = await links.checkOrphans({ propose: settings.get().links.autoPropose });
     if (r.pending) count('orphan_entries');
     notifyLinkProposals(r.proposed);
+    // one point of the linkage history per archive check (#292)
+    links.recordMetrics();
   });
   links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
   /**

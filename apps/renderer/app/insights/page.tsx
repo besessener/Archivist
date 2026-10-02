@@ -6,6 +6,7 @@ import type { InsightChoice, InsightKind } from '@archivist/shared';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
+import { LinkageMetrics } from '@/components/knowledge/linkage-metrics';
 import { LinkProposals } from '@/components/knowledge/link-proposals';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { QuickDate } from '@/components/common/quick-date';
@@ -84,6 +85,7 @@ export default function InsightsPage() {
           </Button>
         }
       />
+      <LinkageMetrics />
       <LinkProposals />
 
       <div className="mb-4 w-52">

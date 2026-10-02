@@ -94,3 +94,40 @@ describe('Archive check: entries without any link (#290)', () => {
     expect(app.services.links.proposals().total).toBe(1);
   });
 });
+
+describe('Linkage metrics (#292)', () => {
+  it('share of orphans, open proposals and the confirmation rate per method; one history point per archive check', async () => {
+    app = await createTestApp({ autoLinks: false });
+    const lease = await note('Mietvertrag', flatText('Mietvertrag'));
+    const costs = await note('Nebenkosten', flatText('Nebenkostenabrechnung'));
+    const recipe = await note('Apfelkuchen', 'Rezept mit Zucker, Mehl und Butter.');
+    await app.services.jobs.whenIdle();
+
+    let m = await app.ok('links:metrics', {});
+    expect(m.current).toMatchObject({ entries: 3, orphans: 3, openProposals: 0, confirmationRate: null });
+    expect(m.history).toEqual([]);
+
+    app.services.settings.update({ links: { autoPropose: true } });
+    await app.services.consistency.run('test');
+    m = await app.ok('links:metrics', {});
+    expect(m.current).toMatchObject({ orphans: 1, openProposals: 1 });
+    expect(m.history).toHaveLength(1);
+    expect(m.history[0]).toMatchObject({ entries: 3, orphans: 1, openProposals: 1 });
+
+    // decisions of the user count per method: one confirmed, one rejected
+    const [p] = app.services.graph.relationsOf(lease, { statuses: ['proposed'] });
+    app.services.graph.decideRelation(p!.id, 'confirmed');
+    const r = app.services.graph.link(recipe, costs, 'related_to', { status: 'proposed', method: 'mention', evidence: 'x' })!;
+    app.services.graph.decideRelation(r.id, 'rejected');
+    // a manual link is no proposal and does not count
+    app.services.graph.linkEntries(recipe, lease, 'relates_to', { status: 'confirmed' });
+
+    await app.services.consistency.run('test');
+    m = await app.ok('links:metrics', {});
+    expect(m.methods.find((x) => x.method === 'similarity')).toMatchObject({ confirmed: 1, rejected: 0, open: 0, rate: 1 });
+    expect(m.methods.find((x) => x.method === 'mention')).toMatchObject({ confirmed: 0, rejected: 1, rate: 0 });
+    expect(m.methods.find((x) => x.method === 'co_origin')).toMatchObject({ rate: null });
+    expect(m.current).toMatchObject({ orphans: 0, openProposals: 0, confirmationRate: 0.5 });
+    expect(m.history.map((h) => h.orphans)).toEqual([1, 0]);
+  });
+});

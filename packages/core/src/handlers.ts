@@ -349,6 +349,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'links:unlinked': (i) => s.links.orphans(i),
     'links:startRun': () => ({ jobId: s.enqueueLinkRun('manual').id }),
     'links:proposals': (i) => s.links.proposals(i),
+    'links:metrics': () => s.links.metrics(),
     'links:decide': (i) => ({ decided: s.graph.decideRelations(i.relationIds, i.decision, { trigger }) }),
     'links:decideGroup': (i) => ({ decided: s.links.decideGroup(i.groupBy, i.key, i.decision, { trigger }) }),
     'knowledge:resolveRelation': (i) => {

@@ -154,6 +154,23 @@ export const LinkProposalPage = z.object({
 export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
 const LinkGroupBy = z.enum(['method', 'entry']);
 
+/** How well the archive is linked (#292): current values, confirmation rate per method and the history. */
+const LinkageSnapshot = z.object({
+  at: IsoDate,
+  entries: z.number().int(),
+  orphans: z.number().int(),
+  openProposals: z.number().int(),
+  confirmationRate: z.number().nullable(),
+});
+export const LinkageMetrics = z.object({
+  current: LinkageSnapshot,
+  methods: z.array(
+    z.object({ method: RelationMethod, label: z.string(), confirmed: z.number().int(), rejected: z.number().int(), open: z.number().int(), rate: z.number().nullable() }),
+  ),
+  history: z.array(LinkageSnapshot),
+});
+export type LinkageMetrics = z.infer<typeof LinkageMetrics>;
+
 /** A link candidate of the fixed link methods with its reason (#271, #283, #313). */
 export const LinkCandidate = z.object({
   id: z.string(),
@@ -547,6 +564,8 @@ export const ipcContract = {
   ),
   /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. */
   'links:startRun': ch(Empty, z.object({ jobId: Id })),
+  /** How well the archive is linked, with the history of the archive checks (#292). */
+  'links:metrics': ch(Empty, LinkageMetrics),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
   /** Accepts a topic/project taken from a document; only confirmed ones are listed in LLM prompts. */
   'knowledge:confirmEntity': ch(z.object({ id: Id }), GraphEntity),
