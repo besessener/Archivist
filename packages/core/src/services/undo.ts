@@ -50,8 +50,7 @@ export class UndoService {
     const row = this.audit.getRow(auditId);
     if (!row.undoType) throw new AppError('validation_error', 'Diese Aktion kann nicht rückgängig gemacht werden.');
     if (row.undoneAt) return { undone: false, message: 'Die Aktion wurde bereits rückgängig gemacht.', conflicts: [] };
-    const handler = this.handlers.get(row.undoType);
-    if (!handler) throw new AppError('validation_error', `Kein Undo-Handler für „${row.undoType}“.`);
+    const handler = this.handler(row.undoType);
     const conflicts = await handler.check(row.undoData);
     if (conflicts.length > 0) {
       this.ctx.logger.warn('undo', 'Undo rejected because of conflicts', { auditId, conflicts });

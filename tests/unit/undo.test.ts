@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '../../packages/core/src/context';
 import type { AuditService } from '../../packages/core/src/services/audit';
-import { UndoService, type UndoHandler } from '../../packages/core/src/services/undo';
+import { COMPOSITE_UNDO_TYPE, UndoService, type UndoHandler } from '../../packages/core/src/services/undo';
 import { AppError } from '../../packages/core/src/util/errors';
 
 interface Row {
@@ -155,5 +155,46 @@ describe('undo', () => {
     await expect(service.undo('x')).rejects.toBe('kaputt');
 
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'kaputt' }));
+  });
+});
+
+describe('composite undo', () => {
+  const compositeRow = (steps: Array<{ type: string; data: unknown }>) => row({ undoType: COMPOSITE_UNDO_TYPE, undoData: { steps } });
+  const twoSteps = [
+    { type: 'a', data: { n: 1 } },
+    { type: 'b', data: { n: 2 } },
+  ];
+
+  it('runs the steps in reverse order with their own data and joins their messages', async () => {
+    const { service } = setup(compositeRow(twoSteps));
+    const calls: unknown[] = [];
+    service.register('a', handler({ run: async (data) => (calls.push(['a', data]), 'Erster zurück.') }));
+    service.register('b', handler({ run: async (data) => (calls.push(['b', data]), 'Zweiter zurück.') }));
+
+    const result = await service.undo('x');
+
+    expect(result).toEqual({ undone: true, message: 'Zweiter zurück. Erster zurück.', conflicts: [] });
+    expect(calls).toEqual([
+      ['b', { n: 2 }],
+      ['a', { n: 1 }],
+    ]);
+  });
+
+  it('collects the conflicts of every step and then runs none of them', async () => {
+    const { service } = setup(compositeRow(twoSteps));
+    const run = vi.fn(async () => 'x');
+    service.register('a', handler({ check: async (data) => [`a: ${JSON.stringify(data)}`], run }));
+    service.register('b', handler({ check: async () => ['b1', 'b2'], run }));
+
+    const result = await service.undo('x');
+
+    expect(result).toMatchObject({ undone: false, conflicts: ['a: {"n":1}', 'b1', 'b2'] });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('rejects a step whose type has no handler and names the type', async () => {
+    const { service } = setup(compositeRow([{ type: 'verschwunden', data: {} }]));
+
+    await expect(service.undo('x')).rejects.toMatchObject({ category: 'validation_error', message: 'Kein Undo-Handler für „verschwunden“.' });
   });
 });
