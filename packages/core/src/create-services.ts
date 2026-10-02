@@ -12,6 +12,7 @@ import { ChatService } from './services/chat';
 import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
 import { AppStateService } from './services/app-state';
 import { ConsistencyService } from './services/consistency';
+import { SelfService } from './services/self';
 import { PersonDuplicateService } from './services/cleanup/person-duplicates';
 import { PersonQuestionService } from './services/cleanup/person-questions';
 import { ContradictionService } from './services/contradictions';
@@ -90,6 +91,8 @@ function buildServices(opts: CreateServicesOptions) {
   const embedding = new EmbeddingService(settings, llm);
   const graph = new KnowledgeGraphService(ctx, audit, undo);
   const persons = new PersonService(ctx, graph);
+  const self = new SelfService(ctx, settings, graph);
+  persons.setSelfResolver(self.resolver);
   // Search queries go to the embedding endpoint only in mode „automatisch“ – „vorher fragen“ uses local vectors only.
   const search = new SearchService(ctx, embedding, pool, () => privacy.mode() === 'auto' && llm.isConfigured());
   const categories = new CategoryService(ctx);
@@ -135,7 +138,7 @@ function buildServices(opts: CreateServicesOptions) {
   consistency.addCheck((count) => {
     openItemDuplicates.check(count);
   });
-  const personDuplicates = new PersonDuplicateService(ctx, settings, graph, insights);
+  const personDuplicates = new PersonDuplicateService(ctx, settings, graph, insights, () => self.ownNameKeys());
   consistency.addCheck((count) => personDuplicates.check(count));
   const personQuestions = new PersonQuestionService(ctx, graph, insights, llm, privacy);
   consistency.addCheck((count) => personQuestions.check(count));
@@ -242,6 +245,8 @@ function buildServices(opts: CreateServicesOptions) {
     if (e.scopes.includes('settings')) {
       logger.setLevel(settings.get().logs.level);
       consistency.applySettings();
+      // a new profile name renames the own person or merges a person with that name into it
+      self.syncProfile().catch((err: unknown) => logger.warn('persons', 'Eigene Person nicht angepasst', { error: err }));
     }
     if (e.scopes.includes('settings') || e.scopes.includes('scanner')) scanner.applySettings();
   });
@@ -265,6 +270,7 @@ function buildServices(opts: CreateServicesOptions) {
     embedding,
     graph,
     persons,
+    self,
     search,
     categories,
     jobs,
@@ -300,6 +306,9 @@ function buildServices(opts: CreateServicesOptions) {
       documentsSvc.recoverInterruptedAnalyses();
       jobs.start();
       reminders.start();
+      // exactly one own person („Du“): created now, renamed to the profile name if that changed meanwhile
+      self.ensure();
+      self.syncProfile().catch((err: unknown) => logger.warn('persons', 'Eigene Person nicht angepasst', { error: err }));
       scanner.startSchedule();
       scanner.startupScan();
       void archive.cleanupInbox();

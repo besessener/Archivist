@@ -644,8 +644,8 @@ export class ChatService {
     const profile = this.settings.get().profile;
     const nick = profile.nicknames.filter(Boolean);
     const user = profile.name.trim()
-      ? `Benutzer: ${profile.name.trim()}${nick.length ? ` (Spitznamen: ${nick.join(', ')})` : ''}. „ich“, „mir“, „mich“ meinen ihn bzw. sie.`
-      : 'Benutzer: Name nicht hinterlegt. „ich“, „mir“, „mich“ meinen den Benutzer.';
+      ? `Der Benutzer heißt ${profile.name.trim()}${nick.length ? ` (Spitznamen: ${nick.join(', ')})` : ''}. „ich“, „mir“, „mich“, „mein …“ meinen ihn bzw. sie.`
+      : 'Der Name des Benutzers ist nicht hinterlegt. „ich“, „mir“, „mich“, „mein …“ meinen den Benutzer.';
     const items = top(this.openItems.list({ onlyActive: true }), (i) => `${i.title} ${i.description ?? ''}`, 25);
     const decisions = top(
       this.decisions.list().filter((d) => ['active', 'confirmed', 'draft'].includes(d.status)),
@@ -1929,12 +1929,12 @@ export class ChatService {
   }
 
   // ---------- Offene Punkte ----------
-  /** „ich/mir/mich“ als Verantwortlicher ist der Benutzer (Name aus den Einstellungen); ohne Namen bleibt das Feld leer. */
+  /** „ich/mir/mich“ als Verantwortlicher ist die eigene Person (Profilname, ohne Namen der Platzhalter „Ich“). */
   private responsibleName(raw: string | null | undefined): { name: string | null; self: boolean } {
     const v = raw?.trim();
     if (!v) return { name: null, self: false };
     if (!isSelfReference(v)) return { name: v, self: false };
-    return { name: this.settings.get().profile.name.trim() || null, self: true };
+    return { name: this.persons.resolve(v, { context: 'chat' }).entity?.name ?? null, self: true };
   }
 
   /** Die aktuell verarbeitete Benutzernachricht dieser Unterhaltung (Quelle neu angelegter Punkte). */
@@ -2009,10 +2009,13 @@ export class ChatService {
     if (!item.dueAt) asked.push('due');
     // kurze, optionale Rückfrage – sie hält keine weiteren Anliegen auf
     const q = asked.length ? `\n\n_Optional:_ ${asked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann?')).join(' ')}` : '';
-    const selfNote = who.self && !who.name ? ' Verantwortlich: du (hinterlege deinen Namen unter Einstellungen → Über dich, dann ordne ich dich zu).' : '';
+    const selfNote =
+      who.self && !this.settings.get().profile.name.trim()
+        ? ' Hinterlege deinen Namen unter Einstellungen → Über dich, damit ich auch Dokumente mit deinem Namen dir zuordnen kann.'
+        : '';
     return {
       intent: 'open_item_new',
-      content: `Offenen Punkt angelegt: **${item.title}**${item.dueAt ? ` (fällig ${item.dueAt.slice(0, 10)})` : ''}${item.responsibleName ? `, Verantwortlich: ${item.responsibleName}` : ''}.${selfNote}${q}`,
+      content: `Offenen Punkt angelegt: **${item.title}**${item.dueAt ? ` (fällig ${item.dueAt.slice(0, 10)})` : ''}${item.responsibleName ? `, Verantwortlich: ${who.self ? 'du' : item.responsibleName}` : ''}.${selfNote}${q}`,
       sources: [{ id: item.id, type: 'task', title: item.title, snippet: item.description ?? '', score: 1, path: null, date: item.createdAt }],
       context: {
         openItems: [{ type: 'task', id: item.id, label: item.title }],

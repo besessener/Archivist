@@ -117,6 +117,11 @@ function KnowledgeInner() {
                 >
                   <EntityIcon type={e.type} className="size-4 shrink-0 text-primary" />
                   <span className={cn('min-w-0 flex-1 truncate', e.duplicateOfId && 'text-muted-foreground line-through')}>{e.name}</span>
+                  {e.isSelf && (
+                    <Badge variant="info" data-testid="knowledge-item-self">
+                      Du
+                    </Badge>
+                  )}
                   {e.duplicateOfId && (
                     <span className="text-xs text-muted-foreground" data-testid="knowledge-item-duplicate">
                       Duplikat
@@ -300,6 +305,11 @@ function EntityView({ id }: { id: string }) {
           <Badge variant="info">
             <EntityIcon type={entity.type} className="size-3" /> {ENTITY_TYPE_LABELS[entity.type]}
           </Badge>
+          {entity.isSelf && (
+            <Badge variant="success" data-testid="entity-self" title="Das bist du (Einstellungen → Über dich)">
+              Du
+            </Badge>
+          )}
           {entity.duplicateOfId && (
             <Badge variant="outline" data-testid="entity-duplicate">
               verworfen (Duplikat)

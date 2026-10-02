@@ -100,6 +100,7 @@ const toEntity = (r: EntityRow): GraphEntity => ({
   aliases: r.aliases,
   roles: r.roles,
   duplicateOfId: r.duplicateOfId,
+  isSelf: r.isSelf,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });

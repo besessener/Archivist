@@ -470,6 +470,8 @@ export const GraphEntity = z.object({
   roles: z.array(z.string()),
   /** Discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
   duplicateOfId: z.string().nullable(),
+  /** The user's own person (shown with the badge „Du“). */
+  isSelf: z.boolean(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });

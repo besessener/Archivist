@@ -39,7 +39,7 @@ describe('Kontext für das LLM (#38)', () => {
     await send('Hallo');
 
     const input = lastIntentInput();
-    expect(input).toContain('Benutzer: Max Mustermann (Spitznamen: Maxi)');
+    expect(input).toContain('Der Benutzer heißt Max Mustermann (Spitznamen: Maxi)');
     expect(input).toMatch(/- P1: Steuererklärung abgeben \| fällig 2026-11-30 \| Anna/);
     expect(input).toMatch(/- E1: Wir nutzen Kafka \| Messaging \| 2026-01-10 \| aktiv/);
     expect(input).toContain('Offene Vorschläge in diesem Gespräch (ID: Beschreibung):\n- keine');

@@ -273,6 +273,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
           aliases: [],
           roles: [],
           duplicateOfId: event.duplicateOfId,
+          isSelf: false,
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
         };

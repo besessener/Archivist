@@ -2,7 +2,7 @@ import type { EntityRef } from '@archivist/shared';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { auditLog, entities, relations } from '../../db/schema';
-import { isNotAPersonName, parsePersonName } from '../../util/person-names';
+import { isNotAPersonName, isSelfReference, parsePersonName } from '../../util/person-names';
 import type { InsightService } from '../insights';
 import type { KnowledgeGraphService, MergeRequest } from '../knowledge-graph';
 import type { SettingsService } from '../settings';
@@ -56,6 +56,8 @@ export class PersonDuplicateService {
     private readonly settings: SettingsService,
     private readonly graph: KnowledgeGraphService,
     private readonly insights: InsightService,
+    /** Comparison keys of the user's name and nicknames (own identity); persons with these names join the own person. */
+    private readonly ownNameKeys: () => Set<string> = () => new Set(),
   ) {}
 
   private get db() {
@@ -67,17 +69,35 @@ export class PersonDuplicateService {
     const rows = this.db.select().from(entities).where(eq(entities.type, 'person')).all();
     if (rows.length < 2) return [];
     const refCounts = this.referenceCounts();
+    const self = rows.find((r) => r.isSelf);
+    const ownKeys = self ? new Set([...this.ownNameKeys(), parsePersonName(self.name).comparisonKey].filter(Boolean)) : new Set<string>();
+    // the own person takes everyone named like the user (name, nicknames) and former „ich“ entries
+    const own: Candidate[] = [];
     const byKey = new Map<string, Candidate[]>();
     for (const row of rows) {
-      if (isNotAPersonName(row.name)) continue;
       const parsed = parsePersonName(row.name);
-      if (!parsed.comparisonKey) continue;
+      const candidate: Candidate = { row, cleanName: parsed.cleanName, roles: parsed.roles, references: refCounts.get(row.id) ?? 0 };
+      if (self && (row.isSelf || isSelfReference(row.name) || ownKeys.has(parsed.comparisonKey))) {
+        own.push(candidate);
+        continue;
+      }
+      if (isNotAPersonName(row.name) || !parsed.comparisonKey) continue;
       const list = byKey.get(parsed.comparisonKey) ?? [];
-      list.push({ row, cleanName: parsed.cleanName, roles: parsed.roles, references: refCounts.get(row.id) ?? 0 });
+      list.push(candidate);
       byKey.set(parsed.comparisonKey, list);
     }
     const blocked = this.undoneGroups();
     const groups: PersonMergeGroup[] = [];
+    const ownIds = own.map((m) => m.row.id);
+    if (self && own.length > 1 && !blocked.some((set) => ownIds.filter((id) => set.has(id)).length >= 2)) {
+      groups.push({
+        targetId: self.id,
+        targetName: self.name,
+        sourceIds: ownIds.filter((id) => id !== self.id),
+        names: own.map((m) => m.row.name),
+        roles: [...new Set(own.flatMap((m) => m.roles))],
+      });
+    }
     for (const members of byKey.values()) {
       if (members.length < 2) continue;
       const ids = members.map((m) => m.row.id);

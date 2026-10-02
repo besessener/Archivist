@@ -59,6 +59,8 @@ export function SetupWizard() {
   const [testing, setTesting] = useState(false);
   const [dirs, setDirs] = useState<IpcOutput<'scanner:listDirectories'>>([]);
   const [mode, setMode] = useState<Mode>('confirm');
+  const [profileName, setProfileName] = useState('');
+  const [nicknames, setNicknames] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -68,6 +70,8 @@ export function SetupWizard() {
         setModel(s.settings.llm.model);
         setEffort(s.settings.llm.reasoningEffort ?? '');
         setMode(s.settings.privacy.llmMode);
+        setProfileName(s.settings.profile.name);
+        setNicknames(s.settings.profile.nicknames.join(', '));
         setHasKey(s.hasApiKey);
         setDirs(await call('scanner:listDirectories'));
       } catch {
@@ -94,6 +98,19 @@ export function SetupWizard() {
     } finally {
       setTesting(false);
     }
+  }
+
+  /** Name and nicknames are optional; they let Archivist link „ich“ in the chat and documents with the name to the user. */
+  async function saveProfileAndNext() {
+    const list = nicknames
+      .split(',')
+      .map((n) => n.trim())
+      .filter(Boolean);
+    const ok = await run(async () => {
+      await call('settings:update', { profile: { name: profileName.trim(), nicknames: list } });
+      return true;
+    });
+    if (ok) go(1);
   }
 
   async function saveLlmAndNext() {
@@ -171,6 +188,22 @@ export function SetupWizard() {
                   <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Die Einrichtung dauert etwa zwei Minuten.
                 </li>
               </ul>
+              <Field
+                label="Dein Name (optional)"
+                htmlFor="setup-profile-name"
+                hint="Damit „ich“ im Chat und Dokumente mit deinem Namen dir zugeordnet werden. Später unter Einstellungen → Über dich änderbar."
+              >
+                <Input
+                  id="setup-profile-name"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  placeholder="z. B. Monika Lor-Zade"
+                  data-testid="setup-profile-name"
+                />
+              </Field>
+              <Field label="Spitznamen (optional, durch Komma getrennt)" htmlFor="setup-profile-nicknames">
+                <Input id="setup-profile-nicknames" value={nicknames} onChange={(e) => setNicknames(e.target.value)} data-testid="setup-profile-nicknames" />
+              </Field>
             </div>
           )}
 
@@ -342,7 +375,7 @@ export function SetupWizard() {
               Zurück
             </Button>
             {step === 'welcome' && (
-              <Button onClick={() => go(1)} data-testid="setup-next">
+              <Button onClick={() => void saveProfileAndNext()} disabled={busy} data-testid="setup-next">
                 Los geht’s
               </Button>
             )}
