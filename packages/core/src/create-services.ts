@@ -516,6 +516,12 @@ function buildServices(opts: CreateServicesOptions) {
       // exactly one own person („Du“): created now, renamed to the profile name if that changed meanwhile
       self.ensure();
       self.syncProfile().catch((err: unknown) => logger.warn('persons', 'Own person not adjusted', { error: err }));
+      // the status bar shows the KI connection right away instead of „Ungeprüft“ until the first request;
+      // only when external transmission is allowed at all (mode „nur lokal“ sends nothing)
+      if (llm.canUse())
+        void llm.testConnection().then((r) => {
+          if (!r.ok) logger.warn('llm', 'Connection check on startup failed', { error: r.message });
+        });
       scanner.startSchedule();
       scanner.startupScan();
       void archive.cleanupInbox();
