@@ -176,7 +176,14 @@ const LinkageSnapshot = z.object({
 export const LinkageMetrics = z.object({
   current: LinkageSnapshot,
   methods: z.array(
-    z.object({ method: RelationMethod, label: z.string(), confirmed: z.number().int(), rejected: z.number().int(), open: z.number().int(), rate: z.number().nullable() }),
+    z.object({
+      method: RelationMethod,
+      label: z.string(),
+      confirmed: z.number().int(),
+      rejected: z.number().int(),
+      open: z.number().int(),
+      rate: z.number().nullable(),
+    }),
   ),
   history: z.array(LinkageSnapshot),
 });
@@ -550,6 +557,16 @@ export const ipcContract = {
   'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
   /** Related entries with the reason (#276, #289). */
   /** Related entries of an entry, strongest first, paged (#276). */
+  /** Autocomplete after `[[` in a note (#285): entries by name or alias. */
+  'knowledge:wikiSuggest': ch(
+    z.object({ query: z.string().max(200), limit: z.number().int().min(1).max(20).default(8), excludeId: z.string().optional() }),
+    z.array(z.object({ id: z.string(), type: EntityType, name: z.string(), alias: z.string().nullable() })),
+  ),
+  /** The target of each `[[Name]]` of a text – null for an unknown name (#285). */
+  'knowledge:wikiResolve': ch(
+    z.object({ names: z.array(z.string().max(200)).max(200), noteId: z.string().optional() }),
+    z.array(z.object({ name: z.string(), entity: z.object({ id: z.string(), type: EntityType, name: z.string() }).nullable() })),
+  ),
   'knowledge:related': ch(z.object({ id: Id, limit: z.number().int().min(1).max(50).default(10), offset: z.number().int().min(0).default(0) }), RelatedPage),
   /** Link proposals for an entry: similar entries and mentioned topics/projects (#283); the same function as the agent's suggest_links. */
   'links:suggestions': ch(z.object({ id: Id, limit: z.number().int().min(1).max(5).default(3) }), z.array(LinkCandidate)),

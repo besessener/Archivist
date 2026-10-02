@@ -13,7 +13,11 @@ describe('Chat: link suggestions right after capturing (#283)', () => {
   it('offers up to 3 suggestions under the answer – a mentioned project first; a click confirms (undoable), ignoring keeps the proposal', async () => {
     app = await createTestApp({ privacy: 'auto', autoLinks: true });
     const project = (await app.ok('knowledge:createEntity', { type: 'project', name: 'Hausbau' })).entity;
-    await app.ok('knowledge:createEntity', { type: 'note', name: 'Bauantrag', description: 'Bauantrag Hausbau: Statik, Grundriss, Baugenehmigung beim Bauamt.' });
+    await app.ok('knowledge:createEntity', {
+      type: 'note',
+      name: 'Bauantrag',
+      description: 'Bauantrag Hausbau: Statik, Grundriss, Baugenehmigung beim Bauamt.',
+    });
     await app.services.jobs.whenIdle();
     app.llm.on('ChatIntent', () => intent({ intent: 'note_capture', note: 'Für den Hausbau fehlt noch die Statik und die Baugenehmigung vom Bauamt.' }));
 

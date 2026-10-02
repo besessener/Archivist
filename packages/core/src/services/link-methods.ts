@@ -210,7 +210,13 @@ export class LinkMethodsService {
       if (opts.signal?.aborted) break;
       if (this.insights.byDedupeKey(`topic-cluster:${c.key}`)?.status === 'open') continue;
       const name = (await this.topicNamer?.(c, opts.signal)) ?? c.name;
-      if (this.proposeTopic(name, c.members.map((m) => m.id)).actionId) proposed += 1;
+      if (
+        this.proposeTopic(
+          name,
+          c.members.map((m) => m.id),
+        ).actionId
+      )
+        proposed += 1;
     }
     return proposed;
   }
@@ -498,7 +504,9 @@ export class LinkMethodsService {
         withTargets
           ? `Für ${withTargets === 1 ? 'einen davon' : `${withTargets} davon`} gibt es passende Ziele – du findest sie oben unter „Verknüpfungsvorschläge“.`
           : null,
-        rest ? `${rest === 1 ? 'Einer hat' : `${rest} haben`} noch kein passendes Ziel; verknüpfe ${rest === 1 ? 'ihn' : 'sie'} in der Detailansicht unter „Verwandte Einträge“.` : null,
+        rest
+          ? `${rest === 1 ? 'Einer hat' : `${rest} haben`} noch kein passendes Ziel; verknüpfe ${rest === 1 ? 'ihn' : 'sie'} in der Detailansicht unter „Verwandte Einträge“.`
+          : null,
         'Der Hinweis schließt sich, sobald jeder dieser Einträge eine bestätigte Verknüpfung hat.',
       ]
         .filter(Boolean)
@@ -527,7 +535,14 @@ export class LinkMethodsService {
     return MEASURED_METHODS.map((method) => {
       const r = by.get(method) ?? { confirmed: 0, rejected: 0, open: 0 };
       const decided = r.confirmed + r.rejected;
-      return { method, label: RELATION_METHOD_LABELS[method], confirmed: r.confirmed, rejected: r.rejected, open: r.open, rate: decided ? r.confirmed / decided : null };
+      return {
+        method,
+        label: RELATION_METHOD_LABELS[method],
+        confirmed: r.confirmed,
+        rejected: r.rejected,
+        open: r.open,
+        rate: decided ? r.confirmed / decided : null,
+      };
     });
   }
 
@@ -708,7 +723,12 @@ export class LinkMethodsService {
         const otherId = r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId;
         const other = this.graph.getEntity(otherId);
         if (!other || own.has(otherId) || !r.method || !LINK_PROPOSAL_METHODS.includes(r.method) || OWN_FLOW_TYPES.includes(r.relationType)) continue;
-        found.push({ relation: r, entry: { id, type: entry.type, name: entry.name }, target: { id: other.id, type: other.type, name: other.name }, score: r.confidence });
+        found.push({
+          relation: r,
+          entry: { id, type: entry.type, name: entry.name },
+          target: { id: other.id, type: other.type, name: other.name },
+          score: r.confidence,
+        });
       }
     }
     const out: CapturedSuggestion[] = [];

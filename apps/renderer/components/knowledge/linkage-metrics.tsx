@@ -129,8 +129,8 @@ function OrphanList({ onClose }: { onClose: () => void }) {
           <DialogTitle>Einträge ohne Verknüpfung</DialogTitle>
           <DialogDescription>
             {q.data ? `${q.data.total} Einträge haben weder eine bestätigte noch eine vorgeschlagene Verknüpfung` : 'Lade …'}
-            {q.data && q.data.total > q.data.items.length ? ` – hier die ältesten ${q.data.items.length}.` : '.'} Öffne einen, um ihn unter „Verwandte
-            Einträge“ zu verknüpfen.
+            {q.data && q.data.total > q.data.items.length ? ` – hier die ältesten ${q.data.items.length}.` : '.'} Öffne einen, um ihn unter „Verwandte Einträge“
+            zu verknüpfen.
           </DialogDescription>
         </DialogHeader>
         {q.error && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}

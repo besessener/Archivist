@@ -229,7 +229,9 @@ function buildServices(opts: CreateServicesOptions) {
     links.recordMetrics();
   });
   const topicNamer = new TopicNamer(ctx, llm, privacy, documentsSvc);
-  links.setTopicNamer((c, signal) => topicNamer.name(c, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((t) => t.name), signal }));
+  links.setTopicNamer((c, signal) =>
+    topicNamer.name(c, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((t) => t.name), signal }),
+  );
   links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
   /**
    * ONE notification for open link proposals, only when new ones came up (#280): while the current one is unread it is

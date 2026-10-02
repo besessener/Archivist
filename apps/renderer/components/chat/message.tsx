@@ -130,9 +130,7 @@ export function ChatBubble({
                   ))}
               </div>
             )}
-            {message.actions.some((a) => isLinkSuggestion(a)) && (
-              <LinkSuggestions actions={message.actions.filter((a) => isLinkSuggestion(a))} />
-            )}
+            {message.actions.some((a) => isLinkSuggestion(a)) && <LinkSuggestions actions={message.actions.filter((a) => isLinkSuggestion(a))} />}
             {message.runId && !pending && <RunSummary runId={message.runId} />}
             {message.sources.length > 0 && (
               <div>

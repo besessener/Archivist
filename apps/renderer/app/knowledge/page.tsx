@@ -12,7 +12,8 @@ import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
 import { LinkDialog, LinkSuggestions, RelatedEntries, RelationProvenance } from '@/components/knowledge/related';
 import { NoteEditDialog } from '@/components/knowledge/note-edit-dialog';
-import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
+import { UnknownWikiLinks, WikiTextarea } from '@/components/knowledge/wiki-textarea';
+import { MARKDOWN_HINT, Markdown, type WikiResolver } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +24,7 @@ import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
 import { RELATION_STATUS_LABELS, RELATION_TYPE_LABELS } from '@/lib/labels';
-import { ENTITY_TYPE_LABELS } from '@/lib/nav';
+import { ENTITY_TYPE_LABELS, entityHref } from '@/lib/nav';
 import { formatDate } from '@/lib/format';
 import { useDebounced } from '@/lib/use-debounced';
 import { useQuery } from '@/lib/use-query';
@@ -234,9 +235,18 @@ function CreateEntityDialog({
             data-testid="knowledge-new-name"
           />
         </Field>
-        <Field label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'} htmlFor="new-entity-desc" hint={MARKDOWN_HINT}>
-          <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="knowledge-new-description" />
+        <Field
+          label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'}
+          htmlFor="new-entity-desc"
+          hint={isNote ? `${MARKDOWN_HINT} Mit [[Name]] verlinkst du andere Einträge.` : MARKDOWN_HINT}
+        >
+          {isNote ? (
+            <WikiTextarea id="new-entity-desc" value={description} onChange={setDescription} data-testid="knowledge-new-description" />
+          ) : (
+            <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="knowledge-new-description" />
+          )}
         </Field>
+        {isNote && <UnknownWikiLinks text={description} />}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
@@ -281,6 +291,17 @@ function EntityView({ id }: { id: string }) {
   const { entity, relations } = detail.data;
   const outgoing = relations.filter((r) => r.direction === 'out');
   const incoming = relations.filter((r) => r.direction === 'in');
+  // [[Name]] in a note leads to the entry its wiki-link relation points to (#285)
+  const wikiTargets = new Map(
+    outgoing.filter((r) => r.method === 'wikilink' && r.evidence).map((r) => [r.evidence!.slice(2, -2).trim().toLowerCase(), r.other] as const),
+  );
+  const wiki: WikiResolver | undefined =
+    entity.type === 'note'
+      ? (name) => {
+          const o = wikiTargets.get(name.toLowerCase());
+          return o ? { href: entityHref(o.type, o.id), title: `${ENTITY_TYPE_LABELS[o.type]} „${o.name}“` } : null;
+        }
+      : undefined;
 
   const renderRel = (r: (typeof relations)[number]) => (
     <li key={r.id} className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5" data-testid="relation-row" data-status={r.status}>
@@ -357,7 +378,7 @@ function EntityView({ id }: { id: string }) {
           <span className="text-xs text-muted-foreground">Aktualisiert {formatDate(entity.updatedAt)}</span>
         </div>
         <h2 className="mt-1 text-2xl font-semibold tracking-tight">{entity.name}</h2>
-        {entity.description && <Markdown text={entity.description} className="mt-2 text-muted-foreground" testId="entity-description" />}
+        {entity.description && <Markdown text={entity.description} className="mt-2 text-muted-foreground" testId="entity-description" wiki={wiki} />}
         {entity.roles.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Rollen: {entity.roles.join(', ')}</p>}
         {entity.unconfirmed && (
           <div className="mt-3 rounded-md border border-dashed p-3 text-sm" data-testid="entity-unconfirmed-note">

@@ -37,13 +37,21 @@ export function LinkSuggestions({ actions }: { actions: ActionRecord[] }) {
           return (
             <li key={a.id} className="flex flex-wrap items-center gap-2" data-testid="chat-link-suggestion" data-status={a.status}>
               {a.status === 'proposed' ? (
-                <Button size="sm" variant="outline" disabled={busy} title={a.rationale} onClick={() => void confirm(a)} data-testid="chat-link-suggestion-confirm">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  title={a.rationale}
+                  onClick={() => void confirm(a)}
+                  data-testid="chat-link-suggestion-confirm"
+                >
                   {working === a.id ? <Loader2 className="animate-spin" aria-hidden /> : <Link2 aria-hidden />} {a.label}
                 </Button>
               ) : (
                 <span className="flex items-center gap-1 text-sm text-muted-foreground">
                   {a.status === 'executed' && <Check className="size-4 text-success" aria-hidden />}
-                  {a.label.replace(/ – verknüpfen\?$| verknüpfen\?$/, '')}: {a.status === 'executed' ? 'verknüpft' : a.status === 'rejected' ? 'abgelehnt' : 'nicht mehr aktuell'}
+                  {a.label.replace(/ – verknüpfen\?$| verknüpfen\?$/, '')}:{' '}
+                  {a.status === 'executed' ? 'verknüpft' : a.status === 'rejected' ? 'abgelehnt' : 'nicht mehr aktuell'}
                 </span>
               )}
             </li>

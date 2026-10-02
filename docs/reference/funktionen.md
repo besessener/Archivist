@@ -104,6 +104,8 @@ Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von 
 
 **Manuell verknüpfen**: „Verknüpfen“ wählt per Suche einen Eintrag beliebiger Art und die Art der Beziehung (verwandt, folgt aus, ersetzt, blockiert …). Manuelle Verknüpfungen sind sofort bestätigt, stehen im Änderungsprotokoll, lassen sich rückgängig machen und wieder entfernen. Im Chat verknüpft der Agent auf Wunsch („Verknüpfe das mit dem Mietvertrag“) und fragt bei mehreren Treffern nach.
 
+**Wiki-Links in Notizen**: `[[Name]]` (oder `[[Name|angezeigter Text]]`) verweist auf einen anderen Eintrag – Notiz, Dokument, Entscheidung, offener Punkt, Ereignis, Vorgang, Projekt, Thema, Person oder Tag, auch über Aliasse. Nach `[[` bietet das Textfeld passende Einträge an (Pfeiltasten, Enter). Beim Speichern entsteht je Link eine bestätigte, manuelle Beziehung (Methode `wikilink`, Beleg „[[Name]]“); ein gelöschter Link entfernt sie wieder, Rückgängig der Bearbeitung stellt sie her. Umbenennen oder Zusammenführen des Ziels bricht keinen Link. Unbekannte Namen stehen unter dem Textfeld, mit „als Notiz anlegen“; in der Anzeige sind sie gestrichelt unterstrichen, bekannte Links führen zum Eintrag.
+
 **Rückwirkender Lauf** (Job `links.run`): wendet alle Methoden auf das vorhandene Archiv an, abbrechbar, mit Fortschritt; nach einem Neustart geht er hinter dem letzten vollständig erledigten Eintrag weiter, nichts wird doppelt bezahlt. Er startet einmal nach dem Update und auf Knopfdruck unter Einstellungen → Agent → Agentenläufe; am Ende ein gebündelter Hinweis.
 
 ## Personen und eigene Identität
