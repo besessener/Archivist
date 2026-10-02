@@ -79,11 +79,18 @@ export const documents = sqliteTable(
     archiveMode: text('archive_mode'),
     extractedText: text('extracted_text').notNull().default(''),
     technicalMeta: text('technical_meta', { mode: 'json' }).$type<ArchivistJson | null>(),
+    /** Hash of the normalized text start (near-duplicate detection); a column with an index instead of a JSON field (#212). */
+    textHash: text('text_hash'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
     archivedAt: text('archived_at'),
   },
-  (t) => [index('documents_sha_idx').on(t.sha256), index('documents_status_idx').on(t.status), index('documents_topic_idx').on(t.topicId)],
+  (t) => [
+    index('documents_sha_idx').on(t.sha256),
+    index('documents_status_idx').on(t.status),
+    index('documents_topic_idx').on(t.topicId),
+    index('documents_text_hash_idx').on(t.textHash),
+  ],
 );
 
 export const decisions = sqliteTable(

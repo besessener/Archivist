@@ -93,8 +93,12 @@ export class SearchService {
     this.vectors.remove(entityId);
   }
 
+  /**
+   * FTS rows share the rowid of their chunk (migration 0016), so they are deleted by rowid via the indexed chunks
+   * table. `WHERE entity_id = ?` on the UNINDEXED FTS column scanned the whole index on every call (#212).
+   */
   private deleteRows(entityId: string): void {
-    this.sqlite.prepare('DELETE FROM search_fts WHERE entity_id = ?').run(entityId);
+    this.sqlite.prepare('DELETE FROM search_fts WHERE rowid IN (SELECT rowid FROM chunks WHERE entity_id = ?)').run(entityId);
     this.ctx.database.db.delete(chunks).where(eq(chunks.entityId, entityId)).run();
   }
 
@@ -109,12 +113,12 @@ export class SearchService {
     const written: Array<{ id: string; vector: Float32Array | undefined }> = [];
     db.transaction(() => {
       this.deleteRows(input.id);
-      const insertFts = this.sqlite.prepare('INSERT INTO search_fts (chunk_id, entity_id, entity_type, title, content) VALUES (?, ?, ?, ?, ?)');
+      const insertFts = this.sqlite.prepare('INSERT INTO search_fts (rowid, chunk_id, entity_id, entity_type, title, content) VALUES (?, ?, ?, ?, ?, ?)');
       parts.forEach((text, idx) => {
         const chunkId = newId();
         const vec = emb.vectors[idx];
         written.push({ id: chunkId, vector: vec });
-        db.db
+        const { lastInsertRowid } = db.db
           .insert(chunks)
           .values({
             id: chunkId,
@@ -126,7 +130,7 @@ export class SearchService {
             embeddingModel: emb.model,
           })
           .run();
-        insertFts.run(chunkId, input.id, input.type, input.title, text);
+        insertFts.run(lastInsertRowid, chunkId, input.id, input.type, input.title, text);
       });
     });
     // only after the commit: a rolled-back transaction must not leave vectors in the index

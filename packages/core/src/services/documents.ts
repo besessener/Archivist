@@ -504,6 +504,7 @@ export class DocumentService {
       archiveMode: null,
       extractedText: '',
       technicalMeta: null,
+      textHash: null,
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
@@ -714,13 +715,13 @@ export class DocumentService {
     }
 
     signal?.throwIfAborted(); // last checkpoint: after this the proposal is stored
+    // indexed lookup instead of reading technical_meta of every document per analysis (#212)
     const duplicate = textHash
       ? this.db
-          .select({ id: documents.id, meta: documents.technicalMeta })
+          .select({ id: documents.id })
           .from(documents)
-          .where(and(ne(documents.id, id), inArray(documents.status, ['archived', 'indexed_only', 'proposed'])))
-          .all()
-          .find((d) => (d.meta as { textHash?: string } | null)?.textHash === textHash)
+          .where(and(eq(documents.textHash, textHash), ne(documents.id, id), inArray(documents.status, ['archived', 'indexed_only', 'proposed'])))
+          .get()
       : undefined;
 
     const newMain = this.categories.needsApproval(categoryPath);
@@ -757,6 +758,7 @@ export class DocumentService {
         processingStatus: parsed.status,
         processingError: parsed.error,
         technicalMeta: { ...parsed.meta, truncated: parsed.truncated, textHash },
+        textHash,
         proposal: proposal,
         llmStatus,
         status: 'proposed',
