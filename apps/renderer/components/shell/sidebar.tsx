@@ -32,8 +32,9 @@ const ITEMS: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname() ?? '';
   const { status } = useApp();
-  const { data: docs } = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'], jobs: true });
-  const inboxCount = (docs ?? []).filter((d) => ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'].includes(d.status)).length;
+  // counts per status instead of the newest 1000 documents: the badge is exact and cheap (#214)
+  const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
+  const inboxCount = ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'].reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
   const counts: Record<'inbox' | 'insights', number> = { inbox: inboxCount, insights: status?.openInsights ?? 0 };
 
   return (

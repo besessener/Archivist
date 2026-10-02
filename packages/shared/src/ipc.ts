@@ -202,6 +202,9 @@ export const ipcContract = {
   'documents:list': ch(
     z.object({
       status: DocumentStatus.optional(),
+      /** several statuses at once (e.g. everything the inbox shows) */
+      statuses: z.array(DocumentStatus).min(1).optional(),
+      ids: z.array(Id).min(1).max(1000).optional(),
       topicId: z.string().optional(),
       projectId: z.string().optional(),
       query: z.string().optional(),
@@ -210,6 +213,8 @@ export const ipcContract = {
     z.array(DocumentRecord),
   ),
   'documents:get': ch(z.object({ id: Id }), DocumentRecord),
+  /** Number of documents per status (for badges, without loading the list). */
+  'documents:counts': ch(z.object({}), z.record(z.string(), z.number())),
   'documents:classify': ch(z.object({ documentId: Id, allowLlm: z.boolean().default(true) }), z.object({ jobId: Id })),
   'documents:previewArchive': ch(z.object({ items: z.array(ArchiveItemRequest).min(1) }), ArchivePlan),
   'documents:archive': ch(

@@ -1,4 +1,5 @@
 import { localDate, type EntityRef, type TimelineEntry } from '@archivist/shared';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { contradictions, decisions, documents, events, openItems } from '../db/schema';
 import { truncate } from '../util/text';
@@ -46,8 +47,29 @@ export class TimelineService {
       out.push({ ...e, date, year: Number(date.slice(0, 4)) || 0 });
     };
 
-    for (const d of db.select().from(documents).all()) {
-      if (!['archived', 'indexed_only'].includes(d.status) || !match(d.topicId, d.projectId)) continue;
+    // filtered in the database and without the extracted text – SELECT * loaded every full text per call (#214)
+    const docRows = db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        summary: documents.summary,
+        topicId: documents.topicId,
+        projectId: documents.projectId,
+        documentDate: documents.documentDate,
+        dates: documents.dates,
+        archivedAt: documents.archivedAt,
+        createdAt: documents.createdAt,
+      })
+      .from(documents)
+      .where(
+        and(
+          inArray(documents.status, ['archived', 'indexed_only']),
+          q.topicId ? eq(documents.topicId, q.topicId) : undefined,
+          q.projectId ? eq(documents.projectId, q.projectId) : undefined,
+        ),
+      )
+      .all();
+    for (const d of docRows) {
       push({
         id: `doc:${d.id}`,
         date: d.documentDate ?? d.dates[0] ?? d.archivedAt ?? d.createdAt,

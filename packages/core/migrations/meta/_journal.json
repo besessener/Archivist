@@ -120,6 +120,13 @@
       "when": 1790834043730,
       "tag": "0016_search_fts_rowid",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1790834044730,
+      "tag": "0017_documents_created_idx",
+      "breakpoints": true
     }
   ]
 }

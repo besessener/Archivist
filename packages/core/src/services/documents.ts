@@ -9,7 +9,7 @@ import {
   type DocumentStatus,
   type LlmStatus,
 } from '@archivist/shared';
-import { and, desc, eq, inArray, like, ne, notInArray, or } from 'drizzle-orm';
+import { and, count, desc, eq, getTableColumns, inArray, like, ne, notInArray, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, entities, scanFiles, scanRoots } from '../db/schema';
 import { MIME_BY_EXT } from '../parsers';
@@ -34,6 +34,11 @@ import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
 
 export type DocRow = typeof documents.$inferSelect;
+
+/** Characters of the text read for list entries: enough for the 600-character preview, never the whole text (#214). */
+const PREVIEW_SOURCE_CHARS = 2000;
+const { extractedText: _fullText, ...LIST_COLUMNS } = getTableColumns(documents);
+void _fullText;
 
 interface DocumentMetadataUndo {
   id: string;
@@ -141,7 +146,8 @@ export class DocumentService {
     return rel ? path.join(this.settings.get().archiveRoot, ...rel.split('/')) : null;
   }
 
-  toRecord(r: DocRow, names?: Map<string, string>): DocumentRecord {
+  /** `textLength`: length of the full text when `r.extractedText` holds only its beginning (list queries). */
+  toRecord(r: DocRow, names?: Map<string, string>, textLength = r.extractedText.length): DocumentRecord {
     const nm = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
     return {
       id: r.id,
@@ -174,7 +180,7 @@ export class DocumentService {
       folderLlmAllowed: r.folderLlmAllowed,
       proposal: (r.proposal as DocumentProposal | null) ?? null,
       archiveMode: (r.archiveMode as DocumentRecord['archiveMode']) ?? null,
-      textLength: r.extractedText.length,
+      textLength,
       textPreview: truncate(r.extractedText.replace(/\s+/g, ' ').trim(), 600),
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -182,9 +188,10 @@ export class DocumentService {
     };
   }
 
-  private mapMany(rows: DocRow[]): DocumentRecord[] {
+  /** Names of the topics/projects of the rows, in one query. */
+  private entityNames(rows: Array<Pick<DocRow, 'topicId' | 'projectId'>>): Map<string, string> {
     const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId]).filter((x): x is string => Boolean(x)))];
-    const names = new Map(
+    return new Map(
       ids.length
         ? this.db
             .select({ id: entities.id, name: entities.name })
@@ -194,7 +201,6 @@ export class DocumentService {
             .map((e) => [e.id, e.name])
         : [],
     );
-    return rows.map((r) => this.toRecord(r, names));
   }
 
   /** The row of a document, or undefined if it does not exist (any more). */
@@ -212,9 +218,17 @@ export class DocumentService {
     return this.toRecord(this.getRow(id));
   }
 
-  list(opts: { status?: DocumentStatus; topicId?: string; projectId?: string; query?: string; limit?: number } = {}): DocumentRecord[] {
+  /**
+   * Newest documents matching the filter. Reads only the beginning of each text (for the preview) – a list of
+   * 1000 entries used to load every full text into the main process (#214).
+   */
+  list(
+    opts: { status?: DocumentStatus; statuses?: DocumentStatus[]; ids?: string[]; topicId?: string; projectId?: string; query?: string; limit?: number } = {},
+  ): DocumentRecord[] {
     const conds = [];
     if (opts.status) conds.push(eq(documents.status, opts.status));
+    if (opts.statuses) conds.push(inArray(documents.status, opts.statuses));
+    if (opts.ids) conds.push(inArray(documents.id, opts.ids));
     if (opts.topicId) conds.push(eq(documents.topicId, opts.topicId));
     if (opts.projectId) conds.push(eq(documents.projectId, opts.projectId));
     if (opts.query?.trim()) {
@@ -222,13 +236,24 @@ export class DocumentService {
       conds.push(or(like(documents.title, q), like(documents.originalName, q), like(documents.summary, q)));
     }
     const rows = this.db
-      .select()
+      .select({
+        ...LIST_COLUMNS,
+        extractedText: sql<string>`substr(${documents.extractedText}, 1, ${PREVIEW_SOURCE_CHARS})`,
+        textLength: sql<number>`length(${documents.extractedText})`,
+      })
       .from(documents)
       .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(documents.createdAt))
       .limit(opts.limit ?? 300)
       .all();
-    return this.mapMany(rows);
+    const names = this.entityNames(rows);
+    return rows.map(({ textLength, ...r }) => this.toRecord(r, names, textLength));
+  }
+
+  /** Number of documents per status (inbox badge) – a COUNT instead of loading the list (#214). */
+  counts(): Partial<Record<DocumentStatus, number>> {
+    const rows = this.db.select({ status: documents.status, n: count() }).from(documents).groupBy(documents.status).all();
+    return Object.fromEntries(rows.map((r) => [r.status, r.n]));
   }
 
   findDuplicates(sha256: string, excludeId?: string): DocRow[] {

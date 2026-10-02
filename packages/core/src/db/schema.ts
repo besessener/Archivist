@@ -90,6 +90,7 @@ export const documents = sqliteTable(
     index('documents_status_idx').on(t.status),
     index('documents_topic_idx').on(t.topicId),
     index('documents_text_hash_idx').on(t.textHash),
+    index('documents_created_idx').on(t.createdAt),
   ],
 );
 
