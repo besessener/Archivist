@@ -157,14 +157,14 @@ function LinkMethodsSection() {
       {links && (
         <>
           <SwitchRow
-            label="Ähnliche Einträge automatisch vorschlagen"
-            hint="Nach jedem neuen oder geänderten Eintrag sucht Archivist lokal nach ähnlichen Einträgen und schlägt sie als „verwandt“ vor."
+            label="Verknüpfungen automatisch vorschlagen"
+            hint="Nach jedem neuen oder geänderten Eintrag sucht Archivist lokal nach ähnlichen Einträgen; Einträge aus derselben Nachricht oder demselben Dokument gehören zusammen. Alles bleibt ein Vorschlag."
           >
             <Switch
               checked={links.autoPropose}
               disabled={busy}
               onCheckedChange={(v) => void saveLinks({ autoPropose: v })}
-              aria-label="Ähnliche Einträge automatisch vorschlagen"
+              aria-label="Verknüpfungen automatisch vorschlagen"
               data-testid="links-auto-propose"
             />
           </SwitchRow>

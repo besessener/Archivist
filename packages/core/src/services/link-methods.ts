@@ -3,6 +3,7 @@ import type { EntityType } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { currentRun } from '../agent/scope';
 import { newId } from '../util/ids';
+import type { CreatedEntry } from '../util/origin-scope';
 import { normalizeName, tokenize, truncate } from '../util/text';
 import type { AppStateService } from './app-state';
 import type { InsightService } from './insights';
@@ -55,6 +56,11 @@ export interface BackfillResult {
 const BACKFILL_CURSOR = 'links.backfill.cursor';
 /** Entries indexed since the last similarity pass (#271); kept across restarts. */
 const SIMILAR_PENDING = 'links.similar.pending';
+/** Up to this many entries created together are linked pairwise; more are linked in a chain (#272). */
+const MAX_PAIRWISE = 6;
+/** Tables of the entries that name their source documents in `source_ids`. */
+const SOURCE_TABLES = ['decisions', 'open_items', 'events'] as const;
+
 /** Default of the most open similarity proposals per entry (setting `links.maxProposalsPerEntry`). */
 export const MAX_SIMILAR_PROPOSALS = 3;
 
@@ -273,6 +279,72 @@ export class LinkMethodsService {
     });
     // the user already answered this group („Nein“ or done): no new proposal
     return { insightId: insight.id, actionId: insight.status === 'open' ? (insight.recommendedActionId ?? null) : null };
+  }
+
+  /** A current (proposed or confirmed) relation of any type between the two. */
+  private linked(a: string, b: string): boolean {
+    return Boolean(
+      this.sqlite
+        .prepare(
+          `SELECT 1 FROM relations WHERE ((source_entity_id = ? AND target_entity_id = ?) OR (source_entity_id = ? AND target_entity_id = ?)) AND status IN ('proposed','confirmed') LIMIT 1`,
+        )
+        .get(a, b, b, a),
+    );
+  }
+
+  /** Proposes `related_to` with method `co_origin` between the pairs; already linked and rejected pairs are skipped. */
+  private proposeTogether(pairs: Array<[string, string]>, evidence: string, sourceIds: string[]): number {
+    let created = 0;
+    for (const [a, b] of pairs) {
+      if (a === b || this.linked(a, b)) continue;
+      const r = this.graph.link(a, b, 'related_to', { status: 'proposed', confidence: 0.7, method: 'co_origin', evidence, sourceIds });
+      if (r?.created) created += 1;
+    }
+    return created;
+  }
+
+  /**
+   * Entries created by the same chat message belong together (#272): each pair is proposed as `related_to` with method
+   * `co_origin` and the message as evidence (more than {@link MAX_PAIRWISE} entries: in a chain, in the order they were
+   * created). Entries removed meanwhile are skipped. Returns the number of new proposals.
+   */
+  linkCreatedTogether(entries: CreatedEntry[], opts: { evidence: string; sourceIds?: string[] }): number {
+    const ids = [...new Set(entries.map((e) => e.id))].filter((id) => this.graph.getEntity(id));
+    if (ids.length < 2) return 0;
+    const pairs: Array<[string, string]> =
+      ids.length <= MAX_PAIRWISE ? ids.flatMap((a, i) => ids.slice(i + 1).map((b): [string, string] => [a, b])) : ids.slice(1).map((b, i) => [ids[i]!, b]);
+    return this.proposeTogether(pairs, opts.evidence, opts.sourceIds ?? []);
+  }
+
+  /**
+   * Entries extracted from the same document belong together (#272): a new decision, open item or event that names a
+   * document as its source is proposed as `related_to` (`co_origin`) with the other entries from that document.
+   */
+  linkSameDocument(entryId: string): number {
+    const docs = new Set<string>();
+    for (const t of SOURCE_TABLES) {
+      const rows = this.sqlite.prepare(`SELECT j.value AS doc FROM ${t} r, json_each(r.source_ids) j WHERE r.id = ?`).all(entryId) as Array<{ doc: string }>;
+      for (const r of rows) docs.add(r.doc);
+    }
+    let created = 0;
+    for (const doc of docs) {
+      const d = this.graph.getEntity(doc);
+      if (d?.type !== 'document') continue;
+      const others = SOURCE_TABLES.flatMap(
+        (t) =>
+          this.sqlite
+            .prepare(
+              `SELECT r.id FROM ${t} r WHERE r.id <> ? AND EXISTS (SELECT 1 FROM json_each(r.source_ids) j WHERE j.value = ?)${t === 'decisions' ? '' : ' AND r.duplicate_of_id IS NULL'}`,
+            )
+            .all(entryId, doc) as Array<{ id: string }>,
+      ).map((r) => r.id);
+      created += this.proposeTogether(
+        others.map((o): [string, string] => [entryId, o]),
+        `Beide stammen aus dem Dokument „${truncate(d.name, 80)}“.`,
+        [doc],
+      );
+    }
+    return created;
   }
 
   /** Open similarity proposals of an entry (either direction). */

@@ -54,7 +54,10 @@ const ConsistencySettings = z.object({
 
 /** Link proposals of the fixed link methods (Epic #269). */
 export const LinkSettings = z.object({
-  /** Look for similar entries after every new or changed entry and propose them as related (#271). */
+  /**
+   * Propose links automatically: similar entries after every new or changed entry (#271), entries created by the same
+   * message or taken from the same document (#272).
+   */
   autoPropose: z.boolean().default(true),
   /** At most this many open similarity proposals per entry (#271). */
   maxProposalsPerEntry: z.number().int().min(1).max(10).default(3),

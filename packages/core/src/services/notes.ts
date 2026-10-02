@@ -57,6 +57,7 @@ export class NoteService {
     const id = newId();
     this.graph.registerNode('note', id, title, content);
     this.applyLinks(id, input);
+    this.ctx.events.created({ id, type: 'note' });
     await this.search.index({ type: 'note', id, title, content });
     this.ctx.events.changed('knowledge');
     return this.graph.getEntity(id)!;

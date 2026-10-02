@@ -266,7 +266,24 @@ function buildServices(opts: CreateServicesOptions) {
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
-  chat.wire({ actions, archive, agent });
+  chat.wire({
+    actions,
+    archive,
+    agent,
+    createdTogether: (entries, message) => {
+      if (settings.get().links.autoPropose)
+        links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] });
+    },
+  });
+  // entries extracted from the same document belong together (#272)
+  events.on('entry:created', (entry: { id: string }) => {
+    if (!settings.get().links.autoPropose) return;
+    try {
+      links.linkSameDocument(entry.id);
+    } catch (err) {
+      logger.warn('links', 'Linking entries of one document failed', { error: err, id: entry.id });
+    }
+  });
   capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));
   graph.setReindexer(async (refs) => {

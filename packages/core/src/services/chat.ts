@@ -36,6 +36,7 @@ import type { SearchService } from './search';
 import type { SettingsService } from './settings';
 import type { TimelineService } from './timeline';
 import type { AgentService } from '../agent/service';
+import { collectCreated, type CreatedEntry } from '../util/origin-scope';
 import { CaptureService } from './capture';
 import {
   conversationState,
@@ -258,6 +259,7 @@ export class ChatService {
   private actions!: ActionService;
   private archive!: ArchiveService;
   private agent: AgentService | null = null;
+  private createdTogether: ((entries: CreatedEntry[], message: { id: string; text: string }) => void) | null = null;
   /** Requests of the current message that are already done, per conversation – for the last-resort error handling in send(). */
   private readonly progress = new Map<string, { replies: Reply[]; state: ConvState }>();
   /** Running requests per conversation; `cancel` aborts their LLM calls and the requests not started yet (#151). */
@@ -282,10 +284,17 @@ export class ChatService {
     private readonly answers: KnowledgeAnswerService,
   ) {}
 
-  wire(deps: { actions: ActionService; archive: ArchiveService; agent?: AgentService }): void {
+  wire(deps: {
+    actions: ActionService;
+    archive: ArchiveService;
+    agent?: AgentService;
+    /** Entries one message created together are proposed as linked (#272). */
+    createdTogether?: (entries: CreatedEntry[], message: { id: string; text: string }) => void;
+  }): void {
     this.actions = deps.actions;
     this.archive = deps.archive;
     this.agent = deps.agent ?? null;
+    this.createdTogether = deps.createdTogether ?? null;
   }
 
   /** Runs the message through the agent; null when the agent cannot (then the rule-based evaluation applies). */
@@ -444,8 +453,13 @@ export class ChatService {
     this.running.get(conv)?.abort();
     const controller = new AbortController();
     this.running.set(conv, controller);
+    // everything this message creates (also before an error or a cancel) belongs together (#272)
+    const created: CreatedEntry[] = [];
     try {
-      reply = (await this.agentReply(conv, text, state)) ?? (await llmCancelScope.run(controller.signal, () => this.handle(conv, text, state)));
+      reply = await collectCreated(
+        async () => (await this.agentReply(conv, text, state)) ?? (await llmCancelScope.run(controller.signal, () => this.handle(conv, text, state))),
+        created,
+      );
     } catch (err) {
       if (controller.signal.aborted) {
         // cancelled by the user: what is already done stays, nothing else runs
@@ -471,6 +485,12 @@ export class ChatService {
       this.progress.delete(conv);
       if (this.running.get(conv) === controller) this.running.delete(conv);
     }
+    if (created.length > 1)
+      try {
+        this.createdTogether?.(created, { id: userMessage.id, text });
+      } catch (err) {
+        this.ctx.logger.warn('chat', 'Linking entries of one message failed', { error: err });
+      }
     const assistantMessage = this.saveMessage(conv, 'assistant', reply.content, reply);
     this.db
       .update(conversations)

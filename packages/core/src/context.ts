@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseService } from './db/database';
 import type { Logger } from './util/logger';
+import { noteCreated, type CreatedEntry } from './util/origin-scope';
 
 export interface DataPaths {
   root: string;
@@ -58,6 +59,12 @@ export type ChangeScope =
 export class EventBus extends EventEmitter {
   changed(...scopes: ChangeScope[]): void {
     this.emit('data:changed', { scopes });
+  }
+
+  /** A knowledge entry was created (decision, open item, event, note): link methods react to it (#272). */
+  created(entry: CreatedEntry): void {
+    noteCreated(entry);
+    this.emit('entry:created', entry);
   }
 }
 
