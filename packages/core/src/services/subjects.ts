@@ -6,7 +6,8 @@ import { AppError } from '../util/errors';
 import { normalizeName } from '../util/text';
 import { nowIso } from '../util/ids';
 import type { AuditService } from './audit';
-import { LINK_MANY_UNDO_TYPE, type KnowledgeGraphService, type LinkManyUndoData, type LinkUndoData } from './knowledge-graph';
+import type { LinkUndoData } from './graph/link-undo';
+import { LINK_MANY_UNDO_TYPE, type KnowledgeGraphService, type LinkManyUndoData } from './knowledge-graph';
 import {
   planBulkAssignment,
   subjectRelation,
