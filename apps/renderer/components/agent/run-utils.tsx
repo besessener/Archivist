@@ -160,13 +160,19 @@ export function StepRow({ step, action }: { step: AgentStep; action?: React.Reac
             {step.args !== undefined && (
               <>
                 <p className="text-muted-foreground">Eingabe</p>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">{argsText(step.args)}</pre>
+                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region must be reachable by keyboard (axe scrollable-region-focusable) */}
+                <pre tabIndex={0} role="region" aria-label="Eingabe" className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
+                  {argsText(step.args)}
+                </pre>
               </>
             )}
             {step.result && (
               <>
                 <p className="text-muted-foreground">Ergebnis</p>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">{step.result}</pre>
+                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region must be reachable by keyboard (axe scrollable-region-focusable) */}
+                <pre tabIndex={0} role="region" aria-label="Ergebnis" className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
+                  {step.result}
+                </pre>
               </>
             )}
           </div>

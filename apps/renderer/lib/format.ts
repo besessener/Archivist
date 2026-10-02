@@ -31,9 +31,11 @@ export function formatDateTime(value: string | null | undefined, fallback = '–
   return d ? dateTimeFmt.format(d) : fallback;
 }
 
-export function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return '–';
-  return `${Math.round(value * 100)} %`;
+/** An estimate in words, never as a percentage: the values are self-reports of the AI or rules, not measured (#167). */
+export function confidenceWord(value: number): string {
+  if (value >= 0.8) return 'eher sicher';
+  if (value >= 0.5) return 'unsicher';
+  return 'sehr unsicher';
 }
 
 export function formatBytes(bytes: number | null | undefined): string {

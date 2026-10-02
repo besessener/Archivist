@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { fillPattern } from '../../packages/core/src/agent/tools/files';
+import { fillPattern } from '../../packages/core/src/services/rename-pattern';
 import { SECTION_CHARS, locate } from '../../packages/core/src/agent/tools/read';
 import type { TestApp } from '../helpers/harness';
 import { agentApp, archived, folderOf, scriptedTurns, sentText } from '../helpers/agent';
@@ -290,6 +290,22 @@ describe('Settings per chat (#312)', () => {
     expect(res.assistantMessage.actions.some((a) => a.actionType === 'agent_batch')).toBe(true);
     await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
     expect(app.services.settings.get().agent.mode).toBe('auto');
+  });
+
+  it('the document list renames a multi-selection by the same scheme: preview with conflicts, then rename (#304)', async () => {
+    const a = await archived(app, 'scan010.txt', 'Rechnung A', 'work/misc', { docType: 'Rechnung', documentDate: '2026-03-01', persons: ['Müller'] });
+    const b = await archived(app, 'scan011.txt', 'Rechnung B', 'work/misc', { docType: 'Rechnung', documentDate: '2026-03-01', persons: ['Müller'] });
+    await app.ok('documents:bulkUpdate', { ids: [a, b], docType: 'Rechnung', documentDate: '2026-03-01', addPersons: ['Müller'], confirmed: true });
+    const preview = await app.ok('documents:previewRename', { ids: [a, b], pattern: '{datum} {typ} {absender}' });
+    expect(preview.map((p) => p.to?.split('/').at(-1))).toEqual(['2026-03-01 Rechnung Müller.txt', '2026-03-01 Rechnung Müller.txt']);
+    expect(preview[1]!.conflicts.length).toBeGreaterThan(0);
+    expect(fileName(a)).toBe('scan010.txt');
+    const res = await app.ok('documents:rename', { ids: [a, b], pattern: '{datum} {typ} {absender}', confirmed: true });
+    expect(res.success).toBe(1);
+    expect(res.conflicts).toBe(1);
+    expect(fileName(a)).toBe('2026-03-01 Rechnung Müller.txt');
+    expect(fileName(b)).toBe('scan011.txt');
+    expect((await app.call('documents:rename', { ids: [a], pattern: '{titel}', confirmed: false as never })).ok).toBe(false);
   });
 
   it('scan exclusions can be set, lifted and undone – only inside the released scan folders', async () => {

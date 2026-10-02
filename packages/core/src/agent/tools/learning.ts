@@ -3,7 +3,7 @@ import { RuleDefinition, WorkflowDefinition, type MemoryKind, type RuleDefinitio
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
-import { fillPattern } from './files';
+import { fillPattern } from '../../services/rename-pattern';
 import { allDocs, docLine, resolveDocs, unknownNote, type ToolDeps } from './common';
 
 const KIND_LABEL: Record<MemoryKind, string> = { rule: 'Regel', workflow: 'Ablauf', correction: 'Korrektur', preference: 'Vorliebe', fact: 'Wissen' };

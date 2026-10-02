@@ -198,7 +198,8 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
         </>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <ConfidenceBadge value={current.confidence} />
+        {/* the agent's prepared changes are the user's own request – no made-up estimate (#167) */}
+        {!isBatch && <ConfidenceBadge value={current.confidence} />}
         {current.requiredConfirmation === 'strong' && <Badge variant="danger">Besonders folgenreich</Badge>}
         {current.affectedEntities.map((e) => (
           <EntityChip key={`${e.type}-${e.id}`} type={e.type} id={e.id} label={e.label} detail={e.detail} />

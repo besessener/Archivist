@@ -40,6 +40,16 @@ export function useAgentProgress(conversationId: string | null, pending: boolean
           if (p) setProgress((prev) => prev ?? p);
         })
         .catch(() => undefined);
+    } else if (pendingRef.current) {
+      // a new conversation whose id is not known here yet (e.g. back from another tab): adopt its running run
+      call('agent:active', {})
+        .then((runs) => {
+          const p = runs.map(parseProgress).findLast((r) => r !== null && r.conversationId !== null && r.status === 'running') ?? null;
+          if (!alive || !p || adopted.current !== null) return;
+          adopted.current = p.runId;
+          setProgress((prev) => prev ?? p);
+        })
+        .catch(() => undefined);
     }
     const off = subscribe('agent:progress', (payload) => {
       const p = parseProgress(payload);

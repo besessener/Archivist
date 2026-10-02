@@ -17,6 +17,20 @@ export function initChat(page: Page) {
     thinking: root.getByTestId('chat-loading'),
     sources: root.getByTestId('chat-source'),
     conversationSelect: root.getByTestId('conversation-select'),
+    /** Agent mode (#300): live steps of a running run, its summary below the answer and the mode switch. */
+    agent: {
+      steps: root.getByTestId('chat-loading').getByTestId('agent-step'),
+      announcement: root.getByTestId('agent-live-announcement'),
+      usage: root.getByTestId('agent-live-usage'),
+      stop: root.getByTestId('chat-cancel'),
+      summary: root.getByTestId('agent-run-summary'),
+      details: root.getByTestId('agent-run-details'),
+      undoRun: root.getByTestId('agent-undo-run'),
+      undoConfirm: page.getByTestId('agent-undo-run-confirm'),
+      undoResult: root.getByTestId('agent-undo-result'),
+      quickReplies: root.getByTestId('chat-quick-reply'),
+      mode: (m: 'auto' | 'ask') => root.getByTestId(`agent-mode-${m}`),
+    },
     rename: {
       input: page.getByTestId('rename-input'),
       save: page.getByTestId('rename-save'),
@@ -29,6 +43,14 @@ export function initChat(page: Page) {
       await locators.buttons.send.click();
     },
     lastReply: () => locators.messages.last(),
+    /** Opens the technical details of a live step. */
+    showStepDetails: async (index: number) => {
+      await locators.agent.steps.nth(index).getByText('Technische Details').click();
+    },
+    undoLastRun: async () => {
+      await locators.agent.undoRun.last().click();
+      await locators.agent.undoConfirm.click();
+    },
     inputHeight: () => locators.inputs.message.evaluate((element) => element.clientHeight),
     /** Drags the grip above the input field upwards (positive number = larger). */
     growInput: async (pixels: number) => {

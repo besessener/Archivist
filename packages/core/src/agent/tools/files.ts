@@ -1,40 +1,14 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { FOLDER_CREATE_UNDO, SCAN_EXCLUSION_UNDO, type FolderCreateUndoData, type ScanExclusionUndoData } from './tool-undo';
-import type { ArchiveResult, DocumentRecord } from '@archivist/shared';
+import type { ArchiveResult } from '@archivist/shared';
 import { sanitizeCategoryPath } from '../../util/paths';
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
+import { fillPattern } from '../../services/rename-pattern';
 import type { ArchiveConsent, FileOp, FileOpResult } from '../file-jobs';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
 import { docLine, normFolder, resolveDocs, unknownNote, type ToolDeps } from './common';
-
-/** Values for a naming scheme like `{datum} {typ} {absender}` (#304). */
-export function fillPattern(
-  pattern: string,
-  d: Pick<DocumentRecord, 'documentDate' | 'archivedAt' | 'createdAt' | 'docType' | 'persons' | 'title' | 'topicName' | 'projectName' | 'originalName'>,
-): string {
-  const date = (d.documentDate ?? d.archivedAt ?? d.createdAt).slice(0, 10);
-  const values: Record<string, string> = {
-    datum: date,
-    date,
-    jahr: date.slice(0, 4),
-    monat: date.slice(0, 7),
-    typ: d.docType ?? '',
-    absender: d.persons[0] ?? '',
-    titel: d.title,
-    thema: d.topicName ?? '',
-    projekt: d.projectName ?? '',
-    original: path.basename(d.originalName, path.extname(d.originalName)),
-  };
-  const filled = pattern.replace(/\{(\w+)\}/g, (_, k: string) => values[k.toLowerCase()] ?? '').replace(/\s{2,}/g, ' ');
-  // separators left over at the ends when a placeholder was empty
-  let start = 0;
-  let end = filled.length;
-  while (start < end && ' _-'.includes(filled[start]!)) start += 1;
-  while (end > start && ' _-'.includes(filled[end - 1]!)) end -= 1;
-  return filled.slice(start, end).trim();
-}
 
 /** Moves and renames go through the file jobs: larger amounts as a job of their own, in chunks either way (#304). */
 function bulk(deps: ToolDeps, ctx: ToolContext, op: FileOp, items: Parameters<ToolDeps['fileJobs']['run']>[1], label: string, consent?: ArchiveConsent) {
