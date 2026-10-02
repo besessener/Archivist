@@ -63,6 +63,34 @@ interface RelocateUndoData {
   relationsChanged?: RelationRow[];
 }
 
+interface RenameUndoData {
+  documentId: string;
+  fromRel: string;
+  toRel: string;
+  sha256: string;
+  beforeTitle: string;
+  beforeUpdatedAt: string;
+  afterUpdatedAt: string;
+}
+
+/** Request: rename the file of an archived document within its folder (#304). */
+export interface RenameRequest {
+  documentId: string;
+  /** New file name; the extension is kept (added when missing). */
+  fileName: string;
+}
+
+export interface RenamePlanItem {
+  documentId: string;
+  from: string | null;
+  to: string | null;
+  unchanged: boolean;
+  conflicts: string[];
+}
+
+/** Hash- or UUID-like names say nothing about the document and are refused (#304). */
+const MEANINGLESS_NAME = /^(?:[0-9a-f]{12,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
 /** Request: move an already archived document into another archive folder. */
 export interface RelocateRequest {
   documentId: string;
@@ -146,6 +174,10 @@ export class ArchiveService {
     undo: UndoService,
   ) {
     undo.register('archive_file', { check: (d) => this.undoCheck(d as UndoData), run: (d) => this.guarded(() => this.undoRun(d as UndoData)) });
+    undo.register('archive_rename', {
+      check: (d) => this.renameUndoCheck(d as RenameUndoData),
+      run: (d) => this.guarded(() => this.renameUndoRun(d as RenameUndoData)),
+    });
     undo.register('archive_relocate', {
       check: (d) => this.relocateUndoCheck(d as RelocateUndoData),
       run: (d) => this.guarded(() => this.relocateUndoRun(d as RelocateUndoData)),
@@ -1069,6 +1101,177 @@ export class ArchiveService {
     }
     if (await this.removeCreated(moved)) return null;
     return `Die Datei liegt wieder am bisherigen Ort; ${leftoverNote('ein zusätzlicher Eintrag', moved)}`;
+  }
+
+  /** Preview of renames: target names, conflicts with existing files and among each other – changes nothing. */
+  async previewRename(items: RenameRequest[]): Promise<RenamePlanItem[]> {
+    const taken = new Map<string, string>();
+    const out: RenamePlanItem[] = [];
+    for (const req of items) {
+      const row = this.docs.getRow(req.documentId);
+      const base = { documentId: row.id, from: row.archiveRelPath, to: null as string | null, unchanged: false, conflicts: [] as string[] };
+      if (row.status !== 'archived' || !row.archiveRelPath || row.archiveMode === 'index_only') {
+        out.push({ ...base, conflicts: ['Nur archivierte Dokumente mit einer Datei im Archiv lassen sich umbenennen.'] });
+        continue;
+      }
+      let name = sanitizeFileName(req.fileName);
+      if (path.extname(name).slice(1).toLowerCase() !== row.ext.toLowerCase()) name = `${name}.${row.ext}`;
+      const stem = path.basename(name, path.extname(name));
+      if (MEANINGLESS_NAME.test(stem)) {
+        out.push({ ...base, conflicts: [`„${name}“ ist kein sprechender Name (Hash oder UUID).`] });
+        continue;
+      }
+      const dir = path.posix.dirname(row.archiveRelPath);
+      const toRel = dir === '.' ? name : `${dir}/${name}`;
+      if (toRel === row.archiveRelPath) {
+        out.push({ ...base, to: toRel, unchanged: true });
+        continue;
+      }
+      const key = process.platform === 'win32' ? toRel.toLowerCase() : toRel;
+      const conflicts: string[] = [];
+      if (taken.has(key)) conflicts.push(`Derselbe Name ist schon für ein anderes Dokument dieser Umbenennung vorgesehen: ${name}`);
+      // a different case of the same name is the same file on NTFS – only allowed for the document itself
+      else if (fs.existsSync(resolveInside(this.root, toRel)) && !(process.platform === 'win32' && key === row.archiveRelPath.toLowerCase()))
+        conflicts.push(`Im Ordner existiert bereits „${name}“ – es wird nichts überschrieben.`);
+      taken.set(key, row.id);
+      out.push({ ...base, to: toRel, conflicts });
+    }
+    return out;
+  }
+
+  /** Renames archived files within their folder; never overwrites, checks the checksum, logged with undo. */
+  async rename(items: RenameRequest[], opts: { confirmed: boolean; trigger?: string }): Promise<ArchiveResult> {
+    if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
+    return this.guarded(async () => {
+      const plan = await this.previewRename(items);
+      const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
+      for (const p of plan) {
+        const fail = (outcome: 'conflict' | 'skipped' | 'failed', message: string) => {
+          result.items.push({ documentId: p.documentId, outcome, targetPath: null, message, auditId: null });
+          if (outcome === 'conflict') result.conflicts += 1;
+          else if (outcome === 'skipped') result.skipped += 1;
+          else result.failed += 1;
+        };
+        if (p.conflicts.length) {
+          fail('conflict', p.conflicts.join(' '));
+          continue;
+        }
+        if (p.unchanged || !p.to || !p.from) {
+          fail('skipped', 'Der Name ist bereits so.');
+          continue;
+        }
+        try {
+          const row = this.docs.getRow(p.documentId);
+          const src = resolveInside(this.root, p.from);
+          await assertRealInside(this.root, src);
+          if ((await sha256File(src)) !== row.sha256) {
+            fail('conflict', 'Die Archivdatei wurde seit der Archivierung verändert und wird deshalb nicht umbenannt.');
+            continue;
+          }
+          const dest = resolveInside(this.root, p.to);
+          const caseOnly = process.platform === 'win32' && p.to.toLowerCase() === p.from.toLowerCase();
+          if (caseOnly) await fsp.rename(src, dest);
+          else await this.moveExclusive(src, path.dirname(dest), path.basename(dest), row.sha256, true);
+          const updatedAt = nowIso();
+          const title = row.title === path.basename(p.from, path.extname(p.from)) ? path.basename(p.to, path.extname(p.to)) : row.title;
+          this.db.update(documents).set({ archiveRelPath: p.to, title, updatedAt }).where(eq(documents.id, row.id)).run();
+          if (title !== row.title) this.graph.registerNode('document', row.id, title, row.summary);
+          const auditId = this.audit.log({
+            action: 'archive.rename',
+            actor: opts.trigger === 'agent' ? 'agent' : 'user',
+            trigger: opts.trigger ?? 'manual',
+            confirmed: true,
+            entityIds: [row.id],
+            paths: [src, dest],
+            before: { path: src },
+            after: { path: dest },
+            undo: {
+              type: 'archive_rename',
+              data: {
+                documentId: row.id,
+                fromRel: p.from,
+                toRel: p.to,
+                sha256: row.sha256,
+                beforeTitle: row.title,
+                beforeUpdatedAt: row.updatedAt,
+                afterUpdatedAt: updatedAt,
+              } satisfies RenameUndoData,
+            },
+          });
+          result.items.push({ documentId: row.id, outcome: 'success', targetPath: dest, message: `Umbenannt in ${path.basename(dest)}.`, auditId });
+          result.success += 1;
+        } catch (err) {
+          const info = toErrorInfo(err);
+          fail('failed', info.message + (info.details ? ` (${info.details})` : ''));
+        }
+      }
+      this.ctx.events.changed('documents', 'audit', 'knowledge');
+      return result;
+    });
+  }
+
+  private async renameUndoCheck(d: RenameUndoData): Promise<string[]> {
+    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
+    const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
+    if (!row) return ['Das Dokument existiert nicht mehr.'];
+    const conflicts: string[] = [];
+    if (row.updatedAt !== d.afterUpdatedAt) conflicts.push('Das Dokument wurde seit dem Umbenennen verändert.');
+    const now = resolveInside(this.root, d.toRel);
+    if (!fs.existsSync(now)) conflicts.push('Die Datei fehlt unter dem neuen Namen.');
+    else if ((await sha256File(now)) !== d.sha256) conflicts.push('Die Datei wurde seit dem Umbenennen verändert.');
+    const caseOnly = process.platform === 'win32' && d.toRel.toLowerCase() === d.fromRel.toLowerCase();
+    if (!caseOnly && fs.existsSync(resolveInside(this.root, d.fromRel))) conflicts.push('Unter dem alten Namen liegt inzwischen eine andere Datei.');
+    return conflicts;
+  }
+
+  private async renameUndoRun(d: RenameUndoData): Promise<string> {
+    const now = resolveInside(this.root, d.toRel);
+    const back = resolveInside(this.root, d.fromRel);
+    if (process.platform === 'win32' && d.toRel.toLowerCase() === d.fromRel.toLowerCase()) await fsp.rename(now, back);
+    else await this.moveExclusive(now, path.dirname(back), path.basename(back), d.sha256, true);
+    this.db
+      .update(documents)
+      .set({ archiveRelPath: d.fromRel, title: d.beforeTitle, updatedAt: d.beforeUpdatedAt })
+      .where(eq(documents.id, d.documentId))
+      .run();
+    this.graph.registerNode('document', d.documentId, d.beforeTitle, null);
+    this.ctx.events.changed('documents', 'knowledge');
+    return 'Umbenennen rückgängig gemacht.';
+  }
+
+  /** Removes empty folders of the archive (no file, no document) and their category entries; returns the removed paths. */
+  async removeEmptyFolders(): Promise<string[]> {
+    return this.guarded(async () => {
+      const used = new Set(
+        this.db
+          .select({ rel: documents.archiveRelPath })
+          .from(documents)
+          .where(isNotNull(documents.archiveRelPath))
+          .all()
+          .flatMap((r) => {
+            const parts = path.posix.dirname(r.rel!).split('/');
+            return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
+          }),
+      );
+      const removed: string[] = [];
+      for (const c of this.categories.list().toSorted((a, b) => b.path.length - a.path.length)) {
+        if (used.has(c.path) || !c.path.includes('/')) continue;
+        const abs = resolveInside(this.root, c.path);
+        try {
+          if (fs.existsSync(abs)) {
+            if ((await fsp.readdir(abs)).length) continue;
+            await fsp.rmdir(abs);
+          }
+          this.categories.remove(c.path);
+          removed.push(c.path);
+        } catch {
+          /* not empty or locked: stays */
+        }
+      }
+      if (removed.length)
+        this.audit.log({ action: 'category.removeEmpty', actor: 'user', trigger: 'manual', confirmed: true, paths: removed, after: { removed } });
+      return removed;
+    });
   }
 
   private async relocateUndoCheck(d: RelocateUndoData): Promise<string[]> {

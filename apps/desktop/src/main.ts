@@ -63,6 +63,11 @@ const host: HostApi = {
   },
   openPath: (p) => shell.openPath(p),
   revealPath: (p) => shell.showItemInFolder(p),
+  saveFile: async (defaultName) => {
+    const opts: Electron.SaveDialogOptions = { title: 'Speichern unter', defaultPath: path.join(app.getPath('documents'), defaultName) };
+    const res = mainWindow ? await dialog.showSaveDialog(mainWindow, opts) : await dialog.showSaveDialog(opts);
+    return res.canceled || !res.filePath ? null : res.filePath;
+  },
 };
 
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
@@ -99,6 +104,8 @@ function forwardEvents(svc: Services): void {
   });
   svc.events.on('job:updated', (job) => send('job:updated', job));
   svc.events.on('status:changed', () => send('status:changed', {}));
+  // live steps of agent runs (#300); throttled in the agent service
+  svc.events.on('agent:progress', (p: unknown) => send('agent:progress', p));
   svc.events.on('notification:new', (n: AppNotification) => {
     send('notification:new', n);
     if (svc.settings.get().notifications.desktop && Notification.isSupported()) {

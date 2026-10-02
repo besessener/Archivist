@@ -3,6 +3,7 @@ import type { RefType } from '@archivist/shared';
 import {
   Bell,
   Briefcase,
+  FolderKanban,
   FileText,
   Gavel,
   Hash,
@@ -31,6 +32,7 @@ const ICONS: Record<RefType, React.ComponentType<{ className?: string }>> = {
   note: StickyNote,
   category: Folder,
   tag: Tag,
+  case: FolderKanban,
   reminder: Bell,
   contradiction: ShieldAlert,
 };

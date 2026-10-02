@@ -39,8 +39,10 @@ describe('LLM connection', () => {
     const r = await app.ok('llm:testConnection', {});
     expect(r.ok).toBe(true);
     expect(r.modelReply).toBe('OK');
+    // the test also checks native tool calling (#296): this fake endpoint only answers with text
+    expect(r.agent).toMatchObject({ adapter: 'openai', toolCalling: false });
     const tx = await app.ok('llm:transmissions', { limit: 10 });
-    expect(tx[0]?.purpose).toBe('Verbindungstest');
+    expect(tx.map((t) => t.purpose)).toEqual(expect.arrayContaining(['Verbindungstest', 'Verbindungstest (Werkzeuge)']));
   });
 
   it('reports an unreachable endpoint understandably', async () => {

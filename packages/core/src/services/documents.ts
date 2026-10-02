@@ -42,7 +42,16 @@ void _fullText;
 
 interface DocumentMetadataUndo {
   id: string;
-  before: { title: string; topicId: string | null; projectId: string | null; tags: string[]; persons: string[] };
+  before: {
+    title: string;
+    topicId: string | null;
+    projectId: string | null;
+    tags: string[];
+    persons: string[];
+    /** Missing in undo data written before bulk edits existed. */
+    docType?: string | null;
+    documentDate?: string | null;
+  };
   /** Relation changes of the edit (absent in undo data written by older versions). */
   relations?: RelationChangeSet;
   /** Older undo data: relations created by the edit. */
@@ -109,32 +118,48 @@ export class DocumentService {
     undo: UndoService,
   ) {
     undo.register('document_metadata', {
-      check: async (data) => {
-        const d = data as DocumentMetadataUndo;
-        const row = this.db.select().from(documents).where(eq(documents.id, d.id)).get();
-        if (!row) return ['Das Dokument existiert nicht mehr.'];
-        const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : ['Das Dokument wurde seit der Änderung erneut verändert.'];
-        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
-      },
+      check: async (data) => this.metadataUndoConflicts(data as DocumentMetadataUndo),
       run: async (data) => {
-        const d = data as DocumentMetadataUndo;
-        this.db.transaction(() => {
-          this.db
-            .update(documents)
-            .set({ ...d.before, updatedAt: nowIso() })
-            .where(eq(documents.id, d.id))
-            .run();
-          if (this.graph.getEntity(d.id))
-            this.graph.registerNode('document', d.id, d.before.title, this.db.select().from(documents).where(eq(documents.id, d.id)).get()?.summary ?? null);
-          if (d.relations) this.graph.revertRelationChanges(d.relations);
-          // undo data written before relation tracking existed only lists the created relations
-          else for (const rid of d.relationIds ?? []) this.graph.deleteRelation(rid);
-        });
-        await this.indexDocument(d.id);
-        this.ctx.events.changed('documents', 'knowledge');
+        await this.revertMetadata(data as DocumentMetadataUndo);
         return 'Metadaten wiederhergestellt.';
       },
     });
+    // a bulk assignment is ONE undo step (#291)
+    undo.register('document_metadata_bulk', {
+      check: async (data) => {
+        const items = (data as { items: DocumentMetadataUndo[] }).items;
+        return [...new Set(items.flatMap((d) => this.metadataUndoConflicts(d)))];
+      },
+      run: async (data) => {
+        const items = (data as { items: DocumentMetadataUndo[] }).items;
+        for (const d of items.toReversed()) await this.revertMetadata(d);
+        return `Metadaten von ${items.length} Dokument(en) wiederhergestellt.`;
+      },
+    });
+  }
+
+  private metadataUndoConflicts(d: DocumentMetadataUndo): string[] {
+    const row = this.db.select().from(documents).where(eq(documents.id, d.id)).get();
+    if (!row) return ['Das Dokument existiert nicht mehr.'];
+    const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : ['Das Dokument wurde seit der Änderung erneut verändert.'];
+    return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
+  }
+
+  private async revertMetadata(d: DocumentMetadataUndo): Promise<void> {
+    this.db.transaction(() => {
+      this.db
+        .update(documents)
+        .set({ ...d.before, updatedAt: nowIso() })
+        .where(eq(documents.id, d.id))
+        .run();
+      if (this.graph.getEntity(d.id))
+        this.graph.registerNode('document', d.id, d.before.title, this.db.select().from(documents).where(eq(documents.id, d.id)).get()?.summary ?? null);
+      if (d.relations) this.graph.revertRelationChanges(d.relations);
+      // undo data written before relation tracking existed only lists the created relations
+      else for (const rid of d.relationIds ?? []) this.graph.deleteRelation(rid);
+    });
+    await this.indexDocument(d.id);
+    this.ctx.events.changed('documents', 'knowledge');
   }
 
   private get db() {
@@ -896,10 +921,82 @@ export class DocumentService {
   private metadataUndo(row: DocRow, set: Partial<DocRow>, relations: RelationChangeSet): DocumentMetadataUndo {
     return {
       id: row.id,
-      before: { title: row.title, topicId: row.topicId, projectId: row.projectId, tags: row.tags, persons: row.persons },
+      before: {
+        title: row.title,
+        topicId: row.topicId,
+        projectId: row.projectId,
+        tags: row.tags,
+        persons: row.persons,
+        docType: row.docType,
+        documentDate: row.documentDate,
+      },
       relations,
       afterUpdatedAt: set.updatedAt!,
     };
+  }
+
+  /**
+   * Sets or removes topic, project, persons, tags, type, title and business date for several documents at once –
+   * the bulk assignment of the document list and of the agent (#291, #305). The whole batch is ONE undo step.
+   * Until several topics per entry exist (#287) an assignment replaces the previous value.
+   */
+  bulkUpdate(
+    ids: string[],
+    patch: {
+      title?: string;
+      topic?: string | null;
+      project?: string | null;
+      addTags?: string[];
+      removeTags?: string[];
+      addPersons?: string[];
+      removePersons?: string[];
+      docType?: string | null;
+      documentDate?: string | null;
+    },
+    opts: { trigger?: string } = {},
+  ): { updated: DocumentRecord[]; auditId: string | null } {
+    const unique = [...new Set(ids)];
+    if (!unique.length) return { updated: [], auditId: null };
+    const topicId = patch.topic === undefined ? undefined : patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
+    const projectId = patch.project === undefined ? undefined : patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    const addPersons = patch.addPersons?.length ? this.persons.resolveNames(patch.addPersons, { context: 'document', create: true }).names : [];
+    const lowerSet = (xs: string[] | undefined) => new Set((xs ?? []).map((x) => x.toLowerCase()));
+    const removeTags = lowerSet(patch.removeTags);
+    const removePersons = lowerSet(patch.removePersons);
+    const undoItems: DocumentMetadataUndo[] = [];
+    for (const id of unique) {
+      const row = this.getRow(id);
+      const set: Partial<DocRow> = { updatedAt: nowIso() };
+      if (patch.title?.trim() && unique.length === 1) set.title = patch.title.trim().slice(0, 200);
+      if (topicId !== undefined) set.topicId = topicId;
+      if (projectId !== undefined) set.projectId = projectId;
+      if (patch.addTags?.length || removeTags.size)
+        set.tags = [...new Set([...row.tags.filter((t) => !removeTags.has(t.toLowerCase())), ...(patch.addTags ?? []).map((t) => t.trim()).filter(Boolean)])];
+      if (addPersons.length || removePersons.size)
+        set.persons = [...new Set([...row.persons.filter((p) => !removePersons.has(p.toLowerCase())), ...addPersons])];
+      if (patch.docType !== undefined) set.docType = patch.docType?.trim() || null;
+      if (patch.documentDate !== undefined) set.documentDate = patch.documentDate?.trim() || null;
+      const { changes } = this.graph.trackRelationChanges(id, () =>
+        this.ctx.database.transaction(() => {
+          this.db.update(documents).set(set).where(eq(documents.id, id)).run();
+          if (set.title) this.graph.registerNode('document', id, set.title, row.summary);
+          this.syncAssignment(id, set);
+        }),
+      );
+      undoItems.push(this.metadataUndo(row, set, changes));
+    }
+    const auditId = this.audit.log({
+      action: 'document.bulkUpdate',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: unique,
+      after: patch,
+      undo: { type: 'document_metadata_bulk', data: { items: undoItems } },
+    });
+    for (const id of unique) void this.indexDocument(id);
+    this.ctx.events.changed('documents', 'knowledge');
+    return { updated: this.list({ ids: unique, limit: unique.length }), auditId };
   }
 
   ignore(id: string): DocumentRecord {
@@ -1004,6 +1101,54 @@ export class DocumentService {
     } catch (err) {
       this.ctx.logger.warn('documents', 'Indexing failed', { documentId: id, error: err });
     }
+  }
+
+  /**
+   * Final deletion of a document (only reached through a confirmed critical agent tool, #308): the file in the archive
+   * and our own inbox copy are deleted – never a file outside the archive or the Archivist data folder, never the
+   * user's original – then the row, its search index entries and its graph node with all relations. Not undoable.
+   */
+  deletePermanently(id: string, opts: { trigger?: string } = {}): void {
+    const row = this.getRow(id);
+    const deleted: string[] = [];
+    const removeInside = (roots: string[], file: string | null) => {
+      if (!file || !roots.some((r) => isInside(r, file))) return;
+      let real: string;
+      try {
+        real = fs.realpathSync(file);
+      } catch {
+        return; // already gone
+      }
+      const realRoots = roots.flatMap((r) => {
+        try {
+          return [fs.realpathSync(r)];
+        } catch {
+          return [];
+        }
+      });
+      if (!realRoots.some((r) => isInside(r, real) && path.resolve(r) !== path.resolve(real))) return;
+      fs.rmSync(real, { force: true });
+      deleted.push(real);
+    };
+    if (row.archiveMode !== 'index_only') removeInside([this.settings.get().archiveRoot], this.archiveAbs(row.archiveRelPath));
+    removeInside([this.ctx.paths.inbox, this.ctx.paths.quarantine], row.stagedPath);
+    this.ctx.database.transaction(() => {
+      this.db.update(scanFiles).set({ documentId: null }).where(eq(scanFiles.documentId, id)).run();
+      this.db.delete(documents).where(eq(documents.id, id)).run();
+    });
+    this.search.remove(id);
+    // removes the node together with every relation from or to it
+    this.graph.removeNode(id);
+    this.audit.log({
+      action: 'document.delete',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [id],
+      paths: deleted,
+      before: { title: row.title, archiveRelPath: row.archiveRelPath },
+    });
+    this.ctx.events.changed('documents', 'knowledge');
   }
 }
 

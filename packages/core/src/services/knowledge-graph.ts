@@ -1,6 +1,7 @@
 import type { EntityDetail, EntityType, GraphEntity, GraphRelation, RelationStatus, RelationType } from '@archivist/shared';
 import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
+import { currentRun } from '../agent/scope';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { decisions, documents, entities, events, openItems, relations } from '../db/schema';
 import { AppError } from '../util/errors';
@@ -208,6 +209,7 @@ const mapEntity = (r: EntityRow): GraphEntity => ({
   roles: r.roles,
   duplicateOfId: r.duplicateOfId,
   isSelf: r.isSelf,
+  status: r.status,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -219,6 +221,8 @@ const mapRelation = (r: RelationRow): GraphRelation => ({
   confidence: r.confidence,
   sourceIds: r.sourceIds,
   status: r.status as RelationStatus,
+  origin: r.origin,
+  runId: r.runId,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -255,6 +259,50 @@ const sameState = (a: RelationState, b: RelationState) =>
 /** Statuses that count as a current, visible assignment. */
 const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 
+/** Undo of a link or unlink made through {@link KnowledgeGraphService.linkEntries} / `unlinkEntries` (#277). */
+const LINK_UNDO_TYPE = 'relation.link';
+const CASE_UNDO_TYPE = 'case.status';
+interface LinkUndoData {
+  /** The relation as it was before (null: the call created it). */
+  before: RelationRow | null;
+  /** The relation as the call left it (null: the call removed it). */
+  after: RelationRow | null;
+}
+
+/** An entry connected to another one, with the path and the reason (#276, #289). */
+export interface RelatedEntry {
+  entity: GraphEntity;
+  depth: number;
+  relation: GraphRelation;
+  /** Plain-language reason: relation type, status, origin and evidence count. */
+  reason: string;
+  /** Entry in between for depth 2. */
+  via: GraphEntity | null;
+}
+
+const RELATION_LABEL: Record<RelationType, string> = {
+  belongs_to: 'gehört zu',
+  relates_to: 'bezieht sich auf',
+  supports: 'stützt',
+  contradicts: 'widerspricht',
+  participated_in: 'beteiligt an',
+  concerns: 'betrifft',
+  affects: 'wirkt sich aus auf',
+  supersedes: 'ersetzt',
+  blocks: 'blockiert',
+  results_from: 'folgt aus',
+  produced: 'hat erzeugt',
+  duplicate_of: 'Duplikat von',
+  related_to: 'verwandt mit',
+};
+
+export function relationReason(r: GraphRelation): string {
+  const status = r.status === 'confirmed' ? 'bestätigt' : r.status === 'proposed' ? 'vorgeschlagen' : r.status;
+  const origin = r.origin === 'agent' ? ', vom Agenten' : r.origin === 'user' ? ', vom Benutzer' : '';
+  const evidence = r.sourceIds.length ? `, ${r.sourceIds.length} Beleg(e)` : '';
+  return `${RELATION_LABEL[r.relationType] ?? r.relationType} (${status}${origin}${evidence}, Sicherheit ${Math.round(r.confidence * 100)} %)`;
+}
+
 /** Knowledge graph over entity and relation tables in SQLite. */
 export class KnowledgeGraphService {
   private reindexer: MergeReindexer | null = null;
@@ -267,6 +315,23 @@ export class KnowledgeGraphService {
     undo.register(MERGE_UNDO_TYPE, {
       check: async (data) => this.conflicts(data as MergeUndoData),
       run: (data) => this.undoMerge(data as MergeUndoData),
+    });
+    undo.register(CASE_UNDO_TYPE, {
+      check: async (data) => {
+        const d = data as { id: string; afterUpdatedAt: string };
+        const row = this.db.select().from(entities).where(eq(entities.id, d.id)).get();
+        return !row ? ['Der Vorgang existiert nicht mehr.'] : row.updatedAt !== d.afterUpdatedAt ? ['Der Vorgang wurde seither verändert.'] : [];
+      },
+      run: async (data) => {
+        const d = data as { id: string; before: string | null; beforeUpdatedAt: string };
+        this.db.update(entities).set({ status: d.before, updatedAt: d.beforeUpdatedAt }).where(eq(entities.id, d.id)).run();
+        this.ctx.events.changed('knowledge');
+        return 'Status des Vorgangs zurückgesetzt.';
+      },
+    });
+    undo.register(LINK_UNDO_TYPE, {
+      check: async (data) => this.linkUndoConflicts(data as LinkUndoData),
+      run: async (data) => this.linkUndoRun(data as LinkUndoData),
     });
   }
 
@@ -303,6 +368,7 @@ export class KnowledgeGraphService {
       isSelf: false,
       createdAt: now,
       updatedAt: now,
+      status: type === 'case' ? 'open' : null,
     };
     this.db.insert(entities).values(row).run();
     this.ctx.events.changed('knowledge');
@@ -373,7 +439,7 @@ export class KnowledgeGraphService {
     sourceId: string,
     targetId: string,
     relationType: RelationType,
-    opts: { confidence?: number; status?: RelationStatus; sourceIds?: string[]; resolvedByUser?: boolean } = {},
+    opts: { confidence?: number; status?: RelationStatus; sourceIds?: string[]; resolvedByUser?: boolean; origin?: 'system' | 'user' | 'agent' } = {},
   ): LinkResult | null {
     if (sourceId === targetId) return null;
     const existing = this.db
@@ -406,6 +472,9 @@ export class KnowledgeGraphService {
       sourceIds: opts.sourceIds ?? [],
       status: opts.status ?? 'proposed',
       resolvedByUser: opts.resolvedByUser ?? false,
+      // inside an agent run the relation is the agent's (origin and run id, #270/#299)
+      origin: currentRun() ? 'agent' : (opts.origin ?? (opts.resolvedByUser ? 'user' : 'system')),
+      runId: currentRun()?.runId ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -480,6 +549,201 @@ export class KnowledgeGraphService {
       counts.set(r.t, (counts.get(r.t) ?? 0) + 1);
     }
     return rows.map((r) => ({ ...mapEntity(r), relationCount: counts.get(r.id) ?? 0 }));
+  }
+
+  /**
+   * Neighbours of an entry up to `depth` (1 or 2) over current relations, each with its reason – the same query the
+   * knowledge page uses for „Verwandte Einträge“ (#276) and the agent for research across the graph (#289).
+   */
+  related(id: string, opts: { depth?: number; limit?: number; types?: EntityType[] } = {}): RelatedEntry[] {
+    const depth = Math.min(Math.max(opts.depth ?? 1, 1), 2);
+    const out = new Map<string, RelatedEntry>();
+    const visit = (from: string, level: number, via: GraphEntity | null) => {
+      for (const r of this.relationsOf(from, { statuses: ACTIVE_STATUSES })) {
+        const otherId = r.sourceEntityId === from ? r.targetEntityId : r.sourceEntityId;
+        if (otherId === id || out.has(otherId)) continue;
+        const other = this.getEntity(otherId);
+        if (!other || other.duplicateOfId) continue;
+        out.set(otherId, { entity: other, depth: level, relation: r, reason: relationReason(r), via });
+      }
+    };
+    visit(id, 1, null);
+    if (depth === 2)
+      for (const first of [...out.values()]) {
+        // hubs (topics with hundreds of documents) are not expanded – they say little about a single entry
+        if (first.entity.type === 'category' || first.entity.type === 'tag') continue;
+        visit(first.entity.id, 2, first.entity);
+      }
+    return [...out.values()]
+      .filter((e) => !opts.types || opts.types.includes(e.entity.type))
+      .toSorted(
+        (a, b) =>
+          a.depth - b.depth ||
+          Number(b.relation.status === 'confirmed') - Number(a.relation.status === 'confirmed') ||
+          b.relation.confidence - a.relation.confidence,
+      )
+      .slice(0, opts.limit ?? 100);
+  }
+
+  /** A relation between the two entries (either direction) that the user rejected – such pairs are never proposed again (#270). */
+  rejectedBetween(a: string, b: string): GraphRelation | undefined {
+    const r = this.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          or(and(eq(relations.sourceEntityId, a), eq(relations.targetEntityId, b)), and(eq(relations.sourceEntityId, b), eq(relations.targetEntityId, a))),
+          eq(relations.status, 'rejected'),
+        ),
+      )
+      .get();
+    return r ? mapRelation(r) : undefined;
+  }
+
+  /** Rejected pairs of an entry (the agent names them on request, #306). */
+  rejectedPairsOf(id: string): Array<{ relation: GraphRelation; other: GraphEntity }> {
+    return this.relationsOf(id, { statuses: ['rejected'] }).flatMap((r) => {
+      const other = this.getEntity(r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId);
+      return other ? [{ relation: r, other }] : [];
+    });
+  }
+
+  /**
+   * Links two entries (knowledge page and agent use the same function, #277). `confirmed`: the user asked for it (in the
+   * agent: an explicit request in mode „Auto“); otherwise the link stays a proposal. Rejected pairs are refused.
+   * Logged with undo.
+   */
+  linkEntries(
+    sourceId: string,
+    targetId: string,
+    relationType: RelationType,
+    opts: { status: 'confirmed' | 'proposed'; trigger?: string; confidence?: number },
+  ): { relation: GraphRelation; created: boolean } {
+    if (sourceId === targetId) throw new AppError('validation_error', 'Ein Eintrag kann nicht mit sich selbst verknüpft werden.');
+    const a = this.getEntity(sourceId);
+    const b = this.getEntity(targetId);
+    if (!a || !b) throw new AppError('validation_error', 'Einer der Einträge existiert nicht.');
+    if (opts.status === 'proposed' && this.rejectedBetween(sourceId, targetId))
+      throw new AppError('validation_error', `Die Verknüpfung „${a.name}“ – „${b.name}“ wurde abgelehnt und wird nicht wieder vorgeschlagen.`);
+    const before =
+      this.db
+        .select()
+        .from(relations)
+        .where(and(eq(relations.sourceEntityId, sourceId), eq(relations.targetEntityId, targetId), eq(relations.relationType, relationType)))
+        .get() ?? null;
+    const confirmed = opts.status === 'confirmed';
+    if (before && confirmed && before.status !== 'confirmed') {
+      this.db.update(relations).set({ status: 'confirmed', resolvedByUser: true, updatedAt: nowIso() }).where(eq(relations.id, before.id)).run();
+    }
+    const res =
+      before && confirmed
+        ? null
+        : this.link(sourceId, targetId, relationType, {
+            confidence: opts.confidence ?? (confirmed ? 1 : 0.6),
+            status: opts.status,
+            resolvedByUser: confirmed,
+            origin: 'user',
+          });
+    const after = this.db
+      .select()
+      .from(relations)
+      .where(and(eq(relations.sourceEntityId, sourceId), eq(relations.targetEntityId, targetId), eq(relations.relationType, relationType)))
+      .get()!;
+    if (after.status === 'rejected' && !confirmed) throw new AppError('validation_error', 'Diese Verknüpfung wurde abgelehnt.');
+    this.audit.log({
+      action: 'relation.link',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed,
+      entityIds: [after.id, sourceId, targetId],
+      before: before ? { status: before.status } : null,
+      after: { status: after.status, relationType },
+      undo: { type: LINK_UNDO_TYPE, data: { before, after } satisfies LinkUndoData },
+    });
+    this.ctx.events.changed('knowledge');
+    return { relation: mapRelation(after), created: res?.created ?? false };
+  }
+
+  /** Removes a relation the user (or the agent on the user's request) no longer wants; logged with undo. */
+  unlinkEntries(relationId: string, opts: { trigger?: string } = {}): GraphRelation {
+    const before = this.db.select().from(relations).where(eq(relations.id, relationId)).get();
+    if (!before) throw new AppError('validation_error', 'Beziehung nicht gefunden.');
+    this.db.delete(relations).where(eq(relations.id, relationId)).run();
+    this.audit.log({
+      action: 'relation.unlink',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [relationId, before.sourceEntityId, before.targetEntityId],
+      before: { status: before.status },
+      after: null,
+      undo: { type: LINK_UNDO_TYPE, data: { before, after: null } satisfies LinkUndoData },
+    });
+    this.ctx.events.changed('knowledge');
+    return mapRelation(before);
+  }
+
+  /** Confirms or rejects a relation as the user's decision (also on the agent's side on request, #306); logged with undo. */
+  decideRelation(relationId: string, status: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): GraphRelation {
+    const before = this.db.select().from(relations).where(eq(relations.id, relationId)).get();
+    if (!before) throw new AppError('validation_error', 'Beziehung nicht gefunden.');
+    this.setRelationStatus(relationId, status);
+    const after = this.db.select().from(relations).where(eq(relations.id, relationId)).get()!;
+    this.audit.log({
+      action: status === 'confirmed' ? 'relation.confirm' : 'relation.reject',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [relationId],
+      before: { status: before.status },
+      after: { status },
+      undo: { type: LINK_UNDO_TYPE, data: { before, after } satisfies LinkUndoData },
+    });
+    return mapRelation(after);
+  }
+
+  /** Opens or closes a case („Vorgang“, #286); logged with undo. */
+  setCaseStatus(id: string, status: 'open' | 'closed', opts: { trigger?: string } = {}): GraphEntity {
+    const row = this.db.select().from(entities).where(eq(entities.id, id)).get();
+    if (row?.type !== 'case') throw new AppError('validation_error', 'Vorgang nicht gefunden.');
+    const updatedAt = nowIso();
+    this.db.update(entities).set({ status, updatedAt }).where(eq(entities.id, id)).run();
+    this.audit.log({
+      action: status === 'closed' ? 'case.close' : 'case.reopen',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { status: row.status },
+      after: { status },
+      undo: { type: CASE_UNDO_TYPE, data: { id, before: row.status, beforeUpdatedAt: row.updatedAt, afterUpdatedAt: updatedAt } },
+    });
+    this.ctx.events.changed('knowledge');
+    return this.getEntity(id)!;
+  }
+
+  private linkUndoConflicts(d: LinkUndoData): string[] {
+    const id = d.after?.id ?? d.before?.id;
+    const now = id ? this.db.select().from(relations).where(eq(relations.id, id)).get() : undefined;
+    if (d.after) {
+      if (!now) return ['Die Verknüpfung existiert nicht mehr.'];
+      if (now.status !== d.after.status || now.updatedAt !== d.after.updatedAt) return ['Die Verknüpfung wurde seither verändert.'];
+      return [];
+    }
+    return now ? ['Die Verknüpfung existiert inzwischen wieder.'] : [];
+  }
+
+  private linkUndoRun(d: LinkUndoData): string {
+    if (d.after && !d.before) this.db.delete(relations).where(eq(relations.id, d.after.id)).run();
+    else if (d.before && d.after)
+      this.db
+        .update(relations)
+        .set({ status: d.before.status, resolvedByUser: d.before.resolvedByUser, confidence: d.before.confidence, updatedAt: d.before.updatedAt })
+        .where(eq(relations.id, d.before.id))
+        .run();
+    else if (d.before) this.db.insert(relations).values(d.before).onConflictDoNothing().run();
+    this.ctx.events.changed('knowledge');
+    return 'Verknüpfung zurückgesetzt.';
   }
 
   getDetail(id: string): EntityDetail {

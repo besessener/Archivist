@@ -1,14 +1,16 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
-import type { AppErrorInfo, LlmTestResult, LlmTransmission } from '@archivist/shared';
+import type { AgentAdapterId, AppErrorInfo, LlmTestResult, LlmTransmission } from '@archivist/shared';
 import { desc } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { llmTransmissions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { redactSecrets } from '../util/redact';
+import { abortedError, mapHttpError } from '../util/llm-errors';
 import type { SecretService } from './secret';
 import type { SettingsService } from './settings';
+import { AnthropicAdapter, detectAdapter, type AdapterConfig } from '../agent/adapters';
 
 export type FetchLike = typeof fetch;
 
@@ -25,7 +27,7 @@ export interface LlmRequest {
   signal?: AbortSignal;
 }
 
-export const abortedError = () => new AppError('llm_error', 'Die LLM-Anfrage wurde abgebrochen.');
+export { abortedError, mapHttpError } from '../util/llm-errors';
 
 /**
  * Cancellation scope: every LLM request started inside `llmCancelScope.run(signal, …)` uses this signal
@@ -155,15 +157,7 @@ export class LlmService {
   }
 
   private mapHttpError(status: number, body: string): AppError {
-    const snippet = body.replace(/\s+/g, ' ').slice(0, 300);
-    if (status === 401 || status === 403)
-      return new AppError('llm_error', 'Der LLM-Endpunkt hat die Anmeldung abgelehnt (API-Key prüfen).', { details: `HTTP ${status}: ${snippet}` });
-    if (status === 404)
-      return new AppError('llm_error', 'Endpunkt oder Modell wurde nicht gefunden (Base URL und Modellname prüfen).', { details: `HTTP 404: ${snippet}` });
-    if (status === 429) return new AppError('llm_error', 'Das LLM-Limit wurde erreicht. Bitte später erneut versuchen.', { retryable: true, details: snippet });
-    if (status >= 500)
-      return new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Serverfehler.', { retryable: true, details: `HTTP ${status}: ${snippet}` });
-    return new AppError('llm_error', 'Der LLM-Endpunkt hat die Anfrage abgelehnt.', { details: `HTTP ${status}: ${snippet}` });
+    return mapHttpError(status, body);
   }
 
   private async post(url: string, apiKey: string, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number; text: string }> {
@@ -235,6 +229,17 @@ export class LlmService {
     const redacted = redactSecrets(input);
     const redactedInstr = redactSecrets(req.instructions);
     const sent = redacted.text;
+    if (this.adapterId(baseUrl) === 'anthropic')
+      return this.completeViaClaude({
+        baseUrl,
+        model,
+        apiKey,
+        req,
+        sent,
+        instructions: redactedInstr.text,
+        redactions: redacted.count + redactedInstr.count,
+        signal,
+      });
 
     const full: Record<string, unknown> = {
       model,
@@ -317,6 +322,91 @@ export class LlmService {
         redactions: redacted.count + redactedInstr.count,
         documentIds: req.documentIds ?? [],
         preview: sent.slice(0, 280),
+        success,
+      });
+    }
+  }
+
+  /** Adapter for the configured endpoint: base URL (or the choice under „Erweitert“) decides (#296). */
+  adapterId(baseUrl = this.settings.get().llm.baseUrl): AgentAdapterId {
+    return detectAdapter(baseUrl, this.settings.get().agent?.adapter ?? 'auto');
+  }
+
+  /** Connection data for the agent adapters; every transmission goes into the transmission log. */
+  adapterConfig(overrides: LlmOverrides = {}): AdapterConfig {
+    const cfg = this.settings.get().llm;
+    const baseUrl = (overrides.baseUrl ?? cfg.baseUrl).trim();
+    const model = (overrides.model ?? cfg.model).trim();
+    const apiKey = overrides.apiKey ?? this.secrets.getApiKey();
+    if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
+    return {
+      baseUrl,
+      model,
+      apiKey,
+      timeoutMs: Math.max(cfg.timeoutMs, 120_000),
+      fetchImpl: this.fetchImpl,
+      log: (t) => {
+        this.recordTransmission(t);
+        if (t.success) {
+          this.circuitOpenUntil = 0;
+          this.markStatus(true, null);
+        }
+      },
+      warn: (message, data) => this.ctx.logger.warn('llm', message, data),
+    };
+  }
+
+  /** Delay between retries of agent requests (tests: 0). */
+  get retryDelay(): number {
+    return this.retryDelayMs;
+  }
+
+  /** Plain text via the Claude Messages API, with the same privacy gate, retries and transmission log as /responses. */
+  private async completeViaClaude(o: {
+    baseUrl: string;
+    model: string;
+    apiKey: string;
+    req: LlmRequest;
+    sent: string;
+    instructions: string;
+    redactions: number;
+    signal?: AbortSignal;
+  }): Promise<string> {
+    const cfg = this.adapterConfig({ baseUrl: o.baseUrl, model: o.model, apiKey: o.apiKey });
+    const adapter = new AnthropicAdapter({ ...cfg, timeoutMs: this.settings.get().llm.timeoutMs, log: () => undefined });
+    let success = false;
+    try {
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          const text = await adapter.completeText({ system: o.instructions, text: o.sent, maxOutputTokens: o.req.maxOutputTokens ?? 16_000, signal: o.signal });
+          if (!text.trim()) throw new AppError('llm_error', 'Das LLM lieferte eine leere Antwort.', { retryable: true });
+          success = true;
+          this.circuitOpenUntil = 0;
+          this.markStatus(true, null);
+          return text;
+        } catch (err) {
+          if (err instanceof AppError && err.retryable && attempt < 3 && !o.signal?.aborted) {
+            await new Promise((r) => setTimeout(r, this.retryDelayMs * attempt));
+            continue;
+          }
+          throw err;
+        }
+      }
+    } catch (err) {
+      if (!o.signal?.aborted) {
+        this.markStatus(false, toErrorInfo(err).message);
+        if (err instanceof AppError && err.category === 'network_error') this.circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
+      }
+      throw err;
+    } finally {
+      this.recordTransmission({
+        purpose: o.req.purpose,
+        model: o.model,
+        endpoint: `${o.baseUrl} (Messages API)`,
+        bytes: Buffer.byteLength(o.sent, 'utf8') + Buffer.byteLength(o.instructions, 'utf8'),
+        redactions: o.redactions,
+        documentIds: o.req.documentIds ?? [],
+        preview: o.sent.slice(0, 280),
         success,
       });
     }
@@ -422,7 +512,7 @@ export class LlmService {
     }
   }
 
-  private recordTransmission(t: Omit<LlmTransmission, 'id' | 'at'>): void {
+  recordTransmission(t: Omit<LlmTransmission, 'id' | 'at'>): void {
     try {
       this.ctx.database.db
         .insert(llmTransmissions)

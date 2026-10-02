@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Settings, SettingsPatch } from '@archivist/shared';
 import { SettingsService } from '../../packages/core/src/services/settings';
 
-type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr';
+type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent';
 
 /**
  * Two complete, valid, non-default value sets per section. Every field differs between A and B,
@@ -47,6 +47,52 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
   ocr: {
     a: { enabled: false, languages: 'eng' },
     b: { enabled: true, languages: 'deu+fra' },
+  },
+  agent: {
+    a: {
+      enabled: false,
+      mode: 'ask',
+      massActionThreshold: 20,
+      adapter: 'anthropic',
+      effort: 'max',
+      chatLimits: { maxRounds: 10, maxTokens: 100_000, timeoutMs: 60_000 },
+      backgroundLimits: { maxRounds: 12, maxTokens: 120_000, timeoutMs: 90_000 },
+      maxRetries: 1,
+      prices: { 'model-a': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.2 } },
+      background: {
+        inbox: false,
+        archiveCheck: true,
+        links: false,
+        nightlyHour: 2,
+        deadlineWatch: false,
+        deadlineLeadDays: 7,
+        weeklyReview: false,
+        weeklyReviewDay: 5,
+      },
+      learning: false,
+    },
+    b: {
+      enabled: true,
+      mode: 'auto',
+      massActionThreshold: 500,
+      adapter: 'openai',
+      effort: 'low',
+      chatLimits: { maxRounds: 20, maxTokens: 200_000, timeoutMs: 120_000 },
+      backgroundLimits: { maxRounds: 30, maxTokens: 300_000, timeoutMs: 180_000 },
+      maxRetries: 5,
+      prices: {},
+      background: {
+        inbox: true,
+        archiveCheck: false,
+        links: true,
+        nightlyHour: null,
+        deadlineWatch: true,
+        deadlineLeadDays: 30,
+        weeklyReview: true,
+        weeklyReviewDay: 0,
+      },
+      learning: true,
+    },
   },
 };
 

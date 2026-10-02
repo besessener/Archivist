@@ -30,6 +30,7 @@ export const ENTITY_TYPE_LABELS: Record<RefType, string> = {
   note: 'Notiz',
   category: 'Kategorie',
   tag: 'Schlagwort',
+  case: 'Vorgang',
   reminder: 'Erinnerung',
   contradiction: 'Widerspruch',
 };

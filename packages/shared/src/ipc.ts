@@ -24,6 +24,7 @@ import {
   DocumentStatus,
   EntityDetail,
   GraphEntity,
+  GraphRelation,
   Insight,
   Job,
   LlmTransmission,
@@ -45,6 +46,17 @@ import {
   VerifyReport,
 } from './domain';
 import { Settings, SettingsPatch } from './settings';
+import {
+  AgentCapability,
+  AgentConversationState,
+  AgentMode,
+  AgentProgress,
+  AgentRun,
+  AgentRunStatus,
+  AgentUsageSummary,
+  MemoryEntry,
+  MemoryInput,
+} from './agent';
 
 const Empty = z.object({});
 const Ok = z.object({ ok: z.literal(true) });
@@ -79,6 +91,8 @@ export const LlmTestResult = z.object({
   message: z.string(),
   modelReply: z.string().nullable(),
   error: AppErrorInfo.nullable(),
+  /** Agent capability: adapter, native tool calling, streaming (#296, #297). */
+  agent: AgentCapability.nullish(),
 });
 export type LlmTestResult = z.infer<typeof LlmTestResult>;
 
@@ -115,6 +129,20 @@ export const TimelineQuery = z.object({
 });
 
 const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benutzers (Pflicht)');
+
+export const UndoRunResult = z.object({ undone: z.number().int(), failed: z.number().int(), conflicts: z.array(z.string()), message: z.string() });
+export type UndoRunResult = z.infer<typeof UndoRunResult>;
+
+export const RelatedEntry = z.object({
+  entity: GraphEntity,
+  depth: z.number().int(),
+  relation: GraphRelation,
+  reason: z.string(),
+  via: GraphEntity.nullable(),
+});
+export type RelatedEntry = z.infer<typeof RelatedEntry>;
+
+const NullableText = z.string().nullish();
 
 const ch = <I extends z.ZodType, O extends z.ZodType>(input: I, output: O) => ({ input, output });
 
@@ -155,6 +183,44 @@ export const ipcContract = {
   'chat:conversations': ch(Empty, z.array(Conversation)),
   'chat:newConversation': ch(Empty, Conversation),
   'chat:renameConversation': ch(z.object({ id: Id, title: z.string().trim().min(1).max(120) }), Conversation),
+
+  // --- Agent mode (#294) ---
+  'agent:capability': ch(Empty, AgentCapability.nullable()),
+  'agent:runs': ch(
+    z.object({
+      trigger: z.enum(['chat', 'background']).optional(),
+      status: AgentRunStatus.optional(),
+      conversationId: Id.optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+    }),
+    z.array(AgentRun),
+  ),
+  'agent:run': ch(z.object({ id: Id }), AgentRun),
+  'agent:undoRun': ch(z.object({ runId: Id }), UndoRunResult),
+  'agent:undoStep': ch(z.object({ runId: Id, stepId: z.string().min(1) }), UndoRunResult),
+  'agent:cancelRun': ch(z.object({ runId: Id }), z.object({ cancelled: z.boolean() })),
+  /** Mode of a conversation and the state of its running run (survives switching tabs, #300). */
+  'agent:conversation': ch(z.object({ conversationId: Id.optional() }), AgentConversationState),
+  'agent:setConversationMode': ch(z.object({ conversationId: Id, mode: AgentMode.nullable() }), AgentConversationState),
+  'agent:active': ch(Empty, z.array(AgentProgress)),
+  'agent:usage': ch(z.object({ days: z.number().int().min(1).max(366).default(31) }), AgentUsageSummary),
+  'agent:runBackground': ch(z.object({ kind: z.enum(['inbox', 'archive_check', 'links']) }), z.object({ jobId: Id.nullable(), message: z.string() })),
+  'agent:memory': ch(z.object({ kind: MemoryInput.shape.kind.optional() }), z.array(MemoryEntry)),
+  'agent:saveMemory': ch(MemoryInput, MemoryEntry),
+  'agent:updateMemory': ch(
+    z.object({
+      id: Id,
+      name: z.string().trim().min(1).max(200).optional(),
+      content: z.string().trim().min(1).max(4000).optional(),
+      enabled: z.boolean().optional(),
+      data: z.unknown().optional(),
+    }),
+    MemoryEntry,
+  ),
+  'agent:deleteMemory': ch(z.object({ id: Id }), Ok),
+  /** Saves a file the agent produced (exports, reports) to a place the user picks. */
+  'agent:saveFile': ch(z.object({ path: z.string().min(1) }), z.object({ savedTo: z.string().nullable() })),
+  'agent:revealFile': ch(z.object({ path: z.string().min(1) }), Ok),
 
   // --- Agent actions ---
   'actions:list': ch(z.object({ status: AgentActionStatus.optional() }), z.array(StoredAgentAction)),
@@ -242,6 +308,24 @@ export const ipcContract = {
     DocumentRecord,
   ),
   'documents:ignore': ch(z.object({ id: Id }), DocumentRecord),
+  /** Bulk assignment for a multi-selection (#291): ONE undo step. */
+  'documents:bulkUpdate': ch(
+    z.object({
+      ids: z.array(Id).min(1).max(5000),
+      topic: NullableText,
+      project: NullableText,
+      addTags: z.array(z.string()).optional(),
+      removeTags: z.array(z.string()).optional(),
+      addPersons: z.array(z.string()).optional(),
+      removePersons: z.array(z.string()).optional(),
+      docType: NullableText,
+      documentDate: NullableText,
+      confirmed: Confirmed,
+    }),
+    z.object({ updated: z.number().int(), auditId: z.string().nullable() }),
+  ),
+  /** Moves archived documents of a multi-selection into another folder (#304, same function as the agent). */
+  'documents:relocate': ch(z.object({ ids: z.array(Id).min(1).max(5000), categoryPath: z.string().min(1), confirmed: Confirmed }), ArchiveResult),
   'documents:forTopic': ch(z.object({ topicId: Id }), z.array(DocumentRecord)),
   'documents:setLlmExcluded': ch(z.object({ id: Id, excluded: z.boolean() }), DocumentRecord),
   /** "Trotzdem importieren": takes a file out of quarantine into the inbox and starts the analysis */
@@ -386,6 +470,11 @@ export const ipcContract = {
     ]),
     KnowledgeCreateResult,
   ),
+  /** Links two entries (same service function as the agent's link tool, #277); `confirmed` = the user's own link. */
+  'knowledge:link': ch(z.object({ sourceId: Id, targetId: Id, relationType: z.string().min(1), confirmed: Confirmed }), GraphRelation),
+  'knowledge:unlink': ch(z.object({ relationId: Id, confirmed: Confirmed }), Ok),
+  /** Related entries with the reason (#276, #289). */
+  'knowledge:related': ch(z.object({ id: Id, depth: z.number().int().min(1).max(2).default(1) }), z.array(RelatedEntry)),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
 
   // --- Events ---
@@ -433,7 +522,7 @@ export type IpcParsedInput<C extends IpcChannel> = z.output<IpcContract[C]['inpu
 export type IpcOutput<C extends IpcChannel> = z.input<IpcContract[C]['output']>;
 
 /** Events main → renderer (also an explicit allowlist). */
-export const EVENT_CHANNELS = ['data:changed', 'job:updated', 'notification:new', 'status:changed'] as const;
+export const EVENT_CHANNELS = ['data:changed', 'job:updated', 'notification:new', 'status:changed', 'agent:progress'] as const;
 export type EventChannel = (typeof EVENT_CHANNELS)[number];
 export const DataChangedPayload = z.object({ scopes: z.array(z.string()) });
 export type DataChangedPayload = z.infer<typeof DataChangedPayload>;

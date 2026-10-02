@@ -1,5 +1,6 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ipcContract, type AppStatus, type IpcChannel, type IpcOutput, type IpcParsedInput, type Result } from '@archivist/shared';
+import { RelationType, ipcContract, type AppStatus, type IpcChannel, type IpcOutput, type IpcParsedInput, type Result } from '@archivist/shared';
 import type { Services } from './create-services';
 import { AppError, permissionError, toErrorInfo } from './util/errors';
 import { isInside } from './util/paths';
@@ -13,6 +14,8 @@ export interface HostApi {
   openPath(absPath: string): Promise<string>;
   revealPath(absPath: string): void;
   secretBackend?: () => { available: boolean; backend: string };
+  /** Save dialog; returns the chosen path or null (exports of the agent, #311). */
+  saveFile?(defaultName: string): Promise<string | null>;
 }
 
 type HandlerMap = { [C in IpcChannel]: (input: IpcParsedInput<C>) => Promise<IpcOutput<C>> | IpcOutput<C> };
@@ -74,6 +77,19 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     return found;
   };
 
+  /** Only files the agent produced (export folder) may be saved or revealed through the agent channels. */
+  const exportFile = (p: string): string => {
+    const dir = path.join(s.paths.root, 'exports');
+    const abs = path.resolve(p);
+    if (!isInside(dir, abs) || !s.scanner.fileExists(abs)) throw permissionError('Diese Datei wurde nicht von Archivist erzeugt.');
+    return abs;
+  };
+
+  const conversationState = (conversationId?: string) => {
+    const override = conversationId ? s.chat.agentModeOverride(conversationId) : null;
+    return { mode: override ?? s.settings.get().agent.mode, override, activeRun: conversationId ? s.agent.progressFor(conversationId) : null };
+  };
+
   const h: HandlerMap = {
     'app:getStatus': () => status(),
     'app:completeSetup': () => {
@@ -117,7 +133,48 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return { ok: true as const };
     },
 
-    'llm:testConnection': (i) => s.llm.testConnection({ baseUrl: i.baseUrl, model: i.model, apiKey: i.apiKey }),
+    'llm:testConnection': (i) => s.agent.testConnection({ baseUrl: i.baseUrl, model: i.model, apiKey: i.apiKey }),
+
+    'agent:capability': () => s.agent.capability(),
+    'agent:runs': (i) => s.agentRuns.list(i),
+    'agent:run': (i) => s.agentRuns.get(i.id),
+    'agent:undoRun': (i) => s.agent.undoRun(i.runId),
+    'agent:undoStep': (i) => s.agent.undoStep(i.runId, i.stepId),
+    'agent:cancelRun': (i) => ({ cancelled: s.agent.cancelRun(i.runId) }),
+    'agent:conversation': (i) => conversationState(i.conversationId),
+    'agent:setConversationMode': (i) => {
+      s.chat.setAgentModeOverride(i.conversationId, i.mode);
+      return conversationState(i.conversationId);
+    },
+    'agent:active': () => s.agent.activeRuns(),
+    'agent:usage': (i) => s.agentRuns.usageSummary(i.days),
+    'agent:runBackground': (i) => {
+      if (!s.agent.isActive() || !s.llm.canUseInBackground())
+        return { jobId: null, message: 'Hintergrund-Läufe brauchen den Agentenmodus, ein LLM mit Werkzeugaufrufen und den Datenschutzmodus „automatisch“.' };
+      const docIds = i.kind === 'inbox' ? s.documents.list({ statuses: ['proposed'], limit: 500 }).map((d) => d.id) : [];
+      if (i.kind === 'inbox' && !docIds.length) return { jobId: null, message: 'Im Eingang liegt nichts zum Einsortieren.' };
+      const job = s.jobs.enqueue('agent.background', 'Hintergrund-Agent (manuell)', { kind: i.kind, docIds }, { maxAttempts: 1 });
+      return { jobId: job.id, message: 'Gestartet.' };
+    },
+    'agent:memory': (i) => s.memory.list(i.kind),
+    'agent:saveMemory': (i) => s.memory.save(i, 'user'),
+    'agent:updateMemory': (i) => s.memory.update(i.id, { name: i.name, content: i.content, enabled: i.enabled, data: i.data }),
+    'agent:deleteMemory': (i) => {
+      s.memory.remove(i.id);
+      return { ok: true as const };
+    },
+    'agent:saveFile': async (i) => {
+      const abs = exportFile(i.path);
+      if (!host.saveFile) return { savedTo: null };
+      const target = await host.saveFile(path.basename(abs));
+      if (!target) return { savedTo: null };
+      await fs.copyFile(abs, target);
+      return { savedTo: target };
+    },
+    'agent:revealFile': (i) => {
+      host.revealPath(exportFile(i.path));
+      return { ok: true as const };
+    },
     'llm:transmissions': (i) => s.llm.listTransmissions(i.limit),
 
     'chat:send': (i) => s.chat.send(i.conversationId, i.text),
@@ -176,6 +233,17 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'documents:undoArchive': (i) => s.undo.undo(i.auditId),
     'documents:updateMetadata': (i) =>
       s.documents.updateMetadata(i.id, { title: i.title, topic: i.topic, project: i.project, tags: i.tags, persons: i.persons }, i.confirmed),
+    'documents:bulkUpdate': (i) => {
+      const { ids, confirmed: _c, ...patch } = i;
+      void _c;
+      const res = s.documents.bulkUpdate(ids, patch, { trigger });
+      return { updated: res.updated.length, auditId: res.auditId };
+    },
+    'documents:relocate': (i) =>
+      s.archive.relocate(
+        i.ids.map((documentId) => ({ documentId, categoryPath: s.categories.canonical(i.categoryPath) })),
+        { confirmed: true, trigger },
+      ),
     'documents:ignore': (i) => s.documents.ignore(i.id),
     'documents:forTopic': (i) => {
       const e = s.graph.getEntity(i.topicId);
@@ -260,6 +328,16 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
 
     'knowledge:listEntities': (i) => s.graph.listEntities(i),
     'knowledge:getEntity': (i) => s.graph.getDetail(i.id),
+    'knowledge:link': (i) => {
+      const type = RelationType.safeParse(i.relationType);
+      if (!type.success) throw new AppError('validation_error', 'Unbekannte Art der Beziehung.');
+      return s.graph.linkEntries(i.sourceId, i.targetId, type.data, { status: 'confirmed', trigger }).relation;
+    },
+    'knowledge:unlink': (i) => {
+      s.graph.unlinkEntries(i.relationId, { trigger });
+      return { ok: true as const };
+    },
+    'knowledge:related': (i) => s.graph.related(i.id, { depth: i.depth }),
     'knowledge:resolveRelation': (i) => {
       s.graph.setRelationStatus(i.relationId, i.status);
       s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });

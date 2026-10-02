@@ -12,6 +12,15 @@ function definedFields(section: object): Record<string, unknown> {
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+/** Nested sub-sections of a section (e.g. `agent.background`) are merged field by field as well; records like `agent.prices` are replaced. */
+const NESTED_SECTIONS = new Set(['background']);
+function mergeSection(prev: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...prev };
+  for (const [k, v] of Object.entries(patch))
+    out[k] = NESTED_SECTIONS.has(k) && isPlainObject(v) && isPlainObject(prev[k]) ? { ...prev[k], ...definedFields(v) } : v;
+  return out;
+}
+
 /** Section keys of `Settings` (nested objects whose fields are validated one by one). */
 const SECTION_KEYS = new Set(
   Object.entries(Settings.parse({}))
@@ -166,7 +175,7 @@ export class SettingsService {
       const prev = (this.current as Record<string, unknown>)[key];
       // eslint-disable-next-line sonarjs/different-types-comparison -- defensive: the patch arrives as parsed JSON via IPC
       const isSection = value !== null && typeof value === 'object' && !Array.isArray(value) && typeof prev === 'object';
-      next[key] = isSection ? { ...(prev as object), ...definedFields(value) } : value;
+      next[key] = isSection ? mergeSection(prev as Record<string, unknown>, definedFields(value)) : value;
     }
     const parsed = Settings.safeParse(next);
     if (!parsed.success) throw validationError('Ungültige Einstellungen.', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
