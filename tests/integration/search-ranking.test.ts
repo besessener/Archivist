@@ -59,3 +59,16 @@ describe('Search ranking: documents with all query terms first (#158)', () => {
     expect(hits[0]?.id).toBe(a.id);
   });
 });
+
+describe('Keyword search bridges inflections (#162)', () => {
+  it('a query in another inflection matches as keyword', async () => {
+    const a = await note('Dach', 'Wir entscheiden im Mai über das neue Dach.');
+    const b = await note('Umzug', 'Der Umzug ins Büro am Markt ist für Juni geplant.');
+
+    const forA = await app.services.search.search('Entscheidungen zum Dach', { types: ['note'] });
+    expect(forA[0]?.id).toBe(a.id);
+    expect(forA[0]?.matchedBy).toContain('keyword');
+    const forB = await app.services.search.search('Umzuge', { types: ['note'] });
+    expect(forB.find((h) => h.id === b.id)?.matchedBy).toContain('keyword');
+  });
+});

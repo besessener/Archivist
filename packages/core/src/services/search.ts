@@ -3,7 +3,7 @@ import { eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { chunks, decisions, documents, entities } from '../db/schema';
 import { newId } from '../util/ids';
-import { chunkText, normalizeName, tokenize, truncate } from '../util/text';
+import { chunkText, normalizeName, searchStem, tokenize, truncate } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
 import type { EmbeddingService, EmbedResult } from './embedding';
 import { LOCAL_MODEL } from './embedding';
@@ -138,7 +138,8 @@ export class SearchService {
   private queryTerms(query: string): string[] {
     const toks = [...new Set(tokenize(query))];
     const kept = toks.filter((t) => !QUERY_STOPWORDS.has(t));
-    return (kept.length ? kept : toks).slice(0, 12);
+    // stemmed terms are matched as prefixes: inflected forms find each other (#162)
+    return [...new Set((kept.length ? kept : toks).map(searchStem))].slice(0, 12);
   }
 
   private ftsQuery(terms: string[], op: 'AND' | 'OR'): string | null {

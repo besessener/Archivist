@@ -87,7 +87,7 @@ describe('SearchService keeps the vector index current', () => {
     expect((await s.search.search('Gartenzaun Meter')).map((h) => h.id)).toContain(n1.id);
     const n2 = await s.notes.create({ title: 'Gartenzaunfarbe', content: 'Der Gartenzaun wird grün gestrichen.' });
     // no keyword match (no prefix of an indexed word) – only the vectors find the new note
-    const after = await s.search.search('Gartenzäunen grünem');
+    const after = await s.search.search('Zaungartenfarbe');
     expect(after.find((h) => h.id === n2.id)?.matchedBy).toEqual(['semantic']);
     s.search.remove(n1.id);
     expect((await s.search.search('Gartenzaun Meter')).map((h) => h.id)).not.toContain(n1.id);
