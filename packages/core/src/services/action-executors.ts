@@ -1,6 +1,6 @@
 import { ActionParamSchemas, type AgentActionType } from '@archivist/shared';
 import { AppError } from '../util/errors';
-import type { ActionDeps } from './actions';
+import type { ActionDeps } from './action-deps';
 
 type Params = Record<string, unknown>;
 type Executor = (deps: ActionDeps, params: Params) => Promise<string> | string;

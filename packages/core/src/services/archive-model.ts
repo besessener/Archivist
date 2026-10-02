@@ -1,36 +1,12 @@
 import path from 'node:path';
 import type { ArchiveResult } from '@archivist/shared';
-import type { AppContext } from '../context';
 import type { relations } from '../db/schema';
 import { toErrorInfo } from '../util/errors';
-import type { WorkerPool } from '../workers/pool';
-import type { ArchiveFileOps } from './archive-files';
-import type { ArchiveLocks } from './archive-locks';
-import type { AuditService } from './audit';
-import type { CategoryService } from './categories';
-import type { DocRow, DocumentService } from './documents';
-import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
-import type { NotificationService } from './notifications';
-import type { PersonService } from './persons';
-import type { SettingsService } from './settings';
+import type { DocRow } from './documents';
+import type { RelationChangeSet } from './knowledge-graph';
 
 export type ArchiveOutcome = ArchiveResult['items'][number];
 export type RelationRow = typeof relations.$inferSelect;
-
-/** Services and shared state the parts of the archive service work with. */
-export interface ArchiveDeps {
-  ctx: AppContext;
-  settings: SettingsService;
-  docs: DocumentService;
-  categories: CategoryService;
-  graph: KnowledgeGraphService;
-  persons: PersonService;
-  audit: AuditService;
-  notifications: NotificationService;
-  pool: WorkerPool;
-  locks: ArchiveLocks;
-  files: ArchiveFileOps;
-}
 
 export interface ArchiveUndoData {
   documentId: string;
@@ -120,7 +96,7 @@ export interface ExecuteOptions {
   trigger?: string;
 }
 
-export const archiveRootOf = (deps: Pick<ArchiveDeps, 'settings'>): string => deps.settings.get().archiveRoot;
+export const archiveRootOf = (deps: { settings: { get(): { archiveRoot: string } } }): string => deps.settings.get().archiveRoot;
 
 export const toPosix = (p: string): string => p.split(path.sep).join('/');
 

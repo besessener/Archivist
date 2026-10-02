@@ -38,10 +38,7 @@ type RootChangeUndoData = RootRoute & CreatedByMove & { mode: ArchiveRootChangeM
 /** `request`: asked for by the user; `migration`: the running move itself, which already holds the lock. */
 type CheckPhase = 'request' | 'migration';
 
-/**
- * Changing the archive root without losing archived documents (stored relative to the root): `migrate` copies the
- * archive into the new folder, verifies every copy and switches (the old folder stays); `pathOnly` only switches.
- */
+/** Changes the archive root without losing documents: `migrate` copies, verifies and switches (old folder stays), `pathOnly` only switches. */
 export class ArchiveRootService {
   constructor(
     private readonly ctx: AppContext,
@@ -200,7 +197,6 @@ export class ArchiveRootService {
     });
   }
 
-  // ---------- Move (background job) ----------
   private async runMigration(job: JobContext<RootRoute>): Promise<unknown> {
     const { from, to } = job.payload;
     const made: CreatedByMove = { created: [], createdDirs: [], createdRoot: false };
@@ -273,7 +269,6 @@ export class ArchiveRootService {
     });
   }
 
-  // ---------- Undo ----------
   private async undoCheck(d: RootChangeUndoData): Promise<string[]> {
     if (this.archive.isRootChangeActive()) return [CHANGE_RUNNING];
     if (!samePath(this.settings.get().archiveRoot, d.to)) return ['Der Archivpfad wurde seitdem erneut geändert.'];

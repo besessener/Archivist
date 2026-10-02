@@ -26,10 +26,7 @@ function removeInside(roots: string[], file: string | null): string[] {
   return [real];
 }
 
-/**
- * Final deletion through a confirmed critical agent tool (#308): only the archive file and our own inbox copy, never
- * the user's original; then row, index entries and graph node. Not undoable.
- */
+/** Final deletion through a confirmed critical agent tool (#308): archive file and own inbox copy only, never the original; not undoable. */
 export function deleteDocumentPermanently(deps: DocumentDeps, request: { id: string; trigger?: string }): void {
   const { ctx, documents: docs } = deps;
   const { id } = request;

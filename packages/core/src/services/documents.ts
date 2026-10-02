@@ -13,9 +13,9 @@ import { DocumentAnalyzer, QUARANTINE_NOT_ANALYZED, type AnalysisResult, type An
 import type { BulkPatch } from './document-bulk';
 import { DocumentImporter, type ImportResult } from './document-import';
 import { DocumentMetadataEditor, type MetadataPatch } from './document-metadata';
-import { isArchivedStatus, type DocRow, type DocumentDeps } from './document-model';
+import { isArchivedStatus, type DocRow, type DocumentDeps, type NewDocument } from './document-model';
 import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
-import { documentRecord, newDocumentRow, searchContent, type NewDocument } from './document-record';
+import { documentRecord, newDocumentRow, searchContent } from './document-record';
 import { DocumentRereader } from './document-reread';
 import { deleteDocumentPermanently } from './document-removal';
 import type { JobQueueService } from './jobs';
@@ -137,7 +137,8 @@ export class DocumentService {
 
   /** "Import anyway" for a quarantined file; requires an explicit confirmation by the user. */
   releaseFromQuarantine(id: string, confirmed: boolean): Promise<DocumentRecord> {
-    return this.importer.releaseFromQuarantine(id, confirmed);
+    if (!confirmed) throw new AppError('permission_error', 'Das Importieren einer Datei aus der Quarantäne erfordert eine Bestätigung.');
+    return this.importer.releaseFromQuarantine(id);
   }
 
   /** Creates a document record (upload or scanned file). */
@@ -205,7 +206,7 @@ export class DocumentService {
 
   /** Sets or removes metadata of several documents at once (#291, #305); the whole batch is ONE undo step. */
   bulkUpdate(ids: string[], patch: BulkPatch, opts: { trigger?: string } = {}): { updated: DocumentRecord[]; auditId: string | null } {
-    return this.metadata.bulkUpdate(ids, patch, opts);
+    return this.metadata.bulkUpdate(ids, { patch, trigger: opts.trigger });
   }
 
   ignore(id: string): DocumentRecord {

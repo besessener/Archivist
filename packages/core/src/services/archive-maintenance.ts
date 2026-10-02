@@ -6,7 +6,8 @@ import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { documents } from '../db/schema';
 import { isInside, resolveInside } from '../util/paths';
 import { hasChecksum } from './archive-files';
-import { archivePathOf, archiveRootOf, type ArchiveDeps } from './archive-model';
+import { archivePathOf, archiveRootOf } from './archive-model';
+import type { ArchiveDeps } from './archive-deps';
 
 export const FOLDERS_RESTORE_UNDO = 'category_restore';
 
@@ -47,10 +48,7 @@ export class ArchiveMaintenance {
     return this.deps.ctx.database.db;
   }
 
-  /**
-   * Removes inbox copies whose removal failed right after archiving – only when unchanged and the archived file is
-   * intact. Never throws; returns the number of documents whose pending inbox copy was cleaned up.
-   */
+  /** Removes inbox copies left after archiving, only when unchanged and the archive file is intact; never throws, returns the count. */
   async cleanupInbox(): Promise<number> {
     let cleaned = 0;
     try {

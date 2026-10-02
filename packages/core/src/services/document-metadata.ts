@@ -140,7 +140,7 @@ export class DocumentMetadataEditor {
     const row = this.deps.documents.getRow(id);
     // archived documents are part of the graph: their persons and tags are linked like on archiving (#274)
     const inGraph = isArchivedStatus(row.status);
-    const set = this.metadataChanges(patch, inGraph);
+    const set = this.metadataChanges(patch, { createPersons: inGraph });
     const { changes } = this.deps.graph.trackRelationChanges(id, () =>
       this.deps.ctx.database.transaction(() => {
         this.db.update(documents).set(set).where(eq(documents.id, id)).run();
@@ -162,19 +162,20 @@ export class DocumentMetadataEditor {
     return this.afterEdit(id);
   }
 
-  private metadataChanges(patch: MetadataPatch, createPersons: boolean): Partial<DocRow> {
+  private metadataChanges(patch: MetadataPatch, persons: { createPersons: boolean }): Partial<DocRow> {
     const { graph } = this.deps;
     const set: Partial<DocRow> = { updatedAt: nowIso() };
     if (patch.title !== undefined && patch.title.trim()) set.title = patch.title.trim().slice(0, 200);
     if (patch.tags) set.tags = [...new Set(patch.tags.map((t) => t.trim()).filter(Boolean))];
-    if (patch.persons) set.persons = this.deps.persons.resolveNames(patch.persons, { context: 'document', create: createPersons }).names;
+    if (patch.persons) set.persons = this.deps.persons.resolveNames(patch.persons, { context: 'document', create: persons.createPersons }).names;
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? graph.ensureEntity('project', patch.project).id : null;
     return set;
   }
 
   /** Sets or removes metadata of several documents at once (#291, #305); the whole batch is ONE undo step. */
-  bulkUpdate(ids: string[], patch: BulkPatch, opts: { trigger?: string } = {}): { updated: DocumentRecord[]; auditId: string | null } {
+  bulkUpdate(ids: string[], change: { patch: BulkPatch; trigger?: string }): { updated: DocumentRecord[]; auditId: string | null } {
+    const { patch } = change;
     const unique = [...new Set(ids)];
     if (!unique.length) return { updated: [], auditId: null };
     const targets = this.bulkTargets(patch);
@@ -182,7 +183,7 @@ export class DocumentMetadataEditor {
     const auditId = this.deps.audit.log({
       action: 'document.bulkUpdate',
       actor: 'user',
-      trigger: opts.trigger ?? 'manual',
+      trigger: change.trigger ?? 'manual',
       confirmed: true,
       entityIds: unique,
       after: patch,

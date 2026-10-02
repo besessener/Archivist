@@ -14,10 +14,7 @@ export class DocumentRereader {
     return this.deps.ctx.database.db;
   }
 
-  /**
-   * A changed original of an index-only document must not stay searchable with its old content (#229): re-reads it
-   * locally and re-indexes it; a stale inbox copy is removed. False if nothing changed or the document is not index-only.
-   */
+  /** Re-reads a changed original of an index-only document so it is not searchable with old content (#229); false if unchanged. */
   async refreshIndexedOnly(id: string, opts: { signal?: AbortSignal } = {}): Promise<boolean> {
     const row = this.deps.documents.findRow(id);
     if (!row || row.status !== 'indexed_only' || !row.sourcePath) return false;

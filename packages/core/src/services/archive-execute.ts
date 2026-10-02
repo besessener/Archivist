@@ -10,18 +10,11 @@ import { nowIso } from '../util/ids';
 import { normalizeName } from '../util/text';
 import type { ExtractedItemProposer } from './archive-extracted-items';
 import { errorCode, leftoverNote } from './archive-files';
-import {
-  archiveRootOf,
-  outcomeWithoutChange,
-  toPosix,
-  type ArchiveDeps,
-  type ArchiveOutcome,
-  type ArchiveUndoData,
-  type ExecuteOptions,
-} from './archive-model';
+import { archiveRootOf, outcomeWithoutChange, toPosix, type ArchiveOutcome, type ArchiveUndoData, type ExecuteOptions } from './archive-model';
 import { assignmentNames, type ArchivePlanner, type ArchiveTarget, type PlannedArchive } from './archive-plan';
 import type { DocRow } from './documents';
 import type { RelationChangeSet } from './knowledge-graph';
+import type { ArchiveDeps } from './archive-deps';
 
 /** What one archiving needs once its plan has passed every check. */
 interface Archiving {

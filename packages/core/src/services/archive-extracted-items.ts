@@ -1,6 +1,5 @@
-import type { DocumentProposal, EntityRef, StoredAgentAction } from '@archivist/shared';
+import type { AgentActionProposal, DocumentProposal, EntityRef, StoredAgentAction } from '@archivist/shared';
 import { truncate } from '../util/text';
-import type { ActionService } from './actions';
 import type { DocRow } from './documents';
 import type { NotificationService } from './notifications';
 import { matchOpenItems, type OpenItemService } from './open-items';
@@ -8,6 +7,11 @@ import { matchOpenItems, type OpenItemService } from './open-items';
 /** Upper bound of decision proposals per document (protection against a runaway classification). */
 const MAX_DOCUMENT_DECISIONS = 10;
 const MAX_DOCUMENT_OPEN_ITEMS = 3;
+
+/** Where proposals go (the action service); typed by shape, since the action service module depends on the archive. */
+export interface ProposalSink {
+  propose(input: AgentActionProposal & { label: string }): StoredAgentAction;
+}
 
 type FoundOpenItem = DocumentProposal['possibleOpenItems'][number];
 type FoundDecision = DocumentProposal['possibleDecisions'][number];
@@ -19,17 +23,14 @@ interface Source {
   rationale: string;
 }
 
-/**
- * Proposals for decisions and open items recognized in an archived document (stage 1: proposal only, no change).
- * An open item that matches an active one adds the document as a source instead of creating a duplicate.
- */
+/** Proposes decisions and open items found in an archived document; a matching active open item gets the document as a source. */
 export class ExtractedItemProposer {
-  private actions!: ActionService;
+  private actions!: ProposalSink;
   private openItems!: OpenItemService;
 
   constructor(private readonly notifications: NotificationService) {}
 
-  wire(deps: { actions: ActionService; openItems: OpenItemService }): void {
+  wire(deps: { actions: ProposalSink; openItems: OpenItemService }): void {
     this.actions = deps.actions;
     this.openItems = deps.openItems;
   }

@@ -36,9 +36,9 @@ async function publishCopy(partial: string, target: { dest: string; rel: string 
 }
 
 /** Copies under a temporary name, verifies the checksum, then publishes; null when an identical file is already there. */
-async function copyVerified(target: { src: string; dest: string; rel: string }): Promise<string | null> {
-  const { src, dest, rel } = target;
-  const sha = await sha256File(src);
+async function copyVerified(target: { source: string; dest: string; rel: string }): Promise<string | null> {
+  const { source, dest, rel } = target;
+  const sha = await sha256File(source);
   if (exists(dest)) {
     if ((await sha256File(dest).catch(() => null)) === sha) return null;
     throw new AppError('archive_conflict', `Im neuen Ordner liegt bereits eine andere Datei unter „${rel}“. Archivist überschreibt nichts.`);
@@ -46,7 +46,7 @@ async function copyVerified(target: { src: string; dest: string; rel: string }):
   const partial = `${dest}${PARTIAL_SUFFIX}`;
   await fsp.rm(partial, { force: true }); // leftover of an interrupted earlier move (our own temporary name)
   try {
-    await fsp.copyFile(src, partial, fs.constants.COPYFILE_EXCL);
+    await fsp.copyFile(source, partial, fs.constants.COPYFILE_EXCL);
     if ((await sha256File(partial)) !== sha) throw fsError(`Die Kopie von „${rel}“ stimmt nicht mit dem Original überein.`);
     await publishCopy(partial, { dest, rel });
   } catch (err) {
@@ -93,7 +93,7 @@ export async function copyTree(job: JobContext<RootRoute>, work: { plan: Migrate
   for (const [i, f] of plan.files.entries()) {
     job.throwIfCancelled();
     job.report(total ? (i / total) * 0.95 : 0, `Kopiere und prüfe Datei ${i + 1} von ${total} …`);
-    const sha = await copyVerified({ src: toAbs(from, f.rel), dest: toAbs(to, f.rel), rel: f.rel });
+    const sha = await copyVerified({ source: toAbs(from, f.rel), dest: toAbs(to, f.rel), rel: f.rel });
     if (sha) made.created.push({ rel: f.rel, sha256: sha });
   }
 }

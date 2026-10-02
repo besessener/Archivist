@@ -1,4 +1,3 @@
-import type { z } from 'zod';
 import {
   ActionParamSchemas,
   type AgentActionProposal,
@@ -13,20 +12,9 @@ import { agentActions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
 import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
+import type { ActionDeps, AgentBatchExecutor } from './action-deps';
 import { executeAction } from './action-executors';
 import { mergedIds, revalidate, type Revalidation } from './action-revalidation';
-import type { ArchiveService } from './archive';
-import type { AuditService } from './audit';
-import type { NoteEventDuplicateService } from './cleanup/note-event-duplicates';
-import type { OpenItemDuplicateService } from './cleanup/open-item-duplicates';
-import type { ContradictionService } from './contradictions';
-import type { DecisionService } from './decisions';
-import type { DocumentService } from './documents';
-import type { KnowledgeGraphService } from './knowledge-graph';
-import type { OpenItemService } from './open-items';
-import type { ReminderService } from './reminders';
-import type { ScannerService } from './scanner';
-import type { UndoService } from './undo';
 
 type Row = typeof agentActions.$inferSelect;
 
@@ -45,25 +33,6 @@ const toStoredAction = (r: Row): StoredAgentAction => ({
   createdAt: r.createdAt,
   resolvedAt: r.resolvedAt,
 });
-
-/** Executes a confirmed proposal card of an agent run (provided by the agent service, #298). */
-export type AgentBatchExecutor = (params: z.output<(typeof ActionParamSchemas)['agent_batch']>) => Promise<string>;
-
-export interface ActionDeps {
-  archive: ArchiveService;
-  documents: DocumentService;
-  decisions: DecisionService;
-  openItems: OpenItemService;
-  openItemDuplicates: OpenItemDuplicateService;
-  contradictions: ContradictionService;
-  graph: KnowledgeGraphService;
-  noteEventDuplicates: NoteEventDuplicateService;
-  scanner: ScannerService;
-  reminders: ReminderService;
-  audit: AuditService;
-  undo: UndoService;
-  agentBatch?: AgentBatchExecutor;
-}
 
 /** From this many documents a relocation counts as especially far-reaching („besonders folgenreich“). */
 const STRONG_RELOCATION_DOCUMENTS = 20;

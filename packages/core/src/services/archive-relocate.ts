@@ -11,7 +11,6 @@ import {
   archiveRootOf,
   outcomeWithoutChange,
   toPosix,
-  type ArchiveDeps,
   type ArchiveOutcome,
   type RelationRow,
   type RelocatePlanItem,
@@ -19,6 +18,7 @@ import {
   type RelocateUndoData,
 } from './archive-model';
 import type { DocRow } from './documents';
+import type { ArchiveDeps } from './archive-deps';
 
 interface RelocateSource {
   file: string;

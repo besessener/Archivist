@@ -1,21 +1,7 @@
 import type { DocumentProposal, DocumentRecord, DocumentStatus, LlmStatus } from '@archivist/shared';
 import { MIME_BY_EXT } from '../parsers';
 import { truncate } from '../util/text';
-import type { DocRow } from './document-model';
-
-export interface NewDocument {
-  originalName: string;
-  ext: string;
-  size: number;
-  sha256: string;
-  sourcePath: string | null;
-  stagedPath: string | null;
-  llmStatus?: LlmStatus;
-  /** false: the file comes from a scan folder without LLM permission */
-  folderLlmAllowed?: boolean;
-  status?: Extract<DocumentStatus, 'staged' | 'quarantined'>;
-  processingError?: string | null;
-}
+import type { DocRow, NewDocument } from './document-model';
 
 /** Row of a freshly recorded document: not analyzed, not archived. */
 export function newDocumentRow(input: NewDocument, created: { id: string; at: string }): DocRow {

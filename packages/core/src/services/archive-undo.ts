@@ -7,7 +7,8 @@ import { fsError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
 import { hasChecksum, pruneEmptyDirs } from './archive-files';
-import { archivePathOf, archiveRootOf, type ArchiveDeps, type ArchiveUndoData } from './archive-model';
+import { archivePathOf, archiveRootOf, type ArchiveUndoData } from './archive-model';
+import type { ArchiveDeps } from './archive-deps';
 
 const hasArchiveFile = (d: ArchiveUndoData) => d.mode === 'copy' || d.mode === 'move';
 

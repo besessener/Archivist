@@ -6,7 +6,8 @@ import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
 import { resolveInside } from '../util/paths';
 import { pruneEmptyDirs } from './archive-files';
-import { archiveRootOf, type ArchiveDeps, type RelationRow, type RelocateUndoData } from './archive-model';
+import { archiveRootOf, type RelationRow, type RelocateUndoData } from './archive-model';
+import type { ArchiveDeps } from './archive-deps';
 
 /** Undo of a relocation: the file goes back to its previous folder, the category relations as they were. */
 export class RelocateUndo {

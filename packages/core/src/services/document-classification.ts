@@ -77,10 +77,7 @@ const squash = (s: string) =>
     .trim()
     .toLowerCase();
 
-/**
- * Decisions worth proposing (#175): only what was decided or explicitly rejected, and only with an evidence sentence
- * that really occurs in the document – the user could not check anything else.
- */
+/** Decisions worth proposing (#175): decided or rejected only, with an evidence sentence that really occurs in the document. */
 function documentDecisions(found: DocumentClassification['decisions'], text: string): DocumentProposal['possibleDecisions'] {
   const hay = squash(text);
   return found.flatMap((d) => {

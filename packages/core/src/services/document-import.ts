@@ -227,9 +227,8 @@ export class DocumentImporter {
     });
   }
 
-  /** "Import anyway": moves a quarantined file into the inbox and queues it for analysis. Requires confirmation. */
-  async releaseFromQuarantine(id: string, confirmed: boolean): Promise<DocumentRecord> {
-    if (!confirmed) throw new AppError('permission_error', 'Das Importieren einer Datei aus der Quarantäne erfordert eine Bestätigung.');
+  /** "Import anyway" (after the user's confirmation): moves a quarantined file into the inbox and queues it for analysis. */
+  async releaseFromQuarantine(id: string): Promise<DocumentRecord> {
     const row = this.deps.documents.getRow(id);
     if (row.status !== 'quarantined') throw new AppError('validation_error', 'Das Dokument liegt nicht in der Quarantäne.');
     const file = row.stagedPath;

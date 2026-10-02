@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { DocumentStatus } from '@archivist/shared';
+import type { DocumentRecord, DocumentStatus, LlmStatus } from '@archivist/shared';
 import type { AppContext } from '../context';
 import type { documents } from '../db/schema';
 import type { ParsedDocument } from '../parsers';
@@ -8,7 +8,7 @@ import { normalizeName } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
-import type { DocumentService } from './documents';
+import type { DocumentListQuery } from './document-queries';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
@@ -25,6 +25,34 @@ export const ARCHIVED_STATUSES: DocumentStatus[] = ['archived', 'indexed_only'];
 
 export const isArchivedStatus = (status: string): boolean => ARCHIVED_STATUSES.includes(status as DocumentStatus);
 
+export interface NewDocument {
+  originalName: string;
+  ext: string;
+  size: number;
+  sha256: string;
+  sourcePath: string | null;
+  stagedPath: string | null;
+  llmStatus?: LlmStatus;
+  /** false: the file comes from a scan folder without LLM permission */
+  folderLlmAllowed?: boolean;
+  status?: Extract<DocumentStatus, 'staged' | 'quarantined'>;
+  processingError?: string | null;
+}
+
+/** What the parts of the document service use of the service itself (typed by shape to keep the modules acyclic). */
+export interface DocumentAccess {
+  findRow(id: string): DocRow | undefined;
+  getRow(id: string): DocRow;
+  get(id: string): DocumentRecord;
+  list(opts: DocumentListQuery): DocumentRecord[];
+  findDuplicates(sha256: string, excludeId?: string): DocRow[];
+  insertDocument(input: NewDocument): DocumentRecord;
+  folderLlmAllowedFor(p: string): boolean;
+  readablePath(r: DocRow): string;
+  indexDocument(id: string): Promise<void>;
+  archivePath(rel: string | null): string | null;
+}
+
 /** Services the parts of the document service work with; `documents` is the service itself. */
 export interface DocumentDeps {
   ctx: AppContext;
@@ -39,7 +67,7 @@ export interface DocumentDeps {
   notifications: NotificationService;
   categories: CategoryService;
   jobs: JobQueueService;
-  documents: DocumentService;
+  documents: DocumentAccess;
 }
 
 /** Extracts the text of a file in the worker (with OCR as configured). */

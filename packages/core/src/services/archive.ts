@@ -2,9 +2,8 @@ import type { ArchiveItemRequest, ArchivePlan, ArchiveResult, VerifyReport } fro
 import type { AppContext } from '../context';
 import { permissionError, toErrorInfo } from '../util/errors';
 import type { WorkerPool } from '../workers/pool';
-import type { ActionService } from './actions';
 import { ArchiveExecutor } from './archive-execute';
-import { ExtractedItemProposer } from './archive-extracted-items';
+import { ExtractedItemProposer, type ProposalSink } from './archive-extracted-items';
 import { ArchiveFileOps } from './archive-files';
 import { ArchiveLocks } from './archive-locks';
 import { ArchiveMaintenance, FOLDERS_RESTORE_UNDO } from './archive-maintenance';
@@ -12,7 +11,6 @@ import {
   addOutcome,
   emptyArchiveResult,
   failureMessage,
-  type ArchiveDeps,
   type ArchiveOutcome,
   type ArchiveUndoData,
   type ExecuteOptions,
@@ -37,15 +35,13 @@ import type { OpenItemService } from './open-items';
 import type { PersonService } from './persons';
 import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
+import type { ArchiveDeps } from './archive-deps';
 
 export type { RelocateRequest, RenameRequest } from './archive-model';
 
 const UNCONFIRMED = 'Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.';
 
-/**
- * Controlled file actions: nothing runs without `confirmed`, target files are never overwritten, copies are verified
- * by checksum before sources are removed, paths stay inside the archive, and undo first checks for later changes.
- */
+/** Controlled file actions: only with `confirmed`, never overwriting, verified before sources go, inside the archive, undo checks first. */
 export class ArchiveService {
   private readonly deps: ArchiveDeps;
   private readonly extractedItems: ExtractedItemProposer;
@@ -104,7 +100,7 @@ export class ArchiveService {
     });
   }
 
-  wire(deps: { actions: ActionService; openItems: OpenItemService }): void {
+  wire(deps: { actions: ProposalSink; openItems: OpenItemService }): void {
     this.extractedItems.wire(deps);
   }
 

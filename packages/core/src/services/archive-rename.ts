@@ -10,13 +10,13 @@ import {
   archiveRootOf,
   failureMessage,
   outcomeWithoutChange,
-  type ArchiveDeps,
   type ArchiveOutcome,
   type RenamePlanItem,
   type RenameRequest,
   type RenameUndoData,
 } from './archive-model';
 import type { DocRow } from './documents';
+import type { ArchiveDeps } from './archive-deps';
 
 /** Hash- or UUID-like names say nothing about the document and are refused (#304). */
 const MEANINGLESS_NAME = /^(?:[0-9a-f]{12,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
@@ -81,9 +81,9 @@ export class ArchiveRenamer {
   private async renameFile(row: DocRow, rename: { fromRel: string; toRel: string; trigger: string | undefined }): Promise<ArchiveOutcome> {
     const { fromRel, toRel, trigger } = rename;
     const root = archiveRootOf(this.deps);
-    const src = resolveInside(root, fromRel);
-    await assertRealInside(root, src);
-    if ((await sha256File(src)) !== row.sha256)
+    const current = resolveInside(root, fromRel);
+    await assertRealInside(root, current);
+    if ((await sha256File(current)) !== row.sha256)
       return outcomeWithoutChange({
         documentId: row.id,
         outcome: 'conflict',
@@ -91,12 +91,12 @@ export class ArchiveRenamer {
       });
     const dest = resolveInside(root, toRel);
     const caseOnly = caseOnlyChange(fromRel, toRel);
-    if (caseOnly) await fsp.rename(src, dest);
-    else await this.deps.files.moveExclusive({ source: src, dir: path.dirname(dest), name: path.basename(dest), sha256: row.sha256, naming: 'exact' });
+    if (caseOnly) await fsp.rename(current, dest);
+    else await this.deps.files.moveExclusive({ source: current, dir: path.dirname(dest), name: path.basename(dest), sha256: row.sha256, naming: 'exact' });
     const updatedAt = nowIso();
     const title = row.title === stemOf(fromRel) ? stemOf(toRel) : row.title;
     // database, graph and audit entry together – if they fail, the file goes back to its old name (#221)
-    const auditId = await this.deps.files.commitOrPutBack({ moved: dest, original: src, sha256: row.sha256, caseOnly }, () => {
+    const auditId = await this.deps.files.commitOrPutBack({ moved: dest, original: current, sha256: row.sha256, caseOnly }, () => {
       this.db.update(documents).set({ archiveRelPath: toRel, title, updatedAt }).where(eq(documents.id, row.id)).run();
       if (title !== row.title) this.deps.graph.registerNode('document', row.id, title, row.summary);
       const undoData: RenameUndoData = {
@@ -114,8 +114,8 @@ export class ArchiveRenamer {
         trigger: trigger ?? 'manual',
         confirmed: true,
         entityIds: [row.id],
-        paths: [src, dest],
-        before: { path: src },
+        paths: [current, dest],
+        before: { path: current },
         after: { path: dest },
         undo: { type: 'archive_rename', data: undoData },
       });

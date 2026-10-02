@@ -3,8 +3,9 @@ import path from 'node:path';
 import type { ArchiveItemRequest, ArchivePlan, ArchivePlanItem, DocumentProposal } from '@archivist/shared';
 import { AppError } from '../util/errors';
 import { assertRealInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
-import { archivePathOf, archiveRootOf, toPosix, type ArchiveDeps } from './archive-model';
+import { archivePathOf, archiveRootOf, toPosix } from './archive-model';
 import type { DocRow } from './documents';
+import type { ArchiveDeps } from './archive-deps';
 
 /** Where a copy or move puts the file; absent for blocked items, `ignore` and `index_only`. */
 export interface ArchiveTarget {
@@ -30,7 +31,8 @@ const blocked = (base: ArchivePlanItem, conflict: string): PlannedArchive => ({ 
 
 const errorText = (err: unknown, fallback: string) => (err instanceof AppError ? err.message : fallback);
 
-function basePlanItem(row: DocRow, req: ArchiveItemRequest, proposal: DocumentProposal | null): ArchivePlanItem {
+function basePlanItem(row: DocRow, req: ArchiveItemRequest): ArchivePlanItem {
+  const proposal = row.proposal as DocumentProposal | null;
   return {
     documentId: row.id,
     title: row.title,
@@ -52,7 +54,8 @@ function basePlanItem(row: DocRow, req: ArchiveItemRequest, proposal: DocumentPr
 }
 
 /** Summary line of an archive preview. */
-function planSummary(plan: ArchivePlanItem[], moves: number, newCategories: string[]): string {
+function planSummary(plan: ArchivePlanItem[], counts: { moves: number; newCategories: string[] }): string {
+  const { moves, newCategories } = counts;
   const ready = plan.filter((p) => !p.blocked).length;
   const moveNote = moves ? `, ${moves} werden verschoben (Original wird entfernt)` : '';
   const categoryNote = newCategories.length ? `, neue Hauptkategorie(n): ${newCategories.join(', ')}` : '';
@@ -71,14 +74,14 @@ export class ArchivePlanner {
       items: plan,
       newCategories,
       requiresStrongConfirmation: moves > 0 || newCategories.length > 0,
-      summary: planSummary(plan, moves, newCategories),
+      summary: planSummary(plan, { moves, newCategories }),
     };
   }
 
   async plan(req: ArchiveItemRequest): Promise<PlannedArchive> {
     const row = this.deps.docs.getRow(req.documentId);
     const proposal = row.proposal as DocumentProposal | null;
-    const base = basePlanItem(row, req, proposal);
+    const base = basePlanItem(row, req);
     if (row.status === 'archived') return blocked(base, 'Das Dokument ist bereits archiviert.');
     if (req.mode === 'ignore') return { item: { ...base, sourcePath: row.sourcePath } };
     if (row.status === 'quarantined') return blocked(base, 'Die Datei liegt in Quarantäne. Bitte zuerst in der Inbox „Trotzdem importieren“ wählen.');

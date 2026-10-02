@@ -1,5 +1,5 @@
 import { ActionParamSchemas, type AgentActionType } from '@archivist/shared';
-import type { ActionDeps } from './actions';
+import type { ActionDeps } from './action-deps';
 import { folderOf } from './archive-structure';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
 
