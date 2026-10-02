@@ -145,18 +145,18 @@ export class SolutionService {
   private async gather(item: OpenItem): Promise<GatheredSource[]> {
     const out: SourceDescription[] = [];
     const seen = new Set<string>([item.id]);
-    const add = (id: string, max: number, snippet?: string) => {
+    const add = (id: string, { max, snippet }: { max: number; snippet?: string }) => {
       if (seen.has(id) || out.length >= max) return;
       seen.add(id);
       const source = this.describe(id, snippet);
       if (source) out.push(source);
     };
-    for (const id of item.sourceIds) add(id, MAX_LINKED);
-    for (const neighbor of this.graph.neighbors(item.id, { types: LINKED_TYPES })) add(neighbor.id, MAX_LINKED);
+    for (const id of item.sourceIds) add(id, { max: MAX_LINKED });
+    for (const neighbor of this.graph.neighbors(item.id, { types: LINKED_TYPES })) add(neighbor.id, { max: MAX_LINKED });
     const query = [item.title, item.description, item.topicName, item.projectName].filter(Boolean).join(' ');
     // no external embeddings: nothing may leave the device before the confirmation
     const hits = await this.search.search(query, { types: SEARCH_TYPES, limit: MAX_SOURCES * 2, allowRemoteEmbedding: false });
-    for (const hit of hits) add(hit.id, MAX_SOURCES, hit.snippet);
+    for (const hit of hits) add(hit.id, { max: MAX_SOURCES, snippet: hit.snippet });
     return out.map((source, i) => ({ ...source, ref: `S${i + 1}` }));
   }
 
@@ -188,7 +188,7 @@ export class SolutionService {
       const sources = await this.gather(item);
       if (controller.signal.aborted) throw abortedError();
       const model = this.settings.get().llm.model;
-      const answer = await this.requestProposal(item, sources, controller.signal);
+      const answer = await this.requestProposal(item, { sources, signal: controller.signal });
       if (controller.signal.aborted) throw abortedError();
       const solution = composeSolution({ answer, sources, model, generatedAt: nowIso() });
       const saved = this.openItems.setSolution(id, solution);
@@ -206,14 +206,14 @@ export class SolutionService {
     }
   }
 
-  private async requestProposal(item: OpenItem, sources: GatheredSource[], signal: AbortSignal): Promise<SolutionProposal> {
+  private async requestProposal(item: OpenItem, { sources, signal }: { sources: GatheredSource[]; signal: AbortSignal }): Promise<SolutionProposal> {
     try {
       return await this.llm.completeJson(SolutionProposal, {
         schemaName: 'SolutionProposal',
         purpose: 'Lösungsvorschlag',
         documentIds: sources.filter((s) => s.type === 'document').map((s) => s.id),
         instructions: SOLUTION_INSTRUCTIONS,
-        input: solutionPrompt(item, sources, localToday()),
+        input: solutionPrompt(item, { sources, today: localToday() }),
         signal,
       });
     } catch (err) {
@@ -240,11 +240,12 @@ export class SolutionService {
       const description = [item.description?.trim(), formatSolution(solution)].filter(Boolean).join('\n\n');
       return { item: this.openItems.update(item.id, { description }), created: [], noteId: null };
     }
-    if (input.target === 'items') return this.createSteps(item, solution, input);
+    if (input.target === 'items') return this.createSteps(item, { ...input, solution });
     return this.createNote(item, solution);
   }
 
-  private createSteps(item: OpenItem, solution: OpenItemSolution, input: { stepIndexes: number[]; confirmed: boolean }): ApplyResult {
+  private createSteps(item: OpenItem, input: { solution: OpenItemSolution; stepIndexes: number[]; confirmed: boolean }): ApplyResult {
+    const { solution } = input;
     if (!input.confirmed) throw new AppError('permission_error', 'Neue offene Punkte aus dem Vorschlag erfordern eine ausdrückliche Bestätigung.');
     const steps = [...new Set(input.stepIndexes)].flatMap((i) => (solution.nextSteps[i] ? [solution.nextSteps[i]] : []));
     if (!steps.length) throw new AppError('validation_error', 'Keine gültigen Schritte ausgewählt.');

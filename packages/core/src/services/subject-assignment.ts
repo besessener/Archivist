@@ -80,14 +80,14 @@ export class BulkAssignmentPlan {
 
   assignSubject(kind: SubjectKind, name: string): void {
     const targetId = this.sources.resolve(kind, name);
-    for (const entry of this.entries) this.assignSubjectTo(entry, kind, targetId);
+    for (const entry of this.entries) this.assignSubjectTo(entry, { kind, targetId });
   }
 
   assignTag(name: string): void {
     const tagId = this.sources.resolve('tag', name);
     for (const entry of this.entries) {
       if (entry.type !== 'document') this.add.push({ sourceId: entry.id, targetId: tagId, relationType: 'relates_to' });
-      else if (!this.addDocumentTag(entry.id, name, tagId)) continue;
+      else if (!this.addDocumentTag(entry.id, { name, tagId })) continue;
       this.touched.add(entry.id);
     }
   }
@@ -99,7 +99,7 @@ export class BulkAssignmentPlan {
     }
   }
 
-  private assignSubjectTo(entry: Entry, kind: SubjectKind, targetId: string): void {
+  private assignSubjectTo(entry: Entry, { kind, targetId }: { kind: SubjectKind; targetId: string }): void {
     const table = SUBJECT_TABLE[entry.type];
     const link = { sourceId: entry.id, targetId, relationType: subjectRelation(entry.type, kind) };
     const current = table ? this.currentMain(entry, kind) : null;
@@ -120,7 +120,7 @@ export class BulkAssignmentPlan {
   }
 
   /** Adds the tag to a document unless it already carries it (case-insensitive); returns whether it was added. */
-  private addDocumentTag(documentId: string, name: string, tagId: string): boolean {
+  private addDocumentTag(documentId: string, { name, tagId }: { name: string; tagId: string }): boolean {
     const tagUndo = this.tagUndoOf(documentId);
     if ([...tagUndo.before, ...tagUndo.added].some((tag) => tag.toLowerCase() === name.toLowerCase())) return false;
     tagUndo.added.push(name);

@@ -66,9 +66,9 @@ export class OpenItemService {
     );
   }
 
-  private map(row: OpenItemRow, names?: Map<string, string>, conversations = this.conversationsOf([row])): OpenItem {
-    const nameOf = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
-    return toOpenItem(row, { nameOf, conversations });
+  private map(row: OpenItemRow, lookups: { names?: Map<string, string>; conversations?: Map<string, string> } = {}): OpenItem {
+    const nameOf = (id: string | null) => (id ? (lookups.names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
+    return toOpenItem(row, { nameOf, conversations: lookups.conversations ?? this.conversationsOf([row]) });
   }
 
   private mapMany(rows: OpenItemRow[]): OpenItem[] {
@@ -84,7 +84,7 @@ export class OpenItemService {
         : [],
     );
     const conversations = this.conversationsOf(rows);
-    return rows.map((row) => this.map(row, names, conversations));
+    return rows.map((row) => this.map(row, { names, conversations }));
   }
 
   get(id: string): OpenItem {
@@ -119,7 +119,7 @@ export class OpenItemService {
   }
 
   /** The responsible person as a `responsible_for` relation; a relation to a former responsible person becomes outdated (#274). */
-  private syncResponsible(id: string, personId: string | null, sourceIds: string[]): void {
+  private syncResponsible(id: string, { personId, sourceIds }: { personId: string | null; sourceIds: string[] }): void {
     if (personId) this.graph.link(personId, id, 'responsible_for', { confidence: 0.9, status: 'confirmed', sourceIds });
     this.graph.unlinkSystemRelations(id, 'responsible_for', personId ? [personId] : [], { direction: 'in', otherType: 'person' });
   }
@@ -132,8 +132,8 @@ export class OpenItemService {
       this.graph.registerNode('task', row.id, row.title, row.description);
       if (row.topicId) this.graph.link(row.id, row.topicId, 'relates_to', link);
       if (row.projectId) this.graph.link(row.id, row.projectId, 'belongs_to', link);
-      this.syncResponsible(row.id, row.responsiblePersonId, row.sourceIds);
-      for (const sourceId of row.sourceIds) this.linkSource(row.id, sourceId, row.confidence);
+      this.syncResponsible(row.id, { personId: row.responsiblePersonId, sourceIds: row.sourceIds });
+      for (const sourceId of row.sourceIds) this.linkSource(row.id, { sourceId, confidence: row.confidence });
     });
     this.audit.log({
       action: 'open_item.create',
@@ -162,7 +162,7 @@ export class OpenItemService {
     const current = this.row(id);
     // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
     assertEditableStatusChange(current.status as OpenItemStatus, patch.status);
-    const set: Partial<OpenItemRow> = { updatedAt: nowIso(), ...this.patchColumns(current, patch, opts.trigger) };
+    const set: Partial<OpenItemRow> = { updatedAt: nowIso(), ...this.patchColumns(current, { patch, trigger: opts.trigger }) };
     const { changes } = this.graph.trackRelationChanges(id, () =>
       this.db.transaction(() => {
         this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
@@ -185,7 +185,7 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  private patchColumns(current: OpenItemRow, patch: OpenItemPatch, trigger: string | undefined): Partial<OpenItemRow> {
+  private patchColumns(current: OpenItemRow, { patch, trigger }: { patch: OpenItemPatch; trigger?: string }): Partial<OpenItemRow> {
     const set = plainPatchColumns(current, patch);
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
@@ -211,11 +211,11 @@ export class OpenItemService {
     if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
     if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
     if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
-    if (set.responsiblePersonId !== undefined) this.syncResponsible(id, set.responsiblePersonId, current.sourceIds);
+    if (set.responsiblePersonId !== undefined) this.syncResponsible(id, { personId: set.responsiblePersonId, sourceIds: current.sourceIds });
   }
 
   /** Links a source (decision or document) with the item in the graph: item → results_from → source. */
-  private linkSource(id: string, sourceId: string, confidence: number): void {
+  private linkSource(id: string, { sourceId, confidence }: { sourceId: string; confidence: number }): void {
     const type = this.graph.getEntity(sourceId)?.type;
     if (type === 'decision' || type === 'document') this.graph.link(id, sourceId, 'results_from', { confidence, status: 'confirmed', sourceIds: [sourceId] });
   }
@@ -233,8 +233,8 @@ export class OpenItemService {
     this.db.transaction(() => {
       this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
       if (set.description) this.graph.registerNode('task', id, current.title, set.description);
-      if (set.responsiblePersonId) this.syncResponsible(id, set.responsiblePersonId, set.sourceIds ?? current.sourceIds);
-      this.linkSource(id, sourceId, current.confidence);
+      if (set.responsiblePersonId) this.syncResponsible(id, { personId: set.responsiblePersonId, sourceIds: set.sourceIds ?? current.sourceIds });
+      this.linkSource(id, { sourceId, confidence: current.confidence });
     });
     this.audit.log({
       action: 'open_item.add_source',

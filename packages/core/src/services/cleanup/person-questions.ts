@@ -65,14 +65,9 @@ const LlmHints = z.object({
 });
 const VERDICT_TEXT = { same: 'wahrscheinlich dieselbe Person', different: 'wahrscheinlich verschiedene Personen', unclear: 'unklar' } as const;
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const count = (n: number, [one, many]: [string, string]) => `${n} ${n === 1 ? one : many}`;
 
-/**
- * Archive check step: asks instead of guessing when two person entries might be the same person (first or last name
- * only, initial, middle name, similar spelling). „Gleich“ merges (undoable, the other spelling becomes an alias),
- * „Verschieden“ is remembered for as long as both entries exist, a short name with several candidates gets one question
- * „Welche … ist gemeint?“ with „keine davon“. Questions that no longer apply are withdrawn with their proposals.
- */
+/** Archive check step: asks instead of guessing when two person entries might be the same person; answers are remembered. */
 export class PersonQuestionService {
   constructor(
     private readonly ctx: AppContext,
@@ -117,10 +112,7 @@ export class PersonQuestionService {
     this.insights.reconcile(PERSON_WHICH_KEY_PREFIX, current);
   }
 
-  /**
-   * Pairs answered „verschieden“: rejected pair questions, and every candidate of a rejected „Welche …?“ question
-   * („keine davon“). The latter are stored as rejected pair questions, so the answer outlives the group question.
-   */
+  /** Pairs answered „verschieden“; a rejected „Welche …?“ question is stored per candidate so the answer outlives it. */
   private differentPairs(exists: Set<string>): { has: (a: string, b: string) => boolean; keys: Set<string> } {
     const rejected = (prefix: string) =>
       this.db
@@ -204,15 +196,15 @@ export class PersonQuestionService {
     const decisions = shared.filter((n) => n.type === 'decision').length;
     const topics = shared.filter((n) => n.type === 'topic' || n.type === 'project').map((n) => `„${n.name}“`);
     const parts = [
-      docs ? count(docs, 'gemeinsames Dokument', 'gemeinsame Dokumente') : null,
-      decisions ? count(decisions, 'gemeinsame Entscheidung', 'gemeinsame Entscheidungen') : null,
+      docs ? count(docs, ['gemeinsames Dokument', 'gemeinsame Dokumente']) : null,
+      decisions ? count(decisions, ['gemeinsame Entscheidung', 'gemeinsame Entscheidungen']) : null,
       topics.length ? `gemeinsame Themen/Projekte: ${topics.join(', ')}` : null,
     ].filter(Boolean);
     return parts.length ? parts.join(', ') : 'keine gemeinsamen Dokumente, Entscheidungen oder Themen';
   }
 
   private describeEvidence(e: Evidence): string {
-    const parts = [count(e.documents, 'Dokument', 'Dokumente'), count(e.decisions, 'Entscheidung', 'Entscheidungen')];
+    const parts = [count(e.documents, ['Dokument', 'Dokumente']), count(e.decisions, ['Entscheidung', 'Entscheidungen'])];
     if (e.topics.length) parts.push(`Themen/Projekte: ${e.topics.slice(0, 5).join(', ')}`);
     return parts.join(', ');
   }
@@ -301,10 +293,7 @@ export class PersonQuestionService {
     };
   }
 
-  /**
-   * Optional hint of the language model for new questions. Only the names are sent, and only in privacy mode „auto“:
-   * in „vorher fragen“ nobody can confirm a background run, „nur lokal“ sends nothing. The hint never decides.
-   */
+  /** Optional LLM hint (names only, privacy mode „auto“ only: nobody can confirm a background run) that never decides. */
   private async llmHints(questions: Question[], signal?: AbortSignal): Promise<Map<number, string>> {
     const out = new Map<number, string>();
     if (questions.length === 0 || this.privacy.mode() !== 'auto' || !this.llm.canUse()) return out;

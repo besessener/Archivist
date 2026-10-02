@@ -179,7 +179,7 @@ export class DecisionService {
     // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
     assertEditableStatusChange(current.status as DecisionStatus, patch.status);
     const personContext = mentionContext(opts.trigger, 'decision');
-    const set: Partial<DecisionRow> = { updatedAt: nowIso(), ...this.patchColumns(current, patch, personContext) };
+    const set: Partial<DecisionRow> = { updatedAt: nowIso(), ...this.patchColumns(current, { patch, personContext }) };
     const merged = { ...current, ...set };
     const missing = computeMissingFields({
       ...merged,
@@ -187,7 +187,7 @@ export class DecisionService {
       unknownFields: merged.unknownFields as DecisionField[],
     });
     set.missingFields = missing;
-    const status = statusAfterEdit(current.status as DecisionStatus, patch, missing);
+    const status = statusAfterEdit(current.status as DecisionStatus, { patch, missing });
     if (status) set.status = status;
     const { changes } = this.graph.trackRelationChanges(id, () =>
       this.db.transaction(() => {
@@ -212,7 +212,7 @@ export class DecisionService {
   }
 
   /** The patch's columns; the date is checked before topics, projects and persons are created. */
-  private patchColumns(current: DecisionRow, patch: DecisionPatch, personContext: PersonMentionContext): Partial<DecisionRow> {
+  private patchColumns(current: DecisionRow, { patch, personContext }: { patch: DecisionPatch; personContext: PersonMentionContext }): Partial<DecisionRow> {
     const set: Partial<DecisionRow> = {};
     if (patch.decidedAt !== undefined) set.decidedAt = checkedDecisionDate(patch.decidedAt, today());
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;

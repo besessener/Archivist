@@ -12,11 +12,20 @@ export interface CreatedRelation {
   updatedAt: string;
 }
 
-interface MissingLink {
+interface Link {
   source: string;
   target: string;
   type: RelationType;
+}
+
+interface MissingLink extends Link {
   row: RelationRow;
+}
+
+/** The kept record (`to`) and the record whose links it takes over (`from`). */
+interface MergePair {
+  from: string;
+  to: string;
 }
 
 /** Links of merged records: copies the duplicate's links to the kept record and removes them again on undo. */
@@ -38,7 +47,7 @@ export class MergeLinks {
       .all();
   }
 
-  private exists(source: string, target: string, type: string): boolean {
+  private exists({ source, target, type }: { source: string; target: string; type: string }): boolean {
     return Boolean(
       this.db
         .select({ id: relations.id })
@@ -55,7 +64,7 @@ export class MergeLinks {
   }
 
   /** Active links of `fromId` that `toId` does not have yet (same direction and type), except to `skipTypes`. */
-  missingLinks(fromId: string, toId: string, skipTypes: EntityType[]): MissingLink[] {
+  missingLinks({ from: fromId, to: toId }: MergePair, skipTypes: EntityType[]): MissingLink[] {
     const out: MissingLink[] = [];
     for (const relation of this.activeRelations(fromId)) {
       const outgoing = relation.sourceEntityId === fromId;
@@ -63,26 +72,22 @@ export class MergeLinks {
       if (other === toId || this.isSkipped(other, skipTypes)) continue;
       const source = outgoing ? toId : other;
       const target = outgoing ? other : toId;
-      if (!this.exists(source, target, relation.relationType)) out.push({ source, target, type: relation.relationType as RelationType, row: relation });
+      if (!this.exists({ source, target, type: relation.relationType }))
+        out.push({ source, target, type: relation.relationType as RelationType, row: relation });
     }
     return out;
   }
 
   /** Creates a link that does not exist yet and returns it for the undo (existing links are never touched). */
-  linkNew(
-    source: string,
-    target: string,
-    type: RelationType,
-    opts: { confidence: number; status: 'proposed' | 'confirmed'; sourceIds: string[] },
-  ): CreatedRelation[] {
-    if (this.exists(source, target, type)) return [];
-    const relation = this.graph.link(source, target, type, opts);
+  linkNew(link: Link, opts: { confidence: number; status: 'proposed' | 'confirmed'; sourceIds: string[] }): CreatedRelation[] {
+    if (this.exists(link)) return [];
+    const relation = this.graph.link(link.source, link.target, link.type, opts);
     return relation ? [{ id: relation.id, updatedAt: relation.updatedAt }] : [];
   }
 
-  copyLinks(fromId: string, toId: string, skipTypes: EntityType[]): CreatedRelation[] {
-    return this.missingLinks(fromId, toId, skipTypes).flatMap((link) =>
-      this.linkNew(link.source, link.target, link.type, {
+  copyLinks(pair: MergePair, skipTypes: EntityType[]): CreatedRelation[] {
+    return this.missingLinks(pair, skipTypes).flatMap((link) =>
+      this.linkNew(link, {
         confidence: link.row.confidence,
         status: link.row.status === 'confirmed' ? 'confirmed' : 'proposed',
         sourceIds: link.row.sourceIds,
@@ -92,7 +97,7 @@ export class MergeLinks {
 
   /** The discarded record points to the kept one in the knowledge graph (`duplicate_of`); removed again on undo. */
   markDuplicate(duplicateId: string, keepId: string): CreatedRelation[] {
-    return this.linkNew(duplicateId, keepId, 'duplicate_of', { confidence: 1, status: 'confirmed', sourceIds: [] });
+    return this.linkNew({ source: duplicateId, target: keepId, type: 'duplicate_of' }, { confidence: 1, status: 'confirmed', sourceIds: [] });
   }
 
   createdRelationConflicts(created: CreatedRelation[]): string[] {

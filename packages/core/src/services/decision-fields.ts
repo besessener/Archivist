@@ -60,7 +60,8 @@ export function assertEditableStatusChange(current: DecisionStatus, wanted: Deci
 }
 
 /** The status after an edit: the wanted one, or `active` once a draft has all required fields; unchanged otherwise. */
-export function statusAfterEdit(current: DecisionStatus, patch: DecisionPatch, missing: DecisionField[]): DecisionStatus | undefined {
+export function statusAfterEdit(current: DecisionStatus, edit: { patch: DecisionPatch; missing: DecisionField[] }): DecisionStatus | undefined {
+  const { patch, missing } = edit;
   if (patch.status && patch.status !== current) return patch.status;
   if (!patch.status && current === 'draft' && missing.length === 0 && !patch.asDraft) return 'active';
   return undefined;
@@ -110,7 +111,7 @@ export function toDecision(row: DecisionRow, nameOf: (id: string | null) => stri
   };
 }
 
-function orUnknown(d: Decision, field: DecisionField, value: string | null): string {
+function orUnknown(d: Decision, { field, value }: { field: DecisionField; value: string | null }): string {
   if (value !== null) return value;
   return d.unknownFields.includes(field) ? CONFIRMED_UNKNOWN : 'offen';
 }
@@ -119,9 +120,9 @@ function orUnknown(d: Decision, field: DecisionField, value: string | null): str
 export function formatDecision(d: Decision): string {
   const project = d.projectName && d.projectName !== d.topicName ? ` (Projekt: ${d.projectName})` : '';
   return [
-    `**Wann:** ${orUnknown(d, 'decidedAt', d.decidedAt ? d.decidedAt.slice(0, 10) : null)}`,
-    `**Thema:** ${orUnknown(d, 'topic', d.topicName)}${project}`,
-    `**Beteiligte:** ${orUnknown(d, 'participants', d.participants.length ? d.participants.join(', ') : null)}`,
+    `**Wann:** ${orUnknown(d, { field: 'decidedAt', value: d.decidedAt ? d.decidedAt.slice(0, 10) : null })}`,
+    `**Thema:** ${orUnknown(d, { field: 'topic', value: d.topicName })}${project}`,
+    `**Beteiligte:** ${orUnknown(d, { field: 'participants', value: d.participants.length ? d.participants.join(', ') : null })}`,
     `**Entscheidung:** ${d.decisionText}`,
     `**Begründung:** ${d.rationale ?? '–'}`,
     `**Auswirkungen:** ${d.consequences ?? '–'}`,

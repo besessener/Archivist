@@ -73,7 +73,7 @@ type Origin = { actor?: 'user' | 'agent'; trigger?: string };
 
 /** The kept item's new values; a filled due date or responsible person is no longer „unknown“. */
 function mergedColumns(keep: Row, duplicate: Row) {
-  const { patch, before, fields } = takeOverMissing(keep, duplicate, TAKE_OVER);
+  const { patch, before, fields } = takeOverMissing({ keep, duplicate }, TAKE_OVER);
   const set: Partial<Row> = { ...patch };
   const keepBefore: Partial<Row> = { ...before };
   if (patch.dueAt && keep.dueUnknown) {
@@ -166,7 +166,7 @@ export class OpenItemDuplicateService {
     const keepKeys = new Set<string>();
     let found = 0;
     for (const pair of this.findPairs()) {
-      const key = duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, pair.keep.id, pair.duplicate.id);
+      const key = duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, [pair.keep.id, pair.duplicate.id]);
       keepKeys.add(key);
       // a rejected hint („Verschieden“) stays rejected: upsert neither reopens it nor proposes its action again
       this.insights.upsert(duplicateInsight({ ...pair, key, takenOver: this.takenOverLabels(pair) }));
@@ -180,7 +180,9 @@ export class OpenItemDuplicateService {
   }
 
   private takenOverLabels({ keep, duplicate }: DuplicatePair): string[] {
-    const fields = takeOverMissing(this.row(keep.id)!, this.row(duplicate.id)!, TAKE_OVER).fields.map((field) => FIELD_LABELS[field] ?? field);
+    const fields = takeOverMissing({ keep: this.row(keep.id)!, duplicate: this.row(duplicate.id)! }, TAKE_OVER).fields.map(
+      (field) => FIELD_LABELS[field] ?? field,
+    );
     if (this.pendingReminders(duplicate.id).length) fields.push('Erinnerungen');
     return fields;
   }
@@ -191,7 +193,7 @@ export class OpenItemDuplicateService {
     for (const insight of this.insights.list('rejected')) {
       if (insight.kind !== 'duplicate' || insight.sourceIds.length !== 2) continue;
       const [a, b] = insight.sourceIds as [string, string];
-      if (this.row(a) && this.row(b)) keys.push(duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, a, b));
+      if (this.row(a) && this.row(b)) keys.push(duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, [a, b]));
     }
     return keys;
   }

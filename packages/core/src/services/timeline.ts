@@ -21,6 +21,14 @@ type SubjectMatch = (row: { id: string; topicId: string | null; projectId: strin
 type RefsOf = (type: EntityRef['type'], id: string | null) => EntityRef[];
 type EntityName = (id: string) => string | null;
 
+/** The database handle with the lookups shared by the entry builders. */
+interface TimelineReader {
+  db: Db;
+  match: SubjectMatch;
+  refsOf: RefsOf;
+  entityName: EntityName;
+}
+
 /** Chronological view of documents, decisions, open items and contradictions; the newest `limit` entries, oldest first. */
 export class TimelineService {
   constructor(private readonly ctx: AppContext) {}
@@ -92,7 +100,7 @@ function subjectRefs(refsOf: RefsOf, row: { topicId: string | null; projectId: s
 }
 
 /** Filtered in the database and without the extracted text – SELECT * loaded every full text per call (#214). */
-function documentEntries(db: Db, q: TimelineQuery, refsOf: RefsOf): UndatedEntry[] {
+function documentEntries({ db, refsOf }: TimelineReader, q: TimelineQuery): UndatedEntry[] {
   const rows = db
     .select({
       id: documents.id,
@@ -127,7 +135,7 @@ function documentEntries(db: Db, q: TimelineQuery, refsOf: RefsOf): UndatedEntry
 const DECISION_STATUS_NOTE: Record<string, string> = { superseded: ' (überholt)', draft: ' (Entwurf)' };
 
 /** Without a decision or source document date a decision is undated; its capture day only keeps it in order (#168). */
-function decisionEntries(db: Db, rows: Array<typeof decisions.$inferSelect>, refsOf: RefsOf): UndatedEntry[] {
+function decisionEntries({ db, refsOf }: TimelineReader, rows: Array<typeof decisions.$inferSelect>): UndatedEntry[] {
   const dating = decisionDates(db, rows);
   return rows.map((row) => {
     const dated = dating.get(row.id);
@@ -145,7 +153,7 @@ function decisionEntries(db: Db, rows: Array<typeof decisions.$inferSelect>, ref
 }
 
 /** A discarded duplicate event is represented by the event it was merged into. */
-function eventEntries(db: Db, match: SubjectMatch, refsOf: RefsOf): UndatedEntry[] {
+function eventEntries({ db, match, refsOf }: TimelineReader): UndatedEntry[] {
   return db
     .select()
     .from(events)
@@ -188,7 +196,7 @@ function openItemEntries(row: typeof openItems.$inferSelect, refsOf: RefsOf): Un
 }
 
 /** Without a subject filter every contradiction, else those affecting the shown decisions; the contradiction's ref comes first. */
-function contradictionEntries(db: Db, affecting: Set<string> | 'all', entityName: EntityName): UndatedEntry[] {
+function contradictionEntries({ db, entityName }: TimelineReader, affecting: Set<string> | 'all'): UndatedEntry[] {
   return db
     .select()
     .from(contradictions)
@@ -212,19 +220,20 @@ export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
   const match = subjectMatcher(db, q);
   const entityName = entityNames(db);
   const refsOf: RefsOf = (type, id) => (id ? [{ type, id, label: entityName(id) ?? id }] : []);
+  const reader: TimelineReader = { db, match, refsOf, entityName };
   const decisionRows = db.select().from(decisions).all().filter(match);
   const filtered = Boolean(q.topicId || q.projectId);
   const entries = [
-    ...documentEntries(db, q, refsOf),
-    ...decisionEntries(db, decisionRows, refsOf),
-    ...eventEntries(db, match, refsOf),
+    ...documentEntries(reader, q),
+    ...decisionEntries(reader, decisionRows),
+    ...eventEntries(reader),
     ...db
       .select()
       .from(openItems)
       .all()
       .filter(match)
       .flatMap((row) => openItemEntries(row, refsOf)),
-    ...contradictionEntries(db, filtered ? new Set(decisionRows.map((row) => row.id)) : 'all', entityName),
+    ...contradictionEntries(reader, filtered ? new Set(decisionRows.map((row) => row.id)) : 'all'),
   ].flatMap((entry) => inRange(entry, q));
   // filter first, then keep the NEWEST `limit` entries in chronological order
   const sorted = entries.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));

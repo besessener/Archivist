@@ -103,12 +103,12 @@ export class SubjectService {
     const types = new Map(entryRows.map((row) => [row.id, row.type]));
     for (const id of unique) {
       const type = types.get(id);
-      if (type) out[id] = this.subjectsOf(id, type, rows);
+      if (type) out[id] = this.subjectsOf({ id, type }, rows);
     }
     return out;
   }
 
-  private subjectsOf(id: string, type: EntityType, rows: SubjectRow[]): EntrySubjects {
+  private subjectsOf({ id, type }: { id: string; type: EntityType }, rows: SubjectRow[]): EntrySubjects {
     const main = this.main(id, type);
     const mine = rows.filter((row) => row.entryId === id);
     const ref = (subjectId: string | null) => (subjectId ? { id: subjectId, name: this.graph.getEntity(subjectId)?.name ?? '' } : null);
@@ -150,7 +150,7 @@ export class SubjectService {
     for (const kind of SUBJECT_KINDS) {
       const names = namesOf(patch, kind);
       if (!names) continue;
-      const changes = this.extraChanges(entry, kind, names, current);
+      const changes = this.extraChanges(entry, { kind, names, current });
       add.push(...changes.add);
       remove.push(...changes.remove);
     }
@@ -159,7 +159,10 @@ export class SubjectService {
     return this.of(id);
   }
 
-  private extraChanges(entry: GraphEntity, kind: SubjectKind, names: string[], current: EntrySubjects): { add: LinkSpec[]; remove: string[] } {
+  private extraChanges(
+    entry: GraphEntity,
+    { kind, names, current }: { kind: SubjectKind; names: string[]; current: EntrySubjects },
+  ): { add: LinkSpec[]; remove: string[] } {
     const mainId = kind === 'topic' ? current.topic?.id : current.project?.id;
     const wanted = new Set(
       names

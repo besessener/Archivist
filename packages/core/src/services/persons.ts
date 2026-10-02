@@ -101,18 +101,24 @@ const toEntity = (r: EntityRow): GraphEntity => ({
   updatedAt: r.updatedAt,
 });
 
+/** All indexed persons and those whose alias is the mention. */
+interface IndexHits {
+  all: PersonIndexEntry[];
+  aliasHits: PersonIndexEntry[];
+}
+
 const byPreference = (a: PersonIndexEntry, b: PersonIndexEntry): number =>
   Number(b.clean) - Number(a.clean) || a.row.createdAt.localeCompare(b.row.createdAt) || a.row.id.localeCompare(b.row.id);
 
 /** Step "name without role/title"; an alias shared by several persons is ambiguous, then only names count. */
-function keyMatch(parsed: ParsedPersonName, all: PersonIndexEntry[], aliasHits: PersonIndexEntry[]): PersonIndexEntry | undefined {
+function keyMatch(parsed: ParsedPersonName, { all, aliasHits }: IndexHits): PersonIndexEntry | undefined {
   const key = parsed.comparisonKey;
   if (!key) return undefined;
   return all.filter((p) => (aliasHits.length > 1 ? p.nameKey === key : p.keys.has(key))).sort(byPreference)[0];
 }
 
 /** Persons the mention might mean but was not assigned to: a shared alias, or a similar name. */
-function unclearCandidates(parsed: ParsedPersonName, all: PersonIndexEntry[], aliasHits: PersonIndexEntry[]): PersonCandidate[] {
+function unclearCandidates(parsed: ParsedPersonName, { all, aliasHits }: IndexHits): PersonCandidate[] {
   const candidates: PersonCandidate[] = aliasHits.map((p) => ({ entity: toEntity(p.row), relation: 'shared_alias' as const }));
   for (const p of all) {
     if (aliasHits.includes(p)) continue;
@@ -148,7 +154,7 @@ export class PersonService {
   }
 
   resolve(name: string, opts: ResolvePersonOptions = {}): PersonResolution {
-    return this.resolveWith(name, opts, () => this.loadIndex());
+    return this.resolveWith(name, { ...opts, index: () => this.loadIndex() });
   }
 
   /** Resolves a name list (participants, document persons) and returns the canonical names to store. */
@@ -160,7 +166,7 @@ export class PersonService {
     const seenIds = new Set<string>();
     for (const raw of names) {
       if (!raw.trim()) continue;
-      const resolution = this.resolveWith(raw, opts, lazyIndex);
+      const resolution = this.resolveWith(raw, { ...opts, index: lazyIndex });
       out.resolutions.push(resolution);
       if (resolution.matchedBy === 'created') index = null; // a new person must be found by the next mention
       if (resolution.entity && !seenIds.has(resolution.entity.id)) {
@@ -176,34 +182,42 @@ export class PersonService {
     return out;
   }
 
-  private resolveWith(name: string, opts: ResolvePersonOptions, index: () => PersonIndexEntry[]): PersonResolution {
+  private resolveWith(name: string, opts: ResolvePersonOptions & { index: () => PersonIndexEntry[] }): PersonResolution {
     const parsed = parsePersonName(name);
     const mention: SelfResolverInput = { name, parsed, selfReference: isSelfReference(parsed.raw), context: opts.context ?? 'manual' };
     const create = opts.create !== false;
-    const result = (entity: GraphEntity | null, matchedBy: PersonResolution['matchedBy'], ambiguousCandidates: PersonCandidate[] = []): PersonResolution => {
+    const result = (entity: GraphEntity | null, match: { matchedBy: PersonResolution['matchedBy']; candidates?: PersonCandidate[] }): PersonResolution => {
       const withRoles = entity && create && parsed.roles.length ? this.graph.addRoles(entity.id, parsed.roles) : entity;
       const resolvedName = withRoles?.name ?? (parsed.cleanName || null);
-      return { entity: withRoles, name: resolvedName, parsed, matchedBy, rejected: false, selfReference: mention.selfReference, ambiguousCandidates };
+      return {
+        entity: withRoles,
+        name: resolvedName,
+        parsed,
+        matchedBy: match.matchedBy,
+        rejected: false,
+        selfReference: mention.selfReference,
+        ambiguousCandidates: match.candidates ?? [],
+      };
     };
 
     if (isNotAPersonName(parsed.raw)) {
       const self = mention.selfReference ? this.selfResolver(mention) : null;
-      if (self) return result(self, 'self');
+      if (self) return result(self, { matchedBy: 'self' });
       return { entity: null, name: null, parsed, matchedBy: null, rejected: true, selfReference: mention.selfReference, ambiguousCandidates: [] };
     }
     const exact = this.graph.findByName('person', parsed.raw);
-    if (exact) return result(exact, 'exact');
-    const all = index();
+    if (exact) return result(exact, { matchedBy: 'exact' });
+    const all = opts.index();
     const norm = normalizeName(parsed.raw);
     const aliasHits = all.filter((p) => p.aliases.has(norm));
-    if (aliasHits.length === 1) return result(toEntity(aliasHits[0]!.row), 'alias');
-    const byKey = keyMatch(parsed, all, aliasHits);
-    if (byKey) return result(toEntity(byKey.row), 'normalized');
+    if (aliasHits.length === 1) return result(toEntity(aliasHits[0]!.row), { matchedBy: 'alias' });
+    const byKey = keyMatch(parsed, { all, aliasHits });
+    if (byKey) return result(toEntity(byKey.row), { matchedBy: 'normalized' });
     const self = this.selfResolver(mention);
-    if (self) return result(self, 'self');
-    const candidates = unclearCandidates(parsed, all, aliasHits);
-    if (!create || !parsed.cleanName) return result(null, null, candidates);
-    return result(this.createPerson(parsed.cleanName, { description: opts.description, candidates }), 'created', candidates);
+    if (self) return result(self, { matchedBy: 'self' });
+    const candidates = unclearCandidates(parsed, { all, aliasHits });
+    if (!create || !parsed.cleanName) return result(null, { matchedBy: null, candidates });
+    return result(this.createPerson(parsed.cleanName, { description: opts.description, candidates }), { matchedBy: 'created', candidates });
   }
 
   /** A mention no step matched becomes a new person; unclear candidates are only logged, never assigned. */

@@ -56,6 +56,7 @@ interface EventMergeUndo extends NoteMergeUndo {
 }
 
 type Origin = { actor?: 'user' | 'agent'; trigger?: string };
+type MergeRequest = { keepId: string; duplicateId: string };
 
 interface MergerDeps {
   ctx: AppContext;
@@ -95,7 +96,7 @@ export class NoteEventMerger {
   }
 
   /** Why a proposed merge can no longer be executed (record gone or already discarded), or null. */
-  staleReason(kind: 'note' | 'event', keepId: string, duplicateId: string): string | null {
+  staleReason(kind: 'note' | 'event', { keepId, duplicateId }: MergeRequest): string | null {
     const label = kind === 'note' ? 'Notiz' : 'Ereignis';
     const lookup = (id: string) => (kind === 'note' ? this.entity(id) : this.event(id));
     const keep = lookup(keepId);
@@ -108,16 +109,16 @@ export class NoteEventMerger {
   }
 
   /** Keeps note `keepId`, takes over the links it lacks and marks the duplicate as discarded; one undoable audit entry. */
-  mergeNotes(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
+  mergeNotes({ keepId, duplicateId }: MergeRequest, origin: Origin = {}): RecordMergeResult {
     if (keepId === duplicateId) throw new AppError('validation_error', 'Eine Notiz kann nicht mit sich selbst zusammengeführt werden.');
     const keep = this.entity(keepId);
     const duplicate = this.entity(duplicateId);
     if (keep?.type !== 'note' || duplicate?.type !== 'note') throw new AppError('validation_error', 'Notiz nicht gefunden.');
-    const stale = this.staleReason('note', keepId, duplicateId);
+    const stale = this.staleReason('note', { keepId, duplicateId });
     if (stale) throw new AppError('validation_error', stale);
     const now = nowIso();
     const merged = this.deps.ctx.database.transaction(() => {
-      const copied = this.deps.links.copyLinks(duplicate.id, keep.id, []);
+      const copied = this.deps.links.copyLinks({ from: duplicate.id, to: keep.id }, []);
       const createdRelations = [...copied, ...this.deps.links.markDuplicate(duplicate.id, keep.id)];
       this.db.update(entities).set({ duplicateOfId: keep.id, updatedAt: now }).where(eq(entities.id, duplicate.id)).run();
       const data: NoteMergeUndo = { keepId: keep.id, duplicateId: duplicate.id, duplicateUpdatedAt: now, createdRelations };
@@ -166,14 +167,14 @@ export class NoteEventMerger {
   }
 
   /** Keeps event `keepId`, takes over the details and links it lacks and marks the duplicate as discarded (undoable). */
-  mergeEvents(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
+  mergeEvents({ keepId, duplicateId }: MergeRequest, origin: Origin = {}): RecordMergeResult {
     if (keepId === duplicateId) throw new AppError('validation_error', 'Ein Ereignis kann nicht mit sich selbst zusammengeführt werden.');
     const keep = this.event(keepId);
     const duplicate = this.event(duplicateId);
     if (!keep || !duplicate) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
-    const stale = this.staleReason('event', keepId, duplicateId);
+    const stale = this.staleReason('event', { keepId, duplicateId });
     if (stale) throw new AppError('validation_error', stale);
-    const takeOver = takeOverMissing(keep, duplicate, EVENT_TAKE_OVER);
+    const takeOver = takeOverMissing({ keep, duplicate }, EVENT_TAKE_OVER);
     const merged = this.deps.ctx.database.transaction(() => this.writeEventMerge({ keep, duplicate, takeOver, origin }));
     void this.deps.eventRecords.reindex(keep.id);
     void this.deps.eventRecords.reindex(duplicate.id);
@@ -196,10 +197,10 @@ export class NoteEventMerger {
     const sourceIds = patch.sourceIds ?? keep.sourceIds;
     const link = { confidence: 0.9, status: 'confirmed' as const, sourceIds };
     const createdRelations: CreatedRelation[] = [
-      ...(patch.topicId ? this.deps.links.linkNew(keep.id, patch.topicId, 'relates_to', link) : []),
-      ...(patch.projectId ? this.deps.links.linkNew(keep.id, patch.projectId, 'belongs_to', link) : []),
+      ...(patch.topicId ? this.deps.links.linkNew({ source: keep.id, target: patch.topicId, type: 'relates_to' }, link) : []),
+      ...(patch.projectId ? this.deps.links.linkNew({ source: keep.id, target: patch.projectId, type: 'belongs_to' }, link) : []),
     ];
-    const copied = this.deps.links.copyLinks(duplicate.id, keep.id, EVENT_FIELD_TARGETS);
+    const copied = this.deps.links.copyLinks({ from: duplicate.id, to: keep.id }, EVENT_FIELD_TARGETS);
     createdRelations.push(...copied, ...this.deps.links.markDuplicate(duplicate.id, keep.id));
     this.db.update(events).set({ duplicateOfId: keep.id, updatedAt: now }).where(eq(events.id, duplicate.id)).run();
     this.db.update(entities).set({ duplicateOfId: keep.id, updatedAt: now }).where(eq(entities.id, duplicate.id)).run();

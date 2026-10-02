@@ -125,15 +125,15 @@ export class NoteEventDuplicateService {
   check(count?: (kind: string) => void): void {
     const noteKeys = new Set<string>();
     for (const { keep, duplicate, assessment } of this.findNotePairs()) {
-      const key = duplicatePairKey(NOTE_DUPLICATE_KEY_PREFIX, keep.id, duplicate.id);
+      const key = duplicatePairKey(NOTE_DUPLICATE_KEY_PREFIX, [keep.id, duplicate.id]);
       noteKeys.add(key);
-      const missingLinks = this.links.missingLinks(duplicate.id, keep.id, []).length;
+      const missingLinks = this.links.missingLinks({ from: duplicate.id, to: keep.id }, []).length;
       const shown = this.insights.upsert(noteInsight({ keep, duplicate, assessment, key, missingLinks }));
       if (shown.status === 'open') count?.('duplicate_note');
     }
     const eventKeys = new Set<string>();
     for (const { keep, duplicate, assessment } of this.findEventPairs()) {
-      const key = duplicatePairKey(EVENT_DUPLICATE_KEY_PREFIX, keep.id, duplicate.id);
+      const key = duplicatePairKey(EVENT_DUPLICATE_KEY_PREFIX, [keep.id, duplicate.id]);
       eventKeys.add(key);
       const shown = this.insights.upsert(eventInsight({ keep, duplicate, assessment, key, takenOver: this.eventTakeOver(keep, duplicate) }));
       if (shown.status === 'open') count?.('duplicate_event');
@@ -145,8 +145,8 @@ export class NoteEventDuplicateService {
   }
 
   private eventTakeOver(keep: EventRow, duplicate: EventRow): string[] {
-    const fields = takeOverMissing(keep, duplicate, EVENT_TAKE_OVER).fields.map((field) => EVENT_FIELD_LABELS[field] ?? field);
-    if (this.links.missingLinks(duplicate.id, keep.id, EVENT_FIELD_TARGETS).length) fields.push('Verknüpfungen');
+    const fields = takeOverMissing({ keep, duplicate }, EVENT_TAKE_OVER).fields.map((field) => EVENT_FIELD_LABELS[field] ?? field);
+    if (this.links.missingLinks({ from: duplicate.id, to: keep.id }, EVENT_FIELD_TARGETS).length) fields.push('Verknüpfungen');
     return fields;
   }
 
@@ -156,7 +156,7 @@ export class NoteEventDuplicateService {
     for (const insight of this.insights.list('rejected')) {
       if (insight.sourceIds.length !== 2) continue;
       const [a, b] = insight.sourceIds as [string, string];
-      const key = duplicatePairKey(prefix, a, b);
+      const key = duplicatePairKey(prefix, [a, b]);
       if (this.insights.byDedupeKey(key)?.id === insight.id && exists(a) && exists(b)) keys.push(key);
     }
     return keys;
@@ -164,14 +164,14 @@ export class NoteEventDuplicateService {
 
   /** Why a proposed merge can no longer be executed (record gone or already discarded), or null. */
   staleReason(kind: 'note' | 'event', keepId: string, duplicateId: string): string | null {
-    return this.merger.staleReason(kind, keepId, duplicateId);
+    return this.merger.staleReason(kind, { keepId, duplicateId });
   }
 
   mergeNotes(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
-    return this.merger.mergeNotes(keepId, duplicateId, origin);
+    return this.merger.mergeNotes({ keepId, duplicateId }, origin);
   }
 
   mergeEvents(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
-    return this.merger.mergeEvents(keepId, duplicateId, origin);
+    return this.merger.mergeEvents({ keepId, duplicateId }, origin);
   }
 }

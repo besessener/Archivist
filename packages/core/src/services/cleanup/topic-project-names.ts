@@ -24,12 +24,7 @@ function findTopicProjectPairs(graph: KnowledgeGraphService): Array<{ topic: Cou
 
 const links = (n: number) => `${n} ${n === 1 ? 'Verknüpfung' : 'Verknüpfungen'}`;
 
-/**
- * Archive check: asks for every topic/project pair with the same name whether it is a project or a topic. The answers
- * „Projekt“/„Thema“ merge both into one entry of the chosen type (undoable); „Beides ist richtig“ rejects the insight,
- * which stays rejected while the pair exists (stable dedupe key). Questions whose pair no longer exists are removed
- * together with the proposals of their answers.
- */
+/** Archive check: asks per same-named topic/project pair which it is; „Projekt“/„Thema“ merge both (undoable). */
 export function checkTopicProjectNames(deps: { graph: KnowledgeGraphService; insights: InsightService }, count: (kind: string) => void): void {
   const current = new Set<string>();
   for (const { topic, project } of findTopicProjectPairs(deps.graph)) {
@@ -39,7 +34,7 @@ export function checkTopicProjectNames(deps: { graph: KnowledgeGraphService; ins
       { type: 'topic' as const, id: topic.id, label: topic.name, detail: 'Thema' },
       { type: 'project' as const, id: project.id, label: project.name, detail: 'Projekt' },
     ];
-    const mergeInto = (source: Counted, target: Counted, id: string, typeLabel: string): InsightChoiceSpec => ({
+    const mergeInto = ({ source, target }: { source: Counted; target: Counted }, { id, typeLabel }: { id: string; typeLabel: string }): InsightChoiceSpec => ({
       id,
       label: typeLabel,
       description: `Thema und Projekt werden zum ${typeLabel} „${target.name}“ zusammengeführt. Dokumente, Entscheidungen, offene Punkte, Ereignisse und Beziehungen werden übernommen. Das lässt sich rückgängig machen.`,
@@ -60,8 +55,8 @@ export function checkTopicProjectNames(deps: { graph: KnowledgeGraphService; ins
       confidence: 0.9,
       affected,
       choices: [
-        mergeInto(topic, project, 'project', 'Projekt'),
-        mergeInto(project, topic, 'topic', 'Thema'),
+        mergeInto({ source: topic, target: project }, { id: 'project', typeLabel: 'Projekt' }),
+        mergeInto({ source: project, target: topic }, { id: 'topic', typeLabel: 'Thema' }),
         {
           id: 'different',
           label: 'Beides ist richtig (verschieden)',

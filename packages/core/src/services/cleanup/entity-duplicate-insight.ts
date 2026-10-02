@@ -38,18 +38,18 @@ export interface Found {
 
 const referenceCount = (e: Evidence) => e.documents + e.decisions + e.openItems + e.events;
 
-function plural(n: number, one: string, many: string): string {
+function plural(n: number, [one, many]: [string, string]): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
 function describeEvidence(e: Evidence): string {
   const parts = [
-    e.documents && plural(e.documents, 'Dokument', 'Dokumente'),
-    e.decisions && plural(e.decisions, 'Entscheidung', 'Entscheidungen'),
-    e.openItems && plural(e.openItems, 'offener Punkt', 'offene Punkte'),
-    e.events && plural(e.events, 'Ereignis', 'Ereignisse'),
+    e.documents && plural(e.documents, ['Dokument', 'Dokumente']),
+    e.decisions && plural(e.decisions, ['Entscheidung', 'Entscheidungen']),
+    e.openItems && plural(e.openItems, ['offener Punkt', 'offene Punkte']),
+    e.events && plural(e.events, ['Ereignis', 'Ereignisse']),
   ].filter(Boolean);
-  if (parts.length === 0) return e.relations ? plural(e.relations, 'Verknüpfung', 'Verknüpfungen') : 'keine Verweise';
+  if (parts.length === 0) return e.relations ? plural(e.relations, ['Verknüpfung', 'Verknüpfungen']) : 'keine Verweise';
   return parts.join(', ');
 }
 
@@ -94,7 +94,7 @@ interface PairView {
   hintLine: string | undefined;
 }
 
-function whyText(found: Found, shorter: Candidate, longer: Candidate): string {
+function whyText(found: Found, { shorter, longer }: { shorter: Candidate; longer: Candidate }): string {
   if (found.match !== 'alias') return MATCH_TEXT[found.match](shorter.name, longer.name);
   const bIsAliasOfA = found.a.aliases.some((alias) => normalizeName(alias) === normalizeName(found.b.name));
   return bIsAliasOfA ? MATCH_TEXT.alias(found.b.name, found.a.name) : MATCH_TEXT.alias(found.a.name, found.b.name);
@@ -214,7 +214,7 @@ export function duplicateInsight(input: {
     source,
     shorter,
     longer,
-    why: whyText(found, shorter, longer),
+    why: whyText(found, { shorter, longer }),
     hintLine: input.hintLine,
   };
   const recommendation = `„${source.candidate.name}“ in „${target.candidate.name}“ zusammenführen`;

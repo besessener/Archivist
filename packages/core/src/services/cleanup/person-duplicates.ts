@@ -30,10 +30,7 @@ export interface PersonMergeGroup {
   roles: string[];
 }
 
-/**
- * How "clean" a spelling is: capitalized words, a hyphen kept in double names and real umlauts beat lower case,
- * "Lor Zade" and "ue"; the name itself without roles or titles beats a decorated one.
- */
+/** How "clean" a spelling is: capitals, a kept hyphen, real umlauts and no roles or titles score higher. */
 function spellingScore(c: Candidate): number {
   const words = c.cleanName.split(' ');
   let score = 0;
@@ -44,12 +41,7 @@ function spellingScore(c: Candidate): number {
   return score;
 }
 
-/**
- * Archive check step: merges unambiguous person duplicates without asking. Unambiguous means the names are equal once
- * roles, titles, case, hyphen vs. space, umlaut spellings and the order "Nachname, Vorname" are ignored (the comparison
- * key of {@link parsePersonName}). All merges of a run form one undoable audit entry and one insight with „Rückgängig“.
- * A group whose merge was undone is never merged automatically again.
- */
+/** Archive check step: merges persons with equal comparison keys ({@link parsePersonName}) in one undoable step; undone groups never again. */
 export class PersonDuplicateService {
   constructor(
     private readonly ctx: AppContext,

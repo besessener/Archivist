@@ -45,7 +45,7 @@ export function itemFields(item: OpenItem): Array<{ label: string; value: string
   ];
 }
 
-export function solutionPrompt(item: OpenItem, sources: GatheredSource[], today: string): string {
+export function solutionPrompt(item: OpenItem, { sources, today }: { sources: GatheredSource[]; today: string }): string {
   const fields = itemFields(item)
     .map((field) => `${field.label}: ${field.value}`)
     .join('\n');
@@ -73,12 +73,12 @@ export function composeSolution(input: { answer: SolutionProposal; sources: Gath
   const { answer, sources } = input;
   const refs = new Set(sources.map((s) => s.ref));
   const valid = (ids: string[]) => [...new Set(ids.map(normalizeRef).filter((ref) => refs.has(ref)))];
-  const claim = (text: string, detail: string | null | undefined, ids: string[]): Claim => {
+  const claim = ({ text, detail }: { text: string; detail?: string | null }, ids: string[]): Claim => {
     const sourceRefs = valid(ids);
     return { text: text.trim(), detail: detail?.trim() || null, sourceRefs, uncertain: sourceRefs.length === 0 };
   };
-  const nextSteps = answer.nextSteps.map((step) => claim(step.title, step.detail, step.sourceIds)).filter((step) => step.text);
-  const risks = answer.risks.map((risk) => claim(risk.description, null, risk.sourceIds)).filter((risk) => risk.text);
+  const nextSteps = answer.nextSteps.map((step) => claim({ text: step.title, detail: step.detail }, step.sourceIds)).filter((step) => step.text);
+  const risks = answer.risks.map((risk) => claim({ text: risk.description, detail: null }, risk.sourceIds)).filter((risk) => risk.text);
   const assessment = answer.assessment.trim();
   if (!assessment && nextSteps.length === 0)
     throw new AppError('llm_error', 'Das LLM lieferte keinen verwertbaren Lösungsvorschlag. Es wurde nichts geändert.');
