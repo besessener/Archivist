@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { snapshot } from '../eval/checks';
-import { BASE_DOCS, EMPTY_FOLDERS, buildArchive } from '../eval/fixture';
+import { buildArchive } from '../eval/archive-builder';
+import { BASE_DOCS, EMPTY_FOLDERS } from '../eval/fixture';
 import { providersFromEnv, selectTasks } from '../eval/runner';
 import { MUST_HAVE, STORIES, TASKS } from '../eval/tasks';
 

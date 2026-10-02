@@ -6,7 +6,8 @@ import { createServices, type Services } from '../../packages/core/src';
 import { detectAdapter } from '../../packages/core/src/agent/adapters';
 import { MIGRATIONS, TestCipher } from '../helpers/harness';
 import { snapshot, type CheckContext, type EvalTask, type Reply } from './checks';
-import { BASE_DOCS, buildArchive } from './fixture';
+import { buildArchive } from './archive-builder';
+import { BASE_DOCS } from './fixture';
 
 /** One configured model endpoint (from ARCHIVIST_EVAL_* environment variables). */
 export interface EvalProvider {
