@@ -1,5 +1,6 @@
 'use client';
 
+import { ExtraSubjectsNote, useSubjectsOf } from '@/components/common/extra-subjects';
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -65,6 +66,7 @@ function DecisionsInner() {
     if ((a.status === 'draft') !== (b.status === 'draft')) return a.status === 'draft' ? -1 : 1;
     return (b.decidedAt ?? b.createdAt).localeCompare(a.decidedAt ?? a.createdAt);
   });
+  const subjects = useSubjectsOf(sorted.map((d) => d.id));
 
   return (
     <Page wide>
@@ -136,7 +138,7 @@ function DecisionsInner() {
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {formatLongDate(d.decidedAt, 'Datum unbekannt')}
-                    {d.topicName ? ` · ${d.topicName}` : ''}
+                    {d.topicName ? ` · ${d.topicName}` : ''} <ExtraSubjectsNote subjects={subjects[d.id]} />
                   </p>
                   {d.missingFields.length > 0 && (
                     <p className="mt-1.5 flex items-center gap-1 text-xs text-warning">

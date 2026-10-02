@@ -1,5 +1,6 @@
 'use client';
 
+import { ExtraSubjectFields, useExtraSubjects } from '@/components/common/extra-subjects';
 import { useState } from 'react';
 import { DECISION_FIELD_LABELS, EditableDecisionStatus, isEditableDecisionStatus, localDate, type DecisionField, type DecisionStatus } from '@archivist/shared';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
@@ -44,6 +45,7 @@ export function DecisionFormDialog({
   const [decidedAt, setDecidedAt] = useState(dayOf(decision?.decidedAt));
   const [topic, setTopic] = useState(decision?.topicName ?? '');
   const [project, setProject] = useState(decision?.projectName ?? '');
+  const extra = useExtraSubjects(decision?.id, open);
   const [participants, setParticipants] = useState((decision?.participants ?? []).join(', '));
   const [rationale, setRationale] = useState(decision?.rationale ?? '');
   const [consequences, setConsequences] = useState(decision?.consequences ?? '');
@@ -138,11 +140,17 @@ export function DecisionFormDialog({
       statusLocked || pendingCritical ? undefined : effectiveDraft ? 'draft' : status === 'draft' || !isEditableDecisionStatus(status) ? 'confirmed' : status;
     const out = await run(
       async () => {
-        if (!decision) return call('decisions:create', body);
+        if (!decision) {
+          const created = await call('decisions:create', body);
+          await extra.save(created.id);
+          return created;
+        }
         const saved =
           pendingCritical && !fieldsChanged
             ? decision
             : await call('decisions:update', { id: decision.id, patch: { ...body, ...(editStatus ? { status: editStatus } : {}) } });
+        // after the main topic/project, so a new main one is never stored as a further one as well
+        await extra.save(decision.id);
         if (pendingCritical === 'revoked') return call('decisions:revoke', { id: decision.id, confirmed: true });
         if (pendingCritical === 'superseded')
           return (await call('decisions:supersede', { oldDecisionId: decision.id, newDecisionId: supersededBy, confirmed: true })).old;
@@ -220,6 +228,9 @@ export function DecisionFormDialog({
           <Field label="Projekt" htmlFor="d-project">
             <Input id="d-project" value={project} onChange={(e) => setProject(e.target.value)} />
           </Field>
+          <div className="sm:col-span-2">
+            <ExtraSubjectFields idPrefix="decision" {...extra} />
+          </div>
           <Field label="Begründung" htmlFor="d-why">
             <Input id="d-why" value={rationale} onChange={(e) => setRationale(e.target.value)} />
           </Field>

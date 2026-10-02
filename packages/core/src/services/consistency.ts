@@ -344,7 +344,17 @@ export class ConsistencyService {
       .from(documents)
       .where(inArray(documents.status, ['archived', 'indexed_only']))
       .all();
-    const noTopic = archived.filter((d) => !d.topicId && !d.projectId);
+    // a further topic or project counts as an assignment as well (#287)
+    const withSubject = new Set(
+      (
+        this.ctx.database.sqlite
+          .prepare(
+            `SELECT DISTINCT r.source_entity_id AS id FROM relations r JOIN entities s ON s.id = r.target_entity_id WHERE s.type IN ('topic','project') AND r.status = 'confirmed'`,
+          )
+          .all() as Array<{ id: string }>
+      ).map((r) => r.id),
+    );
+    const noTopic = archived.filter((d) => !d.topicId && !d.projectId && !withSubject.has(d.id));
     // keys are stable (kind plus object id, or just the kind for aggregated hints); after the run, every hint whose
     // cause is gone is removed together with its open proposal
     const current = new Set<string>();

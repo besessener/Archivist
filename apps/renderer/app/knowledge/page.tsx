@@ -180,7 +180,7 @@ function KnowledgeInner() {
         onSubmit={async (input) => {
           const r = await run(() => call('knowledge:createEntity', { type: 'event', ...input }));
           if (r) showResult(r);
-          return r !== undefined;
+          return r?.entity.id ?? false;
         }}
       />
     </Page>

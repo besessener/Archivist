@@ -216,7 +216,7 @@ export default function TimelinePage() {
         onSubmit={async (input) => {
           const out = await run(() => call('events:create', input), { success: 'Ereignis eingetragen.' });
           if (out) void tl.refetch();
-          return out !== undefined;
+          return out?.id ?? false;
         }}
       />
       {editEvent && (

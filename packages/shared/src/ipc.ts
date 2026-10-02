@@ -154,6 +154,16 @@ export const LinkProposalPage = z.object({
 export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
 const LinkGroupBy = z.enum(['method', 'entry']);
 
+const SubjectRef = z.object({ id: z.string(), name: z.string() });
+/** Main and further topics/projects of an entry (#287). */
+const EntrySubjects = z.object({
+  topic: SubjectRef.nullable(),
+  project: SubjectRef.nullable(),
+  extraTopics: z.array(SubjectRef),
+  extraProjects: z.array(SubjectRef),
+});
+export type EntrySubjects = z.infer<typeof EntrySubjects>;
+
 /** A case („Vorgang“) with its numbers (#286). */
 const CaseSummary = z.object({
   id: z.string(),
@@ -619,6 +629,24 @@ export const ipcContract = {
   'links:resetThresholds': ch(z.object({ confirmed: Confirmed }), z.object({ ok: z.literal(true) })),
   /** How well the archive is linked, with the history of the archive checks (#292). */
   'links:metrics': ch(Empty, LinkageMetrics),
+  // --- Several topics/projects per entry (#287) and bulk assignment (#291) ---
+  'subjects:of': ch(z.object({ ids: z.array(Id).min(1).max(1000) }), z.record(z.string(), EntrySubjects)),
+  /** Sets the further topics/projects of an entry by name (the main one stays) – one undo step. */
+  'subjects:setExtras': ch(
+    z.object({ id: Id, topics: z.array(z.string().max(200)).max(50).optional(), projects: z.array(z.string().max(200)).max(50).optional() }),
+    EntrySubjects,
+  ),
+  /** Bulk assignment of a list's selection: topic, project, tag, case – ONE undo step (#291). */
+  'entries:bulkAssign': ch(
+    z.object({
+      ids: z.array(Id).min(1).max(500),
+      topic: z.string().max(200).nullish(),
+      project: z.string().max(200).nullish(),
+      tag: z.string().max(100).nullish(),
+      caseId: z.string().nullish(),
+    }),
+    z.object({ updated: z.number().int(), auditId: z.string().nullable() }),
+  ),
   // --- Cases („Vorgänge“, #286) ---
   'cases:list': ch(z.object({ includeClosed: z.boolean().default(true) }), z.array(CaseSummary)),
   'cases:detail': ch(z.object({ id: Id }), z.object({ case: GraphEntity, entries: z.array(CaseEntry), openItems: z.array(CaseEntry) })),

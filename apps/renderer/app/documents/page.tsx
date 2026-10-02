@@ -1,6 +1,7 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { ExtraSubjectFields, ExtraSubjectsNote, useExtraSubjects, useSubjectsOf } from '@/components/common/extra-subjects';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ExternalLink, FolderOpen, Pencil, Search, X } from 'lucide-react';
 import { ConfidenceBadge } from '@/components/common/confidence';
@@ -47,6 +48,7 @@ function DocumentsInner() {
   const docs = list.data ?? [];
   const types = [...new Set(docs.map((d) => d.docType).filter((t): t is string => !!t))].sort();
   const shown = docs.filter((d) => !type || d.docType === type);
+  const subjects = useSubjectsOf(useMemo(() => shown.map((d) => d.id), [shown]));
   // Multi-selection (#291, #304): only documents that are currently shown count
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedDocs = shown.filter((d) => selected.has(d.id));
@@ -154,7 +156,9 @@ function DocumentsInner() {
                   </TD>
                   <TD>{d.docType ?? '–'}</TD>
                   <TD>{d.categoryPath ?? '–'}</TD>
-                  <TD>{d.topicName ?? '–'}</TD>
+                  <TD>
+                    {d.topicName ?? '–'} <ExtraSubjectsNote subjects={subjects[d.id]} />
+                  </TD>
                   <TD>{d.projectName ?? '–'}</TD>
                   <TD className="whitespace-nowrap">
                     {d.documentDate ? (
@@ -213,6 +217,7 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
   const [tags, setTags] = useState(doc.tags.join(', '));
   const [persons, setPersons] = useState(doc.persons.join(', '));
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const extra = useExtraSubjects(doc.id);
 
   useEffect(() => {
     setEditing(false);
@@ -226,6 +231,11 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
     ['Personen', doc.persons.join(', '), parseList(persons).join(', ')],
   ];
   const changed = changes.filter(([, a, b]) => a !== b);
+  const extraChanges: Array<[string, string, string]> = [
+    ['Weitere Themen', extra.initialTopics, parseList(extra.topics).join(', ')],
+    ['Weitere Projekte', extra.initialProjects, parseList(extra.projects).join(', ')],
+  ];
+  const allChanged = [...changed, ...extraChanges.filter(([, a, b]) => a !== b)];
 
   return (
     <>
@@ -250,6 +260,12 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
           <dd>{doc.topicName ?? '–'}</dd>
           <dt className="text-muted-foreground">Projekt</dt>
           <dd>{doc.projectName ?? '–'}</dd>
+          {(extra.initialTopics || extra.initialProjects) && (
+            <>
+              <dt className="text-muted-foreground">Weitere Themen/Projekte</dt>
+              <dd data-testid="document-extra-subjects">{[extra.initialTopics, extra.initialProjects].filter(Boolean).join(', ')}</dd>
+            </>
+          )}
           <dt className="text-muted-foreground">Personen</dt>
           <dd>{doc.persons.length ? doc.persons.join(', ') : '–'}</dd>
           <dt className="text-muted-foreground">Schlagwörter</dt>
@@ -282,6 +298,9 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
           <Field label="Personen" htmlFor="doc-persons" hint="Mit Komma trennen.">
             <Input id="doc-persons" value={persons} onChange={(e) => setPersons(e.target.value)} />
           </Field>
+          <div className="sm:col-span-2">
+            <ExtraSubjectFields idPrefix="doc" {...extra} />
+          </div>
         </div>
       )}
       {doc.textPreview && !editing && (
@@ -320,7 +339,7 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
             <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
               Abbrechen
             </Button>
-            <Button size="sm" disabled={changed.length === 0 || !title.trim()} onClick={() => setConfirmOpen(true)} data-testid="doc-save">
+            <Button size="sm" disabled={allChanged.length === 0 || !title.trim()} onClick={() => setConfirmOpen(true)} data-testid="doc-save">
               Speichern …
             </Button>
           </div>
@@ -335,16 +354,20 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
         confirmLabel="Änderungen speichern"
         onConfirm={async () => {
           const out = await run(
-            () =>
-              call('documents:updateMetadata', {
-                id: doc.id,
-                title: title.trim(),
-                topic: topic.trim() || null,
-                project: project.trim() || null,
-                tags: parseList(tags),
-                persons: parseList(persons),
-                confirmed: true,
-              }),
+            async () => {
+              if (changed.length)
+                await call('documents:updateMetadata', {
+                  id: doc.id,
+                  title: title.trim(),
+                  topic: topic.trim() || null,
+                  project: project.trim() || null,
+                  tags: parseList(tags),
+                  persons: parseList(persons),
+                  confirmed: true,
+                });
+              await extra.save(doc.id);
+              return true;
+            },
             { success: 'Metadaten gespeichert.' },
           );
           if (out) {
@@ -355,7 +378,7 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
         }}
       >
         <ul className="flex flex-col gap-1.5 text-sm">
-          {changed.map(([label, before, after]) => (
+          {allChanged.map(([label, before, after]) => (
             <li key={label}>
               <span className="font-medium">{label}: </span>
               <span className="text-muted-foreground line-through">{before || '–'}</span> → <span>{after || '–'}</span>

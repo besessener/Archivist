@@ -9,6 +9,7 @@ import { ArchiveRootService } from './services/archive-root';
 import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CaseService } from './services/cases';
+import { SubjectService } from './services/subjects';
 import { CategoryService } from './services/categories';
 import { ChatService } from './services/chat';
 import { CaptureService } from './services/capture';
@@ -217,6 +218,7 @@ function buildServices(opts: CreateServicesOptions) {
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
   const cases = new CaseService(ctx, graph, audit);
+  const subjects = new SubjectService(ctx, graph, audit, undo);
   const linkThresholds = new LinkThresholds(ctx, appState);
   const links = new LinkMethodsService(ctx, graph, search, insights, appState, linkThresholds);
   // entries without any link (#290): targets as proposals, one bundled hint per archive check
@@ -390,14 +392,16 @@ function buildServices(opts: CreateServicesOptions) {
   });
   capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));
-  graph.setReindexer(async (refs) => {
+  const reindexRefs = async (refs: { documents: string[]; decisions: string[]; openItems: string[]; events: string[] }) => {
     await Promise.all([
       ...refs.documents.map((id) => documentsSvc.indexDocument(id)),
       ...refs.decisions.map((id) => decisions.reindex(id)),
       ...refs.openItems.map((id) => openItems.reindex(id)),
       ...refs.events.map((id) => eventsSvc.reindex(id)),
     ]);
-  });
+  };
+  graph.setReindexer(reindexRefs);
+  subjects.setReindexer(reindexRefs);
 
   // 6) job handlers
   // A failed attempt keeps the document in `analyzing` while a retry follows; only after the last attempt
@@ -562,6 +566,7 @@ function buildServices(opts: CreateServicesOptions) {
     agentFileJobs,
     links,
     cases,
+    subjects,
     linkThresholds,
     enqueueLinkRun,
     memory,

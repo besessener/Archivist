@@ -1,5 +1,6 @@
 'use client';
 
+import { ExtraSubjectFields, ExtraSubjectsNote, useExtraSubjects, useSubjectsOf } from '@/components/common/extra-subjects';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { BellPlus, Check, ListChecks, MessageSquare, Network, Pencil, Plus, X } from 'lucide-react';
@@ -58,6 +59,7 @@ export default function OpenItemsPage() {
   // do not lock prematurely while the status is loading – the main process checks anyway
   const llmConfigured = status ? status.llm.configured : true;
 
+  const subjects = useSubjectsOf(useMemo(() => (data ?? []).map((i) => i.id), [data]));
   const groups = useMemo(() => {
     const out: Record<Group, OpenItemRecord[]> = { overdue: [], due: [], open: [], done: [] };
     for (const i of data ?? []) out[groupOf(i)].push(i);
@@ -144,6 +146,7 @@ export default function OpenItemsPage() {
                       {i.reminderAt && <Badge variant="info">Erinnerung {formatDate(i.reminderAt)}</Badge>}
                       {i.topicName && <Badge variant="outline">{i.topicName}</Badge>}
                       {i.projectName && <Badge variant="outline">{i.projectName}</Badge>}
+                      <ExtraSubjectsNote subjects={subjects[i.id]} />
                     </div>
                     {i.resolutionNote && (
                       <p className="mt-2 text-sm" data-testid="open-item-resolution-note">
@@ -217,6 +220,7 @@ function ItemFormDialog({
   const statusEditable = item !== null && isEditableOpenItemStatus(item.status);
   const [topic, setTopic] = useState(item?.topicName ?? '');
   const [project, setProject] = useState(item?.projectName ?? '');
+  const extra = useExtraSubjects(item?.id, open);
 
   async function save() {
     const base = {
@@ -229,13 +233,16 @@ function ItemFormDialog({
       priority,
     };
     const out = await run(
-      () =>
-        item
-          ? call('openItems:update', {
+      async () => {
+        const saved = item
+          ? await call('openItems:update', {
               id: item.id,
               patch: { ...base, ...(statusEditable ? { status } : {}), responsibleUnknown: respUnknown, dueUnknown },
             })
-          : call('openItems:create', base),
+          : await call('openItems:create', base);
+        await extra.save(saved.id);
+        return saved;
+      },
       { success: item ? 'Änderungen gespeichert.' : 'Offener Punkt angelegt.' },
     );
     if (out) {
@@ -315,6 +322,9 @@ function ItemFormDialog({
           <Field label="Projekt" htmlFor="oi-project">
             <Input id="oi-project" value={project} onChange={(e) => setProject(e.target.value)} />
           </Field>
+          <div className="sm:col-span-2">
+            <ExtraSubjectFields idPrefix="open-item" {...extra} />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

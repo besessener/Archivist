@@ -11,6 +11,7 @@ import {
 import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { decisions, entities } from '../db/schema';
+import { withSubject } from '../db/subject-filter';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput, toIsoDate } from '../util/dates';
@@ -206,8 +207,9 @@ export class DecisionService {
   list(opts: { status?: DecisionStatus; topicId?: string; projectId?: string } = {}): Decision[] {
     const conds = [];
     if (opts.status) conds.push(eq(decisions.status, opts.status));
-    if (opts.topicId) conds.push(eq(decisions.topicId, opts.topicId));
-    if (opts.projectId) conds.push(eq(decisions.projectId, opts.projectId));
+    // the main topic/project or a further one (#287)
+    if (opts.topicId) conds.push(withSubject(decisions.id, decisions.topicId, opts.topicId));
+    if (opts.projectId) conds.push(withSubject(decisions.id, decisions.projectId, opts.projectId));
     return this.mapMany(
       this.db
         .select()

@@ -286,8 +286,8 @@ const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 const LINK_UNDO_TYPE = 'relation.link';
 const CASE_UNDO_TYPE = 'case.status';
 /** Undo of several links made at once – a bulk assignment (#286, #291). */
-const LINK_MANY_UNDO_TYPE = 'relation.linkMany';
-interface LinkManyUndoData {
+export const LINK_MANY_UNDO_TYPE = 'relation.linkMany';
+export interface LinkManyUndoData {
   items: LinkUndoData[];
 }
 /** Undo of several proposals decided at once (#280). */
@@ -297,7 +297,7 @@ interface DecideManyUndoData {
   /** updatedAt of each relation right after the decision; a later change blocks the undo. */
   after: Record<string, string>;
 }
-interface LinkUndoData {
+export interface LinkUndoData {
   /** The relation as it was before (null: the call created it). */
   before: RelationRow | null;
   /** The relation as the call left it (null: the call removed it). */
@@ -836,21 +836,57 @@ export class KnowledgeGraphService {
   ): number {
     const target = this.getEntity(targetId);
     if (!target) throw new AppError('validation_error', 'Das Ziel existiert nicht.');
+    return this.changeLinks(
+      { add: [...new Set(sourceIds)].map((sourceId) => ({ sourceId, targetId, relationType })) },
+      { ...opts, summary: { target: target.name, relationType } },
+    );
+  }
+
+  /**
+   * Adds confirmed links (the user's choice) and removes others in ONE step – one audit entry, one undo (#287, #291).
+   * Links that already are confirmed stay as they are. Returns the number of links added or removed.
+   */
+  changeLinks(
+    change: { add?: Array<{ sourceId: string; targetId: string; relationType: RelationType }>; remove?: string[] },
+    opts: { trigger?: string; action?: string; method?: RelationMethod; summary?: Record<string, unknown> } = {},
+  ): number {
+    const { items, entityIds } = this.applyLinkChanges(change, opts.method);
+    if (!items.length) return 0;
+    this.audit.log({
+      action: opts.action ?? 'relation.linkMany',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [...entityIds],
+      after: { ...opts.summary, count: items.length },
+      undo: { type: LINK_MANY_UNDO_TYPE, data: { items } satisfies LinkManyUndoData },
+    });
+    this.ctx.events.changed('knowledge');
+    return items.length;
+  }
+
+  /** {@link changeLinks} without its audit entry – for an action that logs several parts as one undo step (#291). */
+  applyLinkChanges(
+    change: { add?: Array<{ sourceId: string; targetId: string; relationType: RelationType }>; remove?: string[] },
+    method?: RelationMethod,
+  ): { items: LinkUndoData[]; entityIds: Set<string> } {
+    const opts = { method };
     const items: LinkUndoData[] = [];
+    const entityIds = new Set<string>();
     this.ctx.database.transaction(() => {
-      for (const sourceId of [...new Set(sourceIds)]) {
-        if (sourceId === targetId || !this.getEntity(sourceId)) continue;
+      for (const a of change.add ?? []) {
+        if (a.sourceId === a.targetId || !this.getEntity(a.sourceId) || !this.getEntity(a.targetId)) continue;
         const find = () =>
           this.db
             .select()
             .from(relations)
-            .where(and(eq(relations.sourceEntityId, sourceId), eq(relations.targetEntityId, targetId), eq(relations.relationType, relationType)))
+            .where(and(eq(relations.sourceEntityId, a.sourceId), eq(relations.targetEntityId, a.targetId), eq(relations.relationType, a.relationType)))
             .get() ?? null;
         const before = find();
         if (before?.status === 'confirmed') continue;
         if (before) this.db.update(relations).set({ status: 'confirmed', resolvedByUser: true, updatedAt: nowIso() }).where(eq(relations.id, before.id)).run();
         else
-          this.link(sourceId, targetId, relationType, {
+          this.link(a.sourceId, a.targetId, a.relationType, {
             confidence: 1,
             status: 'confirmed',
             resolvedByUser: true,
@@ -858,20 +894,18 @@ export class KnowledgeGraphService {
             method: opts.method ?? 'manual',
           });
         items.push({ before, after: find() });
+        entityIds.add(a.sourceId).add(a.targetId);
+      }
+      for (const id of new Set(change.remove ?? [])) {
+        const before = this.db.select().from(relations).where(eq(relations.id, id)).get();
+        if (!before) continue;
+        this.db.delete(relations).where(eq(relations.id, id)).run();
+        items.push({ before, after: null });
+        entityIds.add(before.sourceEntityId).add(before.targetEntityId);
       }
     });
-    if (!items.length) return 0;
-    this.audit.log({
-      action: opts.action ?? 'relation.linkMany',
-      actor: 'user',
-      trigger: opts.trigger ?? 'manual',
-      confirmed: true,
-      entityIds: [targetId, ...items.map((i) => i.after!.sourceEntityId)],
-      after: { target: target.name, relationType, count: items.length },
-      undo: { type: LINK_MANY_UNDO_TYPE, data: { items } satisfies LinkManyUndoData },
-    });
-    this.ctx.events.changed('knowledge');
-    return items.length;
+    if (items.length) this.ctx.events.changed('knowledge');
+    return { items, entityIds };
   }
 
   /** Removes a relation the user (or the agent on the user's request) no longer wants; logged with undo. */
