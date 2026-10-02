@@ -18,7 +18,7 @@ export interface NotificationInput {
   dedupeKey?: string;
 }
 
-const map = (r: Row): AppNotification => ({
+const toNotification = (r: Row): AppNotification => ({
   id: r.id,
   title: r.title,
   description: r.description,
@@ -42,18 +42,14 @@ export class NotificationService {
   /** The notification with this dedupe key (also a read or resolved one), if any. */
   byDedupeKey(key: string): AppNotification | null {
     const r = this.db.select().from(notifications).where(eq(notifications.dedupeKey, key)).get();
-    return r ? map(r) : null;
+    return r ? toNotification(r) : null;
   }
 
   create(input: NotificationInput): AppNotification {
     if (input.dedupeKey) {
-      const existing = this.db
-        .select()
-        .from(notifications)
-        .where(and(eq(notifications.dedupeKey, input.dedupeKey)))
-        .get();
+      const existing = this.db.select().from(notifications).where(eq(notifications.dedupeKey, input.dedupeKey)).get();
       if (existing) {
-        if (existing.resolvedAt) return map(existing); // do not revive resolved notifications
+        if (existing.resolvedAt) return toNotification(existing); // do not revive resolved notifications
         this.db
           .update(notifications)
           .set({
@@ -66,7 +62,7 @@ export class NotificationService {
           .where(eq(notifications.id, existing.id))
           .run();
         this.ctx.events.changed('notifications');
-        return map({ ...existing, title: input.title, description: input.description });
+        return toNotification({ ...existing, title: input.title, description: input.description });
       }
     }
     const row: Row = {
@@ -83,7 +79,7 @@ export class NotificationService {
       resolvedAt: null,
     };
     this.db.insert(notifications).values(row).run();
-    const out = map(row);
+    const out = toNotification(row);
     this.ctx.events.emit('notification:new', out);
     this.ctx.events.changed('notifications', 'status');
     return out;
@@ -97,22 +93,22 @@ export class NotificationService {
       .orderBy(desc(notifications.createdAt))
       .limit(opts.limit ?? 100)
       .all();
-    return rows.map(map);
+    return rows.map(toNotification);
   }
 
   get(id: string): AppNotification {
     const r = this.db.select().from(notifications).where(eq(notifications.id, id)).get();
     if (!r) throw new AppError('validation_error', 'Benachrichtigung nicht gefunden.');
-    return map(r);
+    return toNotification(r);
   }
 
   unreadCount(): number {
     return (
       this.db
-        .select({ c: sql<number>`count(*)` })
+        .select({ count: sql<number>`count(*)` })
         .from(notifications)
         .where(and(isNull(notifications.readAt), isNull(notifications.resolvedAt)))
-        .get()?.c ?? 0
+        .get()?.count ?? 0
     );
   }
 
@@ -141,13 +137,13 @@ export class NotificationService {
   /** Resolves all open notifications ("Alle leeren" in the bell). Returns how many were closed. */
   resolveAll(): number {
     const now = nowIso();
-    const res = this.db
+    const result = this.db
       .update(notifications)
       .set({ resolvedAt: now, readAt: sql`coalesce(${notifications.readAt}, ${now})` })
       .where(isNull(notifications.resolvedAt))
       .run();
-    if (res.changes > 0) this.ctx.events.changed('notifications', 'status');
-    return res.changes;
+    if (result.changes > 0) this.ctx.events.changed('notifications', 'status');
+    return result.changes;
   }
 
   /** Resolves all open notifications with the key prefix (e.g. when the cause no longer exists). */
@@ -173,10 +169,7 @@ export class NotificationService {
     if (stale.length) this.ctx.events.changed('notifications', 'status');
   }
 
-  /**
-   * Reopens a resolved notification (after "Später erinnern"): title, actions and targets stay unchanged,
-   * it moves to the top as unread and is announced again like a new notification. Returns null if it no longer exists.
-   */
+  /** Reopens a resolved notification (after "Später erinnern") as new and unread; null if it no longer exists. */
   reopen(id: string): AppNotification | null {
     const existing = this.db.select().from(notifications).where(eq(notifications.id, id)).get();
     if (!existing) return null;
@@ -186,7 +179,7 @@ export class NotificationService {
       .set({ resolvedAt: reopened.resolvedAt, readAt: reopened.readAt, createdAt: reopened.createdAt })
       .where(eq(notifications.id, id))
       .run();
-    const out = map(reopened);
+    const out = toNotification(reopened);
     this.ctx.events.emit('notification:new', out);
     this.ctx.events.changed('notifications', 'status');
     return out;

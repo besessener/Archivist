@@ -14,20 +14,17 @@ interface Datable {
   sourceIds: string[];
 }
 
-/**
- * Dates for decisions: the decision date, else the earliest document date among its source documents.
- * The capture date is never used – it says nothing about when something was decided.
- */
+/** Decision date, else the earliest source document date; never the capture date (it says nothing about the decision). */
 export function decisionDates(db: Db, list: Datable[]): Map<string, DecisionDating> {
   const sourceIds = [...new Set(list.filter((d) => !d.decidedAt).flatMap((d) => d.sourceIds))];
-  const docDates = new Map<string, string>();
+  const documentDates = new Map<string, string>();
   for (let i = 0; i < sourceIds.length; i += 500) {
     const rows = db
       .select({ id: documents.id, documentDate: documents.documentDate })
       .from(documents)
       .where(inArray(documents.id, sourceIds.slice(i, i + 500)))
       .all();
-    for (const r of rows) if (r.documentDate) docDates.set(r.id, r.documentDate);
+    for (const row of rows) if (row.documentDate) documentDates.set(row.id, row.documentDate);
   }
   const out = new Map<string, DecisionDating>();
   for (const d of list) {
@@ -35,7 +32,7 @@ export function decisionDates(db: Db, list: Datable[]): Map<string, DecisionDati
       out.set(d.id, { date: d.decidedAt, basis: 'decided' });
       continue;
     }
-    const fromSources = d.sourceIds.flatMap((id) => docDates.get(id) ?? []).sort()[0];
+    const fromSources = d.sourceIds.flatMap((id) => documentDates.get(id) ?? []).sort()[0];
     out.set(d.id, fromSources ? { date: fromSources, basis: 'source' } : { date: null, basis: null });
   }
   return out;

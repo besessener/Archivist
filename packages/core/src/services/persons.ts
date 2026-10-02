@@ -31,11 +31,7 @@ export interface SelfResolverInput {
   context: PersonMentionContext;
 }
 
-/**
- * Maps a mention to the user's own person (own name, nicknames, "ich" in chat). Called for self references before
- * they are rejected and, as the last resolution step, for names no other step matched. Returns null when the
- * mention is not the user.
- */
+/** Maps a mention to the user's own person (own name, nicknames, "ich" in chat), or null when it is not the user. */
 export type SelfResolver = (input: SelfResolverInput) => GraphEntity | null;
 
 export interface ResolvePersonOptions {
@@ -108,14 +104,34 @@ const toEntity = (r: EntityRow): GraphEntity => ({
 const byPreference = (a: PersonIndexEntry, b: PersonIndexEntry): number =>
   Number(b.clean) - Number(a.clean) || a.row.createdAt.localeCompare(b.row.createdAt) || a.row.id.localeCompare(b.row.id);
 
-/**
- * Central person resolution: every place that turns a name into a person (decision participants, responsible persons,
- * document persons, chat) goes through {@link resolve}. Order: exact name → alias → name without role/title
- * (comparison key) → own identity. Roles in the mention become info on the person; pronouns and answer words never
- * become persons; unclear short forms are not assigned silently but reported as candidates.
- */
+/** Step "name without role/title"; an alias shared by several persons is ambiguous, then only names count. */
+function keyMatch(parsed: ParsedPersonName, all: PersonIndexEntry[], aliasHits: PersonIndexEntry[]): PersonIndexEntry | undefined {
+  const key = parsed.comparisonKey;
+  if (!key) return undefined;
+  return all.filter((p) => (aliasHits.length > 1 ? p.nameKey === key : p.keys.has(key))).sort(byPreference)[0];
+}
+
+/** Persons the mention might mean but was not assigned to: a shared alias, or a similar name. */
+function unclearCandidates(parsed: ParsedPersonName, all: PersonIndexEntry[], aliasHits: PersonIndexEntry[]): PersonCandidate[] {
+  const candidates: PersonCandidate[] = aliasHits.map((p) => ({ entity: toEntity(p.row), relation: 'shared_alias' as const }));
+  for (const p of all) {
+    if (aliasHits.includes(p)) continue;
+    const relation = comparePersonNames(parsed.cleanName, p.row.name);
+    if (relation && relation !== 'same') candidates.push({ entity: toEntity(p.row), relation });
+  }
+  return candidates;
+}
+
+/** "ich" stays as text outside documents (it means the user, see the own identity); in documents it is the author. */
+function storedName(resolution: PersonResolution, context: PersonMentionContext | undefined): string | null {
+  return resolution.name ?? (resolution.selfReference && context !== 'document' ? resolution.parsed.raw : null);
+}
+
+const NO_SELF: SelfResolver = () => null;
+
+/** Turns names into persons: exact name → alias → name without role/title → own identity; unclear ones are reported, not assigned. */
 export class PersonService {
-  private selfResolver: SelfResolver | null = null;
+  private selfResolver: SelfResolver = NO_SELF;
 
   constructor(
     private readonly ctx: AppContext,
@@ -126,9 +142,9 @@ export class PersonService {
     return this.ctx.database.db;
   }
 
-  /** Installs (or removes) the resolver for the user's own person. */
+  /** Installs (or, with null, removes) the resolver for the user's own person. */
   setSelfResolver(resolver: SelfResolver | null): void {
-    this.selfResolver = resolver;
+    this.selfResolver = resolver ?? NO_SELF;
   }
 
   resolve(name: string, opts: ResolvePersonOptions = {}): PersonResolution {
@@ -144,15 +160,14 @@ export class PersonService {
     const seenIds = new Set<string>();
     for (const raw of names) {
       if (!raw.trim()) continue;
-      const res = this.resolveWith(raw, opts, lazyIndex);
-      out.resolutions.push(res);
-      if (res.matchedBy === 'created') index = null; // a new person must be found by the next mention
-      if (res.entity && !seenIds.has(res.entity.id)) {
-        seenIds.add(res.entity.id);
-        out.entities.push(res.entity);
+      const resolution = this.resolveWith(raw, opts, lazyIndex);
+      out.resolutions.push(resolution);
+      if (resolution.matchedBy === 'created') index = null; // a new person must be found by the next mention
+      if (resolution.entity && !seenIds.has(resolution.entity.id)) {
+        seenIds.add(resolution.entity.id);
+        out.entities.push(resolution.entity);
       }
-      // "ich" stays as text outside documents (it means the user, see the own identity); in documents it is the author
-      const name = res.name ?? (res.selfReference && opts.context !== 'document' ? res.parsed.raw : null);
+      const name = storedName(resolution, opts.context);
       const key = name ? normalizeName(name) : '';
       if (!name || seenNames.has(key)) continue;
       seenNames.add(key);
@@ -162,57 +177,45 @@ export class PersonService {
   }
 
   private resolveWith(name: string, opts: ResolvePersonOptions, index: () => PersonIndexEntry[]): PersonResolution {
-    const context = opts.context ?? 'manual';
-    const create = opts.create !== false;
     const parsed = parsePersonName(name);
-    const selfReference = isSelfReference(parsed.raw);
+    const mention: SelfResolverInput = { name, parsed, selfReference: isSelfReference(parsed.raw), context: opts.context ?? 'manual' };
+    const create = opts.create !== false;
     const result = (entity: GraphEntity | null, matchedBy: PersonResolution['matchedBy'], ambiguousCandidates: PersonCandidate[] = []): PersonResolution => {
-      if (entity && create && parsed.roles.length) entity = this.graph.addRoles(entity.id, parsed.roles);
-      return { entity, name: entity?.name ?? (parsed.cleanName || null), parsed, matchedBy, rejected: false, selfReference, ambiguousCandidates };
+      const withRoles = entity && create && parsed.roles.length ? this.graph.addRoles(entity.id, parsed.roles) : entity;
+      const resolvedName = withRoles?.name ?? (parsed.cleanName || null);
+      return { entity: withRoles, name: resolvedName, parsed, matchedBy, rejected: false, selfReference: mention.selfReference, ambiguousCandidates };
     };
 
     if (isNotAPersonName(parsed.raw)) {
-      const self = selfReference ? this.selfResolver?.({ name, parsed, selfReference, context }) : null;
+      const self = mention.selfReference ? this.selfResolver(mention) : null;
       if (self) return result(self, 'self');
-      return { entity: null, name: null, parsed, matchedBy: null, rejected: true, selfReference, ambiguousCandidates: [] };
+      return { entity: null, name: null, parsed, matchedBy: null, rejected: true, selfReference: mention.selfReference, ambiguousCandidates: [] };
     }
-
-    // 1) exact name
     const exact = this.graph.findByName('person', parsed.raw);
     if (exact) return result(exact, 'exact');
-
     const all = index();
-    // 2) alias
     const norm = normalizeName(parsed.raw);
     const aliasHits = all.filter((p) => p.aliases.has(norm));
     if (aliasHits.length === 1) return result(toEntity(aliasHits[0]!.row), 'alias');
-
-    // 3) name without role/title (case, hyphen, umlaut spelling and "Nachname, Vorname" ignored)
-    // (an alias shared by several persons is ambiguous, then only names count)
-    const key = parsed.comparisonKey;
-    const keyHits = key ? all.filter((p) => (aliasHits.length > 1 ? p.nameKey === key : p.keys.has(key))).sort(byPreference) : [];
-    if (keyHits.length > 0) return result(toEntity(keyHits[0]!.row), 'normalized');
-
-    // 4) own identity
-    const self = this.selfResolver?.({ name, parsed, selfReference, context });
+    const byKey = keyMatch(parsed, all, aliasHits);
+    if (byKey) return result(toEntity(byKey.row), 'normalized');
+    const self = this.selfResolver(mention);
     if (self) return result(self, 'self');
-
-    // not found: unclear candidates are reported, never assigned
-    const candidates: PersonCandidate[] = aliasHits.map((p) => ({ entity: toEntity(p.row), relation: 'shared_alias' as const }));
-    for (const p of all) {
-      if (aliasHits.includes(p)) continue;
-      const relation = comparePersonNames(parsed.cleanName, p.row.name);
-      if (relation && relation !== 'same') candidates.push({ entity: toEntity(p.row), relation });
-    }
+    const candidates = unclearCandidates(parsed, all, aliasHits);
     if (!create || !parsed.cleanName) return result(null, null, candidates);
-    const created = this.graph.ensureEntity('person', parsed.cleanName, opts.description);
-    if (candidates.length) {
+    return result(this.createPerson(parsed.cleanName, { description: opts.description, candidates }), 'created', candidates);
+  }
+
+  /** A mention no step matched becomes a new person; unclear candidates are only logged, never assigned. */
+  private createPerson(name: string, opts: { description?: string | null; candidates: PersonCandidate[] }): GraphEntity {
+    const created = this.graph.ensureEntity('person', name, opts.description);
+    if (opts.candidates.length) {
       this.ctx.logger.info('persons', 'Unclear person mention created as a separate person', {
         name: created.name,
-        candidates: candidates.map((c) => ({ id: c.entity.id, name: c.entity.name, relation: c.relation })),
+        candidates: opts.candidates.map((c) => ({ id: c.entity.id, name: c.entity.name, relation: c.relation })),
       });
     }
-    return result(created, 'created', candidates);
+    return created;
   }
 
   private loadIndex(): PersonIndexEntry[] {
