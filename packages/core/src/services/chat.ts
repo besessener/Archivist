@@ -1363,7 +1363,8 @@ export class ChatService {
   private async decisionFlow(conv: string, text: string, intent: ChatIntent, state: ConvState, viaLlm: boolean): Promise<Reply> {
     const ex = intent.decision ?? { participants: [], alternatives: [], unknownFields: [], confidence: 0.5 };
     const pending = state.pending?.kind === 'decision' ? state.pending : null;
-    const isNew = intent.intent !== 'decision_amend' || !pending;
+    // an addition always changes an existing decision – also without a running follow-up question (#177)
+    const isNew = intent.intent !== 'decision_amend';
 
     // determine the target decision of an addition without a running follow-up question
     let target: Decision | null = null;
@@ -1457,6 +1458,14 @@ export class ChatService {
     if (ex.validUntil) patch.validUntil = ex.validUntil;
     // the patch replaces the stored list, so keep what was confirmed as unknown before
     if (unknownFields.size) patch.unknownFields = [...new Set([...t.unknownFields, ...unknownFields])];
+    if (!pending && Object.keys(patch).length === 0)
+      return {
+        intent: intent.intent,
+        content: `Was soll ich an der Entscheidung „${t.title}“ ergänzen? Nenne bitte Datum, Beteiligte, Begründung, Thema oder Projekt.`,
+        sources: [this.decisionSource(t)],
+        confidence: 0.4,
+        state: { ...state, last: { ...(state.last ?? {}), decisionId: t.id } },
+      };
     const updated = this.decisions.update(t.id, patch, { trigger: 'chat' });
     // „Thema oder Projekt?“ stays asked until it is answered (or another topic was named)
     const stillClarify =

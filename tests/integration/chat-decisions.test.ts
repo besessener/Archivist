@@ -610,3 +610,53 @@ describe('References in the chat lead to the right object', () => {
     expect((r.assistantMessage.context?.contradictions ?? []).map((c) => c.id)).toContain(contra!.id);
   });
 });
+
+describe('An addition without a running follow-up question (#177)', () => {
+  it('changes the last decision instead of creating a new one from the addition sentence', async () => {
+    app.llm.on('ChatIntent', (_s, input) =>
+      /Ben war übrigens auch dabei/.test(input)
+        ? intent({ intent: 'decision_amend', decision: decisionEx({ participants: ['Ben'] }) })
+        : intent({
+            intent: 'decision_new',
+            decision: decisionEx({
+              decisionText: 'Wir wechseln zum Stromanbieter B.',
+              decidedAt: '2026-03-03',
+              topic: 'Strom',
+              topicIsProject: false,
+              participants: ['Anna'],
+            }),
+          }),
+    );
+    const r1 = await app.ok('chat:send', { text: 'Wir haben am 3.3.2026 entschieden, zum Stromanbieter B zu wechseln. Anna war dabei.' });
+    const [first] = await app.ok('decisions:list', {});
+    expect(first!.status).toBe('active');
+
+    await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Ben war übrigens auch dabei.' });
+
+    const all = await app.ok('decisions:list', {});
+    expect(all).toHaveLength(1);
+    expect(all[0]!.participants).toEqual(expect.arrayContaining(['Anna', 'Ben']));
+    expect(all[0]!.decisionText).toBe('Wir wechseln zum Stromanbieter B.');
+  });
+
+  it('asks what to add when the addition names nothing that can be stored', async () => {
+    app.llm.on('ChatIntent', (_s, input) =>
+      /Noch was dazu/.test(input)
+        ? intent({ intent: 'decision_amend', decision: decisionEx() })
+        : intent({
+            intent: 'decision_new',
+            decision: decisionEx({
+              decisionText: 'Wir wechseln zu B.',
+              decidedAt: '2026-03-03',
+              topic: 'Strom',
+              topicIsProject: false,
+              participants: ['Anna'],
+            }),
+          }),
+    );
+    const r1 = await app.ok('chat:send', { text: 'Wir haben entschieden, zu B zu wechseln.' });
+    const r = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Noch was dazu.' });
+    expect(r.assistantMessage.content).toMatch(/Was soll ich an der Entscheidung/);
+    expect(await app.ok('decisions:list', {})).toHaveLength(1);
+  });
+});
