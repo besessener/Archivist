@@ -44,7 +44,21 @@ export class FakeLlm {
     return this;
   }
 
-  fetch = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  /** Like real fetch: an aborted signal rejects the pending request, even while a responder still works. */
+  fetch = (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const signal = init?.signal;
+    if (!signal) return this.respond(url, init);
+    if (signal.aborted) return Promise.reject(new DOMException('This operation was aborted', 'AbortError'));
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(new DOMException('This operation was aborted', 'AbortError'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.respond(url, init)
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener('abort', onAbort));
+    });
+  };
+
+  private respond = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
     if (this.down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
     const u = url instanceof Request ? url.url : String(url);
     const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown>;

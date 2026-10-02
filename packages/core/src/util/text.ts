@@ -22,6 +22,20 @@ export function tokenize(text: string, opts: { keepStopwords?: boolean } = {}): 
   return opts.keepStopwords ? tokens : tokens.filter((t) => !STOPWORDS.has(t));
 }
 
+/** Inflection endings (German and English), longest first; stripped from search terms only. */
+const SEARCH_SUFFIXES = ['ungen', 'ung', 'heiten', 'heit', 'keiten', 'keit', 'ing', 'ern', 'en', 'er', 'es', 'em', 'ed', 'e', 'n', 's'];
+
+/**
+ * Light stemming for keyword search (query side): the FTS index has no stemmer, but terms are matched as
+ * prefixes, so cutting an inflection ending lets „Entscheidung“ also find „entscheiden“, „Entscheidungen“,
+ * „entscheidet“. Words stay at least 4 characters long; numbers stay unchanged.
+ */
+export function searchStem(term: string): string {
+  if (/\d/.test(term)) return term;
+  for (const suffix of SEARCH_SUFFIXES) if (term.endsWith(suffix) && term.length - suffix.length >= 4) return term.slice(0, -suffix.length);
+  return term;
+}
+
 export function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }

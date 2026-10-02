@@ -111,11 +111,30 @@ export async function scanDirectory(input: ScanDirectoryInput): Promise<ScanDire
   return result;
 }
 
-export function cosineTopK(input: { query: Float32Array; matrix: Float32Array; dim: number; k: number; minScore: number }): { index: number; score: number }[] {
-  const { query, matrix, dim, k, minScore } = input;
-  const n = Math.floor(matrix.length / dim);
+export interface CosineTopKInput {
+  query: Float32Array;
+  /** Row-major vectors; usually a view on a SharedArrayBuffer of the vector index (not copied to the worker). */
+  matrix: Float32Array;
+  dim: number;
+  k: number;
+  minScore: number;
+  /** Number of rows to consider (default: all rows of `matrix`). */
+  rows?: number;
+  /** Type code per row; 0 = removed row, skipped. */
+  types?: Uint8Array;
+  /** Only rows whose type code is set to 1 here are considered. */
+  typeMask?: Uint8Array | null;
+}
+
+export function cosineTopK(input: CosineTopKInput): { index: number; score: number }[] {
+  const { query, matrix, dim, k, minScore, types, typeMask } = input;
+  const n = Math.min(input.rows ?? Infinity, Math.floor(matrix.length / dim));
   const scores: { index: number; score: number }[] = [];
   for (let i = 0; i < n; i += 1) {
+    if (types) {
+      const code = types[i] ?? 0;
+      if (code === 0 || (typeMask && typeMask[code] !== 1)) continue;
+    }
     let dot = 0;
     const off = i * dim;
     for (let j = 0; j < dim; j += 1) dot += (query[j] ?? 0) * (matrix[off + j] ?? 0);
@@ -128,7 +147,7 @@ export interface TaskMap {
   hashFile: { in: { path: string }; out: string };
   scanDirectory: { in: ScanDirectoryInput; out: ScanDirectoryResult };
   extractDocument: { in: { path: string; options?: ParseOptions }; out: ParsedDocument };
-  cosineTopK: { in: { query: Float32Array; matrix: Float32Array; dim: number; k: number; minScore: number }; out: { index: number; score: number }[] };
+  cosineTopK: { in: CosineTopKInput; out: { index: number; score: number }[] };
 }
 export type TaskName = keyof TaskMap;
 
