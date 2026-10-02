@@ -154,6 +154,17 @@ export const LinkProposalPage = z.object({
 export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
 const LinkGroupBy = z.enum(['method', 'entry']);
 
+/** A threshold learned from the user's rejections (#275). */
+const LearnedThreshold = z.object({
+  method: RelationMethod,
+  label: z.string(),
+  measure: z.string(),
+  offset: z.number(),
+  cap: z.number(),
+  confirmed: z.number().int(),
+  rejected: z.number().int(),
+});
+
 /** How well the archive is linked (#292): current values, confirmation rate per method and the history. */
 const LinkageSnapshot = z.object({
   at: IsoDate,
@@ -564,6 +575,10 @@ export const ipcContract = {
   ),
   /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. */
   'links:startRun': ch(Empty, z.object({ jobId: Id })),
+  /** What the link methods learned from rejections (#275): raise of the threshold per method, capped. */
+  'links:thresholds': ch(Empty, z.array(LearnedThreshold)),
+  /** Forgets the learned thresholds (#275); rejected pairs stay rejected. */
+  'links:resetThresholds': ch(z.object({ confirmed: Confirmed }), z.object({ ok: z.literal(true) })),
   /** How well the archive is linked, with the history of the archive checks (#292). */
   'links:metrics': ch(Empty, LinkageMetrics),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),

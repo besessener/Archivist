@@ -7,6 +7,7 @@ import type { CreatedEntry } from '../util/origin-scope';
 import { normalizeName, tokenize, truncate } from '../util/text';
 import type { AppStateService } from './app-state';
 import type { InsightService } from './insights';
+import type { LinkThresholds } from './link-thresholds';
 import { relationReason, type KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
 
@@ -142,6 +143,8 @@ const BUSINESS_DATE: Array<{ table: string; column: string; type: EntityType; ex
   { table: 'decisions', column: 'decided_at', type: 'decision' },
   { table: 'documents', column: 'document_date', type: 'document', extra: "AND x.status IN ('archived','indexed_only')" },
 ];
+/** Confidence of a same-day proposal with one shared person (#278); every further person adds 0.1. */
+const DATE_PERSON_BASE = 0.6;
 const dayShift = (day: string, days: number) => new Date(Date.parse(`${day}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 const germanDay = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
 
@@ -165,6 +168,7 @@ export class LinkMethodsService {
     private readonly search: SearchService,
     private readonly insights: InsightService,
     private readonly appState: AppStateService,
+    private readonly thresholds?: LinkThresholds,
   ) {}
 
   private noteAnalyzer: ((id: string, signal?: AbortSignal) => Promise<number>) | null = null;
@@ -204,9 +208,13 @@ export class LinkMethodsService {
     return e ? `${e.name} ${e.description ?? ''}`.trim() : '';
   }
 
-  /** Similar indexed entries by their vectors (best first), without the entry itself. */
-  private similar(id: string, types: EntityType[], limit: number) {
-    return this.search.similarTo(id, { types, limit, minScore: MIN_SIMILARITY });
+  /**
+   * Similar indexed entries by their vectors (best first), without the entry itself. `learned`: the threshold includes what
+   * the user's rejections taught (#275) – for link proposals, not for grouping entries into a topic.
+   */
+  private similar(id: string, types: EntityType[], limit: number, learned = true) {
+    const raise = learned ? (this.thresholds?.offset('similarity') ?? 0) : 0;
+    return this.search.similarTo(id, { types, limit, minScore: { local: MIN_SIMILARITY.local + raise, embeddings: MIN_SIMILARITY.embeddings + raise } });
   }
 
   /**
@@ -570,7 +578,7 @@ export class LinkMethodsService {
     };
     for (const p of pool) {
       if (opts.signal?.aborted) break;
-      for (const h of await this.similar(p.id, TOPIC_ENTRY_TYPES, 8)) {
+      for (const h of await this.similar(p.id, TOPIC_ENTRY_TYPES, 8, false)) {
         if (!ids.has(h.id) || this.graph.rejectedBetween(p.id, h.id)) continue;
         parent.set(find(h.id), find(p.id));
       }
@@ -741,6 +749,8 @@ export class LinkMethodsService {
     const persons = this.personsOf(id);
     if (!persons.size) return 0;
     let created = 0;
+    // more shared persons, more confidence; the learned raise (#275) holds back the weakest ones first
+    const bar = DATE_PERSON_BASE + (this.thresholds?.offset('date_person') ?? 0) - 1e-9;
     for (const b of BUSINESS_DATE) {
       // stored instants can fall on a neighbouring UTC day: take one day around and compare the local day
       const rows = this.sqlite
@@ -749,10 +759,11 @@ export class LinkMethodsService {
       for (const row of rows) {
         if (localDate(row.d) !== day || this.linked(id, row.id) || !this.graph.getEntity(row.id)) continue;
         const shared = [...this.personsOf(row.id).entries()].filter(([pid]) => persons.has(pid)).map(([, name]) => `„${name}“`);
-        if (!shared.length) continue;
+        const confidence = Math.min(0.8, DATE_PERSON_BASE + 0.1 * (shared.length - 1));
+        if (!shared.length || confidence < bar) continue;
         const r = this.graph.link(id, row.id, 'related_to', {
           status: 'proposed',
-          confidence: 0.6,
+          confidence,
           method: 'date_person',
           evidence: `Am ${germanDay(day)} mit ${shared.join(', ')}`,
         });

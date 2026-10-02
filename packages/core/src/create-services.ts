@@ -25,6 +25,7 @@ import { InsightService } from './services/insights';
 import { JobQueueService } from './services/jobs';
 import { KnowledgeGraphService } from './services/knowledge-graph';
 import { LinkMethodsService } from './services/link-methods';
+import { LinkThresholds } from './services/link-thresholds';
 import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
 import { NoteAnalysisService } from './services/note-analysis';
@@ -197,7 +198,8 @@ function buildServices(opts: CreateServicesOptions) {
   );
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
-  const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+  const linkThresholds = new LinkThresholds(ctx, appState);
+  const links = new LinkMethodsService(ctx, graph, search, insights, appState, linkThresholds);
   // entries without any link (#290): targets as proposals, one bundled hint per archive check
   consistency.addCheck(async (count) => {
     const r = await links.checkOrphans({ propose: settings.get().links.autoPropose });
@@ -510,6 +512,7 @@ function buildServices(opts: CreateServicesOptions) {
     agentRuns,
     agentFileJobs,
     links,
+    linkThresholds,
     enqueueLinkRun,
     memory,
     enqueueConsistency,
