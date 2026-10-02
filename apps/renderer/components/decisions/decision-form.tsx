@@ -75,7 +75,7 @@ export function DecisionFormDialog({
   const [decidedAt, setDecidedAt] = useState(dayOf(decision?.decidedAt));
   const [topic, setTopic] = useState(decision?.topicName ?? '');
   const [project, setProject] = useState(decision?.projectName ?? '');
-  const extra = useExtraSubjects(decision?.id, open);
+  const extra = useExtraSubjects(decision?.id, { open });
   const [participants, setParticipants] = useState((decision?.participants ?? []).join(', '));
   const [rationale, setRationale] = useState(decision?.rationale ?? '');
   const [consequences, setConsequences] = useState(decision?.consequences ?? '');

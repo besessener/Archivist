@@ -55,8 +55,7 @@ export default function ChatPage() {
   const pendingHere = useMemo(() => requestsFor(requests, conversationId), [requests, conversationId]);
   // A request is still running (even if it was sent before switching tabs)
   const sending = pendingHere.some((request) => request.result === null);
-  // Live state of the agent run (also after switching tabs or a reload, #300)
-  const progress = useAgentProgress(conversationId, sending);
+  const progress = useAgentProgress({ conversationId, pending: sending });
   const working = sending || progress?.status === 'running';
   const { run: runStop, busy: stopping } = useRun();
   const stop = useCallback(
@@ -97,7 +96,7 @@ export default function ChatPage() {
       if (!content || working) return;
       setText('');
       // The request keeps running in the main process and stays in the shared store, even if the page is left in the meantime.
-      const sent = await chatRequests.send(conversationId, content, () =>
+      const sent = await chatRequests.send({ conversationId, content }, () =>
         run(() => call('chat:send', { text: content, ...(conversationId ? { conversationId } : {}) }), {
           errorTitle: 'Nachricht konnte nicht gesendet werden',
         }),

@@ -11,10 +11,7 @@ import { call } from '@/lib/ipc';
 import { plural } from '@/lib/format';
 import { useRun } from '@/lib/use-run';
 
-/**
- * Bulk assignment for the multi-selection of a list (#291): topic, project, tag and case for all selected entries at once
- * – ONE undo step. A topic or project is added (#287): the main one where none is set, otherwise a further one.
- */
+/** Topic, project, tag and case for all selected entries as ONE undo step (#291); a topic or project is added, never replaced (#287). */
 function BulkAssignDialog({ ids, noun, onClose, onDone }: { ids: string[]; noun: [string, string]; onClose: () => void; onDone: (n: number) => void }) {
   const [topic, setTopic] = useState('');
   const [project, setProject] = useState('');

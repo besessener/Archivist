@@ -44,7 +44,7 @@ export function ItemFormDialog({
   const statusEditable = item !== null && isEditableOpenItemStatus(item.status);
   const [topic, setTopic] = useState(item?.topicName ?? '');
   const [project, setProject] = useState(item?.projectName ?? '');
-  const extra = useExtraSubjects(item?.id, open);
+  const extra = useExtraSubjects(item?.id, { open });
 
   async function save() {
     const base = {

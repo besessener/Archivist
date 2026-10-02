@@ -23,8 +23,8 @@ export function SearchBox() {
   const seq = useRef(0);
 
   useEffect(() => {
-    const q = query.trim();
-    if (q.length < 2) {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
       setResults([]);
       setError(null);
       setLoading(false);
@@ -32,20 +32,21 @@ export function SearchBox() {
     }
     const id = ++seq.current;
     setLoading(true);
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises -- try/catch in the callback, outdated responses are discarded via seq
-    const t = setTimeout(async () => {
+    // outdated responses are discarded via seq
+    const search = async () => {
       try {
-        const res = await call('search:global', { query: q, limit: 15 });
+        const found = await call('search:global', { query: trimmed, limit: 15 });
         if (id !== seq.current) return;
-        setResults(res);
+        setResults(found);
         setError(null);
       } catch (err) {
         if (id === seq.current) setError(errorMessage(err));
       } finally {
         if (id === seq.current) setLoading(false);
       }
-    }, 250);
-    return () => clearTimeout(t);
+    };
+    const timer = setTimeout(() => void search(), 250);
+    return () => clearTimeout(timer);
   }, [query]);
 
   const showPanel = open && query.trim().length >= 2;

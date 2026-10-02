@@ -15,13 +15,8 @@ function parseProgress(payload: unknown): Progress | null {
   return res.success ? res.data : null;
 }
 
-/**
- * Live state of the agent run of a conversation (#300): loaded on mount / conversation switch via
- * `agent:conversation` (survives switching tabs and reloads) and kept current with `agent:progress`.
- * `pending`: a request of this view is running; for a new conversation (id still unknown) the first chat run
- * that reports progress is adopted.
- */
-export function useAgentProgress(conversationId: string | null, pending: boolean): Progress | null {
+/** Live state of a conversation's agent run (#300); while `pending` in a new conversation, the first running chat run is adopted. */
+export function useAgentProgress({ conversationId, pending }: { conversationId: string | null; pending: boolean }): Progress | null {
   const [progress, setProgress] = useState<Progress | null>(null);
   const adopted = useRef<string | null>(null);
   const pendingRef = useRef(pending);

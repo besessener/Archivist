@@ -8,12 +8,9 @@ import { useRun } from '@/lib/use-run';
 import type { ActionRecord } from '@/lib/types';
 
 /** A link suggestion after capturing (#283) – other relation proposals keep their full card. */
-export const isLinkSuggestion = (a: ActionRecord) => a.actionType === 'confirm_relation' && a.proposedParameters.offered === true;
+export const isLinkSuggestion = (action: ActionRecord) => action.actionType === 'confirm_relation' && action.proposedParameters.offered === true;
 
-/**
- * Link suggestions under an answer that captured something (#283): one click confirms the link (undoable in the change
- * log). Ignoring changes nothing – the suggestion stays in the list of link proposals under Insights.
- */
+/** Link suggestions under an answer that captured something (#283); ignored ones stay in the link proposals under Insights. */
 export function LinkSuggestions({ actions }: { actions: ActionRecord[] }) {
   const [state, setState] = useState<Record<string, ActionRecord>>({});
   const { run, busy } = useRun();

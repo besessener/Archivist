@@ -30,7 +30,6 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
   const { run, busy } = useRun();
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
-  // May this document's content go to the LLM at all (exclusion, folder permission, privacy mode)?
   const llmPossible = mode !== 'local_only' && doc.llmStatus !== 'excluded' && doc.folderLlmAllowed;
   const quarantined = doc.status === 'quarantined';
   const archivable = doc.status === 'staged' || doc.status === 'proposed';
