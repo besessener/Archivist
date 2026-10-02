@@ -555,6 +555,7 @@ export const RELATION_METHOD_LABELS: Record<RelationMethod, string> = {
   wikilink: 'Wiki-Link',
   manual: 'von dir verknüpft',
   agent: 'vom Agenten vorgeschlagen',
+  refinement: 'genauere Art (KI-Hinweis)',
 };
 
 /**

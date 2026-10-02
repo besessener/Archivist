@@ -35,7 +35,7 @@ export interface LinkCandidate {
 }
 
 /** Methods whose proposals are reviewed in the list of link proposals (#280); field mirrors and own flows are not. */
-export const LINK_PROPOSAL_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent', 'wikilink'];
+export const LINK_PROPOSAL_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent', 'wikilink', 'refinement'];
 /** Relation types with a flow of their own (contradictions, versions, duplicates). */
 const OWN_FLOW_TYPES = ['contradicts', 'supersedes', 'duplicate_of'];
 
@@ -135,7 +135,7 @@ const METRICS_HISTORY = 'links.metrics.history';
 /** Points kept in the history (with a daily check about a year). */
 const MAX_METRICS_POINTS = 400;
 /** Methods of the automatic proposals whose confirmation rate is measured (#292). */
-const MEASURED_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent'];
+const MEASURED_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent', 'refinement'];
 /** Where the orphan check of the archive check continues (#290). */
 const ORPHAN_CURSOR = 'links.orphans.cursor';
 /** The one bundled hint about entries without a link (#290). */
@@ -296,7 +296,7 @@ export class LinkMethodsService {
     const types = OWN_FLOW_TYPES.map((t) => `'${t}'`).join(',');
     return {
       from: `FROM relations r JOIN entities s ON s.id = r.source_entity_id JOIN entities t ON t.id = r.target_entity_id
-        WHERE r.status = 'proposed' AND r.method IN (${methods}) AND r.relation_type NOT IN (${types})
+        WHERE r.status = 'proposed' AND r.method IN (${methods}) AND (r.relation_type NOT IN (${types}) OR r.method = 'refinement')
           AND s.duplicate_of_id IS NULL AND t.duplicate_of_id IS NULL`,
       key: groupBy === 'method' ? 'r.method' : 'r.source_entity_id',
       sort: groupBy === 'method' ? 'r.method' : 's.normalized_name, r.source_entity_id',
@@ -527,7 +527,7 @@ export class LinkMethodsService {
            sum(CASE WHEN r.status = 'confirmed' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS confirmed,
            sum(CASE WHEN r.status = 'rejected' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS rejected,
            sum(CASE WHEN r.status = 'proposed' THEN 1 ELSE 0 END) AS open
-         FROM relations r WHERE r.method IN (${MEASURED_METHODS.map((m) => `'${m}'`).join(',')}) AND r.relation_type NOT IN (${OWN_FLOW_TYPES.map((t) => `'${t}'`).join(',')})
+         FROM relations r WHERE r.method IN (${MEASURED_METHODS.map((m) => `'${m}'`).join(',')}) AND (r.relation_type NOT IN (${OWN_FLOW_TYPES.map((t) => `'${t}'`).join(',')}) OR r.method = 'refinement')
          GROUP BY r.method`,
       )
       .all() as Array<{ method: RelationMethod; confirmed: number; rejected: number; open: number }>;

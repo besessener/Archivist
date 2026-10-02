@@ -931,6 +931,11 @@ export class KnowledgeGraphService {
   decideRelation(relationId: string, status: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): GraphRelation {
     const before = this.db.select().from(relations).where(eq(relations.id, relationId)).get();
     if (!before) throw new AppError('validation_error', 'Beziehung nicht gefunden.');
+    // a more precise kind replaces the general „verwandt“ of the pair – both in one undo step (#284)
+    if (status === 'confirmed' && before.method === 'refinement' && before.status === 'proposed') {
+      this.decideRelations([relationId], 'confirmed', opts);
+      return this.getRelation(relationId)!;
+    }
     this.setRelationStatus(relationId, status);
     const after = this.db.select().from(relations).where(eq(relations.id, relationId)).get()!;
     this.audit.log({
@@ -960,6 +965,28 @@ export class KnowledgeGraphService {
       .all();
     if (!rows.length) return 0;
     const updatedAt = nowIso();
+    // a confirmed more precise kind (#284) makes the general „verwandt“ of its pair outdated – part of the same undo
+    const general =
+      status === 'confirmed'
+        ? rows
+            .filter((r) => r.method === 'refinement')
+            .flatMap((r) =>
+              this.db
+                .select()
+                .from(relations)
+                .where(
+                  and(
+                    eq(relations.relationType, 'related_to'),
+                    eq(relations.status, 'confirmed'),
+                    or(
+                      and(eq(relations.sourceEntityId, r.sourceEntityId), eq(relations.targetEntityId, r.targetEntityId)),
+                      and(eq(relations.sourceEntityId, r.targetEntityId), eq(relations.targetEntityId, r.sourceEntityId)),
+                    ),
+                  ),
+                )
+                .all(),
+            )
+        : [];
     this.ctx.database.transaction(() => {
       this.db
         .update(relations)
@@ -971,6 +998,17 @@ export class KnowledgeGraphService {
           ),
         )
         .run();
+      if (general.length)
+        this.db
+          .update(relations)
+          .set({ status: 'outdated', updatedAt })
+          .where(
+            inArray(
+              relations.id,
+              general.map((r) => r.id),
+            ),
+          )
+          .run();
       this.audit.log({
         action: status === 'confirmed' ? 'relation.confirmMany' : 'relation.rejectMany',
         actor: 'user',
@@ -982,8 +1020,8 @@ export class KnowledgeGraphService {
         undo: {
           type: DECIDE_MANY_UNDO_TYPE,
           data: {
-            before: rows.map((r) => ({ id: r.id, status: r.status, resolvedByUser: r.resolvedByUser, updatedAt: r.updatedAt })),
-            after: Object.fromEntries(rows.map((r) => [r.id, updatedAt])),
+            before: [...rows, ...general].map((r) => ({ id: r.id, status: r.status, resolvedByUser: r.resolvedByUser, updatedAt: r.updatedAt })),
+            after: Object.fromEntries([...rows, ...general].map((r) => [r.id, updatedAt])),
           } satisfies DecideManyUndoData,
         },
       });

@@ -268,6 +268,14 @@ export class ContradictionService {
     this.ctx.events.changed('contradictions', 'insights');
   }
 
+  /**
+   * A contradiction between two decisions found elsewhere (the LLM's refinement of a link, #284) – recorded like one of
+   * the own check, with its hint and proposals. An existing record of the pair is returned as it is.
+   */
+  async recordPair(aId: string, bId: string, reason: string, confidence: number): Promise<Contradiction> {
+    return this.record(this.decisions.get(aId), this.decisions.get(bId), reason, confidence);
+  }
+
   private async record(a: Decision, b: Decision, reason: string, confidence: number): Promise<Contradiction> {
     const dedupeKey = ContradictionService.pairKey(a.id, b.id);
     const existing = this.db.select().from(contradictions).where(eq(contradictions.dedupeKey, dedupeKey)).get();

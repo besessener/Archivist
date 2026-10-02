@@ -30,6 +30,7 @@ import { KnowledgeGraphService, relationReason } from './services/knowledge-grap
 import { LinkMethodsService } from './services/link-methods';
 import { LinkThresholds } from './services/link-thresholds';
 import { TopicNamer } from './services/topic-namer';
+import { RelationRefiner } from './services/relation-refiner';
 import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
 import { NoteAnalysisService } from './services/note-analysis';
@@ -229,10 +230,17 @@ function buildServices(opts: CreateServicesOptions) {
     // groups of similar entries without a topic: „Neues Thema ‚…‘ anlegen?“ (#281)
     const topics = settings.get().links.autoPropose ? await links.proposeClusterTopics() : 0;
     if (topics) count('topic_cluster', topics);
+    // the kind of confirmed „verwandt“ links, more precisely – only in privacy mode „automatisch“ (#284)
+    if (settings.get().links.autoPropose) {
+      const refined = await refiner.run({ max: 10 });
+      if (refined) count('relation_refinement', refined);
+      notifyLinkProposals(refined);
+    }
     // one point of the linkage history per archive check (#292)
     links.recordMetrics();
   });
   const topicNamer = new TopicNamer(ctx, llm, privacy, documentsSvc);
+  const refiner = new RelationRefiner(ctx, graph, llm, privacy, documentsSvc, insights, contradictions, appState);
   links.setTopicNamer((c, signal) =>
     topicNamer.name(c, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((t) => t.name), signal }),
   );
@@ -565,6 +573,7 @@ function buildServices(opts: CreateServicesOptions) {
     agentRuns,
     agentFileJobs,
     links,
+    refiner,
     cases,
     subjects,
     linkThresholds,
