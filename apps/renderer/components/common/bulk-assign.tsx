@@ -10,11 +10,9 @@ import { Input } from '@/components/ui/input';
 import { call } from '@/lib/ipc';
 import { plural } from '@/lib/format';
 import { useRun } from '@/lib/use-run';
+import { withMembership } from '@/lib/utils';
 
-/**
- * Bulk assignment for the multi-selection of a list (#291): topic, project, tag and case for all selected entries at once
- * – ONE undo step. A topic or project is added (#287): the main one where none is set, otherwise a further one.
- */
+/** Topic, project, tag and case for all selected entries as ONE undo step (#291); a topic or project is added, never replaced (#287). */
 function BulkAssignDialog({ ids, noun, onClose, onDone }: { ids: string[]; noun: [string, string]; onClose: () => void; onDone: (n: number) => void }) {
   const [topic, setTopic] = useState('');
   const [project, setProject] = useState('');
@@ -26,7 +24,7 @@ function BulkAssignDialog({ ids, noun, onClose, onDone }: { ids: string[]; noun:
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-testid="entries-assign-dialog">
         <DialogHeader>
-          <DialogTitle>{plural(ids.length, noun[0], noun[1])} zuordnen</DialogTitle>
+          <DialogTitle>{plural(ids.length, noun)} zuordnen</DialogTitle>
           <DialogDescription>
             Leere Felder bleiben unverändert. Ein Thema oder Projekt wird ergänzt: Hat ein Eintrag noch keins, wird es sein Hauptthema, sonst ein weiteres.
             Alles ist ein einziger Schritt im Änderungsprotokoll und lässt sich dort rückgängig machen.
@@ -90,7 +88,7 @@ export function BulkAssignBar({ ids, noun, onClear, onDone }: { ids: string[]; n
           data-testid="entries-bulk-bar"
         >
           <span className="text-sm font-medium" aria-live="polite">
-            {plural(ids.length, noun[0], noun[1])} ausgewählt
+            {plural(ids.length, noun)} ausgewählt
           </span>
           <Button size="sm" variant="outline" onClick={() => setOpen(true)} data-testid="entries-bulk-assign">
             <Tags aria-hidden /> Zuordnen
@@ -101,7 +99,7 @@ export function BulkAssignBar({ ids, noun, onClear, onDone }: { ids: string[]; n
         </div>
       )}
       {done !== null && (
-        <Notice tone="info" title={`${plural(done, noun[0], noun[1])} zugeordnet`} role="status" className="relative" data-testid="entries-bulk-result">
+        <Notice tone="info" title={`${plural(done, noun)} zugeordnet`} role="status" className="relative" data-testid="entries-bulk-result">
           <p>Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.</p>
           <Button size="icon-sm" variant="ghost" className="absolute right-1 top-1" aria-label="Hinweis schließen" onClick={() => setDone(null)}>
             <X aria-hidden />
@@ -132,13 +130,7 @@ export function useSelection() {
     selected,
     ids: [...selected],
     has: (id: string) => selected.has(id),
-    toggle: (id: string, on: boolean) =>
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (on) next.add(id);
-        else next.delete(id);
-        return next;
-      }),
+    toggle: (id: string, on: boolean) => setSelected((previous) => withMembership(previous, { value: id, present: on })),
     setAll: (ids: string[]) => setSelected(new Set(ids)),
     clear: () => setSelected(new Set()),
   };

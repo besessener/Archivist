@@ -64,8 +64,7 @@ export default function TimelinePage() {
     { scopes: ['documents', 'decisions', 'openItems', 'knowledge', 'contradictions', 'events'] },
   );
 
-  // The service returns the newest `limit` entries; a full page means older ones may exist.
-  // While a larger window is loading the previous (smaller) result is still shown, so keep the button visible.
+  // a full page means older entries may exist; while a larger window loads, the smaller result still shows, so keep the button
   const shown = tl.data?.length ?? 0;
   const canLoadOlder = limit < MAX_ENTRIES && (shown >= limit || (tl.loading && pages > 1 && shown >= limit - PAGE_SIZE));
   const filter = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -252,7 +251,7 @@ export default function TimelinePage() {
         open={deleteId !== null}
         onOpenChange={(o) => !o && setDeleteId(null)}
         title="Ereignis löschen?"
-        description="Das Ereignis wird aus Timeline, Suche und Wissensgraph entfernt. Rückgängig machen können Sie das unter Einstellungen → Änderungsprotokoll."
+        description="Das Ereignis wird aus Timeline, Suche und Wissensgraph entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll."
         confirmLabel="Löschen"
         destructive
         onConfirm={async () => {

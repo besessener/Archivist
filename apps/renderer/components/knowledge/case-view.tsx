@@ -11,16 +11,13 @@ import { OPEN_ITEM_STATUS_LABELS } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 
-/**
- * The page of a case („Vorgang“, #286): status (open/closed), its open items and all its entries as a timeline, newest
- * first. Proposed members (from the similarity of entries) are marked; they are decided in „Verwandte Einträge“.
- */
+/** A case („Vorgang“, #286) with status, open items and entries newest first; proposed members are decided in „Verwandte Einträge“. */
 export function CaseView({ id }: { id: string }) {
-  const q = useQuery('cases:detail', { id }, { scopes: ['knowledge', 'openItems', 'events', 'decisions', 'documents'] });
+  const query = useQuery('cases:detail', { id }, { scopes: ['knowledge', 'openItems', 'events', 'decisions', 'documents'] });
   const { run, busy } = useRun();
-  if (q.error && !q.data) return <ErrorNote error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data) return <Loading />;
-  const { case: c, entries, openItems } = q.data;
+  if (query.error && !query.data) return <ErrorNote error={query.error} onRetry={() => void query.refetch()} />;
+  if (!query.data) return <Loading />;
+  const { case: c, entries, openItems } = query.data;
   const closed = c.status === 'closed';
   return (
     <section className="flex flex-col gap-4" data-testid="case-view">
@@ -41,7 +38,7 @@ export function CaseView({ id }: { id: string }) {
             const out = await run(() => call('cases:setStatus', { id, status: closed ? 'open' : 'closed' }), {
               success: closed ? 'Vorgang wieder geöffnet.' : 'Vorgang abgeschlossen. Rückgängig im Änderungsprotokoll.',
             });
-            if (out) void q.refetch();
+            if (out) void query.refetch();
           }}
         >
           {closed ? <RotateCcw aria-hidden /> : <CircleCheck aria-hidden />} {closed ? 'Wieder öffnen' : 'Abschließen'}

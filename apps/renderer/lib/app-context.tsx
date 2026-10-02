@@ -5,7 +5,7 @@ import type { AppStatus } from '@archivist/shared';
 import { call, getBridge } from './ipc';
 import { scopesOf, subscribe } from './events';
 import { useToast } from './toast';
-import type { ChatMsg, ImportResult } from './types';
+import type { ChatMessage, ImportResult } from './types';
 
 export interface ImportState {
   startedAt: number;
@@ -18,8 +18,8 @@ interface AppContextValue {
   statusError: string | null;
   refreshStatus: () => Promise<void>;
   /** Last assistant reply for the right-hand context panel. */
-  contextMessage: ChatMsg | null;
-  setContextMessage: (m: ChatMsg | null) => void;
+  contextMessage: ChatMessage | null;
+  setContextMessage: (m: ChatMessage | null) => void;
   importFiles: (files: File[]) => Promise<void>;
   importing: boolean;
   importState: ImportState | null;
@@ -34,7 +34,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [checked, setChecked] = useState(false);
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [contextMessage, setContextMessage] = useState<ChatMsg | null>(null);
+  const [contextMessage, setContextMessage] = useState<ChatMessage | null>(null);
   const [importState, setImportState] = useState<ImportState | null>(null);
   const [importing, setImporting] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

@@ -111,9 +111,9 @@ function UsageRows({ caption, rows, label }: { caption: string; rows: Row[]; lab
 /** Usage per day and month, split into chat and background (#302) – information only. */
 export function AgentUsageTable() {
   const [days, setDays] = useState(31);
-  const q = useQuery('agent:usage', { days }, { scopes: ['agent'] });
-  const dayRows = useMemo(() => group((q.data?.days ?? []).map((d) => ({ ...d, key: d.day }))), [q.data]);
-  const monthRows = useMemo(() => group((q.data?.months ?? []).map((m) => ({ ...m, key: m.month }))), [q.data]);
+  const query = useQuery('agent:usage', { days }, { scopes: ['agent'] });
+  const dayRows = useMemo(() => group((query.data?.days ?? []).map((d) => ({ ...d, key: d.day }))), [query.data]);
+  const monthRows = useMemo(() => group((query.data?.months ?? []).map((m) => ({ ...m, key: m.month }))), [query.data]);
 
   return (
     <Section title="Verbrauch" description="Nur zur Information – es gibt keine Kostenobergrenze. Kosten sind Schätzungen nach der Preistabelle (US$).">
@@ -125,12 +125,12 @@ export function AgentUsageTable() {
           <option value="366">letztes Jahr</option>
         </Select>
       </Field>
-      {q.error && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}
-      {!q.data && q.loading && <Loading />}
-      {q.data && (
+      {query.error && <ErrorNote error={query.error} onRetry={() => void query.refetch()} />}
+      {!query.data && query.loading && <Loading />}
+      {query.data && (
         <>
           <p className="text-sm" data-testid="agent-usage-total">
-            Insgesamt: {formatNumber(q.data.total.runs)} Läufe · {formatTokens(q.data.total.tokens)} · {formatCost(q.data.total.costUsd)}
+            Insgesamt: {formatNumber(query.data.total.runs)} Läufe · {formatTokens(query.data.total.tokens)} · {formatCost(query.data.total.costUsd)}
           </p>
           <UsageRows caption="Pro Tag" rows={dayRows} label={(k) => formatDate(k)} />
           <UsageRows caption="Pro Monat" rows={monthRows} label={monthLabel} />

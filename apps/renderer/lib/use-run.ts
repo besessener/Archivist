@@ -8,10 +8,7 @@ export interface RunOptions {
   errorTitle?: string;
 }
 
-/**
- * Runs an action, shows errors as a toast (with „Erneut versuchen“ (retry) if possible)
- * and returns `undefined` on errors.
- */
+/** Runs an action; an error shows as a toast (with „Erneut versuchen“ where possible) and yields `undefined`. */
 export function useRun() {
   const { toast, reportError } = useToast();
   const [busy, setBusy] = useState(false);

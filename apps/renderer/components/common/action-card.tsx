@@ -12,6 +12,7 @@ import { ConfidenceBadge } from './confidence';
 import { ConfirmDialog } from './confirm-dialog';
 import { EntityChip } from './entity-chip';
 import { formatDate } from '@/lib/format';
+import { withMembership } from '@/lib/utils';
 
 const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondary' | 'success' | 'danger' | 'warning' | 'info' }> = {
   proposed: { label: 'Wartet auf deine Entscheidung', variant: 'warning' },
@@ -23,50 +24,63 @@ const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondar
 };
 
 type Params = Record<string, unknown>;
-const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
-const list = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : []);
+type Value = [label: string, value: string];
+const MISSING = 'nicht angegeben';
+const nonBlank = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '') : [];
+const optional = (label: string, value: string | null): Value[] => (value ? [[label, value]] : []);
+const dayOrMissing = (value: unknown): string => (nonBlank(value) ? formatDate(nonBlank(value)) : MISSING);
+
+function decisionValues(parameters: Params): Value[] {
+  const participants = stringList(parameters.participants);
+  const evidence = nonBlank(parameters.evidence);
+  return [
+    ['Entscheidung', nonBlank(parameters.decisionText) ?? MISSING],
+    ['Datum', dayOrMissing(parameters.decidedAt)],
+    ['Beteiligte', participants.length ? participants.join(', ') : MISSING],
+    ['Thema', nonBlank(parameters.topic) ?? MISSING],
+    ...optional('Projekt', nonBlank(parameters.project)),
+    ...optional('Beleg', evidence && `„${evidence}“`),
+  ];
+}
+
+function closeValues(parameters: Params): Value[] {
+  return optional(parameters.status === 'dismissed' ? 'Warum verworfen' : 'Lösung', nonBlank(parameters.resolutionNote));
+}
+
+function openItemValues(parameters: Params): Value[] {
+  return [
+    ['Punkt', nonBlank(parameters.title) ?? MISSING],
+    ...optional('Beschreibung', nonBlank(parameters.description)),
+    ['Fällig', dayOrMissing(parameters.dueAt)],
+    ['Verantwortlich', nonBlank(parameters.responsible) ?? MISSING],
+  ];
+}
+
+const VALUES_BY_TYPE: Partial<Record<ActionRecord['actionType'], (parameters: Params) => Value[]>> = {
+  record_decision: decisionValues,
+  close_open_item: closeValues,
+  create_open_item: openItemValues,
+};
 
 /** The values a confirmation would store – the label alone can say something else than what is saved (#178). */
-function proposedValues(action: ActionRecord): Array<[string, string]> {
-  const p = action.proposedParameters as Params;
-  const missing = 'nicht angegeben';
-  if (action.actionType === 'record_decision') {
-    const participants = list(p.participants);
-    return [
-      ['Entscheidung', str(p.decisionText) ?? missing],
-      ['Datum', str(p.decidedAt) ? formatDate(str(p.decidedAt)) : missing],
-      ['Beteiligte', participants.length ? participants.join(', ') : missing],
-      ['Thema', str(p.topic) ?? missing],
-      ...(str(p.project) ? [['Projekt', str(p.project)!] as [string, string]] : []),
-      ...(str(p.evidence) ? [['Beleg', `„${str(p.evidence)}“`] as [string, string]] : []),
-    ];
-  }
-  if (action.actionType === 'close_open_item') {
-    return str(p.resolutionNote) ? [[p.status === 'dismissed' ? 'Warum verworfen' : 'Lösung', str(p.resolutionNote)!]] : [];
-  }
-  if (action.actionType === 'create_open_item') {
-    return [
-      ['Punkt', str(p.title) ?? missing],
-      ...(str(p.description) ? [['Beschreibung', str(p.description)!] as [string, string]] : []),
-      ['Fällig', str(p.dueAt) ? formatDate(str(p.dueAt)) : missing],
-      ['Verantwortlich', str(p.responsible) ?? missing],
-    ];
-  }
-  return [];
+function proposedValues(action: ActionRecord): Value[] {
+  return VALUES_BY_TYPE[action.actionType]?.(action.proposedParameters) ?? [];
 }
 
 function ProposedValues({ action }: { action: ActionRecord }) {
   const values = proposedValues(action);
   if (values.length === 0) return null;
   const incomplete =
-    action.actionType === 'record_decision' && values.some(([k, v]) => ['Datum', 'Beteiligte', 'Thema'].includes(k) && v === 'nicht angegeben');
+    action.actionType === 'record_decision' && values.some(([label, value]) => ['Datum', 'Beteiligte', 'Thema'].includes(label) && value === MISSING);
   return (
     <div className="mt-2 rounded-md bg-muted/50 p-2 text-xs" data-testid="action-values">
       <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[7rem_1fr]">
-        {values.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-muted-foreground">{k}</dt>
-            <dd className={v === 'nicht angegeben' ? 'text-muted-foreground' : undefined}>{v}</dd>
+        {values.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className={value === MISSING ? 'text-muted-foreground' : undefined}>{value}</dd>
           </div>
         ))}
       </dl>
@@ -85,10 +99,10 @@ function batchItems(action: ActionRecord): BatchItem[] {
   if (action.actionType !== 'agent_batch') return [];
   const items = (action.proposedParameters as Params).items;
   if (!Array.isArray(items)) return [];
-  return items.map((it) => {
-    const o = (it && typeof it === 'object' ? it : {}) as Params;
-    const risk = o.risk === 'critical' || o.risk === 'read' ? o.risk : 'write';
-    return { label: str(o.label) ?? str(o.tool) ?? 'Änderung', reason: str(o.reason) ?? '', risk };
+  return items.map((item) => {
+    const entry = (item && typeof item === 'object' ? item : {}) as Params;
+    const risk = entry.risk === 'critical' || entry.risk === 'read' ? entry.risk : 'write';
+    return { label: nonBlank(entry.label) ?? nonBlank(entry.tool) ?? 'Änderung', reason: nonBlank(entry.reason) ?? '', risk };
   });
 }
 
@@ -106,14 +120,14 @@ function BatchChecklist({
 }) {
   return (
     <ul className="mt-2 flex flex-col gap-1.5" data-testid="action-batch-items" aria-label="Vorbereitete Änderungen">
-      {items.map((it, i) => (
-        <li key={`${i}-${it.label}`} className="flex items-start gap-2">
+      {items.map((item, i) => (
+        <li key={`${i}-${item.label}`} className="flex items-start gap-2">
           {editable ? (
             <Checkbox
               className="mt-0.5"
               checked={selected.has(i)}
-              onCheckedChange={(v) => onToggle(i, v === true)}
-              aria-label={it.label}
+              onCheckedChange={(checked) => onToggle(i, checked === true)}
+              aria-label={item.label}
               data-testid="action-batch-item"
             />
           ) : (
@@ -123,11 +137,11 @@ function BatchChecklist({
           )}
           <div className="min-w-0 flex-1">
             <p className="flex flex-wrap items-center gap-1.5">
-              <span>{it.label}</span>
-              {it.risk === 'critical' && <Badge variant="warning">fragt immer</Badge>}
+              <span>{item.label}</span>
+              {item.risk === 'critical' && <Badge variant="warning">fragt immer</Badge>}
               {!editable && !selected.has(i) && <span className="text-xs text-muted-foreground">(nicht ausgewählt)</span>}
             </p>
-            {it.reason && <p className="text-xs text-muted-foreground">{it.reason}</p>}
+            {item.reason && <p className="text-xs text-muted-foreground">{item.reason}</p>}
           </div>
         </li>
       ))}
@@ -136,30 +150,24 @@ function BatchChecklist({
 }
 
 /** Card for an action proposal from the agent, with confirm/reject. */
-export function ActionCard({ action, onResolved }: { action: ActionRecord; onResolved?: (a: ActionRecord) => void }) {
+export function ActionCard({ action, onResolved }: { action: ActionRecord; onResolved?: (resolved: ActionRecord) => void }) {
   const [current, setCurrent] = useState<ActionRecord>(action);
   const [strongOpen, setStrongOpen] = useState(false);
   const { run, busy } = useRun();
-  const st = STATUS[current.status];
+  const status = STATUS[current.status];
   const items = batchItems(current);
   const isBatch = current.actionType === 'agent_batch';
   const [selected, setSelected] = useState<Set<number>>(() => {
-    const pre = (current.proposedParameters as Params).selected;
-    return new Set(Array.isArray(pre) ? pre.filter((n): n is number => typeof n === 'number') : items.map((_, i) => i));
+    const preselected = (current.proposedParameters as Params).selected;
+    return new Set(Array.isArray(preselected) ? preselected.filter((index): index is number => typeof index === 'number') : items.map((_, i) => i));
   });
   const allSelected = selected.size === items.length;
-  const toggle = (index: number, checked: boolean) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(index);
-      else next.delete(index);
-      return next;
-    });
+  const toggle = (index: number, checked: boolean) => setSelected((previous) => withMembership(previous, { value: index, present: checked }));
 
-  async function resolve(decision: 'approve' | 'reject', strongConfirmed = false) {
+  async function resolve({ decision, strongConfirmed }: { decision: 'approve' | 'reject'; strongConfirmed: boolean }) {
     // partial confirmation of an agent batch: only the checked items are executed
     const parameterOverrides = isBatch && !allSelected ? { selected: [...selected].sort((a, b) => a - b) } : undefined;
-    const out = await run(
+    const resolved = await run(
       () =>
         decision === 'approve'
           ? call('actions:resolve', {
@@ -172,18 +180,18 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
           : call('actions:resolve', { decision: 'reject', actionId: current.id }),
       { success: decision === 'approve' ? 'Aktion bestätigt.' : 'Vorschlag abgelehnt.' },
     );
-    if (out) {
-      setCurrent(out);
-      onResolved?.(out);
+    if (resolved) {
+      setCurrent(resolved);
+      onResolved?.(resolved);
     }
-    return out;
+    return resolved;
   }
 
   return (
     <div className="rounded-lg border bg-background p-3 text-sm" data-testid="action-card" data-status={current.status}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 font-medium">{current.label}</p>
-        <Badge variant={st.variant}>{st.label}</Badge>
+        <Badge variant={status.variant}>{status.label}</Badge>
       </div>
       {current.rationale && <p className="mt-1 text-muted-foreground">{current.rationale}</p>}
       <ProposedValues action={current} />
@@ -201,8 +209,8 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
         {/* the agent's prepared changes are the user's own request – no made-up estimate (#167) */}
         {!isBatch && <ConfidenceBadge value={current.confidence} />}
         {current.requiredConfirmation === 'strong' && <Badge variant="danger">Besonders folgenreich</Badge>}
-        {current.affectedEntities.map((e) => (
-          <EntityChip key={`${e.type}-${e.id}`} type={e.type} id={e.id} label={e.label} detail={e.detail} />
+        {current.affectedEntities.map((entity) => (
+          <EntityChip key={`${entity.type}-${entity.id}`} type={entity.type} id={entity.id} label={entity.label} detail={entity.detail} />
         ))}
       </div>
       {current.result && <p className="mt-2 text-xs text-muted-foreground">{current.result}</p>}
@@ -212,11 +220,17 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
             size="sm"
             disabled={busy || (isBatch && selected.size === 0)}
             data-testid="action-approve"
-            onClick={() => (current.requiredConfirmation === 'strong' ? setStrongOpen(true) : void resolve('approve'))}
+            onClick={() => (current.requiredConfirmation === 'strong' ? setStrongOpen(true) : void resolve({ decision: 'approve', strongConfirmed: false }))}
           >
             {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} {isBatch ? 'Ausführen' : 'Bestätigen'}
           </Button>
-          <Button size="sm" variant="outline" disabled={busy} data-testid="action-reject" onClick={() => void resolve('reject')}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            data-testid="action-reject"
+            onClick={() => void resolve({ decision: 'reject', strongConfirmed: false })}
+          >
             <X aria-hidden /> Ablehnen
           </Button>
         </div>
@@ -230,8 +244,8 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
         requireCheckbox="Ich habe die Auswirkungen verstanden und möchte diese Aktion ausführen."
         confirmTestId="action-strong-confirm"
         onConfirm={async () => {
-          const out = await resolve('approve', true);
-          if (out) setStrongOpen(false);
+          const resolved = await resolve({ decision: 'approve', strongConfirmed: true });
+          if (resolved) setStrongOpen(false);
         }}
       >
         <div className="rounded-md border bg-muted/50 p-3 text-sm">
@@ -241,15 +255,15 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
             <ul className="mt-2 list-disc pl-5">
               {items
                 .filter((_, i) => selected.has(i))
-                .map((it, i) => (
-                  <li key={`${i}-${it.label}`}>{it.label}</li>
+                .map((item, i) => (
+                  <li key={`${i}-${item.label}`}>{item.label}</li>
                 ))}
             </ul>
           )}
           {current.affectedEntities.length > 0 && (
             <ul className="mt-2 list-disc pl-5">
-              {current.affectedEntities.map((e) => (
-                <li key={`${e.type}-${e.id}`}>{e.label}</li>
+              {current.affectedEntities.map((entity) => (
+                <li key={`${entity.type}-${entity.id}`}>{entity.label}</li>
               ))}
             </ul>
           )}

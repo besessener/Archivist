@@ -13,10 +13,7 @@ import { cn } from '@/lib/utils';
 
 type ReminderRecord = IpcOutput<'reminders:list'>[number];
 
-/**
- * Pending reminders („Anstehende Erinnerungen“) with „Verschieben“ and „Verwerfen“, shared by the open-items page and
- * the notification bell. Renders nothing while there is no pending reminder (for the given target type).
- */
+/** Pending reminders with „Verschieben“ and „Verwerfen“ (open items, notification bell); renders nothing without one. */
 export function UpcomingReminders({
   targetType,
   enabled = true,

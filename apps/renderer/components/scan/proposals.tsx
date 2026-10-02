@@ -13,14 +13,11 @@ import { plural } from '@/lib/format';
 import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import type { ArchiveItemRequest, ArchiveMode, ScanProposalGroup } from '@archivist/shared';
+import { withMembership } from '@/lib/utils';
 
-function Group({
-  group,
-  onArchive,
-}: {
-  group: ScanProposalGroup;
-  onArchive: (ids: string[], mode: ArchiveMode, group: ScanProposalGroup) => void | Promise<void>;
-}) {
+type ArchiveRequest = { ids: string[]; mode: ArchiveMode; group: ScanProposalGroup };
+
+function Group({ group, onArchive }: { group: ScanProposalGroup; onArchive: (request: ArchiveRequest) => void | Promise<void> }) {
   const docs = useQuery(
     'documents:list',
     { ids: group.documentIds.slice(0, 1000), limit: 1000 },
@@ -37,7 +34,7 @@ function Group({
         <div>
           <h3 className="font-semibold">{group.label}</h3>
           <p className="text-sm text-muted-foreground">
-            {plural(group.documentIds.length, 'Dokument gehört', 'Dokumente gehören')} vermutlich{' '}
+            {plural(group.documentIds.length, ['Dokument gehört', 'Dokumente gehören'])} vermutlich{' '}
             {target ? (
               <>
                 zu <strong>{target}</strong>
@@ -57,14 +54,7 @@ function Group({
             <li key={id}>
               <CheckboxField
                 checked={selected.has(id)}
-                onCheckedChange={(v) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    if (v === true) next.add(id);
-                    else next.delete(id);
-                    return next;
-                  })
-                }
+                onCheckedChange={(checked) => setSelected((previous) => withMembership(previous, { value: id, present: checked === true }))}
                 label={
                   <span>
                     {d?.title ?? id}
@@ -87,7 +77,7 @@ function Group({
             ))}
           </Select>
         </div>
-        <Button disabled={selected.size === 0} onClick={() => onArchive([...selected], mode, group)} data-testid="scan-proposal-archive">
+        <Button disabled={selected.size === 0} onClick={() => onArchive({ ids: [...selected], mode, group })} data-testid="scan-proposal-archive">
           Ausgewählte archivieren … ({selected.size})
         </Button>
       </div>
@@ -100,7 +90,7 @@ export function ScanProposals() {
   const docs = useQuery('documents:list', { statuses: ['proposed'], limit: 1000 }, { scopes: ['documents'] });
   const [items, setItems] = useState<ArchiveItemRequest[] | null>(null);
 
-  async function openArchive(ids: string[], mode: ArchiveMode, group: ScanProposalGroup) {
+  async function openArchive({ ids, mode, group }: ArchiveRequest) {
     const list: ArchiveItemRequest[] = [];
     for (const id of ids) {
       // load fresh: the document list may still be outdated right after the analysis

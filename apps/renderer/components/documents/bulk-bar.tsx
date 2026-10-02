@@ -41,7 +41,7 @@ function AssignDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-testid="bulk-assign-dialog">
         <DialogHeader>
-          <DialogTitle>{plural(docs.length, 'Dokument', 'Dokumente')} zuordnen</DialogTitle>
+          <DialogTitle>{plural(docs.length, ['Dokument', 'Dokumente'])} zuordnen</DialogTitle>
           <DialogDescription>
             Leere Felder bleiben unverändert. Ein Thema oder Projekt wird ergänzt: Hat ein Dokument noch keins, wird es das Hauptthema, sonst ein weiteres. Die
             Änderung ist ein einziger Schritt im Änderungsprotokoll und lässt sich dort rückgängig machen.
@@ -103,14 +103,14 @@ function MoveDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: () 
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-testid="bulk-move-dialog">
         <DialogHeader>
-          <DialogTitle>{plural(movable.length, 'Dokument', 'Dokumente')} verschieben</DialogTitle>
+          <DialogTitle>{plural(movable.length, ['Dokument', 'Dokumente'])} verschieben</DialogTitle>
           <DialogDescription>
             Die Dateien werden innerhalb des Archivs in den gewählten Ordner verschoben. Jede Verschiebung lässt sich rückgängig machen.
           </DialogDescription>
         </DialogHeader>
         {skipped > 0 && (
           <Notice tone="warning">
-            {plural(skipped, 'Dokument ist', 'Dokumente sind')} nur indexiert und {skipped === 1 ? 'wird' : 'werden'} nicht verschoben.
+            {plural(skipped, ['Dokument ist', 'Dokumente sind'])} nur indexiert und {skipped === 1 ? 'wird' : 'werden'} nicht verschoben.
           </Notice>
         )}
         <Field label="Zielordner im Archiv" htmlFor="bulk-folder" hint="z. B. finanzen/energie – ein neuer Ordner wird angelegt.">
@@ -151,7 +151,7 @@ function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => vo
       tone={problems.length > 0 ? 'warning' : 'info'}
       title={
         result.kind === 'assign'
-          ? `${plural(result.updated, 'Dokument', 'Dokumente')} zugeordnet`
+          ? `${plural(result.updated, ['Dokument', 'Dokumente'])} zugeordnet`
           : result.kind === 'rename'
             ? 'Umbenennen abgeschlossen'
             : 'Verschieben abgeschlossen'
@@ -199,7 +199,7 @@ export function BulkBar({ docs, onClear, onDone }: { docs: DocRecord[]; onClear:
           data-testid="bulk-bar"
         >
           <span className="text-sm font-medium" aria-live="polite">
-            {plural(docs.length, 'Dokument', 'Dokumente')} ausgewählt
+            {plural(docs.length, ['Dokument', 'Dokumente'])} ausgewählt
           </span>
           <Button size="sm" variant="outline" onClick={() => setDialog('assign')} data-testid="bulk-assign">
             <Tags aria-hidden /> Zuordnen

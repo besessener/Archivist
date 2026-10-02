@@ -109,9 +109,9 @@ export function ScanDirectories() {
   const [removing, setRemoving] = useState<ScanRootRecord | null>(null);
 
   async function add() {
-    const sel = await run(() => call('app:selectDirectory', { title: 'Verzeichnis für die Dokumentensuche wählen' }));
-    if (!sel?.path) return;
-    await run(() => call('scanner:addDirectory', { path: sel.path as string, recursive: true }), { success: 'Verzeichnis hinzugefügt.' });
+    const selection = await run(() => call('app:selectDirectory', { title: 'Verzeichnis für die Dokumentensuche wählen' }));
+    if (!selection?.path) return;
+    await run(() => call('scanner:addDirectory', { path: selection.path as string, recursive: true }), { success: 'Verzeichnis hinzugefügt.' });
     void refetch();
   }
 

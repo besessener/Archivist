@@ -15,7 +15,7 @@ import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import type { DocRecord } from '@/lib/types';
 import type { ArchiveItemRequest, ArchiveMode, DocumentStatus } from '@archivist/shared';
-import { cn } from '@/lib/utils';
+import { cn, withMembership } from '@/lib/utils';
 
 const INBOX_STATUSES: DocumentStatus[] = ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'];
 const FILTERS: Array<{ id: DocumentStatus | 'all'; label: string }> = [
@@ -140,14 +140,7 @@ export default function InboxPage() {
             edit={getEdit(d)}
             onEdit={(e) => setEdits((prev) => ({ ...prev, [d.id]: e }))}
             selected={selected.has(d.id)}
-            onSelect={(v) =>
-              setSelected((prev) => {
-                const next = new Set(prev);
-                if (v) next.add(d.id);
-                else next.delete(d.id);
-                return next;
-              })
-            }
+            onSelect={(checked) => setSelected((previous) => withMembership(previous, { value: d.id, present: checked }))}
             onArchive={() => openFor([d])}
             onChanged={() => void refetch()}
             llmMode={settings?.privacy.llmMode ?? 'confirm'}
