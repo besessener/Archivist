@@ -1,17 +1,12 @@
 import { z } from 'zod';
 import { truncate } from '../../util/text';
 import type { LinkCandidate } from '../../services/link-methods';
-import { defineTool, list, type AgentTool, type ToolContext } from '../registry';
-import { TYPE_LABEL, unknownNote, type ToolDeps } from './common';
+import { defineTool, list, type AgentTool } from '../registry';
+import { TYPE_LABEL, unknownNote, type ToolDeps, type ToolScope } from './common';
 
-/**
- * The fixed link methods of Epic #269 as tools of their own (#313): candidates for an entry (#271, #283), entries without
- * any link (#290), groups of similar entries without a topic (#281) and the retroactive run (#279). They call the same
- * service functions as the user interface and only ever propose – confirming stays with the user; rejected pairs are never
- * proposed again. Names and passages of documents pass the privacy filter (#301); the runner masks secrets in every result.
- */
 /** An entry as the model sees it: ref, kind and name – documents only with permission (#301). */
-function entryLine(deps: ToolDeps, ctx: ToolContext, id: string, name: string, type: string): string {
+function entryLine({ deps, ctx }: ToolScope, entry: { id: string; name: string; type: string }): string {
+  const { id, name, type } = entry;
   if (type === 'document') {
     const row = deps.docs.findRow(id);
     if (!row || !deps.privacy.mayShareDocument(row)) return `${ctx.refs.doc(id)} Dokument [nicht freigegeben]`;
@@ -22,27 +17,27 @@ function entryLine(deps: ToolDeps, ctx: ToolContext, id: string, name: string, t
 }
 
 /** A candidate with its reason; the reason of a similarity is text of the entry – of a document only with permission. */
-function candidateLine(deps: ToolDeps, ctx: ToolContext, c: LinkCandidate): string {
-  const row = c.method === 'similarity' && c.type === 'document' ? deps.docs.findRow(c.id) : null;
-  const reason = c.method === 'mention' ? c.reason : row && !deps.privacy.mayShareDocument(row) ? 'ähnlicher Inhalt' : `ähnlich: „${c.reason}“`;
-  return `  → ${entryLine(deps, ctx, c.id, c.name, c.type)} (${Math.round(c.score * 100)} %, ${reason})`;
+function candidateLine(scope: ToolScope, candidate: LinkCandidate): string {
+  const { deps } = scope;
+  const row = candidate.method === 'similarity' && candidate.type === 'document' ? deps.docs.findRow(candidate.id) : null;
+  const hidden = row && !deps.privacy.mayShareDocument(row);
+  const reason = candidate.method === 'mention' ? candidate.reason : hidden ? 'ähnlicher Inhalt' : `ähnlich: „${candidate.reason}“`;
+  return `  → ${entryLine(scope, candidate)} (${Math.round(candidate.score * 100)} %, ${reason})`;
 }
 
-/**
- * Link proposals right after capturing an entry (#283): up to 3 candidates, for the agent to offer („Das klingt nach Projekt
- * X – verknüpfen?“). Empty when there are none; a failing search never fails the capture.
- */
-export async function linkHint(deps: ToolDeps, ctx: ToolContext, id: string | null): Promise<string> {
+/** Up to 3 link proposals right after capturing an entry, for the agent to offer (#283); a failing search never fails the capture. */
+export async function linkHint(scope: ToolScope, id: string | null): Promise<string> {
   if (!id) return '';
   try {
-    const found = await deps.links.candidates(id, { limit: 3 });
+    const found = await scope.deps.links.candidates(id, { limit: 3 });
     if (!found.length) return '';
-    return `\nMögliche Verknüpfungen (anbieten; verknüpfen nur auf Wunsch des Benutzers, sonst bleibt es ein Vorschlag):\n${found.map((c) => candidateLine(deps, ctx, c)).join('\n')}`;
+    return `\nMögliche Verknüpfungen (anbieten; verknüpfen nur auf Wunsch des Benutzers, sonst bleibt es ein Vorschlag):\n${found.map((c) => candidateLine(scope, c)).join('\n')}`;
   } catch {
     return '';
   }
 }
 
+/** The fixed link methods of Epic #269 as tools (#313): they only ever propose – confirming stays with the user. */
 export function linkMethodTools(deps: ToolDeps): AgentTool[] {
   const { graph, links } = deps;
 
@@ -58,18 +53,18 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
         const { ids, unknown } = ctx.refs.resolveMany(a.entries);
         if (!ids.length) return { content: `Keine Einträge angegeben.${unknownNote(unknown)}`, isError: true };
         const lines: string[] = [];
-        let n = 0;
+        let proposals = 0;
         for (const id of ids.slice(0, 25)) {
           const e = graph.getEntity(id);
           if (!e) continue;
           const found = await links.candidates(id, { limit: a.limit });
-          n += found.length;
+          proposals += found.length;
           lines.push(
-            `${entryLine(deps, ctx, id, e.name, e.type)}:`,
-            ...(found.length ? found.map((c) => candidateLine(deps, ctx, c)) : ['  (keine passenden Vorschläge)']),
+            `${entryLine({ deps, ctx }, { id, name: e.name, type: e.type })}:`,
+            ...(found.length ? found.map((c) => candidateLine({ deps, ctx }, c)) : ['  (keine passenden Vorschläge)']),
           );
         }
-        return { content: `${lines.join('\n')}${unknownNote(unknown)}`, summary: `${n} Vorschläge` };
+        return { content: `${lines.join('\n')}${unknownNote(unknown)}`, summary: `${proposals} Vorschläge` };
       },
     }),
     defineTool({
@@ -88,8 +83,8 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
         if (!page.total) return { content: 'Es gibt keine verwaisten Einträge.', summary: 'keine' };
         const lines: string[] = [];
         for (const o of page.items) {
-          lines.push(entryLine(deps, ctx, o.id, o.name, o.type));
-          if (a.withSuggestions) for (const c of await links.candidates(o.id, { limit: 2 })) lines.push(candidateLine(deps, ctx, c));
+          lines.push(entryLine({ deps, ctx }, o));
+          if (a.withSuggestions) for (const c of await links.candidates(o.id, { limit: 2 })) lines.push(candidateLine({ deps, ctx }, c));
         }
         const set = ctx.refs.set(page.items.map((o) => o.id));
         const more = page.total > a.offset + page.items.length ? `\nWeitere mit offset=${a.offset + page.items.length}.` : '';
@@ -113,7 +108,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
           const set = ctx.refs.set(c.members.map((m) => m.id));
           return `Gruppe ${i + 1} (${set}, ${c.members.length} Einträge), Namensvorschlag „${c.name}“:\n${c.members
             .slice(0, 12)
-            .map((m) => `  ${entryLine(deps, ctx, m.id, m.name, m.type)}`)
+            .map((m) => `  ${entryLine({ deps, ctx }, m)}`)
             .join('\n')}`;
         });
         return { content: blocks.join('\n\n'), summary: `${clusters.length} Gruppe(n)` };
@@ -130,13 +125,13 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const { ids, unknown } = ctx.refs.resolveMany(a.entries);
         if (ids.length < 2) return { content: `Ein Thema braucht mindestens zwei Einträge.${unknownNote(unknown)}`, isError: true };
-        const res = links.proposeTopic(a.name.trim(), ids, { conversationId: ctx.conversationId });
-        if (res.actionId) ctx.actionIds.push(res.actionId);
+        const proposal = links.proposeTopic(a.name.trim(), ids, { conversationId: ctx.conversationId });
+        if (proposal.actionId) ctx.actionIds.push(proposal.actionId);
         return {
-          content: res.actionId
+          content: proposal.actionId
             ? `Vorschlag „Neues Thema ‚${a.name}‘ anlegen?“ für ${ids.length} Einträge angelegt; der Benutzer entscheidet.${unknownNote(unknown)}`
             : `Zu dieser Gruppe hat der Benutzer schon entschieden – kein neuer Vorschlag.`,
-          summary: res.actionId ? 'vorgeschlagen' : 'schon beantwortet',
+          summary: proposal.actionId ? 'vorgeschlagen' : 'schon beantwortet',
         };
       },
     }),
@@ -148,17 +143,17 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: () => 'Sehe nach, wie gut das Archiv verknüpft ist',
       run: async () => {
-        const m = links.metrics();
-        const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v * 100)} %`);
+        const metrics = links.metrics();
+        const percent = (v: number | null) => (v === null ? '–' : `${Math.round(v * 100)} %`);
         const share = (s: { orphans: number; entries: number }) => (s.entries ? s.orphans / s.entries : 0);
-        const history = m.history.slice(-8);
+        const history = metrics.history.slice(-8);
         const lines = [
-          `Einträge: ${m.current.entries}, davon ohne Verknüpfung: ${m.current.orphans} (${pct(share(m.current))}).`,
-          `Offene Verknüpfungsvorschläge: ${m.current.openProposals}. Bestätigungsquote gesamt: ${pct(m.current.confirmationRate)}.`,
+          `Einträge: ${metrics.current.entries}, davon ohne Verknüpfung: ${metrics.current.orphans} (${percent(share(metrics.current))}).`,
+          `Offene Verknüpfungsvorschläge: ${metrics.current.openProposals}. Bestätigungsquote gesamt: ${percent(metrics.current.confirmationRate)}.`,
           'Je Methode (bestätigt / abgelehnt / offen, Quote):',
-          ...m.methods.map((x) => `- ${x.label}: ${x.confirmed} / ${x.rejected} / ${x.open}, ${pct(x.rate)}`),
+          ...metrics.methods.map((x) => `- ${x.label}: ${x.confirmed} / ${x.rejected} / ${x.open}, ${percent(x.rate)}`),
           history.length
-            ? `Verlauf (Anteil verwaist je Archivprüfung, älteste zuerst): ${history.map((h) => `${h.at.slice(0, 10)} ${pct(share(h))}`).join(', ')}.`
+            ? `Verlauf (Anteil verwaist je Archivprüfung, älteste zuerst): ${history.map((h) => `${h.at.slice(0, 10)} ${percent(share(h))}`).join(', ')}.`
             : 'Noch kein Verlauf – er entsteht mit jeder Archivprüfung.',
           'Aus Ablehnungen gelernt:',
           ...deps.linkThresholds
@@ -168,7 +163,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
                 `- ${t.label} (${t.measure}): ${t.offset > 0 ? `+${Math.round(t.offset * 100)} Punkte` : 'unverändert'} (Deckel +${Math.round(t.cap * 100)}; zuletzt ${t.confirmed} bestätigt, ${t.rejected} abgelehnt)`,
             ),
         ];
-        return { content: lines.join('\n'), summary: `${pct(share(m.current))} verwaist` };
+        return { content: lines.join('\n'), summary: `${percent(share(metrics.current))} verwaist` };
       },
     }),
     defineTool({
@@ -195,15 +190,15 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
       count: () => 1,
       label: () => 'Schlage Verknüpfungen für das bestehende Archiv vor',
       run: async (a, ctx) => {
-        const r = await links.backfill({
+        const result = await links.backfill({
           maxEntries: a.maxEntries,
           signal: ctx.signal,
           onProgress: (done, total) => ctx.job?.report(done / total, `${done} von ${total} Einträgen geprüft`),
         });
         return {
-          content: `${r.processed} Einträge geprüft, ${r.proposed} Verknüpfungen vorgeschlagen. ${r.done ? 'Das Archiv ist vollständig durchlaufen.' : `Noch ${r.remaining} Einträge – ein weiterer Aufruf macht weiter.`}`,
-          summary: `${r.proposed} vorgeschlagen`,
-          change: r.proposed ? `${r.proposed} Verknüpfungen vorgeschlagen` : undefined,
+          content: `${result.processed} Einträge geprüft, ${result.proposed} Verknüpfungen vorgeschlagen. ${result.done ? 'Das Archiv ist vollständig durchlaufen.' : `Noch ${result.remaining} Einträge – ein weiterer Aufruf macht weiter.`}`,
+          summary: `${result.proposed} vorgeschlagen`,
+          change: result.proposed ? `${result.proposed} Verknüpfungen vorgeschlagen` : undefined,
           changed: 0,
         };
       },

@@ -2,54 +2,93 @@ import { z } from 'zod';
 import { RuleDefinition, WorkflowDefinition, type MemoryKind, type RuleDefinition as Rule } from '@archivist/shared';
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
-import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
+import { defineTool, list, optText, type AgentTool } from '../registry';
 import { fillPattern } from '../../services/rename-pattern';
-import { allDocs, docLine, resolveDocs, unknownNote, type ToolDeps } from './common';
+import { allDocs, docLine, resolveDocs, type ToolDeps, type ToolScope } from './common';
 
 const KIND_LABEL: Record<MemoryKind, string> = { rule: 'Regel', workflow: 'Ablauf', correction: 'Korrektur', preference: 'Vorliebe', fact: 'Wissen' };
 
-/**
- * Learning tools (#315): Archivist stores rules, own workflows, preferences and knowledge about the user – only on the
- * user's explicit instruction or after asking (the runner checks the user's own words, never document contents).
- */
+/** What a rule may look at: metadata and the beginning of the text. */
+function ruleSubject(deps: ToolDeps, id: string) {
+  const row = deps.docs.getRow(id);
+  const d = deps.docs.get(id);
+  return {
+    title: d.title,
+    originalName: d.originalName,
+    ext: d.ext,
+    docType: d.docType,
+    topicName: d.topicName,
+    persons: d.persons,
+    sender: d.persons[0] ?? null,
+    text: row.extractedText.slice(0, 20_000),
+  };
+}
+
+const hasValue = (value: unknown) => (Array.isArray(value) ? value.length > 0 : Boolean(value));
+
+/** Plan per document: what the matching rules would change; conflicts are reported, never guessed. */
+function planRules(deps: ToolDeps, ids: string[]) {
+  return ids.map((id) => {
+    const d = deps.docs.get(id);
+    const { rules, conflict } = deps.memory.matchingRules(ruleSubject(deps, id));
+    const then: Rule['then'] = {};
+    for (const r of rules) Object.assign(then, Object.fromEntries(Object.entries(r.rule.then).filter(([, v]) => hasValue(v))));
+    return { doc: d, rules, conflict, then };
+  });
+}
+
+type RulePlan = ReturnType<typeof planRules>[number];
+
+/** Documents with matching rules: the given refs, else every archived document. */
+function planFor(scope: ToolScope, documents: string[] | null | undefined): RulePlan[] {
+  const ids = documents?.length
+    ? resolveDocs(scope, documents).docs.map((d) => d.id)
+    : allDocs(scope.deps)
+        .filter((d) => d.status === 'archived')
+        .map((d) => d.id);
+  return planRules(scope.deps, ids).filter((p) => p.rules.length);
+}
+
+function planLine(scope: ToolScope, p: RulePlan): string {
+  const rules = p.rules.map((r) => `[${r.entry.id}] ${r.entry.name}`).join(', ');
+  const outcome = p.conflict
+    ? ` ⚠ ${p.conflict}`
+    : ` → ${Object.entries(p.then)
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+        .join('; ')}`;
+  return `- ${docLine(scope, p.doc)} ← ${rules}${outcome}`;
+}
+
+/** Applies the merged actions of the rules to one document and records the rules as applied in this run. */
+async function applyRules({ deps, ctx }: ToolScope, p: RulePlan): Promise<void> {
+  const { then, doc } = p;
+  if (then.topic || then.project || then.tags?.length) {
+    deps.docs.bulkUpdate(
+      [doc.id],
+      {
+        ...(then.topic ? { topic: then.topic } : {}),
+        ...(then.project ? { project: then.project } : {}),
+        ...(then.tags?.length ? { addTags: then.tags } : {}),
+      },
+      { trigger: 'agent' },
+    );
+  }
+  const archived = doc.status === 'archived';
+  if (
+    then.folder &&
+    archived &&
+    folderOf(doc).toLowerCase() !== then.folder.toLowerCase() &&
+    !deps.categories.needsApproval(deps.categories.canonical(then.folder))
+  )
+    await deps.archive.relocate([{ documentId: doc.id, categoryPath: deps.categories.canonical(then.folder) }], { confirmed: true, trigger: 'agent' });
+  if (then.renamePattern && archived)
+    await deps.archive.rename([{ documentId: doc.id, fileName: fillPattern(then.renamePattern, doc) }], { confirmed: true, trigger: 'agent' });
+  for (const r of p.rules) if (!ctx.applied.some((x) => x.id === r.entry.id)) ctx.applied.push({ id: r.entry.id, kind: 'rule', label: r.entry.name });
+}
+
+/** Learning tools (#315): stored only on the user's own instruction – the runner checks their words, never documents. */
 export function learningTools(deps: ToolDeps): AgentTool[] {
   const { memory } = deps;
-
-  const subjectOf = (id: string) => {
-    const row = deps.docs.getRow(id);
-    const d = deps.docs.get(id);
-    return {
-      title: d.title,
-      originalName: d.originalName,
-      ext: d.ext,
-      docType: d.docType,
-      topicName: d.topicName,
-      persons: d.persons,
-      sender: d.persons[0] ?? null,
-      text: row.extractedText.slice(0, 20_000),
-    };
-  };
-
-  /** Plan per document: what the matching rules would change; conflicts are reported, never guessed. */
-  const planRules = (ids: string[]) =>
-    ids.map((id) => {
-      const d = deps.docs.get(id);
-      const { rules, conflict } = memory.matchingRules(subjectOf(id));
-      const then: Rule['then'] = {};
-      for (const r of rules)
-        Object.assign(then, Object.fromEntries(Object.entries(r.rule.then).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : Boolean(v)))));
-      return { doc: d, rules, conflict, then };
-    });
-
-  /** Documents with matching rules: the given refs, else every archived document. */
-  const planFor = (documents: string[] | null | undefined, ctx: ToolContext) => {
-    const ids = documents?.length
-      ? resolveDocs(deps, ctx, documents).docs.map((d) => d.id)
-      : allDocs(deps)
-          .filter((d) => d.status === 'archived')
-          .map((d) => d.id);
-    return planRules(ids).filter((p) => p.rules.length);
-  };
 
   return [
     defineTool({
@@ -86,11 +125,15 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
               isError: true,
             };
         }
-        const e = memory.save(
+        const entry = memory.save(
           { kind: a.kind, name: a.name, content: a.content, data: a.kind === 'rule' ? a.rule : a.kind === 'workflow' ? a.workflow : null },
           'user',
         );
-        return { content: `${KIND_LABEL[e.kind]} „${e.name}“ gespeichert [${e.id}].`, summary: 'gemerkt', change: `${KIND_LABEL[e.kind]} „${e.name}“ gemerkt` };
+        return {
+          content: `${KIND_LABEL[entry.kind]} „${entry.name}“ gespeichert [${entry.id}].`,
+          summary: 'gemerkt',
+          change: `${KIND_LABEL[entry.kind]} „${entry.name}“ gemerkt`,
+        };
       },
     }),
     defineTool({
@@ -108,16 +151,16 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
       requiresUserInstruction: true,
       label: () => 'Ändere etwas Gelerntes',
       run: async (a) => {
-        const e = memory.update(a.id, {
+        const entry = memory.update(a.id, {
           ...(a.name ? { name: a.name } : {}),
           ...(a.content ? { content: a.content } : {}),
           ...(a.enabled !== null && a.enabled !== undefined ? { enabled: a.enabled } : {}),
           ...(a.rule ? { data: a.rule } : a.workflow ? { data: a.workflow } : {}),
         });
         return {
-          content: `${KIND_LABEL[e.kind]} „${e.name}“ aktualisiert${e.enabled ? '' : ' (ausgeschaltet)'}.`,
+          content: `${KIND_LABEL[entry.kind]} „${entry.name}“ aktualisiert${entry.enabled ? '' : ' (ausgeschaltet)'}.`,
           summary: 'aktualisiert',
-          change: `${KIND_LABEL[e.kind]} „${e.name}“ geändert`,
+          change: `${KIND_LABEL[entry.kind]} „${entry.name}“ geändert`,
         };
       },
     }),
@@ -129,9 +172,13 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
       requiresUserInstruction: true,
       label: () => 'Vergesse etwas Gelerntes',
       run: async (a) => {
-        const e = memory.get(a.id);
+        const entry = memory.get(a.id);
         memory.remove(a.id);
-        return { content: `${KIND_LABEL[e.kind]} „${e.name}“ gelöscht.`, summary: 'gelöscht', change: `${KIND_LABEL[e.kind]} „${e.name}“ vergessen` };
+        return {
+          content: `${KIND_LABEL[entry.kind]} „${entry.name}“ gelöscht.`,
+          summary: 'gelöscht',
+          change: `${KIND_LABEL[entry.kind]} „${entry.name}“ vergessen`,
+        };
       },
     }),
     defineTool({
@@ -147,8 +194,8 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
           content: items
             .slice(0, 100)
             .map(
-              (e) =>
-                `- [${e.id}] ${KIND_LABEL[e.kind]} „${e.name}“${e.enabled ? '' : ' (aus)'}: ${truncate(e.content, 200)}${e.timesApplied ? ` – ${e.timesApplied}× angewendet` : ''}`,
+              (entry) =>
+                `- [${entry.id}] ${KIND_LABEL[entry.kind]} „${entry.name}“${entry.enabled ? '' : ' (aus)'}: ${truncate(entry.content, 200)}${entry.timesApplied ? ` – ${entry.timesApplied}× angewendet` : ''}`,
             )
             .join('\n'),
         };
@@ -161,51 +208,24 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
       schema: z.object({ documents: list.nullish(), preview: z.boolean().default(true) }),
       risk: (a) => (a.preview ? 'read' : 'write'),
       // without `documents` the rules apply to the whole archive – the mass action threshold must see that (#298)
-      count: (a, ctx) => planFor(a.documents, ctx).filter((p) => !p.conflict).length,
+      count: (a, ctx) => planFor({ deps, ctx }, a.documents).filter((p) => !p.conflict).length,
       label: (a) => (a.preview ? 'Prüfe, welche Regeln greifen' : 'Wende Regeln an'),
-      run: async (a, ctx: ToolContext) => {
-        const plan = planFor(a.documents, ctx);
+      run: async (a, ctx) => {
+        const plan = planFor({ deps, ctx }, a.documents);
         if (!plan.length) return { content: 'Keine Regel greift für diese Dokumente.', summary: 'keine Treffer' };
         const conflicts = plan.filter((p) => p.conflict);
         const work = plan.filter((p) => !p.conflict);
-        const line = (p: (typeof plan)[number]) =>
-          `- ${docLine(p.doc, ctx, deps.privacy)} ← ${p.rules.map((r) => `[${r.entry.id}] ${r.entry.name}`).join(', ')}${
-            p.conflict
-              ? ` ⚠ ${p.conflict}`
-              : ` → ${Object.entries(p.then)
-                  .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-                  .join('; ')}`
-          }`;
+        const line = (p: RulePlan) => planLine({ deps, ctx }, p);
         if (a.preview)
           return {
             content: `Vorschau (noch nichts geändert), ${plan.length} Dokument(e), ${conflicts.length} mit Widerspruch:\n${plan.slice(0, 60).map(line).join('\n')}`,
             summary: `${work.length} würden geändert`,
           };
-        let changed = 0;
-        for (const p of work) {
-          const t = p.then;
-          if (t.topic || t.project || t.tags?.length) {
-            deps.docs.bulkUpdate(
-              [p.doc.id],
-              { ...(t.topic ? { topic: t.topic } : {}), ...(t.project ? { project: t.project } : {}), ...(t.tags?.length ? { addTags: t.tags } : {}) },
-              { trigger: 'agent' },
-            );
-          }
-          if (
-            t.folder &&
-            p.doc.status === 'archived' &&
-            folderOf(p.doc).toLowerCase() !== t.folder.toLowerCase() &&
-            !deps.categories.needsApproval(deps.categories.canonical(t.folder))
-          )
-            await deps.archive.relocate([{ documentId: p.doc.id, categoryPath: deps.categories.canonical(t.folder) }], { confirmed: true, trigger: 'agent' });
-          if (t.renamePattern && p.doc.status === 'archived')
-            await deps.archive.rename([{ documentId: p.doc.id, fileName: fillPattern(t.renamePattern, p.doc) }], { confirmed: true, trigger: 'agent' });
-          changed += 1;
-          for (const r of p.rules) if (!ctx.applied.some((x) => x.id === r.entry.id)) ctx.applied.push({ id: r.entry.id, kind: 'rule', label: r.entry.name });
-        }
+        for (const p of work) await applyRules({ deps, ctx }, p);
         memory.markApplied(work.flatMap((p) => p.rules.map((r) => r.entry.id)));
+        const changed = work.length;
         return {
-          content: `Regeln angewendet auf ${changed} Dokument(e).${conflicts.length ? `\nNicht geändert wegen Widerspruch (frag den Benutzer):\n${conflicts.map(line).join('\n')}` : ''}${unknownNote([])}`,
+          content: `Regeln angewendet auf ${changed} Dokument(e).${conflicts.length ? `\nNicht geändert wegen Widerspruch (frag den Benutzer):\n${conflicts.map(line).join('\n')}` : ''}`,
           summary: `${changed} geändert`,
           change: `Regeln auf ${changed} Dokument(e) angewendet`,
           changed,
