@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SECTION_CHARS } from '../../packages/core/src/agent/tools/read';
+import { SECTION_CHARS } from '../../packages/core/src/agent/tools/read-documents';
 import type { TestApp } from '../helpers/harness';
 import { agentApp, archived, scriptedTurns } from '../helpers/agent';
 

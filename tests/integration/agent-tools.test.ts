@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fillPattern } from '../../packages/core/src/services/rename-pattern';
-import { SECTION_CHARS, locate } from '../../packages/core/src/agent/tools/read';
+import { SECTION_CHARS, locate } from '../../packages/core/src/agent/tools/read-documents';
 import type { TestApp } from '../helpers/harness';
 import { agentApp, archived, folderOf, scriptedTurns, sentText } from '../helpers/agent';
 
