@@ -3,7 +3,10 @@
   "productName": "Archivist",
   "version": "0.1.0",
   "description": "Archivist – persönlicher, agentischer AI-Archivar (lokal, ein Benutzer)",
-  "author": "Archivist",
+  "author": {
+    "name": "Matthias Eggert",
+    "url": "https://github.com/besessener"
+  },
   "license": "MIT",
   "private": true,
   "main": "dist/main.cjs",

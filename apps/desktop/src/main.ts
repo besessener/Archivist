@@ -2,6 +2,7 @@ import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
 import { createHandlers, createIpcDispatcher, createServices, type HostApi, type SecretCipher, type Services } from '@archivist/core';
 import { IPC_CHANNELS, type AppNotification } from '@archivist/shared';
+import { appUserModelId } from './app-id';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
@@ -15,6 +16,8 @@ const testMode = process.env.ARCHIVIST_TEST_MODE === '1';
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 if (process.env.ARCHIVIST_DATA_DIR) app.setPath('userData', path.join(process.env.ARCHIVIST_DATA_DIR, '.electron'));
+// Windows shows desktop notifications only for a process whose AppUserModelID matches a Start menu shortcut
+if (process.platform === 'win32') app.setAppUserModelId(appUserModelId(app.isPackaged, process.execPath));
 
 let services: Services | null = null;
 let mainWindow: BrowserWindow | null = null;
