@@ -24,6 +24,7 @@
     "start": "npm run build && npm run start -w archivist",
     "dist": "npm run build && npm run dist -w archivist",
     "dist:win": "npm run build && npm run dist:win -w archivist",
+    "release:win": "npm run build && npm run release:win -w archivist",
     "native:check": "node scripts/check-native.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
