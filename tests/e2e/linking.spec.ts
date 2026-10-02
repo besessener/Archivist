@@ -1,8 +1,9 @@
+import type { Page } from '@playwright/test';
 import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
 
 /** Optional screenshots for a visual check (ARCHIVIST_E2E_SHOTS=<folder>). */
-const shot = async (page: import('@playwright/test').Page, name: string) => {
+const shot = async (page: Page, name: string) => {
   const dir = process.env.ARCHIVIST_E2E_SHOTS;
   if (dir) await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true });
 };
