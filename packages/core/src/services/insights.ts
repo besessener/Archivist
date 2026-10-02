@@ -86,7 +86,7 @@ export class InsightService {
     const existing = this.db.select().from(insights).where(eq(insights.dedupeKey, input.dedupeKey)).get();
     const now = nowIso();
     if (existing) {
-      const wakes = existing.status === 'snoozed' && existing.snoozedUntil !== null && existing.snoozedUntil <= now;
+      const wakes = existing.status === 'snoozed' && existing.snoozedUntil !== null && this.snoozeOver(existing.snoozedUntil);
       const reopens = existing.status === 'accepted' && this.shouldReopen(existing, input, now);
       if (existing.status !== 'open' && !wakes && !reopens) {
         // the user already decided: a proposal made for this insight would be orphaned
@@ -226,10 +226,15 @@ export class InsightService {
     return this.list('open').length;
   }
 
+  /** A snoozed insight wakes up together with its reminder: a date-only value at the local reminder time (#77). */
+  private snoozeOver(snoozedUntil: string): boolean {
+    return this.reminders.isDue(snoozedUntil);
+  }
+
   private wakeSnoozed(): void {
-    const now = nowIso();
     for (const r of this.db.select().from(insights).where(eq(insights.status, 'snoozed')).all()) {
-      if (r.snoozedUntil && r.snoozedUntil <= now) this.db.update(insights).set({ status: 'open', snoozedUntil: null }).where(eq(insights.id, r.id)).run();
+      if (r.snoozedUntil && this.snoozeOver(r.snoozedUntil))
+        this.db.update(insights).set({ status: 'open', snoozedUntil: null }).where(eq(insights.id, r.id)).run();
     }
   }
 

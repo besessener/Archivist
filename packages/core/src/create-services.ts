@@ -89,7 +89,7 @@ function buildServices(opts: CreateServicesOptions) {
   const categories = new CategoryService(ctx);
   const jobs = new JobQueueService(ctx, { concurrency: opts.jobConcurrency ?? 2, retryBaseDelayMs: opts.jobRetryDelayMs });
   const notifications = new NotificationService(ctx);
-  const reminders = new ReminderService(ctx, notifications);
+  const reminders = new ReminderService(ctx, notifications, settings);
   // Settings are loaded before the database exists; report a repaired or unreadable settings.json now.
   const settingsProblem = settings.takeLoadProblem();
   if (settingsProblem) {

@@ -1,11 +1,12 @@
-import type { Reminder } from '@archivist/shared';
-import { and, asc, desc, eq, lte } from 'drizzle-orm';
+import { localDate, localInstant, type Reminder } from '@archivist/shared';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import type { Db } from '../db/database';
 import { openItems, reminders } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import type { NotificationService } from './notifications';
+import type { SettingsService } from './settings';
 
 type Row = typeof reminders.$inferSelect;
 const REMINDER_PREFIX = 'Erinnerung: ';
@@ -18,6 +19,11 @@ const map = (r: Row): Reminder => ({
   status: r.status as Reminder['status'],
   createdAt: r.createdAt,
 });
+
+function reached(remindAt: string, now: Date, defaultTime: string, timeZone?: string): boolean {
+  const at = localInstant(remindAt, defaultTime, timeZone);
+  return !at || at.getTime() <= now.getTime();
+}
 
 /** openItems.reminderAt spiegelt die nächste noch ausstehende Erinnerung des Punkts (oder null). */
 export function syncReminderAt(db: Db, openItemId: string): void {
@@ -44,6 +50,7 @@ export class ReminderService {
   constructor(
     private readonly ctx: AppContext,
     private readonly notifications: NotificationService,
+    private readonly settings: SettingsService,
   ) {}
 
   private get db() {
@@ -103,13 +110,19 @@ export class ReminderService {
     this.ctx.events.changed('reminders', 'openItems');
   }
 
+  /**
+   * Whether a reminder time has been reached (#77): a date without a time means the configured
+   * local reminder time (default 08:00) on that day, not midnight UTC. Unparsable values count as due.
+   */
+  isDue(remindAt: string, now: Date = new Date(), timeZone?: string): boolean {
+    return reached(remindAt, now, this.settings.get().notifications.reminderTime, timeZone);
+  }
+
   /** Löst fällige Erinnerungen aus (Start der Anwendung und periodisch). Gibt die Anzahl zurück. */
-  checkDue(now: Date = new Date()): number {
-    const due = this.db
-      .select()
-      .from(reminders)
-      .where(and(eq(reminders.status, 'pending'), lte(reminders.remindAt, now.toISOString())))
-      .all();
+  checkDue(now: Date = new Date(), timeZone?: string): number {
+    const pending = this.db.select().from(reminders).where(eq(reminders.status, 'pending')).orderBy(asc(reminders.remindAt)).all();
+    const time = this.settings.get().notifications.reminderTime;
+    const due = pending.filter((r) => reached(r.remindAt, now, time, timeZone));
     for (const r of due) {
       this.db.update(reminders).set({ status: 'fired' }).where(eq(reminders.id, r.id)).run();
       if (r.targetType === 'open_item' && r.targetId) syncReminderAt(this.db, r.targetId);
@@ -121,7 +134,7 @@ export class ReminderService {
       if (r.targetType === 'insight') link.push({ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' });
       this.notifications.create({
         title: r.title.startsWith(REMINDER_PREFIX) ? r.title : `${REMINDER_PREFIX}${r.title}`,
-        description: `Geplant für ${r.remindAt.slice(0, 10)}.`,
+        description: `Geplant für ${localDate(r.remindAt, timeZone)}.`,
         type: 'reminder',
         priority: 'high',
         affectedEntityIds: r.targetId ? [r.targetId] : [],

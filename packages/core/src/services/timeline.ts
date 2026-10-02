@@ -1,4 +1,4 @@
-import type { EntityRef, TimelineEntry } from '@archivist/shared';
+import { localDate, type EntityRef, type TimelineEntry } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { contradictions, decisions, documents, events, openItems } from '../db/schema';
 import { truncate } from '../util/text';
@@ -38,10 +38,11 @@ export class TimelineService {
       { type: 'contradiction', id: c.id, label: c.title },
       ...c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
     ];
+    // Timestamps (createdAt, …) belong to the local day, not the UTC day (#77).
     const push = (e: Omit<TimelineEntry, 'year'>) => {
-      const date = e.date.slice(0, 10);
-      if (q.from && date < q.from.slice(0, 10)) return;
-      if (q.to && date > q.to.slice(0, 10)) return;
+      const date = localDate(e.date);
+      if (q.from && date < localDate(q.from)) return;
+      if (q.to && date > localDate(q.to)) return;
       out.push({ ...e, date, year: Number(date.slice(0, 4)) || 0 });
     };
 

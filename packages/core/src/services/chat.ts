@@ -4,6 +4,7 @@ import {
   ChatAnalysis,
   DECISION_FIELD_LABELS,
   KnowledgeAnswer,
+  localDate,
   type ChatContext,
   type ChatMessage,
   type Decision,
@@ -1568,7 +1569,7 @@ export class ChatService {
       } else if (h.type === 'event') {
         // Ereignisse aus der Timeline: das Datum (occurredAt) gehört in Quelle und Quellentext
         const e = this.events.get(h.id);
-        const day = e.occurredAt.slice(0, 10);
+        const day = localDate(e.occurredAt);
         out.push({
           id: e.id,
           type: 'event',
