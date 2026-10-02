@@ -33,18 +33,17 @@ export const folderLabel = (folder: string): string => (folder === '' ? '(oberst
 
 /** Grouped by folder; the largest group first, alphabetical on a tie. */
 export function groupByFolder<T extends PlacedDoc>(docs: T[]): FolderGroup<T>[] {
-  const map = new Map<string, T[]>();
+  const byFolder = new Map<string, T[]>();
   for (const doc of docs) {
     const folder = folderOf(doc);
-    map.set(folder, [...(map.get(folder) ?? []), doc]);
+    byFolder.set(folder, [...(byFolder.get(folder) ?? []), doc]);
   }
-  return [...map.entries()].map(([folder, list]) => ({ folder, docs: list })).sort((a, b) => b.docs.length - a.docs.length || a.folder.localeCompare(b.folder));
+  return [...byFolder.entries()]
+    .map(([folder, list]) => ({ folder, docs: list }))
+    .sort((a, b) => b.docs.length - a.docs.length || a.folder.localeCompare(b.folder));
 }
 
-/**
- * Suggests the common target folder: where most of the documents already lie. On a tie the more specific
- * (deeper) folder, then alphabetical. The top level never qualifies; `null` if it is the only one.
- */
+/** Common target folder: where most documents lie, on a tie the deeper, then alphabetical; never the top level (`null`). */
 export function chooseTargetFolder(groups: FolderGroup[]): string | null {
   const candidates = groups.filter((g) => g.folder !== '');
   if (candidates.length === 0) return null;
@@ -56,12 +55,12 @@ export function chooseTargetFolder(groups: FolderGroup[]): string | null {
 export function splitSubjects<T extends PlacedDoc>(docs: T[]): SplitSubject<T>[] {
   const out: SplitSubject<T>[] = [];
   const collect = (kind: SplitSubject['kind'], pick: (d: T) => string | null | undefined) => {
-    const by = new Map<string, T[]>();
+    const byName = new Map<string, T[]>();
     for (const doc of docs) {
       const name = pick(doc)?.trim();
-      if (name) by.set(name, [...(by.get(name) ?? []), doc]);
+      if (name) byName.set(name, [...(byName.get(name) ?? []), doc]);
     }
-    for (const [name, list] of by) {
+    for (const [name, list] of byName) {
       const groups = groupByFolder(list);
       if (groups.length > 1) out.push({ kind, name, groups });
     }

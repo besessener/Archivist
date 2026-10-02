@@ -6,15 +6,12 @@ import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { sanitizeCategoryPath } from '../util/paths';
 
-const SEED = ['work', 'private'];
+const SEED_CATEGORIES = ['work', 'private'];
 
-/**
- * Categories (relative folder paths in the archive). The agent may propose subcategories;
- * new main categories (first segment) require explicit confirmation.
- */
+/** Categories (relative folder paths in the archive); new main categories (first segment) need explicit confirmation. */
 export class CategoryService {
   constructor(private readonly ctx: AppContext) {
-    for (const s of SEED) this.insertIfMissing(s);
+    for (const seed of SEED_CATEGORIES) this.insertIfMissing(seed);
   }
 
   private get db() {
