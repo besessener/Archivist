@@ -25,13 +25,13 @@ function failNextAudit(action: string): void {
   const audit = app.services.audit;
   const original = audit.log.bind(audit);
   let failed = false;
-  audit.log = ((entry: Parameters<typeof original>[0]) => {
+  audit.log = (entry: Parameters<typeof original>[0]) => {
     if (!failed && entry.action === action) {
       failed = true;
       throw new Error('database is locked');
     }
     return original(entry);
-  });
+  };
 }
 
 describe('File operations on the same document at the same time (#240)', () => {
@@ -76,13 +76,13 @@ describe('Database and file system stay in step (#221, #238)', () => {
     const { database } = app.services.ctx;
     const tx = database.transaction.bind(database);
     let failed = false;
-    database.transaction = (<T>(fn: () => T): T => {
+    database.transaction = <T>(fn: () => T): T => {
       if (!failed) {
         failed = true;
         throw new Error('database is locked');
       }
       return tx(fn);
-    });
+    };
     await expect(undo(res.items[0]!.auditId!)).rejects.toThrow();
     expect(app.services.documents.getRow(id).archiveRelPath).toBe(renamed);
     expect(fs.existsSync(path.join(root, ...renamed.split('/')))).toBe(true);
