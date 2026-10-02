@@ -37,6 +37,9 @@ function statusVariant(s: RelationStatus) {
   return s === 'confirmed' ? ('success' as const) : s === 'rejected' ? ('danger' as const) : s === 'outdated' ? ('secondary' as const) : ('warning' as const);
 }
 
+/** Entries the list loads; a full list says so instead of passing itself off as everything (#222). */
+const ENTITY_LIMIT = 300;
+
 function KnowledgeInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -44,7 +47,7 @@ function KnowledgeInner() {
   const [type, setType] = useState<EntityType | ''>('');
   const [search, setSearch] = useState('');
   const q = useDebounced(search.trim(), 300);
-  const list = useQuery('knowledge:listEntities', { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: 300 }, { scopes: ['knowledge'] });
+  const list = useQuery('knowledge:listEntities', { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: ENTITY_LIMIT }, { scopes: ['knowledge'] });
   const [createOpen, setCreateOpen] = useState(false);
   const [createKey, setCreateKey] = useState(0);
   /** Initial title of the open event dialog; null = closed. */
@@ -98,6 +101,11 @@ function KnowledgeInner() {
               </option>
             ))}
           </Select>
+          {(list.data?.length ?? 0) >= ENTITY_LIMIT && (
+            <p className="text-xs text-muted-foreground" data-testid="knowledge-capped">
+              Angezeigt werden die ersten {ENTITY_LIMIT} Einträge; möglicherweise gibt es weitere. Grenze die Liste mit der Suche oder dem Typ ein.
+            </p>
+          )}
           {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
           {!list.data && list.loading && <Loading />}
           {list.data && list.data.length === 0 && (

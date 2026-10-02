@@ -63,6 +63,9 @@ export interface CreateServicesOptions {
 
 export type Services = ReturnType<typeof buildServices>;
 
+/** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
+const AUTO_ANALYZE_BATCH = 500;
+
 /** Composition root: creates and wires all services. */
 export function createServices(opts: CreateServicesOptions) {
   return buildServices(opts);
@@ -229,12 +232,12 @@ function buildServices(opts: CreateServicesOptions) {
     // optional: analyze new files automatically (only if explicitly enabled and the privacy mode allows it)
     const s = settings.get();
     if (s.scan.autoAnalyze && privacy.mode() === 'auto') {
-      const ids = scanner
-        .getResults({ limit: 2000 })
-        .files.filter((f) => f.status === 'new' || f.status === 'changed')
-        .filter((f) => f.llmStatus !== 'excluded')
-        .map((f) => f.id);
-      if (ids.length) jobs.enqueue('scanner.analyze', `Analysiere ${ids.length} neue Dateien`, { fileIds: ids, confirmLlm: false });
+      // every waiting file (oldest first), in batches like a manual analysis
+      const ids = scanner.filesAwaitingAnalysis();
+      for (let i = 0; i < ids.length; i += AUTO_ANALYZE_BATCH) {
+        const batch = ids.slice(i, i + AUTO_ANALYZE_BATCH);
+        jobs.enqueue('scanner.analyze', `Analysiere ${batch.length} neue Dateien`, { fileIds: batch, confirmLlm: false });
+      }
     }
     return summaries;
   });

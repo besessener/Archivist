@@ -20,9 +20,11 @@ import { useDebounced } from '@/lib/use-debounced';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { DocRecord } from '@/lib/types';
+import type { DocumentStatus } from '@archivist/shared';
 import { parseList } from '@/lib/utils';
 
-const ARCHIVED = ['archived', 'indexed_only'];
+const ARCHIVED: DocumentStatus[] = ['archived', 'indexed_only'];
+const LIMIT = 1000;
 
 function DocumentsInner() {
   const router = useRouter();
@@ -32,10 +34,14 @@ function DocumentsInner() {
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const q = useDebounced(search.trim(), 300);
-  const list = useQuery('documents:list', { limit: 1000, ...(q ? { query: q } : {}), ...(topicId ? { topicId } : {}) }, { scopes: ['documents'] });
+  // filtered in the database: archived documents are no longer hidden behind newer inbox entries; the total tells
+  // whether the list is complete (#222)
+  const filter = { statuses: ARCHIVED, ...(q ? { query: q } : {}), ...(topicId ? { topicId } : {}) };
+  const list = useQuery('documents:list', { ...filter, limit: LIMIT }, { scopes: ['documents'] });
+  const total = useQuery('documents:count', filter, { scopes: ['documents'] });
   const topic = useQuery('knowledge:getEntity', topicId ? { id: topicId } : undefined, { enabled: !!topicId });
 
-  const docs = (list.data ?? []).filter((d) => ARCHIVED.includes(d.status));
+  const docs = list.data ?? [];
   const types = [...new Set(docs.map((d) => d.docType).filter((t): t is string => !!t))].sort();
   const shown = docs.filter((d) => !type || d.docType === type);
 
@@ -78,6 +84,12 @@ function DocumentsInner() {
           </Badge>
         )}
       </div>
+      {(total.data ?? 0) > docs.length && (
+        <p className="mb-4 text-sm text-muted-foreground" data-testid="documents-capped">
+          Angezeigt werden die neuesten {docs.length.toLocaleString('de-DE')} von {total.data!.toLocaleString('de-DE')} Dokumenten. Grenze die Liste mit der
+          Suche oder einem Thema ein, um ältere zu finden.
+        </p>
+      )}
       {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
       {!list.data && list.loading && <Loading />}
       {list.data && shown.length === 0 && (

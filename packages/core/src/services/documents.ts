@@ -22,7 +22,7 @@ import { normalizeName, truncate } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
-import { documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
+import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
 import { classifyLocally, humanizeCategoryPath, normalizeIsoDates, pastOrToday, snapToKnown } from './classifier';
 import { isJobCancelled, isJobInterrupted, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
@@ -216,6 +216,11 @@ export class DocumentService {
   /** Number of documents per status (inbox badge) – a COUNT instead of loading the list (#214). */
   counts(): Partial<Record<DocumentStatus, number>> {
     return documentCounts(this.db);
+  }
+
+  /** Number of documents matching a list filter, regardless of the list's limit. */
+  count(opts: Omit<DocumentListQuery, 'limit'> = {}): number {
+    return countDocumentList(this.db, opts);
   }
 
   findDuplicates(sha256: string, excludeId?: string): DocRow[] {

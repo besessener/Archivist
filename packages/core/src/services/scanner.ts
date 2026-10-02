@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { DocumentProposal, Job, ScanFile, ScanFileStatus, ScanRoot, ScanSummary } from '@archivist/shared';
 import type { ScanExclusion, ScanProposalGroup } from '@archivist/shared';
-import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
 import { MIME_BY_EXT } from '../parsers';
@@ -549,6 +549,22 @@ export class ScannerService {
       .all()
       .find((r) => r.lastSummary);
     return { files, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
+  }
+
+  /**
+   * New or changed files that may be analysed and are not queued for analysis yet, oldest first. Unlike the result
+   * list (newest 2000, ordered by name) this never picks the same first files after every scan (#222).
+   */
+  filesAwaitingAnalysis(): string[] {
+    const queued = new Set(this.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((p) => p.fileIds ?? []));
+    return this.db
+      .select({ id: scanFiles.id })
+      .from(scanFiles)
+      .where(and(inArray(scanFiles.status, ['new', 'changed']), ne(scanFiles.llmStatus, 'excluded')))
+      .orderBy(scanFiles.firstSeenAt, scanFiles.path)
+      .all()
+      .map((r) => r.id)
+      .filter((id) => !queued.has(id));
   }
 
   getFile(id: string): ScanFile {
