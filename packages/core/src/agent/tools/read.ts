@@ -23,6 +23,7 @@ import {
 const PAGE_SIZE = 50;
 /** Characters per section when a document is read section by section (#190). */
 export const SECTION_CHARS = 6_000;
+const RELATED_PAGE = 40;
 
 const FindArgs = z.object({
   ext: list.nullish().describe('Dateiendung(en), z. B. ["pptx","ppt"]'),
@@ -340,8 +341,13 @@ export function readTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'related',
       description:
-        'Verwandte Einträge eines Eintrags (D… oder K…) im Wissensgraphen, mit Begründung (Art der Beziehung, Status, Herkunft, Belege). depth 2 bezieht auch die Nachbarn der Nachbarn ein. Abgelehnte Paare werden auf Wunsch mit rejected=true genannt.',
-      schema: z.object({ id: z.string().min(1), depth: z.coerce.number().int().min(1).max(2).nullish(), rejected: z.boolean().nullish() }),
+        'Verwandte Einträge eines Eintrags (D… oder K…) im Wissensgraphen, mit Begründung – dieselbe Liste wie „Verwandte Einträge“ in der Oberfläche: direkte Beziehungen (bestätigt oder vorgeschlagen) und gemeinsame Projekte, Vorgänge, Themen, Personen und Tags, nach Stärke sortiert, seitenweise (page). depth 2 nennt stattdessen auch die Nachbarn der Nachbarn. Abgelehnte Paare werden auf Wunsch mit rejected=true genannt.',
+      schema: z.object({
+        id: z.string().min(1),
+        depth: z.coerce.number().int().min(1).max(2).nullish(),
+        rejected: z.boolean().nullish(),
+        page: z.coerce.number().int().min(1).nullish(),
+      }),
       risk: 'read',
       label: () => 'Sehe nach, was damit zusammenhängt',
       run: async (a, ctx) => {
@@ -355,16 +361,29 @@ export function readTools(deps: ToolDeps): AgentTool[] {
               : 'Keine abgelehnten Paare.',
           };
         }
-        const rel = graph.related(id, { depth: a.depth ?? 1, limit: 80 });
-        if (!rel.length) return { content: 'Keine verknüpften Einträge.', summary: 'nichts verknüpft' };
+        if ((a.depth ?? 1) === 2) {
+          const rel = graph.related(id, { depth: 2, limit: 80 });
+          if (!rel.length) return { content: 'Keine verknüpften Einträge.', summary: 'nichts verknüpft' };
+          return {
+            content: rel
+              .map(
+                (r) =>
+                  `- ${describeEntity(deps, ctx, r.entity.id, r.entity.type, r.entity.name)} – ${r.reason}${r.via ? ` (über ${truncate(r.via.name, 40)})` : ''}`,
+              )
+              .join('\n'),
+            summary: `${rel.length} verknüpft`,
+          };
+        }
+        const page = a.page ?? 1;
+        const { total, items } = deps.links.related(id, { limit: RELATED_PAGE, offset: (page - 1) * RELATED_PAGE });
+        if (!total) return { content: 'Keine verwandten Einträge.', summary: 'nichts verknüpft' };
+        const pages = Math.ceil(total / RELATED_PAGE);
+        const status = (r: (typeof items)[number]) => (r.relation ? ` [${r.relation.status === 'confirmed' ? 'bestätigt' : 'Vorschlag'}]` : '');
         return {
-          content: rel
-            .map(
-              (r) =>
-                `- ${describeEntity(deps, ctx, r.entity.id, r.entity.type, r.entity.name)} – ${r.reason}${r.via ? ` (über ${truncate(r.via.name, 40)})` : ''}`,
-            )
-            .join('\n'),
-          summary: `${rel.length} verknüpft`,
+          content: `${total} verwandte Einträge, Seite ${page}/${pages}:\n${items
+            .map((r) => `- ${describeEntity(deps, ctx, r.entity.id, r.entity.type, r.entity.name)} – ${r.reason}${status(r)}`)
+            .join('\n')}${page < pages ? `\n(weiter mit page=${page + 1})` : ''}`,
+          summary: `${total} verwandt`,
         };
       },
     }),
@@ -423,7 +442,23 @@ interface EntryArgs {
   to: string | null;
 }
 
+/** An entry known only from documents that may not be shared is not described to the model either (#301). */
+function fromHiddenOnly(deps: ToolDeps, sourceIds: readonly string[]): boolean {
+  if (!sourceIds.length) return false;
+  return sourceIds.every((id) => {
+    const row = deps.docs.findRow(id);
+    return row !== undefined && !deps.privacy.mayShareDocument(deps.docs.get(id));
+  });
+}
+
+const HIDDEN_ENTRY = '[nicht freigegeben – stammt aus einem nicht freigegebenen Dokument]';
+
 function entryRows(deps: ToolDeps, a: EntryArgs): Array<{ id: string; text: string; date: string }> {
+  const rows = entryRowsUnfiltered(deps, a);
+  return rows.map((r) => (r.sourceIds && fromHiddenOnly(deps, r.sourceIds) ? { id: r.id, date: r.date, text: `${r.kindLabel} ${HIDDEN_ENTRY}` } : r));
+}
+
+function entryRowsUnfiltered(deps: ToolDeps, a: EntryArgs): Array<{ id: string; text: string; date: string; sourceIds?: string[]; kindLabel?: string }> {
   const q = a.query?.toLowerCase() ?? null;
   const match = (...values: Array<string | null | undefined>) => !q || values.some((v) => lower(v).includes(q));
   const inRange = (date: string | null | undefined) => (!a.from || (date ?? '') >= a.from) && (!a.to || (date ?? '9999') <= a.to);
@@ -436,6 +471,8 @@ function entryRows(deps: ToolDeps, a: EntryArgs): Array<{ id: string; text: stri
         .filter((d) => match(d.title, d.decisionText) && subj(d.topicName, d.projectName) && inRange(d.decidedAt))
         .map((d) => ({
           id: d.id,
+          sourceIds: d.sourceIds,
+          kindLabel: 'Entscheidung',
           date: d.decidedAt ?? d.createdAt,
           text: `Entscheidung „${truncate(d.title, 90)}“ [${d.status}] ${d.decidedAt?.slice(0, 10) ?? 'ohne Datum'}${d.topicName ? ` | Thema: ${d.topicName}` : ''}${d.projectName ? ` | Projekt: ${d.projectName}` : ''}${d.missingFields.length ? ` | fehlt: ${d.missingFields.join(', ')}` : ''} – ${truncate(d.decisionText.replace(/\s+/g, ' '), 160)}`,
         }));
@@ -445,6 +482,8 @@ function entryRows(deps: ToolDeps, a: EntryArgs): Array<{ id: string; text: stri
         .filter((o) => match(o.title, o.description) && subj(o.topicName, o.projectName) && inRange(o.dueAt ?? o.createdAt))
         .map((o) => ({
           id: o.id,
+          sourceIds: o.sourceIds,
+          kindLabel: 'offener Punkt',
           date: o.dueAt ?? o.createdAt,
           text: `offener Punkt „${truncate(o.title, 90)}“ [${o.status}]${o.dueAt ? ` fällig ${o.dueAt.slice(0, 10)}` : ''}${o.responsibleName ? ` | verantwortlich: ${o.responsibleName}` : ''}${o.reminderAt ? ` | Erinnerung ${o.reminderAt.slice(0, 16)}` : ''}`,
         }));
@@ -463,6 +502,8 @@ function entryRows(deps: ToolDeps, a: EntryArgs): Array<{ id: string; text: stri
         .filter((e) => !e.duplicateOfId && match(e.title, e.description) && subj(e.topicName, e.projectName) && inRange(e.occurredAt))
         .map((e) => ({
           id: e.id,
+          sourceIds: e.sourceIds,
+          kindLabel: 'Ereignis',
           date: e.occurredAt,
           text: `Ereignis am ${e.occurredAt.slice(0, 10)}: ${truncate(e.title, 90)}${e.description ? ` – ${truncate(e.description, 120)}` : ''}`,
         }));

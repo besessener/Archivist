@@ -9,9 +9,9 @@ import { CheckboxField } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { call, errorMessage } from '@/lib/ipc';
 import { ARCHIVE_MODE_SHORT } from '@/lib/labels';
-import { formatPercent } from '@/lib/format';
 import { useRun } from '@/lib/use-run';
 import type { ArchivePlanRecord, ArchiveResultRecord, DocRecord } from '@/lib/types';
+import { ConfidenceBadge } from './confidence';
 import { EntityChip } from './entity-chip';
 import { ErrorNote, Loading, Notice } from './states';
 
@@ -177,7 +177,7 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
                       className="min-w-0 flex-1"
                     />
                     <Badge variant={it.action === 'move' ? 'warning' : 'secondary'}>{ARCHIVE_MODE_SHORT[it.action]}</Badge>
-                    {it.confidence !== null && <Badge variant="outline">{formatPercent(it.confidence)}</Badge>}
+                    {it.confidence !== null && <ConfidenceBadge value={it.confidence} />}
                   </div>
                   {(it.sourcePath || it.targetPath) && (
                     <div className="mt-2 grid items-center gap-1 text-xs sm:grid-cols-[1fr_auto_1fr]">

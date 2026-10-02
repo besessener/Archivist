@@ -3,13 +3,13 @@
 import { useMemo, useState } from 'react';
 import { Layers } from 'lucide-react';
 import { ArchiveDialog, defaultEdit, toArchiveItem } from '@/components/common/archive-dialog';
+import { ConfidenceBadge } from '@/components/common/confidence';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Select } from '@/components/ui/select';
 import { ARCHIVE_MODE_SHORT } from '@/lib/labels';
-import { formatPercent, plural } from '@/lib/format';
+import { plural } from '@/lib/format';
 import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import type { ArchiveItemRequest, ArchiveMode, ScanProposalGroup } from '@archivist/shared';
@@ -48,7 +48,7 @@ function Group({
             .
           </p>
         </div>
-        <Badge variant={group.confidence >= 0.8 ? 'success' : 'warning'}>Sicherheit {formatPercent(group.confidence)}</Badge>
+        <ConfidenceBadge value={group.confidence} />
       </div>
       <ul className="mt-3 flex max-h-56 flex-col gap-1.5 overflow-y-auto" data-testid="scan-proposal-files">
         {group.documentIds.map((id) => {

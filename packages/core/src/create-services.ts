@@ -22,10 +22,10 @@ import { PersonDuplicateService } from './services/cleanup/person-duplicates';
 import { PersonQuestionService } from './services/cleanup/person-questions';
 import { ContradictionService } from './services/contradictions';
 import { DecisionService } from './services/decisions';
-import { DocumentService } from './services/documents';
+import { DOCUMENT_REREAD_JOB, DocumentService } from './services/documents';
 import { EmbeddingService } from './services/embedding';
 import { InsightService } from './services/insights';
-import { JobQueueService } from './services/jobs';
+import { isJobCancelled, JobQueueService } from './services/jobs';
 import { KnowledgeGraphService, relationReason } from './services/knowledge-graph';
 import { LinkMethodsService } from './services/link-methods';
 import { LinkThresholds } from './services/link-thresholds';
@@ -455,6 +455,25 @@ function buildServices(opts: CreateServicesOptions) {
     const res = await scanner.analyzeFiles(job.payload.fileIds, job.payload.confirmLlm, job);
     agent.scheduleInbox();
     return res;
+  });
+  // re-reading archived documents (#220, #305): one job for the selection, with progress; failures are counted, not fatal
+  jobs.register<{ documentIds: string[] }>(DOCUMENT_REREAD_JOB, async (job) => {
+    const ids = job.payload.documentIds;
+    let done = 0;
+    const failed: string[] = [];
+    for (const id of ids) {
+      job.throwIfCancelled();
+      try {
+        await documentsSvc.rereadArchived(id, { signal: job.signal });
+      } catch (err) {
+        if (isJobCancelled(err)) throw err;
+        failed.push(id);
+        ctx.logger.warn('documents', 'Re-reading failed', { documentId: id, error: err });
+      }
+      done += 1;
+      job.report(done / ids.length, `${done} von ${ids.length} Dokumenten neu gelesen`);
+    }
+    return { reread: done - failed.length, failed };
   });
   // background runs of the agent (#313): one job per trigger, cancellable, resumed after a restart
   jobs.register<{ kind: BackgroundKind; docIds?: string[] }>('agent.background', async (job) => {

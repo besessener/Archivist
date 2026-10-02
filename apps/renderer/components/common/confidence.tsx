@@ -1,12 +1,13 @@
 import { Badge } from '@/components/ui/badge';
-import { formatPercent } from '@/lib/format';
+import { confidenceWord } from '@/lib/format';
 
-export function ConfidenceBadge({ value, label = 'Sicherheit' }: { value: number | null | undefined; label?: string }) {
+/** A rough estimate in words (#167): the values are self-reports of the AI or rule defaults, not measured probabilities. */
+export function ConfidenceBadge({ value, label = 'Einschätzung' }: { value: number | null | undefined; label?: string }) {
   if (value === null || value === undefined) return null;
   const variant = value >= 0.8 ? 'success' : value >= 0.5 ? 'warning' : 'danger';
   return (
-    <Badge variant={variant} title="Wie sicher sich die KI bei dieser Einschätzung ist" data-testid="confidence">
-      {label} {formatPercent(value)}
+    <Badge variant={variant} title="Grobe Einschätzung der Analyse – keine gemessene Wahrscheinlichkeit" data-testid="confidence">
+      {label}: {confidenceWord(value)}
     </Badge>
   );
 }

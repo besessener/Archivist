@@ -315,8 +315,8 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
             <span className="text-muted-foreground">keine</span>
           )}
         </Row>
-        <Row label="Sicherheit">
-          <ConfidenceBadge value={d.confidence} />
+        <Row label="Einschätzung">
+          <ConfidenceBadge value={d.confidence} label="Erfassung" />
         </Row>
       </dl>
       <RelatedEntries id={d.id} link={{ name: d.title }} />

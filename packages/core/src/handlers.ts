@@ -4,6 +4,7 @@ import { RelationType, ipcContract, type AppStatus, type IpcChannel, type IpcOut
 import type { Services } from './create-services';
 import { AppError, permissionError, toErrorInfo } from './util/errors';
 import { isInside } from './util/paths';
+import { fillPattern } from './services/rename-pattern';
 
 /** Operating-system-level functions that only the Electron main process can provide. */
 export interface HostApi {
@@ -21,6 +22,16 @@ export interface HostApi {
 type HandlerMap = { [C in IpcChannel]: (input: IpcParsedInput<C>) => Promise<IpcOutput<C>> | IpcOutput<C> };
 
 /** Implements every IPC channel exclusively via the service layer. */
+/** Rename requests for a scheme: each document gets its own name from its metadata. */
+function renameByPattern(s: Services, ids: string[], pattern: string) {
+  const byId = new Map(s.documents.list({ ids, limit: ids.length }).map((d) => [d.id, d]));
+  // in the order of the selection: of two equal names the first selected one gets it
+  return ids.flatMap((id) => {
+    const d = byId.get(id);
+    return d ? [{ documentId: id, fileName: fillPattern(pattern, d) }] : [];
+  });
+}
+
 export function createHandlers(s: Services, host: HostApi): HandlerMap {
   const trigger = 'ui';
   const settingsPayload = () => ({ settings: s.settings.get(), hasApiKey: s.secrets.hasApiKey() });
@@ -250,6 +261,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         i.ids.map((documentId) => ({ documentId, categoryPath: s.categories.canonical(i.categoryPath) })),
         { confirmed: true, trigger },
       ),
+    'documents:previewRename': (i) => s.archive.previewRename(renameByPattern(s, i.ids, i.pattern)),
+    'documents:rename': (i) => s.archive.rename(renameByPattern(s, i.ids, i.pattern), { confirmed: true, trigger }),
     'documents:ignore': (i) => s.documents.ignore(i.id),
     'documents:forTopic': (i) => {
       const e = s.graph.getEntity(i.topicId);

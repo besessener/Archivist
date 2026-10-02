@@ -1,49 +1,18 @@
 import path from 'node:path';
 import { z } from 'zod';
-import type { ArchiveResult, DocumentRecord } from '@archivist/shared';
+import { FOLDER_CREATE_UNDO, SCAN_EXCLUSION_UNDO, type FolderCreateUndoData, type ScanExclusionUndoData } from './tool-undo';
+import type { ArchiveResult } from '@archivist/shared';
 import { sanitizeCategoryPath } from '../../util/paths';
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
-import type { FileOp, FileOpResult } from '../file-jobs';
+import { fillPattern } from '../../services/rename-pattern';
+import type { ArchiveConsent, FileOp, FileOpResult } from '../file-jobs';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
 import { docLine, normFolder, resolveDocs, unknownNote, type ToolDeps } from './common';
 
-/** Values for a naming scheme like `{datum} {typ} {absender}` (#304). */
-export function fillPattern(
-  pattern: string,
-  d: Pick<DocumentRecord, 'documentDate' | 'archivedAt' | 'createdAt' | 'docType' | 'persons' | 'title' | 'topicName' | 'projectName' | 'originalName'>,
-): string {
-  const date = (d.documentDate ?? d.archivedAt ?? d.createdAt).slice(0, 10);
-  const values: Record<string, string> = {
-    datum: date,
-    date,
-    jahr: date.slice(0, 4),
-    monat: date.slice(0, 7),
-    typ: d.docType ?? '',
-    absender: d.persons[0] ?? '',
-    titel: d.title,
-    thema: d.topicName ?? '',
-    projekt: d.projectName ?? '',
-    original: path.basename(d.originalName, path.extname(d.originalName)),
-  };
-  const filled = pattern.replace(/\{(\w+)\}/g, (_, k: string) => values[k.toLowerCase()] ?? '').replace(/\s{2,}/g, ' ');
-  // separators left over at the ends when a placeholder was empty
-  let start = 0;
-  let end = filled.length;
-  while (start < end && ' _-'.includes(filled[start]!)) start += 1;
-  while (end > start && ' _-'.includes(filled[end - 1]!)) end -= 1;
-  return filled.slice(start, end).trim();
-}
-
 /** Moves and renames go through the file jobs: larger amounts as a job of their own, in chunks either way (#304). */
-function bulk(
-  deps: ToolDeps,
-  ctx: ToolContext,
-  op: FileOp,
-  items: Array<{ documentId: string; categoryPath: string } | { documentId: string; fileName: string }>,
-  label: string,
-) {
-  return deps.fileJobs.run(op, items, { signal: ctx.signal, label, inJob: Boolean(ctx.job), report: ctx.job?.report });
+function bulk(deps: ToolDeps, ctx: ToolContext, op: FileOp, items: Parameters<ToolDeps['fileJobs']['run']>[1], label: string, consent?: ArchiveConsent) {
+  return deps.fileJobs.run(op, items, { signal: ctx.signal, label, inJob: Boolean(ctx.job), report: ctx.job?.report, consent });
 }
 
 function summarize(res: ArchiveResult & Partial<Pick<FileOpResult, 'stopped' | 'jobId' | 'resumes'>>): string {
@@ -118,6 +87,49 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       },
     }),
     defineTool({
+      name: 'propose_structure',
+      description:
+        'Eine neue Ordnerstruktur als PLAN vorschlagen: je Gruppe Dokumente (D…/S…) und Zielordner. Der Plan erscheint als eine Vorschlagskarte und wird erst nach Bestätigung durch den Benutzer ausgeführt (ganz oder teilweise je Gruppe). Für „Wie würdest du das ordnen?“ oder größere Umbauten statt vieler einzelner move_documents.',
+      schema: z.object({
+        groups: z
+          .array(z.object({ documents: list, folder: z.string().min(1) }))
+          .min(1)
+          .max(50),
+      }),
+      // a plan is always a proposal: nothing moves before the user confirmed it
+      risk: 'critical',
+      count: (a, ctx) => a.groups.reduce((n, g) => n + count(g.documents, ctx), 0),
+      label: (a) => `Neue Ordnerstruktur: ${a.groups.map((g) => g.folder).join(', ')}`,
+      run: async (a, ctx) => {
+        const items: Array<{ documentId: string; categoryPath: string }> = [];
+        const unknownAll: string[] = [];
+        for (const g of a.groups) {
+          let target: string;
+          try {
+            target = canonical(sanitizeCategoryPath(g.folder));
+          } catch (err) {
+            return { content: `Ungültiger Zielordner „${g.folder}“: ${(err as Error).message}`, isError: true };
+          }
+          const main = categories.needsApproval(target);
+          if (main) categories.create(main, true);
+          const { docs, unknown } = resolveDocs(deps, ctx, g.documents);
+          unknownAll.push(...unknown);
+          for (const d of docs)
+            if (d.status === 'archived' && d.archiveRelPath && folderOf(d).toLowerCase() !== target.toLowerCase())
+              items.push({ documentId: d.id, categoryPath: target });
+        }
+        if (!items.length) return { content: `Nach diesem Plan ist nichts zu verschieben.${unknownNote(unknownAll)}`, summary: 'nichts zu tun' };
+        const res = await bulk(deps, ctx, 'relocate', items, `Agent: Ordnerstruktur nach Plan (${items.length} Dateien)`);
+        return {
+          content: `Plan umgesetzt: ${summarize(res)}.\n${details(res, ctx)}${unknownNote(unknownAll)}`,
+          summary: `${res.success} verschoben`,
+          isError: res.success === 0 && res.failed + res.conflicts > 0,
+          change: res.success ? `Ordnerstruktur nach Plan: ${res.success} Datei(en) verschoben` : undefined,
+          changed: res.success,
+        };
+      },
+    }),
+    defineTool({
       name: 'rename_documents',
       description:
         'Archivierte Dateien umbenennen: einzeln (name) oder nach Schema (pattern mit {datum}, {jahr}, {monat}, {typ}, {absender}, {titel}, {thema}, {projekt}, {original}). preview=true (Standard) zeigt nur die neuen Namen und Konflikte; erst danach mit preview=false ausführen. Keine Überschreibungen, keine Hash- oder UUID-Namen.',
@@ -166,8 +178,21 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         const target = canonical(a.path);
         const existed = categories.list().some((c) => c.path === target);
         if (existed) return { content: `Der Ordner ${target} existiert bereits.`, summary: 'gab es schon' };
+        const before = new Set(categories.list().map((x) => x.path));
         const c = categories.create(target, true);
-        deps.audit.log({ action: 'category.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [c.id], after: { path: c.path } });
+        const added = categories
+          .list()
+          .map((x) => x.path)
+          .filter((p) => !before.has(p));
+        deps.audit.log({
+          action: 'category.create',
+          actor: 'agent',
+          trigger: 'agent',
+          confirmed: true,
+          entityIds: [c.id],
+          after: { path: c.path },
+          undo: { type: FOLDER_CREATE_UNDO, data: { paths: added } satisfies FolderCreateUndoData },
+        });
         return { content: `Ordner ${c.path} angelegt.`, summary: 'angelegt', change: `Ordner ${c.path} angelegt` };
       },
     }),
@@ -246,7 +271,10 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         if (!open.length) return { content: `Keine Dokumente im Eingang darunter.${unknownNote(unknown)}`, isError: true };
         const folder = a.folder ? canonical(a.folder) : undefined;
         const main = folder ? categories.needsApproval(folder) : null;
-        const res = await archive.execute(
+        const res = await bulk(
+          deps,
+          ctx,
+          'archive',
           open.map((d) => ({
             documentId: d.id,
             mode: a.mode,
@@ -254,7 +282,8 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
             ...(a.topic !== null ? { topic: a.topic } : {}),
             ...(a.project !== null ? { project: a.project } : {}),
           })),
-          { confirmed: true, approveNewCategories: main ? [main] : [], confirmMove: a.mode === 'move', trigger: 'agent' },
+          `Agent: ${open.length} Dokument(e) aus dem Eingang archivieren`,
+          { approveNewCategories: main ? [main] : [], confirmMove: a.mode === 'move' },
         );
         return {
           content: `Archiviert: ${summarize(res)}.\n${details(res, ctx)}${unknownNote(unknown)}`,
@@ -267,20 +296,39 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
     }),
     defineTool({
       name: 'exclude_from_scan',
-      description: 'Eine Datei oder ein Verzeichnis von künftigen Scans ausschließen (remove=true hebt den Ausschluss auf).',
+      description:
+        'Eine Datei oder ein Verzeichnis von künftigen Scans ausschließen (remove=true hebt den Ausschluss auf). Nur innerhalb der freigegebenen Scan-Ordner, absoluter Pfad.',
       schema: z.object({ path: z.string().min(1), kind: z.enum(['file', 'dir']).default('dir'), remove: z.boolean().default(false) }),
       risk: 'write',
       label: (a) => (a.remove ? `Hebe den Scan-Ausschluss für ${truncate(a.path, 60)} auf` : `Schließe ${truncate(a.path, 60)} vom Scan aus`),
       run: async (a) => {
+        // paths stay inside the folders the user released for scanning (#301)
+        const roots = deps.scanner.listDirectories().map((r) => r.path);
+        if (!roots.some((r) => deps.privacy.paths.same(r, a.path) || deps.privacy.paths.inside(r, a.path)))
+          return { content: `„${a.path}“ liegt in keinem freigegebenen Scan-Ordner (${roots.join(', ') || 'keine eingerichtet'}).`, isError: true };
         if (a.remove) {
           const ex = deps.scanner.listExclusions().find((e) => deps.privacy.paths.same(e.path, a.path));
           if (!ex) return { content: `Für „${a.path}“ gibt es keinen Ausschluss.`, summary: 'nicht vorhanden' };
           deps.scanner.removeExclusion(ex.id);
-          deps.audit.log({ action: 'scan.include', actor: 'agent', trigger: 'agent', confirmed: true, paths: [ex.path] });
+          deps.audit.log({
+            action: 'scan.include',
+            actor: 'agent',
+            trigger: 'agent',
+            confirmed: true,
+            paths: [ex.path],
+            undo: { type: SCAN_EXCLUSION_UNDO, data: { kind: ex.kind, path: ex.path, excluded: false } satisfies ScanExclusionUndoData },
+          });
           return { content: `Ausschluss für ${ex.path} aufgehoben.`, summary: 'aufgehoben', change: `Scan-Ausschluss für ${ex.path} aufgehoben` };
         }
         const ex = deps.scanner.exclude(a.kind, a.path);
-        deps.audit.log({ action: 'scan.exclude', actor: 'agent', trigger: 'agent', confirmed: true, paths: [ex.path] });
+        deps.audit.log({
+          action: 'scan.exclude',
+          actor: 'agent',
+          trigger: 'agent',
+          confirmed: true,
+          paths: [ex.path],
+          undo: { type: SCAN_EXCLUSION_UNDO, data: { kind: ex.kind, path: ex.path, excluded: true } satisfies ScanExclusionUndoData },
+        });
         return { content: `${ex.path} wird künftig nicht mehr gescannt.`, summary: 'ausgeschlossen', change: `${ex.path} vom Scan ausgeschlossen` };
       },
     }),
@@ -298,7 +346,8 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
     }),
     defineTool({
       name: 'reanalyze',
-      description: 'Analyse bzw. OCR für ausgewählte Dokumente erneut ausführen (als Hintergrundauftrag).',
+      description:
+        'Analyse bzw. OCR für ausgewählte Dokumente erneut ausführen (als Hintergrundauftrag). Dokumente im Eingang werden neu analysiert; archivierte und nur indexierte werden neu gelesen (Text und OCR, Suchindex) – ihre Zuordnungen bleiben.',
       schema: z.object({ documents: list }),
       risk: 'write',
       count: (a, ctx) => count(a.documents, ctx),
@@ -306,13 +355,23 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
         if (!docs.length) return { content: `Keine Dokumente angegeben.${unknownNote(unknown)}`, isError: true };
-        const jobs = docs.map((d) => deps.docs.enqueueAnalysis(d.id, deps.privacy.evaluateDocument(d).allowed && deps.privacy.mode() !== 'local_only'));
+        const archived = docs.filter((d) => d.status === 'archived' || d.status === 'indexed_only');
+        const skipped = docs.filter((d) => d.status === 'quarantined');
+        const inbox = docs.filter((d) => !archived.includes(d) && !skipped.includes(d));
+        const allowLlm = deps.privacy.mode() !== 'local_only';
+        for (const d of inbox) deps.docs.enqueueAnalysis(d.id, allowLlm && deps.privacy.evaluateDocument(d).allowed);
+        const rereadJob = archived.length ? deps.docs.enqueueReread(archived.map((d) => d.id)) : null;
+        const lines = [
+          inbox.length ? `${inbox.length} Dokument(e) im Eingang werden neu analysiert.` : null,
+          rereadJob ? `${archived.length} archivierte(s) Dokument(e) werden neu gelesen (Auftrag ${rereadJob}); Zuordnungen bleiben.` : null,
+          skipped.length ? `Nicht analysiert (in Quarantäne): ${skipped.map((d) => ctx.refs.doc(d.id)).join(', ')}` : null,
+          ...docs.slice(0, 30).map((d) => `- ${docLine(d, ctx, deps.privacy)}`),
+        ];
         return {
-          content: `${jobs.length} Analyse-Auftrag/Aufträge gestartet:\n${docs
-            .slice(0, 30)
-            .map((d) => `- ${docLine(d, ctx, deps.privacy)}`)
-            .join('\n')}`,
-          summary: `${jobs.length} gestartet`,
+          content: `${lines.filter(Boolean).join('\n')}${unknownNote(unknown)}`,
+          summary: `${inbox.length + archived.length} gestartet`,
+          change: `${inbox.length + archived.length} Dokument(e) zur erneuten Analyse gegeben`,
+          changed: inbox.length + archived.length,
         };
       },
     }),

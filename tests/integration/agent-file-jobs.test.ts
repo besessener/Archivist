@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Job } from '@archivist/shared';
 import { FILE_JOB_TYPE, type FileJobPayload } from '../../packages/core/src/agent/file-jobs';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, folderOf, scriptedTurns } from '../helpers/agent';
+import { agentApp, archived, folderOf, inInbox, scriptedTurns } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -259,5 +259,23 @@ describe('Large file operations as a job of their own (#304)', () => {
     const undo = await app.ok('agent:undoStep', { runId, stepId });
     expect(undo).toMatchObject({ undone: 3, failed: 0 });
     for (const id of ids) expect(folderOf(app, id)).toBe('work/misc');
+  });
+
+  it('archiving many inbox documents also runs as one job under the run id, undoable as a whole', async () => {
+    const ids = [await inInbox(app, 'brief-1.txt', 'Brief 1'), await inInbox(app, 'brief-2.txt', 'Brief 2'), await inInbox(app, 'brief-3.txt', 'Brief 3')];
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { status: 'inbox' } }] },
+      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: 'private/post' } }] },
+      { text: 'Archiviert.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Leg alle Briefe im Eingang unter private/post ab' });
+    for (const id of ids) expect(folderOf(app, id)).toBe('private/post');
+    const jobs = fileJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ status: 'succeeded', runId: res.assistantMessage.runId });
+    expect(app.services.audit.forRun(res.assistantMessage.runId!).filter((e) => e.action === 'archive.copy')).toHaveLength(3);
+    const undo = await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(undo.undone).toBe(3);
+    for (const id of ids) expect(app.services.documents.getRow(id).status).not.toBe('archived');
   });
 });

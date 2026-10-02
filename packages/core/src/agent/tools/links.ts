@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { RelationType } from '@archivist/shared';
 import { truncate } from '../../util/text';
+import { userAgrees, userAsksForChange } from '../security';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
 import { TYPE_LABEL, unknownNote, type ToolDeps } from './common';
 
@@ -15,7 +16,32 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
     const e = graph.getEntity(id);
     return e ? `${TYPE_LABEL[e.type] ?? e.type} „${truncate(e.name, 50)}“` : id;
   };
-  const statusFor = (ctx: ToolContext, onUserRequest: boolean) => (ctx.trigger === 'chat' && onUserRequest ? 'confirmed' : 'proposed');
+  /** Open link proposals of one entry or of all entries of a project/topic/case. */
+  const proposalsFor = (
+    a: { entry: string | null; subject: string | null; relationIds?: string[] | null },
+    ctx: ToolContext,
+  ): { error: string } | { proposals: ReturnType<typeof graph.relationsOf> } => {
+    let ids: string[];
+    if (a.entry) {
+      const id = ctx.refs.resolve(a.entry);
+      if (!id) return { error: `Unbekannte ID „${a.entry}“.` };
+      ids = [id];
+    } else if (a.subject) {
+      const subj = graph.findByNameOrAlias('project', a.subject) ?? graph.findByNameOrAlias('topic', a.subject) ?? graph.findByNameOrAlias('case', a.subject);
+      if (!subj) return { error: `Projekt bzw. Thema „${a.subject}“ ist unbekannt.` };
+      ids = [subj.id, ...graph.neighbors(subj.id).map((e) => e.id)];
+    } else return { error: 'Gib entry oder subject an.' };
+    const wanted = a.relationIds?.length ? new Set(a.relationIds) : null;
+    const proposals = [...new Map(ids.flatMap((id) => graph.relationsOf(id, { statuses: ['proposed'] })).map((r) => [r.id, r])).values()].filter(
+      (r) => !wanted || wanted.has(r.id),
+    );
+    return { proposals };
+  };
+  // the model's claim „the user asked for it“ only counts when the user's own words ask for a change
+  const statusFor = (ctx: ToolContext, onUserRequest: boolean) =>
+    ctx.trigger === 'chat' && onUserRequest && (userAsksForChange(`${ctx.userText}\n${ctx.lastAnswer ?? ''}`) || userAgrees(ctx.lastAnswer))
+      ? 'confirmed'
+      : 'proposed';
 
   return [
     defineTool({
@@ -79,24 +105,15 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
         'Vorgeschlagene Verknüpfungen bestätigen oder ablehnen – für einen Eintrag (entry: D…/K…) oder alle Einträge eines Projekts/Themas (subject: Name). Nur auf Wunsch des Benutzers („Bestätige alle Vorschläge zum Projekt X“). Abgelehnte Paare werden nie wieder vorgeschlagen.',
       schema: z.object({ entry: optText, subject: optText, decision: z.enum(['confirm', 'reject']), relationIds: list.nullish() }),
       risk: 'write',
-      count: () => 1,
+      count: (a, ctx) => {
+        const found = proposalsFor(a, ctx);
+        return 'error' in found ? 1 : found.proposals.length;
+      },
       label: (a) => `${a.decision === 'confirm' ? 'Bestätige' : 'Lehne'} vorgeschlagene Verknüpfungen${a.decision === 'reject' ? ' ab' : ''}`,
       run: async (a, ctx) => {
-        let ids: string[];
-        if (a.entry) {
-          const id = ctx.refs.resolve(a.entry);
-          if (!id) return { content: `Unbekannte ID „${a.entry}“.`, isError: true };
-          ids = [id];
-        } else if (a.subject) {
-          const subj =
-            graph.findByNameOrAlias('project', a.subject) ?? graph.findByNameOrAlias('topic', a.subject) ?? graph.findByNameOrAlias('case', a.subject);
-          if (!subj) return { content: `Projekt bzw. Thema „${a.subject}“ ist unbekannt.`, isError: true };
-          ids = [subj.id, ...graph.neighbors(subj.id).map((e) => e.id)];
-        } else return { content: 'Gib entry oder subject an.', isError: true };
-        const wanted = a.relationIds?.length ? new Set(a.relationIds) : null;
-        const proposals = [...new Map(ids.flatMap((id) => graph.relationsOf(id, { statuses: ['proposed'] })).map((r) => [r.id, r])).values()].filter(
-          (r) => !wanted || wanted.has(r.id),
-        );
+        const found = proposalsFor(a, ctx);
+        if ('error' in found) return { content: found.error, isError: true };
+        const { proposals } = found;
         if (!proposals.length) return { content: 'Keine offenen Verknüpfungsvorschläge gefunden.', summary: 'keine' };
         for (const r of proposals) graph.decideRelation(r.id, a.decision === 'confirm' ? 'confirmed' : 'rejected', { trigger: 'agent' });
         return {

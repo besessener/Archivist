@@ -193,7 +193,7 @@ export function parseDecisionDate(input: string, now: Date = new Date()): string
   const weekday = !LAST_WEEKDAY_RE.test(text) && !NEXT_WEEKDAY_RE.test(text) ? (AM_WEEKDAY_RE.exec(text) ?? BARE_WEEKDAY_RE.exec(text)) : null;
   const parsed = weekday && !/\d/.test(text) ? toIsoDate(previousWeekday(today, WEEKDAYS[weekday[1]!]!)) : parseGermanDate(input, now);
   // only „12. Juni“ / „12.6.“ (no year) can mean last year; „morgen“ or „2027“ in the future is no decision date
-  const yearless = !/\b\d{4}\b|\.\s?\d{2}\b/.test(text) && /\b\d{1,2}\.\s?(?:\d{1,2}\.|[a-zäöü]{3,})/.test(text);
+  const yearless = isYearless(text);
   return pastOrNull(parsed, today, !yearless);
 }
 
@@ -203,6 +203,19 @@ export function normalizeDecisionDate(value: string | null | undefined, now: Dat
   const v = value.trim();
   if (/^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v)) return pastOrNull(normalizeDateInput(v, now), new Date(now.getFullYear(), now.getMonth(), now.getDate()), true);
   return parseDecisionDate(v, now);
+}
+
+/** „12. Juni“ / „3.10.“ – a day and month without a year („3.10.26“ and „2026“ have one). */
+function isYearless(text: string): boolean {
+  return !/\b\d{4}\b|\b\d{1,2}\.\s?\d{1,2}\.\s?\d{2}\b/.test(text) && /\b\d{1,2}\.\s?(?:\d{1,2}\.|[a-zäöü]{3,})/.test(text);
+}
+
+/** A due date („bis 15.1.“): without a year it is the next such day, never one that has already passed. */
+export function normalizeDueDate(value: string | null | undefined, now: Date = new Date()): string | null {
+  const iso = normalizeDateInput(value, now);
+  if (!iso || !value) return iso;
+  if (!isYearless(value.toLowerCase()) || iso.slice(0, 10) >= toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()))) return iso;
+  return validDate(Number(iso.slice(0, 4)) + 1, Number(iso.slice(5, 7)), Number(iso.slice(8, 10))) ?? iso;
 }
 
 /** A date after today: the same day one year earlier if the year was not given, otherwise null. */

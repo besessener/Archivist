@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { PDFDocument, PDFFont } from 'pdf-lib';
 import type { DocumentRecord } from '@archivist/shared';
 import { folderLabel, folderOf } from '../../services/archive-structure';
-import { sanitizeFileName, uniquePath } from '../../util/paths';
+import { assertRealInside, sanitizeFileName, uniquePath } from '../../util/paths';
 import { truncate } from '../../util/text';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
 import { docDay, docLine, resolveDocs, unknownNote, type ToolDeps } from './common';
@@ -61,6 +61,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 async function exportPath(deps: ToolDeps, title: string, ext: string): Promise<string> {
   const dir = path.join(deps.paths.root, 'exports');
   await fsp.mkdir(dir, { recursive: true });
+  // a symlinked export folder must not lead out of the data folder (#301)
+  await assertRealInside(deps.paths.root, dir);
   return uniquePath(dir, sanitizeFileName(`${title.trim() || 'Export'} ${today()}.${ext}`, 'Export'));
 }
 

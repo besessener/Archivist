@@ -25,6 +25,9 @@ Gib jedem Anbieter einen Namen und setz die Variablen dazu. `<NAME>` ist der Nam
 | `ARCHIVIST_EVAL_<NAME>_API_KEY` | API-Key |
 | `ARCHIVIST_EVAL_<NAME>_EFFORT` | optional: `low`, `medium`, `high` (Standard), `xhigh`, `max` |
 | `ARCHIVIST_EVAL_<NAME>_ADAPTER` | optional: `auto` (Standard), `anthropic`, `openai` |
+| `ARCHIVIST_EVAL_<NAME>_MAX_ROUNDS` | optional: Notbremse für Runden je Lauf |
+| `ARCHIVIST_EVAL_<NAME>_MAX_TOKENS` | optional: Token-Budget je Lauf |
+| `ARCHIVIST_EVAL_<NAME>_TIMEOUT_S` | optional: Zeitlimit je Lauf in Sekunden |
 | `ARCHIVIST_EVAL_TASKS` | optional: nur diese Aufgaben-IDs oder Stories, z. B. `move-slides,#309` |
 
 Beispiel – Claude auf Microsoft Foundry (Anthropic-Endpunkt) und GPT auf Azure OpenAI:
@@ -55,12 +58,13 @@ Das Ergebnis liegt in `eval-results/agent-<Zeitstempel>.json` und `.md` (nicht i
 ## Effort und Budgets abstimmen
 
 - Trag denselben Anbieter mehrfach mit unterschiedlichem Effort ein (z. B. `claude-high` und `claude-medium` mit gleicher URL) und wäg Quote gegen Kosten und Dauer ab.
+- Ebenso für die Budgets: z. B. `claude-knapp` mit `_MAX_ROUNDS=15` und `_MAX_TOKENS=200000` neben `claude` mit den Standardwerten. Eigene Grenzen einer Aufgabe (z. B. absichtlich niedrige Notbremse) haben Vorrang.
 - Nach Änderungen an Prompt, Werkzeugen oder Grenzen zeigt der Vergleich mit dem vorigen Lauf, welche Aufgaben neu scheitern.
 - Läufe, die an `limit` scheitern oder sehr viele Runden brauchen, sprechen für höhere `chatLimits`/`backgroundLimits` – oder für ein Werkzeug, das die Arbeit deterministisch erledigt.
 - Für schnelle Iterationen mit `ARCHIVIST_EVAL_TASKS` nur die betroffenen Aufgaben laufen lassen.
 
 ## Wie bewertet wird
 
-- Jede Aufgabe läuft in einer frischen App mit einem Test-Archiv aus ~40 kleinen Dokumenten (Folien, Handwerkerrechnungen, Kontoauszüge mit Lücke, Mietvertrag in zwei Fassungen, Garantie, Versicherung, E-Mails, Duplikate, ein gesperrtes Dokument). Das Archiv wird **ohne LLM** aufgebaut (Import nur lokal, Ordner, Typ und Datum explizit); Fristen liegen relativ zu heute.
+- Jede Aufgabe läuft in einer frischen App mit einem Test-Archiv aus ~40 kleinen Dokumenten (Foliensätze als echte pptx-Dateien, Handwerkerrechnungen, Kontoauszüge mit Lücke, Mietvertrag in zwei Fassungen, Garantie, Versicherung, E-Mails, Duplikate, ein gesperrtes Dokument). Das Archiv wird **ohne LLM** aufgebaut (Import nur lokal, Ordner, Typ und Datum explizit); Fristen liegen relativ zu heute.
 - Bewertet wird das **Ergebnis im Archiv**, nicht der Weg: Dateien im richtigen Ordner und sonst nichts verändert (Vorher/Nachher-Abgleich aller Pfade und Metadaten), Erinnerungen mit dem richtigen Datum, eine Rückfrage bei unklarem Anliegen (Laufstatus `ask_user`), ignorierte Anweisungen aus Dokumenten, die deterministische Summe in der Antwort usw.
 - Damit der Code nicht veraltet, prüft `tests/unit/agent-eval-tasks.test.ts` im normalen Testlauf Aufgabenliste und Archivaufbau mit dem Fake-LLM.

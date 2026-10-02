@@ -5,7 +5,6 @@ import { AlertCircle, FileText, HelpCircle } from 'lucide-react';
 import { RunSummary } from '@/components/agent/run-summary';
 import { ActionCard } from '@/components/common/action-card';
 import { isLinkSuggestion, LinkSuggestions } from './link-suggestions';
-import { ConfidenceBadge } from '@/components/common/confidence';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown } from '@/components/common/markdown';
 import { Notice } from '@/components/common/states';
@@ -144,15 +143,11 @@ export function ChatBubble({
                 </div>
               </div>
             )}
-            {message.confidence !== null && (
-              <div className="flex items-center gap-1.5">
-                <ConfidenceBadge value={message.confidence} />
-                {message.confidence < 0.5 && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <HelpCircle className="size-3.5" aria-hidden /> Bitte prüfe diese Antwort.
-                  </span>
-                )}
-              </div>
+            {/* chat answers carry no estimate badge: their values are rule defaults, not measured (#167) */}
+            {message.confidence !== null && message.confidence < 0.5 && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <HelpCircle className="size-3.5" aria-hidden /> Bitte prüfe diese Antwort.
+              </span>
             )}
           </div>
         )}

@@ -47,6 +47,62 @@ function describeChange(
     .join(', ');
 }
 
+const samePerson = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Participants after adding and removing names; no key when nothing changes. */
+function mergePersons(current: string[], add: string[], remove: string[]): { participants?: string[] } {
+  if (!add.length && !remove.length) return {};
+  const kept = current.filter((p) => !remove.some((r) => samePerson(r, p)));
+  return { participants: [...kept, ...add.filter((p) => !kept.some((k) => samePerson(k, p)))] };
+}
+
+/** Title, topic, project, persons and date of decisions, open items and events (#305). */
+function updateEntries(
+  deps: ToolDeps,
+  ids: string[],
+  a: {
+    title: string | null;
+    topic?: string | null;
+    project?: string | null;
+    addPersons: string[];
+    removePersons?: string[] | null;
+    date: string | null | undefined;
+  },
+): { changed: string[] } | { error: string } {
+  const changed: string[] = [];
+  const { date, addPersons } = a;
+  for (const id of ids) {
+    const e = deps.graph.getEntity(id);
+    if (!e) continue;
+    const common = {
+      ...(a.title ? { title: a.title } : {}),
+      ...(a.topic !== undefined ? { topic: a.topic } : {}),
+      ...(a.project !== undefined ? { project: a.project } : {}),
+    };
+    const persons = (current: string[]) => mergePersons(current, addPersons, a.removePersons ?? []);
+    if (e.type === 'decision') {
+      const d = deps.decisions.get(id);
+      const patch = { ...common, ...(date !== undefined ? { decidedAt: date } : {}), ...persons(d.participants) };
+      if (!Object.keys(patch).length) continue;
+      deps.decisions.update(id, patch, { trigger: 'agent' });
+    } else if (e.type === 'task' || e.type === 'question') {
+      const o = deps.openItems.get(id);
+      const responsible = addPersons[0] ?? (o.responsibleName && a.removePersons?.some((p) => samePerson(p, o.responsibleName!)) ? null : undefined);
+      const patch = { ...common, ...(date !== undefined ? { dueAt: date } : {}), ...(responsible !== undefined ? { responsible } : {}) };
+      if (!Object.keys(patch).length) continue;
+      deps.openItems.update(id, patch, { trigger: 'agent' });
+    } else if (e.type === 'event') {
+      if (date === null) return { error: 'Ein Ereignis braucht ein Datum – es kann nicht entfernt werden.' };
+      const merged = persons(deps.events.get(id).participants);
+      const patch = { ...common, ...(date ? { occurredAt: date } : {}), ...(merged.participants ? { participants: merged.participants } : {}) };
+      if (!Object.keys(patch).length) continue;
+      deps.events.update(id, patch, { trigger: 'agent' });
+    } else continue;
+    changed.push(`${TYPE_LABEL[e.type] ?? e.type} „${truncate(e.name, 40)}“`);
+  }
+  return { changed };
+}
+
 export function metadataTools(deps: ToolDeps): AgentTool[] {
   const { graph } = deps;
   const resolveOne = (ctx: ToolContext, ref: string) => ctx.refs.resolve(ref);
@@ -55,7 +111,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'set_metadata',
       description:
-        'Thema, Projekt, Personen, Tags, Dokumenttyp, Titel und fachliches Datum setzen oder entfernen – für Dokumente (D…/S…, einzeln und in Serie; eine Sammelaktion ist EIN Rückgängig-Schritt). Für Entscheidungen, offene Punkte und Ereignisse (K…) Thema und Projekt. topic/project ERSETZEN das Hauptthema bzw. -projekt (danach richtet sich die Ablage); leerer Wert ("") entfernt es. Ein Eintrag kann weitere Themen und Projekte haben: addTopics/addProjects ERGÄNZEN (wer noch keins hat, bekommt es als Hauptthema), removeTopics/removeProjects entfernen weitere. „Ordne das auch X zu“ heißt ergänzen, nicht ersetzen. case: Vorgang (ID oder Name eines vorhandenen Vorgangs), dem die Einträge zugeordnet werden. addTags gilt für alle Arten von Einträgen, auch Notizen. Personen werden mit dem Graph abgeglichen (Aliasse, „ich“ = Benutzer).',
+        'Thema, Projekt, Personen, Tags, Dokumenttyp, Titel und fachliches Datum setzen oder entfernen – für Dokumente (D…/S…, einzeln und in Serie; eine Sammelaktion ist EIN Rückgängig-Schritt). Für Entscheidungen, offene Punkte und Ereignisse (K…) Titel, Thema, Projekt, Personen (Beteiligte bzw. verantwortlich) und Datum (documentDate = Entscheidungsdatum, Fälligkeit bzw. Ereignisdatum). topic/project ERSETZEN das Hauptthema bzw. -projekt (danach richtet sich die Ablage); leerer Wert ("") entfernt es. Ein Eintrag kann weitere Themen und Projekte haben: addTopics/addProjects ERGÄNZEN (wer noch keins hat, bekommt es als Hauptthema), removeTopics/removeProjects entfernen weitere. „Ordne das auch X zu“ heißt ergänzen, nicht ersetzen. case: Vorgang (ID oder Name eines vorhandenen Vorgangs), dem die Einträge zugeordnet werden. addTags gilt für alle Arten von Einträgen, auch Notizen. Personen werden mit dem Graph abgeglichen (Aliasse, „ich“ = Benutzer).',
       schema: z.object({
         targets: list,
         topic: removable,
@@ -132,16 +188,9 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
           );
           changed.push(`${res.updated.length} Dokument(e)`);
         }
-        for (const id of others) {
-          const e = graph.getEntity(id);
-          const patch = { ...(a.topic !== undefined ? { topic: a.topic } : {}), ...(a.project !== undefined ? { project: a.project } : {}) };
-          if (!e || !Object.keys(patch).length) continue;
-          if (e.type === 'decision') deps.decisions.update(id, patch, { trigger: 'agent' });
-          else if (e.type === 'task' || e.type === 'question') deps.openItems.update(id, patch, { trigger: 'agent' });
-          else if (e.type === 'event') deps.events.update(id, patch);
-          else continue;
-          changed.push(`${TYPE_LABEL[e.type] ?? e.type} „${truncate(e.name, 40)}“`);
-        }
+        const entriesChanged = updateEntries(deps, others, { ...a, addPersons, date });
+        if ('error' in entriesChanged) return { content: entriesChanged.error, isError: true };
+        changed.push(...entriesChanged.changed);
         // further topics/projects, a case and tags of entries without a tag column: added, ONE undo step each (#287, #291)
         const noteIds = others.filter((id) => graph.getEntity(id)?.type === 'note');
         const nonDocs = others.filter((id) => !noteIds.includes(id));
@@ -202,6 +251,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
         'Themen, Projekte, Personen oder Schlagwörter (K…) zusammenführen – über den bestehenden Ablauf mit Rückgängig. sources werden in target übernommen.',
       schema: z.object({ sources: list, target: z.string().min(1), allowCrossType: z.boolean().default(false) }),
       risk: 'write',
+      count: (a, ctx) => Math.max(1, ctx.refs.resolveMany(a.sources).ids.length),
       label: () => 'Führe Einträge zusammen',
       run: async (a, ctx) => {
         const target = resolveOne(ctx, a.target);

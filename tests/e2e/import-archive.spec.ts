@@ -38,6 +38,24 @@ test.describe('import and archiving', () => {
     expect(fs.existsSync(note), 'the original is kept').toBe(true);
   });
 
+  test('renames archived files of a multi-selection by a scheme, after a preview (#304)', async ({ on, page, workspace }) => {
+    const app = on(page);
+    const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
+    const folder = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht');
+
+    await app.inbox.do.importFile(note);
+    await app.navigation.do.open('inbox');
+    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.openArchivePlan();
+    await app.inbox.do.confirmArchive();
+    await app.inbox.locators.archivePlan.close.click();
+
+    await app.navigation.do.open('documents');
+    await expect(app.documents.locators.rows).toHaveCount(1);
+    await app.documents.do.renameAll('{typ} {titel}', 'Protokoll Jour Fixe Nordlicht.txt');
+    expect(fs.readdirSync(folder)).toEqual(['Protokoll Jour Fixe Nordlicht.txt']);
+  });
+
   test('shows quarantined files with a reason and imports them only after confirmation', async ({ on, page, workspace }) => {
     const app = on(page);
     const fake = workspace.addDownload('rechnung.pdf', 'MZ das ist keine PDF-Datei');

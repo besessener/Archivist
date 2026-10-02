@@ -53,7 +53,12 @@ const LEARN_RE =
 const YES_RE = /^\s*(?:ja|jep|jo|klar|gern|gerne|genau|ok|okay|passt|richtig|bitte|mach\s+das|einverstanden|ja,?\s*bitte)\b/i;
 
 export function userTeaches(text: string, lastAnswer: string | null): boolean {
-  return LEARN_RE.test(text) || (lastAnswer !== null && YES_RE.test(lastAnswer));
+  return LEARN_RE.test(text) || userAgrees(lastAnswer);
+}
+
+/** A „ja“ to the agent's previous question. */
+export function userAgrees(lastAnswer: string | null): boolean {
+  return lastAnswer !== null && YES_RE.test(lastAnswer);
 }
 
 /** Masks secrets (API keys, passwords, IBAN …) in text that leaves the machine; returns the number of masked spots. */

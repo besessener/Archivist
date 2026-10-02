@@ -42,6 +42,8 @@ export interface RunnerOptions {
   maxOutputTokens?: number;
   massThreshold: number;
   ctx: ToolContext;
+  /** Secrets already masked before the run (system instructions, the user's message). */
+  redactions?: number;
   /** Offer the provider's web search (chat runs only, setting „Websuche“). */
   webSearch?: boolean;
   /** Prepares a change as a proposal instead of carrying it out; returns the text for the model. */
@@ -116,9 +118,11 @@ export class AgentRunner {
   private pendingTool: Extract<AgentMessage, { role: 'tool' }> | null = null;
   private readonly webSources = new Map<string, WebSource>();
   private readonly started: number;
+  private redactions: number;
 
   constructor(private readonly o: RunnerOptions) {
     this.started = (o.now ?? Date.now)();
+    this.redactions = o.redactions ?? 0;
   }
 
   private now(): number {
@@ -292,6 +296,7 @@ export class AgentRunner {
             taskBudget: Math.max(0, this.o.limits.maxTokens - budgetTokens(this.usage)),
             purpose: 'Agent',
             documentIds: [...ctx.shared],
+            redactions: this.redactions,
             webSearch: this.o.webSearch ?? false,
             signal: controller.signal,
           },
@@ -507,7 +512,9 @@ export class AgentRunner {
     const instruction = findInstruction(out.content);
     if (instruction && !ctx.tainted) ctx.tainted = instruction;
     // secrets are masked before anything leaves the machine – tool results included (#301)
-    let content = maskSecrets(out.content).text;
+    const masked = maskSecrets(out.content);
+    this.redactions += masked.count;
+    let content = masked.text;
     if (content.length > MAX_RESULT_CHARS) content = `${content.slice(0, MAX_RESULT_CHARS)}\n[… gekürzt; nutze Seiten- bzw. Abschnittsparameter für den Rest]`;
     return done(out.isError ? 'error' : 'ok', content, out.summary ?? '', Boolean(out.isError));
   }

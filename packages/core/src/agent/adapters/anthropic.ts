@@ -257,7 +257,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         model: this.model,
         endpoint: this.endpoint,
         bytes,
-        redactions: 0,
+        redactions: req.redactions ?? 0,
         documentIds: req.documentIds,
         preview: previewOf(req.messages),
         success,

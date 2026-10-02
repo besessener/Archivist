@@ -1,10 +1,9 @@
 'use client';
 
-import { Gauge, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import { EntityChip } from '@/components/common/entity-chip';
 import { Badge } from '@/components/ui/badge';
 import { useApp } from '@/lib/app-context';
-import { formatPercent } from '@/lib/format';
 import type { EntityRef } from '@archivist/shared';
 
 function Section({ title, items }: { title: string; items: EntityRef[] | undefined }) {
@@ -40,12 +39,6 @@ export function ContextPanel() {
       )}
       {m && hasAny && (
         <>
-          {m.confidence !== null && (
-            <div className="mb-4 flex items-center gap-2 text-sm">
-              <Gauge className="size-4 text-primary" aria-hidden />
-              Sicherheit der Antwort: <strong>{formatPercent(m.confidence)}</strong>
-            </div>
-          )}
           <Section title="Themen" items={ctx?.topics} />
           <Section title="Projekte" items={ctx?.projects} />
           <Section title="Personen" items={ctx?.persons} />

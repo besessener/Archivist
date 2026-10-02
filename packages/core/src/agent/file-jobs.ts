@@ -1,4 +1,4 @@
-import type { ArchiveResult } from '@archivist/shared';
+import type { ArchiveItemRequest, ArchiveResult } from '@archivist/shared';
 import type { ArchiveService, RelocateRequest, RenameRequest } from '../services/archive';
 import { isJobCancelled, isJobInterrupted, type JobContext, type JobQueueService } from '../services/jobs';
 import type { AgentRunService } from './runs';
@@ -10,8 +10,14 @@ export const FILE_JOB_THRESHOLD = 50;
 /** Files per chunk: a stop ends cleanly between two chunks, and a job continues after a restart from the last one. */
 export const FILE_CHUNK = 25;
 
-export type FileOp = 'relocate' | 'rename';
-type FileItem = RelocateRequest | RenameRequest;
+export type FileOp = 'relocate' | 'rename' | 'archive';
+type FileItem = RelocateRequest | RenameRequest | ArchiveItemRequest;
+
+/** What the user confirmed for archiving from the inbox (new main categories, moving originals). */
+export interface ArchiveConsent {
+  approveNewCategories: string[];
+  confirmMove: boolean;
+}
 
 /** The run id, the step and whether the user asked for it travel with the job: every change it makes carries them. */
 export interface FileJobPayload {
@@ -20,6 +26,7 @@ export interface FileJobPayload {
   explicit: boolean;
   op: FileOp;
   items: FileItem[];
+  consent?: ArchiveConsent;
 }
 
 export interface FileOpResult extends ArchiveResult {
@@ -98,14 +105,14 @@ export class AgentFileJobs {
   }
 
   /**
-   * Moves or renames the files in chunks. Above the threshold – and only inside a chat run or a confirmed proposal, never
+   * Moves, renames or archives the files in chunks. Above the threshold – and only inside a chat run or a confirmed proposal, never
    * in a background run that is a job itself – as a job of its own; smaller amounts inline. Either way the step's live
    * view gets the progress and a stop ends cleanly between two chunks.
    */
   async run(
     op: FileOp,
     items: FileItem[],
-    opts: { signal: AbortSignal; label: string; inJob: boolean; report?: (p: number, m: string) => void },
+    opts: { signal: AbortSignal; label: string; inJob: boolean; report?: (p: number, m: string) => void; consent?: ArchiveConsent },
   ): Promise<FileOpResult> {
     const scope = currentRun();
     if (scope && !opts.inJob && items.length > this.threshold) return this.asJob(scope, op, items, opts);
@@ -113,7 +120,7 @@ export class AgentFileJobs {
     let done = 0;
     for (; done < items.length && !opts.signal.aborted; done += this.chunk) {
       const chunk = items.slice(done, done + this.chunk);
-      addResult(result, await this.apply(op, chunk));
+      addResult(result, await this.apply(op, chunk, opts.consent));
       const n = Math.min(done + chunk.length, items.length);
       if (items.length > this.chunk) {
         scope?.onProgress?.({ jobId: null, done: n, total: items.length });
@@ -123,15 +130,34 @@ export class AgentFileJobs {
     return { ...result, stopped: Math.max(0, items.length - done), jobId: null, resumes: false };
   }
 
-  private apply(op: FileOp, chunk: FileItem[]): Promise<ArchiveResult> {
+  private apply(op: FileOp, chunk: FileItem[], consent?: ArchiveConsent): Promise<ArchiveResult> {
+    if (op === 'archive')
+      return this.archive.execute(chunk as ArchiveItemRequest[], {
+        confirmed: true,
+        approveNewCategories: consent?.approveNewCategories ?? [],
+        confirmMove: consent?.confirmMove ?? false,
+        trigger: 'agent',
+      });
     return op === 'rename'
       ? this.archive.rename(chunk as RenameRequest[], { confirmed: true, trigger: 'agent' })
       : this.archive.relocate(chunk as RelocateRequest[], { confirmed: true, trigger: 'agent' });
   }
 
-  private asJob(scope: AgentRunScope, op: FileOp, items: FileItem[], opts: { signal: AbortSignal; label: string }): Promise<FileOpResult> {
+  private asJob(
+    scope: AgentRunScope,
+    op: FileOp,
+    items: FileItem[],
+    opts: { signal: AbortSignal; label: string; consent?: ArchiveConsent },
+  ): Promise<FileOpResult> {
     return new Promise<FileOpResult>((resolve, reject) => {
-      const payload: FileJobPayload = { runId: scope.runId, stepId: scope.stepId ?? null, explicit: scope.explicit, op, items };
+      const payload: FileJobPayload = {
+        runId: scope.runId,
+        stepId: scope.stepId ?? null,
+        explicit: scope.explicit,
+        op,
+        items,
+        ...(opts.consent ? { consent: opts.consent } : {}),
+      };
       const job = this.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, opts.label, payload, { maxAttempts: 1 });
       const onAbort = () => {
         // quitting: the queue interrupts the job, it continues after the next start – the run reports what is done
@@ -183,7 +209,7 @@ export class AgentFileJobs {
         job.throwIfCancelled();
         const chunk = p.items.slice(done, done + this.chunk);
         const before = scope.auditIds.length;
-        addResult(result, await agentRunScope.run(scope, () => this.apply(p.op, chunk)));
+        addResult(result, await agentRunScope.run(scope, () => this.apply(p.op, chunk, p.consent)));
         done += chunk.length;
         if (!w && p.stepId) this.runs.addStepAudit(p.runId, p.stepId, scope.auditIds.slice(before));
         job.saveCheckpoint({ done, result });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeDecisionDate, parseDecisionDate } from '../../packages/core/src/util/dates';
+import { normalizeDecisionDate, normalizeDueDate, parseDecisionDate } from '../../packages/core/src/util/dates';
 import { classifyLocally, pastOrToday } from '../../packages/core/src/services/classifier';
 
 // Friday, 2 October 2026
@@ -15,6 +15,8 @@ describe('Decision dates lie in the past (#168)', () => {
   it('a day without a year is the last such day; an explicit future date is rejected', () => {
     expect(parseDecisionDate('3. Dezember', NOW)).toBe('2025-12-03');
     expect(parseDecisionDate('12.6.', NOW)).toBe('2026-06-12');
+    expect(parseDecisionDate('3.10.', NOW)).toBe('2025-10-03');
+    expect(parseDecisionDate('3.10.26', NOW)).toBeNull();
     expect(parseDecisionDate('3. Dezember 2026', NOW)).toBeNull();
     expect(parseDecisionDate('morgen', NOW)).toBeNull();
     expect(parseDecisionDate('nächsten Montag', NOW)).toBeNull();
@@ -37,5 +39,18 @@ describe('Document date (#168)', () => {
     expect(local.documentDate).toBe('2025-08-14');
     expect(pastOrToday('2026-10-03', NOW)).toBeNull();
     expect(pastOrToday('2026-10-02T09:00:00Z', NOW)).toBe('2026-10-02');
+  });
+});
+
+describe('Due dates lie ahead (#307)', () => {
+  it('a day without a year is the next such day; with a year or relative it stays as given', () => {
+    expect(normalizeDueDate('15.1.', NOW)).toBe('2027-01-15');
+    expect(normalizeDueDate('31.10.', NOW)).toBe('2026-10-31');
+    expect(normalizeDueDate('2. Oktober', NOW)).toBe('2026-10-02');
+    expect(normalizeDueDate('15.1.2026', NOW)).toBe('2026-01-15');
+    expect(normalizeDueDate('2026-01-15', NOW)).toBe('2026-01-15');
+    expect(normalizeDueDate('morgen', NOW)).toBe('2026-10-03');
+    expect(normalizeDueDate('irgendwann', NOW)).toBeNull();
+    expect(normalizeDueDate(null, NOW)).toBeNull();
   });
 });

@@ -56,6 +56,8 @@ Pro Gespräch umschaltbar, auch per „frag mich diesmal vorher“.
 - neuen Hauptkategorien,
 - Massenaktionen über der Schwelle (Standard: mehr als 100 Einträge in einem Lauf).
 
+Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rules` ohne Auswahl alle archivierten Dokumente, auf die eine Regel passt, `merge_subjects` die zusammengeführten Einträge, `decide_link_proposals` die betroffenen Vorschläge. Eine Verknüpfung „auf Wunsch des Benutzers“ (`onUserRequest`) gilt nur als bestätigt, wenn deine eigene Nachricht eine Änderung verlangt oder du auf die Rückfrage „ja“ gesagt hast – sonst bleibt sie ein Vorschlag.
+
 ## Agentenläufe
 
 - Jeder Lauf hat eine Lauf-ID mit Auslöser, Anbieter und Modell, Werkzeugaufrufen (gekürzte Ergebnisse), Tokens und geschätzten Kosten, Dauer und Ergebnis.
@@ -70,13 +72,32 @@ Pro Gespräch umschaltbar, auch per „frag mich diesmal vorher“.
 - Der Schritt zeigt den Fortschritt live im Chat; die Auftragsliste verlinkt den Lauf.
 - „Stopp“ bricht zwischen zwei Blöcken ab – Erledigtes bleibt und bleibt rückgängig machbar. Beim Beenden wird der Auftrag unterbrochen und nach dem nächsten Start an derselben Stelle fortgesetzt.
 - Modus „Fragen“ und die Schwelle für Massenaktionen gelten unverändert (vor dem Auftrag).
+- Dasselbe gilt für `archive_inbox`: Dokumente aus dem Eingang werden in Blöcken archiviert, ab der Schwelle als eigener Auftrag.
 - Ein Hintergrund-Lauf ist selbst ein Auftrag und arbeitet deshalb ohne zweiten Auftrag, mit Fortschritt im eigenen.
+
+## Dateien und Ablage
+
+- `move_documents`, `rename_documents` (einzeln oder nach Schema, erst Vorschau), `create_folder`, `rename_folder`, `remove_empty_folders`, `archive_inbox`, `exclude_from_scan`.
+- `propose_structure`: eine neue Ordnerstruktur als Plan. Er erscheint immer als Vorschlagskarte mit einem Punkt je Gruppe und lässt sich ganz oder teilweise bestätigen.
+- Rückgängig gibt es für jede Änderung – auch für angelegte Ordner (solange nichts darin liegt), entfernte leere Ordner und Scan-Ausschlüsse.
+- `exclude_from_scan` nimmt nur absolute Pfade innerhalb der freigegebenen Scan-Ordner an.
+- `reanalyze`: Dokumente im Eingang werden neu analysiert; archivierte und nur indexierte werden in **einem** Auftrag neu gelesen (Text, OCR, Suchindex) – Titel, Typ, Zuordnungen und Verknüpfungen bleiben.
+- Umbenennen nach Schema steht mit derselben Funktion in der Dokumentliste (Mehrfachauswahl → „Umbenennen“).
+
+## Lesen
+
+- `find_documents` filtert nach Endung, Name, Ordner, Thema, Projekt, Typ, Person, Tag, Dokument- und Archivierungsdatum, Größe und Status, sortiert und seitenweise, mit Gesamtzahl und Ergebnismenge `S…` (`within` grenzt eine frühere Menge ein). Ergebnismengen beliebiger Größe werden vollständig aufgelöst.
+- `related` liefert dieselbe Liste wie „Verwandte Einträge“ in der Oberfläche (direkte Beziehungen und gemeinsame Projekte, Vorgänge, Themen, Personen, Tags, nach Stärke, seitenweise); `depth: 2` nennt auch die Nachbarn der Nachbarn.
+- Einträge, die nur aus nicht freigegebenen Dokumenten stammen, nennt `list_entries` ohne Inhalt.
 
 ## Wissen erfassen
 
 - Entscheidungen, Notizen, offene Punkte, Erinnerungen und Ereignisse erfasst ein Modul (`services/capture.ts`): Pflichtangaben und Rückfragen, Dubletten-Prüfung, Personen-Auflösung, Ersetzen und Widerspruchsprüfung.
 - Die Erfassungswerkzeuge des Agenten und der regelbasierte Chat rufen dasselbe Modul auf. Rückfragen stellt der Agent über `ask_user`, der regelbasierte Chat über seine Rückfrage im Gespräch.
 - `chat.ts` enthält nur noch den Gesprächsablauf und den regelbasierten Rückfall (Absicht-Klassifikation und `dispatch()`).
+- Ist beim Ersetzen nicht eindeutig, welche ältere Entscheidung gemeint ist, nennt `record_decision` die Kandidaten mit ihren K-IDs; nach der Rückfrage legt `supersede_decision` die Vorschlagskarte an. Als überholt markiert wird erst nach deiner Bestätigung.
+- `set_metadata` ändert bei Entscheidungen, offenen Punkten und Ereignissen auch Titel, Personen (Beteiligte bzw. Verantwortliche) und Datum (Entscheidungsdatum, Fälligkeit, Ereignisdatum).
+- Datumsangaben ohne Jahr: „31.10.“ ist bei einer Entscheidung der letzte 31. Oktober, bei einer Erinnerung oder Fälligkeit der nächste.
 
 ## Verknüpfungsmethoden
 
@@ -109,7 +130,9 @@ Weitere Werkzeuge für die Verknüpfungen:
 
 - Dokumentinhalte gehen nur als markierte Daten an das Modell, nie als Anweisungen. Enthält ein Dokument eine Aufforderung an den Agenten, ändert der Lauf nichts ohne eigene Bitte des Benutzers (im Hintergrund nur als Vorschlag).
 - Jedes Werkzeugergebnis läuft durch den Datenschutzfilter: Nicht freigegebene Dokumente erscheinen nur mit Endung, Ordner und Status.
-- Geheimnisse werden vor jeder Übertragung maskiert; welche Dokumente an das LLM gingen, steht im Übertragungsprotokoll.
+- Geheimnisse werden vor jeder Übertragung maskiert – in deiner Nachricht, in Werkzeugergebnissen und in der Systemanweisung (Gelerntes, Profil); welche Dokumente an das LLM gingen und wie viele Stellen maskiert wurden, steht im Übertragungsprotokoll.
+- Wird ein Dokument nach dem Lesen ausgeschlossen oder sein Ordner gesperrt, gehen frühere Werkzeugergebnisse und Antworten des Gesprächs, die es nennen, nicht erneut an das Modell (#202); Gedankenblöcke des Anbieters entfallen dann.
+- Alle Datei-Werkzeuge bleiben im Archiv (Exporte im Datenordner); Path-Traversal und Symlinks, die hinausführen, werden abgelehnt.
 
 ## Verbrauch
 

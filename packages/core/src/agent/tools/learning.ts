@@ -3,7 +3,7 @@ import { RuleDefinition, WorkflowDefinition, type MemoryKind, type RuleDefinitio
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
-import { fillPattern } from './files';
+import { fillPattern } from '../../services/rename-pattern';
 import { allDocs, docLine, resolveDocs, unknownNote, type ToolDeps } from './common';
 
 const KIND_LABEL: Record<MemoryKind, string> = { rule: 'Regel', workflow: 'Ablauf', correction: 'Korrektur', preference: 'Vorliebe', fact: 'Wissen' };
@@ -40,6 +40,16 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
         Object.assign(then, Object.fromEntries(Object.entries(r.rule.then).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : Boolean(v)))));
       return { doc: d, rules, conflict, then };
     });
+
+  /** Documents with matching rules: the given refs, else every archived document. */
+  const planFor = (documents: string[] | null | undefined, ctx: ToolContext) => {
+    const ids = documents?.length
+      ? resolveDocs(deps, ctx, documents).docs.map((d) => d.id)
+      : allDocs(deps)
+          .filter((d) => d.status === 'archived')
+          .map((d) => d.id);
+    return planRules(ids).filter((p) => p.rules.length);
+  };
 
   return [
     defineTool({
@@ -150,15 +160,11 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
         'Gelernte Regeln auf Dokumente (D…/S…, Standard: alle archivierten) anwenden – rückwirkend. preview=true (Standard) zeigt nur, was sich ändern würde. Widersprechen sich Regeln für ein Dokument, wird es nicht geändert, sondern genannt.',
       schema: z.object({ documents: list.nullish(), preview: z.boolean().default(true) }),
       risk: (a) => (a.preview ? 'read' : 'write'),
-      count: (a, ctx) => (a.documents?.length ? ctx.refs.resolveMany(a.documents).ids.length : 1),
+      // without `documents` the rules apply to the whole archive – the mass action threshold must see that (#298)
+      count: (a, ctx) => planFor(a.documents, ctx).filter((p) => !p.conflict).length,
       label: (a) => (a.preview ? 'Prüfe, welche Regeln greifen' : 'Wende Regeln an'),
       run: async (a, ctx: ToolContext) => {
-        const ids = a.documents?.length
-          ? resolveDocs(deps, ctx, a.documents).docs.map((d) => d.id)
-          : allDocs(deps)
-              .filter((d) => d.status === 'archived')
-              .map((d) => d.id);
-        const plan = planRules(ids).filter((p) => p.rules.length);
+        const plan = planFor(a.documents, ctx);
         if (!plan.length) return { content: 'Keine Regel greift für diese Dokumente.', summary: 'keine Treffer' };
         const conflicts = plan.filter((p) => p.conflict);
         const work = plan.filter((p) => !p.conflict);

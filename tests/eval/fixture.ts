@@ -3,6 +3,7 @@ import path from 'node:path';
 import { localToday } from '@archivist/shared';
 import type { Services } from '../../packages/core/src';
 import { addPeriod, fmtDe } from '../../packages/core/src/agent/tools/research';
+import { makePptx } from '../helpers/fixtures';
 
 /**
  * Test archive of the agent evaluation (#316). Everything is built deterministically WITHOUT the LLM: files are imported
@@ -13,7 +14,7 @@ import { addPeriod, fmtDe } from '../../packages/core/src/agent/tools/research';
 export interface EvalDoc {
   /** Stable key the checks refer to. */
   key: string;
-  /** File name (the extension decides the parser: .md, .txt, .eml). */
+  /** File name (the extension decides the parser: .md, .txt, .eml; .pptx gets one slide per paragraph). */
   name: string;
   content: string;
   /** Target folder in the archive; null = stays analyzed in the inbox. */
@@ -134,10 +135,10 @@ const WARRANTY_TERMS = [
 
 /** Shared base archive of every task (~40 small documents). */
 export const BASE_DOCS: EvalDoc[] = [
-  // slides (stand-ins for pptx)
+  // slide decks
   {
     key: 'folien-q1',
-    name: 'Folien Quartalsbericht Q1 2026.md',
+    name: 'Folien Quartalsbericht Q1 2026.pptx',
     title: 'Folien Quartalsbericht Q1 2026',
     folder: 'arbeit/allgemein',
     docType: 'Präsentation',
@@ -146,7 +147,7 @@ export const BASE_DOCS: EvalDoc[] = [
   },
   {
     key: 'folien-kickoff',
-    name: 'Folien Kickoff Projekt Atlas.md',
+    name: 'Folien Kickoff Projekt Atlas.pptx',
     title: 'Folien Kickoff Projekt Atlas',
     folder: 'arbeit/projekte/atlas',
     topic: 'Projekt Atlas',
@@ -157,7 +158,7 @@ export const BASE_DOCS: EvalDoc[] = [
   },
   {
     key: 'folien-schulung',
-    name: 'Folien Datenschutz-Schulung.md',
+    name: 'Folien Datenschutz-Schulung.pptx',
     title: 'Folien Datenschutz-Schulung',
     folder: 'arbeit/allgemein',
     docType: 'Präsentation',
@@ -535,12 +536,15 @@ export async function buildArchive(target: BuildTarget, docs: EvalDoc[], emptyFo
     for (const f of emptyFolders) services.categories.create(f, true);
 
     const sourceDir = path.join(target.home, 'eval-sources');
-    const files = docs.map((d, i) => {
+    const files: string[] = [];
+    for (const [i, d] of docs.entries()) {
       const p = path.join(sourceDir, String(i).padStart(3, '0'), d.name);
       fs.mkdirSync(path.dirname(p), { recursive: true });
-      fs.writeFileSync(p, d.content);
-      return p;
-    });
+      // slide decks are real pptx files (one slide per paragraph), so file type filters meet the real thing
+      if (d.name.endsWith('.pptx')) await makePptx(p, d.content.split(/\n{2,}/));
+      else fs.writeFileSync(p, d.content);
+      files.push(p);
+    }
     const imp = await services.documents.importPaths(files, { allowLlm: false });
     if (imp.rejected.length || imp.duplicates.length)
       throw new Error(

@@ -451,6 +451,13 @@ export const ipcContract = {
   ),
   /** Moves archived documents of a multi-selection into another folder (#304, same function as the agent). */
   'documents:relocate': ch(z.object({ ids: z.array(Id).min(1).max(5000), categoryPath: z.string().min(1), confirmed: Confirmed }), ArchiveResult),
+  /** New file names by a scheme like `{datum} {typ} {absender}`, with conflicts – nothing is renamed yet (#304). */
+  'documents:previewRename': ch(
+    z.object({ ids: z.array(Id).min(1).max(5000), pattern: z.string().trim().min(1).max(200) }),
+    z.array(z.object({ documentId: Id, from: z.string().nullable(), to: z.string().nullable(), unchanged: z.boolean(), conflicts: z.array(z.string()) })),
+  ),
+  /** Renames archived files by the scheme; never overwrites, undoable (#304, same function as the agent). */
+  'documents:rename': ch(z.object({ ids: z.array(Id).min(1).max(5000), pattern: z.string().trim().min(1).max(200), confirmed: Confirmed }), ArchiveResult),
   'documents:forTopic': ch(z.object({ topicId: Id }), z.array(DocumentRecord)),
   'documents:setLlmExcluded': ch(z.object({ id: Id, excluded: z.boolean() }), DocumentRecord),
   /** "Trotzdem importieren": takes a file out of quarantine into the inbox and starts the analysis */

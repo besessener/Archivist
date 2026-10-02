@@ -136,10 +136,14 @@ export function docLine(d: DocumentRecord, ctx: ToolContext, privacy: PrivacySer
     .join(' | ');
 }
 
+const RESOLVE_CHUNK = 1000;
+
 /** Resolves D/S refs to documents; unknown refs are named in the result instead of being guessed. */
 export function resolveDocs(deps: ToolDeps, ctx: ToolContext, refs: readonly string[]): { docs: DocumentRecord[]; unknown: string[] } {
   const { ids, unknown } = ctx.refs.resolveMany(refs);
-  const docs = ids.length ? deps.docs.list({ ids: ids.slice(0, 1000), limit: 1000 }) : [];
+  const docs: DocumentRecord[] = [];
+  // chunked: a result set (S…) can stand for far more documents than one query may bind
+  for (let i = 0; i < ids.length; i += RESOLVE_CHUNK) docs.push(...deps.docs.list({ ids: ids.slice(i, i + RESOLVE_CHUNK), limit: RESOLVE_CHUNK }));
   const found = new Set(docs.map((d) => d.id));
   const order = new Map(ids.map((id, i) => [id, i]));
   return { docs: docs.toSorted((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)), unknown: [...unknown, ...ids.filter((id) => !found.has(id))] };

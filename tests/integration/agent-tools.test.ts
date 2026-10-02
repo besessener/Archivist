@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { fillPattern } from '../../packages/core/src/agent/tools/files';
+import { fillPattern } from '../../packages/core/src/services/rename-pattern';
 import { SECTION_CHARS, locate } from '../../packages/core/src/agent/tools/read';
 import type { TestApp } from '../helpers/harness';
 import { agentApp, archived, folderOf, scriptedTurns, sentText } from '../helpers/agent';
@@ -127,14 +127,73 @@ describe('Metadata tools (#305, #291)', () => {
     for (const id of ids) expect((await app.ok('documents:get', { id })).projectName).toBeNull();
   });
 
+  it('entries other than documents get title, persons and date too', async () => {
+    await app.ok('decisions:create', {
+      decisionText: 'Wir kaufen ein Lastenrad',
+      title: 'Lastenrad',
+      topic: 'Mobilität',
+      decidedAt: '2026-01-15',
+      participants: ['Anna'],
+      alternatives: [],
+      unknownFields: [],
+      sourceIds: [],
+      confidence: 0.9,
+    });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'list_entries', args: { kind: 'decision' } }] },
+      {
+        calls: [
+          {
+            name: 'set_metadata',
+            args: { targets: ['K1'], title: 'Lastenrad kaufen', documentDate: '2026-01-10', addPersons: ['Ben'], removePersons: ['Anna'] },
+          },
+        ],
+      },
+      { text: 'Korrigiert.' },
+    );
+    await app.ok('chat:send', { text: 'Die Lastenrad-Entscheidung war am 10.1., mit Ben statt Anna, Titel „Lastenrad kaufen“' });
+    const d = (await app.ok('decisions:list', {}))[0]!;
+    expect(d.title).toBe('Lastenrad kaufen');
+    expect(d.decidedAt?.slice(0, 10)).toBe('2026-01-10');
+    expect(d.participants).toEqual(['Ben']);
+  });
+
   it('unclear persons are asked about, not guessed', async () => {
     await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Schmidt' });
     await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Meier' });
     const id = await archived(app, 'brief.txt', 'Brief', 'private/post');
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'set_metadata', args: { targets: [id], addPersons: ['Anna'] } }] }, { text: '?' });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'brief' } }] },
+      { calls: [{ name: 'set_metadata', args: { targets: ['D1'], addPersons: ['Anna'] } }] },
+      { text: '?' },
+    );
     await app.ok('chat:send', { text: 'Ordne den Brief Anna zu' });
-    expect(lastOutput()).toMatch(/Unbekannte|Unklare Person/);
+    expect(lastOutput()).toContain('Unklare Person');
+    expect(lastOutput()).toContain('Anna Schmidt');
+    expect(lastOutput()).toContain('Anna Meier');
     expect((await app.ok('documents:get', { id })).persons).toEqual([]);
+  });
+
+  it('re-analysis: archived documents are read again in ONE job and keep their assignments (#220)', async () => {
+    const id = await archived(app, 'scan.txt', 'alter Text', 'private/post', { topic: 'Post' });
+    const file = app.services.documents.get(id).archivePath!;
+    fs.writeFileSync(file, 'neuer Text nach besserer Texterkennung');
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'scan' } }] },
+      { calls: [{ name: 'reanalyze', args: { documents: ['S1'] } }] },
+      { text: 'Läuft.' },
+    );
+    const before = app.services.jobs.list(500).length;
+    await app.ok('chat:send', { text: 'Lies scan.txt bitte neu ein' });
+    expect(lastOutput()).toContain('neu gelesen');
+    await app.services.jobs.whenIdle();
+    const jobs = app.services.jobs.list(500);
+    expect(jobs.length - before).toBe(1);
+    expect(jobs.find((j) => j.type === 'documents.reread')?.status).toBe('succeeded');
+    const row = app.services.documents.getRow(id);
+    expect(row.extractedText).toContain('besserer Texterkennung');
+    expect(row.status).toBe('archived');
+    expect((await app.ok('documents:get', { id })).topicName).toBe('Post');
   });
 
   it('privacy exclusion per document is critical: always a proposal', async () => {
@@ -233,14 +292,65 @@ describe('Settings per chat (#312)', () => {
     expect(app.services.settings.get().agent.mode).toBe('auto');
   });
 
-  it('scan exclusions can be set and lifted', async () => {
+  it('the document list renames a multi-selection by the same scheme: preview with conflicts, then rename (#304)', async () => {
+    const a = await archived(app, 'scan010.txt', 'Rechnung A', 'work/misc', { docType: 'Rechnung', documentDate: '2026-03-01', persons: ['Müller'] });
+    const b = await archived(app, 'scan011.txt', 'Rechnung B', 'work/misc', { docType: 'Rechnung', documentDate: '2026-03-01', persons: ['Müller'] });
+    await app.ok('documents:bulkUpdate', { ids: [a, b], docType: 'Rechnung', documentDate: '2026-03-01', addPersons: ['Müller'], confirmed: true });
+    const preview = await app.ok('documents:previewRename', { ids: [a, b], pattern: '{datum} {typ} {absender}' });
+    expect(preview.map((p) => p.to?.split('/').at(-1))).toEqual(['2026-03-01 Rechnung Müller.txt', '2026-03-01 Rechnung Müller.txt']);
+    expect(preview[1]!.conflicts.length).toBeGreaterThan(0);
+    expect(fileName(a)).toBe('scan010.txt');
+    const res = await app.ok('documents:rename', { ids: [a, b], pattern: '{datum} {typ} {absender}', confirmed: true });
+    expect(res.success).toBe(1);
+    expect(res.conflicts).toBe(1);
+    expect(fileName(a)).toBe('2026-03-01 Rechnung Müller.txt');
+    expect(fileName(b)).toBe('scan011.txt');
+    expect((await app.call('documents:rename', { ids: [a], pattern: '{titel}', confirmed: false as never })).ok).toBe(false);
+  });
+
+  it('scan exclusions can be set, lifted and undone – only inside the released scan folders', async () => {
+    const dl = path.join(app.home, 'Downloads');
+    fs.mkdirSync(path.join(dl, 'privat'), { recursive: true });
+    await app.ok('scanner:addDirectory', { path: dl, recursive: true });
+    const inside = path.join(fs.realpathSync(dl), 'privat');
     app.llm.agent = scriptedTurns(
-      { calls: [{ name: 'exclude_from_scan', args: { path: path.join(app.home, 'Downloads') } }] },
-      { calls: [{ name: 'exclude_from_scan', args: { path: path.join(app.home, 'Downloads'), remove: true } }] },
+      {
+        calls: [
+          { name: 'exclude_from_scan', args: { path: path.join(app.home, 'Dokumente') } },
+          { name: 'exclude_from_scan', args: { path: inside } },
+        ],
+      },
       { text: 'ok' },
     );
-    await app.ok('chat:send', { text: 'Schließ Downloads vom Scan aus – ach nein, doch nicht' });
+    const res = await app.ok('chat:send', { text: 'Schließ Downloads/privat und Dokumente vom Scan aus' });
+    expect(sentText(app)).toContain('liegt in keinem freigegebenen Scan-Ordner');
+    expect((await app.ok('scanner:listExclusions', {})).map((e) => e.path)).toEqual([inside]);
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
     expect(await app.ok('scanner:listExclusions', {})).toHaveLength(0);
-    expect(sentText(app)).toContain('nicht mehr gescannt');
+
+    await app.ok('scanner:exclude', { kind: 'dir', path: inside });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'exclude_from_scan', args: { path: inside, remove: true } }] }, { text: 'ok' });
+    const lifted = await app.ok('chat:send', { text: 'Nimm den Ausschluss für privat wieder raus' });
+    expect(await app.ok('scanner:listExclusions', {})).toHaveLength(0);
+    await app.ok('agent:undoRun', { runId: lifted.assistantMessage.runId! });
+    expect((await app.ok('scanner:listExclusions', {})).map((e) => e.path)).toEqual([inside]);
+  });
+
+  it('created folders and removed empty folders can be undone', async () => {
+    await archived(app, 'a.md', 'A', 'work/misc');
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_folder', args: { path: 'work/neu/tief' } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Leg work/neu/tief an' });
+    const paths = async () => (await app.ok('categories:list', {})).map((c) => c.path);
+    expect(await paths()).toEqual(expect.arrayContaining(['work/neu', 'work/neu/tief']));
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(await paths()).not.toContain('work/neu');
+    expect(await paths()).toContain('work/misc');
+
+    await app.ok('categories:create', { path: 'work/leer', confirmed: true });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'remove_empty_folders', args: {} }] }, { text: 'ok' });
+    const removed = await app.ok('chat:send', { text: 'Räum leere Ordner auf' });
+    expect(await paths()).not.toContain('work/leer');
+    await app.ok('agent:undoRun', { runId: removed.assistantMessage.runId! });
+    expect(await paths()).toContain('work/leer');
   });
 });

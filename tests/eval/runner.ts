@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AgentAdapterChoice, AgentEffort, type AgentCapability, type AgentRun } from '@archivist/shared';
+import { AgentAdapterChoice, AgentEffort, type AgentCapability, type AgentLimits, type AgentRun } from '@archivist/shared';
 import { createServices, type Services } from '../../packages/core/src';
 import { detectAdapter } from '../../packages/core/src/agent/adapters';
 import { MIGRATIONS, TestCipher } from '../helpers/harness';
@@ -16,13 +16,30 @@ export interface EvalProvider {
   apiKey: string;
   effort: AgentEffort;
   adapter: AgentAdapterChoice;
+  /** Budgets for this provider (rounds, tokens, time) – to tune them against pass rate and cost. */
+  limits: Partial<AgentLimits>;
 }
 
 const envKey = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 
+/** Optional budgets of one provider; returns the name of an invalid variable instead. */
+function limitsFromEnv(env: NodeJS.ProcessEnv, k: string): Partial<AgentLimits> | string {
+  const out: Partial<AgentLimits> = {};
+  const read = (suffix: string, key: keyof AgentLimits, factor = 1): string | null => {
+    const raw = env[`${k}_${suffix}`]?.trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n <= 0) return `${k}_${suffix}`;
+    out[key] = n * factor;
+    return null;
+  };
+  return read('MAX_ROUNDS', 'maxRounds') ?? read('MAX_TOKENS', 'maxTokens') ?? read('TIMEOUT_S', 'timeoutMs', 1000) ?? out;
+}
+
 /**
  * ARCHIVIST_EVAL_PROVIDERS=claude,openai and per name ARCHIVIST_EVAL_<NAME>_BASE_URL, _MODEL, _API_KEY, optional _EFFORT
- * (low … max, default high) and _ADAPTER (auto/anthropic/openai). Incomplete providers are reported, not used.
+ * (low … max, default high), _ADAPTER (auto/anthropic/openai) and the budgets _MAX_ROUNDS, _MAX_TOKENS, _TIMEOUT_S.
+ * Incomplete providers are reported, not used.
  */
 export function providersFromEnv(env: NodeJS.ProcessEnv = process.env): { providers: EvalProvider[]; problems: string[] } {
   const names = (env.ARCHIVIST_EVAL_PROVIDERS ?? '')
@@ -47,7 +64,12 @@ export function providersFromEnv(env: NodeJS.ProcessEnv = process.env): { provid
       problems.push(`${name}: ungültiger Wert für ${!effort.success ? `${k}_EFFORT` : `${k}_ADAPTER`}`);
       continue;
     }
-    providers.push({ name, baseUrl, model, apiKey, effort: effort.data, adapter: adapter.data });
+    const limits = limitsFromEnv(env, k);
+    if (typeof limits === 'string') {
+      problems.push(`${name}: ungültiger Wert für ${limits}`);
+      continue;
+    }
+    providers.push({ name, baseUrl, model, apiKey, effort: effort.data, adapter: adapter.data, limits });
   }
   return { providers, problems };
 }
@@ -205,7 +227,9 @@ export async function runTask(p: EvalProvider, task: EvalTask, cap: AgentCapabil
       agent: {
         mode: task.mode ?? 'auto',
         ...(task.agent?.massActionThreshold ? { massActionThreshold: task.agent.massActionThreshold } : {}),
-        ...(task.agent?.chatLimits ? { chatLimits: { ...services.settings.get().agent.chatLimits, ...task.agent.chatLimits } } : {}),
+        // the provider's budgets first, a task's own limits (e.g. a deliberately low brake) win
+        chatLimits: { ...services.settings.get().agent.chatLimits, ...p.limits, ...task.agent?.chatLimits },
+        backgroundLimits: { ...services.settings.get().agent.backgroundLimits, ...p.limits },
       },
     });
     const before = snapshot(services);
