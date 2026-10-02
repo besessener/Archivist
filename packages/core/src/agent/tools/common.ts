@@ -156,6 +156,9 @@ export function resolveDocs({ deps, ctx }: ToolScope, refs: readonly string[]): 
   return { docs: docs.toSorted((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)), unknown: [...unknown, ...ids.filter((id) => !found.has(id))] };
 }
 
+/** How many entries a call over these refs affects (mass action threshold); unresolved refs count one each. */
+export const affectedCount = (ctx: ToolContext, refs: readonly string[]) => ctx.refs.resolveMany(refs).ids.length || refs.length;
+
 export const unknownNote = (unknown: string[]) =>
   unknown.length ? `\nUnbekannte IDs: ${unknown.slice(0, 10).join(', ')} – verwende IDs aus find_documents, search oder list_entries.` : '';
 
