@@ -54,6 +54,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Entitäten**: Document, Decision, Topic, Project, Person, Event, Question→Task, Note, Category, Tag.
 - **Beziehungen** mit Confidence und Status `proposed`/`confirmed`/`rejected`/`outdated`, gespeichert in SQLite.
 - **Zusammenführen** von Themen, Projekten (auch Thema ↔ Projekt), Personen und Tags hängt Beziehungen, Thema/Projekt-Verweise (Dokumente, Entscheidungen, offene Punkte, Ereignisse), Beteiligte, Personen und Verantwortliche um, merkt alte Namen als Aliasse und indexiert neu. Es lässt sich exakt rückgängig machen – auch mehrere Zusammenführungen eines Laufs auf einmal.
+- **Themen-Hierarchie**: Ein Thema oder Projekt kann „Unterthema von“ einem anderen sein („Urlaub 2026“ unter „Urlaub“) – per Antwort „Unterthema“ auf die Dubletten-Rückfrage oder über „Verknüpfen“. Die Wissen-Seite zeigt Themen und Projekte als Baum. Filter der Listen, die Timeline und Wissensfragen zu einem Oberthema berücksichtigen alle Unterthemen mit. Kreise und andere Arten als Themen/Projekte werden abgelehnt; rückgängig im Änderungsprotokoll.
 - **Mehrere Themen und Projekte**: Dokumente, Entscheidungen, offene Punkte und Ereignisse haben ein Hauptthema und ein Hauptprojekt (danach richtet sich die Ablage im Archiv) und beliebig viele weitere – in den Formularen unter „Weitere Themen“ / „Weitere Projekte“. Weitere sind bestätigte Beziehungen derselben Art wie die zum Hauptthema; Listen zeigen sie mit „+ …“, Filter nach Thema oder Projekt finden den Eintrag unter jedem davon, und die Archivprüfung zählt ihn als zugeordnet. Ändern ist ein Rückgängig-Schritt; Zusammenführen hängt auch weitere Themen um. Eine Migration hat jedem vorhandenen Hauptthema und -projekt seine Beziehung gegeben.
 - **Veraltete Beziehungen**: Ändern sich Thema, Projekt, Beteiligte, Personen oder Tags (auch beim Bearbeiten eines archivierten Dokuments) oder der Verantwortliche eines offenen Punkts, werden die automatisch angelegten Beziehungen zum alten Ziel `outdated`. Von dir bestätigte oder abgelehnte bleiben unverändert; Rückgängig stellt sie wieder her.
 - **Verantwortliche** sind als Beziehung „verantwortlich für“ mit ihrem offenen Punkt verbunden.
@@ -186,7 +187,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - **doppelte offene Punkte** (Titel, Beschreibung, Thema/Projekt, Verantwortlicher),
 - **doppelte Notizen** (gleicher oder nahezu gleicher Inhalt – Notizen, die nur gleich beginnen, bleiben getrennt),
 - **doppelte Ereignisse** (gleiches Datum, ähnlicher Titel),
-- **mögliche Dubletten bei Themen, Projekten und Tags** (Schreibvarianten, Singular/Plural, Tippfehler; „Urlaub“ ↔ „Urlaub 2026“ nur als Frage),
+- **mögliche Dubletten bei Themen, Projekten und Tags** (Schreibvarianten, Singular/Plural, Tippfehler; „Urlaub“ ↔ „Urlaub 2026“ nur als Frage mit „Unterthema“, „Zusammenführen“ oder „Verschieden“),
 - **gleicher Name als Thema und als Projekt** (Rückfrage „Projekt“ / „Thema“ / „Beides ist richtig“),
 - Ablageort vs. Klassifikation, Datenbank vs. Dateisystem,
 - [Personen-Dubletten](#personen-und-eigene-identität),

@@ -39,6 +39,8 @@ export const RelationType = z.enum([
   'produced',
   'duplicate_of',
   'related_to',
+  /** A topic or project below another one: „Urlaub 2026“ is a subtopic of „Urlaub“ (#282). */
+  'subtopic_of',
 ]);
 export type RelationType = z.infer<typeof RelationType>;
 

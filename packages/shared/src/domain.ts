@@ -628,6 +628,8 @@ export const AgentActionType = z.enum([
   'merge_events',
   'confirm_relation',
   'reject_relation',
+  /** Links two entries as the user's confirmed choice, e.g. „Unterthema von“ (#282). */
+  'link_entities',
   'exclude_path',
   'create_category',
   'set_reminder',
@@ -714,6 +716,7 @@ export const ActionParamSchemas = {
   /** `offered`: a link suggestion after capturing in the chat (#283), shown as a compact button. */
   confirm_relation: z.object({ relationId: Id, offered: z.boolean().optional() }),
   reject_relation: z.object({ relationId: Id }),
+  link_entities: z.object({ sourceId: Id, targetId: Id, relationType: RelationType }),
   exclude_path: z.object({ kind: z.enum(['file', 'dir']), path: z.string() }),
   create_category: z.object({ path: z.string() }),
   set_reminder: z.object({ targetType: z.string(), targetId: z.string().nullable(), title: z.string(), remindAt: IsoDate }),

@@ -81,6 +81,7 @@ const RELATION_LABEL_DE: Partial<Record<string, string>> = {
   blocks: 'blockiert',
   results_from: 'folgt aus',
   related_to: 'verwandt mit',
+  subtopic_of: 'Unterthema von',
   relates_to: 'bezieht sich auf',
   belongs_to: 'gehört zu',
   concerns: 'betrifft',
@@ -445,7 +446,8 @@ export class KnowledgeAnswerService {
           ? this.graph
               .listEntities({ type: type as 'topic' | 'project', query: name, limit: 5 })
               .filter((e) => normalizeName(e.name) === normalizeName(name))
-              .map((e) => e.id)
+              // a question on a topic takes its subtopics along (#282)
+              .flatMap((e) => this.graph.subtreeOf(e.id))
           : [],
       ),
     );

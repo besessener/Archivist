@@ -2,7 +2,7 @@
 
 import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Suspense, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { EntityType, KnowledgeCreateResult, RelationStatus } from '@archivist/shared';
@@ -38,6 +38,31 @@ import type { ActionRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const TYPES: EntityType[] = ['topic', 'project', 'person', 'event', 'note', 'category', 'tag', 'document', 'decision', 'task', 'question', 'case'];
+/**
+ * Orders a list so that each topic/project is followed by its subtopics (#282), indented by depth; entries outside the
+ * hierarchy keep their place. A child whose parent is not in the list stays at the top level.
+ */
+function asTree<T extends { id: string }>(list: T[], links: Array<{ childId: string; parentId: string }>): Array<{ entity: T; depth: number }> {
+  const inList = new Set(list.map((e) => e.id));
+  const parentOf = new Map(links.filter((l) => inList.has(l.parentId) && inList.has(l.childId)).map((l) => [l.childId, l.parentId]));
+  const children = new Map<string, T[]>();
+  for (const e of list) {
+    const p = parentOf.get(e.id);
+    if (p) children.set(p, [...(children.get(p) ?? []), e]);
+  }
+  const out: Array<{ entity: T; depth: number }> = [];
+  const seen = new Set<string>();
+  const visit = (e: T, depth: number) => {
+    if (seen.has(e.id)) return;
+    seen.add(e.id);
+    out.push({ entity: e, depth });
+    for (const c of children.get(e.id) ?? []) visit(c, depth + 1);
+  };
+  for (const e of list) if (!parentOf.has(e.id)) visit(e, 0);
+  for (const e of list) visit(e, 0);
+  return out;
+}
+
 const CREATABLE = ['topic', 'project', 'case', 'person', 'event', 'note'] as const;
 /** Entries that can belong to a case („Vorgang“, #286). */
 const CASE_ENTRY_TYPES = new Set<string>(['document', 'note', 'decision', 'task', 'question', 'event']);
@@ -59,6 +84,9 @@ function KnowledgeInner() {
   const q = useDebounced(search.trim(), 300);
   const list = useQuery('knowledge:listEntities', { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: ENTITY_LIMIT }, { scopes: ['knowledge'] });
   const selection = useSelection();
+  // topics and projects as a tree (#282): children right below their parent, indented
+  const hierarchy = useQuery('knowledge:hierarchy', {}, { scopes: ['knowledge'] });
+  const items = useMemo(() => asTree(list.data ?? [], hierarchy.data ?? []), [list.data, hierarchy.data]);
   const [createOpen, setCreateOpen] = useState(false);
   const [createKey, setCreateKey] = useState(0);
   /** Initial title of the open event dialog; null = closed. */
@@ -124,8 +152,8 @@ function KnowledgeInner() {
           )}
           <BulkAssignBar ids={selection.ids} noun={['Eintrag', 'Einträge']} onClear={selection.clear} onDone={() => void list.refetch()} />
           <ul className="flex max-h-[65vh] flex-col gap-1 overflow-y-auto" data-testid="knowledge-list">
-            {(list.data ?? []).map((e) => (
-              <li key={e.id} className="flex items-center gap-1">
+            {items.map(({ entity: e, depth }) => (
+              <li key={e.id} className="flex items-center gap-1" style={depth ? { paddingLeft: `${Math.min(depth, 4) * 1}rem` } : undefined} data-depth={depth}>
                 {CASE_ENTRY_TYPES.has(e.type) && !e.duplicateOfId ? (
                   <Checkbox
                     className="ml-1"

@@ -345,6 +345,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return { ok: true as const };
     },
     'knowledge:related': (i) => s.links.related(i.id, i),
+    'knowledge:hierarchy': () => s.graph.hierarchy(),
     'knowledge:wikiSuggest': (i) => s.notes.wiki.suggest(i.query, { limit: i.limit, excludeId: i.excludeId }),
     'knowledge:wikiResolve': (i) => s.notes.wiki.resolveAll(i.names, i.noteId),
     'links:suggestions': (i) => s.links.candidates(i.id, { limit: i.limit }),

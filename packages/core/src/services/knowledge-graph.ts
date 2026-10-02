@@ -279,6 +279,9 @@ const clipEvidence = (e: string | null | undefined): string | null => {
   return t.length > EVIDENCE_MAX ? `${t.slice(0, EVIDENCE_MAX - 1)}…` : t;
 };
 
+/** What can be a subtopic of what (#282). */
+const SUBJECT_TYPES = new Set<EntityType>(['topic', 'project']);
+
 /** Statuses that count as a current, visible assignment. */
 const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 
@@ -330,6 +333,7 @@ const RELATION_LABEL: Record<RelationType, string> = {
   produced: 'hat erzeugt',
   duplicate_of: 'Duplikat von',
   related_to: 'verwandt mit',
+  subtopic_of: 'Unterthema von',
 };
 
 /** Plain-language reason of a relation: type, status, who stands behind it, how it came about and its evidence (#270, #276). */
@@ -779,6 +783,12 @@ export class KnowledgeGraphService {
     const a = this.getEntity(sourceId);
     const b = this.getEntity(targetId);
     if (!a || !b) throw new AppError('validation_error', 'Einer der Einträge existiert nicht.');
+    if (relationType === 'subtopic_of') {
+      if (!SUBJECT_TYPES.has(a.type) || !SUBJECT_TYPES.has(b.type))
+        throw new AppError('validation_error', 'Nur Themen und Projekte können Unterthema eines anderen sein.');
+      if (this.subtreeOf(sourceId).includes(targetId))
+        throw new AppError('validation_error', `„${b.name}“ liegt bereits unter „${a.name}“ – das ergäbe einen Kreis.`);
+    }
     if (opts.status === 'proposed' && this.rejectedBetween(sourceId, targetId))
       throw new AppError('validation_error', `Die Verknüpfung „${a.name}“ – „${b.name}“ wurde abgelehnt und wird nicht wieder vorgeschlagen.`);
     const before =
@@ -1028,6 +1038,28 @@ export class KnowledgeGraphService {
     });
     this.ctx.events.changed('knowledge');
     return rows.length;
+  }
+
+  /**
+   * A topic or project with everything below it over confirmed „Unterthema von“ relations (#282) – itself first.
+   * Search filters and knowledge questions on a topic take its subtopics along.
+   */
+  subtreeOf(id: string): string[] {
+    return (
+      this.ctx.database.sqlite
+        .prepare(
+          `WITH RECURSIVE sub(id) AS (SELECT ? UNION SELECT r.source_entity_id FROM relations r JOIN sub ON r.target_entity_id = sub.id
+             WHERE r.relation_type = 'subtopic_of' AND r.status = 'confirmed') SELECT id FROM sub`,
+        )
+        .all(id) as Array<{ id: string }>
+    ).map((r) => r.id);
+  }
+
+  /** Every confirmed „Unterthema von“ (#282): child and parent – for the tree on the knowledge page. */
+  hierarchy(): Array<{ childId: string; parentId: string }> {
+    return this.ctx.database.sqlite
+      .prepare(`SELECT source_entity_id AS childId, target_entity_id AS parentId FROM relations WHERE relation_type = 'subtopic_of' AND status = 'confirmed'`)
+      .all() as Array<{ childId: string; parentId: string }>;
   }
 
   /** Opens or closes a case („Vorgang“, #286); logged with undo. */

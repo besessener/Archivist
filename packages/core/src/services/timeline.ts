@@ -34,23 +34,37 @@ export class TimelineService {
  */
 export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
   const out: TimelineEntry[] = [];
-  // a further topic/project of an entry counts as well (#287)
-  const further = (subjectId: string | undefined) =>
+  // a further topic/project of an entry counts as well (#287), and so do the subtopics (#282)
+  const tree = (subjectId: string | undefined): string[] => {
+    if (!subjectId) return [];
+    const out = [subjectId];
+    for (let i = 0; i < out.length && out.length < 1000; i += 1)
+      for (const r of db
+        .select({ id: relations.sourceEntityId })
+        .from(relations)
+        .where(and(eq(relations.targetEntityId, out[i]!), eq(relations.relationType, 'subtopic_of'), eq(relations.status, 'confirmed')))
+        .all())
+        if (!out.includes(r.id)) out.push(r.id);
+    return out;
+  };
+  const topicTree = new Set(tree(q.topicId));
+  const projectTree = new Set(tree(q.projectId));
+  const further = (subjects: Set<string>) =>
     new Set(
-      subjectId
+      subjects.size
         ? db
             .select({ id: relations.sourceEntityId })
             .from(relations)
-            .where(and(eq(relations.targetEntityId, subjectId), eq(relations.status, 'confirmed')))
+            .where(and(inArray(relations.targetEntityId, [...subjects]), eq(relations.status, 'confirmed')))
             .all()
             .map((r) => r.id)
         : [],
     );
-  const furtherTopic = further(q.topicId);
-  const furtherProject = further(q.projectId);
+  const furtherTopic = further(topicTree);
+  const furtherProject = further(projectTree);
   const match = (topicId: string | null, projectId: string | null, id?: string) => {
-    if (q.topicId && topicId !== q.topicId && !(id && furtherTopic.has(id))) return false;
-    if (q.projectId && projectId !== q.projectId && !(id && furtherProject.has(id))) return false;
+    if (q.topicId && !(topicId && topicTree.has(topicId)) && !(id && furtherTopic.has(id))) return false;
+    if (q.projectId && !(projectId && projectTree.has(projectId)) && !(id && furtherProject.has(id))) return false;
     return true;
   };
   const names = new Map<string, string | null>();

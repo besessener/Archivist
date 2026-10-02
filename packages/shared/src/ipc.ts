@@ -593,6 +593,8 @@ export const ipcContract = {
   'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
   /** Related entries with the reason (#276, #289). */
   /** Related entries of an entry, strongest first, paged (#276). */
+  /** Every confirmed „Unterthema von“ (child, parent) – the topic tree of the knowledge page (#282). */
+  'knowledge:hierarchy': ch(Empty, z.array(z.object({ childId: z.string(), parentId: z.string() }))),
   /** Autocomplete after `[[` in a note (#285): entries by name or alias. */
   'knowledge:wikiSuggest': ch(
     z.object({ query: z.string().max(200), limit: z.number().int().min(1).max(20).default(8), excludeId: z.string().optional() }),

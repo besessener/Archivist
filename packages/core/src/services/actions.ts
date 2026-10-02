@@ -458,6 +458,13 @@ export class ActionService {
         d.graph.decideRelation(params.relationId, 'confirmed', { trigger });
         return 'Beziehung bestätigt.';
       }
+      case 'link_entities': {
+        const params = ActionParamSchemas.link_entities.parse(p);
+        d.graph.linkEntries(params.sourceId, params.targetId, params.relationType, { status: 'confirmed', trigger });
+        const a = d.graph.getEntity(params.sourceId)?.name ?? params.sourceId;
+        const b = d.graph.getEntity(params.targetId)?.name ?? params.targetId;
+        return `„${a}“ mit „${b}“ verknüpft.`;
+      }
       case 'reject_relation': {
         const params = ActionParamSchemas.reject_relation.parse(p);
         d.graph.setRelationStatus(params.relationId, 'rejected');

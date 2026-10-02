@@ -114,6 +114,7 @@ export const RELATION_TYPE_LABELS: Record<RelationType, string> = {
   produced: 'hat erzeugt',
   duplicate_of: 'Duplikat von',
   related_to: 'verwandt mit',
+  subtopic_of: 'Unterthema von',
 };
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
