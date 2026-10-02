@@ -43,7 +43,7 @@ test.describe('knowledge: create new', () => {
     await expect(k.locators.detail.getByTestId('entity-self')).toHaveText('Du');
   });
 
-  test('offers similar entries as link proposals; „Verknüpfen“ confirms the link (#283, #313)', async ({ llm, on, page }, testInfo) => {
+  test('proposes similar entries on its own; „Bestätigen“ under related entries confirms the link (#271, #276, #280)', async ({ llm, on, page }, testInfo) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('knowledge');
@@ -52,13 +52,14 @@ test.describe('knowledge: create new', () => {
     await k.do.create('note', 'Heizung Brenner', 'Die Firma Kalt hat am Brenner der Heizung im Keller einen Defekt gefunden.');
     await expect(k.heading()).toHaveText('Heizung Brenner');
 
-    const suggestion = page.getByTestId('link-suggestion').filter({ hasText: 'Heizung Wartung' });
-    await expect(suggestion).toBeVisible();
+    // proposed in the background, with who stands behind it and why
+    const related = page.getByTestId('related-entry').filter({ hasText: 'Heizung Wartung' });
+    await expect(related).toBeVisible();
+    await expect(related.getByTestId('related-reason')).toContainText('ähnlicher Inhalt');
     await expectNoSeriousA11yViolations(page, testInfo);
-    await suggestion.getByRole('button', { name: 'Mit „Heizung Wartung“ verknüpfen' }).click();
-    await expect(k.locators.toasts.filter({ hasText: 'Verknüpft.' })).toBeVisible();
-    // linked now: no longer a proposal, but a related entry
-    await expect(suggestion).toHaveCount(0);
-    await expect(page.getByTestId('related-entry').filter({ hasText: 'Heizung Wartung' })).toBeVisible();
+    await related.getByTestId('related-confirm').click();
+    await expect(k.locators.toasts.filter({ hasText: 'Bestätigt.' })).toBeVisible();
+    await expect(related.getByTestId('related-reason')).toContainText('von dir bestätigt');
+    await expect(related.getByTestId('related-confirm')).toHaveCount(0);
   });
 });
