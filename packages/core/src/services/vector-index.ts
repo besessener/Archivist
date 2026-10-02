@@ -20,6 +20,19 @@ interface Segment {
   capacity: number;
 }
 
+/** Where a chunk's vector comes from. */
+interface ChunkRow {
+  chunkId: string;
+  entityId: string;
+  entityType: string;
+}
+
+/** A query vector of one embedding model. */
+export interface VectorQuery {
+  model: string;
+  vector: Float32Array;
+}
+
 export interface VectorHit {
   chunkId: string;
   entityId: string;
@@ -36,12 +49,13 @@ class ModelIndex {
   dead = 0;
   readonly rowsPerSegment: number;
 
-  constructor(
-    readonly dim: number,
-    private readonly typeCode: (type: string) => number,
-    maxSegmentRows: number,
-  ) {
-    this.rowsPerSegment = Math.max(1, Math.min(maxSegmentRows, Math.floor(SEGMENT_BYTES / (dim * 4))));
+  readonly dim: number;
+  private readonly typeCode: (type: string) => number;
+
+  constructor(spec: { dim: number; typeCode: (type: string) => number; maxSegmentRows: number }) {
+    this.dim = spec.dim;
+    this.typeCode = spec.typeCode;
+    this.rowsPerSegment = Math.max(1, Math.min(spec.maxSegmentRows, Math.floor(SEGMENT_BYTES / (spec.dim * 4))));
   }
 
   private newSegment(capacity: number): Segment {
@@ -67,7 +81,7 @@ class ModelIndex {
     seg.capacity = capacity;
   }
 
-  add(chunkId: string, entityId: string, entityType: string, vec: Float32Array): void {
+  add({ chunkId, entityId, entityType }: ChunkRow, vector: Float32Array): void {
     let seg = this.segments.at(-1);
     if (!seg || seg.rows >= this.rowsPerSegment) {
       seg = this.newSegment(Math.min(INITIAL_ROWS, this.rowsPerSegment));
@@ -75,8 +89,8 @@ class ModelIndex {
     }
     if (seg.rows >= seg.capacity) this.grow(seg);
     const row = seg.rows;
-    const n = Math.min(vec.length, this.dim);
-    seg.matrix.set(n === vec.length ? vec : vec.subarray(0, n), row * this.dim);
+    const n = Math.min(vector.length, this.dim);
+    seg.matrix.set(n === vector.length ? vector : vector.subarray(0, n), row * this.dim);
     seg.types[row] = this.typeCode(entityType);
     seg.chunkIds.push(chunkId);
     seg.entityIds.push(entityId);
@@ -102,11 +116,7 @@ class ModelIndex {
   }
 }
 
-/**
- * In-memory vector index per embedding model (#163). It is loaded once from `chunks` (embeddings only, no text),
- * then kept up to date by `SearchService.index/remove`. The vectors live in SharedArrayBuffers, so a search only
- * sends the query vector to the worker threads – no per-query SELECT, no matrix build, no copy on the main thread.
- */
+/** In-memory vector index per embedding model (#163) in SharedArrayBuffers: a search only sends the query vector to the workers. */
 export class VectorIndex {
   private readonly models = new Map<string, ModelIndex>();
   private readonly typeCodes = new Map<string, number>();
@@ -133,25 +143,25 @@ export class VectorIndex {
   private load(model: string): ModelIndex | null {
     const cached = this.models.get(model);
     if (cached) return cached;
-    let idx: ModelIndex | null = null;
+    let index: ModelIndex | null = null;
     const rows = this.sqlite()
       .prepare('SELECT id, entity_id AS entityId, entity_type AS entityType, embedding FROM chunks WHERE embedding_model = ? AND embedding IS NOT NULL')
       .iterate(model) as IterableIterator<{ id: string; entityId: string; entityType: string; embedding: Buffer }>;
     for (const r of rows) {
-      const vec = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, Math.floor(r.embedding.byteLength / 4));
-      idx ??= new ModelIndex(vec.length, this.typeCode, this.maxSegmentRows);
-      idx.add(r.id, r.entityId, r.entityType, vec);
+      const vector = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, Math.floor(r.embedding.byteLength / 4));
+      index ??= new ModelIndex({ dim: vector.length, typeCode: this.typeCode, maxSegmentRows: this.maxSegmentRows });
+      index.add({ chunkId: r.id, entityId: r.entityId, entityType: r.entityType }, vector);
     }
-    if (idx) this.models.set(model, idx);
-    return idx;
+    if (index) this.models.set(model, index);
+    return index;
   }
 
   /** Called after an entity's chunks were rewritten in the database. */
-  replace(entityId: string, entityType: string, model: string, chunks: Array<{ id: string; vector: Float32Array | undefined }>): void {
-    for (const m of this.models.values()) m.remove(entityId);
-    const idx = this.models.get(model);
-    if (idx) {
-      for (const c of chunks) if (c.vector) idx.add(c.id, entityId, entityType, c.vector);
+  replace(entity: { id: string; type: string }, written: { model: string; chunks: Array<{ id: string; vector: Float32Array | undefined }> }): void {
+    for (const m of this.models.values()) m.remove(entity.id);
+    const index = this.models.get(written.model);
+    if (index) {
+      for (const c of written.chunks) if (c.vector) index.add({ chunkId: c.id, entityId: entity.id, entityType: entity.type }, c.vector);
     }
     this.compact();
   }
@@ -171,50 +181,47 @@ export class VectorIndex {
     this.models.clear();
   }
 
-  /**
-   * Entries whose chunks are closest to the chunks of `entityId` (cosine, computed in the worker like a search): the best
-   * score per other entry with its best matching chunk. Uses the entity's first `maxChunks` chunks as queries. Empty when
-   * the entity has no vectors of this model.
-   */
+  /** Best score and chunk per other entry, using the entity's first `maxChunks` chunks as queries; empty without vectors of this model. */
   async similarTo(
-    model: string,
-    entityId: string,
+    { model, entityId }: { model: string; entityId: string },
     opts: { k: number; minScore: number; types?: readonly string[] | null; maxChunks?: number },
   ): Promise<VectorHit[]> {
-    const idx = this.load(model);
-    const own = idx?.byEntity.get(entityId);
-    if (!idx || !own?.length) return [];
+    const index = this.load(model);
+    const own = index?.byEntity.get(entityId);
+    if (!index || !own?.length) return [];
     const best = new Map<string, VectorHit>();
     for (const [segIndex, row] of own.slice(0, opts.maxChunks ?? 4)) {
-      const seg = idx.segments[segIndex];
+      const seg = index.segments[segIndex];
       if (!seg) continue;
       // a copy: the shared row may be overwritten while the worker reads the query
-      const query = seg.matrix.slice(row * idx.dim, (row + 1) * idx.dim);
-      for (const h of await this.search(model, query, { k: opts.k + own.length + 1, minScore: opts.minScore, types: opts.types }))
+      const vector = seg.matrix.slice(row * index.dim, (row + 1) * index.dim);
+      for (const h of await this.search({ model, vector }, { k: opts.k + own.length + 1, minScore: opts.minScore, types: opts.types }))
         if (h.entityId !== entityId && (best.get(h.entityId)?.score ?? -1) < h.score) best.set(h.entityId, h);
     }
     return [...best.values()].toSorted((a, b) => b.score - a.score).slice(0, opts.k);
   }
 
-  async search(model: string, query: Float32Array, opts: { k: number; minScore: number; types?: readonly string[] | null }): Promise<VectorHit[]> {
-    const idx = this.load(model);
-    if (!idx || idx.live === 0) return [];
-    let typeMask: Uint8Array | null = null;
-    if (opts.types) {
-      typeMask = new Uint8Array(256);
-      for (const t of opts.types) {
-        const code = this.typeCodes.get(t);
-        if (code !== undefined) typeMask[code] = 1;
-      }
-      if (!typeMask.some(Boolean)) return [];
-    }
-    const q = new Float32Array(idx.dim);
-    q.set(query.length > idx.dim ? query.subarray(0, idx.dim) : query);
+  async search(query: VectorQuery, opts: { k: number; minScore: number; types?: readonly string[] | null }): Promise<VectorHit[]> {
+    const index = this.load(query.model);
+    if (!index || index.live === 0) return [];
+    const typeMask = opts.types ? this.typeMask(opts.types) : null;
+    if (typeMask && !typeMask.some(Boolean)) return [];
+    const padded = new Float32Array(index.dim);
+    padded.set(query.vector.length > index.dim ? query.vector.subarray(0, index.dim) : query.vector);
     // snapshot: rows written after this point are not part of this search
-    const parts = idx.segments.map((s) => ({ seg: s, matrix: s.matrix, types: s.types, rows: s.rows, chunkIds: s.chunkIds, entityIds: s.entityIds }));
+    const parts = index.segments.map((s) => ({ seg: s, matrix: s.matrix, types: s.types, rows: s.rows, chunkIds: s.chunkIds, entityIds: s.entityIds }));
     const results = await Promise.all(
       parts.map((p) =>
-        this.pool.run('cosineTopK', { query: q, matrix: p.matrix, types: p.types, rows: p.rows, typeMask, dim: idx.dim, k: opts.k, minScore: opts.minScore }),
+        this.pool.run('cosineTopK', {
+          query: padded,
+          matrix: p.matrix,
+          types: p.types,
+          rows: p.rows,
+          typeMask,
+          dim: index.dim,
+          k: opts.k,
+          minScore: opts.minScore,
+        }),
       ),
     );
     const hits: VectorHit[] = [];
@@ -228,5 +235,14 @@ export class VectorIndex {
       }
     });
     return hits.toSorted((a, b) => b.score - a.score).slice(0, opts.k);
+  }
+
+  private typeMask(types: readonly string[]): Uint8Array {
+    const mask = new Uint8Array(256);
+    for (const t of types) {
+      const code = this.typeCodes.get(t);
+      if (code !== undefined) mask[code] = 1;
+    }
+    return mask;
   }
 }

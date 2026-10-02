@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { subjectFromText } from '../../packages/core/src/services/chat';
+import { subjectFromText } from '../../packages/core/src/services/chat/subjects';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 const TOPIC = 'Bildungsurlaub 2026';

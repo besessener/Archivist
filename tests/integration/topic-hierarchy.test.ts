@@ -59,9 +59,9 @@ describe('Topic hierarchy: subtopics instead of merging (#282)', () => {
     const u26 = await topic('Urlaub 2026');
     await app.ok('knowledge:link', { sourceId: u26.id, targetId: urlaub.id, relationType: 'subtopic_of', confirmed: true });
     await app.ok('decisions:create', { decisionText: 'Unterkunft: Ferienhaus am See.', topic: 'Urlaub 2026', asDraft: false, sourceIds: [] });
-    const answer = await app.services.answers.knowledgeQuestion(
-      'Welche Unterkunft haben wir?',
-      {
+    const answer = await app.services.answers.knowledgeQuestion({
+      text: 'Welche Unterkunft haben wir?',
+      intent: {
         intent: 'knowledge_question',
         confidence: 0.9,
         rationale: 'test',
@@ -80,8 +80,8 @@ describe('Topic hierarchy: subtopics instead of merging (#282)', () => {
         note: null,
         decisionCertainty: null,
       },
-      {},
-    );
+      state: {},
+    });
     expect(answer.content).toContain('Ferienhaus');
   });
 });
