@@ -512,6 +512,8 @@ export class ActionService {
             unknownFields: [],
             asDraft: false,
             confidence: 0.7,
+            origin: 'document',
+            evidence: params.evidence ?? null,
           },
           { actor: 'agent', trigger },
         );

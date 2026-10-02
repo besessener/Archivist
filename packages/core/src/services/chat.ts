@@ -1709,7 +1709,7 @@ export class ChatService {
         const backing = this.decisionDocuments(d);
         out.push({
           ...this.decisionSource(d, h.score),
-          _text: `${this.decisions.format(d).replace(/\*\*/g, '')}${backing.length ? `\nBelegt durch: ${backing.map((b) => `Dokument „${b.title}“`).join(', ')}` : ''}`,
+          _text: this.decisionPromptText(d, backing),
           _topics: [d.topicId, d.projectId].filter((x): x is string => Boolean(x)),
           _dates: d.decidedAt ? [d.decidedAt] : [],
         });
@@ -1761,6 +1761,18 @@ export class ChatService {
     // up to 3 supporting documents of retrieved decisions, after the hits
     const ids = new Set(out.map((o) => o.id));
     return [...out, ...supporting.filter((b) => !ids.has(b.id)).slice(0, 3)];
+  }
+
+  /** A decision as answer source: its fields, the verbatim evidence of a document decision (#175) and the backing documents. */
+  private decisionPromptText(d: Decision, backing: GatheredSource[]): string {
+    return [
+      this.decisions.format(d).replace(/\*\*/g, ''),
+      d.origin === 'document' && 'Herkunft: aus einem Dokument übernommen (vom Benutzer bestätigt)',
+      d.evidence && `Wörtlich im Dokument: „${truncate(d.evidence, 400)}“`,
+      backing.length && `Belegt durch: ${backing.map((b) => `Dokument „${b.title}“`).join(', ')}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   /** Archived source documents of a decision, with the passage that best matches the decision text. */

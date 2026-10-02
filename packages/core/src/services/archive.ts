@@ -758,6 +758,8 @@ export class ArchiveService {
           topic,
           project,
           sourceIds: [row.id],
+          kind: it.kind ?? null,
+          evidence: it.evidence ?? null,
         },
       }),
     );

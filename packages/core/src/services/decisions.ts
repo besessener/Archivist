@@ -4,6 +4,7 @@ import {
   type Decision,
   type DecisionField,
   type DecisionInput,
+  type DecisionOrigin,
   type DecisionPatch,
   type DecisionStatus,
 } from '@archivist/shared';
@@ -173,6 +174,8 @@ export class DecisionService {
       sourceIds: r.sourceIds,
       confidence: r.confidence,
       missingFields: r.missingFields as DecisionField[],
+      origin: (r.origin as DecisionOrigin | null) ?? null,
+      evidence: r.evidence,
       unknownFields: r.unknownFields as DecisionField[],
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -278,6 +281,8 @@ export class DecisionService {
       confidence: input.confidence,
       missingFields: missing,
       unknownFields: input.unknownFields,
+      origin: input.origin ?? (opts.trigger === 'chat' ? 'chat' : 'form'),
+      evidence: input.evidence?.trim() || null,
       createdAt: now,
       updatedAt: now,
     };

@@ -228,7 +228,13 @@ export function classifyLocally(input: {
     .split(/(?<=[.!?])\s+|\n+/)
     .filter((s) => /(?:wir\s+haben\s+)?(?:beschlossen|entschieden)|beschluss:|entscheidung:/i.test(s) && s.length < 400)
     .slice(0, 5)
-    .map((s) => ({ title: firstSentence(s, 90), decisionText: s.trim(), decidedAt: extractDates(s, now).find((d) => pastOrToday(d, now)) ?? null }));
+    .map((s) => ({
+      title: firstSentence(s, 90),
+      decisionText: s.trim(),
+      decidedAt: extractDates(s, now).find((d) => pastOrToday(d, now)) ?? null,
+      kind: 'decided' as const,
+      evidence: s.trim(),
+    }));
   return {
     docType,
     title: base.trim() || input.fileName,

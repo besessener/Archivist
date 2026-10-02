@@ -194,12 +194,24 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
   it('proposes documents for an existing topic and archives only the selected ones', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     app.llm.on('DocumentClassification', () =>
-      cls('Hauskauf', { decisions: [{ title: 'Kaufentscheidung', decisionText: 'Wir kaufen das Haus.', decidedAt: '2026-05-01', participants: [] }] }),
+      cls('Hauskauf', {
+        decisions: [
+          {
+            title: 'Kaufentscheidung',
+            decisionText: 'Wir kaufen das Haus.',
+            decidedAt: '2026-05-01',
+            participants: [],
+            kind: 'decided',
+            evidence: 'Wir kaufen das Haus.',
+          },
+        ],
+      }),
     );
     // existing topic
     await app.ok('knowledge:createEntity', { type: 'topic', name: 'Hauskauf' });
     const dl = path.join(app.home, 'Downloads');
-    for (const n of ['kaufvertrag', 'grundbuch', 'finanzierung']) app.file(`Downloads/${n}.txt`, `Dokument ${n} zum Hauskauf Musterstraße 1.`);
+    for (const n of ['kaufvertrag', 'grundbuch', 'finanzierung'])
+      app.file(`Downloads/${n}.txt`, `Dokument ${n} zum Hauskauf Musterstraße 1. Wir kaufen das Haus.`);
     await app.ok('scanner:addDirectory', { path: dl, recursive: true });
     await scan();
     const files = (await app.ok('scanner:getResults', {})).files;

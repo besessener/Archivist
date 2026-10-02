@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ArchiveLocationProposal, DecisionField } from './domain';
+import { ArchiveLocationProposal, DecisionField, DecisionKind } from './domain';
 import { Confidence, RelationType } from './common';
 
 export { AgentActionProposal, ArchiveLocationProposal } from './domain';
@@ -150,7 +150,18 @@ export const DocumentClassification = z.object({
   tags: z.array(z.string()).default([]),
   location: ArchiveLocationProposal,
   decisions: z
-    .array(z.object({ title: z.string(), decisionText: z.string(), decidedAt: opt(z.string()), participants: z.array(z.string()).default([]) }))
+    .array(
+      z.object({
+        title: z.string(),
+        decisionText: z.string(),
+        decidedAt: opt(z.string()),
+        participants: z.array(z.string()).default([]),
+        kind: opt(DecisionKind).describe(
+          'decided = verbindlich entschieden/beschlossen; proposed = nur vorgeschlagen; discussed = nur besprochen; postponed = vertagt; rejected = ausdrücklich abgelehnt',
+        ),
+        evidence: opt(z.string()).describe('Der Satz aus dem Dokumenttext, der die Entscheidung belegt – wörtlich und unverändert kopiert'),
+      }),
+    )
     .default([]),
   openItems: z.array(z.object({ title: z.string(), description: opt(z.string()), dueAt: opt(z.string()), responsible: opt(z.string()) })).default([]),
   confidence: Confidence,

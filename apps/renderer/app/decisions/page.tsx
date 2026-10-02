@@ -24,6 +24,13 @@ import { useRun } from '@/lib/use-run';
 import type { ActionRecord, DecisionRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+/** Where the decision was captured – a decision from a document is no dictated one (#175). */
+const ORIGIN_LABELS: Record<NonNullable<DecisionRecord['origin']>, string> = {
+  chat: 'Im Chat erfasst',
+  form: 'Im Formular erfasst',
+  document: 'Aus einem Dokument übernommen',
+};
+
 function statusVariant(s: DecisionStatus) {
   switch (s) {
     case 'active':
@@ -274,6 +281,14 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
             </span>
           )}
         </Row>
+        <Row label="Herkunft">{d.origin ? ORIGIN_LABELS[d.origin] : <span className="text-muted-foreground">nicht erfasst</span>}</Row>
+        {d.evidence && (
+          <Row label="Beleg">
+            <blockquote className="border-l-2 border-primary/50 pl-2 text-muted-foreground italic" data-testid="decision-evidence">
+              „{d.evidence}“
+            </blockquote>
+          </Row>
+        )}
         <Row label="Quellen">
           {d.sourceIds.length > 0 ? (
             <span className="flex flex-wrap gap-1.5">

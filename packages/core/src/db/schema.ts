@@ -107,6 +107,9 @@ export const decisions = sqliteTable(
     confidence: real('confidence').notNull().default(0.8),
     missingFields: jsonArr('missing_fields'),
     unknownFields: jsonArr('unknown_fields'),
+    /** chat | form | document (#175); null for older decisions */
+    origin: text('origin'),
+    evidence: text('evidence'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
