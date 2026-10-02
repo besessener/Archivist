@@ -63,14 +63,14 @@ export default function InsightsPage() {
     <Page>
       <PageHeader
         title="Insights"
-        description="Hinweise, die Archivist beim Aufräumen und Prüfen Ihres Archivs gefunden hat. Nichts passiert, ohne dass Sie es bestätigen."
+        description="Hinweise, die Archivist beim Aufräumen und Prüfen deines Archivs gefunden hat. Nichts passiert, ohne dass du es bestätigst."
         actions={
           <Button
             variant="outline"
             disabled={busy}
             data-testid="consistency-run"
             onClick={() =>
-              void run(() => call('consistency:run'), { success: 'Archivprüfung gestartet. Den Fortschritt sehen Sie oben unter „Verarbeitung“.' })
+              void run(() => call('consistency:run'), { success: 'Archivprüfung gestartet. Den Fortschritt siehst du oben unter „Verarbeitung“.' })
             }
           >
             <Play aria-hidden /> Archivprüfung jetzt starten
@@ -90,7 +90,7 @@ export default function InsightsPage() {
       {insights.error && !insights.data && <ErrorNote error={insights.error} onRetry={() => void insights.refetch()} />}
       {!insights.data && insights.loading && <Loading />}
       {insights.data && grouped.length === 0 && (
-        <EmptyState icon={<Lightbulb />} title="Keine Hinweise" description="Im Moment gibt es nichts, was Ihre Aufmerksamkeit braucht." />
+        <EmptyState icon={<Lightbulb />} title="Keine Hinweise" description="Im Moment gibt es nichts, was deine Aufmerksamkeit braucht." />
       )}
 
       <div className="flex flex-col gap-8">

@@ -41,7 +41,7 @@ function DocumentsInner() {
 
   return (
     <Page wide>
-      <PageHeader title="Dokumente" description="Alle archivierten und indexierten Dokumente. Klicken Sie auf eine Zeile für Einzelheiten." />
+      <PageHeader title="Dokumente" description="Alle archivierten und indexierten Dokumente. Klicke auf eine Zeile für Einzelheiten." />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -81,7 +81,7 @@ function DocumentsInner() {
       {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
       {!list.data && list.loading && <Loading />}
       {list.data && shown.length === 0 && (
-        <EmptyState title="Keine Dokumente gefunden" description="Archivierte Dokumente erscheinen hier, sobald Sie Inbox-Einträge archiviert haben." />
+        <EmptyState title="Keine Dokumente gefunden" description="Archivierte Dokumente erscheinen hier, sobald du Inbox-Einträge archiviert hast." />
       )}
       {shown.length > 0 && (
         <div className="rounded-xl border bg-card">

@@ -12,7 +12,7 @@ import { ConfirmDialog } from './confirm-dialog';
 import { EntityChip } from './entity-chip';
 
 const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondary' | 'success' | 'danger' | 'warning' | 'info' }> = {
-  proposed: { label: 'Wartet auf Ihre Entscheidung', variant: 'warning' },
+  proposed: { label: 'Wartet auf deine Entscheidung', variant: 'warning' },
   approved: { label: 'Bestätigt', variant: 'info' },
   rejected: { label: 'Abgelehnt', variant: 'secondary' },
   executed: { label: 'Ausgeführt', variant: 'success' },
@@ -76,7 +76,7 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
         open={strongOpen}
         onOpenChange={setStrongOpen}
         title="Diese Aktion bewusst bestätigen"
-        description="Diese Aktion hat weitreichende Folgen. Bitte prüfen Sie die Details."
+        description="Diese Aktion hat weitreichende Folgen. Bitte prüfe die Details."
         confirmLabel="Jetzt ausführen"
         requireCheckbox="Ich habe die Auswirkungen verstanden und möchte diese Aktion ausführen."
         confirmTestId="action-strong-confirm"

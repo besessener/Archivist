@@ -55,7 +55,7 @@ describe('Neue offene Punkte vollständig anlegen (#41)', () => {
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Zahnarzt anrufen', responsible: 'mir' } }));
     const r = await send('Zahnarzt anrufen bleibt an mir hängen');
     expect((await app.ok('openItems:list', {}))[0]!.responsibleName).toBeNull();
-    expect(r.assistantMessage.content).toContain('Einstellungen → Über Sie');
+    expect(r.assistantMessage.content).toContain('Einstellungen → Über dich');
     expect(app.services.graph.findByName('person', 'mir')).toBeFalsy();
   });
 

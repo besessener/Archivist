@@ -161,7 +161,7 @@ export function NotificationBell() {
         <DialogContent data-testid="notification-action-dialog">
           <DialogHeader>
             <DialogTitle>Aktion bestätigen</DialogTitle>
-            <DialogDescription>Bitte prüfen Sie den Vorschlag, bevor Sie ihn bestätigen.</DialogDescription>
+            <DialogDescription>Bitte prüfe den Vorschlag, bevor du ihn bestätigst.</DialogDescription>
           </DialogHeader>
           {confirmAction && (
             <ActionCard

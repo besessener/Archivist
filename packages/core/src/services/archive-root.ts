@@ -176,8 +176,8 @@ export class ArchiveRootService {
 
   private normalizeTarget(root: string): string {
     const trimmed = root.trim();
-    if (!trimmed) throw validationError('Bitte geben Sie einen Archivpfad an.');
-    if (!path.isAbsolute(trimmed)) throw validationError('Bitte geben Sie einen vollständigen (absoluten) Pfad an.');
+    if (!trimmed) throw validationError('Bitte gib einen Archivpfad an.');
+    if (!path.isAbsolute(trimmed)) throw validationError('Bitte gib einen vollständigen (absoluten) Pfad an.');
     return path.resolve(trimmed);
   }
 
@@ -327,7 +327,7 @@ export class ArchiveRootService {
     if (n === 0) return;
     this.notifications.create({
       title: `${archivedDocsText(n)} nicht erreichbar`,
-      description: `Im Archivordner „${root}“ fehlen ${n} von ${presence.documents} archivierten Dokumenten oder weichen ab (${exampleList(presence.examples)}). Sie lassen sich nicht öffnen, und die Archivprüfung meldet sie als fehlend. Legen Sie die Dateien dorthin oder stellen Sie den bisherigen Archivpfad wieder her.`,
+      description: `Im Archivordner „${root}“ fehlen ${n} von ${presence.documents} archivierten Dokumenten oder weichen ab (${exampleList(presence.examples)}). Sie lassen sich nicht öffnen, und die Archivprüfung meldet sie als fehlend. Lege die Dateien dorthin oder stelle den bisherigen Archivpfad wieder her.`,
       type: 'system',
       priority: 'high',
       proposedActions: [{ label: 'Einstellungen öffnen', kind: 'navigate', target: '/settings/' }],
@@ -439,7 +439,7 @@ export class ArchiveRootService {
       });
       this.notifications.create({
         title: 'Archiv umgezogen',
-        description: `${archivedDocsText(presence.documents)} (${total} Dateien) liegen jetzt geprüft in „${to}“. Der bisherige Ordner „${from}“ bleibt unverändert erhalten; Sie können ihn löschen, sobald Sie den neuen Ort geprüft haben. Der Umzug lässt sich in den Einstellungen rückgängig machen.`,
+        description: `${archivedDocsText(presence.documents)} (${total} Dateien) liegen jetzt geprüft in „${to}“. Der bisherige Ordner „${from}“ bleibt unverändert erhalten; du kannst ihn löschen, sobald du den neuen Ort geprüft hast. Der Umzug lässt sich in den Einstellungen rückgängig machen.`,
         type: 'system',
         proposedActions: [{ label: 'Einstellungen öffnen', kind: 'navigate', target: '/settings/' }],
       });

@@ -61,7 +61,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     const d = s.documents.getRow(id);
     // a quarantined file is suspicious: never open it, only reveal it in the file manager
     if (d.status === 'quarantined' && !opts.allowQuarantine)
-      throw permissionError('Dateien in Quarantäne werden nicht geöffnet. Nutzen Sie „Ordner öffnen“, um sie im Dateimanager zu prüfen.');
+      throw permissionError('Dateien in Quarantäne werden nicht geöffnet. Nutze „Ordner öffnen“, um sie im Dateimanager zu prüfen.');
     const candidates = [d.archiveRelPath ? path.join(s.settings.get().archiveRoot, ...d.archiveRelPath.split('/')) : null, d.stagedPath, d.sourcePath].filter(
       (x): x is string => Boolean(x),
     );
@@ -100,7 +100,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'settings:update': (i) => {
       const before = s.settings.get().archiveRoot;
       if (i.archiveRoot !== undefined && s.archive.isRootChangeActive())
-        throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.');
+        throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
       const settings = s.settings.update(i);
       // a direct path change (without moving the archive) warns when archived documents are not found there
       if (settings.archiveRoot !== before) s.archiveRoot.warnUnreachable(settings.archiveRoot);

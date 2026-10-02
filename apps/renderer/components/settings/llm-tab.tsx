@@ -147,7 +147,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
         open={clearOpen}
         onOpenChange={setClearOpen}
         title="API-Schlüssel löschen?"
-        description="Ohne Schlüssel kann Archivist keine KI-Funktionen mehr nutzen, bis Sie einen neuen eintragen."
+        description="Ohne Schlüssel kann Archivist keine KI-Funktionen mehr nutzen, bis du einen neuen einträgst."
         confirmLabel="Schlüssel löschen"
         destructive
         onConfirm={async () => {

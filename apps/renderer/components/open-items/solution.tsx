@@ -45,7 +45,7 @@ export function SolutionSection({ item, mode, llmConfigured, onChanged }: Soluti
     mode === 'local_only'
       ? 'Im Datenschutzmodus „nur lokal“ werden keine Inhalte an das LLM gesendet – Lösungsvorschläge sind deshalb deaktiviert.'
       : !llmConfigured
-        ? 'Das LLM ist nicht konfiguriert. Hinterlegen Sie Base URL, Modell und API-Key in den Einstellungen.'
+        ? 'Das LLM ist nicht konfiguriert. Hinterlege Base URL, Modell und API-Key in den Einstellungen.'
         : null;
 
   async function generate(confirmed: boolean) {

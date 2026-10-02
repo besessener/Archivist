@@ -112,7 +112,7 @@ function ChangeRootDialog({ preview, onClose, onStarted }: { preview: Preview; o
                 <span data-testid="archive-root-path-warning">
                   {affected === 1 ? '1 archiviertes Dokument fehlt' : `${affected} archivierte Dokumente fehlen`} im neuen Ordner oder{' '}
                   {affected === 1 ? 'weicht' : 'weichen'} ab
-                  <Examples presence={preview.atTarget} />. Wenn Sie trotzdem umstellen, {affected === 1 ? 'ist es' : 'sind sie'} nicht mehr erreichbar: Öffnen
+                  <Examples presence={preview.atTarget} />. Wenn du trotzdem umstellst, {affected === 1 ? 'ist es' : 'sind sie'} nicht mehr erreichbar: Öffnen
                   schlägt fehl, und die Archivprüfung meldet {affected === 1 ? 'es' : 'sie'} als fehlend.
                 </span>
               </Notice>
@@ -177,14 +177,14 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
   return (
     <Section
       title="Archivordner"
-      description="In diesen Ordner legt Archivist Ihre Dokumente ab. Beim Ändern können Sie das Archiv umziehen lassen oder nur den Pfad umstellen, wenn die Dateien schon dort liegen."
+      description="In diesen Ordner legt Archivist deine Dokumente ab. Beim Ändern kannst du das Archiv umziehen lassen oder nur den Pfad umstellen, wenn die Dateien schon dort liegen."
     >
       {st && unreachableOf(st.current) > 0 && (
         <Notice tone="danger" title={`${docs(unreachableOf(st.current))} nicht erreichbar`}>
           <span data-testid="archive-root-unreachable">
             Im aktuellen Archivordner {unreachableOf(st.current) === 1 ? 'fehlt' : 'fehlen'} {unreachableOf(st.current)} von {docs(st.current.documents)} oder{' '}
             {unreachableOf(st.current) === 1 ? 'weicht' : 'weichen'} ab
-            <Examples presence={st.current} />. Legen Sie die Dateien dorthin oder stellen Sie den bisherigen Archivordner wieder her.
+            <Examples presence={st.current} />. Lege die Dateien dorthin oder stelle den bisherigen Archivordner wieder her.
           </span>
         </Notice>
       )}

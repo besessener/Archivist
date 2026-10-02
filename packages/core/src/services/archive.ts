@@ -167,9 +167,9 @@ export class ArchiveService {
    * Refuses while operations are still running; returns the function that lifts the block again.
    */
   beginRootChange(): () => void {
-    if (this.rootChangeActive) throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.');
+    if (this.rootChangeActive) throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
     if (this.inFlight > 0)
-      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuchen Sie es gleich noch einmal.', {
+      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.', {
         retryable: true,
       });
     this.rootChangeActive = true;
@@ -189,7 +189,7 @@ export class ArchiveService {
   /** Runs an archive file operation unless the archive root is being changed right now. */
   private async guarded<T>(fn: () => Promise<T>): Promise<T> {
     if (this.rootChangeActive)
-      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.', { retryable: true });
+      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.', { retryable: true });
     this.inFlight += 1;
     try {
       return await fn();

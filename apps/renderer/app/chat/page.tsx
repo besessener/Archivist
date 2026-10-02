@@ -217,7 +217,7 @@ export default function ChatPage() {
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight">Wie kann ich helfen?</h1>
                 <p className="mt-1 text-muted-foreground">
-                  Halten Sie Entscheidungen fest, stellen Sie Fragen an Ihr Archiv oder ziehen Sie Dokumente einfach in dieses Fenster.
+                  Halte Entscheidungen fest, stelle Fragen an dein Archiv oder zieh Dokumente einfach in dieses Fenster.
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
@@ -331,7 +331,7 @@ export default function ChatPage() {
           </Button>
         </form>
         <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground">
-          Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) können Sie auch einfach in das Fenster ziehen.
+          Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) kannst du auch einfach in das Fenster ziehen.
         </p>
       </div>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>

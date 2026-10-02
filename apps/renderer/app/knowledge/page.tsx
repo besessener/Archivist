@@ -64,7 +64,7 @@ function KnowledgeInner() {
     <Page wide>
       <PageHeader
         title="Wissen"
-        description="Alles, was Archivist über Ihre Themen, Projekte und Personen weiß – und wie es zusammenhängt."
+        description="Alles, was Archivist über deine Themen, Projekte und Personen weiß – und wie es zusammenhängt."
         actions={
           <Button
             onClick={() => {
@@ -101,7 +101,7 @@ function KnowledgeInner() {
           {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
           {!list.data && list.loading && <Loading />}
           {list.data && list.data.length === 0 && (
-            <EmptyState title="Nichts gefunden" description="Legen Sie ein Thema, Projekt oder eine Person an oder ändern Sie den Filter." />
+            <EmptyState title="Nichts gefunden" description="Lege ein Thema, Projekt oder eine Person an oder ändere den Filter." />
           )}
           <ul className="flex max-h-[65vh] flex-col gap-1 overflow-y-auto" data-testid="knowledge-list">
             {(list.data ?? []).map((e) => (
@@ -132,10 +132,7 @@ function KnowledgeInner() {
           {id ? (
             <EntityView key={id} id={id} />
           ) : (
-            <EmptyState
-              title="Wählen Sie einen Eintrag"
-              description="Klicken Sie links auf ein Thema, Projekt oder eine Person, um die Verknüpfungen zu sehen."
-            />
+            <EmptyState title="Wähle einen Eintrag" description="Klicke links auf ein Thema, Projekt oder eine Person, um die Verknüpfungen zu sehen." />
           )}
         </div>
       </div>
@@ -186,7 +183,7 @@ function CreateEntityDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Neu anlegen</DialogTitle>
-          <DialogDescription>Legen Sie ein neues Thema, Projekt, eine Person, eine Notiz oder ein Ereignis (mit Datum) an.</DialogDescription>
+          <DialogDescription>Lege ein neues Thema, Projekt, eine Person, eine Notiz oder ein Ereignis (mit Datum) an.</DialogDescription>
         </DialogHeader>
         <Field label="Art" htmlFor="new-entity-type">
           <Select
@@ -421,7 +418,7 @@ function MergeDialog({
         <DialogHeader>
           <DialogTitle>Themen zusammenführen vorschlagen</DialogTitle>
           <DialogDescription>
-            „{sourceName}“ soll in ein anderes Thema aufgehen. Es wird nur ein Vorschlag erstellt – Sie bestätigen ihn anschließend.
+            „{sourceName}“ soll in ein anderes Thema aufgehen. Es wird nur ein Vorschlag erstellt – du bestätigst ihn anschließend.
           </DialogDescription>
         </DialogHeader>
         <Field label="Zusammenführen mit" htmlFor="merge-target">
