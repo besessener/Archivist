@@ -51,6 +51,29 @@ import type { TimelineService } from './timeline';
 
 type MsgRow = typeof messages.$inferSelect;
 
+type OpenItemField = 'responsible' | 'due';
+interface OpenItemAsk {
+  openItemId: string;
+  asked: OpenItemField[];
+}
+type OpenItemPending = Extract<Pending, { kind: 'open_item' }>;
+
+function openItemAsks(p: OpenItemPending): OpenItemAsk[] {
+  return [{ openItemId: p.openItemId, asked: p.asked }, ...(p.more ?? [])];
+}
+
+/** Identity of a request within one message: kind, text segment and the object it targets. */
+function intentKey(i: ChatIntent): string {
+  return JSON.stringify([i.intent, i.segment ?? '', i.openItem?.targetId ?? null, i.openItem?.targetHint ?? null, i.reminder?.targetId ?? null]);
+}
+
+/** Follow-up question about one or more open items; null if nothing is asked. */
+function openItemPending(entries: OpenItemAsk[], optional?: boolean): OpenItemPending | null {
+  const [first, ...more] = entries;
+  if (!first) return null;
+  return { kind: 'open_item', ...first, optional, ...(more.length ? { more } : {}) };
+}
+
 type Pending =
   | {
       kind: 'decision';
@@ -62,7 +85,14 @@ type Pending =
       /** only „Thema oder Projekt?“ is still open – does not hold up further requests */
       optional?: boolean;
     }
-  | { kind: 'open_item'; openItemId: string; asked: Array<'responsible' | 'due'>; optional?: boolean }
+  | {
+      kind: 'open_item';
+      openItemId: string;
+      asked: OpenItemField[];
+      optional?: boolean;
+      /** further items asked about in the same reply („3 offene Punkte angelegt – bis wann?“) */
+      more?: OpenItemAsk[];
+    }
   | { kind: 'open_item_duplicate'; existingId: string; text: string; intent: ChatIntent }
   | { kind: 'reminder'; title: string; targetId: string | null; snooze: boolean; source: string }
   | { kind: 'confirm_save'; text: string; intent: ChatIntent }
@@ -633,8 +663,12 @@ export class ChatService {
       return `Der Agent hat gefragt, welche ältere Entscheidung durch „${this.decisions.get(p.newDecisionId).title}“ ersetzt wird; die Antwort wertet er selbst aus.`;
     if (p.kind === 'confirm_save')
       return `Der Agent hat gefragt, ob „${truncate(p.intent.segment ?? p.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Beantwortet die Nachricht das (auch frei formuliert, z. B. „lieber als Termin“, „keine Entscheidung, nur merken“), setze saveAs (decision, event, note oder nothing) und liefere für die Antwort selbst keine weitere Absicht. Andere Anliegen in der Nachricht ordnest du wie gewohnt ein; passt die Nachricht nicht zur Rückfrage, setze saveAs=null.`;
-    const i = this.openItems.get(p.openItemId);
-    return `Der Agent hat zum offenen Punkt „${i.title}“ nach ${p.asked.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ')} gefragt. ${PENDING_ONLY_IF_FITS} (dann intent=open_item_update ohne targetHint)`;
+    const group = this.openItemGroup(p);
+    const asked = (fields: OpenItemField[]) => fields.map((a) => (a === 'responsible' ? 'Verantwortlichem' : 'Fälligkeit')).join(' und ');
+    if (!group.length) return 'keine';
+    if (group.length === 1)
+      return `Der Agent hat zum offenen Punkt „${group[0]!.item.title}“ nach ${asked(group[0]!.asked)} gefragt. ${PENDING_ONLY_IF_FITS} (dann intent=open_item_update ohne targetHint)`;
+    return `Der Agent hat zu mehreren offenen Punkten nachgefragt: ${group.map((g) => `„${g.item.title}“ (${asked(g.asked)})`).join(', ')}. ${PENDING_ONLY_IF_FITS} Gilt die Antwort für alle diese Punkte (z. B. „für alle“ oder nur ein Datum bzw. Name), liefere GENAU EIN intent=open_item_update ohne targetId und ohne targetHint; betrifft sie nur einzelne, liefere je Punkt ein open_item_update mit dessen targetId.`;
   }
 
   private historyHint(conv: string): string {
@@ -748,6 +782,16 @@ export class ChatService {
     } catch {
       return null;
     }
+  }
+
+  /** Items of an open-item follow-up question that still lack an asked field – answered, closed or deleted ones drop out. */
+  private openItemGroup(p: OpenItemPending): Array<{ item: OpenItem; asked: OpenItemField[] }> {
+    return openItemAsks(p).flatMap(({ openItemId, asked }) => {
+      const item = this.openItemOrNull(openItemId);
+      if (!item) return [];
+      const still = asked.filter((a) => (a === 'due' ? !item.dueAt && !item.dueUnknown : !item.responsiblePersonId && !item.responsibleUnknown));
+      return still.length ? [{ item, asked: still }] : [];
+    });
   }
 
   /** The open item meant: id from the LLM, otherwise a unique match for the hint; ambiguous → candidates for the follow-up question. */
@@ -939,9 +983,12 @@ export class ChatService {
         return intent.intent === 'event_record' && same(intent.event?.title, p.title);
       case 'open_item': {
         if (intent.intent !== 'open_item_update') return false;
-        if (intent.openItem?.targetId) return intent.openItem.targetId === p.openItemId;
+        const ids = this.openItemGroup(p).map((g) => g.item.id);
+        if (intent.openItem?.targetId) return ids.includes(intent.openItem.targetId);
         const hint = intent.openItem?.targetHint;
-        return !hint?.trim() || this.openItems.findByHint(hint)?.id === p.openItemId;
+        if (!hint?.trim()) return ids.length > 0;
+        const found = this.openItems.findByHint(hint)?.id;
+        return Boolean(found && ids.includes(found));
       }
       default:
         return false;
@@ -961,9 +1008,11 @@ export class ChatService {
         return `Die Frage, wann ich an „${truncate(p.title, 80)}“ erinnern soll, habe ich verworfen – dazu ist keine Erinnerung angelegt.`;
       case 'event':
         return `Das Ereignis „${truncate(p.title, 80)}“ habe ich ohne Datum nicht eingetragen.`;
-      case 'open_item':
-        if (p.optional) return null;
-        return `Die fehlenden Angaben zum offenen Punkt „${truncate(this.openItems.get(p.openItemId).title, 80)}“ kannst du jederzeit nachtragen.`;
+      case 'open_item': {
+        const group = this.openItemGroup(p);
+        if (p.optional || !group.length) return null;
+        return `Die fehlenden Angaben zu ${group.length === 1 ? 'dem offenen Punkt' : 'den offenen Punkten'} ${group.map((g) => `„${truncate(g.item.title, 80)}“`).join(', ')} kannst du jederzeit nachtragen.`;
+      }
       case 'confirm_save':
         return `Zu „${truncate(p.intent.segment ?? p.text, 80)}“ habe ich nichts gespeichert.`;
       default:
@@ -1067,7 +1116,8 @@ export class ChatService {
    */
   private async runIntents(conv: string, text: string, analysis: ChatAnalysis, state: ConvState, viaLlm: boolean): Promise<Reply> {
     const intents = analysis.intents
-      .filter((i, idx, all) => all.findIndex((o) => o.intent === i.intent && (o.segment ?? '') === (i.segment ?? '')) === idx)
+      // the same request twice counts once – but one update per open item („für alle drei“) are different requests
+      .filter((i, idx, all) => all.findIndex((o) => intentKey(o) === intentKey(i)) === idx)
       .filter((i) => !(analysis.clarification && (i.intent === 'unknown' || i.intent === 'smalltalk')));
     const fresh: QueuedIntent[] = intents.map((intent) => ({ text, intent }));
     return this.runWork(conv, fresh, state.queue ?? [], state, viaLlm, analysis.clarification ?? null);
@@ -1136,8 +1186,11 @@ export class ChatService {
       // an old follow-up question returned unchanged is settled, not a new one
       if (current.pending === old) current = { ...current, pending: null };
       if ((current.pending?.kind === 'open_item' || current.pending?.kind === 'decision') && current.pending.optional) {
-        // „Thema oder Projekt?“ takes precedence: the question stays asked until it is answered
-        if (optional?.kind !== 'decision') optional = current.pending;
+        // „Thema oder Projekt?“ takes precedence: the question stays asked until it is answered;
+        // several new open items of one message are asked about together („für alle drei 31.12.“)
+        if (optional?.kind === 'open_item' && current.pending.kind === 'open_item')
+          optional = openItemPending([...openItemAsks(optional), ...openItemAsks(current.pending)], true);
+        else if (optional?.kind !== 'decision') optional = current.pending;
         current = { ...current, pending: null };
       }
       const done = this.progress.get(conv);
@@ -2186,7 +2239,7 @@ export class ChatService {
       },
       { actor: 'user', trigger: 'chat' },
     );
-    const asked: Array<'responsible' | 'due'> = [];
+    const asked: OpenItemField[] = [];
     if (!item.responsiblePersonId && !who.self) asked.push('responsible');
     if (!item.dueAt) asked.push('due');
     // short, optional follow-up question – it does not hold up further requests
@@ -2206,7 +2259,7 @@ export class ChatService {
       confidence: item.confidence,
       uncertainties: asked.map((a) => (a === 'responsible' ? 'Verantwortlicher unbekannt' : 'Fälligkeitsdatum unbekannt')),
       state: {
-        pending: asked.length ? { kind: 'open_item', openItemId: item.id, asked, optional: true } : null,
+        pending: openItemPending(asked.length ? [{ openItemId: item.id, asked }] : [], true),
         last: { ...(state.last ?? {}), openItemId: item.id },
       },
     };
@@ -2247,19 +2300,71 @@ export class ChatService {
   private async openItemUpdate(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
     const oi = intent.openItem ?? {};
     const pending = state.pending?.kind === 'open_item' ? state.pending : null;
-    const target = pending ? { item: this.openItems.get(pending.openItemId), ambiguous: [], hinted: true } : this.targetOpenItem(oi.targetId, oi.targetHint);
-    if (target.ambiguous.length) return this.askWhichOpenItem(text, intent, target.ambiguous, state);
-    const item = target.item ?? this.lastOpenItem(state, target);
-    if (!item) return { intent: 'open_item_update', content: this.noOpenItemQuestion(oi.targetHint, 'meinst du'), confidence: 0.3, state };
+    const group = pending ? this.openItemGroup(pending) : [];
+    let chosen = group;
+    if (group.length > 1 && (oi.targetId || oi.targetHint?.trim())) {
+      // a named item answers only for itself; otherwise the answer applies to every item asked about
+      const named = this.targetOpenItem(oi.targetId, oi.targetHint).item;
+      const own = group.filter((g) => g.item.id === named?.id);
+      if (own.length) chosen = own;
+    }
+    if (!chosen.length) {
+      const target = this.targetOpenItem(oi.targetId, oi.targetHint);
+      if (target.ambiguous.length) return this.askWhichOpenItem(text, intent, target.ambiguous, state);
+      const item = target.item ?? this.lastOpenItem(state, target);
+      if (!item) return { intent: 'open_item_update', content: this.noOpenItemQuestion(oi.targetHint, 'meinst du'), confidence: 0.3, state };
+      chosen = [{ item, asked: [] }];
+    }
+    if (oi.newStatus === 'resolved' || oi.newStatus === 'dismissed') {
+      const closes: Reply[] = [];
+      for (const { item } of chosen)
+        closes.push(await this.openItemClose(conv, text, { ...intent, openItem: { ...oi, targetId: item.id, targetHint: item.title } }, state));
+      return this.mergeReplies(closes, closes.at(-1)!.state ?? state);
+    }
+    const results = chosen.map(({ item, asked }) => this.applyOpenItemAnswer(item, oi, text, asked));
+    const remaining: OpenItemAsk[] = [
+      ...results.filter((r) => r.stillAsked.length).map((r) => ({ openItemId: r.updated.id, asked: r.stillAsked })),
+      ...group.filter((g) => !chosen.includes(g)).map((g) => ({ openItemId: g.item.id, asked: g.asked })),
+    ];
+    const stillAsked = [...new Set(results.flatMap((r) => r.stillAsked))];
+    // what is still missing is visible in the reply – otherwise the follow-up question would be invisible
+    const open = stillAsked.length
+      ? `\n\nNoch offen: ${stillAsked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann?')).join(' ')} (Du kannst auch „unbekannt“ sagen.)`
+      : '';
+    const line = (u: OpenItem) =>
+      `**${u.title}**${u.dueAt ? ` – fällig ${u.dueAt.slice(0, 10)}` : u.dueUnknown ? ', Termin: unbekannt' : ''}${u.responsibleName ? `, Verantwortlich: ${u.responsibleName}` : u.responsibleUnknown ? ', Verantwortlicher: unbekannt' : ''}`;
+    const updated = results.map((r) => r.updated);
+    return {
+      intent: 'open_item_update',
+      content:
+        updated.length === 1
+          ? `Offenen Punkt aktualisiert: ${line(updated[0]!)}.${open}`
+          : `Offene Punkte aktualisiert:\n${updated.map((u) => `• ${line(u)}`).join('\n')}${open}`,
+      context: { openItems: updated.map((u) => ({ type: 'task' as const, id: u.id, label: u.title })) },
+      confidence: 0.8,
+      state: {
+        pending: openItemPending(remaining, pending?.optional),
+        last: { ...(state.last ?? {}), openItemId: updated.at(-1)!.id },
+      },
+    };
+  }
+
+  /** Applies an answer or change to one open item; `asked` are the fields the follow-up question asked for. */
+  private applyOpenItemAnswer(
+    item: OpenItem,
+    oi: NonNullable<ChatIntent['openItem']>,
+    text: string,
+    asked: OpenItemField[],
+  ): { updated: OpenItem; stillAsked: OpenItemField[] } {
     const patch: Parameters<OpenItemService['update']>[1] = {};
     const who = this.responsibleName(oi.responsible);
     const unknown = unknownFieldsIn(text);
     if (who.name) patch.responsible = who.name;
-    else if (pending?.asked.includes('responsible') && (unknown.responsible || (unknown.generic && !unknown.due))) patch.responsibleUnknown = true;
+    else if (asked.includes('responsible') && (unknown.responsible || (unknown.generic && !unknown.due))) patch.responsibleUnknown = true;
     const due = normalizeDateInput(oi.dueAt ?? null);
     if (due) patch.dueAt = due;
     // „Anna, Termin unbekannt“: owner set and due date deliberately unknown
-    else if (pending?.asked.includes('due') && (unknown.due || (unknown.generic && !unknown.responsible))) patch.dueUnknown = true;
+    else if (asked.includes('due') && (unknown.due || (unknown.generic && !unknown.responsible))) patch.dueUnknown = true;
     // additions are appended to the description
     if (oi.description) {
       const merged = appendDescription(item.description, oi.description);
@@ -2267,27 +2372,11 @@ export class ChatService {
     }
     if (oi.priority) patch.priority = oi.priority;
     if (oi.newStatus && oi.newStatus !== 'resolved' && oi.newStatus !== 'dismissed') patch.status = oi.newStatus;
-    if (oi.newStatus === 'resolved' || oi.newStatus === 'dismissed')
-      return this.openItemClose(conv, text, { ...intent, openItem: { ...oi, targetHint: item.title } }, state);
     const updated = Object.keys(patch).length ? this.openItems.update(item.id, patch, { trigger: 'chat' }) : item;
-    const stillAsked: Array<'responsible' | 'due'> = [];
-    if (!updated.responsiblePersonId && !updated.responsibleUnknown && pending?.asked.includes('responsible') && !patch.responsible)
-      stillAsked.push('responsible');
-    if (!updated.dueAt && !updated.dueUnknown && pending?.asked.includes('due') && !patch.dueAt) stillAsked.push('due');
-    // what is still missing is visible in the reply – otherwise the follow-up question would be invisible
-    const open = stillAsked.length
-      ? `\n\nNoch offen: ${stillAsked.map((a) => (a === 'responsible' ? 'Wer ist verantwortlich?' : 'Bis wann?')).join(' ')} (Du kannst auch „unbekannt“ sagen.)`
-      : '';
-    return {
-      intent: 'open_item_update',
-      content: `Offenen Punkt aktualisiert: **${updated.title}**${updated.dueAt ? ` – fällig ${updated.dueAt.slice(0, 10)}` : updated.dueUnknown ? ', Termin: unbekannt' : ''}${updated.responsibleName ? `, Verantwortlich: ${updated.responsibleName}` : updated.responsibleUnknown ? ', Verantwortlicher: unbekannt' : ''}.${open}`,
-      context: { openItems: [{ type: 'task', id: updated.id, label: updated.title }] },
-      confidence: 0.8,
-      state: {
-        pending: stillAsked.length ? { kind: 'open_item', openItemId: updated.id, asked: stillAsked, optional: pending?.optional } : null,
-        last: { ...(state.last ?? {}), openItemId: updated.id },
-      },
-    };
+    const stillAsked: OpenItemField[] = [];
+    if (!updated.responsiblePersonId && !updated.responsibleUnknown && asked.includes('responsible') && !patch.responsible) stillAsked.push('responsible');
+    if (!updated.dueAt && !updated.dueUnknown && asked.includes('due') && !patch.dueAt) stillAsked.push('due');
+    return { updated, stillAsked };
   }
 
   private async openItemClose(conv: string, text: string, intent: ChatIntent, state: ConvState): Promise<Reply> {
