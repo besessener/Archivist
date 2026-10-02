@@ -50,7 +50,7 @@ Pro Gespräch umschaltbar, auch per „frag mich diesmal vorher“.
 
 **Immer nachgefragt** wird – in jedem Modus – bei:
 
-- endgültigem Löschen,
+- Löschen (Dokumente in den Papierkorb legen, `mark_duplicates` mit `delete`; mit zweiter Bestätigung),
 - Änderungen an Originaldateien außerhalb des Archivs,
 - Datenschutz-Einstellungen,
 - neuen Hauptkategorien,

@@ -11,7 +11,8 @@ Archivist/
 ├── logs/          strukturierte JSON-Logs (ohne Schlüssel/Dokumentinhalte)
 ├── backups/       Datenbank- und Metadaten-Backups
 ├── inbox/         Eingang: eigene Kopien hochgeladener Dateien bis zur Archivierung
-└── quarantine/    Dateien, deren Inhalt nicht zur Endung passt
+├── quarantine/    Dateien, deren Inhalt nicht zur Endung passt
+└── trash/         Papierkorb: eigene Kopien gelöschter Dokumente (trash/<id>/), bis du ihn leerst
 ```
 
 ## Ablage im Archiv

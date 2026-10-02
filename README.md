@@ -5,7 +5,7 @@
 Archivist ist ein persönlicher, agentischer KI-Archivar für genau einen Benutzer: eine lokale Desktop-Anwendung für Windows (Electron + Next.js + TypeScript), die Dokumente, Entscheidungen, offene Punkte und Wissen nicht nur speichert, sondern versteht, verknüpft und das Archiv aktiv konsistent hält.
 
 - **Chat als Schnittstelle** – Entscheidungen festhalten, Fragen stellen, Antworten mit Quellen.
-- **Sicheres Archivieren** – Dokumente landen in menschenlesbaren Ordnern; nichts wird gelöscht oder überschrieben, alles ist rückgängig machbar.
+- **Sicheres Archivieren** – Dokumente landen in menschenlesbaren Ordnern; nichts wird überschrieben, Gelöschtes landet im Papierkorb, alles ist rückgängig machbar.
 - **Wissensgraph und hybride Suche** – Themen, Projekte, Personen und Dokumente sind verknüpft und auffindbar; Archivist schlägt Verknüpfungen mit Begründung vor, du entscheidest.
 - **Agent** – plant mehrere Schritte, nutzt Werkzeuge und prüft das Archiv im Hintergrund auf Lücken, Dubletten und Widersprüche.
 - **Lokal und datensparsam** – alle Daten bleiben auf deinem Rechner; nach außen geht nur, was du dem konfigurierten LLM-Endpunkt freigibst.
