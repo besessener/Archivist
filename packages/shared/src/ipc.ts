@@ -387,6 +387,8 @@ export const ipcContract = {
     KnowledgeCreateResult,
   ),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
+  /** Accepts a topic/project taken from a document; only confirmed ones are listed in LLM prompts. */
+  'knowledge:confirmEntity': ch(z.object({ id: Id }), GraphEntity),
 
   // --- Events ---
   'events:list': ch(z.object({ topicId: z.string().optional(), projectId: z.string().optional() }), z.array(EventRecord)),

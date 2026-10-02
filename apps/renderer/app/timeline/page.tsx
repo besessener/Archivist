@@ -69,14 +69,16 @@ export default function TimelinePage() {
     setPages(1);
   };
 
-  const groups = useMemo(() => {
+  // undated entries (decisions without any known date) get their own section instead of the capture day (#168)
+  const { groups, undated } = useMemo(() => {
     const map = new Map<number, Entry[]>();
-    for (const e of [...(tl.data ?? [])].sort((a, b) => b.date.localeCompare(a.date))) {
+    const sorted = [...(tl.data ?? [])].sort((a, b) => b.date.localeCompare(a.date));
+    for (const e of sorted.filter((x) => !x.undated)) {
       const list = map.get(e.year) ?? [];
       list.push(e);
       map.set(e.year, list);
     }
-    return [...map.entries()].sort((a, b) => b[0] - a[0]);
+    return { groups: [...map.entries()].sort((a, b) => b[0] - a[0]), undated: sorted.filter((x) => x.undated) };
   }, [tl.data]);
 
   async function openEdit(eventId: string) {
@@ -85,6 +87,55 @@ export default function TimelinePage() {
     const found = all.find((ev) => ev.id === eventId);
     if (found) setEditEvent(found);
     else toast({ variant: 'info', title: 'Dieses Ereignis gibt es nicht mehr.' });
+  }
+
+  function renderEntry(e: Entry) {
+    const k = KIND[e.kind];
+    return (
+      <li key={e.id} className="relative" data-testid="timeline-entry" data-kind={e.kind}>
+        <span className="absolute -left-[2.15rem] flex size-6 items-center justify-center rounded-full border bg-card">
+          <k.icon className="size-3.5 text-primary" />
+        </span>
+        <p className="text-xs text-muted-foreground">
+          {e.undated ? `ohne Datum, erfasst am ${formatLongDate(e.date)}` : formatLongDate(e.date)} · {k.label}
+        </p>
+        <p className="flex items-center gap-2 font-medium">
+          {e.title}
+          {e.kind === 'event' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label="Ereignis bearbeiten"
+              onClick={() => void openEdit(e.id.replace(/^event:/, ''))}
+              data-testid="event-edit"
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+          )}
+          {e.kind === 'event' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label="Ereignis löschen"
+              onClick={() => setDeleteId(e.id.replace(/^event:/, ''))}
+              data-testid="event-delete"
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          )}
+        </p>
+        {e.description && <p className="mt-0.5 text-sm text-muted-foreground">{e.description}</p>}
+        {e.refs.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {e.refs.map((r) => (
+              <EntityChip key={`${r.type}-${r.id}`} type={r.type} id={r.id} label={r.label} detail={r.detail} />
+            ))}
+          </div>
+        )}
+      </li>
+    );
   }
 
   return (
@@ -128,7 +179,7 @@ export default function TimelinePage() {
       </div>
       {tl.error && !tl.data && <ErrorNote error={tl.error} onRetry={() => void tl.refetch()} />}
       {!tl.data && tl.loading && <Loading />}
-      {tl.data && groups.length === 0 && (
+      {tl.data && groups.length === 0 && undated.length === 0 && (
         <EmptyState icon={<CalendarDays />} title="Keine Einträge" description="Für diesen Filter gibt es keine Einträge in der Timeline." />
       )}
       <div className="flex flex-col gap-8" data-testid="timeline">
@@ -137,58 +188,17 @@ export default function TimelinePage() {
             <h2 id={`year-${year}`} className="mb-3 text-lg font-semibold">
               {year}
             </h2>
-            <ol className="relative ml-3 flex flex-col gap-4 border-l pl-6">
-              {entries.map((e) => {
-                const k = KIND[e.kind];
-                return (
-                  <li key={e.id} className="relative" data-testid="timeline-entry" data-kind={e.kind}>
-                    <span className="absolute -left-[2.15rem] flex size-6 items-center justify-center rounded-full border bg-card">
-                      <k.icon className="size-3.5 text-primary" />
-                    </span>
-                    <p className="text-xs text-muted-foreground">
-                      {formatLongDate(e.date)} · {k.label}
-                    </p>
-                    <p className="flex items-center gap-2 font-medium">
-                      {e.title}
-                      {e.kind === 'event' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-6"
-                          aria-label="Ereignis bearbeiten"
-                          onClick={() => void openEdit(e.id.replace(/^event:/, ''))}
-                          data-testid="event-edit"
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                      )}
-                      {e.kind === 'event' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-6"
-                          aria-label="Ereignis löschen"
-                          onClick={() => setDeleteId(e.id.replace(/^event:/, ''))}
-                          data-testid="event-delete"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      )}
-                    </p>
-                    {e.description && <p className="mt-0.5 text-sm text-muted-foreground">{e.description}</p>}
-                    {e.refs.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {e.refs.map((r) => (
-                          <EntityChip key={`${r.type}-${r.id}`} type={r.type} id={r.id} label={r.label} detail={r.detail} />
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
+            <ol className="relative ml-3 flex flex-col gap-4 border-l pl-6">{entries.map((e) => renderEntry(e))}</ol>
           </section>
         ))}
+        {undated.length > 0 && (
+          <section aria-labelledby="year-undated" data-testid="timeline-undated">
+            <h2 id="year-undated" className="mb-3 text-lg font-semibold">
+              Ohne Datum
+            </h2>
+            <ol className="relative ml-3 flex flex-col gap-4 border-l pl-6">{undated.map((e) => renderEntry(e))}</ol>
+          </section>
+        )}
       </div>
       {tl.data && canLoadOlder && (
         <div className="mt-8 flex flex-col items-center gap-2">

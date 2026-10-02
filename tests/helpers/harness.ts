@@ -128,6 +128,8 @@ export interface TestAppOptions {
   privacy?: 'auto' | 'confirm' | 'local_only';
   scanEnabled?: boolean;
   workerFile?: string | null;
+  /** bundled read worker (db-reader-entry); null = queries run inline */
+  readerFile?: string | null;
   dataRoot?: string;
 }
 
@@ -143,6 +145,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     cipher: new TestCipher(),
     fetchImpl: llm.fetch,
     workerFile: opts.workerFile ?? null,
+    readerFile: opts.readerFile ?? null,
     jobConcurrency: 1,
     llmRetryDelayMs: 0,
     jobRetryDelayMs: 0,

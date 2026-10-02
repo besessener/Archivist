@@ -208,6 +208,7 @@ const mapEntity = (r: EntityRow): GraphEntity => ({
   roles: r.roles,
   duplicateOfId: r.duplicateOfId,
   isSelf: r.isSelf,
+  ...(r.unconfirmed ? { unconfirmed: true } : {}),
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -280,7 +281,12 @@ export class KnowledgeGraphService {
   }
 
   /** Finds or creates a named entity (topic, project, person …) by its normalized name. */
-  ensureEntity(type: EntityType, name: string, description?: string | null): GraphEntity {
+  /**
+   * The entity of this type and name, created if missing. `fromDocument`: the name was taken from a document's
+   * analysis – a new entity is marked unconfirmed (kept out of LLM prompts, #199). Any other use of the name
+   * (the user typed it, a decision or open item uses it) confirms it.
+   */
+  ensureEntity(type: EntityType, name: string, description?: string | null, opts: { fromDocument?: boolean } = {}): GraphEntity {
     const clean = name.trim().replace(/\s+/g, ' ');
     if (!clean) throw new AppError('validation_error', 'Der Name darf nicht leer sein.');
     const norm = normalizeName(clean);
@@ -289,7 +295,10 @@ export class KnowledgeGraphService {
       .from(entities)
       .where(and(eq(entities.type, type), eq(entities.normalizedName, norm)))
       .get();
-    if (existing) return mapEntity(existing);
+    if (existing) {
+      if (existing.unconfirmed && !opts.fromDocument) return this.confirmEntity(existing.id);
+      return mapEntity(existing);
+    }
     const now = nowIso();
     const row: EntityRow = {
       id: newId(),
@@ -301,12 +310,24 @@ export class KnowledgeGraphService {
       roles: [],
       duplicateOfId: null,
       isSelf: false,
+      unconfirmed: Boolean(opts.fromDocument) && (type === 'topic' || type === 'project'),
       createdAt: now,
       updatedAt: now,
     };
     this.db.insert(entities).values(row).run();
     this.ctx.events.changed('knowledge');
     return mapEntity(row);
+  }
+
+  /** The user accepts a topic/project taken from a document: from now on it is listed in LLM prompts. */
+  confirmEntity(id: string): GraphEntity {
+    const row = this.db.select().from(entities).where(eq(entities.id, id)).get();
+    if (!row) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
+    if (!row.unconfirmed) return mapEntity(row);
+    const updatedAt = nowIso();
+    this.db.update(entities).set({ unconfirmed: false, updatedAt }).where(eq(entities.id, id)).run();
+    this.ctx.events.changed('knowledge');
+    return mapEntity({ ...row, unconfirmed: false, updatedAt });
   }
 
   findByName(type: EntityType, name: string): GraphEntity | undefined {
@@ -456,9 +477,11 @@ export class KnowledgeGraphService {
     return opts.types ? found.filter((e) => opts.types!.includes(e.type)) : found;
   }
 
-  listEntities(opts: { type?: EntityType; query?: string; limit?: number } = {}): Array<GraphEntity & { relationCount: number }> {
+  /** `confirmedOnly`: without topics/projects taken from documents that the user has not confirmed (for LLM prompts). */
+  listEntities(opts: { type?: EntityType; query?: string; limit?: number; confirmedOnly?: boolean } = {}): Array<GraphEntity & { relationCount: number }> {
     const conds = [];
     if (opts.type) conds.push(eq(entities.type, opts.type));
+    if (opts.confirmedOnly) conds.push(eq(entities.unconfirmed, false));
     if (opts.query?.trim()) conds.push(like(entities.normalizedName, `%${normalizeName(opts.query)}%`));
     const rows = this.db
       .select()

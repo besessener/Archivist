@@ -499,6 +499,8 @@ export const GraphEntity = z.object({
   duplicateOfId: z.string().nullable(),
   /** The user's own person (shown with the badge „Du“). */
   isSelf: z.boolean(),
+  /** Topic/project taken from a document and not yet confirmed: never listed in LLM prompts (#199). */
+  unconfirmed: z.boolean().optional(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
@@ -547,6 +549,8 @@ export const TimelineEntry = z.object({
   title: z.string(),
   description: z.string().nullable(),
   refs: z.array(EntityRef),
+  /** no known date (an undated decision without dated source document): `date` is only the capture day (#168) */
+  undated: z.boolean().optional(),
 });
 export type TimelineEntry = z.infer<typeof TimelineEntry>;
 
