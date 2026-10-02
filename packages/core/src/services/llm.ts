@@ -60,6 +60,22 @@ function isUnsupportedParamError(text: string): boolean {
   return UNSUPPORTED_PARAM_PATTERNS.some((re) => re.test(text));
 }
 
+/** Optional request parameters that a compatible endpoint may reject. */
+type OptionalParam = 'store' | 'reasoning' | 'text' | 'max_output_tokens';
+const OPTIONAL_PARAMS: OptionalParam[] = ['store', 'reasoning', 'text', 'max_output_tokens'];
+
+const PARAM_MENTIONS: Record<OptionalParam, RegExp> = {
+  store: /\bstore\b/i,
+  reasoning: /\breasoning\b/i,
+  text: /\btext\.format\b|\bresponse_format\b|\bjson_object\b|['"`]text['"`]/i,
+  max_output_tokens: /\bmax_output_tokens\b/i,
+};
+
+/** The optional parameters an "unsupported parameter" error names explicitly. */
+function namedParams(text: string): OptionalParam[] {
+  return OPTIONAL_PARAMS.filter((p) => PARAM_MENTIONS[p].test(text));
+}
+
 /**
  * JSON mode (text.format = json_object) of the Responses API requires the word "json" in the input –
  * the instructions do not count. Without it the endpoint rejects the request with HTTP 400.
@@ -73,6 +89,12 @@ const JSON_INPUT_HINT = 'Antworte als JSON.\n\n';
  * - Structured outputs are validated with Zod; invalid outputs never trigger actions.
  */
 export class LlmService {
+  /**
+   * Optional parameters an endpoint (base URL + model) has rejected; later requests leave them out
+   * right away instead of re-learning it on every call. Kept in memory only.
+   */
+  private readonly rejectedParams = new Map<string, Set<OptionalParam>>();
+
   private lastStatus: { state: 'unknown' | 'ok' | 'error'; lastError: string | null; lastCheckedAt: string | null } = {
     state: 'unknown',
     lastError: null,
@@ -195,24 +217,28 @@ export class LlmService {
       ...(req.json ? { text: { format: { type: 'json_object' } } } : {}),
     };
     const url = this.endpoint(baseUrl, 'responses');
+    const endpointKey = `${url}\n${model}`;
+    const rejected = this.rejectedParams.get(endpointKey) ?? new Set<OptionalParam>();
+    const without = (params: Set<OptionalParam>) => Object.fromEntries(Object.entries(full).filter(([k]) => !params.has(k as OptionalParam)));
     const bytes = Buffer.byteLength(sent, 'utf8') + Buffer.byteLength(redactedInstr.text, 'utf8');
     let success = false;
     try {
       let attempt = 0;
-      let body = full;
       for (;;) {
         attempt += 1;
         try {
-          let res = await this.post(url, apiKey, body, cfg.timeoutMs, req.signal);
-          if (res.status === 400 && body === full && isUnsupportedParamError(res.text)) {
-            // some compatible endpoints do not know optional parameters → retry without them
-            const { store: _s, reasoning: _r, text: _t, max_output_tokens: _m, ...minimal } = full;
-            void _s;
-            void _r;
-            void _t;
-            void _m;
-            body = minimal;
-            res = await this.post(url, apiKey, body, cfg.timeoutMs, req.signal);
+          let res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, req.signal);
+          // Some compatible endpoints do not know optional parameters → retry without exactly the one the error names.
+          // store:false is only dropped when the endpoint rejects `store` itself (#150).
+          while (res.status === 400 && isUnsupportedParamError(res.text)) {
+            const present = OPTIONAL_PARAMS.filter((p) => p in full && !rejected.has(p));
+            const named = namedParams(res.text).filter((p) => present.includes(p));
+            const drop = named.length > 0 ? named : present.filter((p) => p !== 'store');
+            if (drop.length === 0) break;
+            for (const p of drop) rejected.add(p);
+            this.rejectedParams.set(endpointKey, rejected);
+            this.ctx.logger.warn('llm', 'Endpoint rejected optional parameters – retrying without them', { params: drop });
+            res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, req.signal);
           }
           if (res.status >= 400) throw this.mapHttpError(res.status, res.text);
           let parsed: ResponsesBody;
