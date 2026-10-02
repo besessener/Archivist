@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { EntityType } from '@archivist/shared';
 import { DatabaseService, type MigrationStatus } from './db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from './context';
 import { ActionService } from './services/actions';
@@ -23,7 +24,7 @@ import { DocumentService } from './services/documents';
 import { EmbeddingService } from './services/embedding';
 import { InsightService } from './services/insights';
 import { JobQueueService } from './services/jobs';
-import { KnowledgeGraphService } from './services/knowledge-graph';
+import { KnowledgeGraphService, relationReason } from './services/knowledge-graph';
 import { LinkMethodsService } from './services/link-methods';
 import { LinkThresholds } from './services/link-thresholds';
 import { TopicNamer } from './services/topic-namer';
@@ -80,6 +81,21 @@ const LINK_RUN_JOB = 'links.run';
 const NOTE_ANALYZE_JOB = 'notes.analyze';
 /** Job that proposes similar entries for newly indexed ones (#271). */
 const LINK_SIMILAR_JOB = 'links.similar';
+/** Job that offers links for what a chat message captured (#283). */
+const CHAT_LINKS_JOB = 'links.chatSuggest';
+const KIND_LABEL: Partial<Record<string, string>> = {
+  project: 'Projekt',
+  topic: 'Thema',
+  person: 'Person',
+  tag: 'Tag',
+  case: 'Vorgang',
+  document: 'Dokument',
+  note: 'Notiz',
+  decision: 'Entscheidung',
+  task: 'offener Punkt',
+  question: 'offene Frage',
+  event: 'Ereignis',
+};
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -318,6 +334,34 @@ function buildServices(opts: CreateServicesOptions) {
       if (settings.get().links.autoPropose)
         notifyLinkProposals(links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] }));
     },
+    suggestLinks: (entries, reply) => {
+      if (settings.get().links.autoPropose) jobs.enqueue(CHAT_LINKS_JOB, 'Verknüpfungen anbieten', { entries, ...reply }, { maxAttempts: 1 });
+    },
+  });
+  // up to 3 clickable link suggestions under the answer that captured something (#283)
+  jobs.register<{ entries: Array<{ id: string; type: EntityType }>; messageId: string; conversationId: string }>(CHAT_LINKS_JOB, async (job) => {
+    const found = await links.suggestForCaptured(job.payload.entries, { limit: 3 });
+    const ids = found.map((s) => {
+      const what = KIND_LABEL[s.target.type] ?? s.target.type;
+      const label = ['project', 'topic', 'case'].includes(s.target.type)
+        ? `Das klingt nach ${what} „${s.target.name}“ – verknüpfen?`
+        : `Mit ${what} „${s.target.name}“ verknüpfen?`;
+      return actions.propose({
+        actionType: 'confirm_relation',
+        label,
+        rationale: `Für „${s.entry.name}“: ${relationReason(s.relation)}`,
+        confidence: Math.min(1, Math.max(0, s.score)),
+        affectedEntities: [
+          { type: s.entry.type, id: s.entry.id, label: s.entry.name },
+          { type: s.target.type, id: s.target.id, label: s.target.name },
+        ],
+        requiredConfirmation: 'confirm',
+        proposedParameters: { relationId: s.relation.id, offered: true },
+        conversationId: job.payload.conversationId,
+      }).id;
+    });
+    chat.attachActions(job.payload.messageId, ids);
+    return { summary: `${ids.length} Verknüpfung(en) angeboten` };
   });
   // a new or edited note is analysed like a document, in a job of its own (#273)
   const enqueueNoteAnalysis = (entry: { id: string; type: string }) => {

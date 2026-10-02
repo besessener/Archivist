@@ -710,7 +710,8 @@ export const ActionParamSchemas = {
   merge_notes: z.object({ keepId: Id, duplicateId: Id }),
   /** Duplicate events: keep `keepId`, take over its missing details from `duplicateId`, discard that one as a duplicate (undoable). */
   merge_events: z.object({ keepId: Id, duplicateId: Id }),
-  confirm_relation: z.object({ relationId: Id }),
+  /** `offered`: a link suggestion after capturing in the chat (#283), shown as a compact button. */
+  confirm_relation: z.object({ relationId: Id, offered: z.boolean().optional() }),
   reject_relation: z.object({ relationId: Id }),
   exclude_path: z.object({ kind: z.enum(['file', 'dir']), path: z.string() }),
   create_category: z.object({ path: z.string() }),

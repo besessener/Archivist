@@ -100,6 +100,8 @@ Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von 
 - Vorschläge direkt bestätigen oder ablehnen; 10 je Seite;
 - Knoten mit mehr als 500 Einträgen zählen nicht; abgelehnte Paare fehlen.
 
+**Vorschläge beim Erfassen im Chat**: Nach dem Speichern einer Notiz, Entscheidung, eines offenen Punkts oder Ereignisses erscheinen unter der Antwort bis zu drei Knöpfe wie „Das klingt nach Projekt „Hausbau“ – verknüpfen?“ – aus der Ähnlichkeitssuche, genannten Themen und Projekten und der Notiz-Analyse. Sie werden in einem eigenen Job ermittelt, die Antwort wartet nicht darauf. Ein Klick bestätigt die Verknüpfung (rückgängig im Änderungsprotokoll); ignorierte Vorschläge bleiben in den Verknüpfungsvorschlägen.
+
 **Manuell verknüpfen**: „Verknüpfen“ wählt per Suche einen Eintrag beliebiger Art und die Art der Beziehung (verwandt, folgt aus, ersetzt, blockiert …). Manuelle Verknüpfungen sind sofort bestätigt, stehen im Änderungsprotokoll, lassen sich rückgängig machen und wieder entfernen. Im Chat verknüpft der Agent auf Wunsch („Verknüpfe das mit dem Mietvertrag“) und fragt bei mehreren Treffern nach.
 
 **Rückwirkender Lauf** (Job `links.run`): wendet alle Methoden auf das vorhandene Archiv an, abbrechbar, mit Fortschritt; nach einem Neustart geht er hinter dem letzten vollständig erledigten Eintrag weiter, nichts wird doppelt bezahlt. Er startet einmal nach dem Update und auf Knopfdruck unter Einstellungen → Agent → Agentenläufe; am Ende ein gebündelter Hinweis.

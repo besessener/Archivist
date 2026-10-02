@@ -104,6 +104,16 @@ export interface LinkageMetrics {
   history: LinkageSnapshot[];
 }
 
+/** A link suggestion after capturing (#283): the stored proposal with both ends. */
+export interface CapturedSuggestion {
+  relation: GraphRelation;
+  entry: { id: string; type: EntityType; name: string };
+  target: { id: string; type: EntityType; name: string };
+  score: number;
+}
+/** What the chat captures and offers links for (#283). */
+const CAPTURED_TYPES: EntityType[] = ['note', 'decision', 'task', 'question', 'event'];
+
 export interface TopicCluster {
   /** Stable for the same members: a rejected proposal („Nein“) is remembered under it. */
   key: string;
@@ -672,6 +682,39 @@ export class LinkMethodsService {
     });
     // the user already answered this group („Nein“ or done): no new proposal
     return { insightId: insight.id, actionId: insight.status === 'open' ? (insight.recommendedActionId ?? null) : null };
+  }
+
+  /**
+   * Link suggestions right after capturing in the chat (#283): for the new notes, decisions, open items and events the
+   * best of their similar entries and mentioned topics/projects (#271) and of the open proposals of the note analysis
+   * (#273) – at most `limit` in total, one per target. They are stored as proposals, so an ignored suggestion stays in the
+   * list of link proposals (#280); rejected pairs never come back.
+   */
+  async suggestForCaptured(entries: CreatedEntry[], opts: { limit?: number } = {}): Promise<CapturedSuggestion[]> {
+    const limit = opts.limit ?? 3;
+    const own = new Set(entries.map((e) => e.id));
+    const found: CapturedSuggestion[] = [];
+    for (const { id } of entries.filter((e) => CAPTURED_TYPES.includes(e.type)).slice(0, 5)) {
+      const entry = this.graph.getEntity(id);
+      if (!entry) continue;
+      for (const c of await this.candidates(id, { limit })) {
+        if (own.has(c.id)) continue;
+        const type = c.method === 'similarity' ? 'related_to' : c.type === 'project' ? 'belongs_to' : 'relates_to';
+        const r = this.graph.link(id, c.id, type, { status: 'proposed', confidence: c.score, method: c.method, evidence: c.reason });
+        if (r?.status === 'proposed')
+          found.push({ relation: r, entry: { id, type: entry.type, name: entry.name }, target: { id: c.id, type: c.type, name: c.name }, score: c.score });
+      }
+      for (const r of this.graph.relationsOf(id, { statuses: ['proposed'] })) {
+        const otherId = r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId;
+        const other = this.graph.getEntity(otherId);
+        if (!other || own.has(otherId) || !r.method || !LINK_PROPOSAL_METHODS.includes(r.method) || OWN_FLOW_TYPES.includes(r.relationType)) continue;
+        found.push({ relation: r, entry: { id, type: entry.type, name: entry.name }, target: { id: other.id, type: other.type, name: other.name }, score: r.confidence });
+      }
+    }
+    const out: CapturedSuggestion[] = [];
+    for (const s of found.toSorted((x, y) => y.score - x.score))
+      if (out.length < limit && !out.some((o) => o.target.id === s.target.id || o.relation.id === s.relation.id)) out.push(s);
+    return out;
   }
 
   /** A current (proposed or confirmed) relation of any type between the two. */

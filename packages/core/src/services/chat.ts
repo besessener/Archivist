@@ -260,6 +260,7 @@ export class ChatService {
   private archive!: ArchiveService;
   private agent: AgentService | null = null;
   private createdTogether: ((entries: CreatedEntry[], message: { id: string; text: string }) => void) | null = null;
+  private suggestLinks: ((entries: CreatedEntry[], reply: { messageId: string; conversationId: string }) => void) | null = null;
   /** Requests of the current message that are already done, per conversation – for the last-resort error handling in send(). */
   private readonly progress = new Map<string, { replies: Reply[]; state: ConvState }>();
   /** Running requests per conversation; `cancel` aborts their LLM calls and the requests not started yet (#151). */
@@ -290,11 +291,26 @@ export class ChatService {
     agent?: AgentService;
     /** Entries one message created together are proposed as linked (#272). */
     createdTogether?: (entries: CreatedEntry[], message: { id: string; text: string }) => void;
+    /** Link suggestions for what a message captured, attached to the reply afterwards (#283). */
+    suggestLinks?: (entries: CreatedEntry[], reply: { messageId: string; conversationId: string }) => void;
   }): void {
     this.actions = deps.actions;
     this.archive = deps.archive;
     this.agent = deps.agent ?? null;
     this.createdTogether = deps.createdTogether ?? null;
+    this.suggestLinks = deps.suggestLinks ?? null;
+  }
+
+  /** Adds proposals to an answer that is already shown (link suggestions after capturing, #283). */
+  attachActions(messageId: string, actionIds: string[]): void {
+    const row = this.db.select().from(messages).where(eq(messages.id, messageId)).get();
+    if (!row || !actionIds.length) return;
+    this.db
+      .update(messages)
+      .set({ actionIds: [...new Set([...row.actionIds, ...actionIds])] })
+      .where(eq(messages.id, messageId))
+      .run();
+    this.ctx.events.changed('chat');
   }
 
   /** Runs the message through the agent; null when the agent cannot (then the rule-based evaluation applies). */
@@ -492,6 +508,13 @@ export class ChatService {
         this.ctx.logger.warn('chat', 'Linking entries of one message failed', { error: err });
       }
     const assistantMessage = this.saveMessage(conv, 'assistant', reply.content, reply);
+    // never on the path of the answer: the suggestions follow in a job of their own (#283)
+    if (created.length)
+      try {
+        this.suggestLinks?.(created, { messageId: assistantMessage.id, conversationId: conv });
+      } catch (err) {
+        this.ctx.logger.warn('chat', 'Link suggestions not started', { error: err });
+      }
     this.db
       .update(conversations)
       .set({ pending: (reply.state ?? state) as unknown as ArchivistJson, updatedAt: nowIso() })

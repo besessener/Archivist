@@ -225,8 +225,8 @@ export class ActionService {
       // a relation card has confirm and reject: rejecting discards the proposed relation
       if (action.actionType === 'confirm_relation') {
         const params = ActionParamSchemas.confirm_relation.parse(action.proposedParameters);
-        this.deps.graph.setRelationStatus(params.relationId, 'rejected');
-        this.deps.audit.log({ action: 'relation.reject', actor: 'user', trigger: 'confirmation', confirmed: true, entityIds: [params.relationId] });
+        // logged with undo (#283)
+        this.deps.graph.decideRelation(params.relationId, 'rejected', { trigger: 'confirmation' });
       }
       this.deps.audit.log({
         action: `action.reject:${action.actionType}`,
@@ -454,8 +454,8 @@ export class ActionService {
       }
       case 'confirm_relation': {
         const params = ActionParamSchemas.confirm_relation.parse(p);
-        d.graph.setRelationStatus(params.relationId, 'confirmed');
-        d.audit.log({ action: 'relation.confirm', actor: 'user', trigger, confirmed: true, entityIds: [params.relationId] });
+        // the user's decision, undoable in the change log (#283)
+        d.graph.decideRelation(params.relationId, 'confirmed', { trigger });
         return 'Beziehung bestätigt.';
       }
       case 'reject_relation': {
