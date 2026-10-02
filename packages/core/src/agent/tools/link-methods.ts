@@ -141,6 +141,51 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
       },
     }),
     defineTool({
+      name: 'linkage_report',
+      description:
+        'Wie gut das Archiv verknüpft ist (#292): Anteil verwaister Einträge, offene Verknüpfungsvorschläge, Bestätigungsquote je Methode und der Verlauf der Archivprüfungen – dazu, was die Methoden aus Ablehnungen gelernt haben (#275, angehobene Schwellen mit Deckel). Ändert nichts.',
+      schema: z.object({}),
+      risk: 'read',
+      label: () => 'Sehe nach, wie gut das Archiv verknüpft ist',
+      run: async () => {
+        const m = links.metrics();
+        const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v * 100)} %`);
+        const share = (s: { orphans: number; entries: number }) => (s.entries ? s.orphans / s.entries : 0);
+        const history = m.history.slice(-8);
+        const lines = [
+          `Einträge: ${m.current.entries}, davon ohne Verknüpfung: ${m.current.orphans} (${pct(share(m.current))}).`,
+          `Offene Verknüpfungsvorschläge: ${m.current.openProposals}. Bestätigungsquote gesamt: ${pct(m.current.confirmationRate)}.`,
+          'Je Methode (bestätigt / abgelehnt / offen, Quote):',
+          ...m.methods.map((x) => `- ${x.label}: ${x.confirmed} / ${x.rejected} / ${x.open}, ${pct(x.rate)}`),
+          history.length
+            ? `Verlauf (Anteil verwaist je Archivprüfung, älteste zuerst): ${history.map((h) => `${h.at.slice(0, 10)} ${pct(share(h))}`).join(', ')}.`
+            : 'Noch kein Verlauf – er entsteht mit jeder Archivprüfung.',
+          'Aus Ablehnungen gelernt:',
+          ...deps.linkThresholds
+            .list()
+            .map(
+              (t) =>
+                `- ${t.label} (${t.measure}): ${t.offset > 0 ? `+${Math.round(t.offset * 100)} Punkte` : 'unverändert'} (Deckel +${Math.round(t.cap * 100)}; zuletzt ${t.confirmed} bestätigt, ${t.rejected} abgelehnt)`,
+            ),
+        ];
+        return { content: lines.join('\n'), summary: `${pct(share(m.current))} verwaist` };
+      },
+    }),
+    defineTool({
+      name: 'reset_learned_thresholds',
+      description:
+        'Setzt zurück, was die Verknüpfungsmethoden aus Ablehnungen gelernt haben (#275): alle schlagen wieder mit ihrer ursprünglichen Schwelle vor, nur künftige Entscheidungen zählen. Abgelehnte Paare bleiben abgelehnt. Nur auf ausdrücklichen Wunsch des Benutzers; nicht rückgängig machbar.',
+      schema: z.object({}),
+      // cannot be undone: always asks
+      risk: 'critical',
+      label: () => 'Setze die gelernten Schwellen zurück',
+      run: async () => {
+        deps.linkThresholds.reset();
+        deps.audit.log({ action: 'links.thresholds.reset', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [] });
+        return { content: 'Die gelernten Schwellen sind zurückgesetzt.', summary: 'zurückgesetzt', change: 'Gelernte Schwellen zurückgesetzt' };
+      },
+    }),
+    defineTool({
       name: 'backfill_links',
       description:
         'Rückwirkender Verknüpfungslauf über das bestehende Archiv: schlägt für jeden Eintrag ähnliche Einträge als Verknüpfung VOR (nie bestätigt; abgelehnte Paare nie wieder). Arbeitet bis zu maxEntries Einträge ab und merkt sich die Stelle – ein weiterer Aufruf oder ein Neustart macht dort weiter.',

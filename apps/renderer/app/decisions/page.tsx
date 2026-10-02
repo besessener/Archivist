@@ -1,5 +1,8 @@
 'use client';
 
+import { ExtraSubjectsNote, useSubjectsOf } from '@/components/common/extra-subjects';
+import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -65,6 +68,8 @@ function DecisionsInner() {
     if ((a.status === 'draft') !== (b.status === 'draft')) return a.status === 'draft' ? -1 : 1;
     return (b.decidedAt ?? b.createdAt).localeCompare(a.decidedAt ?? a.createdAt);
   });
+  const subjects = useSubjectsOf(sorted.map((d) => d.id));
+  const selection = useSelection();
 
   return (
     <Page wide>
@@ -117,15 +122,23 @@ function DecisionsInner() {
               description="Halte eine Entscheidung fest – im Chat mit „Wir haben entschieden, dass …“ oder hier mit dem Formular."
             />
           )}
+          <BulkAssignBar ids={selection.ids} noun={['Entscheidung', 'Entscheidungen']} onClear={selection.clear} onDone={() => void active.refetch()} />
           <ul className="flex max-h-[68vh] flex-col gap-2 overflow-y-auto" data-testid="decision-list">
             {sorted.map((d) => (
-              <li key={d.id}>
+              <li key={d.id} className="flex items-start gap-2">
+                <Checkbox
+                  className="mt-3.5"
+                  checked={selection.has(d.id)}
+                  onCheckedChange={(v) => selection.toggle(d.id, v === true)}
+                  aria-label={`${d.title || d.decisionText} auswählen`}
+                  data-testid="decision-select"
+                />
                 <Link
                   href={`/decisions/?id=${encodeURIComponent(d.id)}`}
                   data-testid="decision-row"
                   data-status={d.status}
                   className={cn(
-                    'block rounded-lg border p-3 transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring',
+                    'block min-w-0 flex-1 rounded-lg border p-3 transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring',
                     d.status === 'draft' && 'border-warning/60 bg-warning/8',
                     d.id === id && 'ring-2 ring-primary/50',
                   )}
@@ -136,7 +149,7 @@ function DecisionsInner() {
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {formatLongDate(d.decidedAt, 'Datum unbekannt')}
-                    {d.topicName ? ` · ${d.topicName}` : ''}
+                    {d.topicName ? ` · ${d.topicName}` : ''} <ExtraSubjectsNote subjects={subjects[d.id]} />
                   </p>
                   {d.missingFields.length > 0 && (
                     <p className="mt-1.5 flex items-center gap-1 text-xs text-warning">

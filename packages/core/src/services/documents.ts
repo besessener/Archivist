@@ -1001,6 +1001,11 @@ export class DocumentService {
       title?: string;
       topic?: string | null;
       project?: string | null;
+      /** Added (#287, #291): the main topic/project where none is set, otherwise a further one. */
+      addTopic?: string;
+      addProject?: string;
+      /** The documents go into this case (#286). */
+      caseId?: string;
       addTags?: string[];
       removeTags?: string[];
       addPersons?: string[];
@@ -1014,6 +1019,11 @@ export class DocumentService {
     if (!unique.length) return { updated: [], auditId: null };
     const topicId = patch.topic === undefined ? undefined : patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     const projectId = patch.project === undefined ? undefined : patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    const subjectOf = (kind: 'topic' | 'project', name: string | undefined) =>
+      name?.trim() ? (this.graph.findByNameOrAlias(kind, name.trim()) ?? this.graph.ensureEntity(kind, name.trim())).id : undefined;
+    const addTopicId = subjectOf('topic', patch.addTopic);
+    const addProjectId = subjectOf('project', patch.addProject);
+    if (patch.caseId && this.graph.getEntity(patch.caseId)?.type !== 'case') throw new AppError('validation_error', 'Vorgang nicht gefunden.');
     const addPersons = patch.addPersons?.length ? this.persons.resolveNames(patch.addPersons, { context: 'document', create: true }).names : [];
     const lowerSet = (xs: string[] | undefined) => new Set((xs ?? []).map((x) => x.toLowerCase()));
     const removeTags = lowerSet(patch.removeTags);
@@ -1025,6 +1035,17 @@ export class DocumentService {
       if (patch.title?.trim() && unique.length === 1) set.title = patch.title.trim().slice(0, 200);
       if (topicId !== undefined) set.topicId = topicId;
       if (projectId !== undefined) set.projectId = projectId;
+      // added: the main one where none is set, otherwise a further one (linked below, inside the tracked change)
+      const extra: Array<[string, 'relates_to' | 'belongs_to']> = [];
+      if (addTopicId && topicId === undefined) {
+        if (!row.topicId) set.topicId = addTopicId;
+        else if (row.topicId !== addTopicId) extra.push([addTopicId, 'relates_to']);
+      }
+      if (addProjectId && projectId === undefined) {
+        if (!row.projectId) set.projectId = addProjectId;
+        else if (row.projectId !== addProjectId) extra.push([addProjectId, 'belongs_to']);
+      }
+      if (patch.caseId) extra.push([patch.caseId, 'belongs_to']);
       if (patch.addTags?.length || removeTags.size)
         set.tags = [...new Set([...row.tags.filter((t) => !removeTags.has(t.toLowerCase())), ...(patch.addTags ?? []).map((t) => t.trim()).filter(Boolean)])];
       if (addPersons.length || removePersons.size)
@@ -1036,6 +1057,8 @@ export class DocumentService {
           this.db.update(documents).set(set).where(eq(documents.id, id)).run();
           if (set.title) this.graph.registerNode('document', id, set.title, row.summary);
           this.syncAssignment(id, set);
+          for (const [target, type] of extra)
+            this.graph.link(id, target, type, { status: 'confirmed', resolvedByUser: true, origin: 'user', method: 'manual', confidence: 1 });
         }),
       );
       undoItems.push(this.metadataUndo(row, set, changes));

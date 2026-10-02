@@ -602,6 +602,28 @@ export const TASKS: EvalTask[] = [
     check: (c) => verdict([c.services.settings.get().agent.background.weeklyReview === false, 'Wochenrückblick ist noch an'], archiveUnchanged(c)),
   },
 
+  // ---------- #306 links and cases: the linking features of Epic #269 as tools ----------
+  {
+    id: 'topic-add-not-replace',
+    story: '#306',
+    title: '„Auch zuordnen“ ergänzt ein weiteres Thema, das Hauptthema bleibt',
+    messages: ['Ordne die Rechnung von Sanitär Meier zusätzlich auch dem Thema „Steuer 2025“ zu.'],
+    check: (c) => {
+      const s = c.services.subjects.of(c.ids['rechnung-sanitaer-2025']!);
+      return verdict(
+        [s.topic?.name === 'Handwerker', `Hauptthema ist jetzt „${s.topic?.name ?? '–'}“ statt „Handwerker“`],
+        [s.extraTopics.some((t) => /steuer 2025/i.test(t.name)), 'kein weiteres Thema „Steuer 2025“'],
+      );
+    },
+  },
+  {
+    id: 'linkage-report',
+    story: '#306',
+    title: 'Frage nach dem Verknüpfungsgrad nutzt die Kennzahlen',
+    messages: ['Wie gut ist mein Archiv verknüpft?'],
+    check: (c) => verdict(usedTool(c, ['linkage_report']), [/%/.test(c.answer), 'keine Zahl in der Antwort'], archiveUnchanged(c)),
+  },
+
   // ---------- #313 background ----------
   {
     id: 'bg-inbox-sort',

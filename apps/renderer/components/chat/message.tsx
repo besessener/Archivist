@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { AlertCircle, FileText, HelpCircle } from 'lucide-react';
 import { RunSummary } from '@/components/agent/run-summary';
 import { ActionCard } from '@/components/common/action-card';
+import { isLinkSuggestion, LinkSuggestions } from './link-suggestions';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown } from '@/components/common/markdown';
@@ -120,13 +121,16 @@ export function ChatBubble({
                 ))}
               </div>
             )}
-            {message.actions.length > 0 && (
+            {message.actions.some((a) => !isLinkSuggestion(a)) && (
               <div className="flex flex-col gap-2" data-testid="chat-actions">
-                {message.actions.map((a) => (
-                  <ActionCard key={a.id} action={a} />
-                ))}
+                {message.actions
+                  .filter((a) => !isLinkSuggestion(a))
+                  .map((a) => (
+                    <ActionCard key={a.id} action={a} />
+                  ))}
               </div>
             )}
+            {message.actions.some((a) => isLinkSuggestion(a)) && <LinkSuggestions actions={message.actions.filter((a) => isLinkSuggestion(a))} />}
             {message.runId && !pending && <RunSummary runId={message.runId} />}
             {message.sources.length > 0 && (
               <div>

@@ -102,12 +102,23 @@ export class EventService {
   }
 
   list(opts: { topicId?: string; projectId?: string } = {}): EventRecord[] {
+    // a further topic/project counts as well (#287), and so do the subtopics (#282)
+    const subject = opts.topicId ?? opts.projectId;
+    const tree = new Set(subject ? this.graph.subtreeOf(subject) : []);
+    const further = this.ctx.database.sqlite.prepare(
+      `SELECT source_entity_id AS id FROM relations WHERE target_entity_id = ? AND status = 'confirmed' AND relation_type <> 'subtopic_of'`,
+    );
+    const extra = new Set([...tree].flatMap((s) => (further.all(s) as Array<{ id: string }>).map((r) => r.id)));
     const rows = this.db
       .select()
       .from(events)
       .orderBy(desc(events.occurredAt))
       .all()
-      .filter((r) => (!opts.topicId || r.topicId === opts.topicId) && (!opts.projectId || r.projectId === opts.projectId));
+      .filter(
+        (r) =>
+          (!opts.topicId || (r.topicId !== null && tree.has(r.topicId)) || extra.has(r.id)) &&
+          (!opts.projectId || (r.projectId !== null && tree.has(r.projectId)) || extra.has(r.id)),
+      );
     const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId]).filter((x): x is string => Boolean(x)))];
     const names = new Map(
       ids.length

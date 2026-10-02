@@ -47,7 +47,7 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
     expect(report.byKind.similar_entities).toBe(4);
     expect(duplicates('open')).toHaveLength(4);
-    for (const [a, b] of pairs) {
+    for (const [a, b] of pairs.slice(0, 3)) {
       const [insight] = forPair(a!.id, b!.id);
       expect(insight).toBeDefined();
       const action = app.services.actions.get(insight!.recommendedActionId!);
@@ -58,6 +58,13 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     const [prefix] = forPair(pairs[3]![0]!.id, pairs[3]![1]!.id);
     expect(prefix!.title).toBe('Gehört „Urlaub 2026“ zu „Urlaub“? (Themen)');
     expect(prefix!.confidence).toBeLessThan(0.5);
+    // a prefix case of topics and projects also offers „Unterthema“ (#282)
+    expect(prefix!.choices.map((c) => c.label)).toEqual(['Unterthema', 'Zusammenführen', 'Verschieden']);
+    expect(app.services.actions.get(prefix!.choices[0]!.actionId!)).toMatchObject({
+      actionType: 'link_entities',
+      proposedParameters: { sourceId: pairs[3]![1]!.id, targetId: pairs[3]![0]!.id, relationType: 'subtopic_of' },
+    });
+    expect(app.services.actions.get(prefix!.choices[1]!.actionId!).actionType).toBe('merge_entities');
     const [typo] = forPair(pairs[2]![0]!.id, pairs[2]![1]!.id);
     expect(typo!.title).toContain('Tag');
     expect(typo!.explanation).toContain('Tippfehler');
@@ -168,8 +175,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     const b = graph().ensureEntity('project', 'Hauskauf Finanzierung');
     await check();
     const [insight] = forPair(a.id, b.id);
-    await app.ok('insights:respond', { response: 'reject', id: insight!.id });
-    expect(app.services.actions.get(insight!.recommendedActionId!).status).toBe('rejected');
+    await app.ok('insights:respond', { response: 'choose', id: insight!.id, choiceId: 'different', confirmed: true });
+    expect(forPair(a.id, b.id).map((i) => i.status)).toEqual(['rejected']);
 
     await check();
     sqlite().prepare("UPDATE entities SET name = 'Hauskauf Kredit', normalized_name = 'hauskauf kredit' WHERE id = ?").run(b.id);

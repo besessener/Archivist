@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { EntityType } from '@archivist/shared';
 import { DatabaseService, type MigrationStatus } from './db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from './context';
 import { ActionService } from './services/actions';
@@ -7,6 +8,8 @@ import { ArchiveService } from './services/archive';
 import { ArchiveRootService } from './services/archive-root';
 import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
+import { CaseService } from './services/cases';
+import { SubjectService } from './services/subjects';
 import { CategoryService } from './services/categories';
 import { ChatService } from './services/chat';
 import { CaptureService } from './services/capture';
@@ -23,8 +26,11 @@ import { DocumentService } from './services/documents';
 import { EmbeddingService } from './services/embedding';
 import { InsightService } from './services/insights';
 import { JobQueueService } from './services/jobs';
-import { KnowledgeGraphService } from './services/knowledge-graph';
+import { KnowledgeGraphService, relationReason } from './services/knowledge-graph';
 import { LinkMethodsService } from './services/link-methods';
+import { LinkThresholds } from './services/link-thresholds';
+import { TopicNamer } from './services/topic-namer';
+import { RelationRefiner } from './services/relation-refiner';
 import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
 import { NoteAnalysisService } from './services/note-analysis';
@@ -78,6 +84,21 @@ const LINK_RUN_JOB = 'links.run';
 const NOTE_ANALYZE_JOB = 'notes.analyze';
 /** Job that proposes similar entries for newly indexed ones (#271). */
 const LINK_SIMILAR_JOB = 'links.similar';
+/** Job that offers links for what a chat message captured (#283). */
+const CHAT_LINKS_JOB = 'links.chatSuggest';
+const KIND_LABEL: Partial<Record<string, string>> = {
+  project: 'Projekt',
+  topic: 'Thema',
+  person: 'Person',
+  tag: 'Tag',
+  case: 'Vorgang',
+  document: 'Dokument',
+  note: 'Notiz',
+  decision: 'Entscheidung',
+  task: 'offener Punkt',
+  question: 'offene Frage',
+  event: 'Ereignis',
+};
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -197,7 +218,32 @@ function buildServices(opts: CreateServicesOptions) {
   );
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
-  const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+  const cases = new CaseService(ctx, graph, audit);
+  const subjects = new SubjectService(ctx, graph, audit, undo);
+  const linkThresholds = new LinkThresholds(ctx, appState);
+  const links = new LinkMethodsService(ctx, graph, search, insights, appState, linkThresholds);
+  // entries without any link (#290): targets as proposals, one bundled hint per archive check
+  consistency.addCheck(async (count) => {
+    const r = await links.checkOrphans({ propose: settings.get().links.autoPropose });
+    if (r.pending) count('orphan_entries');
+    notifyLinkProposals(r.proposed);
+    // groups of similar entries without a topic: „Neues Thema ‚…‘ anlegen?“ (#281)
+    const topics = settings.get().links.autoPropose ? await links.proposeClusterTopics() : 0;
+    if (topics) count('topic_cluster', topics);
+    // the kind of confirmed „verwandt“ links, more precisely – only in privacy mode „automatisch“ (#284)
+    if (settings.get().links.autoPropose) {
+      const refined = await refiner.run({ max: 10 });
+      if (refined) count('relation_refinement', refined);
+      notifyLinkProposals(refined);
+    }
+    // one point of the linkage history per archive check (#292)
+    links.recordMetrics();
+  });
+  const topicNamer = new TopicNamer(ctx, llm, privacy, documentsSvc);
+  const refiner = new RelationRefiner(ctx, graph, llm, privacy, documentsSvc, insights, contradictions, appState);
+  links.setTopicNamer((c, signal) =>
+    topicNamer.name(c, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((t) => t.name), signal }),
+  );
   links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
   /**
    * ONE notification for open link proposals, only when new ones came up (#280): while the current one is unread it is
@@ -266,6 +312,9 @@ function buildServices(opts: CreateServicesOptions) {
       memory,
       fileJobs: agentFileJobs,
       links,
+      subjects,
+      cases,
+      linkThresholds,
       capture,
       answers,
       enqueueConsistency,
@@ -302,6 +351,34 @@ function buildServices(opts: CreateServicesOptions) {
       if (settings.get().links.autoPropose)
         notifyLinkProposals(links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] }));
     },
+    suggestLinks: (entries, reply) => {
+      if (settings.get().links.autoPropose) jobs.enqueue(CHAT_LINKS_JOB, 'Verknüpfungen anbieten', { entries, ...reply }, { maxAttempts: 1 });
+    },
+  });
+  // up to 3 clickable link suggestions under the answer that captured something (#283)
+  jobs.register<{ entries: Array<{ id: string; type: EntityType }>; messageId: string; conversationId: string }>(CHAT_LINKS_JOB, async (job) => {
+    const found = await links.suggestForCaptured(job.payload.entries, { limit: 3 });
+    const ids = found.map((s) => {
+      const what = KIND_LABEL[s.target.type] ?? s.target.type;
+      const label = ['project', 'topic', 'case'].includes(s.target.type)
+        ? `Das klingt nach ${what} „${s.target.name}“ – verknüpfen?`
+        : `Mit ${what} „${s.target.name}“ verknüpfen?`;
+      return actions.propose({
+        actionType: 'confirm_relation',
+        label,
+        rationale: `Für „${s.entry.name}“: ${relationReason(s.relation)}`,
+        confidence: Math.min(1, Math.max(0, s.score)),
+        affectedEntities: [
+          { type: s.entry.type, id: s.entry.id, label: s.entry.name },
+          { type: s.target.type, id: s.target.id, label: s.target.name },
+        ],
+        requiredConfirmation: 'confirm',
+        proposedParameters: { relationId: s.relation.id, offered: true },
+        conversationId: job.payload.conversationId,
+      }).id;
+    });
+    chat.attachActions(job.payload.messageId, ids);
+    return { summary: `${ids.length} Verknüpfung(en) angeboten` };
   });
   // a new or edited note is analysed like a document, in a job of its own (#273)
   const enqueueNoteAnalysis = (entry: { id: string; type: string }) => {
@@ -326,14 +403,16 @@ function buildServices(opts: CreateServicesOptions) {
   });
   capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));
-  graph.setReindexer(async (refs) => {
+  const reindexRefs = async (refs: { documents: string[]; decisions: string[]; openItems: string[]; events: string[] }) => {
     await Promise.all([
       ...refs.documents.map((id) => documentsSvc.indexDocument(id)),
       ...refs.decisions.map((id) => decisions.reindex(id)),
       ...refs.openItems.map((id) => openItems.reindex(id)),
       ...refs.events.map((id) => eventsSvc.reindex(id)),
     ]);
-  });
+  };
+  graph.setReindexer(reindexRefs);
+  subjects.setReindexer(reindexRefs);
 
   // 6) job handlers
   // A failed attempt keeps the document in `analyzing` while a retry follows; only after the last attempt
@@ -399,18 +478,13 @@ function buildServices(opts: CreateServicesOptions) {
     }
     job.throwIfCancelled();
     job.report(null, 'Suche Gruppen ähnlicher Einträge ohne Thema');
-    const clusters = await links.clusters({ signal: job.signal });
-    for (const c of clusters)
-      links.proposeTopic(
-        c.name,
-        c.members.map((m) => m.id),
-      );
-    if (proposed || clusters.length)
+    const topics = await links.proposeClusterTopics({ signal: job.signal });
+    if (proposed || topics)
       notifications.create({
         title: 'Verknüpfungsvorschläge',
         description: [
           proposed ? `${proposed} Verknüpfung${proposed === 1 ? '' : 'en'} vorgeschlagen.` : null,
-          clusters.length ? `${clusters.length} neue${clusters.length === 1 ? 's Thema' : ' Themen'} vorgeschlagen.` : null,
+          topics ? `${topics} neue${topics === 1 ? 's Thema' : ' Themen'} vorgeschlagen.` : null,
           'Du entscheidest, was übernommen wird.',
         ]
           .filter(Boolean)
@@ -420,7 +494,7 @@ function buildServices(opts: CreateServicesOptions) {
         proposedActions: [{ label: 'Hinweise ansehen', kind: 'navigate', target: '/insights/' }],
         dedupeKey: `link-run:${job.id}`,
       });
-    return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${clusters.length} Themen vorgeschlagen` };
+    return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${topics} Themen vorgeschlagen` };
   });
   jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, async (job) => {
     const r = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
@@ -502,6 +576,10 @@ function buildServices(opts: CreateServicesOptions) {
     agentRuns,
     agentFileJobs,
     links,
+    refiner,
+    cases,
+    subjects,
+    linkThresholds,
     enqueueLinkRun,
     memory,
     enqueueConsistency,

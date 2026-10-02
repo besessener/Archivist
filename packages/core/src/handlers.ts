@@ -345,10 +345,21 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return { ok: true as const };
     },
     'knowledge:related': (i) => s.links.related(i.id, i),
+    'knowledge:hierarchy': () => s.graph.hierarchy(),
+    'knowledge:neighborhood': (i) => s.graph.neighborhood(i.id, i),
+    'knowledge:wikiSuggest': (i) => s.notes.wiki.suggest(i.query, { limit: i.limit, excludeId: i.excludeId }),
+    'knowledge:wikiResolve': (i) => s.notes.wiki.resolveAll(i.names, i.noteId),
     'links:suggestions': (i) => s.links.candidates(i.id, { limit: i.limit }),
     'links:unlinked': (i) => s.links.orphans(i),
     'links:startRun': () => ({ jobId: s.enqueueLinkRun('manual').id }),
     'links:proposals': (i) => s.links.proposals(i),
+    'links:metrics': () => s.links.metrics(),
+    'links:thresholds': () => s.linkThresholds.list(),
+    'links:resetThresholds': () => {
+      s.linkThresholds.reset();
+      s.audit.log({ action: 'links.thresholds.reset', actor: 'user', trigger, confirmed: true, entityIds: [] });
+      return { ok: true as const };
+    },
     'links:decide': (i) => ({ decided: s.graph.decideRelations(i.relationIds, i.decision, { trigger }) }),
     'links:decideGroup': (i) => ({ decided: s.links.decideGroup(i.groupBy, i.key, i.decision, { trigger }) }),
     'knowledge:resolveRelation': (i) => {
@@ -382,6 +393,10 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         if (created) s.audit.log({ action: 'note.create', actor: 'user', trigger, confirmed: true, entityIds: [note.id], after: { title: note.name } });
         return { entity: note, created };
       }
+      if (i.type === 'case') {
+        const r = s.cases.create(i.name, i.description, { trigger });
+        return { entity: r.case, created: r.created };
+      }
       if (i.type === 'person') {
         // persons go through the central resolution (roles, spellings, no pronouns or answer words)
         const person = s.persons.resolve(i.name, { context: 'manual', description: i.description?.trim() || null });
@@ -403,6 +418,19 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.audit.log({ action: `${entity.type}.confirm`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
       return entity;
     },
+    'subjects:of': (i) => s.subjects.ofMany(i.ids),
+    'subjects:setExtras': (i) => s.subjects.setExtras(i.id, { topics: i.topics, projects: i.projects }, { trigger }),
+    'entries:bulkAssign': (i) =>
+      s.subjects.bulkAssign(
+        i.ids,
+        { topics: i.topic ? [i.topic] : [], projects: i.project ? [i.project] : [], tags: i.tag ? [i.tag] : [], caseId: i.caseId },
+        { trigger },
+      ),
+    'cases:list': (i) => s.cases.list(i),
+    'cases:detail': (i) => s.cases.detail(i.id),
+    'cases:create': (i) => s.cases.create(i.name, i.description, { trigger }),
+    'cases:assign': (i) => ({ assigned: s.cases.assign(i.entryIds, i.caseId, { trigger }) }),
+    'cases:setStatus': (i) => s.graph.setCaseStatus(i.id, i.status, { trigger }),
     'knowledge:proposeMerge': (i) => {
       const a = s.graph.getEntity(i.sourceTopicId);
       const b = s.graph.getEntity(i.targetTopicId);

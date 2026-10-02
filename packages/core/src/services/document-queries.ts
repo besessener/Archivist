@@ -2,6 +2,7 @@ import type { DocumentStatus } from '@archivist/shared';
 import { and, count, desc, eq, getTableColumns, inArray, like, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/database';
 import { documents, entities } from '../db/schema';
+import { withSubject } from '../db/subject-filter';
 
 /** Characters of the text read for list entries: enough for the 600-character preview, never the whole text (#214). */
 const PREVIEW_SOURCE_CHARS = 2000;
@@ -33,8 +34,9 @@ function listFilter(opts: DocumentListQuery) {
   if (opts.status) conds.push(eq(documents.status, opts.status));
   if (opts.statuses) conds.push(inArray(documents.status, opts.statuses));
   if (opts.ids) conds.push(inArray(documents.id, opts.ids));
-  if (opts.topicId) conds.push(eq(documents.topicId, opts.topicId));
-  if (opts.projectId) conds.push(eq(documents.projectId, opts.projectId));
+  // the main topic/project or a further one (#287)
+  if (opts.topicId) conds.push(withSubject(documents.id, documents.topicId, opts.topicId));
+  if (opts.projectId) conds.push(withSubject(documents.id, documents.projectId, opts.projectId));
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
     conds.push(or(like(documents.title, q), like(documents.originalName, q), like(documents.summary, q)));

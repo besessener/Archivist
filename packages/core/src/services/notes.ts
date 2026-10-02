@@ -9,6 +9,7 @@ import type { AuditService } from './audit';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
+import { WikiLinks } from './wiki-links';
 
 /** Undo of a note edit (#273): the former title and text. */
 const NOTE_UPDATE_UNDO = 'note.update';
@@ -36,6 +37,9 @@ const sameText = (a: string, b: string) => collapse(a).toLowerCase() === collaps
  * never merged just because their titles start the same way.
  */
 export class NoteService {
+  /** `[[Name]]` links in the text (#285). */
+  readonly wiki: WikiLinks;
+
   constructor(
     private readonly ctx: AppContext,
     private readonly graph: KnowledgeGraphService,
@@ -43,6 +47,7 @@ export class NoteService {
     private readonly audit?: AuditService,
     undo?: UndoService,
   ) {
+    this.wiki = new WikiLinks(ctx, graph);
     undo?.register(NOTE_UPDATE_UNDO, {
       check: async (data) => {
         const d = data as NoteUpdateUndo;
@@ -53,6 +58,7 @@ export class NoteService {
       run: async (data) => {
         const d = data as NoteUpdateUndo;
         this.graph.registerNode('note', d.id, d.before.name, d.before.description);
+        this.wiki.sync(d.id, d.before.description ?? d.before.name);
         await this.reindex(d.id);
         // the analysis runs again on the former text: its relations come back, the newer ones become outdated
         this.ctx.events.emit('entry:updated', { id: d.id, type: 'note' });
@@ -78,6 +84,7 @@ export class NoteService {
     const title = collapse(patch.title ?? '') || (patch.content !== undefined ? truncate(collapse(content), 70) : note.name);
     if (title === note.name && content === (note.description ?? note.name)) return note;
     this.graph.registerNode('note', id, title, content);
+    this.wiki.sync(id, content);
     const after = this.graph.getEntity(id)!;
     this.audit?.log({
       action: 'note.update',
@@ -123,6 +130,7 @@ export class NoteService {
     const id = newId();
     this.graph.registerNode('note', id, title, content);
     this.applyLinks(id, input);
+    this.wiki.sync(id, content);
     this.ctx.events.created({ id, type: 'note' });
     await this.search.index({ type: 'note', id, title, content });
     this.ctx.events.changed('knowledge');

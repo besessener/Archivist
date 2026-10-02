@@ -13,6 +13,7 @@ import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { ArchiveResultRecord, DocRecord } from '@/lib/types';
 import { parseList } from '@/lib/utils';
+import { CaseSelect } from '@/components/knowledge/case-dialog';
 
 type Result = { kind: 'assign'; updated: number } | { kind: 'move'; result: ArchiveResultRecord };
 
@@ -23,10 +24,13 @@ function AssignDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: (
   const [clearProject, setClearProject] = useState(false);
   const [addTags, setAddTags] = useState('');
   const [removeTags, setRemoveTags] = useState('');
+  const [caseId, setCaseId] = useState('');
   const { run, busy } = useRun();
+  // a topic/project is added (#287): the main one where none is set, otherwise a further one
   const patch = {
-    ...(clearTopic ? { topic: null } : topic.trim() ? { topic: topic.trim() } : {}),
-    ...(clearProject ? { project: null } : project.trim() ? { project: project.trim() } : {}),
+    ...(clearTopic ? { topic: null } : topic.trim() ? { addTopic: topic.trim() } : {}),
+    ...(clearProject ? { project: null } : project.trim() ? { addProject: project.trim() } : {}),
+    ...(caseId ? { caseId } : {}),
     ...(parseList(addTags).length ? { addTags: parseList(addTags) } : {}),
     ...(parseList(removeTags).length ? { removeTags: parseList(removeTags) } : {}),
   };
@@ -38,18 +42,19 @@ function AssignDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: (
         <DialogHeader>
           <DialogTitle>{plural(docs.length, 'Dokument', 'Dokumente')} zuordnen</DialogTitle>
           <DialogDescription>
-            Leere Felder bleiben unverändert. Die Änderung ist ein einziger Schritt im Änderungsprotokoll und lässt sich dort rückgängig machen.
+            Leere Felder bleiben unverändert. Ein Thema oder Projekt wird ergänzt: Hat ein Dokument noch keins, wird es das Hauptthema, sonst ein weiteres. Die
+            Änderung ist ein einziger Schritt im Änderungsprotokoll und lässt sich dort rückgängig machen.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <Field label="Thema" htmlFor="bulk-topic">
+            <Field label="Thema ergänzen" htmlFor="bulk-topic">
               <Input id="bulk-topic" value={topic} disabled={clearTopic} onChange={(e) => setTopic(e.target.value)} data-testid="bulk-topic" />
             </Field>
             <CheckboxField label="Thema entfernen" checked={clearTopic} onCheckedChange={(v) => setClearTopic(v === true)} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Field label="Projekt" htmlFor="bulk-project">
+            <Field label="Projekt ergänzen" htmlFor="bulk-project">
               <Input id="bulk-project" value={project} disabled={clearProject} onChange={(e) => setProject(e.target.value)} data-testid="bulk-project" />
             </Field>
             <CheckboxField label="Projekt entfernen" checked={clearProject} onCheckedChange={(v) => setClearProject(v === true)} />
@@ -59,6 +64,9 @@ function AssignDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: (
           </Field>
           <Field label="Schlagwörter entfernen" htmlFor="bulk-remove-tags" hint="Mit Komma trennen.">
             <Input id="bulk-remove-tags" value={removeTags} onChange={(e) => setRemoveTags(e.target.value)} />
+          </Field>
+          <Field label="Vorgang" htmlFor="bulk-case" className="sm:col-span-2">
+            <CaseSelect id="bulk-case" value={caseId} onChange={setCaseId} />
           </Field>
         </div>
         <DialogFooter>

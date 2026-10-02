@@ -6,7 +6,7 @@ import { Field } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { UnknownWikiLinks, WikiTextarea } from './wiki-textarea';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
 
@@ -43,9 +43,10 @@ export function NoteEditDialog({
         <Field label="Titel" htmlFor="note-edit-title">
           <Input id="note-edit-title" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} data-testid="note-edit-title" />
         </Field>
-        <Field label="Inhalt" htmlFor="note-edit-content" hint={MARKDOWN_HINT}>
-          <Textarea id="note-edit-content" value={content} rows={8} onChange={(e) => setContent(e.target.value)} data-testid="note-edit-content" />
+        <Field label="Inhalt" htmlFor="note-edit-content" hint={`${MARKDOWN_HINT} Mit [[Name]] verlinkst du andere Einträge.`}>
+          <WikiTextarea id="note-edit-content" value={content} rows={8} onChange={setContent} excludeId={note.id} data-testid="note-edit-content" />
         </Field>
+        <UnknownWikiLinks text={content} noteId={note.id} />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen

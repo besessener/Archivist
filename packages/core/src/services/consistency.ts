@@ -53,6 +53,9 @@ const KIND_LABELS: Record<string, string> = {
   duplicate_open_item: 'doppelte offene Punkte',
   persons_merged: 'automatisch zusammengeführte Personen-Einträge',
   unclear_person: 'unklare Personen-Zuordnungen',
+  orphan_entries: 'Einträge ohne Verknüpfung',
+  topic_cluster: 'Vorschläge für neue Themen',
+  relation_refinement: 'genauere Arten von Verknüpfungen',
 };
 
 /** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */
@@ -342,7 +345,17 @@ export class ConsistencyService {
       .from(documents)
       .where(inArray(documents.status, ['archived', 'indexed_only']))
       .all();
-    const noTopic = archived.filter((d) => !d.topicId && !d.projectId);
+    // a further topic or project counts as an assignment as well (#287)
+    const withSubject = new Set(
+      (
+        this.ctx.database.sqlite
+          .prepare(
+            `SELECT DISTINCT r.source_entity_id AS id FROM relations r JOIN entities s ON s.id = r.target_entity_id WHERE s.type IN ('topic','project') AND r.status = 'confirmed'`,
+          )
+          .all() as Array<{ id: string }>
+      ).map((r) => r.id),
+    );
+    const noTopic = archived.filter((d) => !d.topicId && !d.projectId && !withSubject.has(d.id));
     // keys are stable (kind plus object id, or just the kind for aggregated hints); after the run, every hint whose
     // cause is gone is removed together with its open proposal
     const current = new Set<string>();

@@ -12,13 +12,38 @@ export interface UndoHandler {
  * Undo foundation: handlers register per action type. Before undoing, it is checked
  * whether newer changes exist – they are never overwritten unnoticed.
  */
+/** Undo of one action made of several parts (e.g. a bulk assignment, #291): its steps, undone in reverse order. */
+export const COMPOSITE_UNDO_TYPE = 'composite';
+export interface CompositeUndoData {
+  steps: Array<{ type: string; data: unknown }>;
+}
+
 export class UndoService {
   private readonly handlers = new Map<string, UndoHandler>();
 
   constructor(
     private readonly ctx: AppContext,
     private readonly audit: AuditService,
-  ) {}
+  ) {
+    this.register(COMPOSITE_UNDO_TYPE, {
+      check: async (data) => {
+        const out: string[] = [];
+        for (const s of (data as CompositeUndoData).steps) out.push(...(await this.handler(s.type).check(s.data)));
+        return out;
+      },
+      run: async (data) => {
+        const messages: string[] = [];
+        for (const s of (data as CompositeUndoData).steps.toReversed()) messages.push(await this.handler(s.type).run(s.data));
+        return messages.join(' ');
+      },
+    });
+  }
+
+  private handler(type: string): UndoHandler {
+    const h = this.handlers.get(type);
+    if (!h) throw new AppError('validation_error', `Kein Undo-Handler für „${type}“.`);
+    return h;
+  }
 
   register(type: string, handler: UndoHandler): void {
     this.handlers.set(type, handler);

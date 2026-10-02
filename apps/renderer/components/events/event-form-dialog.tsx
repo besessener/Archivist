@@ -1,5 +1,6 @@
 'use client';
 
+import { ExtraSubjectFields, useExtraSubjects } from '@/components/common/extra-subjects';
 import { useState } from 'react';
 import type { IpcInput, IpcOutput } from '@archivist/shared';
 import { MARKDOWN_HINT } from '@/components/common/markdown';
@@ -40,7 +41,8 @@ export function EventFormDialog({
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onSubmit: (input: EventFormInput) => Promise<boolean>;
+  /** Returns whether the dialog may close – or the id of the saved event (then its further topics/projects are stored too). */
+  onSubmit: (input: EventFormInput) => Promise<boolean | string>;
   initialTitle?: string;
   event?: EventRecord | null;
 }) {
@@ -51,6 +53,7 @@ export function EventFormDialog({
   const [topic, setTopic] = useState(event?.topicName ?? '');
   const [project, setProject] = useState(event?.projectName ?? '');
   const [participants, setParticipants] = useState(event?.participants.join(', ') ?? '');
+  const extra = useExtraSubjects(event?.id ?? undefined, open);
   async function save() {
     setBusy(true);
     try {
@@ -63,6 +66,8 @@ export function EventFormDialog({
         participants: parseList(participants),
         sourceIds: [],
       });
+      const savedId = typeof ok === 'string' ? ok : ok ? event?.id : undefined;
+      if (savedId) await extra.save(savedId);
       if (ok) onOpenChange(false);
     } finally {
       setBusy(false);
@@ -92,6 +97,9 @@ export function EventFormDialog({
           <Field label="Projekt" htmlFor="ev-project">
             <Input id="ev-project" value={project} onChange={(e) => setProject(e.target.value)} data-testid="event-project" />
           </Field>
+          <div className="sm:col-span-2">
+            <ExtraSubjectFields idPrefix="event" {...extra} />
+          </div>
           <Field label="Beteiligte (kommagetrennt)" htmlFor="ev-participants" className="sm:col-span-2">
             <Input id="ev-participants" value={participants} onChange={(e) => setParticipants(e.target.value)} data-testid="event-participants" />
           </Field>

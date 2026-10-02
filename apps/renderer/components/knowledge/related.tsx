@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Link2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, FolderKanban, Link2, X } from 'lucide-react';
 import { RELATION_METHOD_LABELS, RELATION_PROVENANCE_LABELS, RelationType, relationProvenance, type GraphRelation } from '@archivist/shared';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { ErrorNote, Field, Loading } from '@/components/common/states';
@@ -17,6 +17,7 @@ import { useDebounced } from '@/lib/use-debounced';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { cn } from '@/lib/utils';
+import { CaseAssignDialog } from './case-dialog';
 
 /**
  * Who stands behind a relation and why (#270): „automatisch“, „von dir bestätigt“ or „manuell“, how it came about and its
@@ -54,6 +55,7 @@ const RELATED_PAGE = 10;
 export function RelatedEntries({ id, link }: { id: string; link?: { name: string } }) {
   const [page, setPage] = useState(0);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [caseOpen, setCaseOpen] = useState(false);
   const q = useQuery('knowledge:related', { id, limit: RELATED_PAGE, offset: page * RELATED_PAGE }, { scopes: ['knowledge'] });
   const { run, busy } = useRun();
   const total = q.data?.total ?? 0;
@@ -69,9 +71,14 @@ export function RelatedEntries({ id, link }: { id: string; link?: { name: string
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Verwandte Einträge{q.data ? ` (${total})` : ''}</h3>
         {link && (
-          <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="related-link">
-            <Link2 aria-hidden /> Verknüpfen
-          </Button>
+          <span className="flex gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => setCaseOpen(true)} data-testid="related-case">
+              <FolderKanban aria-hidden /> Zu Vorgang hinzufügen
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="related-link">
+              <Link2 aria-hidden /> Verknüpfen
+            </Button>
+          </span>
         )}
       </div>
       {q.error && !q.data && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}
@@ -119,6 +126,7 @@ export function RelatedEntries({ id, link }: { id: string; link?: { name: string
           </Button>
         </div>
       )}
+      {link && <CaseAssignDialog entryIds={[id]} open={caseOpen} onOpenChange={setCaseOpen} onDone={() => void q.refetch()} />}
       {link && (
         <LinkDialog
           open={linkOpen}

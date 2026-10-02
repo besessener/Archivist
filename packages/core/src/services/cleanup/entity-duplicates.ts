@@ -280,10 +280,21 @@ export class EntityDuplicateCheck {
       for (let j = i + 1; j < list.length; j += 1) {
         const [a, b] = [list[i]!, list[j]!];
         const match = classifyNames(a, b);
-        if (match) out.push({ key: duplicateKey([a.id, b.id]), type, a, b, match });
+        // one already below the other (#282) is no duplicate
+        if (match && !this.subtopicLinked(a.id, b.id)) out.push({ key: duplicateKey([a.id, b.id]), type, a, b, match });
       }
     }
     return out;
+  }
+
+  private subtopicLinked(a: string, b: string): boolean {
+    return Boolean(
+      this.ctx.database.sqlite
+        .prepare(
+          `SELECT 1 FROM relations WHERE relation_type = 'subtopic_of' AND status = 'confirmed' AND ((source_entity_id = ? AND target_entity_id = ?) OR (source_entity_id = ? AND target_entity_id = ?)) LIMIT 1`,
+        )
+        .get(a, b, b, a),
+    );
   }
 
   private rejectedByLegacyCheck(f: Found): boolean {
@@ -380,6 +391,56 @@ export class EntityDuplicateCheck {
       ...(hintLine ? ['', hintLine] : []),
     ].join('\n');
     const recommendation = `„${source.name}“ in „${target.name}“ zusammenführen`;
+    const merge = {
+      actionType: 'merge_entities' as const,
+      label: `${label} ${recommendation}`,
+      rationale: why,
+      confidence: MATCH_CONFIDENCE[f.match],
+      affectedEntities: [ref(source, es), ref(target, et)],
+      requiredConfirmation: 'confirm' as const,
+      proposedParameters: { sourceIds: [source.id], targetId: target.id, allowCrossType: false },
+    };
+    // „Urlaub“ ↔ „Urlaub 2026“ (topics, projects): the longer one may be a subtopic instead (#282)
+    if (f.match === 'prefix' && f.type !== 'tag')
+      return {
+        kind: 'similar_entities',
+        title: `Gehört „${longer.name}“ zu „${shorter.name}“? (${TYPE_PLURAL[f.type]})`,
+        explanation: [
+          why,
+          '',
+          'Belege:',
+          `• ${label} „${target.name}“: ${describeEvidence(et)}`,
+          `• ${label} „${source.name}“: ${describeEvidence(es)}`,
+          '',
+          `„Unterthema“ ordnet „${longer.name}“ unter „${shorter.name}“ ein – beide bleiben bestehen, Suche und Wissensfragen zu „${shorter.name}“ berücksichtigen „${longer.name}“ mit. „Zusammenführen“ macht eins daraus. Beides lässt sich rückgängig machen; „Verschieden“ wird dauerhaft gemerkt.`,
+          ...(hintLine ? ['', hintLine] : []),
+        ].join('\n'),
+        confidence: MATCH_CONFIDENCE[f.match],
+        affected: [ref(target, et), ref(source, es)],
+        sourceIds: [target.id, source.id],
+        choices: [
+          {
+            id: 'subtopic',
+            label: 'Unterthema',
+            description: `„${longer.name}“ wird Unterthema von „${shorter.name}“.`,
+            proposal: {
+              actionType: 'link_entities',
+              label: `„${longer.name}“ als Unterthema von „${shorter.name}“ einordnen`,
+              rationale: why,
+              confidence: MATCH_CONFIDENCE[f.match],
+              affectedEntities: [
+                { type: f.type, id: longer.id, label: longer.name },
+                { type: f.type, id: shorter.id, label: shorter.name },
+              ],
+              requiredConfirmation: 'confirm',
+              proposedParameters: { sourceId: longer.id, targetId: shorter.id, relationType: 'subtopic_of' },
+            },
+          },
+          { id: 'merge', label: 'Zusammenführen', description: recommendation, proposal: merge },
+          { id: 'different', label: 'Verschieden', description: 'Wird dauerhaft gemerkt.', proposal: null },
+        ],
+        dedupeKey: f.key,
+      };
     return {
       kind: 'similar_entities',
       title:
@@ -390,18 +451,7 @@ export class EntityDuplicateCheck {
       confidence: MATCH_CONFIDENCE[f.match],
       affected: [ref(target, et), ref(source, es)],
       sourceIds: [target.id, source.id],
-      action: {
-        label: recommendation,
-        proposal: {
-          actionType: 'merge_entities',
-          label: `${label} ${recommendation}`,
-          rationale: why,
-          confidence: MATCH_CONFIDENCE[f.match],
-          affectedEntities: [ref(source, es), ref(target, et)],
-          requiredConfirmation: 'confirm',
-          proposedParameters: { sourceIds: [source.id], targetId: target.id, allowCrossType: false },
-        },
-      },
+      action: { label: recommendation, proposal: merge },
       dedupeKey: f.key,
     };
   }

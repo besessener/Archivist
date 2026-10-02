@@ -1,5 +1,7 @@
 'use client';
 
+import { ExtraSubjectFields, ExtraSubjectsNote, useExtraSubjects, useSubjectsOf } from '@/components/common/extra-subjects';
+import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { BellPlus, Check, ListChecks, MessageSquare, Network, Pencil, Plus, X } from 'lucide-react';
@@ -13,7 +15,7 @@ import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CheckboxField } from '@/components/ui/checkbox';
+import { Checkbox, CheckboxField } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -58,6 +60,8 @@ export default function OpenItemsPage() {
   // do not lock prematurely while the status is loading – the main process checks anyway
   const llmConfigured = status ? status.llm.configured : true;
 
+  const selection = useSelection();
+  const subjects = useSubjectsOf(useMemo(() => (data ?? []).map((i) => i.id), [data]));
   const groups = useMemo(() => {
     const out: Record<Group, OpenItemRecord[]> = { overdue: [], due: [], open: [], done: [] };
     for (const i of data ?? []) out[groupOf(i)].push(i);
@@ -86,6 +90,7 @@ export default function OpenItemsPage() {
           description="Sag im Chat zum Beispiel „Wir müssen noch klären, …“ oder lege hier einen Punkt an."
         />
       )}
+      <BulkAssignBar ids={selection.ids} noun={['offener Punkt', 'offene Punkte']} onClear={selection.clear} onDone={() => void refetch()} />
       <div className="flex flex-col gap-8">
         {(['overdue', 'due', 'open', 'done'] as const).map((g) =>
           groups[g].length === 0 ? null : (
@@ -95,79 +100,89 @@ export default function OpenItemsPage() {
               </h2>
               <ul className="flex flex-col gap-2">
                 {groups[g].map((i) => (
-                  <li key={i.id} className="rounded-xl border bg-card p-3" data-testid="open-item-row" data-status={i.status} data-group={g}>
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className={g === 'done' ? 'font-medium text-muted-foreground line-through' : 'font-medium'}>{i.title}</p>
-                        {i.description && <Markdown text={i.description} className="mt-0.5 text-sm text-muted-foreground" testId="open-item-description" />}
-                        {i.sourceConversationId && (
-                          <Link
-                            href={`/chat/?c=${encodeURIComponent(i.sourceConversationId)}`}
-                            className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                            data-testid="open-item-chat-link"
-                          >
-                            <MessageSquare className="size-3.5" aria-hidden /> Im Chat ansehen
-                          </Link>
-                        )}
+                  <li key={i.id} className="flex gap-3 rounded-xl border bg-card p-3" data-testid="open-item-row" data-status={i.status} data-group={g}>
+                    <Checkbox
+                      className="mt-1"
+                      checked={selection.has(i.id)}
+                      onCheckedChange={(v) => selection.toggle(i.id, v === true)}
+                      aria-label={`${i.title} auswählen`}
+                      data-testid="open-item-select"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className={g === 'done' ? 'font-medium text-muted-foreground line-through' : 'font-medium'}>{i.title}</p>
+                          {i.description && <Markdown text={i.description} className="mt-0.5 text-sm text-muted-foreground" testId="open-item-description" />}
+                          {i.sourceConversationId && (
+                            <Link
+                              href={`/chat/?c=${encodeURIComponent(i.sourceConversationId)}`}
+                              className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              data-testid="open-item-chat-link"
+                            >
+                              <MessageSquare className="size-3.5" aria-hidden /> Im Chat ansehen
+                            </Link>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {i.priority === 'high' && <Badge variant="danger">Hohe Priorität</Badge>}
+                          {i.status !== 'open' && (
+                            <Badge variant="outline" data-testid="open-item-status">
+                              {OPEN_ITEM_STATUS_LABELS[i.status]}
+                              {i.duplicateOfId ? ' (Duplikat)' : ''}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {i.priority === 'high' && <Badge variant="danger">Hohe Priorität</Badge>}
-                        {i.status !== 'open' && (
-                          <Badge variant="outline" data-testid="open-item-status">
-                            {OPEN_ITEM_STATUS_LABELS[i.status]}
-                            {i.duplicateOfId ? ' (Duplikat)' : ''}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                        {i.responsibleName ? (
+                          <Badge variant="outline">Verantwortlich: {i.responsibleName}</Badge>
+                        ) : i.responsibleUnknown ? (
+                          <Badge variant="secondary">Verantwortlicher bewusst unbekannt</Badge>
+                        ) : g !== 'done' ? (
+                          <Badge variant="warning" data-testid="badge-no-owner">
+                            Kein Verantwortlicher
                           </Badge>
-                        )}
+                        ) : null}
+                        {i.dueAt ? (
+                          <Badge variant={g === 'overdue' ? 'danger' : 'outline'}>
+                            Termin: {formatDate(i.dueAt)} ({relativeDay(i.dueAt)})
+                          </Badge>
+                        ) : i.dueUnknown ? (
+                          <Badge variant="secondary">Termin bewusst unbekannt</Badge>
+                        ) : g !== 'done' ? (
+                          <Badge variant="warning" data-testid="badge-no-due">
+                            Kein Termin
+                          </Badge>
+                        ) : null}
+                        {i.reminderAt && <Badge variant="info">Erinnerung {formatDate(i.reminderAt)}</Badge>}
+                        {i.topicName && <Badge variant="outline">{i.topicName}</Badge>}
+                        {i.projectName && <Badge variant="outline">{i.projectName}</Badge>}
+                        <ExtraSubjectsNote subjects={subjects[i.id]} />
                       </div>
+                      {i.resolutionNote && (
+                        <p className="mt-2 text-sm" data-testid="open-item-resolution-note">
+                          <span className="font-medium">{i.status === 'dismissed' ? 'Warum verworfen: ' : 'Lösung: '}</span>
+                          <span className="whitespace-pre-wrap text-muted-foreground">{i.resolutionNote}</span>
+                        </p>
+                      )}
+                      {g !== 'done' && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => setEditItem(i)} data-testid="open-item-edit">
+                            <Pencil aria-hidden /> Bearbeiten
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setRemindItem(i)} data-testid="open-item-remind">
+                            <BellPlus aria-hidden /> Erinnern
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setRelatedItem(i)} data-testid="open-item-related">
+                            <Network aria-hidden /> Zusammenhänge
+                          </Button>
+                          <Button size="sm" onClick={() => setCloseItem(i)} data-testid="open-item-close">
+                            <Check aria-hidden /> Erledigt …
+                          </Button>
+                          <SolutionSection item={i} mode={llmMode} llmConfigured={llmConfigured} onChanged={() => void refetch()} />
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                      {i.responsibleName ? (
-                        <Badge variant="outline">Verantwortlich: {i.responsibleName}</Badge>
-                      ) : i.responsibleUnknown ? (
-                        <Badge variant="secondary">Verantwortlicher bewusst unbekannt</Badge>
-                      ) : g !== 'done' ? (
-                        <Badge variant="warning" data-testid="badge-no-owner">
-                          Kein Verantwortlicher
-                        </Badge>
-                      ) : null}
-                      {i.dueAt ? (
-                        <Badge variant={g === 'overdue' ? 'danger' : 'outline'}>
-                          Termin: {formatDate(i.dueAt)} ({relativeDay(i.dueAt)})
-                        </Badge>
-                      ) : i.dueUnknown ? (
-                        <Badge variant="secondary">Termin bewusst unbekannt</Badge>
-                      ) : g !== 'done' ? (
-                        <Badge variant="warning" data-testid="badge-no-due">
-                          Kein Termin
-                        </Badge>
-                      ) : null}
-                      {i.reminderAt && <Badge variant="info">Erinnerung {formatDate(i.reminderAt)}</Badge>}
-                      {i.topicName && <Badge variant="outline">{i.topicName}</Badge>}
-                      {i.projectName && <Badge variant="outline">{i.projectName}</Badge>}
-                    </div>
-                    {i.resolutionNote && (
-                      <p className="mt-2 text-sm" data-testid="open-item-resolution-note">
-                        <span className="font-medium">{i.status === 'dismissed' ? 'Warum verworfen: ' : 'Lösung: '}</span>
-                        <span className="whitespace-pre-wrap text-muted-foreground">{i.resolutionNote}</span>
-                      </p>
-                    )}
-                    {g !== 'done' && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setEditItem(i)} data-testid="open-item-edit">
-                          <Pencil aria-hidden /> Bearbeiten
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => setRemindItem(i)} data-testid="open-item-remind">
-                          <BellPlus aria-hidden /> Erinnern
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => setRelatedItem(i)} data-testid="open-item-related">
-                          <Network aria-hidden /> Zusammenhänge
-                        </Button>
-                        <Button size="sm" onClick={() => setCloseItem(i)} data-testid="open-item-close">
-                          <Check aria-hidden /> Erledigt …
-                        </Button>
-                        <SolutionSection item={i} mode={llmMode} llmConfigured={llmConfigured} onChanged={() => void refetch()} />
-                      </div>
-                    )}
                   </li>
                 ))}
               </ul>
@@ -217,6 +232,7 @@ function ItemFormDialog({
   const statusEditable = item !== null && isEditableOpenItemStatus(item.status);
   const [topic, setTopic] = useState(item?.topicName ?? '');
   const [project, setProject] = useState(item?.projectName ?? '');
+  const extra = useExtraSubjects(item?.id, open);
 
   async function save() {
     const base = {
@@ -229,13 +245,16 @@ function ItemFormDialog({
       priority,
     };
     const out = await run(
-      () =>
-        item
-          ? call('openItems:update', {
+      async () => {
+        const saved = item
+          ? await call('openItems:update', {
               id: item.id,
               patch: { ...base, ...(statusEditable ? { status } : {}), responsibleUnknown: respUnknown, dueUnknown },
             })
-          : call('openItems:create', base),
+          : await call('openItems:create', base);
+        await extra.save(saved.id);
+        return saved;
+      },
       { success: item ? 'Änderungen gespeichert.' : 'Offener Punkt angelegt.' },
     );
     if (out) {
@@ -315,6 +334,9 @@ function ItemFormDialog({
           <Field label="Projekt" htmlFor="oi-project">
             <Input id="oi-project" value={project} onChange={(e) => setProject(e.target.value)} />
           </Field>
+          <div className="sm:col-span-2">
+            <ExtraSubjectFields idPrefix="open-item" {...extra} />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

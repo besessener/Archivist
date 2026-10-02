@@ -279,12 +279,40 @@ const clipEvidence = (e: string | null | undefined): string | null => {
   return t.length > EVIDENCE_MAX ? `${t.slice(0, EVIDENCE_MAX - 1)}…` : t;
 };
 
+/** Neighbours of one kind beyond this many are shown as one group node in the graph view (#288). */
+const HUB_GROUP = 12;
+
+/** The surroundings of an entry for the graph view (#288). */
+export interface NeighborhoodGraph {
+  centerId: string;
+  nodes: Array<{ id: string; type: EntityType; name: string; depth: number; count: number | null; status: string | null }>;
+  edges: Array<{ id: string; source: string; target: string; relationType: RelationType; status: RelationStatus; grouped?: boolean }>;
+  /** More nodes exist than were returned. */
+  truncated: boolean;
+}
+
+const toEdge = (r: GraphRelation): NeighborhoodGraph['edges'][number] => ({
+  id: r.id,
+  source: r.sourceEntityId,
+  target: r.targetEntityId,
+  relationType: r.relationType,
+  status: r.status,
+});
+
+/** What can be a subtopic of what (#282). */
+const SUBJECT_TYPES = new Set<EntityType>(['topic', 'project']);
+
 /** Statuses that count as a current, visible assignment. */
 const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 
 /** Undo of a link or unlink made through {@link KnowledgeGraphService.linkEntries} / `unlinkEntries` (#277). */
 const LINK_UNDO_TYPE = 'relation.link';
 const CASE_UNDO_TYPE = 'case.status';
+/** Undo of several links made at once – a bulk assignment (#286, #291). */
+export const LINK_MANY_UNDO_TYPE = 'relation.linkMany';
+export interface LinkManyUndoData {
+  items: LinkUndoData[];
+}
 /** Undo of several proposals decided at once (#280). */
 const DECIDE_MANY_UNDO_TYPE = 'relation.decideMany';
 interface DecideManyUndoData {
@@ -292,7 +320,7 @@ interface DecideManyUndoData {
   /** updatedAt of each relation right after the decision; a later change blocks the undo. */
   after: Record<string, string>;
 }
-interface LinkUndoData {
+export interface LinkUndoData {
   /** The relation as it was before (null: the call created it). */
   before: RelationRow | null;
   /** The relation as the call left it (null: the call removed it). */
@@ -325,6 +353,7 @@ const RELATION_LABEL: Record<RelationType, string> = {
   produced: 'hat erzeugt',
   duplicate_of: 'Duplikat von',
   related_to: 'verwandt mit',
+  subtopic_of: 'Unterthema von',
 };
 
 /** Plain-language reason of a relation: type, status, who stands behind it, how it came about and its evidence (#270, #276). */
@@ -378,6 +407,19 @@ export class KnowledgeGraphService {
         });
         this.ctx.events.changed('knowledge');
         return `${d.before.length} Entscheidung${d.before.length === 1 ? '' : 'en'} über Verknüpfungen zurückgenommen.`;
+      },
+    });
+    undo.register(LINK_MANY_UNDO_TYPE, {
+      check: async (data) => {
+        const issues = (data as LinkManyUndoData).items.flatMap((i) => this.linkUndoConflicts(i));
+        return issues.length ? [`${issues.length} der Verknüpfungen wurde${issues.length === 1 ? '' : 'n'} seither verändert oder entfernt.`] : [];
+      },
+      run: async (data) => {
+        const items = (data as LinkManyUndoData).items;
+        this.ctx.database.transaction(() => {
+          for (const i of items) this.linkUndoRun(i);
+        });
+        return `${items.length} Zuordnung${items.length === 1 ? '' : 'en'} zurückgenommen.`;
       },
     });
     undo.register(LINK_UNDO_TYPE, {
@@ -761,6 +803,12 @@ export class KnowledgeGraphService {
     const a = this.getEntity(sourceId);
     const b = this.getEntity(targetId);
     if (!a || !b) throw new AppError('validation_error', 'Einer der Einträge existiert nicht.');
+    if (relationType === 'subtopic_of') {
+      if (!SUBJECT_TYPES.has(a.type) || !SUBJECT_TYPES.has(b.type))
+        throw new AppError('validation_error', 'Nur Themen und Projekte können Unterthema eines anderen sein.');
+      if (this.subtreeOf(sourceId).includes(targetId))
+        throw new AppError('validation_error', `„${b.name}“ liegt bereits unter „${a.name}“ – das ergäbe einen Kreis.`);
+    }
     if (opts.status === 'proposed' && this.rejectedBetween(sourceId, targetId))
       throw new AppError('validation_error', `Die Verknüpfung „${a.name}“ – „${b.name}“ wurde abgelehnt und wird nicht wieder vorgeschlagen.`);
     const before =
@@ -805,6 +853,91 @@ export class KnowledgeGraphService {
     return { relation: mapRelation(after), created: res?.created ?? false };
   }
 
+  /**
+   * Links several entries with one target as the user's confirmed choice (bulk assignment to a case, topic or tag –
+   * #286, #291): ONE audit entry, ONE undo step. Entries already linked that way are left as they are. Returns the
+   * number of new or newly confirmed links.
+   */
+  linkMany(
+    sourceIds: string[],
+    targetId: string,
+    relationType: RelationType,
+    opts: { trigger?: string; action?: string; method?: RelationMethod } = {},
+  ): number {
+    const target = this.getEntity(targetId);
+    if (!target) throw new AppError('validation_error', 'Das Ziel existiert nicht.');
+    return this.changeLinks(
+      { add: [...new Set(sourceIds)].map((sourceId) => ({ sourceId, targetId, relationType })) },
+      { ...opts, summary: { target: target.name, relationType } },
+    );
+  }
+
+  /**
+   * Adds confirmed links (the user's choice) and removes others in ONE step – one audit entry, one undo (#287, #291).
+   * Links that already are confirmed stay as they are. Returns the number of links added or removed.
+   */
+  changeLinks(
+    change: { add?: Array<{ sourceId: string; targetId: string; relationType: RelationType }>; remove?: string[] },
+    opts: { trigger?: string; action?: string; method?: RelationMethod; summary?: Record<string, unknown> } = {},
+  ): number {
+    const { items, entityIds } = this.applyLinkChanges(change, opts.method);
+    if (!items.length) return 0;
+    this.audit.log({
+      action: opts.action ?? 'relation.linkMany',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [...entityIds],
+      after: { ...opts.summary, count: items.length },
+      undo: { type: LINK_MANY_UNDO_TYPE, data: { items } satisfies LinkManyUndoData },
+    });
+    this.ctx.events.changed('knowledge');
+    return items.length;
+  }
+
+  /** {@link changeLinks} without its audit entry – for an action that logs several parts as one undo step (#291). */
+  applyLinkChanges(
+    change: { add?: Array<{ sourceId: string; targetId: string; relationType: RelationType }>; remove?: string[] },
+    method?: RelationMethod,
+  ): { items: LinkUndoData[]; entityIds: Set<string> } {
+    const opts = { method };
+    const items: LinkUndoData[] = [];
+    const entityIds = new Set<string>();
+    this.ctx.database.transaction(() => {
+      for (const a of change.add ?? []) {
+        if (a.sourceId === a.targetId || !this.getEntity(a.sourceId) || !this.getEntity(a.targetId)) continue;
+        const find = () =>
+          this.db
+            .select()
+            .from(relations)
+            .where(and(eq(relations.sourceEntityId, a.sourceId), eq(relations.targetEntityId, a.targetId), eq(relations.relationType, a.relationType)))
+            .get() ?? null;
+        const before = find();
+        if (before?.status === 'confirmed') continue;
+        if (before) this.db.update(relations).set({ status: 'confirmed', resolvedByUser: true, updatedAt: nowIso() }).where(eq(relations.id, before.id)).run();
+        else
+          this.link(a.sourceId, a.targetId, a.relationType, {
+            confidence: 1,
+            status: 'confirmed',
+            resolvedByUser: true,
+            origin: 'user',
+            method: opts.method ?? 'manual',
+          });
+        items.push({ before, after: find() });
+        entityIds.add(a.sourceId).add(a.targetId);
+      }
+      for (const id of new Set(change.remove ?? [])) {
+        const before = this.db.select().from(relations).where(eq(relations.id, id)).get();
+        if (!before) continue;
+        this.db.delete(relations).where(eq(relations.id, id)).run();
+        items.push({ before, after: null });
+        entityIds.add(before.sourceEntityId).add(before.targetEntityId);
+      }
+    });
+    if (items.length) this.ctx.events.changed('knowledge');
+    return { items, entityIds };
+  }
+
   /** Removes a relation the user (or the agent on the user's request) no longer wants; logged with undo. */
   unlinkEntries(relationId: string, opts: { trigger?: string } = {}): GraphRelation {
     const before = this.db.select().from(relations).where(eq(relations.id, relationId)).get();
@@ -828,6 +961,11 @@ export class KnowledgeGraphService {
   decideRelation(relationId: string, status: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): GraphRelation {
     const before = this.db.select().from(relations).where(eq(relations.id, relationId)).get();
     if (!before) throw new AppError('validation_error', 'Beziehung nicht gefunden.');
+    // a more precise kind replaces the general „verwandt“ of the pair – both in one undo step (#284)
+    if (status === 'confirmed' && before.method === 'refinement' && before.status === 'proposed') {
+      this.decideRelations([relationId], 'confirmed', opts);
+      return this.getRelation(relationId)!;
+    }
     this.setRelationStatus(relationId, status);
     const after = this.db.select().from(relations).where(eq(relations.id, relationId)).get()!;
     this.audit.log({
@@ -857,6 +995,28 @@ export class KnowledgeGraphService {
       .all();
     if (!rows.length) return 0;
     const updatedAt = nowIso();
+    // a confirmed more precise kind (#284) makes the general „verwandt“ of its pair outdated – part of the same undo
+    const general =
+      status === 'confirmed'
+        ? rows
+            .filter((r) => r.method === 'refinement')
+            .flatMap((r) =>
+              this.db
+                .select()
+                .from(relations)
+                .where(
+                  and(
+                    eq(relations.relationType, 'related_to'),
+                    eq(relations.status, 'confirmed'),
+                    or(
+                      and(eq(relations.sourceEntityId, r.sourceEntityId), eq(relations.targetEntityId, r.targetEntityId)),
+                      and(eq(relations.sourceEntityId, r.targetEntityId), eq(relations.targetEntityId, r.sourceEntityId)),
+                    ),
+                  ),
+                )
+                .all(),
+            )
+        : [];
     this.ctx.database.transaction(() => {
       this.db
         .update(relations)
@@ -868,6 +1028,17 @@ export class KnowledgeGraphService {
           ),
         )
         .run();
+      if (general.length)
+        this.db
+          .update(relations)
+          .set({ status: 'outdated', updatedAt })
+          .where(
+            inArray(
+              relations.id,
+              general.map((r) => r.id),
+            ),
+          )
+          .run();
       this.audit.log({
         action: status === 'confirmed' ? 'relation.confirmMany' : 'relation.rejectMany',
         actor: 'user',
@@ -879,14 +1050,103 @@ export class KnowledgeGraphService {
         undo: {
           type: DECIDE_MANY_UNDO_TYPE,
           data: {
-            before: rows.map((r) => ({ id: r.id, status: r.status, resolvedByUser: r.resolvedByUser, updatedAt: r.updatedAt })),
-            after: Object.fromEntries(rows.map((r) => [r.id, updatedAt])),
+            before: [...rows, ...general].map((r) => ({ id: r.id, status: r.status, resolvedByUser: r.resolvedByUser, updatedAt: r.updatedAt })),
+            after: Object.fromEntries([...rows, ...general].map((r) => [r.id, updatedAt])),
           } satisfies DecideManyUndoData,
         },
       });
     });
     this.ctx.events.changed('knowledge');
     return rows.length;
+  }
+
+  /**
+   * A topic or project with everything below it over confirmed „Unterthema von“ relations (#282) – itself first.
+   * Search filters and knowledge questions on a topic take its subtopics along.
+   */
+  subtreeOf(id: string): string[] {
+    return (
+      this.ctx.database.sqlite
+        .prepare(
+          `WITH RECURSIVE sub(id) AS (SELECT ? UNION SELECT r.source_entity_id FROM relations r JOIN sub ON r.target_entity_id = sub.id
+             WHERE r.relation_type = 'subtopic_of' AND r.status = 'confirmed') SELECT id FROM sub`,
+        )
+        .all(id) as Array<{ id: string }>
+    ).map((r) => r.id);
+  }
+
+  /**
+   * The surroundings of an entry as a graph (#288): nodes and relations up to `depth` (1–2) steps away, filtered by
+   * relation type, kind of entry and status. Stays readable with many nodes: at most `maxNodes`; a node with more than
+   * {@link HUB_GROUP} neighbours of one kind shows them as one group node („12 Dokumente“), and the second step does not
+   * go through such big hubs. Rejected and outdated relations are never shown.
+   */
+  neighborhood(
+    id: string,
+    opts: { depth?: number; relationTypes?: RelationType[]; entityTypes?: EntityType[]; statuses?: Array<'proposed' | 'confirmed'>; maxNodes?: number } = {},
+  ): NeighborhoodGraph {
+    const center = this.getEntity(id);
+    if (!center) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
+    const depth = Math.min(Math.max(opts.depth ?? 1, 1), 2);
+    const maxNodes = Math.min(Math.max(opts.maxNodes ?? 60, 5), 200);
+    const statuses = opts.statuses?.length ? opts.statuses : (['proposed', 'confirmed'] as const);
+    const nodes = new Map<string, NeighborhoodGraph['nodes'][number]>();
+    const edges = new Map<string, NeighborhoodGraph['edges'][number]>();
+    let truncated = false;
+    const addNode = (e: GraphEntity, d: number) => {
+      if (!nodes.has(e.id)) nodes.set(e.id, { id: e.id, type: e.type, name: e.name, depth: d, count: null, status: e.status ?? null });
+    };
+    addNode(center, 0);
+    let frontier = [center.id];
+    for (let d = 1; d <= depth; d += 1) {
+      const next: string[] = [];
+      for (const from of frontier) {
+        const rels = this.relationsOf(from, { statuses: [...statuses] }).filter(
+          (r) => r.relationType !== 'duplicate_of' && (!opts.relationTypes?.length || opts.relationTypes.includes(r.relationType)),
+        );
+        const others = rels.flatMap((r) => {
+          const otherId = r.sourceEntityId === from ? r.targetEntityId : r.sourceEntityId;
+          const other = this.getEntity(otherId);
+          return other && !other.duplicateOfId && (!opts.entityTypes?.length || opts.entityTypes.includes(other.type) || nodes.has(otherId))
+            ? [{ r, other }]
+            : [];
+        });
+        // big hubs: per kind more than HUB_GROUP neighbours become one group node
+        const byType = new Map<EntityType, typeof others>();
+        for (const o of others) byType.set(o.other.type, [...(byType.get(o.other.type) ?? []), o]);
+        for (const [type, list] of byType) {
+          const fresh = list.filter((o) => !nodes.has(o.other.id));
+          if (fresh.length > HUB_GROUP) {
+            const groupId = `group:${from}:${type}`;
+            nodes.set(groupId, { id: groupId, type, name: `${fresh.length} weitere`, depth: d, count: fresh.length, status: null });
+            edges.set(groupId, { id: groupId, source: from, target: groupId, relationType: list[0]!.r.relationType, status: 'confirmed', grouped: true });
+            for (const o of list.filter((x) => nodes.has(x.other.id))) edges.set(o.r.id, toEdge(o.r));
+            continue;
+          }
+          for (const o of list) {
+            if (!nodes.has(o.other.id)) {
+              if (nodes.size >= maxNodes) {
+                truncated = true;
+                continue;
+              }
+              addNode(o.other, d);
+              // the second step never runs through a big hub (a tag on every document says little)
+              if (this.relationsOf(o.other.id, { statuses: [...statuses] }).length <= HUB_GROUP * 4) next.push(o.other.id);
+            }
+            edges.set(o.r.id, toEdge(o.r));
+          }
+        }
+      }
+      frontier = next;
+    }
+    return { centerId: center.id, nodes: [...nodes.values()], edges: [...edges.values()], truncated };
+  }
+
+  /** Every confirmed „Unterthema von“ (#282): child and parent – for the tree on the knowledge page. */
+  hierarchy(): Array<{ childId: string; parentId: string }> {
+    return this.ctx.database.sqlite
+      .prepare(`SELECT source_entity_id AS childId, target_entity_id AS parentId FROM relations WHERE relation_type = 'subtopic_of' AND status = 'confirmed'`)
+      .all() as Array<{ childId: string; parentId: string }>;
   }
 
   /** Opens or closes a case („Vorgang“, #286); logged with undo. */

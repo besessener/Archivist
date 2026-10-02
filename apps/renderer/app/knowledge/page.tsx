@@ -1,10 +1,12 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { EntityType, KnowledgeCreateResult, RelationStatus } from '@archivist/shared';
-import { Check, GitMerge, Link2, Pencil, Plus, Search, Unlink, X } from 'lucide-react';
+import { Check, FolderKanban, GitMerge, Link2, Pencil, Plus, Search, Unlink, Waypoints, X } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
@@ -12,7 +14,11 @@ import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
 import { LinkDialog, LinkSuggestions, RelatedEntries, RelationProvenance } from '@/components/knowledge/related';
 import { NoteEditDialog } from '@/components/knowledge/note-edit-dialog';
-import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
+import { CaseAssignDialog } from '@/components/knowledge/case-dialog';
+import { CaseView } from '@/components/knowledge/case-view';
+import { GraphView } from '@/components/knowledge/graph-view';
+import { UnknownWikiLinks, WikiTextarea } from '@/components/knowledge/wiki-textarea';
+import { MARKDOWN_HINT, Markdown, type WikiResolver } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +29,7 @@ import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
 import { RELATION_STATUS_LABELS, RELATION_TYPE_LABELS } from '@/lib/labels';
-import { ENTITY_TYPE_LABELS } from '@/lib/nav';
+import { ENTITY_TYPE_LABELS, entityHref } from '@/lib/nav';
 import { formatDate } from '@/lib/format';
 import { useDebounced } from '@/lib/use-debounced';
 import { useQuery } from '@/lib/use-query';
@@ -33,7 +39,34 @@ import type { ActionRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const TYPES: EntityType[] = ['topic', 'project', 'person', 'event', 'note', 'category', 'tag', 'document', 'decision', 'task', 'question', 'case'];
-const CREATABLE = ['topic', 'project', 'person', 'event', 'note'] as const;
+/**
+ * Orders a list so that each topic/project is followed by its subtopics (#282), indented by depth; entries outside the
+ * hierarchy keep their place. A child whose parent is not in the list stays at the top level.
+ */
+function asTree<T extends { id: string }>(list: T[], links: Array<{ childId: string; parentId: string }>): Array<{ entity: T; depth: number }> {
+  const inList = new Set(list.map((e) => e.id));
+  const parentOf = new Map(links.filter((l) => inList.has(l.parentId) && inList.has(l.childId)).map((l) => [l.childId, l.parentId]));
+  const children = new Map<string, T[]>();
+  for (const e of list) {
+    const p = parentOf.get(e.id);
+    if (p) children.set(p, [...(children.get(p) ?? []), e]);
+  }
+  const out: Array<{ entity: T; depth: number }> = [];
+  const seen = new Set<string>();
+  const visit = (e: T, depth: number) => {
+    if (seen.has(e.id)) return;
+    seen.add(e.id);
+    out.push({ entity: e, depth });
+    for (const c of children.get(e.id) ?? []) visit(c, depth + 1);
+  };
+  for (const e of list) if (!parentOf.has(e.id)) visit(e, 0);
+  for (const e of list) visit(e, 0);
+  return out;
+}
+
+const CREATABLE = ['topic', 'project', 'case', 'person', 'event', 'note'] as const;
+/** Entries that can belong to a case („Vorgang“, #286). */
+const CASE_ENTRY_TYPES = new Set<string>(['document', 'note', 'decision', 'task', 'question', 'event']);
 type Creatable = (typeof CREATABLE)[number];
 
 function statusVariant(s: RelationStatus) {
@@ -51,6 +84,10 @@ function KnowledgeInner() {
   const [search, setSearch] = useState('');
   const q = useDebounced(search.trim(), 300);
   const list = useQuery('knowledge:listEntities', { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: ENTITY_LIMIT }, { scopes: ['knowledge'] });
+  const selection = useSelection();
+  // topics and projects as a tree (#282): children right below their parent, indented
+  const hierarchy = useQuery('knowledge:hierarchy', {}, { scopes: ['knowledge'] });
+  const items = useMemo(() => asTree(list.data ?? [], hierarchy.data ?? []), [list.data, hierarchy.data]);
   const [createOpen, setCreateOpen] = useState(false);
   const [createKey, setCreateKey] = useState(0);
   /** Initial title of the open event dialog; null = closed. */
@@ -114,15 +151,27 @@ function KnowledgeInner() {
           {list.data && list.data.length === 0 && (
             <EmptyState title="Nichts gefunden" description="Lege ein Thema, Projekt oder eine Person an oder ändere den Filter." />
           )}
+          <BulkAssignBar ids={selection.ids} noun={['Eintrag', 'Einträge']} onClear={selection.clear} onDone={() => void list.refetch()} />
           <ul className="flex max-h-[65vh] flex-col gap-1 overflow-y-auto" data-testid="knowledge-list">
-            {(list.data ?? []).map((e) => (
-              <li key={e.id}>
+            {items.map(({ entity: e, depth }) => (
+              <li key={e.id} className="flex items-center gap-1" style={depth ? { paddingLeft: `${Math.min(depth, 4) * 1}rem` } : undefined} data-depth={depth}>
+                {CASE_ENTRY_TYPES.has(e.type) && !e.duplicateOfId ? (
+                  <Checkbox
+                    className="ml-1"
+                    checked={selection.has(e.id)}
+                    onCheckedChange={(v) => selection.toggle(e.id, v === true)}
+                    aria-label={`${e.name} auswählen`}
+                    data-testid="knowledge-select"
+                  />
+                ) : (
+                  <span className="w-5 shrink-0" aria-hidden />
+                )}
                 <Link
                   href={`/knowledge/?id=${encodeURIComponent(e.id)}`}
                   data-testid="knowledge-item"
                   aria-current={e.id === id ? 'true' : undefined}
                   className={cn(
-                    'flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring',
+                    'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring',
                     e.id === id && 'bg-accent',
                   )}
                 >
@@ -175,7 +224,7 @@ function KnowledgeInner() {
         onSubmit={async (input) => {
           const r = await run(() => call('knowledge:createEntity', { type: 'event', ...input }));
           if (r) showResult(r);
-          return r !== undefined;
+          return r?.entity.id ?? false;
         }}
       />
     </Page>
@@ -204,7 +253,7 @@ function CreateEntityDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Neu anlegen</DialogTitle>
-          <DialogDescription>Lege ein neues Thema, Projekt, eine Person, eine Notiz oder ein Ereignis (mit Datum) an.</DialogDescription>
+          <DialogDescription>Lege ein neues Thema, Projekt, einen Vorgang, eine Person, eine Notiz oder ein Ereignis (mit Datum) an.</DialogDescription>
         </DialogHeader>
         <Field label="Art" htmlFor="new-entity-type">
           <Select
@@ -234,9 +283,18 @@ function CreateEntityDialog({
             data-testid="knowledge-new-name"
           />
         </Field>
-        <Field label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'} htmlFor="new-entity-desc" hint={MARKDOWN_HINT}>
-          <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="knowledge-new-description" />
+        <Field
+          label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'}
+          htmlFor="new-entity-desc"
+          hint={isNote ? `${MARKDOWN_HINT} Mit [[Name]] verlinkst du andere Einträge.` : MARKDOWN_HINT}
+        >
+          {isNote ? (
+            <WikiTextarea id="new-entity-desc" value={description} onChange={setDescription} data-testid="knowledge-new-description" />
+          ) : (
+            <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="knowledge-new-description" />
+          )}
         </Field>
+        {isNote && <UnknownWikiLinks text={description} />}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
@@ -274,6 +332,8 @@ function EntityView({ id }: { id: string }) {
   const [mergeAction, setMergeAction] = useState<ActionRecord | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [caseOpen, setCaseOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
   const [unlinking, setUnlinking] = useState<{ relationId: string; label: string } | null>(null);
 
   if (detail.error && !detail.data) return <ErrorNote error={detail.error} onRetry={() => void detail.refetch()} />;
@@ -281,6 +341,17 @@ function EntityView({ id }: { id: string }) {
   const { entity, relations } = detail.data;
   const outgoing = relations.filter((r) => r.direction === 'out');
   const incoming = relations.filter((r) => r.direction === 'in');
+  // [[Name]] in a note leads to the entry its wiki-link relation points to (#285)
+  const wikiTargets = new Map(
+    outgoing.filter((r) => r.method === 'wikilink' && r.evidence).map((r) => [r.evidence!.slice(2, -2).trim().toLowerCase(), r.other] as const),
+  );
+  const wiki: WikiResolver | undefined =
+    entity.type === 'note'
+      ? (name) => {
+          const o = wikiTargets.get(name.toLowerCase());
+          return o ? { href: entityHref(o.type, o.id), title: `${ENTITY_TYPE_LABELS[o.type]} „${o.name}“` } : null;
+        }
+      : undefined;
 
   const renderRel = (r: (typeof relations)[number]) => (
     <li key={r.id} className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5" data-testid="relation-row" data-status={r.status}>
@@ -357,7 +428,7 @@ function EntityView({ id }: { id: string }) {
           <span className="text-xs text-muted-foreground">Aktualisiert {formatDate(entity.updatedAt)}</span>
         </div>
         <h2 className="mt-1 text-2xl font-semibold tracking-tight">{entity.name}</h2>
-        {entity.description && <Markdown text={entity.description} className="mt-2 text-muted-foreground" testId="entity-description" />}
+        {entity.description && <Markdown text={entity.description} className="mt-2 text-muted-foreground" testId="entity-description" wiki={wiki} />}
         {entity.roles.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Rollen: {entity.roles.join(', ')}</p>}
         {entity.unconfirmed && (
           <div className="mt-3 rounded-md border border-dashed p-3 text-sm" data-testid="entity-unconfirmed-note">
@@ -383,6 +454,20 @@ function EntityView({ id }: { id: string }) {
           <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="knowledge-link">
             <Link2 aria-hidden /> Verknüpfen
           </Button>
+          <Button
+            variant={graphOpen ? 'secondary' : 'outline'}
+            size="sm"
+            onClick={() => setGraphOpen((v) => !v)}
+            aria-pressed={graphOpen}
+            data-testid="knowledge-graph"
+          >
+            <Waypoints aria-hidden /> Graph
+          </Button>
+          {CASE_ENTRY_TYPES.has(entity.type) && !entity.duplicateOfId && (
+            <Button variant="outline" size="sm" onClick={() => setCaseOpen(true)} data-testid="knowledge-case">
+              <FolderKanban aria-hidden /> Zu Vorgang hinzufügen
+            </Button>
+          )}
           {entity.type === 'note' && !entity.duplicateOfId && (
             <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} data-testid="note-edit">
               <Pencil aria-hidden /> Bearbeiten
@@ -402,6 +487,10 @@ function EntityView({ id }: { id: string }) {
           <ActionCard action={mergeAction} onResolved={() => void detail.refetch()} />
         </div>
       )}
+
+      {graphOpen && <GraphView id={entity.id} />}
+      {entity.type === 'case' && <CaseView id={entity.id} />}
+      <CaseAssignDialog entryIds={[entity.id]} open={caseOpen} onOpenChange={setCaseOpen} onDone={() => void detail.refetch()} />
 
       <section>
         <h3 className="mb-2 text-sm font-semibold">Verknüpfungen von hier ({outgoing.length})</h3>

@@ -11,6 +11,7 @@ import {
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
+import { withSubject } from '../db/subject-filter';
 import { syncReminderAt } from './reminders';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
@@ -258,8 +259,9 @@ export class OpenItemService {
     const conds = [];
     if (opts.status) conds.push(eq(openItems.status, opts.status));
     if (opts.onlyActive) conds.push(inArray(openItems.status, ACTIVE_STATUSES));
-    if (opts.topicId) conds.push(eq(openItems.topicId, opts.topicId));
-    if (opts.projectId) conds.push(eq(openItems.projectId, opts.projectId));
+    // the main topic/project or a further one (#287)
+    if (opts.topicId) conds.push(withSubject(openItems.id, openItems.topicId, opts.topicId));
+    if (opts.projectId) conds.push(withSubject(openItems.id, openItems.projectId, opts.projectId));
     const rows = this.db
       .select()
       .from(openItems)

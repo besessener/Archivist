@@ -21,7 +21,7 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'link',
       description:
-        'Zwei Einträge (D…/K…) verknüpfen, mit Art der Beziehung. onUserRequest=true NUR, wenn der Benutzer diese Verknüpfung ausdrücklich verlangt hat – dann gilt sie als bestätigt; aus eigenem Antrieb (false) bleibt sie ein Vorschlag. Vom Benutzer abgelehnte Paare werden nie wieder vorgeschlagen.',
+        'Zwei Einträge (D…/K…) verknüpfen, mit Art der Beziehung. relationType subtopic_of ordnet ein Thema/Projekt (a) unter ein anderes (b) ein („Urlaub 2026“ unter „Urlaub“). onUserRequest=true NUR, wenn der Benutzer diese Verknüpfung ausdrücklich verlangt hat – dann gilt sie als bestätigt; aus eigenem Antrieb (false) bleibt sie ein Vorschlag. Vom Benutzer abgelehnte Paare werden nie wieder vorgeschlagen.',
       schema: z.object({
         a: z.string().min(1),
         b: z.string().min(1),
@@ -148,6 +148,39 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
           summary: `${ids.length} zugeordnet`,
           change: `${ids.length} Einträge ${name(caseId)} zugeordnet`,
           changed: ids.length,
+        };
+      },
+    }),
+    defineTool({
+      name: 'case_overview',
+      description:
+        'Ein Vorgang (ID oder Name) mit Status, seinen offenen Punkten und allen Einträgen als Verlauf (neueste zuerst, mit Datum); vorgeschlagene Zuordnungen sind markiert. Ändert nichts.',
+      schema: z.object({ case: z.string().min(1) }),
+      risk: 'read',
+      label: (a) => `Sehe mir den Vorgang „${truncate(a.case, 40)}“ an`,
+      run: async (a, ctx) => {
+        const byRef = ctx.refs.resolve(a.case);
+        const c = (byRef && graph.getEntity(byRef)?.type === 'case' ? graph.getEntity(byRef) : undefined) ?? graph.findByNameOrAlias('case', a.case);
+        if (!c) return { content: `Vorgang „${a.case}“ ist unbekannt – list_subjects type=case zeigt alle.`, isError: true };
+        const d = deps.cases.detail(c.id);
+        const line = (e: (typeof d.entries)[number]) => {
+          // document names only with permission (#301)
+          const row = e.type === 'document' ? deps.docs.findRow(e.id) : undefined;
+          const shareable = e.type !== 'document' || (row !== undefined && deps.privacy.mayShareDocument(row));
+          if (shareable && e.type === 'document') ctx.shared.add(e.id);
+          const label = shareable ? `„${truncate(e.name, 70)}“` : '[nicht freigegeben]';
+          const ref = e.type === 'document' ? ctx.refs.doc(e.id) : ctx.refs.entry(e.id);
+          return `- ${e.date?.slice(0, 10) ?? 'ohne Datum'} ${ref} ${TYPE_LABEL[e.type] ?? e.type} ${label}${e.status ? ` [${e.status}]` : ''}${e.proposed ? ' (vorgeschlagen)' : ''}`;
+        };
+        return {
+          content: [
+            `${ctx.refs.entry(c.id)} Vorgang „${c.name}“ – ${c.status === 'closed' ? 'abgeschlossen' : 'offen'}${c.description ? `: ${truncate(c.description, 200)}` : ''}`,
+            `Offene Punkte (${d.openItems.length}):`,
+            ...(d.openItems.length ? d.openItems.map(line) : ['- keine']),
+            `Verlauf (${d.entries.length} Einträge):`,
+            ...(d.entries.length ? d.entries.slice(0, 60).map(line) : ['- noch leer']),
+          ].join('\n'),
+          summary: `${d.entries.length} Einträge`,
         };
       },
     }),

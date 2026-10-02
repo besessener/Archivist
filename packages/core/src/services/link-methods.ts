@@ -7,6 +7,7 @@ import type { CreatedEntry } from '../util/origin-scope';
 import { normalizeName, tokenize, truncate } from '../util/text';
 import type { AppStateService } from './app-state';
 import type { InsightService } from './insights';
+import type { LinkThresholds } from './link-thresholds';
 import { relationReason, type KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
 
@@ -34,7 +35,7 @@ export interface LinkCandidate {
 }
 
 /** Methods whose proposals are reviewed in the list of link proposals (#280); field mirrors and own flows are not. */
-export const LINK_PROPOSAL_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent', 'wikilink'];
+export const LINK_PROPOSAL_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent', 'wikilink', 'refinement'];
 /** Relation types with a flow of their own (contradictions, versions, duplicates). */
 const OWN_FLOW_TYPES = ['contradicts', 'supersedes', 'duplicate_of'];
 
@@ -85,6 +86,34 @@ export interface OrphanPage {
   items: Array<{ id: string; type: EntityType; name: string; createdAt: string }>;
 }
 
+/** How well the archive is linked (#292): one point of the history. */
+export interface LinkageSnapshot {
+  at: string;
+  entries: number;
+  orphans: number;
+  openProposals: number;
+  /** Share of user decisions that confirmed a proposal (all methods), null without decisions. */
+  confirmationRate: number | null;
+}
+
+export interface LinkageMetrics {
+  current: LinkageSnapshot;
+  /** Per method of the automatic proposals: decisions of the user and open proposals. */
+  methods: Array<{ method: RelationMethod; label: string; confirmed: number; rejected: number; open: number; rate: number | null }>;
+  /** One point per archive check, oldest first. */
+  history: LinkageSnapshot[];
+}
+
+/** A link suggestion after capturing (#283): the stored proposal with both ends. */
+export interface CapturedSuggestion {
+  relation: GraphRelation;
+  entry: { id: string; type: EntityType; name: string };
+  target: { id: string; type: EntityType; name: string };
+  score: number;
+}
+/** What the chat captures and offers links for (#283). */
+const CAPTURED_TYPES: EntityType[] = ['note', 'decision', 'task', 'question', 'event'];
+
 export interface TopicCluster {
   /** Stable for the same members: a rejected proposal („Nein“) is remembered under it. */
   key: string;
@@ -101,6 +130,16 @@ export interface BackfillResult {
 }
 
 const BACKFILL_CURSOR = 'links.backfill.cursor';
+/** History of the linkage metrics (#292), one point per archive check. */
+const METRICS_HISTORY = 'links.metrics.history';
+/** Points kept in the history (with a daily check about a year). */
+const MAX_METRICS_POINTS = 400;
+/** Methods of the automatic proposals whose confirmation rate is measured (#292). */
+const MEASURED_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent', 'refinement'];
+/** Where the orphan check of the archive check continues (#290). */
+const ORPHAN_CURSOR = 'links.orphans.cursor';
+/** The one bundled hint about entries without a link (#290). */
+export const ORPHAN_INSIGHT = 'orphan-entries';
 /** Entries indexed since the last similarity pass (#271); kept across restarts. */
 const SIMILAR_PENDING = 'links.similar.pending';
 /** Up to this many entries created together are linked pairwise; more are linked in a chain (#272). */
@@ -114,6 +153,8 @@ const BUSINESS_DATE: Array<{ table: string; column: string; type: EntityType; ex
   { table: 'decisions', column: 'decided_at', type: 'decision' },
   { table: 'documents', column: 'document_date', type: 'document', extra: "AND x.status IN ('archived','indexed_only')" },
 ];
+/** Confidence of a same-day proposal with one shared person (#278); every further person adds 0.1. */
+const DATE_PERSON_BASE = 0.6;
 const dayShift = (day: string, days: number) => new Date(Date.parse(`${day}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 const germanDay = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
 
@@ -137,6 +178,7 @@ export class LinkMethodsService {
     private readonly search: SearchService,
     private readonly insights: InsightService,
     private readonly appState: AppStateService,
+    private readonly thresholds?: LinkThresholds,
   ) {}
 
   private noteAnalyzer: ((id: string, signal?: AbortSignal) => Promise<number>) | null = null;
@@ -148,6 +190,35 @@ export class LinkMethodsService {
   /** The analysis of notes (#273) for the retroactive run; returns the number of new proposals. */
   setNoteAnalyzer(fn: (id: string, signal?: AbortSignal) => Promise<number>): void {
     this.noteAnalyzer = fn;
+  }
+
+  private topicNamer: ((cluster: TopicCluster, signal?: AbortSignal) => Promise<string | null>) | null = null;
+
+  /** A better name for a new topic from a group (#281, the LLM where the privacy mode allows it). */
+  setTopicNamer(fn: (cluster: TopicCluster, signal?: AbortSignal) => Promise<string | null>): void {
+    this.topicNamer = fn;
+  }
+
+  /**
+   * Groups of similar entries without a topic as „Neues Thema ‚…‘ anlegen?“ (#281) – for the archive check and the
+   * retroactive run. A group already proposed and still open is left as it is (no second name, no LLM call); answered
+   * groups do not come back. Returns the number of new proposals.
+   */
+  async proposeClusterTopics(opts: { signal?: AbortSignal } = {}): Promise<number> {
+    let proposed = 0;
+    for (const c of await this.clusters({ signal: opts.signal })) {
+      if (opts.signal?.aborted) break;
+      if (this.insights.byDedupeKey(`topic-cluster:${c.key}`)?.status === 'open') continue;
+      const name = (await this.topicNamer?.(c, opts.signal)) ?? c.name;
+      if (
+        this.proposeTopic(
+          name,
+          c.members.map((m) => m.id),
+        ).actionId
+      )
+        proposed += 1;
+    }
+    return proposed;
   }
 
   /** The retroactive run starts again from the first entry (e.g. once after an update that brought new methods). */
@@ -176,9 +247,13 @@ export class LinkMethodsService {
     return e ? `${e.name} ${e.description ?? ''}`.trim() : '';
   }
 
-  /** Similar indexed entries by their vectors (best first), without the entry itself. */
-  private similar(id: string, types: EntityType[], limit: number) {
-    return this.search.similarTo(id, { types, limit, minScore: MIN_SIMILARITY });
+  /**
+   * Similar indexed entries by their vectors (best first), without the entry itself. `learned`: the threshold includes what
+   * the user's rejections taught (#275) – for link proposals, not for grouping entries into a topic.
+   */
+  private similar(id: string, types: EntityType[], limit: number, learned = true) {
+    const raise = learned ? (this.thresholds?.offset('similarity') ?? 0) : 0;
+    return this.search.similarTo(id, { types, limit, minScore: { local: MIN_SIMILARITY.local + raise, embeddings: MIN_SIMILARITY.embeddings + raise } });
   }
 
   /**
@@ -221,7 +296,7 @@ export class LinkMethodsService {
     const types = OWN_FLOW_TYPES.map((t) => `'${t}'`).join(',');
     return {
       from: `FROM relations r JOIN entities s ON s.id = r.source_entity_id JOIN entities t ON t.id = r.target_entity_id
-        WHERE r.status = 'proposed' AND r.method IN (${methods}) AND r.relation_type NOT IN (${types})
+        WHERE r.status = 'proposed' AND r.method IN (${methods}) AND (r.relation_type NOT IN (${types}) OR r.method = 'refinement')
           AND s.duplicate_of_id IS NULL AND t.duplicate_of_id IS NULL`,
       key: groupBy === 'method' ? 'r.method' : 'r.source_entity_id',
       sort: groupBy === 'method' ? 'r.method' : 's.normalized_name, r.source_entity_id',
@@ -337,19 +412,173 @@ export class LinkMethodsService {
     return { total: all.length, items: all.slice(offset, offset + (opts.limit ?? 10)) };
   }
 
+  /** Entries without any confirmed or proposed relation (#290); a folder (category) alone does not count. */
+  private orphanWhere(): string {
+    return `${ENTRY_SQL('e', LINK_ENTRY_TYPES)} AND NOT EXISTS (
+      SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = e.id THEN r.target_entity_id ELSE r.source_entity_id END
+      WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND o.type <> 'category')`;
+  }
+
   /**
    * Entries without any confirmed or proposed relation (#290); a folder (category) alone does not count. Plain SQL, no
    * texts are loaded (#213); paged, with the total.
    */
   orphans(opts: { limit?: number; offset?: number } = {}): OrphanPage {
-    const where = `${ENTRY_SQL('e', LINK_ENTRY_TYPES)} AND NOT EXISTS (
-      SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = e.id THEN r.target_entity_id ELSE r.source_entity_id END
-      WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND o.type <> 'category')`;
+    const where = this.orphanWhere();
     const total = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${where}`).get() as { c: number }).c;
     const items = this.sqlite
       .prepare(`SELECT e.id, e.type, e.name, e.created_at AS createdAt FROM entities e WHERE ${where} ORDER BY e.created_at, e.id LIMIT ? OFFSET ?`)
       .all(opts.limit ?? 50, opts.offset ?? 0) as OrphanPage['items'];
     return { total, items };
+  }
+
+  /** Whether the entry has a confirmed relation to anything but a folder. */
+  private hasConfirmedLink(id: string): boolean {
+    return Boolean(
+      this.sqlite
+        .prepare(
+          `SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
+           WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status = 'confirmed' AND o.type <> 'category' LIMIT 1`,
+        )
+        .get(id, id, id),
+    );
+  }
+
+  /** Whether the entry has an open proposal to anything but a folder. */
+  private hasOpenProposal(id: string): boolean {
+    return Boolean(
+      this.sqlite
+        .prepare(
+          `SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
+           WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status = 'proposed' AND o.type <> 'category' LIMIT 1`,
+        )
+        .get(id, id, id),
+    );
+  }
+
+  /**
+   * Archive check step for entries without any link (#290): proposes up to two targets for each orphan (similar entries,
+   * mentioned topics and projects), at most `maxEntries` per run – in a stable order that continues where the last run
+   * stopped, so entries without a target do not block the others. ONE bundled hint per run lists the entries that are
+   * still without a confirmed link and leads to the list of link proposals (#280); it closes once none is left.
+   * Plain SQL and the search index, no full texts in the main process (#213).
+   */
+  async checkOrphans(opts: { propose?: boolean; maxEntries?: number; signal?: AbortSignal } = {}): Promise<{ pending: number; proposed: number }> {
+    const where = this.orphanWhere();
+    const orphanIds = (this.sqlite.prepare(`SELECT e.id FROM entities e WHERE ${where} ORDER BY e.id`).all() as Array<{ id: string }>).map((r) => r.id);
+    let proposed = 0;
+    if (opts.propose !== false && orphanIds.length) {
+      const cursor = this.appState.get(ORPHAN_CURSOR) ?? '';
+      const max = opts.maxEntries ?? 50;
+      const batch = [...orphanIds.filter((id) => id > cursor), ...orphanIds.filter((id) => id <= cursor)].slice(0, max);
+      for (const id of batch) {
+        if (opts.signal?.aborted) break;
+        try {
+          for (const c of await this.candidates(id, { limit: 2 })) {
+            const type = c.method === 'similarity' ? 'related_to' : c.type === 'project' ? 'belongs_to' : 'relates_to';
+            const r = this.graph.link(id, c.id, type, { status: 'proposed', confidence: c.score, method: c.method, evidence: c.reason });
+            if (r?.created) proposed += 1;
+          }
+        } catch (err) {
+          this.ctx.logger.warn('links', 'Targets for an entry without links skipped', { error: err, id });
+        }
+        this.appState.set(ORPHAN_CURSOR, id);
+      }
+    }
+    const previous = this.insights.byDedupeKey(ORPHAN_INSIGHT)?.sourceIds ?? [];
+    const pending = [...new Set([...orphanIds, ...previous])].filter((id) => this.isEntry(id) && !this.hasConfirmedLink(id));
+    if (!pending.length) {
+      this.insights.reconcile(ORPHAN_INSIGHT, new Set());
+      return { pending: 0, proposed };
+    }
+    const withTargets = pending.filter((id) => this.hasOpenProposal(id)).length;
+    const rest = pending.length - withTargets;
+    const shown = pending.slice(0, 15).flatMap((id) => {
+      const e = this.graph.getEntity(id);
+      return e ? [{ type: e.type, id: e.id, label: e.name }] : [];
+    });
+    this.insights.upsert({
+      kind: 'orphan_entries',
+      title: `${pending.length} ${pending.length === 1 ? 'Eintrag' : 'Einträge'} ohne Verknüpfung`,
+      explanation: [
+        withTargets
+          ? `Für ${withTargets === 1 ? 'einen davon' : `${withTargets} davon`} gibt es passende Ziele – du findest sie oben unter „Verknüpfungsvorschläge“.`
+          : null,
+        rest
+          ? `${rest === 1 ? 'Einer hat' : `${rest} haben`} noch kein passendes Ziel; verknüpfe ${rest === 1 ? 'ihn' : 'sie'} in der Detailansicht unter „Verwandte Einträge“.`
+          : null,
+        'Der Hinweis schließt sich, sobald jeder dieser Einträge eine bestätigte Verknüpfung hat.',
+      ]
+        .filter(Boolean)
+        .join(' '),
+      confidence: 0.7,
+      affected: shown,
+      sourceIds: pending,
+      dedupeKey: ORPHAN_INSIGHT,
+    });
+    return { pending: pending.length, proposed };
+  }
+
+  /** Decisions of the user and open proposals per method of the automatic proposals (#292, from the provenance of #270). */
+  private methodCounts(): LinkageMetrics['methods'] {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT r.method AS method,
+           sum(CASE WHEN r.status = 'confirmed' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS confirmed,
+           sum(CASE WHEN r.status = 'rejected' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS rejected,
+           sum(CASE WHEN r.status = 'proposed' THEN 1 ELSE 0 END) AS open
+         FROM relations r WHERE r.method IN (${MEASURED_METHODS.map((m) => `'${m}'`).join(',')}) AND (r.relation_type NOT IN (${OWN_FLOW_TYPES.map((t) => `'${t}'`).join(',')}) OR r.method = 'refinement')
+         GROUP BY r.method`,
+      )
+      .all() as Array<{ method: RelationMethod; confirmed: number; rejected: number; open: number }>;
+    const by = new Map(rows.map((r) => [r.method, r]));
+    return MEASURED_METHODS.map((method) => {
+      const r = by.get(method) ?? { confirmed: 0, rejected: 0, open: 0 };
+      const decided = r.confirmed + r.rejected;
+      return {
+        method,
+        label: RELATION_METHOD_LABELS[method],
+        confirmed: r.confirmed,
+        rejected: r.rejected,
+        open: r.open,
+        rate: decided ? r.confirmed / decided : null,
+      };
+    });
+  }
+
+  private snapshot(methods: LinkageMetrics['methods']): LinkageSnapshot {
+    const entries = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${ENTRY_SQL('e', LINK_ENTRY_TYPES)}`).get() as { c: number }).c;
+    const confirmed = methods.reduce((n, m) => n + m.confirmed, 0);
+    const decided = confirmed + methods.reduce((n, m) => n + m.rejected, 0);
+    return {
+      at: new Date().toISOString(),
+      entries,
+      orphans: this.orphans({ limit: 1 }).total,
+      openProposals: this.proposals({ limit: 1 }).total,
+      confirmationRate: decided ? confirmed / decided : null,
+    };
+  }
+
+  private metricsHistory(): LinkageSnapshot[] {
+    try {
+      const v = JSON.parse(this.appState.get(METRICS_HISTORY) ?? '[]') as unknown;
+      return Array.isArray(v) ? (v as LinkageSnapshot[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** How well the archive is linked right now, with the history of the archive checks (#292). Counts only, no texts. */
+  metrics(): LinkageMetrics {
+    const methods = this.methodCounts();
+    return { current: this.snapshot(methods), methods, history: this.metricsHistory() };
+  }
+
+  /** Stores the current metrics as one point of the history; called by every archive check (#292). */
+  recordMetrics(): LinkageSnapshot {
+    const point = this.snapshot(this.methodCounts());
+    this.appState.set(METRICS_HISTORY, JSON.stringify([...this.metricsHistory(), point].slice(-MAX_METRICS_POINTS)));
+    return point;
   }
 
   /** Entries without a topic and without a project (candidates for a new topic, #281), newest first. */
@@ -397,7 +626,7 @@ export class LinkMethodsService {
     };
     for (const p of pool) {
       if (opts.signal?.aborted) break;
-      for (const h of await this.similar(p.id, TOPIC_ENTRY_TYPES, 8)) {
+      for (const h of await this.similar(p.id, TOPIC_ENTRY_TYPES, 8, false)) {
         if (!ids.has(h.id) || this.graph.rejectedBetween(p.id, h.id)) continue;
         parent.set(find(h.id), find(p.id));
       }
@@ -468,6 +697,44 @@ export class LinkMethodsService {
     });
     // the user already answered this group („Nein“ or done): no new proposal
     return { insightId: insight.id, actionId: insight.status === 'open' ? (insight.recommendedActionId ?? null) : null };
+  }
+
+  /**
+   * Link suggestions right after capturing in the chat (#283): for the new notes, decisions, open items and events the
+   * best of their similar entries and mentioned topics/projects (#271) and of the open proposals of the note analysis
+   * (#273) – at most `limit` in total, one per target. They are stored as proposals, so an ignored suggestion stays in the
+   * list of link proposals (#280); rejected pairs never come back.
+   */
+  async suggestForCaptured(entries: CreatedEntry[], opts: { limit?: number } = {}): Promise<CapturedSuggestion[]> {
+    const limit = opts.limit ?? 3;
+    const own = new Set(entries.map((e) => e.id));
+    const found: CapturedSuggestion[] = [];
+    for (const { id } of entries.filter((e) => CAPTURED_TYPES.includes(e.type)).slice(0, 5)) {
+      const entry = this.graph.getEntity(id);
+      if (!entry) continue;
+      for (const c of await this.candidates(id, { limit })) {
+        if (own.has(c.id)) continue;
+        const type = c.method === 'similarity' ? 'related_to' : c.type === 'project' ? 'belongs_to' : 'relates_to';
+        const r = this.graph.link(id, c.id, type, { status: 'proposed', confidence: c.score, method: c.method, evidence: c.reason });
+        if (r?.status === 'proposed')
+          found.push({ relation: r, entry: { id, type: entry.type, name: entry.name }, target: { id: c.id, type: c.type, name: c.name }, score: c.score });
+      }
+      for (const r of this.graph.relationsOf(id, { statuses: ['proposed'] })) {
+        const otherId = r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId;
+        const other = this.graph.getEntity(otherId);
+        if (!other || own.has(otherId) || !r.method || !LINK_PROPOSAL_METHODS.includes(r.method) || OWN_FLOW_TYPES.includes(r.relationType)) continue;
+        found.push({
+          relation: r,
+          entry: { id, type: entry.type, name: entry.name },
+          target: { id: other.id, type: other.type, name: other.name },
+          score: r.confidence,
+        });
+      }
+    }
+    const out: CapturedSuggestion[] = [];
+    for (const s of found.toSorted((x, y) => y.score - x.score))
+      if (out.length < limit && !out.some((o) => o.target.id === s.target.id || o.relation.id === s.relation.id)) out.push(s);
+    return out;
   }
 
   /** A current (proposed or confirmed) relation of any type between the two. */
@@ -568,6 +835,8 @@ export class LinkMethodsService {
     const persons = this.personsOf(id);
     if (!persons.size) return 0;
     let created = 0;
+    // more shared persons, more confidence; the learned raise (#275) holds back the weakest ones first
+    const bar = DATE_PERSON_BASE + (this.thresholds?.offset('date_person') ?? 0) - 1e-9;
     for (const b of BUSINESS_DATE) {
       // stored instants can fall on a neighbouring UTC day: take one day around and compare the local day
       const rows = this.sqlite
@@ -576,15 +845,47 @@ export class LinkMethodsService {
       for (const row of rows) {
         if (localDate(row.d) !== day || this.linked(id, row.id) || !this.graph.getEntity(row.id)) continue;
         const shared = [...this.personsOf(row.id).entries()].filter(([pid]) => persons.has(pid)).map(([, name]) => `„${name}“`);
-        if (!shared.length) continue;
+        const confidence = Math.min(0.8, DATE_PERSON_BASE + 0.1 * (shared.length - 1));
+        if (!shared.length || confidence < bar) continue;
         const r = this.graph.link(id, row.id, 'related_to', {
           status: 'proposed',
-          confidence: 0.6,
+          confidence,
           method: 'date_person',
           evidence: `Am ${germanDay(day)} mit ${shared.join(', ')}`,
         });
         if (r?.created) created += 1;
       }
+    }
+    return created;
+  }
+
+  /**
+   * An entry similar to an entry of an open case („Vorgang“) is proposed for that case (#286): `belongs_to`, method
+   * `similarity`, the similar member as evidence. Only confirmed members count; a closed case gets nothing new; rejected
+   * and existing assignments are skipped.
+   */
+  async proposeCases(id: string): Promise<number> {
+    if (!this.isEntry(id)) return 0;
+    const best = new Map<string, { score: number; via: string }>();
+    for (const h of await this.similar(id, LINK_ENTRY_TYPES, 8)) {
+      for (const r of this.graph.relationsOf(h.id, { statuses: ['confirmed'], types: ['belongs_to'] })) {
+        const caseId = r.sourceEntityId === h.id ? r.targetEntityId : r.sourceEntityId;
+        const c = this.graph.getEntity(caseId);
+        if (c?.type !== 'case' || c.status === 'closed' || (best.get(caseId)?.score ?? 0) >= h.score) continue;
+        best.set(caseId, { score: h.score, via: this.graph.getEntity(h.id)?.name ?? '' });
+      }
+    }
+    let created = 0;
+    for (const [caseId, b] of best) {
+      if (this.connected(id, caseId)) continue;
+      const c = this.graph.getEntity(caseId)!;
+      const r = this.graph.link(id, caseId, 'belongs_to', {
+        status: 'proposed',
+        confidence: b.score,
+        method: 'similarity',
+        evidence: `ähnlich wie „${truncate(b.via, 80)}“ aus dem Vorgang „${truncate(c.name, 60)}“`,
+      });
+      if (r?.created) created += 1;
     }
     return created;
   }
@@ -654,6 +955,7 @@ export class LinkMethodsService {
         // the more specific reason first: same day and person (#278), then similar content (#271)
         proposed += this.proposeSameDayPerson(next);
         proposed += await this.proposeSimilar(next, { max: opts.max });
+        proposed += await this.proposeCases(next);
       } catch (err) {
         this.ctx.logger.warn('links', 'Similarity proposals skipped', { error: err, id: next });
       }
@@ -698,6 +1000,7 @@ export class LinkMethodsService {
       try {
         proposed += this.proposeSameDayPerson(id);
         proposed += this.linkSameDocument(id);
+        proposed += await this.proposeCases(id);
         if (this.noteAnalyzer && this.graph.getEntity(id)?.type === 'note') proposed += await this.noteAnalyzer(id, opts.signal);
       } catch (err) {
         this.ctx.logger.warn('links', 'Link methods skipped for an entry', { error: err, id });

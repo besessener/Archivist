@@ -212,7 +212,70 @@ function LinkMethodsSection() {
           {message}
         </p>
       )}
+      <LearnedThresholds />
     </Section>
+  );
+}
+
+/**
+ * What the link methods learned from rejections (#275): a method most of whose recent proposals were rejected becomes a
+ * little stricter (capped; confirmations lower it again). Viewable and resettable here.
+ */
+function LearnedThresholds() {
+  const q = useQuery('links:thresholds', {}, { scopes: ['knowledge', 'settings'] });
+  const { run } = useRun();
+  const [resetting, setResetting] = useState(false);
+  if (!q.data) return null;
+  const pts = (v: number) => `+${Math.round(v * 100)} Punkte`;
+  return (
+    <div className="flex flex-col gap-2" data-testid="links-thresholds">
+      <h3 className="text-sm font-medium">Aus Ablehnungen gelernt</h3>
+      <p className="text-xs text-muted-foreground">
+        Lehnst du die meisten der letzten Vorschläge einer Methode ab, wird sie etwas strenger – höchstens um den angegebenen Deckel, Bestätigungen senken die
+        Schwelle wieder. Abgeschaltet wird keine Methode; abgelehnte Paare kommen ohnehin nie wieder.
+      </p>
+      <table className="w-full text-left text-sm tabular-nums">
+        <thead className="text-xs text-muted-foreground">
+          <tr>
+            <th className="font-normal">Methode</th>
+            <th className="font-normal">zuletzt bestätigt / abgelehnt</th>
+            <th className="font-normal">gelernt</th>
+            <th className="font-normal">Deckel</th>
+          </tr>
+        </thead>
+        <tbody>
+          {q.data.map((t) => (
+            <tr key={t.method} data-testid="links-threshold-row" data-method={t.method}>
+              <td>
+                {t.label} <span className="text-xs text-muted-foreground">({t.measure})</span>
+              </td>
+              <td>
+                {t.confirmed} / {t.rejected}
+              </td>
+              <td>{t.offset > 0 ? pts(t.offset) : 'unverändert'}</td>
+              <td>{pts(t.cap)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div>
+        <Button variant="outline" size="sm" data-testid="links-thresholds-reset" onClick={() => setResetting(true)}>
+          <Undo2 aria-hidden /> Gelerntes zurücksetzen
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={resetting}
+        onOpenChange={setResetting}
+        title="Gelernte Schwellen zurücksetzen?"
+        description="Alle Methoden schlagen wieder mit ihrer ursprünglichen Schwelle vor; nur deine künftigen Entscheidungen zählen. Abgelehnte Paare bleiben abgelehnt."
+        confirmLabel="Zurücksetzen"
+        onConfirm={async () => {
+          const out = await run(() => call('links:resetThresholds', { confirmed: true }), { success: 'Gelernte Schwellen zurückgesetzt.' });
+          if (out) void q.refetch();
+          setResetting(false);
+        }}
+      />
+    </div>
   );
 }
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppErrorInfo, EntityType, Id, IsoDate, RelationMethod, RelationStatus, SourceReference, type Result } from './common';
+import { AppErrorInfo, EntityType, Id, IsoDate, RelationMethod, RelationStatus, RelationType, SourceReference, type Result } from './common';
 import {
   AgentActionProposal,
   AgentActionStatus,
@@ -153,6 +153,92 @@ export const LinkProposalPage = z.object({
 });
 export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
 const LinkGroupBy = z.enum(['method', 'entry']);
+
+const SubjectRef = z.object({ id: z.string(), name: z.string() });
+/** Main and further topics/projects of an entry (#287). */
+const EntrySubjects = z.object({
+  topic: SubjectRef.nullable(),
+  project: SubjectRef.nullable(),
+  extraTopics: z.array(SubjectRef),
+  extraProjects: z.array(SubjectRef),
+});
+export type EntrySubjects = z.infer<typeof EntrySubjects>;
+
+/** The surroundings of an entry for the graph view (#288). */
+export const NeighborhoodGraph = z.object({
+  centerId: z.string(),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      type: EntityType,
+      name: z.string(),
+      depth: z.number().int(),
+      count: z.number().int().nullable(),
+      status: z.string().nullable(),
+    }),
+  ),
+  edges: z.array(
+    z.object({ id: z.string(), source: z.string(), target: z.string(), relationType: RelationType, status: RelationStatus, grouped: z.boolean().optional() }),
+  ),
+  truncated: z.boolean(),
+});
+export type NeighborhoodGraph = z.infer<typeof NeighborhoodGraph>;
+
+/** A case („Vorgang“) with its numbers (#286). */
+const CaseSummary = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  status: z.enum(['open', 'closed']),
+  entries: z.number().int(),
+  openItems: z.number().int(),
+  updatedAt: IsoDate,
+});
+/** An entry of a case, with its date for the timeline (#286). */
+const CaseEntry = z.object({
+  id: z.string(),
+  type: EntityType,
+  name: z.string(),
+  date: z.string().nullable(),
+  status: z.string().nullable(),
+  proposed: z.boolean(),
+  relationId: z.string(),
+});
+
+/** A threshold learned from the user's rejections (#275). */
+const LearnedThreshold = z.object({
+  method: RelationMethod,
+  label: z.string(),
+  measure: z.string(),
+  offset: z.number(),
+  cap: z.number(),
+  confirmed: z.number().int(),
+  rejected: z.number().int(),
+});
+
+/** How well the archive is linked (#292): current values, confirmation rate per method and the history. */
+const LinkageSnapshot = z.object({
+  at: IsoDate,
+  entries: z.number().int(),
+  orphans: z.number().int(),
+  openProposals: z.number().int(),
+  confirmationRate: z.number().nullable(),
+});
+export const LinkageMetrics = z.object({
+  current: LinkageSnapshot,
+  methods: z.array(
+    z.object({
+      method: RelationMethod,
+      label: z.string(),
+      confirmed: z.number().int(),
+      rejected: z.number().int(),
+      open: z.number().int(),
+      rate: z.number().nullable(),
+    }),
+  ),
+  history: z.array(LinkageSnapshot),
+});
+export type LinkageMetrics = z.infer<typeof LinkageMetrics>;
 
 /** A link candidate of the fixed link methods with its reason (#271, #283, #313). */
 export const LinkCandidate = z.object({
@@ -348,6 +434,11 @@ export const ipcContract = {
       ids: z.array(Id).min(1).max(5000),
       topic: NullableText,
       project: NullableText,
+      /** Adds a topic/project (#287, #291): the main one where none is set, otherwise a further one. */
+      addTopic: z.string().max(200).optional(),
+      addProject: z.string().max(200).optional(),
+      /** Puts the documents into this case (#286). */
+      caseId: z.string().optional(),
       addTags: z.array(z.string()).optional(),
       removeTags: z.array(z.string()).optional(),
       addPersons: z.array(z.string()).optional(),
@@ -499,7 +590,7 @@ export const ipcContract = {
    */
   'knowledge:createEntity': ch(
     z.discriminatedUnion('type', [
-      z.object({ type: z.enum(['topic', 'project', 'person', 'note']), name: z.string().trim().min(1), description: z.string().optional() }),
+      z.object({ type: z.enum(['topic', 'project', 'case', 'person', 'note']), name: z.string().trim().min(1), description: z.string().optional() }),
       EventInput.extend({ type: z.literal('event') }),
     ]),
     KnowledgeCreateResult,
@@ -522,6 +613,30 @@ export const ipcContract = {
   'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
   /** Related entries with the reason (#276, #289). */
   /** Related entries of an entry, strongest first, paged (#276). */
+  /** The surroundings of an entry as a graph, 1–2 steps, filtered; big hubs grouped (#288). */
+  'knowledge:neighborhood': ch(
+    z.object({
+      id: Id,
+      depth: z.number().int().min(1).max(2).default(1),
+      relationTypes: z.array(RelationType).optional(),
+      entityTypes: z.array(EntityType).optional(),
+      statuses: z.array(z.enum(['proposed', 'confirmed'])).optional(),
+      maxNodes: z.number().int().min(5).max(200).default(60),
+    }),
+    NeighborhoodGraph,
+  ),
+  /** Every confirmed „Unterthema von“ (child, parent) – the topic tree of the knowledge page (#282). */
+  'knowledge:hierarchy': ch(Empty, z.array(z.object({ childId: z.string(), parentId: z.string() }))),
+  /** Autocomplete after `[[` in a note (#285): entries by name or alias. */
+  'knowledge:wikiSuggest': ch(
+    z.object({ query: z.string().max(200), limit: z.number().int().min(1).max(20).default(8), excludeId: z.string().optional() }),
+    z.array(z.object({ id: z.string(), type: EntityType, name: z.string(), alias: z.string().nullable() })),
+  ),
+  /** The target of each `[[Name]]` of a text – null for an unknown name (#285). */
+  'knowledge:wikiResolve': ch(
+    z.object({ names: z.array(z.string().max(200)).max(200), noteId: z.string().optional() }),
+    z.array(z.object({ name: z.string(), entity: z.object({ id: z.string(), type: EntityType, name: z.string() }).nullable() })),
+  ),
   'knowledge:related': ch(z.object({ id: Id, limit: z.number().int().min(1).max(50).default(10), offset: z.number().int().min(0).default(0) }), RelatedPage),
   /** Link proposals for an entry: similar entries and mentioned topics/projects (#283); the same function as the agent's suggest_links. */
   'links:suggestions': ch(z.object({ id: Id, limit: z.number().int().min(1).max(5).default(3) }), z.array(LinkCandidate)),
@@ -547,6 +662,40 @@ export const ipcContract = {
   ),
   /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. */
   'links:startRun': ch(Empty, z.object({ jobId: Id })),
+  /** What the link methods learned from rejections (#275): raise of the threshold per method, capped. */
+  'links:thresholds': ch(Empty, z.array(LearnedThreshold)),
+  /** Forgets the learned thresholds (#275); rejected pairs stay rejected. */
+  'links:resetThresholds': ch(z.object({ confirmed: Confirmed }), z.object({ ok: z.literal(true) })),
+  /** How well the archive is linked, with the history of the archive checks (#292). */
+  'links:metrics': ch(Empty, LinkageMetrics),
+  // --- Several topics/projects per entry (#287) and bulk assignment (#291) ---
+  'subjects:of': ch(z.object({ ids: z.array(Id).min(1).max(1000) }), z.record(z.string(), EntrySubjects)),
+  /** Sets the further topics/projects of an entry by name (the main one stays) – one undo step. */
+  'subjects:setExtras': ch(
+    z.object({ id: Id, topics: z.array(z.string().max(200)).max(50).optional(), projects: z.array(z.string().max(200)).max(50).optional() }),
+    EntrySubjects,
+  ),
+  /** Bulk assignment of a list's selection: topic, project, tag, case – ONE undo step (#291). */
+  'entries:bulkAssign': ch(
+    z.object({
+      ids: z.array(Id).min(1).max(500),
+      topic: z.string().max(200).nullish(),
+      project: z.string().max(200).nullish(),
+      tag: z.string().max(100).nullish(),
+      caseId: z.string().nullish(),
+    }),
+    z.object({ updated: z.number().int(), auditId: z.string().nullable() }),
+  ),
+  // --- Cases („Vorgänge“, #286) ---
+  'cases:list': ch(z.object({ includeClosed: z.boolean().default(true) }), z.array(CaseSummary)),
+  'cases:detail': ch(z.object({ id: Id }), z.object({ case: GraphEntity, entries: z.array(CaseEntry), openItems: z.array(CaseEntry) })),
+  'cases:create': ch(
+    z.object({ name: z.string().trim().min(1).max(200), description: z.string().max(5000).nullish() }),
+    z.object({ case: GraphEntity, created: z.boolean() }),
+  ),
+  /** Puts entries into a case – ONE undo step (#286, #291). */
+  'cases:assign': ch(z.object({ entryIds: z.array(Id).min(1).max(500), caseId: Id }), z.object({ assigned: z.number().int() })),
+  'cases:setStatus': ch(z.object({ id: Id, status: z.enum(['open', 'closed']) }), GraphEntity),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
   /** Accepts a topic/project taken from a document; only confirmed ones are listed in LLM prompts. */
   'knowledge:confirmEntity': ch(z.object({ id: Id }), GraphEntity),

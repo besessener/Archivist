@@ -225,8 +225,8 @@ export class ActionService {
       // a relation card has confirm and reject: rejecting discards the proposed relation
       if (action.actionType === 'confirm_relation') {
         const params = ActionParamSchemas.confirm_relation.parse(action.proposedParameters);
-        this.deps.graph.setRelationStatus(params.relationId, 'rejected');
-        this.deps.audit.log({ action: 'relation.reject', actor: 'user', trigger: 'confirmation', confirmed: true, entityIds: [params.relationId] });
+        // logged with undo (#283)
+        this.deps.graph.decideRelation(params.relationId, 'rejected', { trigger: 'confirmation' });
       }
       this.deps.audit.log({
         action: `action.reject:${action.actionType}`,
@@ -454,9 +454,16 @@ export class ActionService {
       }
       case 'confirm_relation': {
         const params = ActionParamSchemas.confirm_relation.parse(p);
-        d.graph.setRelationStatus(params.relationId, 'confirmed');
-        d.audit.log({ action: 'relation.confirm', actor: 'user', trigger, confirmed: true, entityIds: [params.relationId] });
+        // the user's decision, undoable in the change log (#283)
+        d.graph.decideRelation(params.relationId, 'confirmed', { trigger });
         return 'Beziehung bestätigt.';
+      }
+      case 'link_entities': {
+        const params = ActionParamSchemas.link_entities.parse(p);
+        d.graph.linkEntries(params.sourceId, params.targetId, params.relationType, { status: 'confirmed', trigger });
+        const a = d.graph.getEntity(params.sourceId)?.name ?? params.sourceId;
+        const b = d.graph.getEntity(params.targetId)?.name ?? params.targetId;
+        return `„${a}“ mit „${b}“ verknüpft.`;
       }
       case 'reject_relation': {
         const params = ActionParamSchemas.reject_relation.parse(p);

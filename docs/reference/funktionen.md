@@ -54,6 +54,8 @@ Der Chat ist die zentrale Schnittstelle.
 - **Entitäten**: Document, Decision, Topic, Project, Person, Event, Question→Task, Note, Category, Tag.
 - **Beziehungen** mit Confidence und Status `proposed`/`confirmed`/`rejected`/`outdated`, gespeichert in SQLite.
 - **Zusammenführen** von Themen, Projekten (auch Thema ↔ Projekt), Personen und Tags hängt Beziehungen, Thema/Projekt-Verweise (Dokumente, Entscheidungen, offene Punkte, Ereignisse), Beteiligte, Personen und Verantwortliche um, merkt alte Namen als Aliasse und indexiert neu. Es lässt sich exakt rückgängig machen – auch mehrere Zusammenführungen eines Laufs auf einmal.
+- **Themen-Hierarchie**: Ein Thema oder Projekt kann „Unterthema von“ einem anderen sein („Urlaub 2026“ unter „Urlaub“) – per Antwort „Unterthema“ auf die Dubletten-Rückfrage oder über „Verknüpfen“. Die Wissen-Seite zeigt Themen und Projekte als Baum. Filter der Listen, die Timeline und Wissensfragen zu einem Oberthema berücksichtigen alle Unterthemen mit. Kreise und andere Arten als Themen/Projekte werden abgelehnt; rückgängig im Änderungsprotokoll.
+- **Mehrere Themen und Projekte**: Dokumente, Entscheidungen, offene Punkte und Ereignisse haben ein Hauptthema und ein Hauptprojekt (danach richtet sich die Ablage im Archiv) und beliebig viele weitere – in den Formularen unter „Weitere Themen“ / „Weitere Projekte“. Weitere sind bestätigte Beziehungen derselben Art wie die zum Hauptthema; Listen zeigen sie mit „+ …“, Filter nach Thema oder Projekt finden den Eintrag unter jedem davon, und die Archivprüfung zählt ihn als zugeordnet. Ändern ist ein Rückgängig-Schritt; Zusammenführen hängt auch weitere Themen um. Eine Migration hat jedem vorhandenen Hauptthema und -projekt seine Beziehung gegeben.
 - **Veraltete Beziehungen**: Ändern sich Thema, Projekt, Beteiligte, Personen oder Tags (auch beim Bearbeiten eines archivierten Dokuments) oder der Verantwortliche eines offenen Punkts, werden die automatisch angelegten Beziehungen zum alten Ziel `outdated`. Von dir bestätigte oder abgelehnte bleiben unverändert; Rückgängig stellt sie wieder her.
 - **Verantwortliche** sind als Beziehung „verantwortlich für“ mit ihrem offenen Punkt verbunden.
 - **Ereignisse** haben Beteiligte (Dialog, Chat, Graph „beteiligt an“).
@@ -71,7 +73,7 @@ Wie und warum Archivist Einträge verknüpft: [Wie Archivist Wissen verknüpft](
 | Feld | Werte |
 | --- | --- |
 | Herkunft (`origin`) | `system` (feste Methoden), `user`, `agent` (mit Lauf-ID) |
-| Methode (`method`) | `field` (Feld des Eintrags: Thema, Projekt, Personen, Tags, Ordner), `analysis` (Analyse eines Dokuments oder einer Notiz), `similarity`, `mention`, `co_origin`, `date_person`, `wikilink`, `manual`, `agent` |
+| Methode (`method`) | `field` (Feld des Eintrags: Thema, Projekt, Personen, Tags, Ordner), `analysis` (Analyse eines Dokuments oder einer Notiz), `similarity`, `mention`, `co_origin`, `date_person`, `wikilink`, `manual`, `agent`, `refinement` (genauere Art per LLM) |
 | Beleg (`evidence`) | kurzer Text, höchstens 300 Zeichen: die ähnlichste Textstelle, die Nachricht, „Am 01.09.2026 mit „Anna““ … |
 
 Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von dir bestätigt“, „von dir abgelehnt“ oder „manuell“, dazu Methode und Beleg. Ein bestätigter Feld-Spiegel gilt nur dann als „von dir bestätigt“, wenn du ihn bestätigt hast.
@@ -87,8 +89,11 @@ Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von 
 
 - Übersprungen werden schon verknüpfte Paare, Eingangsdokumente, verworfene Duplikate und **abgelehnte Paare**: Ein abgelehntes Paar schlägt keine Methode wieder vor – in beiden Richtungen, unabhängig von der Art, auch nachdem einer der beiden als Duplikat in einen anderen Eintrag zusammengeführt wurde. Ein abgelehntes „Duplikat“ heißt nur „verschieden“ und blockiert nichts.
 - Abschaltbar unter Einstellungen → Agent → Agentenläufe → „Verknüpfungen automatisch vorschlagen“ (`links.autoPropose`), dort auch die Höchstzahl je Eintrag.
+- **Aus Ablehnungen lernen** (behutsam): Zählt werden deine letzten 40 Entscheidungen je Methode (ab 8). Lehnst du mehr als die Hälfte ab, steigt die Schwelle der Methode – bei 90 % Ablehnung bis zum Deckel von 0,1 (ähnlicher Inhalt: Mindest-Ähnlichkeit; gleicher Tag + gleiche Person: Mindest-Konfidenz, die mit jeder weiteren gemeinsamen Person um 0,1 steigt). Bestätigungen senken sie wieder. Auch am Deckel kommen die stärksten Vorschläge noch, keine Methode wird abgeschaltet. Einsehen und zurücksetzen unter Einstellungen → Agent → Agentenläufe → „Aus Ablehnungen gelernt“.
 
 **Verknüpfungsvorschläge prüfen** (Insights, ganz oben): alle offenen Vorschläge der Methoden, gruppiert nach Methode oder Eintrag, je mit Beleg; 20 je Seite mit Gesamtzahl. „Bestätigen“, „Ablehnen“ und „Alle bestätigen“ (die ganze Gruppe, auch über die Seite hinaus) sind je ein Rückgängig-Schritt. Widersprüche, Versionen und Dubletten haben eigene Abläufe und erscheinen dort nicht. Benachrichtigt wird nur bei neuen Vorschlägen: eine Benachrichtigung, die sich aktualisiert, solange sie ungelesen ist.
+
+**Verknüpfungsgrad** (Insights, über den Vorschlägen): Anteil verwaister Einträge, Zahl offener Vorschläge und die Bestätigungsquote deiner Entscheidungen – gesamt und je Methode. Jede Archivprüfung speichert einen Messpunkt (die letzten 400); der Verlauf zeigt den Anteil verwaister Einträge, als Tabelle auch alle Werte. Ein Klick auf eine Kennzahl öffnet die verwaisten Einträge, die Vorschlagsliste bzw. die Quoten je Methode.
 
 **Verwandte Einträge** in Dokument- und Entscheidungsdetails, auf der Wissen-Seite und als „Zusammenhänge“ bei offenen Punkten:
 
@@ -97,7 +102,24 @@ Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von 
 - Vorschläge direkt bestätigen oder ablehnen; 10 je Seite;
 - Knoten mit mehr als 500 Einträgen zählen nicht; abgelehnte Paare fehlen.
 
+**Vorschläge beim Erfassen im Chat**: Nach dem Speichern einer Notiz, Entscheidung, eines offenen Punkts oder Ereignisses erscheinen unter der Antwort bis zu drei Knöpfe wie „Das klingt nach Projekt „Hausbau“ – verknüpfen?“ – aus der Ähnlichkeitssuche, genannten Themen und Projekten und der Notiz-Analyse. Sie werden in einem eigenen Job ermittelt, die Antwort wartet nicht darauf. Ein Klick bestätigt die Verknüpfung (rückgängig im Änderungsprotokoll); ignorierte Vorschläge bleiben in den Verknüpfungsvorschlägen.
+
+**Graph-Ansicht**: „Graph“ in der Detailansicht der Wissen-Seite zeigt die Umgebung eines Eintrags – 1 oder 2 Schritte, filterbar nach Art der Beziehung, Art des Eintrags und Status (bestätigt durchgezogen, vorgeschlagen gestrichelt). Ein Klick wählt einen Knoten: „Öffnen“ führt zum Eintrag, „Erweitern“ holt seine Nachbarn dazu. Höchstens 60 Knoten; mehr als 12 Nachbarn einer Art erscheinen als ein Sammelknoten („20 Notizen“), und der zweite Schritt läuft nicht über solche großen Knoten. Gezeichnet wird lokal als SVG, ohne Bibliothek aus dem Netz; „Als Tabelle“ listet dieselben Verknüpfungen als Text.
+
 **Manuell verknüpfen**: „Verknüpfen“ wählt per Suche einen Eintrag beliebiger Art und die Art der Beziehung (verwandt, folgt aus, ersetzt, blockiert …). Manuelle Verknüpfungen sind sofort bestätigt, stehen im Änderungsprotokoll, lassen sich rückgängig machen und wieder entfernen. Im Chat verknüpft der Agent auf Wunsch („Verknüpfe das mit dem Mietvertrag“) und fragt bei mehreren Treffern nach.
+
+**Vorgänge** (z. B. „Steuererklärung 2025“, „Autokauf“) sammeln Dokumente, Entscheidungen, offene Punkte, Ereignisse und Notizen zu einer Sache:
+
+- Anlegen auf der Wissen-Seite („Neu anlegen“ → Vorgang) oder direkt beim Zuordnen; Name, Beschreibung, Status offen/abgeschlossen.
+- Zuordnen über „Zu Vorgang hinzufügen“ in den Details eines Eintrags, per Mehrfachauswahl in den Listen oder im Chat („Leg das in den Vorgang Autokauf“). Ein Eintrag kann zu mehreren Vorgängen gehören.
+- Ist ein Eintrag einem Eintrag eines offenen Vorgangs ähnlich, wird er für diesen Vorgang vorgeschlagen (Methode `similarity`, Beleg „ähnlich wie … aus dem Vorgang …“).
+- Die Seite eines Vorgangs zeigt seine offenen Punkte und alle Einträge als Verlauf (neueste zuerst, nach fachlichem Datum).
+- Nennt eine Wissensfrage einen Vorgang, zählen seine Einträge als Quellen („Teil des Vorgangs …“).
+- Anlegen, Zuordnen (auch mehrerer Einträge in einem Schritt) und Abschließen sind rückgängig machbar.
+
+**Sammelzuordnung**: In den Listen der Dokumente, Entscheidungen, offenen Punkte, der Timeline (Ereignisse) und auf der Wissen-Seite (Notizen und andere Einträge) lassen sich mehrere Einträge ankreuzen. „Zuordnen“ setzt für alle auf einmal Thema, Projekt, Tag und Vorgang: Ein Thema oder Projekt wird ergänzt – wer noch keins hat, bekommt es als Hauptthema bzw. -projekt, die anderen als weiteres. Die ganze Sammelaktion ist **ein** Rückgängig-Schritt. Bei Dokumenten bietet der Dialog zusätzlich „Thema entfernen“, „Projekt entfernen“, Schlagwörter entfernen und „Verschieben“.
+
+**Wiki-Links in Notizen**: `[[Name]]` (oder `[[Name|angezeigter Text]]`) verweist auf einen anderen Eintrag – Notiz, Dokument, Entscheidung, offener Punkt, Ereignis, Vorgang, Projekt, Thema, Person oder Tag, auch über Aliasse. Nach `[[` bietet das Textfeld passende Einträge an (Pfeiltasten, Enter). Beim Speichern entsteht je Link eine bestätigte, manuelle Beziehung (Methode `wikilink`, Beleg „[[Name]]“); ein gelöschter Link entfernt sie wieder, Rückgängig der Bearbeitung stellt sie her. Umbenennen oder Zusammenführen des Ziels bricht keinen Link. Unbekannte Namen stehen unter dem Textfeld, mit „als Notiz anlegen“; in der Anzeige sind sie gestrichelt unterstrichen, bekannte Links führen zum Eintrag.
 
 **Rückwirkender Lauf** (Job `links.run`): wendet alle Methoden auf das vorhandene Archiv an, abbrechbar, mit Fortschritt; nach einem Neustart geht er hinter dem letzten vollständig erledigten Eintrag weiter, nichts wird doppelt bezahlt. Er startet einmal nach dem Update und auf Knopfdruck unter Einstellungen → Agent → Agentenläufe; am Ende ein gebündelter Hinweis.
 
@@ -167,10 +189,13 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - **doppelte offene Punkte** (Titel, Beschreibung, Thema/Projekt, Verantwortlicher),
 - **doppelte Notizen** (gleicher oder nahezu gleicher Inhalt – Notizen, die nur gleich beginnen, bleiben getrennt),
 - **doppelte Ereignisse** (gleiches Datum, ähnlicher Titel),
-- **mögliche Dubletten bei Themen, Projekten und Tags** (Schreibvarianten, Singular/Plural, Tippfehler; „Urlaub“ ↔ „Urlaub 2026“ nur als Frage),
+- **mögliche Dubletten bei Themen, Projekten und Tags** (Schreibvarianten, Singular/Plural, Tippfehler; „Urlaub“ ↔ „Urlaub 2026“ nur als Frage mit „Unterthema“, „Zusammenführen“ oder „Verschieden“),
 - **gleicher Name als Thema und als Projekt** (Rückfrage „Projekt“ / „Thema“ / „Beides ist richtig“),
 - Ablageort vs. Klassifikation, Datenbank vs. Dateisystem,
-- [Personen-Dubletten](#personen-und-eigene-identität).
+- [Personen-Dubletten](#personen-und-eigene-identität),
+- **Neue Themen aus Gruppen**: Mindestens drei ähnliche Einträge ohne Thema und Projekt werden als „Neues Thema ‚…‘ anlegen?“ vorgeschlagen, mit den Einträgen als Beleg. Den Namen schlägt im Datenschutzmodus „automatisch“ das LLM vor (nur Titel freigegebener Einträge), sonst bilden ihn die häufigsten gemeinsamen Wörter. „Ja“ legt das Thema an und ordnet zu (rückgängig machbar), „Nein“ wird gemerkt. Auch der rückwirkende Verknüpfungslauf schlägt so Themen vor.
+- **Genauere Art von Verknüpfungen** (nur im Datenschutzmodus „automatisch“, je Lauf bis zu 10 Paare, jedes nur einmal): Für bestätigte „verwandt“-Paare schlägt das LLM „ersetzt“, „blockiert“, „folgt aus“, „widerspricht“ oder „stützt“ vor – mit Begründung als Beleg, die Antwort Zod-geprüft. Gesendet werden nur Titel und kurze Texte (bei Dokumenten die Zusammenfassung, nur wenn sie geteilt werden dürfen), als Daten gekennzeichnet; sie erscheinen im Übertragungsprotokoll. Der Vorschlag steht in den Verknüpfungsvorschlägen; bestätigt ersetzt er das allgemeine „verwandt“ (beides ein Rückgängig-Schritt). Bei zwei Entscheidungen laufen „widerspricht“ und „ersetzt“ über die Widerspruchsprüfung bzw. den Vorschlag „Als überholt markieren“.
+- **Einträge ohne Verknüpfung** (Dokumente, Notizen, Entscheidungen, offene Punkte, Ereignisse ohne bestätigte oder vorgeschlagene Beziehung; ein Ordner allein zählt nicht): Je Lauf schlägt die Prüfung für bis zu 50 davon je zwei Ziele vor (ähnliche Einträge, genannte Themen und Projekte) – beim nächsten Lauf geht es mit den nächsten weiter. Ein gebündelter Hinweis führt in die Verknüpfungsvorschläge und schließt sich, sobald jeder dieser Einträge eine bestätigte Verknüpfung hat. Mit ausgeschalteten automatischen Vorschlägen meldet sie nur.
 
 **Doppelte offene Punkte, Notizen und Ereignisse** folgen demselben Muster: Ein Eintrag wird behalten, fehlende Angaben, Quellen, Erinnerungen und Verknüpfungen werden übernommen, der andere wird als „verworfen (Duplikat)“ markiert. Nichts wird gelöscht, alles ist rückgängig machbar, „Verschieden“ wird gemerkt. Auch der Chat fragt vor dem Anlegen eines offenen Punkts nach, wenn es schon einen ähnlichen gibt.
 
