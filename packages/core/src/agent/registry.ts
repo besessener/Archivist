@@ -2,11 +2,7 @@ import { z } from 'zod';
 import type { AgentMode, ToolRisk } from '@archivist/shared';
 import type { ToolSpec } from './types';
 
-/**
- * Short ids the model sees instead of real ids: D1 … for documents, K1 … for other entries (decisions, open items,
- * notes, events, topics, persons …), S1 … for result sets that stand for ALL hits of a query (#303). They live per
- * conversation, so a follow-up („verschieb die auch“) can still refer to them.
- */
+/** Per-conversation short ids for the model (#303): D… documents, K… other entries, S… result sets standing for all hits. */
 export interface RefState {
   ids: Record<string, string>;
   sets: Record<string, string[]>;
@@ -63,7 +59,7 @@ export class RefStore {
     return ref;
   }
 
-  /** One ref (D1, K2) → real id; real ids pass through unchanged when `allowRaw` (e.g. ids from search results). */
+  /** One ref (D1, K2) → real id; null when unknown. */
   resolve(ref: string): string | null {
     const key = ref.trim().toUpperCase();
     return this.state.ids[key] ?? null;
@@ -188,10 +184,10 @@ export class ToolRegistry {
 }
 
 function jsonSchema(schema: z.ZodType): Record<string, unknown> {
-  const s = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
-  delete s.$schema;
-  if (s.type !== 'object') return { type: 'object', properties: {}, additionalProperties: true };
-  return s;
+  const json = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
+  delete json.$schema;
+  if (json.type !== 'object') return { type: 'object', properties: {}, additionalProperties: true };
+  return json;
 }
 
 /** Zod issues as a short text the model can correct itself with. */

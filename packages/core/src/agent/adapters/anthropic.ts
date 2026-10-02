@@ -29,6 +29,8 @@ export const WEB_SEARCH_MAX_USES = 5;
 /** Minimum total of a Claude task budget. */
 const MIN_TASK_BUDGET = 20_000;
 
+const FALLBACK_MODELS = /^claude-(?:opus-5|sonnet-5-5|fable-5-1)/;
+
 /** True for a base URL of the Anthropic Messages API (api.anthropic.com, Foundry `…/anthropic`). */
 export function isAnthropicUrl(baseUrl: string): boolean {
   try {
@@ -62,6 +64,30 @@ export function sdkBaseUrl(baseUrl: string): string {
   return url;
 }
 
+const safeToolId = (id: string) => id.replace(/[^\w-]/g, '_');
+
+/** Tool results with ids normalized like the tool_use ids they answer, then the operator note. */
+function toolResultBlocks(message: Extract<AgentMessage, { role: 'tool' }>): ContentBlockParam[] {
+  const blocks: ContentBlockParam[] = message.results.map((r) => ({
+    type: 'tool_result' as const,
+    tool_use_id: safeToolId(r.callId),
+    content: r.content || '(leer)',
+    ...(r.isError ? { is_error: true } : {}),
+  }));
+  if (message.note) blocks.push({ type: 'text', text: message.note });
+  return blocks;
+}
+
+function assistantBlocks(message: Extract<AgentMessage, { role: 'assistant' }>, model: string): ContentBlockParam[] {
+  // thinking and compaction blocks go back unchanged and in place (append-only history)
+  if (replayRaw(message, 'anthropic', model) && Array.isArray(message.raw) && message.raw.length) return message.raw as ContentBlockParam[];
+  const blocks: ContentBlockParam[] = [];
+  if (message.text.trim()) blocks.push({ type: 'text', text: message.text });
+  // tool_use ids of other providers may contain characters the Messages API rejects
+  for (const c of message.toolCalls) blocks.push({ type: 'tool_use', id: safeToolId(c.id), name: c.name, input: c.args ?? {} });
+  return blocks;
+}
+
 /** Provider-neutral history → Messages API messages; consecutive results and texts of the user side form one message. */
 export function toAnthropicMessages(messages: AgentMessage[], model: string): MessageParam[] {
   const out: MessageParam[] = [];
@@ -70,32 +96,14 @@ export function toAnthropicMessages(messages: AgentMessage[], model: string): Me
     if (last?.role === 'user' && Array.isArray(last.content)) last.content.push(...blocks);
     else out.push({ role: 'user', content: blocks });
   };
-  for (const m of messages) {
-    if (m.role === 'user') pushUser([{ type: 'text', text: m.content }]);
-    else if (m.role === 'tool') {
-      pushUser(
-        m.results.map((r) => ({
-          type: 'tool_result' as const,
-          tool_use_id: r.callId,
-          content: r.content || '(leer)',
-          ...(r.isError ? { is_error: true } : {}),
-        })),
-      );
-      if (m.note) pushUser([{ type: 'text', text: m.note }]);
-    } else if (replayRaw(m, 'anthropic', model) && Array.isArray(m.raw) && m.raw.length) {
-      // thinking and compaction blocks go back unchanged and in place (append-only history)
-      out.push({ role: 'assistant', content: m.raw as ContentBlockParam[] });
-    } else {
-      const blocks: ContentBlockParam[] = [];
-      if (m.text.trim()) blocks.push({ type: 'text', text: m.text });
-      for (const c of m.toolCalls) blocks.push({ type: 'tool_use', id: c.id.replace(/[^\w-]/g, '_'), name: c.name, input: c.args ?? {} });
+  for (const message of messages) {
+    if (message.role === 'user') pushUser([{ type: 'text', text: message.content }]);
+    else if (message.role === 'tool') pushUser(toolResultBlocks(message));
+    else {
+      const blocks = assistantBlocks(message, model);
       if (blocks.length) out.push({ role: 'assistant', content: blocks });
     }
   }
-  // tool_use ids of other providers were normalized above – the matching results need the same ids
-  for (const msg of out)
-    if (msg.role === 'user' && Array.isArray(msg.content))
-      for (const b of msg.content) if (b.type === 'tool_result') b.tool_use_id = b.tool_use_id.replace(/[^\w-]/g, '_');
   return out;
 }
 
@@ -118,6 +126,28 @@ export function webActivity(blocks: RawBlock[]): { web?: WebSearchActivity } {
     blocks.flatMap((b) => (b.type === 'web_search_tool_result' && Array.isArray(b.content) ? (b.content as Array<{ url?: string; title?: string }>) : [])),
   );
   return { web: { queries, sources: cited.length ? cited : found.slice(0, 8) } };
+}
+
+/** Streamed tools get eager input streaming; the last tool is the first cache breakpoint. */
+function toolParams(req: TurnRequest, off: Set<string>): unknown[] {
+  const tools: unknown[] = req.tools.map((t, i) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters,
+    ...(off.has('eager_streaming') ? {} : { eager_input_streaming: true }),
+    ...(i === req.tools.length - 1 ? { cache_control: { type: 'ephemeral' } } : {}),
+  }));
+  // basic web search (server tool): available on the Claude API and on Foundry, also for deployments hosted on Azure
+  if (req.webSearch && !off.has('web_search')) {
+    const timeZone = off.has('web_location') ? null : userTimeZone();
+    tools.unshift({
+      type: 'web_search_20250305',
+      name: 'web_search',
+      max_uses: WEB_SEARCH_MAX_USES,
+      ...(timeZone ? { user_location: { type: 'approximate', timezone: timeZone } } : {}),
+    });
+  }
+  return tools;
 }
 
 /** SDK error → user-facing error; rate limits, server and connection errors are retryable (the core counts retries). */
@@ -145,56 +175,38 @@ function mapError(err: unknown, signal?: AbortSignal): Error {
   return new AppError('llm_error', 'Die Antwort von Claude war unvollständig.', { retryable: true, details: err instanceof Error ? err.message : String(err) });
 }
 
-/**
- * Adapter for Claude via the Anthropic Messages API (#296) – directly at Anthropic or through Microsoft Foundry
- * (`https://<resource>.services.ai.azure.com/anthropic`). Tools are native tools, results go back as `tool_result`.
- * Thinking is always on for current models and only steered by `effort`; tool use is never forced (`auto` only).
- * System instructions and tool list are stable and cached; task budget and compaction are used where available.
- */
+/** Claude via the Messages API (#296), directly or through Microsoft Foundry; thinking steered by `effort`, tool use never forced. */
 export class AnthropicAdapter implements ProviderAdapter {
   readonly id = 'anthropic' as const;
   readonly model: string;
   private readonly client: Anthropic;
   private readonly firstParty: boolean;
 
-  constructor(private readonly cfg: AdapterConfig) {
-    this.model = cfg.model;
-    this.firstParty = isFirstParty(cfg.baseUrl);
-    const common = { apiKey: cfg.apiKey, baseURL: sdkBaseUrl(cfg.baseUrl), fetch: cfg.fetchImpl as never, maxRetries: 0, timeout: cfg.timeoutMs };
-    this.client = isFoundryHost(cfg.baseUrl) ? (new AnthropicFoundry(common) as unknown as Anthropic) : new Anthropic(common);
+  constructor(private readonly config: AdapterConfig) {
+    this.model = config.model;
+    this.firstParty = isFirstParty(config.baseUrl);
+    const common = { apiKey: config.apiKey, baseURL: sdkBaseUrl(config.baseUrl), fetch: config.fetchImpl as never, maxRetries: 0, timeout: config.timeoutMs };
+    this.client = isFoundryHost(config.baseUrl) ? (new AnthropicFoundry(common) as unknown as Anthropic) : new Anthropic(common);
   }
 
   private get endpoint(): string {
-    return `${sdkBaseUrl(this.cfg.baseUrl)}/v1/messages`;
+    return `${sdkBaseUrl(this.config.baseUrl)}/v1/messages`;
   }
 
-  private params(req: TurnRequest, off: Set<string>, stream: boolean): Record<string, unknown> {
-    const tools = req.tools.map((t, i) => ({
-      name: t.name,
-      description: t.description,
-      input_schema: t.parameters,
-      ...(stream && !off.has('eager_streaming') ? { eager_input_streaming: true } : {}),
-      // the stable tool list is the first cache breakpoint
-      ...(i === req.tools.length - 1 ? { cache_control: { type: 'ephemeral' } } : {}),
-    }));
-    // basic web search (server tool): available on the Claude API and on Foundry, also for deployments hosted on Azure
-    if (req.webSearch && !off.has('web_search')) {
-      const tz = off.has('web_location') ? null : userTimeZone();
-      tools.unshift({
-        type: 'web_search_20250305',
-        name: 'web_search',
-        max_uses: WEB_SEARCH_MAX_USES,
-        ...(tz ? { user_location: { type: 'approximate', timezone: tz } } : {}),
-      } as never);
-    }
-    const betas: string[] = [];
-    const outputConfig: Record<string, unknown> = {};
-    if (!off.has('effort')) outputConfig.effort = req.effort;
-    if (this.firstParty && !off.has('task_budget') && req.taskBudget && req.tools.length) {
-      outputConfig.task_budget = { type: 'tokens', total: Math.max(MIN_TASK_BUDGET, req.taskBudget) };
-      betas.push('task-budgets-2026-03-13');
-    }
-    const p: Record<string, unknown> = {
+  private params(req: TurnRequest, off: Set<string>): Record<string, unknown> {
+    const tools = toolParams(req, off);
+    const taskBudget = this.firstParty && !off.has('task_budget') && req.taskBudget && req.tools.length ? req.taskBudget : 0;
+    const compaction = !off.has('compaction') && req.tools.length > 0;
+    // server-side refusal fallback exists only on the Claude API itself (not on Foundry)
+    const fallbacks = this.firstParty && !off.has('fallbacks') && FALLBACK_MODELS.test(this.model);
+    const outputConfig = {
+      ...(off.has('effort') ? {} : { effort: req.effort }),
+      ...(taskBudget ? { task_budget: { type: 'tokens', total: Math.max(MIN_TASK_BUDGET, taskBudget) } } : {}),
+    };
+    const betas = [taskBudget && 'task-budgets-2026-03-13', compaction && 'compact-2026-01-12', fallbacks && 'server-side-fallback-2026-07-01'].filter(
+      (beta): beta is string => Boolean(beta),
+    );
+    return {
       model: this.model,
       max_tokens: req.maxOutputTokens,
       system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
@@ -202,19 +214,11 @@ export class AnthropicAdapter implements ProviderAdapter {
       ...(tools.length ? { tools, tool_choice: { type: 'auto' } } : {}),
       ...(Object.keys(outputConfig).length ? { output_config: outputConfig } : {}),
       // automatic caching of the growing history (last cacheable block)
-      ...(!off.has('top_cache') ? { cache_control: { type: 'ephemeral' } } : {}),
+      ...(off.has('top_cache') ? {} : { cache_control: { type: 'ephemeral' } }),
+      ...(compaction ? { context_management: { edits: [{ type: 'compact_20260112' }] } } : {}),
+      ...(fallbacks ? { fallbacks: 'default' } : {}),
+      ...(betas.length ? { betas } : {}),
     };
-    if (!off.has('compaction') && req.tools.length) {
-      p.context_management = { edits: [{ type: 'compact_20260112' }] };
-      betas.push('compact-2026-01-12');
-    }
-    // server-side refusal fallback exists only on the Claude API itself (not on Foundry)
-    if (this.firstParty && !off.has('fallbacks') && /^claude-(?:opus-5|sonnet-5-5|fable-5-1)/.test(this.model)) {
-      p.fallbacks = 'default';
-      betas.push('server-side-fallback-2026-07-01');
-    }
-    if (betas.length) p.betas = betas;
-    return p;
   }
 
   async turn(req: TurnRequest, onEvent?: (e: StreamEvent) => void): Promise<TurnResult> {
@@ -225,7 +229,7 @@ export class AnthropicAdapter implements ProviderAdapter {
     try {
       for (let fallback = 0; ; fallback += 1) {
         if (req.signal?.aborted) throw abortedError();
-        const params = this.params(req, off, true);
+        const params = this.params(req, off);
         bytes = Buffer.byteLength(JSON.stringify(params), 'utf8');
         try {
           const stream = this.client.beta.messages.stream(params as never, { signal: req.signal });
@@ -244,7 +248,7 @@ export class AnthropicAdapter implements ProviderAdapter {
             const feature = (Object.keys(FEATURE_MENTIONS) as Feature[]).find((f) => !off.has(f) && FEATURE_MENTIONS[f].test(err.message));
             if (feature) {
               off.add(feature);
-              this.cfg.warn('Claude endpoint rejected an optional feature – retrying without it', { feature });
+              this.config.warn('Claude endpoint rejected an optional feature – retrying without it', { feature });
               continue;
             }
           }
@@ -252,7 +256,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         }
       }
     } finally {
-      this.cfg.log({
+      this.config.log({
         purpose: req.purpose,
         model: this.model,
         endpoint: this.endpoint,
@@ -305,12 +309,12 @@ export class AnthropicAdapter implements ProviderAdapter {
   /** Plain text request (classification, summaries) for the rest of Archivist when Claude is configured. */
   async completeText(input: { system: string; text: string; maxOutputTokens: number; signal?: AbortSignal }): Promise<string> {
     try {
-      const msg = await this.client.messages.create(
+      const message = await this.client.messages.create(
         { model: this.model, max_tokens: input.maxOutputTokens, system: input.system, messages: [{ role: 'user', content: input.text }] },
         { signal: input.signal },
       );
-      if (msg.stop_reason === 'refusal') throw new AppError('llm_error', 'Claude hat die Anfrage abgelehnt.');
-      return msg.content
+      if (message.stop_reason === 'refusal') throw new AppError('llm_error', 'Claude hat die Anfrage abgelehnt.');
+      return message.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
         .join('');

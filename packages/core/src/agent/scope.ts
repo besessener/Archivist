@@ -1,9 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-/**
- * Run scope (#299): every change made while a tool of an agent run executes carries the run id – audit entries
- * (files, metadata, knowledge entries) and relations. Services read it from here, so no service needs a new parameter.
- */
+/** Run scope (#299): changes made while an agent tool runs carry the run id, without a new parameter on every service. */
 export interface AgentRunScope {
   runId: string;
   /** true while a tool runs that the user explicitly asked for (links: confirmed instead of proposed, Epic #294). */

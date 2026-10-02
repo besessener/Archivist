@@ -7,12 +7,7 @@ export const WITHHELD_TEXT = '[Antwort ausgeblendet: Sie nannte Dokumente, die i
 
 const mentions = (text: string, withdrawn: ReadonlySet<string>) => [...text.matchAll(DOC_REF_RE)].some((m) => withdrawn.has(m[0]));
 
-/**
- * Earlier turns of a conversation are sent again with every request. A document excluded or locked after it was read
- * must not travel along in them (#202, #301): tool results and answers that name it are replaced before the replay.
- * Provider blocks (thinking, reasoning) can quote it without naming it, so they are all dropped – except for a newest
- * answer with open tool calls, which the provider needs unchanged to continue.
- */
+/** Replay filter (#202, #301): results and answers naming withdrawn documents are replaced, provider blocks dropped except the open newest. */
 export function withholdWithdrawn(history: readonly AgentMessage[], withdrawn: ReadonlySet<string>): AgentMessage[] {
   if (!withdrawn.size) return [...history];
   const lastAssistant = history.findLastIndex((m) => m.role === 'assistant');

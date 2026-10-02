@@ -36,16 +36,16 @@ export interface PromptInput {
 }
 
 /** System instructions of the agent. */
-export function systemPrompt(p: PromptInput): string {
+export function systemPrompt(input: PromptInput): string {
   return [
     ROLE,
     SECURITY_RULES,
-    `${MODE_TEXT[p.mode]}\nAusnahmen, die IMMER nachfragen (auch im Modus „Auto“): endgültiges Löschen, Änderungen an Originaldateien außerhalb des Archivs, Datenschutz-Einstellungen, neue Hauptkategorien und Massenaktionen mit mehr als ${p.massThreshold} Einträgen in einem Lauf.`,
-    p.background
+    `${MODE_TEXT[input.mode]}\nAusnahmen, die IMMER nachfragen (auch im Modus „Auto“): endgültiges Löschen, Änderungen an Originaldateien außerhalb des Archivs, Datenschutz-Einstellungen, neue Hauptkategorien und Massenaktionen mit mehr als ${input.massThreshold} Einträgen in einem Lauf.`,
+    input.background
       ? 'Du arbeitest im HINTERGRUND ohne den Benutzer: Es gibt keine Rückfragen (ask_user steht nicht zur Verfügung). Bist du unsicher, ändere nichts, sondern lass es als Vorschlag bzw. im Eingang. Fasse am Ende in wenigen Zeilen zusammen, was du getan hast.'
       : null,
-    p.learned || null,
-    p.context,
+    input.learned || null,
+    input.context,
   ]
     .filter(Boolean)
     .join('\n\n');
