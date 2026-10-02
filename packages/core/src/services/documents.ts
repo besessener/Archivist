@@ -772,6 +772,65 @@ export class DocumentService {
     return { usedLlm, warning };
   }
 
+  /**
+   * An index-only document points to its original, so a changed original must not stay searchable with its old
+   * content (#229): re-reads the original in place (locally, no LLM), keeps title, assignments and links, and
+   * re-indexes it. A stale inbox copy is removed, so opening the document shows the current file.
+   * Returns false if nothing changed or the document is not index-only.
+   */
+  async refreshIndexedOnly(id: string, opts: { signal?: AbortSignal } = {}): Promise<boolean> {
+    const row = this.findRow(id);
+    if (!row || row.status !== 'indexed_only' || !row.sourcePath) return false;
+    const source = row.sourcePath;
+    const sha = await this.pool.run('hashFile', { path: source });
+    if (sha === row.sha256) return false;
+    opts.signal?.throwIfAborted();
+    const [st, parsed] = await Promise.all([
+      fsp.stat(source),
+      this.pool.run('extractDocument', {
+        path: source,
+        options: {
+          ocrEnabled: this.settings.get().ocr.enabled,
+          ocrLanguages: this.settings.get().ocr.languages,
+          tessdataDir: path.join(this.ctx.paths.index, 'tessdata'),
+        },
+      }),
+    ]);
+    opts.signal?.throwIfAborted();
+    const text = parsed.text;
+    const textHash = text.length > 200 ? sha256Text(normalizeName(text).slice(0, 20_000)) : null;
+    const updated = this.db
+      .update(documents)
+      .set({
+        sha256: sha,
+        size: st.size,
+        extractedText: text,
+        textHash,
+        processingStatus: parsed.status,
+        processingError: parsed.error,
+        technicalMeta: { ...parsed.meta, truncated: parsed.truncated, textHash },
+        stagedPath: null,
+        updatedAt: nowIso(),
+      })
+      .where(and(eq(documents.id, id), eq(documents.status, 'indexed_only'), eq(documents.sha256, row.sha256)))
+      .run();
+    if (!updated.changes) return false;
+    if (row.stagedPath) await fsp.rm(row.stagedPath, { force: true }).catch(() => undefined);
+    this.audit.log({
+      action: 'document.refresh',
+      actor: 'agent',
+      trigger: 'source_changed',
+      confirmed: true,
+      entityIds: [id],
+      paths: [source],
+      before: { sha256: row.sha256, size: row.size },
+      after: { sha256: sha, size: st.size },
+    });
+    await this.indexDocument(id);
+    this.ctx.events.changed('documents', 'knowledge');
+    return true;
+  }
+
   /** Triggers (re)processing. `allowLlm=true` corresponds to the user's explicit permission. */
   enqueueAnalysis(id: string, allowLlm: boolean): string {
     const doc = this.getRow(id);

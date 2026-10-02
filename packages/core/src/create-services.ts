@@ -143,6 +143,7 @@ function buildServices(opts: CreateServicesOptions) {
     openItemDuplicates.check(count);
   });
   const personDuplicates = new PersonDuplicateService(ctx, settings, graph, insights, () => self.ownNameKeys());
+  consistency.setIndexRefresher((id, signal) => documentsSvc.refreshIndexedOnly(id, { signal }));
   consistency.addCheck((count) => personDuplicates.check(count));
   const personQuestions = new PersonQuestionService(ctx, graph, insights, llm, privacy);
   consistency.addCheck((count) => personQuestions.check(count));

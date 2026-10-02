@@ -394,6 +394,24 @@ export class ScannerService {
     summary.unchanged += 1;
   }
 
+  /**
+   * The original of an index-only document changed: the document is re-read in place (no second document, no
+   * stale content in the search) and the scan file keeps its status (#229). False if the file belongs to no
+   * index-only document.
+   */
+  private async refreshIndexedOnly(prev: FileRow, e: ScanEntry, sha: string, now: string): Promise<boolean> {
+    const doc = this.docs.findRow(prev.documentId!);
+    if (doc?.status !== 'indexed_only') return false;
+    try {
+      await this.docs.refreshIndexedOnly(doc.id);
+    } catch (err) {
+      this.ctx.logger.warn('scanner', 'Index-only document not refreshed', { documentId: doc.id, error: err });
+      return false;
+    }
+    this.db.update(scanFiles).set({ size: e.size, mtimeMs: e.mtimeMs, sha256: sha, lastSeenAt: now }).where(eq(scanFiles.id, prev.id)).run();
+    return true;
+  }
+
   /** Records one walked file: unchanged files are only refreshed, new or changed ones are hashed and checked for duplicates. */
   private async scanEntry(root: RootRow, e: ScanEntry, prev: FileRow | undefined, summary: ScanSummary, now: string): Promise<void> {
     if (prev?.status === 'excluded') {
@@ -415,6 +433,10 @@ export class ScannerService {
     if (prev && prev.sha256 === sha) {
       // only the timestamp changed (touched, or restored by an undo): same content, the status stays
       this.markUnchanged(prev, { size: e.size, mtimeMs: e.mtimeMs, lastSeenAt: now }, summary);
+      return;
+    }
+    if (prev?.documentId && (await this.refreshIndexedOnly(prev, e, sha, now))) {
+      summary.changedFiles += 1;
       return;
     }
     const decision = this.privacy.evaluate({ path: e.path, ext: e.ext, rootLlmAllowed: root.llmAllowed });
@@ -609,6 +631,8 @@ export class ScannerService {
           .run();
         doc = this.docs.getRow(doc.id);
       }
+      // the file changed after it was archived: the new content becomes a new document that replaces the archived one
+      const replaced = doc && doc.sha256 !== sha && (doc.status === 'archived' || doc.status === 'indexed_only') ? doc : null;
       if (!doc || doc.sha256 !== sha) {
         const rec = this.docs.insertDocument({
           originalName: f.name,
@@ -631,6 +655,9 @@ export class ScannerService {
         skipped.push(id);
         return;
       }
+      if (replaced)
+        // a proposal only: the user decides whether the new version really replaces the archived one
+        this.graph.link(doc.id, replaced.id, 'supersedes', { confidence: 0.9, status: 'proposed', sourceIds: [doc.id] });
       const updated = this.docs.getRow(doc.id);
       this.db
         .update(scanFiles)
