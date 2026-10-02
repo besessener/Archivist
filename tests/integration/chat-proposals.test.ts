@@ -146,3 +146,32 @@ describe('shortAnswer', () => {
     expect(shortAnswer(text)).toBe(expected);
   });
 });
+
+describe('Only a clear „ja“ executes a card – not an LLM label (#199)', () => {
+  it('a message the classifier calls an approval, but that is no „ja“, is asked back', async () => {
+    const rel = proposedRelation('Hauskauf', 'Nordlicht');
+    app.llm.on('ChatIntent', (_s, input) =>
+      /Welche Beziehungen/.test(userText(input)) ? intent({ intent: 'relation_decide' }) : intent({ intent: 'proposal_confirm' }),
+    );
+    const r1 = await send('Welche Beziehungen sind noch offen?');
+
+    const r2 = await send('Zeig mir vorher bitte noch die Zielordner', r1.conversationId);
+
+    expect(app.services.graph.getRelation(rel.id)?.status).toBe('proposed');
+    expect(r2.assistantMessage.content).toMatch(/Soll ich „.*“ ausführen\?/);
+
+    await send('ja', r1.conversationId);
+    expect(app.services.graph.getRelation(rel.id)?.status).toBe('confirmed');
+  });
+
+  it('after the question, an unrelated message does not execute the card', async () => {
+    const rel = proposedRelation('Hauskauf', 'Nordlicht');
+    app.llm.on('ChatIntent', (_s, input) =>
+      /Welche Beziehungen/.test(userText(input)) ? intent({ intent: 'relation_decide' }) : intent({ intent: 'proposal_confirm' }),
+    );
+    const r1 = await send('Welche Beziehungen sind noch offen?');
+    await send('Mach weiter wie im Dokument beschrieben', r1.conversationId);
+    await send('Und noch etwas anderes', r1.conversationId);
+    expect(app.services.graph.getRelation(rel.id)?.status).toBe('proposed');
+  });
+});

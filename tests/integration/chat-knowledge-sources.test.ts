@@ -214,3 +214,64 @@ describe('Unbacked answers do not look verified (#166)', () => {
     expect(m.sources.map((s) => s.title)).toEqual(['1. Zaun']);
   });
 });
+
+describe('Sources carry the document date, not the archive date (#168)', () => {
+  beforeEach(async () => {
+    app = await createTestApp({ privacy: 'auto' });
+    app.llm.on('KnowledgeAnswer', () => answer);
+    app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: 'Heizungswartung' }));
+  });
+
+  it('labels the header with the document date and the archive date separately', async () => {
+    app.llm.on('DocumentClassification', () => ({ ...classification('Wartungsvertrag', 'Vertrag zur Heizungswartung.'), documentDate: '2025-08-14' }));
+    const file = app.file('vertrag.txt', 'Berlin, 14.08.2025. Vertrag über die jährliche Heizungswartung.');
+    const imported = await app.ok('documents:import', { paths: [file] });
+    await app.services.jobs.whenIdle();
+    const documentId = imported.imported[0]!.id;
+    const plan = await app.ok('documents:previewArchive', { items: [{ documentId, mode: 'copy' }] });
+    await app.ok('documents:archive', { items: [{ documentId, mode: 'copy' }], confirmed: true, approveNewCategories: plan.newCategories, confirmMove: false });
+    await app.services.documents.indexDocument(documentId);
+
+    const m = (await app.ok('chat:send', { text: 'Wann haben wir die Heizungswartung vereinbart?' })).assistantMessage;
+
+    const today = new Date().toISOString().slice(0, 4);
+    expect(knowledgeInput()).toMatch(new RegExp(`\\[S1\\] \\(document, Dokumentdatum 2025-08-14, archiviert am ${today}-\\d\\d-\\d\\d\\)`));
+    expect(m.sources[0]).toMatchObject({ id: documentId, date: '2025-08-14', dateKind: 'document' });
+    expect((await app.ok('documents:get', { id: documentId })).documentDate).toBe('2025-08-14');
+  });
+
+  it('says that the date is unknown when the document has none', async () => {
+    const documentId = await archiveText('notiz.txt', 'Heizungswartung: der Techniker kommt einmal im Jahr.', 'Notiz Heizung', 'Notiz zur Heizungswartung.');
+
+    const m = (await app.ok('chat:send', { text: 'Was gilt für die Heizungswartung?' })).assistantMessage;
+
+    expect(knowledgeInput()).toMatch(/\[S1\] \(document, Dokumentdatum unbekannt, archiviert am \d{4}-\d\d-\d\d\)/);
+    expect(m.sources[0]).toMatchObject({ id: documentId, dateKind: 'archived' });
+  });
+});
+
+describe('Decision dates (#168)', () => {
+  beforeEach(async () => {
+    app = await createTestApp({ privacy: 'auto' });
+  });
+
+  it('rejects a decision date in the future', async () => {
+    const res = await app.call(
+      'decisions:create',
+      DecisionInput.parse({ decisionText: 'Wir kündigen den Vertrag.', decidedAt: '2999-01-01', topic: 'Vertrag', participants: ['Anna'] }),
+    );
+    expect(res.ok).toBe(false);
+  });
+
+  it('an undated decision is not called older than a dated one by its capture date', async () => {
+    const undated = app.services.decisions.create(
+      DecisionInput.parse({ decisionText: 'Wir nutzen Anbieter A.', topic: 'Strom', participants: ['Anna'], unknownFields: ['decidedAt'] }),
+    );
+    app.services.decisions.create(
+      DecisionInput.parse({ decisionText: 'Wir nutzen Anbieter B.', topic: 'Strom', participants: ['Anna'], decidedAt: '2020-01-01' }),
+    );
+    await app.services.consistency.run();
+    const insights = await app.ok('insights:list', {});
+    expect(insights.filter((i) => i.kind === 'possibly_superseded' && i.affected.some((a) => a.id === undated.id))).toHaveLength(0);
+  });
+});

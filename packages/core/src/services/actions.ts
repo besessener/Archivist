@@ -413,7 +413,7 @@ export class ActionService {
       }
       case 'close_open_item': {
         const params = ActionParamSchemas.close_open_item.parse(p);
-        d.openItems.close(params.openItemId, params.status, { confirmed: true, trigger });
+        d.openItems.close(params.openItemId, params.status, { confirmed: true, trigger, resolutionNote: params.resolutionNote });
         return 'Offener Punkt geschlossen.';
       }
       case 'merge_topics': {
@@ -512,6 +512,8 @@ export class ActionService {
             unknownFields: [],
             asDraft: false,
             confidence: 0.7,
+            origin: 'document',
+            evidence: params.evidence ?? null,
           },
           { actor: 'agent', trigger },
         );

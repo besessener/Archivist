@@ -21,7 +21,11 @@ function Group({
   group: ScanProposalGroup;
   onArchive: (ids: string[], mode: ArchiveMode, group: ScanProposalGroup) => void | Promise<void>;
 }) {
-  const docs = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'] });
+  const docs = useQuery(
+    'documents:list',
+    { ids: group.documentIds.slice(0, 1000), limit: 1000 },
+    { scopes: ['documents'], enabled: group.documentIds.length > 0 },
+  );
   const byId = useMemo(() => new Map((docs.data ?? []).map((d) => [d.id, d])), [docs.data]);
   const [selected, setSelected] = useState<Set<string>>(new Set(group.documentIds));
   const [mode, setMode] = useState<ArchiveMode>('copy');
@@ -93,7 +97,7 @@ function Group({
 
 export function ScanProposals() {
   const { data, loading, error, refetch } = useQuery('scanner:proposals', {}, { scopes: ['scanner', 'documents'] });
-  const docs = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'] });
+  const docs = useQuery('documents:list', { statuses: ['proposed'], limit: 1000 }, { scopes: ['documents'] });
   const [items, setItems] = useState<ArchiveItemRequest[] | null>(null);
 
   async function openArchive(ids: string[], mode: ArchiveMode, group: ScanProposalGroup) {

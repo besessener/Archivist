@@ -20,13 +20,31 @@ export const ArchiveLocationProposal = z.object({
 });
 export type ArchiveLocationProposal = z.infer<typeof ArchiveLocationProposal>;
 
+/** What a document says about a decision: only `decided` (and `rejected`) are decisions; the rest was only talked about (#175). */
+export const DecisionKind = z.enum(['decided', 'proposed', 'discussed', 'postponed', 'rejected']);
+export type DecisionKind = z.infer<typeof DecisionKind>;
+/** Where a decision was captured: dictated in the chat, entered in the form, or taken from a document. */
+export const DecisionOrigin = z.enum(['chat', 'form', 'document']);
+export type DecisionOrigin = z.infer<typeof DecisionOrigin>;
+
 export const DocumentProposal = z.object({
   location: ArchiveLocationProposal,
   topic: z.string().nullable(),
   project: z.string().nullable(),
   persons: z.array(z.string()),
   tags: z.array(z.string()),
-  possibleDecisions: z.array(z.object({ title: z.string(), decisionText: z.string(), decidedAt: z.string().nullish() })),
+  possibleDecisions: z.array(
+    z.object({
+      title: z.string(),
+      decisionText: z.string(),
+      decidedAt: z.string().nullish(),
+      kind: DecisionKind.nullish(),
+      /** The sentence of the document that states the decision, verbatim (checked against the text). */
+      evidence: z.string().nullish(),
+      /** Who took this decision according to the document – not simply everyone the document names (#178). */
+      participants: z.array(z.string()).nullish(),
+    }),
+  ),
   possibleOpenItems: z.array(
     z.object({ title: z.string(), description: z.string().nullish(), dueAt: z.string().nullish(), responsible: z.string().nullish() }),
   ),
@@ -60,6 +78,7 @@ export const DocumentRecord = z.object({
   persons: z.array(z.string()),
   tags: z.array(z.string()),
   dates: z.array(z.string()),
+  documentDate: IsoDate.nullable().describe('Datum des Dokuments selbst (Brief-, Sitzungs-, Rechnungsdatum), nicht das Archivierungsdatum'),
   confidence: z.number().nullable(),
   llmStatus: LlmStatus,
   folderLlmAllowed: z.boolean().describe('false: liegt in einem Scan-Verzeichnis ohne KI-Freigabe'),
@@ -163,6 +182,10 @@ export const Decision = z.object({
   confidence: z.number(),
   missingFields: z.array(DecisionField),
   unknownFields: z.array(DecisionField),
+  /** null for decisions captured before the origin was recorded */
+  origin: DecisionOrigin.nullable(),
+  /** Verbatim sentence of the source document that states the decision (only for decisions from documents). */
+  evidence: z.string().nullable(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
@@ -184,6 +207,8 @@ export const DecisionInput = z.object({
   sourceIds: z.array(z.string()).default([]),
   confidence: Confidence.default(0.9),
   asDraft: z.boolean().default(false),
+  origin: DecisionOrigin.optional(),
+  evidence: z.string().nullish(),
 });
 export type DecisionInput = z.infer<typeof DecisionInput>;
 
@@ -196,7 +221,7 @@ export type EditableDecisionStatus = z.infer<typeof EditableDecisionStatus>;
 export const isEditableDecisionStatus = (s: DecisionStatus): s is EditableDecisionStatus => EditableDecisionStatus.safeParse(s).success;
 
 /** Partial update of a decision: only the given fields change (no defaults, see `patchSchema`). */
-export const DecisionPatch = patchSchema(DecisionInput).extend({ status: EditableDecisionStatus.optional() });
+export const DecisionPatch = patchSchema(DecisionInput.omit({ origin: true, evidence: true })).extend({ status: EditableDecisionStatus.optional() });
 export type DecisionPatch = z.infer<typeof DecisionPatch>;
 
 // ---------- Open items ----------
@@ -266,6 +291,8 @@ export const OpenItem = z.object({
   solution: OpenItemSolution.nullable().default(null),
   /** Discarded as a duplicate („verworfen (Duplikat)“, status `dismissed`): the open item it was merged into. */
   duplicateOfId: z.string().nullable().default(null),
+  /** Comment given when closing (how it was solved / why it was dropped); null while open. */
+  resolutionNote: z.string().nullable().default(null),
 });
 export type OpenItem = z.infer<typeof OpenItem>;
 
@@ -607,7 +634,11 @@ export const ActionParamSchemas = {
     supersedeOldDecisionId: Id.optional(),
     supersedeNewDecisionId: Id.optional(),
   }),
-  close_open_item: z.object({ openItemId: Id, status: z.enum(['resolved', 'dismissed']).default('resolved') }),
+  close_open_item: z.object({
+    openItemId: Id,
+    status: z.enum(['resolved', 'dismissed']).default('resolved'),
+    resolutionNote: z.string().max(4000).nullish(),
+  }),
   merge_topics: z.object({ sourceTopicId: Id, targetTopicId: Id }),
   /** Generic merge (topics, projects, persons, tags); `allowCrossType` merges a topic into a project or vice versa (target type wins). */
   merge_entities: z.object({ sourceIds: z.array(Id).min(1), targetId: Id, allowCrossType: z.boolean().default(false) }),
@@ -649,6 +680,8 @@ export const ActionParamSchemas = {
     topic: z.string().nullish(),
     project: z.string().nullish(),
     sourceIds: z.array(z.string()).default([]),
+    kind: DecisionKind.nullish(),
+    evidence: z.string().nullish(),
   }),
 } as const;
 

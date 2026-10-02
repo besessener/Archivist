@@ -28,7 +28,10 @@ const FILTERS: Array<{ id: DocumentStatus | 'all'; label: string }> = [
 ];
 
 export default function InboxPage() {
-  const { data, loading, error, refetch } = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'], jobs: true });
+  // only inbox documents, filtered in the database – older waiting documents are no longer hidden by newer archived ones (#214)
+  const { data, loading, error, refetch } = useQuery('documents:list', { statuses: INBOX_STATUSES, limit: 1000 }, { scopes: ['documents'], jobs: true });
+  const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
+  const inboxTotal = INBOX_STATUSES.reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
   const [filter, setFilter] = useState<DocumentStatus | 'all'>('all');
   const [edits, setEdits] = useState<Record<string, ArchiveEdit>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -66,11 +69,16 @@ export default function InboxPage() {
               )}
             >
               {f.label}
-              {f.id !== 'all' && ` (${docs.filter((d) => d.status === f.id).length})`}
+              {f.id !== 'all' && ` (${byStatus?.[f.id] ?? docs.filter((d) => d.status === f.id).length})`}
             </button>
           ))}
         </div>
       </div>
+      {inboxTotal > docs.length && (
+        <p className="mb-4 text-sm text-muted-foreground" data-testid="inbox-capped">
+          Angezeigt werden die neuesten {docs.length} von {inboxTotal} wartenden Dokumenten. Archiviere oder ignoriere diese, dann erscheinen die übrigen.
+        </p>
+      )}
 
       {archivable.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3" data-testid="inbox-batchbar">

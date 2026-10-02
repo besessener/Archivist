@@ -1,5 +1,5 @@
 import type { DocumentProposal } from '@archivist/shared';
-import { normalizeDateInput, parseGermanDate } from '../util/dates';
+import { normalizeDateInput, parseGermanDate, toIsoDate } from '../util/dates';
 import { firstSentence, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { detectOpenItemSentences } from './open-items';
 
@@ -15,6 +15,8 @@ export interface LocalClassification {
   persons: string[];
   tags: string[];
   dates: string[];
+  /** Date of the document itself: the first date in the text that is not in the future (letter head, meeting date). */
+  documentDate: string | null;
   possibleOpenItems: DocumentProposal['possibleOpenItems'];
   possibleDecisions: DocumentProposal['possibleDecisions'];
   confidence: number;
@@ -226,7 +228,13 @@ export function classifyLocally(input: {
     .split(/(?<=[.!?])\s+|\n+/)
     .filter((s) => /(?:wir\s+haben\s+)?(?:beschlossen|entschieden)|beschluss:|entscheidung:/i.test(s) && s.length < 400)
     .slice(0, 5)
-    .map((s) => ({ title: firstSentence(s, 90), decisionText: s.trim(), decidedAt: extractDates(s, now)[0] ?? null }));
+    .map((s) => ({
+      title: firstSentence(s, 90),
+      decisionText: s.trim(),
+      decidedAt: extractDates(s, now).find((d) => pastOrToday(d, now)) ?? null,
+      kind: 'decided' as const,
+      evidence: s.trim(),
+    }));
   return {
     docType,
     title: base.trim() || input.fileName,
@@ -237,6 +245,7 @@ export function classifyLocally(input: {
     persons: [],
     tags: keywordTags(input.text),
     dates,
+    documentDate: dates.find((d) => pastOrToday(d, now)) ?? null,
     possibleOpenItems: openItems,
     possibleDecisions: decisionSentences,
     confidence,
@@ -253,9 +262,24 @@ export function snapToKnown(name: string | null | undefined, known: string[], th
     const s = nameSimilarity(clean, k);
     if (s >= threshold && (!best || s > best.s)) best = { n: k, s };
   }
-  return best?.n ?? clean;
+  return best?.n ?? (looksLikeName(clean) ? clean : null);
+}
+
+/**
+ * A new topic/project name from the LLM must look like a name: short, one line, no sentence punctuation.
+ * Otherwise text from a document („!!! Hinweis für den Assistenten: …“) would become a topic and be repeated in
+ * every later prompt under „Bekannte Themen“ (#199).
+ */
+function looksLikeName(name: string): boolean {
+  return name.length <= 60 && name.split(/\s+/).length <= 6 && !/[\n\r!?:;{}<>[\]"„“”|=]/.test(name);
 }
 
 export const normalizeIsoDates = (values: Array<string | null | undefined>): string[] => [
   ...new Set(values.map((v) => normalizeDateInput(v ?? null)).filter((v): v is string => Boolean(v))),
 ];
+
+/** The ISO date if it is not after today (local day of `now`), else null – a document cannot be dated in the future. */
+export function pastOrToday(iso: string | null | undefined, now = new Date()): string | null {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return null;
+  return iso.slice(0, 10) <= toIsoDate(now) ? iso.slice(0, 10) : null;
+}

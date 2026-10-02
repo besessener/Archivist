@@ -22,6 +22,9 @@ import { matchOpenItems, type OpenItemService } from './open-items';
 import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
 
+/** Upper bound of decision proposals per document (protection against a runaway classification). */
+const MAX_DOCUMENT_DECISIONS = 10;
+
 interface UndoData {
   documentId: string;
   mode: 'copy' | 'move' | 'index_only' | 'ignore';
@@ -742,7 +745,8 @@ export class ArchiveService {
         }),
       ];
     });
-    const decisionActions = proposal.possibleDecisions.slice(0, 3).map((it) =>
+    // every decision found (the classification yields only a few per document), each with its own participants (#178)
+    const decisionActions = proposal.possibleDecisions.slice(0, MAX_DOCUMENT_DECISIONS).map((it) =>
       this.actions.propose({
         actionType: 'record_decision',
         label: `Entscheidung erfassen: ${it.title}`,
@@ -754,10 +758,13 @@ export class ArchiveService {
           title: it.title,
           decisionText: it.decisionText,
           decidedAt: it.decidedAt ?? null,
-          participants: proposal.persons.slice(0, 5),
+          // empty if the document does not say who decided: the decision then stays a draft and asks for them
+          participants: it.participants ?? [],
           topic,
           project,
           sourceIds: [row.id],
+          kind: it.kind ?? null,
+          evidence: it.evidence ?? null,
         },
       }),
     );

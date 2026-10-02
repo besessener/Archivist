@@ -113,7 +113,15 @@ function DocumentsInner() {
                   <TD>{d.categoryPath ?? '–'}</TD>
                   <TD>{d.topicName ?? '–'}</TD>
                   <TD>{d.projectName ?? '–'}</TD>
-                  <TD className="whitespace-nowrap">{formatDate(d.archivedAt ?? d.createdAt)}</TD>
+                  <TD className="whitespace-nowrap">
+                    {d.documentDate ? (
+                      formatDate(d.documentDate)
+                    ) : (
+                      <span className="text-muted-foreground" title="Dokumentdatum unbekannt – Datum der Archivierung">
+                        {formatDate(d.archivedAt ?? d.createdAt)} (archiviert)
+                      </span>
+                    )}
+                  </TD>
                   <TD className="max-w-xs break-all text-xs text-muted-foreground">{d.archivePath ?? d.archiveRelPath ?? '–'}</TD>
                 </TR>
               ))}
@@ -203,6 +211,8 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
           <dd>{doc.persons.length ? doc.persons.join(', ') : '–'}</dd>
           <dt className="text-muted-foreground">Schlagwörter</dt>
           <dd>{doc.tags.length ? doc.tags.join(', ') : '–'}</dd>
+          <dt className="text-muted-foreground">Dokumentdatum</dt>
+          <dd>{formatDate(doc.documentDate, 'unbekannt')}</dd>
           <dt className="text-muted-foreground">Datumsangaben</dt>
           <dd>{doc.dates.length ? doc.dates.map((d) => formatDate(d, d)).join(', ') : '–'}</dd>
           <dt className="text-muted-foreground">Archiviert am</dt>

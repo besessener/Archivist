@@ -4,6 +4,7 @@ import {
   type Decision,
   type DecisionField,
   type DecisionInput,
+  type DecisionOrigin,
   type DecisionPatch,
   type DecisionStatus,
 } from '@archivist/shared';
@@ -12,7 +13,7 @@ import type { AppContext } from '../context';
 import { decisions, entities } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
-import { normalizeDateInput } from '../util/dates';
+import { normalizeDateInput, toIsoDate } from '../util/dates';
 import { firstSentence, normalizeName, truncate } from '../util/text';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
@@ -44,6 +45,14 @@ export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'
  * Required fields: when, topic, participants, decision.
  * A field counts as fulfilled if it is present OR the user has explicitly confirmed it as unknown.
  */
+/** Decision date as ISO; a decision cannot have been taken in the future (#168). */
+function checkedDecisionDate(value: string | null | undefined): string | null {
+  const iso = normalizeDateInput(value ?? null);
+  if (iso && iso.slice(0, 10) > toIsoDate(new Date()))
+    throw new AppError('validation_error', `Das Entscheidungsdatum ${iso.slice(0, 10)} liegt in der Zukunft. Gib das Datum an, an dem entschieden wurde.`);
+  return iso;
+}
+
 export function computeMissingFields(d: {
   decisionText?: string | null;
   decidedAt?: string | null;
@@ -165,6 +174,8 @@ export class DecisionService {
       sourceIds: r.sourceIds,
       confidence: r.confidence,
       missingFields: r.missingFields as DecisionField[],
+      origin: (r.origin as DecisionOrigin | null) ?? null,
+      evidence: r.evidence,
       unknownFields: r.unknownFields as DecisionField[],
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -240,7 +251,7 @@ export class DecisionService {
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
-    const decidedAt = normalizeDateInput(input.decidedAt ?? null);
+    const decidedAt = checkedDecisionDate(input.decidedAt);
     const personContext = mentionContext(opts.trigger, 'decision');
     const participants = this.persons.resolveNames(input.participants, { context: personContext }).names;
     const missing = computeMissingFields({
@@ -270,6 +281,8 @@ export class DecisionService {
       confidence: input.confidence,
       missingFields: missing,
       unknownFields: input.unknownFields,
+      origin: input.origin ?? (opts.trigger === 'chat' ? 'chat' : 'form'),
+      evidence: input.evidence?.trim() || null,
       createdAt: now,
       updatedAt: now,
     };
@@ -314,7 +327,7 @@ export class DecisionService {
     const set: Partial<Row> = { updatedAt: nowIso() };
     if (patch.title !== undefined) set.title = patch.title.trim() || cur.title;
     if (patch.decisionText !== undefined) set.decisionText = patch.decisionText.trim();
-    if (patch.decidedAt !== undefined) set.decidedAt = normalizeDateInput(patch.decidedAt ?? null);
+    if (patch.decidedAt !== undefined) set.decidedAt = checkedDecisionDate(patch.decidedAt);
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
     const personContext = mentionContext(opts.trigger, 'decision');

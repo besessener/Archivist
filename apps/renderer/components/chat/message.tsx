@@ -15,6 +15,15 @@ import { useRun } from '@/lib/use-run';
 import type { ChatMsg, SourceRef } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+/** Which date a source shows – an archive date must not look like the document's date (#168). */
+const DATE_KIND_LABEL: Record<NonNullable<SourceRef['dateKind']>, string> = {
+  document: 'Dokument vom',
+  archived: 'archiviert am',
+  decided: 'entschieden am',
+  occurred: 'am',
+  created: 'erfasst am',
+};
+
 function SourceChip({ source }: { source: SourceRef }) {
   const { run } = useRun();
   const inner = (
@@ -23,7 +32,12 @@ function SourceChip({ source }: { source: SourceRef }) {
       <span className="min-w-0 text-left">
         <span className="block truncate text-xs font-medium">{source.title}</span>
         {source.snippet && <span className="line-clamp-2 block text-[11px] text-muted-foreground">{source.snippet}</span>}
-        {source.date && <span className="block text-[11px] text-muted-foreground">{formatDate(source.date)}</span>}
+        {source.date && (
+          <span className="block text-[11px] text-muted-foreground">
+            {source.dateKind ? `${DATE_KIND_LABEL[source.dateKind]} ` : ''}
+            {formatDate(source.date)}
+          </span>
+        )}
       </span>
     </>
   );

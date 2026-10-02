@@ -28,7 +28,7 @@ describe('Knowledge questions also find events (#48)', () => {
     app.llm.on('KnowledgeAnswer', (_s, input) => {
       expect(input).toContain('Beitrag beim German Testing Day eingereicht');
       expect(input).toContain('2026-10-01');
-      expect(input).toMatch(/\[S1\] \(event, 2026-10-01\)/);
+      expect(input).toMatch(/\[S1\] \(event, am 2026-10-01\)/);
       return {
         answer: 'Du hast den Beitrag am 1. Oktober 2026 eingereicht.',
         facts: [{ statement: 'Eingereicht am 2026-10-01.', sourceIds: ['S1'] }],
@@ -56,7 +56,7 @@ describe('Knowledge questions also find events (#48)', () => {
     const r = await app.ok('chat:send', { text: question });
     const m = r.assistantMessage;
     expect(m.content).toMatch(/lokale Trefferliste/);
-    expect(m.content).toMatch(/Beitrag beim German Testing Day eingereicht\*\* \(event, 2026-10-01\)/);
+    expect(m.content).toMatch(/Beitrag beim German Testing Day eingereicht\*\* \(event, am 2026-10-01\)/);
     const src = m.sources.find((s) => s.type === 'event');
     expect(src).toMatchObject({ title: expect.stringContaining('German Testing Day'), date: expect.stringMatching(/^2026-10-01/) });
   });

@@ -1,0 +1,1 @@
+ALTER TABLE `open_items` ADD `resolution_note` text;

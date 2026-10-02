@@ -69,6 +69,8 @@ export const documents = sqliteTable(
     persons: jsonArr('persons'),
     tags: jsonArr('tags'),
     dates: jsonArr('dates'),
+    /** Date of the document itself (letter, meeting, invoice date) – not the archive date (#168). */
+    documentDate: text('document_date'),
     confidence: real('confidence'),
     llmStatus: text('llm_status').notNull().default('pending'),
     /** false: the document lies in a scan folder without LLM permission – nothing of it may reach the LLM. */
@@ -77,11 +79,19 @@ export const documents = sqliteTable(
     archiveMode: text('archive_mode'),
     extractedText: text('extracted_text').notNull().default(''),
     technicalMeta: text('technical_meta', { mode: 'json' }).$type<ArchivistJson | null>(),
+    /** Hash of the normalized text start (near-duplicate detection); a column with an index instead of a JSON field (#212). */
+    textHash: text('text_hash'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
     archivedAt: text('archived_at'),
   },
-  (t) => [index('documents_sha_idx').on(t.sha256), index('documents_status_idx').on(t.status), index('documents_topic_idx').on(t.topicId)],
+  (t) => [
+    index('documents_sha_idx').on(t.sha256),
+    index('documents_status_idx').on(t.status),
+    index('documents_topic_idx').on(t.topicId),
+    index('documents_text_hash_idx').on(t.textHash),
+    index('documents_created_idx').on(t.createdAt),
+  ],
 );
 
 export const decisions = sqliteTable(
@@ -105,6 +115,9 @@ export const decisions = sqliteTable(
     confidence: real('confidence').notNull().default(0.8),
     missingFields: jsonArr('missing_fields'),
     unknownFields: jsonArr('unknown_fields'),
+    /** chat | form | document (#175); null for older decisions */
+    origin: text('origin'),
+    evidence: text('evidence'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -134,6 +147,8 @@ export const openItems = sqliteTable(
     solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
     /** Set when the item was discarded as a duplicate: the open item it was merged into (status `dismissed`). */
     duplicateOfId: text('duplicate_of_id'),
+    /** Optional comment given when closing: how it was solved, or why it was dropped. */
+    resolutionNote: text('resolution_note'),
   },
   (t) => [index('open_items_status_idx').on(t.status)],
 );

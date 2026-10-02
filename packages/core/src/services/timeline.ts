@@ -1,4 +1,5 @@
 import { localDate, type EntityRef, type TimelineEntry } from '@archivist/shared';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { contradictions, decisions, documents, events, openItems } from '../db/schema';
 import { truncate } from '../util/text';
@@ -46,11 +47,32 @@ export class TimelineService {
       out.push({ ...e, date, year: Number(date.slice(0, 4)) || 0 });
     };
 
-    for (const d of db.select().from(documents).all()) {
-      if (!['archived', 'indexed_only'].includes(d.status) || !match(d.topicId, d.projectId)) continue;
+    // filtered in the database and without the extracted text – SELECT * loaded every full text per call (#214)
+    const docRows = db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        summary: documents.summary,
+        topicId: documents.topicId,
+        projectId: documents.projectId,
+        documentDate: documents.documentDate,
+        dates: documents.dates,
+        archivedAt: documents.archivedAt,
+        createdAt: documents.createdAt,
+      })
+      .from(documents)
+      .where(
+        and(
+          inArray(documents.status, ['archived', 'indexed_only']),
+          q.topicId ? eq(documents.topicId, q.topicId) : undefined,
+          q.projectId ? eq(documents.projectId, q.projectId) : undefined,
+        ),
+      )
+      .all();
+    for (const d of docRows) {
       push({
         id: `doc:${d.id}`,
-        date: d.dates[0] ?? d.archivedAt ?? d.createdAt,
+        date: d.documentDate ?? d.dates[0] ?? d.archivedAt ?? d.createdAt,
         kind: 'document',
         title: `Dokument: ${d.title}`,
         description: d.summary ? truncate(d.summary, 220) : null,
@@ -63,7 +85,8 @@ export class TimelineService {
         id: `dec:${d.id}`,
         date: d.decidedAt ?? d.createdAt,
         kind: 'decision',
-        title: `Entscheidung${d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : ''}: ${d.title}`,
+        // without a decision date it is placed at the day it was captured – and says so (#168)
+        title: `Entscheidung${d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : ''}${d.decidedAt ? '' : ' (ohne Datum, erfasst an diesem Tag)'}: ${d.title}`,
         description: truncate(d.decisionText, 240),
         refs: [{ type: 'decision', id: d.id, label: d.title }, ...ref('topic', d.topicId), ...ref('project', d.projectId)],
       });
@@ -98,7 +121,7 @@ export class TimelineService {
           date: o.updatedAt,
           kind: 'open_item',
           title: `${o.status === 'resolved' ? 'Erledigt' : 'Verworfen'}: ${o.title}`,
-          description: null,
+          description: o.resolutionNote ? truncate(o.resolutionNote, 240) : null,
           refs,
         });
     }

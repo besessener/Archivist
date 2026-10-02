@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ArchiveLocationProposal, DecisionField } from './domain';
+import { ArchiveLocationProposal, DecisionField, DecisionKind } from './domain';
 import { Confidence, RelationType } from './common';
 
 export { AgentActionProposal, ArchiveLocationProposal } from './domain';
@@ -98,6 +98,9 @@ export const ChatIntent = z.object({
       targetId: opt(z.string()).describe('ID eines bestehenden offenen Punkts aus dem Kontext (z. B. „P2“), wenn ein bestehender Punkt gemeint ist'),
       targetHint: opt(z.string()).describe('Hinweis, welcher bestehende offene Punkt gemeint ist (nur, wenn keine ID passt)'),
       newStatus: opt(z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed'])),
+      resolutionNote: opt(z.string()).describe(
+        'Nur beim Schließen: wie der Punkt gelöst wurde bzw. warum er sich erledigt hat, wenn der Benutzer es sagt (z. B. „Angebot von Müller angenommen“); sonst leer',
+      ),
     }),
   ),
   event: opt(
@@ -144,10 +147,24 @@ export const DocumentClassification = z.object({
   project: opt(z.string()),
   persons: z.array(z.string()).default([]),
   dates: z.array(z.object({ date: z.string(), label: opt(z.string()) })).default([]),
+  documentDate: opt(z.string()).describe(
+    'Datum des Dokuments selbst (Brief-, Sitzungs-, Rechnungs- oder Erstellungsdatum laut Text), YYYY-MM-DD; nicht das heutige Datum, leer wenn nicht erkennbar',
+  ),
   tags: z.array(z.string()).default([]),
   location: ArchiveLocationProposal,
   decisions: z
-    .array(z.object({ title: z.string(), decisionText: z.string(), decidedAt: opt(z.string()), participants: z.array(z.string()).default([]) }))
+    .array(
+      z.object({
+        title: z.string(),
+        decisionText: z.string(),
+        decidedAt: opt(z.string()),
+        participants: z.array(z.string()).default([]),
+        kind: opt(DecisionKind).describe(
+          'decided = verbindlich entschieden/beschlossen; proposed = nur vorgeschlagen; discussed = nur besprochen; postponed = vertagt; rejected = ausdrücklich abgelehnt',
+        ),
+        evidence: opt(z.string()).describe('Der Satz aus dem Dokumenttext, der die Entscheidung belegt – wörtlich und unverändert kopiert'),
+      }),
+    )
     .default([]),
   openItems: z.array(z.object({ title: z.string(), description: opt(z.string()), dueAt: opt(z.string()), responsible: opt(z.string()) })).default([]),
   confidence: Confidence,

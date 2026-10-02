@@ -14,6 +14,7 @@ import { chatRequests, mergeChatMessages, requestsFor } from '@/lib/chat-request
 import { call } from '@/lib/ipc';
 import { SUPPORTED_TYPES_TEXT } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
+import { useSettings } from '@/lib/use-settings';
 import { useRun } from '@/lib/use-run';
 import { formatDateTime } from '@/lib/format';
 
@@ -48,6 +49,12 @@ export default function ChatPage() {
   const [renameValue, setRenameValue] = useState('');
 
   const convs = useQuery('chat:conversations', {}, { scopes: ['chat'] });
+  const { settings, hasApiKey } = useSettings();
+  // say where messages go – also in „vorher fragen“, where chat messages are sent without a further question (#201)
+  const aiNotice =
+    !settings || settings.privacy.llmMode === 'local_only' || !settings.llm.baseUrl || !hasApiKey
+      ? 'Nachrichten bleiben auf diesem Rechner.'
+      : `Nachrichten werden zur Auswertung an die KI (${settings.llm.model}) gesendet.`;
   const history = useQuery('chat:history', conversationId ? { conversationId } : undefined, {
     scopes: ['chat'],
     enabled: conversationId !== null,
@@ -338,8 +345,8 @@ export default function ChatPage() {
             <SendHorizontal aria-hidden />
           </Button>
         </form>
-        <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground">
-          Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) kannst du auch einfach in das Fenster ziehen.
+        <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground" data-testid="chat-ai-notice">
+          {aiNotice} Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) kannst du auch einfach in das Fenster ziehen.
         </p>
       </div>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>

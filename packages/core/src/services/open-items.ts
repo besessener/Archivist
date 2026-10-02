@@ -143,9 +143,13 @@ export class OpenItemService {
         return row.updatedAt === d.afterUpdatedAt ? [] : ['Der offene Punkt wurde seit der Aktion verändert.'];
       },
       run: async (data) => {
-        const d = data as { id: string; previousStatus: OpenItemStatus; reminders?: Array<{ id: string; status: string }> };
+        const d = data as { id: string; previousStatus: OpenItemStatus; previousNote?: string | null; reminders?: Array<{ id: string; status: string }> };
         this.db.transaction(() => {
-          this.db.update(openItems).set({ status: d.previousStatus, updatedAt: nowIso() }).where(eq(openItems.id, d.id)).run();
+          this.db
+            .update(openItems)
+            .set({ status: d.previousStatus, resolutionNote: d.previousNote ?? null, updatedAt: nowIso() })
+            .where(eq(openItems.id, d.id))
+            .run();
           // reminders ended on closing come back
           for (const r of d.reminders ?? []) this.db.update(reminders).set({ status: r.status }).where(eq(reminders.id, r.id)).run();
           syncReminderAt(this.db, d.id);
@@ -224,6 +228,7 @@ export class OpenItemService {
       updatedAt: r.updatedAt,
       solution: r.solution ? (OpenItemSolution.safeParse(r.solution).data ?? null) : null,
       duplicateOfId: r.duplicateOfId,
+      resolutionNote: r.resolutionNote,
     };
   }
 
@@ -300,6 +305,7 @@ export class OpenItemService {
       updatedAt: now,
       solution: null,
       duplicateOfId: null,
+      resolutionNote: null,
     };
     this.db.transaction(() => {
       this.db.insert(openItems).values(row).run();
@@ -448,7 +454,8 @@ export class OpenItemService {
   }
 
   /** Stage 2: closing only with explicit confirmation; with an undo entry. */
-  close(id: string, status: 'resolved' | 'dismissed', opts: { confirmed: boolean; trigger?: string }): OpenItem {
+  /** `resolutionNote`: optional comment on how it was solved (or why it was dropped); shown with the item and searchable. */
+  close(id: string, status: 'resolved' | 'dismissed', opts: { confirmed: boolean; trigger?: string; resolutionNote?: string | null }): OpenItem {
     if (!opts.confirmed) throw new AppError('permission_error', 'Das Schließen eines offenen Punkts erfordert eine ausdrückliche Bestätigung.');
     const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
@@ -460,7 +467,11 @@ export class OpenItemService {
       .where(and(eq(reminders.targetType, 'open_item'), eq(reminders.targetId, id), inArray(reminders.status, ['pending', 'fired'])))
       .all();
     this.db.transaction(() => {
-      this.db.update(openItems).set({ status, updatedAt }).where(eq(openItems.id, id)).run();
+      this.db
+        .update(openItems)
+        .set({ status, updatedAt, resolutionNote: opts.resolutionNote?.trim() || null })
+        .where(eq(openItems.id, id))
+        .run();
       for (const r of ended) this.db.update(reminders).set({ status: 'dismissed' }).where(eq(reminders.id, r.id)).run();
       syncReminderAt(this.db, id);
     });
@@ -471,8 +482,11 @@ export class OpenItemService {
       confirmed: true,
       entityIds: [id],
       before: { status: cur.status },
-      after: { status },
-      undo: { type: 'open_item_status', data: { id, previousStatus: cur.status, afterUpdatedAt: updatedAt, reminders: ended } },
+      after: { status, resolutionNote: opts.resolutionNote?.trim() || null },
+      undo: {
+        type: 'open_item_status',
+        data: { id, previousStatus: cur.status, previousNote: cur.resolutionNote, afterUpdatedAt: updatedAt, reminders: ended },
+      },
     });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'status', 'reminders');
@@ -500,6 +514,7 @@ export class OpenItemService {
           i.responsibleName && `Verantwortlich: ${i.responsibleName}`,
           i.dueAt && `Fällig: ${i.dueAt.slice(0, 10)}`,
           `Status: ${i.status}`,
+          i.resolutionNote && `${i.status === 'dismissed' ? 'Verworfen' : 'Erledigt'}: ${i.resolutionNote}`,
         ]
           .filter(Boolean)
           .join('\n'),

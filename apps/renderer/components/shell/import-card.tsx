@@ -30,7 +30,8 @@ export function ImportCard() {
   useEffect(() => {
     if (importState && pathname.startsWith('/inbox')) dismissImport();
   }, [importState, pathname, dismissImport]);
-  const { data: docs } = useQuery('documents:list', { limit: 1000 }, { scopes: ['documents'], jobs: true, enabled: importState !== null });
+  const importedIds = importState?.result.imported.slice(0, 1000).map((d) => d.id) ?? [];
+  const { data: docs } = useQuery('documents:list', { ids: importedIds, limit: 1000 }, { scopes: ['documents'], jobs: true, enabled: importedIds.length > 0 });
   if (!importState && !importing) return null;
   if (!importState) {
     return (

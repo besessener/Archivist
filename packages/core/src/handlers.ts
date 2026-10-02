@@ -167,6 +167,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
 
     'documents:import': async (i) => s.documents.importPaths(i.paths),
     'documents:list': (i) => s.documents.list(i),
+    'documents:counts': () => s.documents.counts(),
     'documents:get': (i) => s.documents.get(i.id),
     'documents:classify': (i) => ({ jobId: s.documents.enqueueAnalysis(i.documentId, i.allowLlm) }),
     'documents:previewArchive': (i) => s.archive.preview(i.items),
@@ -251,7 +252,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'openItems:list': (i) => s.openItems.list(i),
     'openItems:create': (i) => s.openItems.create(i, { actor: 'user', trigger }),
     'openItems:update': (i) => s.openItems.update(i.id, i.patch),
-    'openItems:close': (i) => s.openItems.close(i.id, i.status, { confirmed: i.confirmed, trigger }),
+    'openItems:close': (i) => s.openItems.close(i.id, i.status, { confirmed: i.confirmed, trigger, resolutionNote: i.resolutionNote }),
     'openItems:solutionPreview': (i) => s.solutions.preview(i.id),
     'openItems:generateSolution': (i) => s.solutions.generate(i.id, { confirmed: i.confirmed }),
     'openItems:cancelSolution': (i) => ({ cancelled: s.solutions.cancel(i.id) }),

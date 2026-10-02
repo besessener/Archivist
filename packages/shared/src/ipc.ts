@@ -202,6 +202,9 @@ export const ipcContract = {
   'documents:list': ch(
     z.object({
       status: DocumentStatus.optional(),
+      /** several statuses at once (e.g. everything the inbox shows) */
+      statuses: z.array(DocumentStatus).min(1).optional(),
+      ids: z.array(Id).min(1).max(1000).optional(),
       topicId: z.string().optional(),
       projectId: z.string().optional(),
       query: z.string().optional(),
@@ -210,6 +213,8 @@ export const ipcContract = {
     z.array(DocumentRecord),
   ),
   'documents:get': ch(z.object({ id: Id }), DocumentRecord),
+  /** Number of documents per status (for badges, without loading the list). */
+  'documents:counts': ch(z.object({}), z.record(z.string(), z.number())),
   'documents:classify': ch(z.object({ documentId: Id, allowLlm: z.boolean().default(true) }), z.object({ jobId: Id })),
   'documents:previewArchive': ch(z.object({ items: z.array(ArchiveItemRequest).min(1) }), ArchivePlan),
   'documents:archive': ch(
@@ -337,7 +342,16 @@ export const ipcContract = {
     OpenItem,
   ),
   /** Closing is a stage-2 action: explicit confirmation required. */
-  'openItems:close': ch(z.object({ id: Id, status: z.enum(['resolved', 'dismissed']).default('resolved'), confirmed: Confirmed }), OpenItem),
+  'openItems:close': ch(
+    z.object({
+      id: Id,
+      status: z.enum(['resolved', 'dismissed']).default('resolved'),
+      /** optional: how it was solved or why it was dropped */
+      resolutionNote: z.string().max(4000).optional(),
+      confirmed: Confirmed,
+    }),
+    OpenItem,
+  ),
   /** What would be sent for a solution proposal (without an LLM call) – for the confirmation dialog. */
   'openItems:solutionPreview': ch(z.object({ id: Id }), SolutionPreview),
   /** Generates a solution proposal via the LLM; in mode „vorher fragen“ only with confirmation. */

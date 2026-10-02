@@ -55,6 +55,41 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 /** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */
+/** Lets pending I/O and IPC callbacks run before the next synchronous section. */
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/** Whether the files exist – checked asynchronously, a limited number at a time, cancellable between batches. */
+async function filesExist(files: string[], signal?: AbortSignal, batch = 64): Promise<boolean[]> {
+  const out: boolean[] = [];
+  for (let i = 0; i < files.length; i += batch) {
+    signal?.throwIfAborted();
+    const part = await Promise.all(
+      files.slice(i, i + batch).map((f) =>
+        fs.promises.access(f).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    out.push(...part);
+  }
+  return out;
+}
+
+/** The document columns the check reads – never extracted_text (#213). */
+const CHECKED_COLUMNS = {
+  id: documents.id,
+  title: documents.title,
+  status: documents.status,
+  sha256: documents.sha256,
+  textHash: documents.textHash,
+  archiveRelPath: documents.archiveRelPath,
+  categoryPath: documents.categoryPath,
+  topicId: documents.topicId,
+  projectId: documents.projectId,
+};
+type CheckedDocument = Pick<typeof documents.$inferSelect, keyof typeof CHECKED_COLUMNS>;
+
 export type ConsistencyCheck = (count: (kind: string, n?: number) => void) => void | Promise<void>;
 
 /** Key prefixes of the hints this check owns; a hint whose cause no longer exists is closed after each run. */
@@ -110,7 +145,7 @@ export class ConsistencyService {
   }
 
   /** Documents of the same topic or project that lie in different archive directories: hint plus relocation proposal. */
-  private checkScatteredDocuments(archived: Array<typeof documents.$inferSelect>, count: (kind: string) => void): void {
+  private checkScatteredDocuments(archived: CheckedDocument[], count: (kind: string) => void): void {
     const entityIds = new Map<string, string>();
     const entityName = (kind: 'topic' | 'project', id: string | null) => {
       const name = id ? (this.graph.getEntity(id)?.name ?? null) : null;
@@ -173,11 +208,12 @@ export class ConsistencyService {
       byTopic.set(d.topicId!, [...(byTopic.get(d.topicId!) ?? []), d]);
     for (const list of byTopic.values()) {
       if (list.length < 2) continue;
-      const sorted = [...list].sort((a, b) => (a.decidedAt ?? a.createdAt).localeCompare(b.decidedAt ?? b.createdAt));
+      // only dated decisions: the capture date says nothing about which decision is newer (#168)
+      const sorted = list.filter((d) => d.decidedAt).sort((a, b) => a.decidedAt!.localeCompare(b.decidedAt!));
       for (let i = 0; i < sorted.length - 1; i += 1) {
         const older = sorted[i]!;
         const newer = sorted[i + 1]!;
-        if ((older.decidedAt ?? '') === (newer.decidedAt ?? '')) continue;
+        if (older.decidedAt === newer.decidedAt) continue;
         if (this.contradictions.forPair(older.id, newer.id)) continue;
         const key = `superseded:${older.id}:${newer.id}`;
         current.add(key);
@@ -214,7 +250,9 @@ export class ConsistencyService {
 
   /** `signal`: cancels the check between its sections (insights found so far are kept). */
   async run(trigger = 'manual', report?: (p: number, m: string) => void, signal?: AbortSignal): Promise<ConsistencyReport> {
-    const step = (p: number, m: string) => {
+    // every section first yields to the event loop: IPC calls (chat, navigation) are answered in between (#215)
+    const step = async (p: number, m: string) => {
+      await yieldToEventLoop();
       signal?.throwIfAborted();
       report?.(p, m);
     };
@@ -227,9 +265,10 @@ export class ConsistencyService {
     const staleDays = this.settings.get().consistency.staleOpenItemDays;
 
     // ---- Documents ----
-    step(0.1, 'Prüfe Dokumente');
+    await step(0.1, 'Prüfe Dokumente');
+    // metadata only: SELECT * loaded every extracted text (up to 400k chars each) into the main process (#213)
     const archived = this.db
-      .select()
+      .select(CHECKED_COLUMNS)
       .from(documents)
       .where(inArray(documents.status, ['archived', 'indexed_only']))
       .all();
@@ -277,10 +316,7 @@ export class ConsistencyService {
     const bySha = new Map<string, typeof archived>();
     for (const d of archived) bySha.set(d.sha256, [...(bySha.get(d.sha256) ?? []), d]);
     const bySimilarText = new Map<string, typeof archived>();
-    for (const d of archived) {
-      const th = (d.technicalMeta as { textHash?: string } | null)?.textHash;
-      if (th) bySimilarText.set(th, [...(bySimilarText.get(th) ?? []), d]);
-    }
+    for (const d of archived) if (d.textHash) bySimilarText.set(d.textHash, [...(bySimilarText.get(d.textHash) ?? []), d]);
     for (const group of [...bySha.values(), ...bySimilarText.values()]) {
       if (group.length < 2) continue;
       const ids = group.map((d) => d.id);
@@ -311,11 +347,17 @@ export class ConsistencyService {
     }
 
     // ---- Storage location vs. classification (database against file system) ----
-    step(0.3, 'Prüfe Ablageorte');
+    await step(0.3, 'Prüfe Ablageorte');
     const root = this.settings.get().archiveRoot;
-    for (const d of archived.filter((x) => x.archiveRelPath)) {
+    const placed = archived.filter((x) => x.archiveRelPath);
+    // asynchronous checks in batches instead of one existsSync per document on the main thread (#215)
+    const exists = await filesExist(
+      placed.map((d) => path.join(root, ...d.archiveRelPath!.split('/'))),
+      signal,
+    );
+    for (const [i, d] of placed.entries()) {
       const abs = path.join(root, ...d.archiveRelPath!.split('/'));
-      if (!fs.existsSync(abs)) {
+      if (!exists[i]) {
         current.add(`missing-file:${d.id}`);
         this.insights.upsert({
           kind: 'misplaced_file',
@@ -341,18 +383,18 @@ export class ConsistencyService {
     }
 
     // ---- Scattered filing: documents of the same topic/project lie in different directories ----
-    step(0.4, 'Prüfe Verzeichnisse');
+    await step(0.4, 'Prüfe Verzeichnisse');
     this.checkScatteredDocuments(archived, count);
 
     // ---- Duplicate topics, projects and tags (always asks, never merges on its own) ----
-    step(0.45, 'Prüfe Themen, Projekte und Tags');
+    await step(0.45, 'Prüfe Themen, Projekte und Tags');
     await this.entityDuplicates.run(count, signal);
 
     // ---- Same name as topic and as project ----
     checkTopicProjectNames({ graph: this.graph, insights: this.insights }, count);
 
     // ---- Decisions ----
-    step(0.6, 'Prüfe Entscheidungen');
+    await step(0.6, 'Prüfe Entscheidungen');
     const allDecisions = this.decisions.list();
     for (const d of allDecisions) {
       if (d.status === 'draft' || (d.missingFields.length > 0 && d.status !== 'revoked' && d.status !== 'superseded')) {
@@ -381,14 +423,14 @@ export class ConsistencyService {
       }
     }
     // contradictions first: a pair with a contradiction gets no additional "possibly superseded" hint
-    step(0.7, 'Prüfe Widersprüche');
+    await step(0.7, 'Prüfe Widersprüche');
     const found = await this.contradictions.scanAll();
     signal?.throwIfAborted();
     count('contradiction', found.length);
     this.checkSuperseded(allDecisions, current, count);
 
     // ---- Open items ----
-    step(0.85, 'Prüfe offene Punkte');
+    await step(0.85, 'Prüfe offene Punkte');
     const active = this.openItems.list({ onlyActive: true });
     // notifications that were dismissed are never revived, so aggregated ones keep their member hash; outdated ones are closed
     const noOwner = active.filter((i) => !i.responsiblePersonId && !i.responsibleUnknown);
@@ -518,7 +560,18 @@ export class ConsistencyService {
     }
 
     // ---- External, already analyzed files related to known topics ----
-    const pending = this.db.select().from(documents).where(eq(documents.status, 'proposed')).all();
+    const pending = this.db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        proposal: documents.proposal,
+        sourcePath: documents.sourcePath,
+        stagedPath: documents.stagedPath,
+        confidence: documents.confidence,
+      })
+      .from(documents)
+      .where(eq(documents.status, 'proposed'))
+      .all();
     for (const p of pending) {
       const prop = p.proposal as DocumentProposal | null;
       const topic = prop?.topic ?? prop?.project;

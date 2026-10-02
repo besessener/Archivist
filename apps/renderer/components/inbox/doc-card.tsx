@@ -180,6 +180,9 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                     {p.possibleDecisions.map((d, i) => (
                       <li key={`${i}-${d.title}`}>
                         <span className="text-foreground">{d.title}</span> – {d.decisionText}
+                        {d.decidedAt ? ` (${formatDate(d.decidedAt, d.decidedAt)})` : ''}
+                        {d.participants?.length ? ` · Beteiligte: ${d.participants.join(', ')}` : ' · Beteiligte: nicht angegeben'}
+                        {d.evidence && <span className="block italic">„{d.evidence}“</span>}
                       </li>
                     ))}
                   </ul>

@@ -32,7 +32,7 @@ const MODES: Array<{ id: Mode; title: string; text: string }> = [
   {
     id: 'confirm',
     title: 'Vor jeder externen Analyse fragen (empfohlen)',
-    text: 'Archivist analysiert Dokumentinhalte nur mit der KI, nachdem du es jeweils bestätigt hast. Erkannte Geheimnisse wie Passwörter werden vorher maskiert.',
+    text: 'Archivist analysiert Dokumentinhalte nur mit der KI, nachdem du es jeweils bestätigt hast. Was du im Chat schreibst, geht zur Auswertung an die KI. Erkannte Geheimnisse wie Passwörter werden vorher maskiert.',
   },
   {
     id: 'auto',

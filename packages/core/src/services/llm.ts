@@ -136,6 +136,14 @@ export class LlmService {
     return this.isConfigured() && this.settings.get().privacy.llmMode !== 'local_only';
   }
 
+  /**
+   * Background use that nobody asked for in the moment (e.g. contradiction checks of decision texts): only in mode
+   * „automatisch“. In „vorher fragen“ nothing leaves the machine without a request of the user (#201).
+   */
+  canUseInBackground(): boolean {
+    return this.isConfigured() && this.settings.get().privacy.llmMode === 'auto';
+  }
+
   private markStatus(ok: boolean, error: string | null): void {
     this.lastStatus = { state: ok ? 'ok' : 'error', lastError: error, lastCheckedAt: nowIso() };
     this.ctx.events.emit('status:changed');

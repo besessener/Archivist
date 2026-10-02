@@ -78,7 +78,7 @@ describe('Context for the LLM (#38)', () => {
     expect((await app.ok('reminders:list', {}))[0]!.targetId).toBe(carInspection.id);
   });
 
-  it('open proposals of this conversation are listed with ID in the prompt; proposalId selects exactly that card', async () => {
+  it('open proposals of this conversation are listed with ID in the prompt; an approval via proposalId is asked back (#199)', async () => {
     const g = app.services.graph;
     const relA = g.link(g.ensureEntity('topic', 'Hauskauf').id, g.ensureEntity('project', 'Nordlicht').id, 'relates_to', {
       confidence: 0.6,
@@ -89,9 +89,14 @@ describe('Context for the LLM (#38)', () => {
     const r1 = await send('Welche Beziehungen sind offen?');
     app.llm.on('ChatIntent', (_s, input) => intent({ intent: 'proposal_confirm', proposalId: shortId(input, 'Beziehung: Steuer') }));
 
-    await send('Die mit Steuer passt.', r1.conversationId);
+    const r2 = await send('Die mit Steuer passt.', r1.conversationId);
 
     expect(lastIntentInput()).toMatch(/- V\d: Beziehung: Hauskauf/);
+    // the LLM's choice alone executes nothing – the user picks the card explicitly
+    expect(g.getRelation(relB.id)?.status).toBe('proposed');
+    expect(r2.assistantMessage.content).toMatch(/Welchen Vorschlag meinst du/);
+    const num = /(\d+)\. [^\n]*Steuer/.exec(r2.assistantMessage.content)![1]!;
+    await send(num, r1.conversationId);
     expect(g.getRelation(relB.id)?.status).toBe('confirmed');
     expect(g.getRelation(relA.id)?.status).toBe('proposed');
   });
