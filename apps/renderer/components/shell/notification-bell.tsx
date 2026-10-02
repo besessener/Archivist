@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Bell, BellOff, Check, Clock } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
+import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -151,6 +152,7 @@ export function NotificationBell() {
                 </li>
               ))}
             </ul>
+            <UpcomingReminders enabled={open} className="mt-3 border-t px-1 pt-3" />
           </div>
         </PopoverContent>
       </Popover>

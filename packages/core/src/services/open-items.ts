@@ -1,4 +1,13 @@
-import { isEditableOpenItemStatus, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
+import {
+  isEditableOpenItemStatus,
+  localDate,
+  localToday,
+  OpenItemSolution,
+  type OpenItem,
+  type OpenItemInput,
+  type OpenItemPatch,
+  type OpenItemStatus,
+} from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
@@ -212,6 +221,7 @@ export class OpenItemService {
       confidence: r.confidence,
       updatedAt: r.updatedAt,
       solution: r.solution ? (OpenItemSolution.safeParse(r.solution).data ?? null) : null,
+      duplicateOfId: r.duplicateOfId,
     };
   }
 
@@ -287,6 +297,7 @@ export class OpenItemService {
       createdAt: now,
       updatedAt: now,
       solution: null,
+      duplicateOfId: null,
     };
     this.db.transaction(() => {
       this.db.insert(openItems).values(row).run();
@@ -463,8 +474,9 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  overdue(today = nowIso().slice(0, 10)): OpenItem[] {
-    return this.list({ onlyActive: true }).filter((i) => i.dueAt && i.dueAt.slice(0, 10) < today);
+  /** Active items due before `today` (local calendar day, #77). */
+  overdue(today = localToday()): OpenItem[] {
+    return this.list({ onlyActive: true }).filter((i) => i.dueAt && localDate(i.dueAt) < today);
   }
 
   /** Rebuilds the search index entry (e.g. after a merge changed names or references). */

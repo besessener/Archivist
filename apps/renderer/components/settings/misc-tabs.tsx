@@ -14,7 +14,7 @@ import { call } from '@/lib/ipc';
 import { formatBytes, formatDateTime } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
-import type { AuditEntry } from '@archivist/shared';
+import { LOCAL_TIME, type AuditEntry } from '@archivist/shared';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 
 export function ProfileTab({ settings, reload }: TabProps) {
@@ -48,12 +48,34 @@ export function ProfileTab({ settings, reload }: TabProps) {
 }
 
 export function NotificationsTab({ settings, reload }: TabProps) {
-  const { save } = useSaveSettings(reload);
+  const { save, busy } = useSaveSettings(reload);
+  const [reminderTime, setReminderTime] = useState(settings.notifications.reminderTime);
+  const validTime = LOCAL_TIME.test(reminderTime);
   return (
     <Section
       title="Benachrichtigungen"
       description="Hinweise erscheinen immer in der Glocke oben rechts. Zusätzlich können Sie Desktop-Hinweise Ihres Betriebssystems erhalten."
     >
+      <Field label="Uhrzeit für Erinnerungen (Ortszeit)" htmlFor="reminder-time" hint="Erinnerungen für einen Tag ohne Uhrzeit erscheinen zu dieser Uhrzeit.">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            id="reminder-time"
+            type="time"
+            className="w-36"
+            value={reminderTime}
+            onChange={(e) => setReminderTime(e.target.value)}
+            data-testid="settings-reminder-time"
+          />
+          <Button
+            variant="outline"
+            disabled={busy || !validTime || reminderTime === settings.notifications.reminderTime}
+            onClick={() => void save({ notifications: { reminderTime } })}
+            data-testid="settings-reminder-time-save"
+          >
+            <Save aria-hidden /> Speichern
+          </Button>
+        </div>
+      </Field>
       <SwitchRow label="Desktop-Benachrichtigungen" hint="Zeigt wichtige Hinweise auch außerhalb des Programmfensters an.">
         <Switch
           checked={settings.notifications.desktop}

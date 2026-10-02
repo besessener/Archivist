@@ -19,6 +19,7 @@ import { isJobCancelled, type JobContext, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
+import { IntervalSchedule } from './scheduler';
 import type { SettingsService } from './settings';
 
 type RootRow = typeof scanRoots.$inferSelect;
@@ -65,7 +66,8 @@ const mapFile = (r: FileRow): ScanFile => ({
  * ein reiner Dateiscan sendet nie Inhalte an das LLM. Originale werden nie verändert.
  */
 export class ScannerService {
-  private timers: NodeJS.Timeout[] = [];
+  /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
+  private readonly schedule: IntervalSchedule;
   /** Upper bound of files collected per scan root (lowered in tests). */
   maxFilesPerRoot = SCAN_MAX_FILES;
 
@@ -81,6 +83,7 @@ export class ScannerService {
     private readonly audit: AuditService,
     private readonly jobs: JobQueueService,
   ) {
+    this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     ctx.events.on('document:archived', (e: { documentId: string; sourcePath: string | null }) => {
       if (!e.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: e.documentId }).where(eq(scanFiles.path, e.sourcePath)).run();
@@ -179,6 +182,8 @@ export class ScannerService {
     if (patch.maxFileSizeMb !== undefined) set.maxFileSizeMb = patch.maxFileSizeMb;
     if (patch.llmAllowed !== undefined) set.llmAllowed = patch.llmAllowed;
     this.db.update(scanRoots).set(set).where(eq(scanRoots.id, id)).run();
+    // the folder permission is stored on the documents, so every analysis, chat and search path honours it
+    if (patch.llmAllowed !== undefined && patch.llmAllowed !== row.llmAllowed) this.docs.applyFolderPermission(id);
     this.ctx.events.changed('scanner');
     return mapRoot({ ...row, ...set });
   }
@@ -344,7 +349,7 @@ export class ScannerService {
         this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary }).where(eq(scanRoots.id, root.id)).run();
         this.notifyScan(root, summary);
       } catch (err) {
-        if (err instanceof Error && err.name === 'JobCancelledError') throw err;
+        if (isJobCancelled(err)) throw err; // cancelled or interrupted on quit – no scan error
         summary.errors.push(err instanceof Error ? err.message : String(err));
         this.ctx.logger.error('scanner', 'Scan fehlgeschlagen', { root: root.path, error: err });
         this.notifications.create({
@@ -554,6 +559,7 @@ export class ScannerService {
           skipped.push(id);
           continue;
         }
+        const folderLlmAllowed = root.llmAllowed && this.docs.folderLlmAllowedFor(real);
         let doc = f.documentId ? this.db.select().from(documents).where(eq(documents.id, f.documentId)).get() : undefined;
         if (doc && doc.sha256 !== sha && !doc.stagedPath && INBOX_DOC_STATUSES.includes(doc.status)) {
           // The file changed while its entry is still in the inbox: update that entry (re-analyzed below) instead of
@@ -566,8 +572,18 @@ export class ScannerService {
           doc = this.docs.getRow(doc.id);
         }
         if (!doc || doc.sha256 !== sha) {
-          const rec = this.docs.insertDocument({ originalName: f.name, ext: f.ext, size: st.size, sha256: sha, sourcePath: real, stagedPath: null });
+          const rec = this.docs.insertDocument({
+            originalName: f.name,
+            ext: f.ext,
+            size: st.size,
+            sha256: sha,
+            sourcePath: real,
+            stagedPath: null,
+            folderLlmAllowed,
+          });
           doc = this.docs.getRow(rec.id);
+        } else if (doc.folderLlmAllowed !== folderLlmAllowed) {
+          this.db.update(documents).set({ folderLlmAllowed }).where(eq(documents.id, doc.id)).run();
         }
         const decision = this.privacy.evaluate({ path: real, ext: f.ext, rootLlmAllowed: root.llmAllowed });
         const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
@@ -713,21 +729,32 @@ export class ScannerService {
   }
 
   // ---------- Zeitsteuerung (nur bei laufender Anwendung) ----------
+  /** Starts the periodic scan according to the current settings and folders. */
+  startSchedule(): void {
+    this.applySettings();
+    this.schedule.start();
+  }
+
+  /**
+   * Re-plans the periodic scan from the scan settings and the enabled folders. Cheap and idempotent:
+   * call it after every change of settings or folders; an unchanged plan keeps the pending timer.
+   */
   applySettings(): void {
-    for (const t of this.timers) clearInterval(t);
-    this.timers = [];
     const s = this.settings.get().scan;
-    if (!s.enabled || this.listDirectories().length === 0) return;
-    if (s.periodic) {
-      const t = setInterval(() => {
-        try {
-          this.startScan(undefined, 'interval');
-        } catch (err) {
-          this.ctx.logger.warn('scanner', 'Periodischer Scan nicht gestartet', { error: err });
-        }
-      }, s.intervalMinutes * 60_000);
-      t.unref?.();
-      this.timers.push(t);
+    const active = s.enabled && s.periodic && this.listDirectories().some((r) => r.enabled);
+    this.schedule.setInterval(active ? s.intervalMinutes * 60_000 : null);
+  }
+
+  /** When the next periodic scan is due (epoch ms), or null if none is planned. */
+  nextPeriodicScanAt(): number | null {
+    return this.schedule.nextRunAt();
+  }
+
+  private periodicScan(): void {
+    try {
+      this.startScan(undefined, 'interval');
+    } catch (err) {
+      this.ctx.logger.warn('scanner', 'Periodischer Scan nicht gestartet', { error: err });
     }
   }
 
@@ -743,8 +770,7 @@ export class ScannerService {
   }
 
   stop(): void {
-    for (const t of this.timers) clearInterval(t);
-    this.timers = [];
+    this.schedule.stop();
   }
 
   fileExists(p: string): boolean {

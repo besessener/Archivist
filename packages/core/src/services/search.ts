@@ -5,7 +5,7 @@ import { chunks, decisions, documents, entities } from '../db/schema';
 import { newId } from '../util/ids';
 import { chunkText, normalizeName, tokenize, truncate } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
-import type { EmbeddingService } from './embedding';
+import type { EmbeddingService, EmbedResult } from './embedding';
 import { LOCAL_MODEL } from './embedding';
 
 export interface IndexInput {
@@ -27,6 +27,9 @@ interface Hit {
   vectorScore?: number;
 }
 
+/** How long a search waits for the remote query embedding before it answers with local results only. */
+const REMOTE_QUERY_EMBEDDING_TIMEOUT_MS = 2500;
+
 /** Hybride Suche: FTS5 (BM25) + Vektorähnlichkeit (Cosine, Berechnung im Worker-Thread), fusioniert per RRF. */
 export class SearchService {
   constructor(
@@ -34,7 +37,25 @@ export class SearchService {
     private readonly embedding: EmbeddingService,
     private readonly pool: WorkerPool,
     private readonly remoteAllowed: () => boolean = () => false,
+    private readonly remoteQueryTimeoutMs = REMOTE_QUERY_EMBEDDING_TIMEOUT_MS,
   ) {}
+
+  /** Embeds the query; a remote request that does not answer in time is ignored (null). */
+  private async embedQuery(query: string, useRemote: boolean): Promise<EmbedResult | null> {
+    const pending = this.embedding.embed([query], { allowRemote: useRemote, purpose: 'Suchanfrage' });
+    if (!useRemote) return pending;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), this.remoteQueryTimeoutMs);
+    });
+    try {
+      const res = await Promise.race([pending.catch(() => null), timeout]);
+      if (!res) this.ctx.logger.warn('search', 'Embedding-Endpunkt antwortet nicht rechtzeitig – nur lokale Treffer', { timeoutMs: this.remoteQueryTimeoutMs });
+      return res;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   private get sqlite() {
     return this.ctx.database.sqlite;
@@ -117,8 +138,8 @@ export class SearchService {
     let rank = 0;
     for (const useRemote of [false, true]) {
       if (useRemote && !wantRemote) continue;
-      const q = await this.embedding.embed([query], { allowRemote: useRemote, purpose: 'Suchanfrage' });
-      if (useRemote && q.model === LOCAL_MODEL) continue;
+      const q = await this.embedQuery(query, useRemote);
+      if (!q || (useRemote && q.model === LOCAL_MODEL)) continue;
       const qvec = q.vectors[0];
       if (!qvec) continue;
       const rows = this.sqlite

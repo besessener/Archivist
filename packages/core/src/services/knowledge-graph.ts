@@ -5,7 +5,7 @@ import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { decisions, documents, entities, events, openItems, relations } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
-import { nameSimilarity, normalizeName } from '../util/text';
+import { normalizeName } from '../util/text';
 import type { AuditService } from './audit';
 import type { UndoService } from './undo';
 
@@ -203,6 +203,9 @@ const mapRelation = (r: RelationRow): GraphRelation => ({
   updatedAt: r.updatedAt,
 });
 
+/** Result of `link`: the relation and whether this call created it (`false`: it existed and was at most updated). */
+export type LinkResult = GraphRelation & { created: boolean };
+
 /** Mutable state of a relation that field sync may change (restored on undo). */
 export interface RelationState {
   status: RelationStatus;
@@ -310,13 +313,15 @@ export class KnowledgeGraphService {
   /**
    * Legt eine Beziehung an. Bereits abgelehnte Beziehungen werden nicht wiederbelebt,
    * bestätigte nie zurückgestuft.
+   * `created` tells whether the relation was newly created (`true`) or already existed and was at most updated
+   * (`false`). Undo must only delete created relations; use `trackRelationChanges` to also restore updated ones.
    */
   link(
     sourceId: string,
     targetId: string,
     relationType: RelationType,
     opts: { confidence?: number; status?: RelationStatus; sourceIds?: string[]; resolvedByUser?: boolean } = {},
-  ): GraphRelation | null {
+  ): LinkResult | null {
     if (sourceId === targetId) return null;
     const existing = this.db
       .select()
@@ -325,7 +330,7 @@ export class KnowledgeGraphService {
       .get();
     const now = nowIso();
     if (existing) {
-      if (existing.status === 'rejected') return mapRelation(existing);
+      if (existing.status === 'rejected') return { ...mapRelation(existing), created: false };
       // user decisions are kept; an outdated relation becomes current again when it is linked anew
       const status = existing.resolvedByUser
         ? existing.status
@@ -337,7 +342,7 @@ export class KnowledgeGraphService {
       const sourceIds = [...new Set([...existing.sourceIds, ...(opts.sourceIds ?? [])])];
       const confidence = Math.max(existing.confidence, opts.confidence ?? 0);
       this.db.update(relations).set({ status, sourceIds, confidence, updatedAt: now }).where(eq(relations.id, existing.id)).run();
-      return mapRelation({ ...existing, status, sourceIds, confidence, updatedAt: now });
+      return { ...mapRelation({ ...existing, status, sourceIds, confidence, updatedAt: now }), created: false };
     }
     const row: RelationRow = {
       id: newId(),
@@ -353,7 +358,7 @@ export class KnowledgeGraphService {
     };
     this.db.insert(relations).values(row).run();
     this.ctx.events.changed('knowledge');
-    return mapRelation(row);
+    return { ...mapRelation(row), created: true };
   }
 
   getRelation(id: string): GraphRelation | undefined {
@@ -551,19 +556,6 @@ export class KnowledgeGraphService {
       .from(relations)
       .where(or(eq(relations.sourceEntityId, entityId), eq(relations.targetEntityId, entityId)))
       .all();
-  }
-
-  /** Paare ähnlich benannter Themen (Kandidaten für eine Zusammenführung). */
-  findSimilarTopics(threshold = 0.82): Array<{ a: GraphEntity; b: GraphEntity; score: number }> {
-    const topics = this.db.select().from(entities).where(eq(entities.type, 'topic')).all().map(mapEntity);
-    const out: Array<{ a: GraphEntity; b: GraphEntity; score: number }> = [];
-    for (let i = 0; i < topics.length; i += 1) {
-      for (let j = i + 1; j < topics.length; j += 1) {
-        const score = nameSimilarity(topics[i]!.name, topics[j]!.name);
-        if (score >= threshold) out.push({ a: topics[i]!, b: topics[j]!, score });
-      }
-    }
-    return out.sort((x, y) => y.score - x.score);
   }
 
   // ---------------------------------------------------------------------------------------------

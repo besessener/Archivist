@@ -1,4 +1,5 @@
 import {
+  localToday,
   SolutionProposal,
   type EntityType,
   type ErrorCategory,
@@ -123,7 +124,7 @@ export class SolutionService {
         case 'document': {
           const d = this.documents.getRow(id);
           if (SKIPPED_DOC_STATUSES.has(d.status)) return null;
-          const allowed = this.privacy.evaluate({ path: d.sourcePath, ext: d.ext, docExcluded: d.llmStatus === 'excluded' }).allowed;
+          const allowed = this.privacy.evaluateDocument(d).allowed;
           const text = allowed
             ? [
                 d.docType && `Typ: ${d.docType}`,
@@ -220,7 +221,7 @@ export class SolutionService {
     const src = sources.length
       ? sources.map((s) => `[${s.ref}] (${s.type}, ${s.date?.slice(0, 10) ?? 'ohne Datum'}) ${s.title}\n${truncate(s.text, 1400)}`).join('\n\n')
       : 'keine passenden Quellen gefunden';
-    return `Heutiges Datum: ${nowIso().slice(0, 10)}\n\nOffener Punkt:\n${fields}\n\nQuellen aus dem Archiv:\n${src}`;
+    return `Heutiges Datum: ${localToday()}\n\nOffener Punkt:\n${fields}\n\nQuellen aus dem Archiv:\n${src}`;
   }
 
   /** Erzeugt einen Lösungsvorschlag und speichert ihn am Punkt (ersetzt einen vorhandenen). */

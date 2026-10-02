@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { BellPlus, Check, Lightbulb, Play, ShieldAlert, X } from 'lucide-react';
-import type { InsightKind } from '@archivist/shared';
+import type { InsightChoice, InsightKind } from '@archivist/shared';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
@@ -25,6 +25,8 @@ import { CheckboxField } from '@/components/ui/checkbox';
 type Contradiction = IpcOutput<'contradictions:list'>[number];
 type InsightStatus = 'open' | 'accepted' | 'rejected' | 'snoozed';
 const STATUS_LABELS: Record<InsightStatus, string> = { open: 'Offen', snoozed: 'Zurückgestellt', accepted: 'Bestätigt', rejected: 'Abgelehnt' };
+/** Duplicate questions: confirming merges, rejecting remembers permanently that the entries are different. */
+const DUPLICATE_KINDS = new Set<InsightKind>(['similar_entities']);
 
 export default function InsightsPage() {
   const [status, setStatus] = useState<InsightStatus>('open');
@@ -32,6 +34,7 @@ export default function InsightsPage() {
   const contradictions = useQuery('contradictions:list', {}, { scopes: ['contradictions'] });
   const { run, busy } = useRun();
   const [accepting, setAccepting] = useState<InsightRecord | null>(null);
+  const [choosing, setChoosing] = useState<{ insight: InsightRecord; choice: InsightChoice } | null>(null);
   const [snoozing, setSnoozing] = useState<InsightRecord | null>(null);
   const [resolving, setResolving] = useState<Contradiction | null>(null);
 
@@ -44,6 +47,15 @@ export default function InsightsPage() {
     }
     return [...map.entries()].sort((a, b) => INSIGHT_KIND_LABELS[a[0]].localeCompare(INSIGHT_KIND_LABELS[b[0]], 'de'));
   }, [insights.data]);
+
+  /** Answers a question insight; an answer that changes data is confirmed in a dialog first. */
+  const choose = async (insight: InsightRecord, choice: InsightChoice, strongConfirmed = false): Promise<void> => {
+    await run(() => call('insights:respond', { response: 'choose', id: insight.id, choiceId: choice.id, confirmed: true, strongConfirmed }), {
+      success: `Antwort „${choice.label}“ übernommen.`,
+    });
+    // also after an error: an outdated question is removed by the backend
+    void insights.refetch();
+  };
 
   const openContradictions = (contradictions.data ?? []).filter((c) => c.status === 'detected' || c.status === 'acknowledged');
 
@@ -94,7 +106,7 @@ export default function InsightsPage() {
                     <h3 className="font-semibold">{i.title}</h3>
                     <ConfidenceBadge value={i.confidence} />
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{i.explanation}</p>
+                  <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{i.explanation}</p>
                   {i.affected.length > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-xs text-muted-foreground">Betrifft:</span>
@@ -109,26 +121,53 @@ export default function InsightsPage() {
                       {i.recommendedActionLabel}
                     </p>
                   )}
+                  {i.chosenChoiceId && (
+                    <p className="mt-2 text-sm" data-testid="insight-chosen">
+                      <span className="font-medium">Antwort: </span>
+                      {i.choices.find((c) => c.id === i.chosenChoiceId)?.label ?? i.chosenChoiceId}
+                    </p>
+                  )}
                   {i.status === 'snoozed' && i.snoozedUntil && (
                     <p className="mt-2 text-xs text-muted-foreground">Zurückgestellt bis {formatDate(i.snoozedUntil)}</p>
                   )}
                   {i.status === 'open' && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button size="sm" onClick={() => setAccepting(i)} data-testid="insight-accept">
-                        <Check aria-hidden /> Bestätigen
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        data-testid="insight-reject"
-                        onClick={async () => {
-                          await run(() => call('insights:respond', { response: 'reject', id: i.id }), { success: 'Hinweis abgelehnt.' });
-                          void insights.refetch();
-                        }}
-                      >
-                        <X aria-hidden /> Ablehnen
-                      </Button>
+                    // a question insight shows its answers; a classic one shows Bestätigen. Ablehnen is offered unless an answer already means „nein“.
+                    <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label={i.choices.length > 0 ? 'Antworten' : 'Aktionen'}>
+                      {i.choices.map((c) => (
+                        <Button
+                          key={c.id}
+                          size="sm"
+                          variant={c.actionId ? 'default' : 'outline'}
+                          disabled={busy}
+                          title={c.description ?? undefined}
+                          data-testid="insight-choice"
+                          data-choice-id={c.id}
+                          onClick={() => (c.actionId ? setChoosing({ insight: i, choice: c }) : void choose(i, c))}
+                        >
+                          {c.label}
+                        </Button>
+                      ))}
+                      {i.choices.length === 0 && (
+                        <Button size="sm" onClick={() => setAccepting(i)} data-testid="insight-accept">
+                          <Check aria-hidden /> {DUPLICATE_KINDS.has(i.kind) ? 'Zusammenführen' : 'Bestätigen'}
+                        </Button>
+                      )}
+                      {!i.choices.some((c) => c.actionId === null) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          data-testid="insight-reject"
+                          onClick={async () => {
+                            await run(() => call('insights:respond', { response: 'reject', id: i.id }), {
+                              success: DUPLICATE_KINDS.has(i.kind) ? 'Als verschieden gemerkt.' : 'Hinweis abgelehnt.',
+                            });
+                            void insights.refetch();
+                          }}
+                        >
+                          <X aria-hidden /> {DUPLICATE_KINDS.has(i.kind) ? 'Verschieden' : 'Ablehnen'}
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => setSnoozing(i)} data-testid="insight-snooze">
                         <BellPlus aria-hidden /> Später erinnern
                       </Button>
@@ -199,11 +238,42 @@ export default function InsightsPage() {
       >
         {accepting && (
           <div className="flex flex-col gap-2 text-sm">
-            <p className="text-muted-foreground">{accepting.explanation}</p>
+            <p className="whitespace-pre-line text-muted-foreground">{accepting.explanation}</p>
             {accepting.affected.length > 0 && (
               <ul className="list-disc pl-5">
                 {accepting.affected.map((e) => (
                   <li key={`${e.type}-${e.id}`}>{e.label}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={choosing !== null}
+        onOpenChange={(o) => !o && setChoosing(null)}
+        title={choosing ? `Antwort „${choosing.choice.label}“ übernehmen?` : ''}
+        description={choosing?.insight.title}
+        confirmLabel="Übernehmen"
+        requireCheckbox="Ich habe die betroffenen Objekte geprüft und möchte diese Aktion ausführen."
+        confirmTestId="insight-choice-confirm"
+        onConfirm={async (checked) => {
+          if (!choosing) return;
+          await choose(choosing.insight, choosing.choice, checked);
+          setChoosing(null);
+        }}
+      >
+        {choosing && (
+          <div className="flex flex-col gap-2 text-sm">
+            {choosing.choice.description && <p>{choosing.choice.description}</p>}
+            {choosing.insight.affected.length > 0 && (
+              <ul className="list-disc pl-5">
+                {choosing.insight.affected.map((e) => (
+                  <li key={`${e.type}-${e.id}`}>
+                    {e.label}
+                    {e.detail ? ` (${e.detail})` : ''}
+                  </li>
                 ))}
               </ul>
             )}

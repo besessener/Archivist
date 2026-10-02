@@ -122,6 +122,8 @@ describe('IPC-Vertrag: Ausgaben echter Daten entsprechen den Schemas', () => {
     expect((await app.ok('timeline:get', {})).length).toBeGreaterThan(4);
     expect((await app.ok('contradictions:list', {})).length).toBeGreaterThanOrEqual(1);
     expect((await app.ok('insights:list', {})).length).toBeGreaterThan(1);
+    // „Nordlicht“ is both a topic and a project: a question insight with answer options
+    expect((await app.ok('insights:list', {})).find((i) => i.kind === 'topic_project_name')?.choices).toHaveLength(3);
     expect((await app.ok('notifications:list', {})).length).toBeGreaterThan(3);
     expect((await app.ok('knowledge:listEntities', { type: 'document' })).length).toBe(1);
     const t = (await app.ok('timeline:get', {})).filter((e) => e.kind === 'decision');

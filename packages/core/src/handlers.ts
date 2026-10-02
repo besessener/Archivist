@@ -97,7 +97,15 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     },
 
     'settings:get': () => settingsPayload(),
-    'settings:update': (i) => ({ settings: s.settings.update(i) }),
+    'settings:update': (i) => {
+      const before = s.settings.get().archiveRoot;
+      if (i.archiveRoot !== undefined && s.archive.isRootChangeActive())
+        throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.');
+      const settings = s.settings.update(i);
+      // a direct path change (without moving the archive) warns when archived documents are not found there
+      if (settings.archiveRoot !== before) s.archiveRoot.warnUnreachable(settings.archiveRoot);
+      return { settings };
+    },
     'settings:setApiKey': (i) => {
       s.secrets.setApiKey(i.apiKey);
       s.events.changed('settings', 'status');
@@ -218,6 +226,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'insights:respond': async (i) => {
       if (i.response === 'accept') return s.insights.accept(i.id, { strongConfirmed: i.strongConfirmed });
       if (i.response === 'reject') return s.insights.reject(i.id);
+      if (i.response === 'choose') return s.insights.choose(i.id, i.choiceId, { strongConfirmed: i.strongConfirmed });
       return s.insights.remindLater(i.id, i.remindAt);
     },
     'consistency:run': () => ({ jobId: s.enqueueConsistency('manual').id }),
@@ -316,6 +325,9 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'backup:create': (i) => s.backup.create(i.includeArchive),
     'backup:list': () => s.backup.list(),
     'archive:verify': () => s.archive.verify(),
+    'archive:rootStatus': () => s.archiveRoot.status(),
+    'archive:previewRootChange': (i) => s.archiveRoot.preview(i.root),
+    'archive:changeRoot': (i) => s.archiveRoot.change(i),
   };
   return h;
 }

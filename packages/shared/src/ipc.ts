@@ -6,6 +6,10 @@ import {
   ArchiveItemRequest,
   ArchivePlan,
   ArchiveResult,
+  ArchiveRootChangeMode,
+  ArchiveRootChangeResult,
+  ArchiveRootPreview,
+  ArchiveRootStatus,
   AppNotification,
   AuditEntry,
   BackupInfo,
@@ -106,7 +110,8 @@ export const TimelineQuery = z.object({
   projectId: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-  limit: z.number().int().min(1).max(1000).default(300),
+  /** Maximum number of entries; the newest ones are returned (chronologically sorted). */
+  limit: z.number().int().min(1).max(10000).default(300),
 });
 
 const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benutzers (Pflicht)');
@@ -283,6 +288,8 @@ export const ipcContract = {
     z.discriminatedUnion('response', [
       z.object({ response: z.literal('accept'), id: Id, confirmed: Confirmed, strongConfirmed: z.boolean().default(false) }),
       z.object({ response: z.literal('reject'), id: Id }),
+      // answers a question insight with one of its `choices`; options with an action need the explicit confirmation
+      z.object({ response: z.literal('choose'), id: Id, choiceId: z.string().min(1), confirmed: Confirmed, strongConfirmed: z.boolean().default(false) }),
       z.object({ response: z.literal('remind_later'), id: Id, remindAt: IsoDate }),
     ]),
     Insight,
@@ -388,6 +395,18 @@ export const ipcContract = {
   'backup:create': ch(z.object({ includeArchive: z.boolean().default(false) }), BackupInfo),
   'backup:list': ch(Empty, z.array(BackupInfo)),
   'archive:verify': ch(Empty, VerifyReport),
+  'archive:rootStatus': ch(Empty, ArchiveRootStatus),
+  'archive:previewRootChange': ch(z.object({ root: z.string().trim().min(1).max(4096) }), ArchiveRootPreview),
+  'archive:changeRoot': ch(
+    z.object({
+      root: z.string().trim().min(1).max(4096),
+      mode: ArchiveRootChangeMode,
+      confirmed: Confirmed,
+      /** `pathOnly`: switch even though archived documents are missing in the new folder (the user saw the warning). */
+      acceptMissing: z.boolean().default(false),
+    }),
+    ArchiveRootChangeResult,
+  ),
 } as const;
 
 export type IpcContract = typeof ipcContract;

@@ -1,6 +1,6 @@
 {
-  "id": "2cce2981-2dcf-49df-8bad-39bab587d5c5",
-  "prevId": "8dec2296-f18b-4161-a55f-f142d7470ab1",
+  "id": "4d427f0a-5138-4ed2-880b-d09b51c14e4a",
+  "prevId": "e5723ad8-052f-4b8a-9ad8-85ac8f859098",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -839,6 +839,14 @@
           "autoincrement": false,
           "default": "'pending'"
         },
+        "folder_llm_allowed": {
+          "name": "folder_llm_allowed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
         "proposal": {
           "name": "proposal",
           "type": "text",
@@ -963,13 +971,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'[]'"
-        },
-        "duplicate_of_id": {
-          "name": "duplicate_of_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",
@@ -1673,6 +1674,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "duplicate_of_id": {
+          "name": "duplicate_of_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -2205,13 +2213,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "duplicate_of_id": {
-          "name": "duplicate_of_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         }
       },

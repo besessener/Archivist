@@ -27,7 +27,8 @@
     "neverAnalyzeFiles": []
   },
   "notifications": {
-    "desktop": false
+    "desktop": false,
+    "reminderTime": "08:00"
   },
   "logs": {
     "level": "info",

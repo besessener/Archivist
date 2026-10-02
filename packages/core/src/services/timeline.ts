@@ -1,4 +1,4 @@
-import type { EntityRef, TimelineEntry } from '@archivist/shared';
+import { localDate, type EntityRef, type TimelineEntry } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { contradictions, decisions, documents, events, openItems } from '../db/schema';
 import { truncate } from '../util/text';
@@ -9,10 +9,14 @@ export interface TimelineQuery {
   projectId?: string;
   from?: string;
   to?: string;
+  /** Maximum number of entries; the newest ones are kept (default 300). */
   limit?: number;
 }
 
-/** Chronologische Sicht auf Dokumente, Entscheidungen, offene Punkte und Widersprüche – jeder Eintrag verweist auf seine Objekte. */
+/**
+ * Chronologische Sicht auf Dokumente, Entscheidungen, offene Punkte und Widersprüche – jeder Eintrag verweist auf seine Objekte.
+ * Returns the newest `limit` entries matching the filter, sorted oldest first.
+ */
 export class TimelineService {
   constructor(
     private readonly ctx: AppContext,
@@ -34,10 +38,11 @@ export class TimelineService {
       { type: 'contradiction', id: c.id, label: c.title },
       ...c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
     ];
+    // Timestamps (createdAt, …) belong to the local day, not the UTC day (#77).
     const push = (e: Omit<TimelineEntry, 'year'>) => {
-      const date = e.date.slice(0, 10);
-      if (q.from && date < q.from.slice(0, 10)) return;
-      if (q.to && date > q.to.slice(0, 10)) return;
+      const date = localDate(e.date);
+      if (q.from && date < localDate(q.from)) return;
+      if (q.to && date > localDate(q.to)) return;
       out.push({ ...e, date, year: Number(date.slice(0, 4)) || 0 });
     };
 
@@ -131,6 +136,9 @@ export class TimelineService {
         }
       }
     }
-    return out.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(0, q.limit ?? 300);
+    // Filter first (above), then keep the NEWEST `limit` entries; the result stays in chronological order.
+    const sorted = out.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    const limit = q.limit ?? 300;
+    return sorted.length > limit ? sorted.slice(sorted.length - limit) : sorted;
   }
 }
