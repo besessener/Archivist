@@ -1,7 +1,10 @@
 # Packaging-Konfiguration für Archivist (electron-builder)
-appId: de.archivist.app
+# Reverse-DNS-ID einer Domain, die uns gehört (besessener.github.io). Nicht mehr ändern: NSIS leitet daraus die
+# Installer-GUID ab (stille Updates) und setzt sie als AppUserModelID der Verknüpfungen (Benachrichtigungen);
+# muss mit APP_ID in src/app-id.ts übereinstimmen.
+appId: io.github.besessener.archivist
 productName: Archivist
-copyright: Archivist
+copyright: Copyright © 2026 Matthias Eggert
 directories:
   output: release
   buildResources: build
