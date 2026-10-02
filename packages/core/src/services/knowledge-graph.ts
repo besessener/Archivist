@@ -105,7 +105,13 @@ const REF_TABLES: Record<RefTableName, RefTableSpec> = {
     lists: {},
     responsible: true,
   },
-  events: { table: events, the: 'Das Ereignis', a: 'Ein Ereignis', cols: ['topicId', 'projectId', 'updatedAt'], lists: {} },
+  events: {
+    table: events,
+    the: 'Das Ereignis',
+    a: 'Ein Ereignis',
+    cols: ['topicId', 'projectId', 'participants', 'updatedAt'],
+    lists: { person: 'participants' },
+  },
 };
 
 /** Exact prior state of one merge (undo data). */
@@ -699,7 +705,7 @@ export class KnowledgeGraphService {
    * Performs several merges atomically and records them as ONE audit entry, so one undo reverts all of them.
    * Each merge re-hangs relations (status/confidence/sources are kept, duplicates combined), `topicId`/`projectId`
    * of documents, decisions, open items and events, responsible persons and the name lists `decisions.participants`,
-   * `documents.persons` and `documents.tags` (canonical target name, deduplicated). Merged-away names become aliases
+   * `events.participants`, `documents.persons` and `documents.tags` (canonical target name, deduplicated). Merged-away names become aliases
    * of the target, their roles are added to the target's roles; the affected records are reindexed afterwards.
    */
   async mergeMany(requests: MergeRequest[], opts: MergeOptions = {}): Promise<MergeBatchResult> {

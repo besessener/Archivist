@@ -880,10 +880,12 @@ export class DocumentService {
   ): DocumentRecord {
     if (!confirmed) throw new AppError('permission_error', 'Das Überschreiben von Metadaten erfordert eine Bestätigung.');
     const row = this.getRow(id);
+    // archived documents are part of the graph: their persons and tags are linked like on archiving (#274)
+    const inGraph = ARCHIVED_STATUSES.includes(row.status as DocumentStatus);
     const set: Partial<DocRow> = { updatedAt: nowIso() };
     if (patch.title !== undefined && patch.title.trim()) set.title = patch.title.trim().slice(0, 200);
-    if (patch.tags) set.tags = patch.tags;
-    if (patch.persons) set.persons = this.persons.resolveNames(patch.persons, { context: 'document', create: false }).names;
+    if (patch.tags) set.tags = [...new Set(patch.tags.map((t) => t.trim()).filter(Boolean))];
+    if (patch.persons) set.persons = this.persons.resolveNames(patch.persons, { context: 'document', create: inGraph }).names;
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
     const { changes } = this.graph.trackRelationChanges(id, () =>
@@ -891,6 +893,7 @@ export class DocumentService {
         this.db.update(documents).set(set).where(eq(documents.id, id)).run();
         if (set.title) this.graph.registerNode('document', id, set.title, row.summary);
         this.syncAssignment(id, set);
+        if (inGraph) this.syncPersonsAndTags(id, set);
       }),
     );
     this.audit.log({
@@ -917,6 +920,28 @@ export class DocumentService {
     if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
     if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
     if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+  }
+
+  /**
+   * Links an archived document to its (changed) persons and tags like archiving does; automatic relations to
+   * persons or tags no longer listed become outdated, relations the user confirmed or rejected stay unchanged.
+   */
+  private syncPersonsAndTags(id: string, set: Partial<DocRow>): void {
+    if (set.persons) {
+      const people = this.persons.resolveNames(set.persons, { context: 'document', create: false }).entities;
+      for (const p of people) this.graph.link(p.id, id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [id] });
+      this.graph.unlinkSystemRelations(
+        id,
+        'produced',
+        people.map((p) => p.id),
+        { direction: 'in', otherType: 'person' },
+      );
+    }
+    if (set.tags) {
+      const tagIds = set.tags.map((t) => this.graph.ensureEntity('tag', t).id);
+      for (const tagId of tagIds) this.graph.link(id, tagId, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [id] });
+      this.graph.unlinkSystemRelations(id, 'relates_to', tagIds, { otherType: 'tag' });
+    }
   }
 
   private metadataUndo(row: DocRow, set: Partial<DocRow>, relations: RelationChangeSet): DocumentMetadataUndo {

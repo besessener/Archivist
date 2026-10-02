@@ -101,7 +101,16 @@ type Pending =
   | { kind: 'supersede_choice'; newDecisionId: string; candidateIds: string[] }
   | { kind: 'open_item_choice'; text: string; intent: ChatIntent; candidateIds: string[] }
   | { kind: 'subject_choice'; text: string; intent: ChatIntent; names: string[] }
-  | { kind: 'event'; title: string; description: string | null; topic: string | null; project: string | null; source: string };
+  | {
+      kind: 'event';
+      title: string;
+      description: string | null;
+      topic: string | null;
+      project: string | null;
+      /** absent in states stored before #274 */
+      participants?: string[];
+      source: string;
+    };
 
 /** Short ids in the intent prompt (P1, E1, V1) → real ids. Unknown ids returned by the LLM are discarded. */
 interface PromptRefs {
@@ -447,7 +456,7 @@ Absichten (intent):
 - knowledge_question: Frage zum Archivwissen (Wann/Warum/Wer/Wie/„Haben wir jemals …“/Haltungsänderung/Widersprüche).
 - document_search: Dokumente suchen oder anzeigen (nicht, um ihre Verzeichnisse zu bewerten).
 - timeline_query: Chronologische Übersicht zu Thema/Projekt/Zeitraum.
-- event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description. Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
+- event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description sowie event.participants (nur ausdrücklich genannte beteiligte Personen; „ich“ bleibt „ich“). Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
 - open_item_new / open_item_update / open_item_close: offene Punkte erfassen/ändern/schließen. Beim Schließen gehört eine genannte Lösung bzw. ein Grund in openItem.resolutionNote.
 - reminder_create / reminder_snooze: Erinnerung anlegen bzw. verschieben.
 - proposal_confirm / proposal_reject: Zustimmung bzw. Ablehnung eines offenen Agentenvorschlags („ja, mach das“, „nein“).
@@ -2218,6 +2227,7 @@ export class ChatService {
       pending?.description ??
       ev.description?.trim() ??
       ((intent.segment ?? text).trim().length > title.length + 10 ? (intent.segment ?? text).trim().slice(0, 2000) : null);
+    const participants = pending?.participants ?? (ev.participants ?? []).map((p) => p.trim()).filter(Boolean);
     const clear: ConvState = { ...state, pending: null };
     if (!occurredAt) {
       return {
@@ -2232,13 +2242,14 @@ export class ChatService {
             description,
             topic: pending?.topic ?? intent.topic ?? null,
             project: pending?.project ?? intent.project ?? null,
+            participants,
             source: pending?.source ?? text.slice(0, 4000),
           },
         },
       };
     }
     const event = this.events.create(
-      { title, description, occurredAt, topic: pending?.topic ?? intent.topic, project: pending?.project ?? intent.project, sourceIds: [] },
+      { title, description, occurredAt, topic: pending?.topic ?? intent.topic, project: pending?.project ?? intent.project, participants, sourceIds: [] },
       { actor: 'user', trigger: 'chat' },
     );
     const sources: SourceReference[] = [
@@ -2246,7 +2257,7 @@ export class ChatService {
     ];
     return {
       intent: 'event_record',
-      content: `Ereignis in der Timeline eingetragen: **${event.title}** (${event.occurredAt.slice(0, 10)})${event.topicName ? `, Thema: ${event.topicName}` : ''}${event.projectName ? `, Projekt: ${event.projectName}` : ''}.`,
+      content: `Ereignis in der Timeline eingetragen: **${event.title}** (${event.occurredAt.slice(0, 10)})${event.topicName ? `, Thema: ${event.topicName}` : ''}${event.projectName ? `, Projekt: ${event.projectName}` : ''}${event.participants.length ? `, Beteiligte: ${event.participants.join(', ')}` : ''}.`,
       sources,
       context: {
         topics: event.topicName ? [{ type: 'topic', id: event.topicId!, label: event.topicName }] : [],

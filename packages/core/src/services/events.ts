@@ -8,6 +8,7 @@ import { normalizeDateInput } from '../util/dates';
 import { normalizeName } from '../util/text';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService, NodeSnapshot, RelationChangeSet } from './knowledge-graph';
+import { mentionContext, type PersonMentionContext, type PersonService } from './persons';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
@@ -34,6 +35,7 @@ export class EventService {
     private readonly graph: KnowledgeGraphService,
     private readonly search: SearchService,
     private readonly audit: AuditService,
+    private readonly persons: PersonService,
     undo: UndoService,
   ) {
     undo.register('event_update', {
@@ -85,6 +87,7 @@ export class EventService {
       topicName: nm(r.topicId),
       projectId: r.projectId,
       projectName: nm(r.projectId),
+      participants: r.participants,
       sourceIds: r.sourceIds,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -125,6 +128,7 @@ export class EventService {
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
+    const personContext = mentionContext(ctxInfo.trigger, 'manual');
     const row: Row = {
       id: newId(),
       title: input.title.trim(),
@@ -132,6 +136,7 @@ export class EventService {
       occurredAt,
       topicId: topic?.id ?? null,
       projectId: project?.id ?? null,
+      participants: this.persons.resolveNames(input.participants ?? [], { context: personContext }).names,
       sourceIds: input.sourceIds ?? [],
       createdAt: now,
       updatedAt: now,
@@ -142,6 +147,7 @@ export class EventService {
       this.graph.registerNode('event', row.id, row.title, row.description);
       if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds });
       if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds });
+      this.syncParticipants(row, personContext);
     });
     this.audit.log({
       action: 'event.create',
@@ -176,7 +182,17 @@ export class EventService {
     return existing ? { event: existing, created: false } : { event: this.create(input, ctxInfo), created: true };
   }
 
-  update(id: string, patch: Partial<EventInput>): EventRecord {
+  /** The participants as `participated_in` relations; relations to persons no longer listed become outdated. */
+  private syncParticipants(r: Pick<Row, 'id' | 'participants' | 'sourceIds'>, personContext: PersonMentionContext): void {
+    const personIds: string[] = [];
+    for (const person of this.persons.resolveNames(r.participants, { context: personContext }).entities) {
+      personIds.push(person.id);
+      this.graph.link(person.id, r.id, 'participated_in', { confidence: 0.9, status: 'confirmed', sourceIds: r.sourceIds });
+    }
+    this.graph.unlinkSystemRelations(r.id, 'participated_in', personIds, { direction: 'in', otherType: 'person' });
+  }
+
+  update(id: string, patch: Partial<EventInput>, ctxInfo: { trigger?: string } = {}): EventRecord {
     const cur = this.db.select().from(events).where(eq(events.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
     const set: Partial<Row> = { updatedAt: nowIso() };
@@ -189,9 +205,12 @@ export class EventService {
     }
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    const personContext = mentionContext(ctxInfo.trigger, 'manual');
+    if (patch.participants !== undefined) set.participants = this.persons.resolveNames(patch.participants, { context: personContext }).names;
     const { changes } = this.graph.trackRelationChanges(id, () =>
       this.db.transaction(() => {
         this.db.update(events).set(set).where(eq(events.id, id)).run();
+        if (set.participants) this.syncParticipants({ ...cur, ...set }, personContext);
         this.graph.registerNode('event', id, set.title ?? cur.title, set.description === undefined ? cur.description : set.description);
         if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
         if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
@@ -205,7 +224,7 @@ export class EventService {
     this.audit.log({
       action: 'event.update',
       actor: 'user',
-      trigger: 'manual',
+      trigger: ctxInfo.trigger ?? 'manual',
       confirmed: true,
       entityIds: [id],
       before: { title: cur.title, occurredAt: cur.occurredAt },
