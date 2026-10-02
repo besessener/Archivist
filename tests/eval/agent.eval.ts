@@ -4,10 +4,7 @@ import { writeReport, type EvalReport } from './report';
 import { probeProvider, providersFromEnv, runTask, selectTasks, type EvalProvider, type TaskResult } from './runner';
 import { TASKS } from './tasks';
 
-/**
- * Evaluation of the agent with REAL models (#316). Costs money – never part of `npm test` or CI.
- * Run: `npm run eval:agent` with ARCHIVIST_EVAL_PROVIDERS and ARCHIVIST_EVAL_<NAME>_* set (see docs/how-to/agent-evaluieren.md).
- */
+// Evaluation with REAL models (#316): costs money, never part of `npm test` or CI; see docs/how-to/agent-evaluieren.md.
 
 const { providers, problems } = providersFromEnv();
 const tasks = selectTasks(TASKS);
@@ -16,15 +13,15 @@ const TASK_TIMEOUT = 20 * 60_000;
 if (!providers.length) {
   const why = problems.length ? `Konfiguration unvollständig: ${problems.join('; ')}` : 'ARCHIVIST_EVAL_PROVIDERS ist nicht gesetzt';
   console.info(`Agent-Evaluation übersprungen: ${why} (siehe docs/how-to/agent-evaluieren.md).`);
-  describe.skip(`Agent-Evaluation übersprungen – ${why}`, () => {
-    it('braucht konfigurierte Anbieter', () => undefined);
+  describe.skip(`agent evaluation skipped – ${why}`, () => {
+    it('needs configured providers', () => undefined);
   });
 } else {
   const startedAt = new Date().toISOString();
   const results: TaskResult[] = [];
   const caps = new Map<string, AgentCapability | null>();
 
-  describe('Agent-Evaluation mit echten Modellen', () => {
+  describe('agent evaluation with real models', () => {
     afterAll(() => {
       const report: EvalReport = {
         startedAt,
@@ -44,7 +41,7 @@ if (!providers.length) {
       console.log(`Kosten dieses Laufs: $${out.costUsd.toFixed(4)}`);
     });
 
-    if (problems.length) it.skip(`nicht verwendet: ${problems.join('; ')}`, () => undefined);
+    if (problems.length) it.skip(`not used: ${problems.join('; ')}`, () => undefined);
 
     for (const p of providers) describeProvider(p);
   });
@@ -80,7 +77,7 @@ if (!providers.length) {
                 runIds: [],
                 answer: '',
               };
-            else r = await runTask(p, task, cap);
+            else r = await runTask({ provider: p, task, capability: cap });
             results.push(r);
             expect(r.pass, r.reasons.join('; ')).toBe(true);
           },

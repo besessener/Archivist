@@ -16,8 +16,8 @@ const stepOutcome = async (runId: string | null | undefined, tool: string) =>
 
 describe('Exceptions that ask in every mode (#298)', () => {
   it('deleting duplicates for good is only ever a proposal, even in „Auto“', async () => {
-    const keep = await archived(app, 'rechnung.txt', 'Rechnung 17', 'private/finanzen');
-    const copy = await archived(app, 'rechnung-kopie.txt', 'Rechnung 17 Kopie', 'private/finanzen');
+    const keep = await archived(app, { name: 'rechnung.txt', content: 'Rechnung 17', folder: 'private/finanzen' });
+    const copy = await archived(app, { name: 'rechnung-kopie.txt', content: 'Rechnung 17 Kopie', folder: 'private/finanzen' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'rechnung' } }] },
       { calls: [{ name: 'mark_duplicates', args: { keep: 'D1', duplicates: ['D2'], action: 'delete' } }] },
@@ -31,7 +31,7 @@ describe('Exceptions that ask in every mode (#298)', () => {
   });
 
   it('moving originals out of their place (archive_inbox mode move) is only ever a proposal, even in „Auto“', async () => {
-    const id = await inInbox(app, 'brief.txt', 'Ein Brief');
+    const id = await inInbox(app, { name: 'brief.txt', content: 'Ein Brief' });
     const source = app.services.documents.getRow(id).sourcePath!;
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { status: 'inbox' } }] },
@@ -46,8 +46,8 @@ describe('Exceptions that ask in every mode (#298)', () => {
 
   it('the threshold set in the settings counts; learned rules applied to the whole archive cannot get around it', async () => {
     await app.ok('settings:update', { agent: { massActionThreshold: 1 } });
-    const a = await archived(app, 'strom-1.txt', 'Stadtwerke Strom Januar', 'private/misc');
-    const b = await archived(app, 'strom-2.txt', 'Stadtwerke Strom Februar', 'private/misc');
+    const a = await archived(app, { name: 'strom-1.txt', content: 'Stadtwerke Strom Januar', folder: 'private/misc' });
+    const b = await archived(app, { name: 'strom-2.txt', content: 'Stadtwerke Strom Februar', folder: 'private/misc' });
     app.services.memory.save({
       kind: 'rule',
       name: 'Stadtwerke',
@@ -62,7 +62,7 @@ describe('Exceptions that ask in every mode (#298)', () => {
   });
 
   it('background runs follow the same exceptions: a critical change becomes a proposal', async () => {
-    const id = await inInbox(app, 'brief.txt', 'Ein Brief');
+    const id = await inInbox(app, { name: 'brief.txt', content: 'Ein Brief' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'move', folder: 'private/post' } }] },
       { text: 'Vorgeschlagen.' },

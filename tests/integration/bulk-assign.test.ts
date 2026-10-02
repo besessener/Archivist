@@ -53,8 +53,8 @@ describe('Bulk assignment for several entries (#291)', () => {
   it('documents: a topic is added instead of replaced, a case collects them – one undo step', async () => {
     app = await createTestApp();
     const c = (await app.ok('cases:create', { name: 'Steuer 2025' })).case;
-    const a = await archived(app, 'a.md', 'Beleg A', 'private/steuer', { topic: 'Steuer' });
-    const b = await archived(app, 'b.md', 'Beleg B', 'private/steuer');
+    const a = await archived(app, { name: 'a.md', content: 'Beleg A', folder: 'private/steuer', topic: 'Steuer' });
+    const b = await archived(app, { name: 'b.md', content: 'Beleg B', folder: 'private/steuer' });
     await app.ok('documents:bulkUpdate', { ids: [a, b], addTopic: 'Belege', caseId: c.id, addTags: ['2025'], confirmed: true });
     expect(await subjectsOf(a)).toMatchObject({ topic: { name: 'Steuer' }, extraTopics: [{ name: 'Belege' }] });
     expect((await subjectsOf(b)).topic?.name).toBe('Belege');

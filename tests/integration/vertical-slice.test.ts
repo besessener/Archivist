@@ -94,13 +94,11 @@ describe('Import, classify, archive and undo a file', () => {
     expect(archived.status).toBe('archived');
     expect(archived.projectName).toBe('prod-plat');
 
-    // search and knowledge graph updated
     const hits = await app.ok('search:global', { query: 'Jour Fixe Budget', limit: 5 });
     expect(hits.some((h) => h.id === id)).toBe(true);
     const topics = await app.ok('knowledge:listEntities', { type: 'project' });
     expect(topics.map((t) => t.name)).toContain('prod-plat');
 
-    // audit + undo
     const audit = await app.ok('audit:list', { limit: 20, onlyUndoable: true });
     const entry = audit.find((a) => a.action === 'archive.copy');
     expect(entry?.undoable).toBe(true);

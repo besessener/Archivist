@@ -1,8 +1,7 @@
 import type { VitestPluginContext } from 'vitest/node';
 import { defineConfig } from 'vitest/config';
 
-// Stryker filters tests by the space-joined suite path; Vitest 5 matches names joined with ' > '.
-// Without this adjustment every filtered mutant run executes no test and all mutants survive (idea from CollectionBuddy).
+// Stryker filters by the space-joined suite path, Vitest 5 joins with ' > ': without this every mutant run executes no test.
 const strykerTestNameSeparator = {
   name: 'stryker-test-name-separator',
   configureVitest({ project }: VitestPluginContext) {

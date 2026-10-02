@@ -6,7 +6,7 @@ import { _electron as electron, test as base, type ElectronApplication, type Pag
 import { startFakeLlm, type FakeLlmServer } from './fake-llm';
 import { createPageTree, type PageTree } from './pages';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- the electron package exports the binary path, which its typings (the Electron API) do not describe
 const electronPath = require('electron') as unknown as string;
 const appDir = path.resolve(__dirname, '../../apps/desktop');
 // ARCHIVIST_E2E_PACKAGED=1: test the packaged application (electron-builder --dir) instead of the development build
@@ -31,8 +31,7 @@ interface Fixtures {
 }
 
 async function launch(env: Record<string, string>): Promise<ElectronApplication> {
-  // Launching the Electron binary occasionally hangs on CI runners (Chromium/D-Bus/Xvfb race); a restart fixes that
-  // without skipping any test content. It is retried at most twice.
+  // Launching occasionally hangs on CI runners (Chromium/D-Bus/Xvfb race); up to two restarts fix that without skipping test content.
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await electron.launch({
@@ -41,8 +40,8 @@ async function launch(env: Record<string, string>): Promise<ElectronApplication>
         timeout: 45_000,
         env,
       });
-    } catch (err) {
-      if (attempt >= 3) throw err;
+    } catch (error) {
+      if (attempt >= 3) throw error;
     }
   }
 }

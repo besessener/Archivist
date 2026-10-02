@@ -207,7 +207,6 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
         ],
       }),
     );
-    // existing topic
     await app.ok('knowledge:createEntity', { type: 'topic', name: 'Hauskauf' });
     const dl = path.join(app.home, 'Downloads');
     for (const n of ['kaufvertrag', 'grundbuch', 'finanzierung'])
@@ -227,7 +226,6 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
     const insight = (await app.ok('insights:list', {})).find((i) => i.kind === 'assignment')!;
     expect(insight.recommendedActionId).toBeTruthy();
 
-    // confirm only 2 of 3
     const chosen = groups[0]!.documentIds.slice(0, 2);
     const plan = await app.ok('documents:previewArchive', { items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })) });
     expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('work', 'projects', 'Hauskauf')))).toBe(true);

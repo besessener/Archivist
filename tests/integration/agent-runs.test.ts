@@ -18,8 +18,8 @@ const relationsBetween = (a: string, b: string) =>
 
 describe('Agent runs: undo (#299)', () => {
   it('undoes a run with mixed changes (move, metadata, open item, note, link) completely and in reverse order', async () => {
-    const a = await archived(app, 'steuer.md', 'Steuerunterlagen 2025', 'work/misc');
-    const other = await archived(app, 'quittung.md', 'Quittung', 'work/misc');
+    const a = await archived(app, { name: 'steuer.md', content: 'Steuerunterlagen 2025', folder: 'work/misc' });
+    const other = await archived(app, { name: 'quittung.md', content: 'Quittung', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'steuer' } }] },
       {
@@ -49,7 +49,6 @@ describe('Agent runs: undo (#299)', () => {
       ['link', 'ok'],
       ['move_documents', 'ok'],
     ]);
-    // everything happened
     expect(folderOf(app, a)).toBe('work/steuer/2025');
     expect(doc(a).topicName).toBe('Steuer');
     expect(doc(a).tags).toContain('2025');
@@ -83,7 +82,7 @@ describe('Agent runs: undo (#299)', () => {
   });
 
   it('several changes of one document in the same instant are still undone newest first', async () => {
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       {
@@ -106,8 +105,8 @@ describe('Agent runs: undo (#299)', () => {
   });
 
   it('a conflict (the user edited the metadata after the run) blocks exactly that change; the others are undone', async () => {
-    const a = await archived(app, 'vertrag.md', 'Vertrag', 'work/misc');
-    const b = await archived(app, 'angebot.md', 'Angebot', 'work/misc');
+    const a = await archived(app, { name: 'vertrag.md', content: 'Vertrag', folder: 'work/misc' });
+    const b = await archived(app, { name: 'angebot.md', content: 'Angebot', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'vertrag' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'angebot' } }] },
@@ -137,15 +136,14 @@ describe('Agent runs: undo (#299)', () => {
     // the user's edit and the change it depends on stay
     expect(doc(a).title).toBe('Mietvertrag (von Hand)');
     expect(doc(a).topicName).toBe('Verträge');
-    // the rest is undone
     expect(folderOf(app, b)).toBe('work/misc');
     expect(await openItemTitles()).not.toContain('Vertrag unterschreiben');
     expect((await app.ok('agent:run', { id: runId })).undoable).toBe(1);
   });
 
   it('undoStep undoes exactly one step', async () => {
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
-    const b = await archived(app, 'b.md', 'B', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'b' } }] },
@@ -172,9 +170,9 @@ describe('Agent runs: undo (#299)', () => {
 
 describe('Agent runs: relations (#270, #306)', () => {
   it('relations created in a run carry origin agent and the run id; explicit request → confirmed, own accord → proposed', async () => {
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
-    const b = await archived(app, 'b.md', 'B', 'work/misc');
-    const c = await archived(app, 'c.md', 'C', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
+    const c = await archived(app, { name: 'c.md', content: 'C', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'b' } }] },
@@ -200,8 +198,8 @@ describe('Agent runs: relations (#270, #306)', () => {
   });
 
   it('in the background even an „explicit“ link stays a proposal', async () => {
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
-    const b = await archived(app, 'b.md', 'B', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'b' } }] },
@@ -214,8 +212,8 @@ describe('Agent runs: relations (#270, #306)', () => {
   });
 
   it('a pair the user rejected is never proposed again', async () => {
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
-    const b = await archived(app, 'b.md', 'B', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
     const linkScript = (onUserRequest: boolean) =>
       scriptedTurns(
         { calls: [{ name: 'find_documents', args: { name: 'a' } }] },

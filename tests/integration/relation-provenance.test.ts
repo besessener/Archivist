@@ -50,7 +50,6 @@ describe('Origin, method and evidence of every relation (#270)', () => {
     });
     expect(taken).toMatchObject({ method: 'similarity', evidence: 'Wohnung in der Hauptstraße 5', resolvedByUser: true });
     expect(relationProvenance(taken)).toBe('user_confirmed');
-    // the detail view shows it
     const detail = await app.ok('knowledge:getEntity', { id: a });
     expect(detail.relations.find((r) => r.other.id === c)).toMatchObject({ method: 'similarity', evidence: 'Wohnung in der Hauptstraße 5' });
   });

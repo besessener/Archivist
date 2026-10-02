@@ -51,10 +51,10 @@ export function initInbox(page: Page) {
       await expect(locators.proposals.first()).toContainText(target, { timeout: 30_000 });
     },
     /** „Erneut verarbeiten“ in the confirmation dialog of mode „vorher fragen“, with or without consent to the AI transfer. */
-    reprocessConfirmed: async (withLlm: boolean) => {
+    reprocessConfirmed: async (consent: { allowLlm: boolean }) => {
       await locators.buttons.reprocess.first().click();
       await expect(locators.reprocessDialog.root).toBeVisible();
-      if (withLlm) await locators.reprocessDialog.allowLlm.check();
+      if (consent.allowLlm) await locators.reprocessDialog.allowLlm.check();
       await locators.reprocessDialog.confirm.click();
       await expect(locators.reprocessDialog.root).toBeHidden();
     },
@@ -73,5 +73,5 @@ export function initInbox(page: Page) {
       await expect(locators.archivePlan.result).toContainText(/erfolgreich|archiviert/i);
     },
   };
-  return pageObject(locators.items, locators, interactions);
+  return pageObject({ root: locators.items, locators, actions: interactions });
 }

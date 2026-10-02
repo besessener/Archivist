@@ -29,7 +29,7 @@ export function initChat(page: Page) {
       undoConfirm: page.getByTestId('agent-undo-run-confirm'),
       undoResult: root.getByTestId('agent-undo-result'),
       quickReplies: root.getByTestId('chat-quick-reply'),
-      mode: (m: 'auto' | 'ask') => root.getByTestId(`agent-mode-${m}`),
+      mode: (mode: 'auto' | 'ask') => root.getByTestId(`agent-mode-${mode}`),
     },
     rename: {
       input: page.getByTestId('rename-input'),
@@ -72,5 +72,5 @@ export function initChat(page: Page) {
       await expect(locators.conversationSelect).toContainText(title);
     },
   };
-  return pageObject(root, locators, interactions);
+  return pageObject({ root, locators, actions: interactions });
 }

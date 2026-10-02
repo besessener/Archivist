@@ -29,13 +29,28 @@ async function call(...calls: Array<{ name: string; args: Record<string, unknown
 }
 
 async function corpus() {
-  const invoice = await archived(app, 'rechnung-maler.txt', 'Malerarbeiten 1.200 Euro', 'private/finanzen', {
+  const invoice = await archived(app, {
+    name: 'rechnung-maler.txt',
+    content: 'Malerarbeiten 1.200 Euro',
+    folder: 'private/finanzen',
     docType: 'Rechnung',
     documentDate: '2025-04-10',
     persons: ['Maler Schulz'],
   });
-  const contract = await archived(app, 'mietvertrag.txt', 'Mietvertrag Wohnung', 'private/wohnen', { docType: 'Vertrag', documentDate: '2024-01-01' });
-  const slides = await archived(app, 'folien.md', `# Folien\n${'x'.repeat(5_000)}`, 'work/slides', { docType: 'Präsentation', documentDate: '2026-02-01' });
+  const contract = await archived(app, {
+    name: 'mietvertrag.txt',
+    content: 'Mietvertrag Wohnung',
+    folder: 'private/wohnen',
+    docType: 'Vertrag',
+    documentDate: '2024-01-01',
+  });
+  const slides = await archived(app, {
+    name: 'folien.md',
+    content: `# Folien\n${'x'.repeat(5_000)}`,
+    folder: 'work/slides',
+    docType: 'Präsentation',
+    documentDate: '2026-02-01',
+  });
   await app.ok('documents:bulkUpdate', { ids: [invoice], project: 'Renovierung', addTags: ['handwerker'], confirmed: true });
   return { invoice, contract, slides };
 }
@@ -93,7 +108,7 @@ describe('find_documents: every filter, paging with total and result sets (#303)
 
 describe('Other read tools (#303)', () => {
   it('read_document pages through sections; section 2 holds the rest of the text', async () => {
-    await archived(app, 'lang.txt', `${'a'.repeat(SECTION_CHARS)}ENDE-DES-TEXTS`, 'private/misc');
+    await archived(app, { name: 'lang.txt', content: `${'a'.repeat(SECTION_CHARS)}ENDE-DES-TEXTS`, folder: 'private/misc' });
     const [, first, second] = await call(
       { name: 'find_documents', args: { name: 'lang' } },
       { name: 'read_document', args: { id: 'D1' } },
@@ -107,7 +122,7 @@ describe('Other read tools (#303)', () => {
 
   it('search names the section of the hit', async () => {
     const filler = Array.from({ length: 800 }, (_, i) => `Absatz ${i} über die Bedienung.`).join(' ');
-    await archived(app, 'handbuch.txt', `${filler} Die Garantie gilt fünf Jahre.`, 'private/misc');
+    await archived(app, { name: 'handbuch.txt', content: `${filler} Die Garantie gilt fünf Jahre.`, folder: 'private/misc' });
     const [hit] = await call({ name: 'search', args: { query: 'Garantie fünf Jahre' } });
     expect(hit).toContain('handbuch');
     // the hit lies near the end, not in the first section
@@ -143,8 +158,8 @@ describe('Other read tools (#303)', () => {
   });
 
   it('related uses the same list as „Verwandte Einträge“ in the user interface, with the reason', async () => {
-    const a = await archived(app, 'angebot.txt', 'Angebot Dach', 'private/haus');
-    const b = await archived(app, 'auftrag.txt', 'Auftrag Dach', 'private/haus');
+    const a = await archived(app, { name: 'angebot.txt', content: 'Angebot Dach', folder: 'private/haus' });
+    const b = await archived(app, { name: 'auftrag.txt', content: 'Auftrag Dach', folder: 'private/haus' });
     await app.ok('documents:bulkUpdate', { ids: [a, b], project: 'Dachsanierung', confirmed: true });
     const ui = await app.ok('knowledge:related', { id: a });
     const [, related] = await call({ name: 'find_documents', args: { name: 'angebot' } }, { name: 'related', args: { id: 'D1' } });
@@ -157,7 +172,7 @@ describe('Other read tools (#303)', () => {
 
 describe('Entries that stem only from documents not shared (#301)', () => {
   it('are listed without their content', async () => {
-    const doc = await archived(app, 'befund.txt', 'Befund', 'private/gesundheit');
+    const doc = await archived(app, { name: 'befund.txt', content: 'Befund', folder: 'private/gesundheit' });
     await app.ok('documents:setLlmExcluded', { id: doc, excluded: true });
     await app.ok('decisions:create', {
       decisionText: 'Therapie mit Medikament X beginnen',

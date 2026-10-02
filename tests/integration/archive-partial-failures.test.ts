@@ -4,10 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
-/**
- * Fault injection for archiving and relocating: file system calls fail halfway (EBUSY, ENOSPC, EXDEV).
- * Afterwards the state must be unambiguous and the reported message must match it.
- */
+// File system calls fail halfway (EBUSY, ENOSPC, EXDEV): the state stays unambiguous and the message matches it.
 
 const TOPIC = 'Bildungsurlaub 2026';
 

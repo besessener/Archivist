@@ -15,5 +15,5 @@ export function initNavigation(page: Page) {
       await locators.link(section).click();
     },
   };
-  return pageObject(root, locators, interactions);
+  return pageObject({ root, locators, actions: interactions });
 }

@@ -246,7 +246,6 @@ describe('Archive state and processing status', () => {
     expect(d.processingStatus).toBe('failed');
     expect(d.processingError).toBeTruthy();
     expect(d.status).toBe('proposed');
-    // reprocess
     makePdf(d.stagedPath!, ['Jetzt ist es ein gültiges Dokument zum Test']);
     await app.ok('documents:classify', { documentId: d.id, allowLlm: true });
     await app.services.jobs.whenIdle();

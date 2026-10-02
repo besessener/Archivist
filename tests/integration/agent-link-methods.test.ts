@@ -17,20 +17,22 @@ const lastOutput = () =>
 
 /** Three documents about the same flat, one recipe. */
 async function flat() {
-  const lease = await archived(
-    app,
-    'mietvertrag.md',
-    'Mietvertrag für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.',
-    'private/wohnen',
-  );
-  const costs = await archived(
-    app,
-    'nebenkosten.md',
-    'Nebenkostenabrechnung für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Miete und Heizung.',
-    'private/wohnen',
-  );
-  const recipe = await archived(app, 'rezept.md', 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', 'private/kochen');
-  const notice = await archived(app, 'kuendigung.md', 'Kündigung der Wohnung Hauptstraße 5 an Vermieter Schmidt, Kaution zurück.', 'private/wohnen');
+  const lease = await archived(app, {
+    name: 'mietvertrag.md',
+    content: 'Mietvertrag für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.',
+    folder: 'private/wohnen',
+  });
+  const costs = await archived(app, {
+    name: 'nebenkosten.md',
+    content: 'Nebenkostenabrechnung für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Miete und Heizung.',
+    folder: 'private/wohnen',
+  });
+  const recipe = await archived(app, { name: 'rezept.md', content: 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', folder: 'private/kochen' });
+  const notice = await archived(app, {
+    name: 'kuendigung.md',
+    content: 'Kündigung der Wohnung Hauptstraße 5 an Vermieter Schmidt, Kaution zurück.',
+    folder: 'private/wohnen',
+  });
   return { lease, costs, recipe, notice };
 }
 

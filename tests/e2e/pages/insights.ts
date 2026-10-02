@@ -15,23 +15,23 @@ export function initInsights(page: Page) {
     },
   };
   const card = (title: string) => locators.cards.filter({ hasText: title });
-  const choices = (c: Locator) => c.getByTestId('insight-choice');
+  const choices = (insightCard: Locator) => insightCard.getByTestId('insight-choice');
   const interactions = {
     runCheck: async () => {
       await locators.buttons.runCheck.click();
     },
     /** Answers a question insight; an answer that changes data is confirmed in the dialog. */
-    choose: async (c: Locator, label: string, opts: { confirm: boolean }) => {
-      await choices(c).filter({ hasText: label }).click();
-      if (opts.confirm) {
+    choose: async (insightCard: Locator, answer: { label: string; confirm: boolean }) => {
+      await choices(insightCard).filter({ hasText: answer.label }).click();
+      if (answer.confirm) {
         await locators.choiceDialog.checkbox.click();
         await locators.choiceDialog.confirm.click();
       }
-      await expect(c).toBeHidden();
+      await expect(insightCard).toBeHidden();
     },
     showStatus: async (status: 'open' | 'accepted' | 'rejected' | 'snoozed') => {
       await locators.statusFilter.selectOption(status);
     },
   };
-  return Object.assign(pageObject(locators.cards, locators, interactions), { card, choices });
+  return Object.assign(pageObject({ root: locators.cards, locators, actions: interactions }), { card, choices });
 }

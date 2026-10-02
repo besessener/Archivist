@@ -43,9 +43,9 @@ export function initTimeline(page: Page) {
     seedEvents: async (events: Array<{ title: string; occurredAt: string }>) => {
       await page.evaluate(async (list) => {
         const bridge = (window as unknown as { archivist: { invoke: (channel: string, input: unknown) => Promise<{ ok: boolean }> } }).archivist;
-        for (const e of list) {
-          const r = await bridge.invoke('events:create', e);
-          if (!r.ok) throw new Error(`events:create failed for ${e.title}`);
+        for (const event of list) {
+          const result = await bridge.invoke('events:create', event);
+          if (!result.ok) throw new Error(`events:create failed for ${event.title}`);
         }
       }, events);
     },
@@ -53,5 +53,5 @@ export function initTimeline(page: Page) {
       await locators.buttons.loadOlder.click();
     },
   };
-  return Object.assign(pageObject(locators.entries, locators, interactions), { entry });
+  return Object.assign(pageObject({ root: locators.entries, locators, actions: interactions }), { entry });
 }

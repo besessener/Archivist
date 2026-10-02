@@ -63,7 +63,7 @@ describe('Capturing knowledge as agent tools (#307)', () => {
   });
 
   it('open items: duplicate check reports an existing item; ifDuplicate=create creates it anyway; sources link documents', async () => {
-    const doc = await archived(app, 'angebot.txt', 'Angebot Müller', 'work/misc');
+    const doc = await archived(app, { name: 'angebot.txt', content: 'Angebot Müller', folder: 'work/misc' });
     await app.ok('openItems:create', { title: 'Angebot Müller prüfen', priority: 'normal', confidence: 0.9 } as never);
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'angebot' } }] },
@@ -84,7 +84,7 @@ describe('Capturing knowledge as agent tools (#307)', () => {
   });
 
   it('reminders: date in words is normalized, a second reminder for the same target and day is not created', async () => {
-    const doc = await archived(app, 'vertrag.txt', 'Vertrag', 'work/misc');
+    const doc = await archived(app, { name: 'vertrag.txt', content: 'Vertrag', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'vertrag' } }] },
       { calls: [{ name: 'create_reminder', args: { title: 'Vertrag kündigen', remindAt: '2026-11-30', target: 'D1' } }] },

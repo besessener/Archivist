@@ -7,8 +7,8 @@ test.describe('decisions: status change in the form', () => {
     await app.navigation.do.open('decisions');
     const d = app.decisions;
 
-    await d.do.create('Wir nutzen Postgres.', '2026-09-01', 'Datenbank', 'Anna, Ben');
-    await d.do.create('Wir nutzen SQLite.', '2026-10-01', 'Datenbank', 'Anna');
+    await d.do.create({ text: 'Wir nutzen Postgres.', isoDate: '2026-09-01', topic: 'Datenbank', participants: 'Anna, Ben' });
+    await d.do.create({ text: 'Wir nutzen SQLite.', isoDate: '2026-10-01', topic: 'Datenbank', participants: 'Anna' });
 
     // revoke: cancelling the dialog changes nothing
     await d.row('Wir nutzen Postgres.').click();

@@ -14,8 +14,8 @@ test.describe('linking knowledge (Epic #269)', () => {
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('knowledge');
     const k = app.knowledge;
-    await k.do.create('project', 'Hausbau');
-    await k.do.create('note', 'Statik', 'Statiker beauftragt.');
+    await k.do.create({ type: 'project', name: 'Hausbau' });
+    await k.do.create({ type: 'note', name: 'Statik', description: 'Statiker beauftragt.' });
 
     // [[ offers the entries; choosing one inserts the link
     await k.locators.buttons.create.click();
@@ -34,7 +34,7 @@ test.describe('linking knowledge (Epic #269)', () => {
     await expect(page.getByTestId('wiki-link-unknown')).toHaveText('Unbekannt');
 
     // a case: create, add the note, its page lists it
-    await k.do.create('case', 'Autokauf');
+    await k.do.create({ type: 'case', name: 'Autokauf' });
     await expect(k.heading()).toHaveText('Autokauf');
     await expect(page.getByTestId('case-view')).toBeVisible();
     await k().filter({ hasText: 'Baustelle' }).click();

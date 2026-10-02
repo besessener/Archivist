@@ -50,7 +50,6 @@ describe('Snoozed notification keeps its actions (#79)', () => {
     expect(announced.map((n) => n.id)).toEqual([original.id]);
     expect((await app.ok('reminders:list', {}))[0]!.status).toBe('fired');
 
-    // Not fired twice.
     expect(app.services.reminders.checkDue()).toBe(0);
     expect(await open()).toHaveLength(1);
   });

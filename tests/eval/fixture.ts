@@ -1,15 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { localToday } from '@archivist/shared';
-import type { Services } from '../../packages/core/src';
 import { addPeriod, fmtDe } from '../../packages/core/src/agent/tools/research';
-import { makePptx } from '../helpers/fixtures';
 
-/**
- * Test archive of the agent evaluation (#316). Everything is built deterministically WITHOUT the LLM: files are imported
- * with local analysis only („nur lokal“ during the setup), archived with an explicit folder and topic, and type, date,
- * title and sender are set via the bulk assignment. Deadlines are relative to today so the set does not rot.
- */
+// Test archive of the agent evaluation (#316), built without the LLM; deadlines are relative to today so the set does not rot.
 
 export interface EvalDoc {
   /** Stable key the checks refer to. */
@@ -29,7 +21,7 @@ export interface EvalDoc {
   excluded?: boolean;
 }
 
-// ---------- dates relative to today ----------
+// dates relative to today
 const TODAY = localToday();
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -86,7 +78,7 @@ export function dateForms(iso: string): string[] {
 
 const de = fmtDe;
 
-// ---------- documents ----------
+// documents
 const statement = (month: number, lines: string[]): EvalDoc => {
   const mm = pad2(month);
   return {
@@ -512,86 +504,3 @@ export const EMPTY_FOLDERS = ['arbeit/presentations'];
 
 /** An inbox document (analyzed locally, not archived). */
 export const inboxDoc = (d: Omit<EvalDoc, 'folder'>): EvalDoc => ({ ...d, folder: null });
-
-export interface BuildTarget {
-  services: Services;
-  /** Directory for the source files of the import (outside the archive). */
-  home: string;
-}
-
-/** Builds the archive deterministically without any LLM call; returns key → document id. */
-export async function buildArchive(target: BuildTarget, docs: EvalDoc[], emptyFolders: string[] = EMPTY_FOLDERS): Promise<Record<string, string>> {
-  const { services } = target;
-  const keys = new Set<string>();
-  for (const d of docs) {
-    if (keys.has(d.key)) throw new Error(`duplicate fixture key ${d.key}`);
-    keys.add(d.key);
-  }
-  const previousMode = services.settings.get().privacy.llmMode;
-  services.settings.update({ privacy: { llmMode: 'local_only' } });
-  try {
-    const folders = [...docs.flatMap((d) => (d.folder ? [d.folder] : [])), ...emptyFolders];
-    const mains = [...new Set(folders.map((f) => f.split('/')[0]!))];
-    for (const main of mains) if (services.categories.needsApproval(main)) services.categories.create(main, true);
-    for (const f of emptyFolders) services.categories.create(f, true);
-
-    const sourceDir = path.join(target.home, 'eval-sources');
-    const files: string[] = [];
-    for (const [i, d] of docs.entries()) {
-      const p = path.join(sourceDir, String(i).padStart(3, '0'), d.name);
-      fs.mkdirSync(path.dirname(p), { recursive: true });
-      // slide decks are real pptx files (one slide per paragraph), so file type filters meet the real thing
-      if (d.name.endsWith('.pptx')) await makePptx(p, d.content.split(/\n{2,}/));
-      else fs.writeFileSync(p, d.content);
-      files.push(p);
-    }
-    const imp = await services.documents.importPaths(files, { allowLlm: false });
-    if (imp.rejected.length || imp.duplicates.length)
-      throw new Error(
-        `fixture import failed: ${[...imp.rejected.map((r) => `${r.path}: ${r.reason}`), ...imp.duplicates.map((x) => `${x.path}: duplicate`)].join('; ')}`,
-      );
-    await services.jobs.whenIdle();
-    const ids: Record<string, string> = {};
-    docs.forEach((d, i) => {
-      const doc = imp.imported.find((x) => x.sourcePath === fs.realpathSync(files[i]!));
-      if (!doc) throw new Error(`fixture document ${d.key} not imported`);
-      ids[d.key] = doc.id;
-    });
-
-    const toArchive = docs.filter((d) => d.folder);
-    if (toArchive.length) {
-      const res = await services.archive.execute(
-        toArchive.map((d) => ({ documentId: ids[d.key]!, mode: 'copy' as const, categoryPath: d.folder!, topic: d.topic ?? null, project: null })),
-        { confirmed: true, approveNewCategories: mains, confirmMove: false, trigger: 'eval-setup' },
-      );
-      if (res.success !== toArchive.length)
-        throw new Error(
-          `fixture archiving failed: ${res.items
-            .filter((i) => i.outcome !== 'success')
-            .map((i) => i.message)
-            .join('; ')}`,
-        );
-    }
-    for (const d of docs) {
-      const id = ids[d.key]!;
-      services.documents.bulkUpdate(
-        [id],
-        {
-          ...(d.title ? { title: d.title } : {}),
-          ...(d.docType !== undefined ? { docType: d.docType } : {}),
-          ...(d.documentDate !== undefined ? { documentDate: d.documentDate } : {}),
-          ...(d.persons?.length ? { addPersons: d.persons } : {}),
-          ...(d.tags?.length ? { addTags: d.tags } : {}),
-          ...(!d.folder && d.topic ? { topic: d.topic } : {}),
-        },
-        { trigger: 'eval-setup' },
-      );
-      if (d.excluded) services.documents.setLlmExcluded(id, true);
-    }
-    await Promise.all(Object.values(ids).map((id) => services.documents.indexDocument(id)));
-    await services.jobs.whenIdle();
-    return ids;
-  } finally {
-    services.settings.update({ privacy: { llmMode: previousMode } });
-  }
-}

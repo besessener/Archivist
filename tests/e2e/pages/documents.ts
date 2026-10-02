@@ -37,5 +37,5 @@ export function initDocuments(page: Page) {
       await expect(locators.bulk.result).toContainText('Umbenennen abgeschlossen');
     },
   };
-  return pageObject(table, locators, interactions);
+  return pageObject({ root: table, locators, actions: interactions });
 }

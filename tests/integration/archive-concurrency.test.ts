@@ -36,7 +36,7 @@ function failNextAudit(action: string): void {
 
 describe('File operations on the same document at the same time (#240)', () => {
   it('two archive requests for one document: one archives, the other reports a conflict – no orphan copy', async () => {
-    const id = await inInbox(app, 'brief.txt', 'Ein Brief');
+    const id = await inInbox(app, { name: 'brief.txt', content: 'Ein Brief' });
     const request = () =>
       app.services.archive.execute([{ documentId: id, mode: 'copy', categoryPath: 'private/post' }], {
         confirmed: true,
@@ -55,7 +55,7 @@ describe('File operations on the same document at the same time (#240)', () => {
 
 describe('Database and file system stay in step (#221, #238)', () => {
   it('rename: if the database refuses, the file goes back to its old name', async () => {
-    const id = await archived(app, 'scan001.txt', 'Rechnung', 'private/post');
+    const id = await archived(app, { name: 'scan001.txt', content: 'Rechnung', folder: 'private/post' });
     const before = app.services.documents.getRow(id).archiveRelPath!;
     failNextAudit('archive.rename');
     const res = await app.services.archive.rename([{ documentId: id, fileName: 'Rechnung Stadtwerke' }], { confirmed: true, trigger: 'agent' });
@@ -67,7 +67,7 @@ describe('Database and file system stay in step (#221, #238)', () => {
   });
 
   it('undo of a rename: if the database refuses, the file stays where the database points – and the undo can be retried', async () => {
-    const id = await archived(app, 'scan002.txt', 'Rechnung', 'private/post');
+    const id = await archived(app, { name: 'scan002.txt', content: 'Rechnung', folder: 'private/post' });
     const res = await app.services.archive.rename([{ documentId: id, fileName: 'Rechnung Wasser' }], { confirmed: true, trigger: 'agent' });
     const renamed = app.services.documents.getRow(id).archiveRelPath!;
     const root = app.services.settings.get().archiveRoot;

@@ -36,7 +36,11 @@ const decide = (title: string, text: string) =>
 
 describe('Knowledge answers use the knowledge graph (#289)', () => {
   it('a question about a document also finds the decision the document supports – with the relation as path', async () => {
-    const offer = await archived(app, 'angebot.md', 'Angebot des Dachdeckers Kowalski über 18.000 Euro für die Dachsanierung.', 'private/haus');
+    const offer = await archived(app, {
+      name: 'angebot.md',
+      content: 'Angebot des Dachdeckers Kowalski über 18.000 Euro für die Dachsanierung.',
+      folder: 'private/haus',
+    });
     // the decision text shares no word with the question
     const decision = decide('Sanierung beauftragt', 'Wir beauftragen die Firma für die Arbeiten im Frühjahr.');
     app.services.graph.link(offer, decision.id, 'supports', { status: 'confirmed', resolvedByUser: true, method: 'manual' });
@@ -50,7 +54,7 @@ describe('Knowledge answers use the knowledge graph (#289)', () => {
   });
 
   it('proposed, rejected and outdated relations are never used', async () => {
-    const offer = await archived(app, 'angebot.md', 'Angebot des Dachdeckers Kowalski über 18.000 Euro.', 'private/haus');
+    const offer = await archived(app, { name: 'angebot.md', content: 'Angebot des Dachdeckers Kowalski über 18.000 Euro.', folder: 'private/haus' });
     const ids = [
       decide('Eins', 'Erster Beschluss zu den Arbeiten.').id,
       decide('Zwei', 'Zweiter Beschluss zu den Arbeiten.').id,

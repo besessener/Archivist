@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
-// #199: what a document says must not quietly become „known“ context for later prompts, and far-reaching
-// proposals need more than a plain confirmation
+// #199: document text never becomes „known“ context for later prompts; far-reaching proposals need more than a plain yes.
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });

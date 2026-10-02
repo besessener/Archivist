@@ -44,7 +44,13 @@ describe('Same day and same person (#278)', () => {
   });
 
   it('the business date counts, not when it was captured; documents by their document date', async () => {
-    const doc = await archived(app, 'protokoll.md', 'Protokoll der Baubesprechung.', 'private/haus', { persons: ['Anna Berger'], documentDate: '2026-08-15' });
+    const doc = await archived(app, {
+      name: 'protokoll.md',
+      content: 'Protokoll der Baubesprechung.',
+      folder: 'private/haus',
+      persons: ['Anna Berger'],
+      documentDate: '2026-08-15',
+    });
     const e = event('Baubesprechung', '2026-08-15', ['Anna Berger']);
     // captured today, but happened on another day
     event('Telefonat', '2026-08-20', ['Anna Berger']);
