@@ -84,9 +84,9 @@ export class AuditService {
       })
       .run();
     this.ctx.events.changed('audit');
-    for (const l of this.listeners) {
+    for (const listener of this.listeners) {
       try {
-        l({ ...input, id, runId: run?.runId ?? null });
+        listener({ ...input, id, runId: run?.runId ?? null });
       } catch (err) {
         this.ctx.logger.warn('audit', 'Audit listener failed', { error: err });
       }
@@ -94,7 +94,7 @@ export class AuditService {
     return id;
   }
 
-  private map(r: Row): AuditEntry {
+  private toEntry(r: Row): AuditEntry {
     return {
       id: r.id,
       at: r.at,
@@ -121,8 +121,8 @@ export class AuditService {
       .orderBy(desc(auditLog.at))
       .limit(limit * (onlyUndoable ? 5 : 1))
       .all();
-    const mapped = rows.map((r) => this.map(r));
-    return (onlyUndoable ? mapped.filter((m) => m.undoable) : mapped).slice(0, limit);
+    const entries = rows.map((r) => this.toEntry(r));
+    return (onlyUndoable ? entries.filter((e) => e.undoable) : entries).slice(0, limit);
   }
 
   /** Changes of one agent run, newest first (undo of a whole run goes through them in this order). */

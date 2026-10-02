@@ -7,7 +7,6 @@ import { withSubject } from '../db/subject-filter';
 /** Characters of the text read for list entries: enough for the 600-character preview, never the whole text (#214). */
 const PREVIEW_SOURCE_CHARS = 2000;
 const { extractedText: _fullText, ...LIST_COLUMNS } = getTableColumns(documents);
-void _fullText;
 
 export interface DocumentListQuery {
   status?: DocumentStatus;
@@ -19,35 +18,32 @@ export interface DocumentListQuery {
   limit?: number;
 }
 
-type DocRow = typeof documents.$inferSelect;
+type DocumentRow = typeof documents.$inferSelect;
 
 export interface DocumentListRows {
   /** Rows with only the beginning of the text in `extractedText`; `textLength` is the full length. */
-  rows: Array<DocRow & { textLength: number }>;
+  rows: Array<DocumentRow & { textLength: number }>;
   /** Names of the referenced topics/projects. */
   names: Array<[string, string]>;
 }
 
 /** The WHERE clause of a document list (everything but the limit). */
 function listFilter(opts: DocumentListQuery) {
-  const conds = [];
-  if (opts.status) conds.push(eq(documents.status, opts.status));
-  if (opts.statuses) conds.push(inArray(documents.status, opts.statuses));
-  if (opts.ids) conds.push(inArray(documents.id, opts.ids));
+  const conditions = [];
+  if (opts.status) conditions.push(eq(documents.status, opts.status));
+  if (opts.statuses) conditions.push(inArray(documents.status, opts.statuses));
+  if (opts.ids) conditions.push(inArray(documents.id, opts.ids));
   // the main topic/project or a further one (#287)
-  if (opts.topicId) conds.push(withSubject(documents.id, documents.topicId, opts.topicId));
-  if (opts.projectId) conds.push(withSubject(documents.id, documents.projectId, opts.projectId));
+  if (opts.topicId) conditions.push(withSubject(documents.id, documents.topicId, opts.topicId));
+  if (opts.projectId) conditions.push(withSubject(documents.id, documents.projectId, opts.projectId));
   if (opts.query?.trim()) {
-    const q = `%${opts.query.trim()}%`;
-    conds.push(or(like(documents.title, q), like(documents.originalName, q), like(documents.summary, q)));
+    const pattern = `%${opts.query.trim()}%`;
+    conditions.push(or(like(documents.title, pattern), like(documents.originalName, pattern), like(documents.summary, pattern)));
   }
-  return conds.length ? and(...conds) : undefined;
+  return conditions.length ? and(...conditions) : undefined;
 }
 
-/**
- * Newest documents matching the filter, with the topic/project names – a pure read that runs on the main
- * connection or in the read worker (#214, #215). Reads only the beginning of each text.
- */
+/** Newest documents matching the filter with topic/project names; a pure read for main connection or read worker (#214, #215). */
 export function queryDocumentList(db: Db, opts: DocumentListQuery = {}): DocumentListRows {
   const rows = db
     .select({
