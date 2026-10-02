@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RefStore, riskOf, type AgentTool, type ToolContext, type ToolOutput } from '../../packages/core/src/agent/registry';
@@ -116,7 +114,6 @@ async function archived(name: string, content: string, opts: { loc?: string; dat
 }
 
 const row = (id: string) => app.services.documents.findRow(id);
-const abs = (id: string) => path.join(app.services.settings.get().archiveRoot, ...row(id)!.archiveRelPath!.split('/'));
 const lastAudit = (action: string) => app.services.audit.list(50).find((e) => e.action === action);
 
 describe('agent duplicate tools', () => {
@@ -181,7 +178,7 @@ describe('agent duplicate tools', () => {
     const tool = tools.get('mark_duplicates')!;
     const args = tool.schema.parse({ keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup)], as: 'duplicate', action: 'mark' });
     expect(riskOf(tool, args)).toBe('write');
-    expect(riskOf(tool, tool.schema.parse({ keep: 'D1', duplicates: ['D2'], action: 'delete' }))).toBe('critical');
+    expect(tool.schema.safeParse({ keep: 'D1', duplicates: ['D2'], action: 'delete' }).success, 'Archivist never deletes a document').toBe(false);
 
     const out = await tool.run(args, ctx);
 
@@ -211,25 +208,6 @@ describe('agent duplicate tools', () => {
       status: 'confirmed',
     });
     expect(row(keep)!.archiveRelPath).toBe('private/vertraege/Vertrag final.txt');
-  });
-
-  it('deletes duplicates for good, but never the kept document or a file outside the archive', async () => {
-    const keep = await archived('Foto-Liste.txt', 'Liste A', { title: 'Foto-Liste' });
-    const dup = await archived('Foto-Liste Kopie.txt', 'Liste A Kopie', { title: 'Foto-Liste Kopie' });
-    const dupFile = abs(dup);
-    const original = row(dup)!.sourcePath!;
-    app.services.graph.link(dup, keep, 'duplicate_of', { status: 'proposed' });
-
-    const out = await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup), ctx.refs.doc(keep)], action: 'delete' });
-
-    expect(out).toMatchObject({ changed: 1, change: '1 Duplikat(e) endgültig gelöscht' });
-    expect(row(dup)).toBeUndefined();
-    expect(fs.existsSync(dupFile)).toBe(false);
-    expect(fs.existsSync(original), "the user's original stays").toBe(true);
-    expect(fs.existsSync(abs(keep))).toBe(true);
-    expect(app.services.graph.getEntity(dup)).toBeUndefined();
-    expect(app.services.graph.relationsOf(keep, { types: ['duplicate_of'] })).toEqual([]);
-    expect(lastAudit('document.delete')).toMatchObject({ undoable: false, entityIds: [dup], before: { title: 'Foto-Liste Kopie' } });
   });
 
   it('merges duplicate topics through the existing merge flow', async () => {

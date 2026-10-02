@@ -21,7 +21,7 @@ interface MarkArgs {
   keep: string;
   duplicates: string[];
   as: 'duplicate' | 'older_version';
-  action: 'mark' | 'subfolder' | 'delete';
+  action: 'mark' | 'subfolder';
 }
 
 /** The duplicates to treat: never the document to keep. */
@@ -31,27 +31,6 @@ interface Treatment {
   keepRef: string;
   refs: string;
   unknown: string[];
-}
-
-function deleteDuplicates({ deps, ctx }: ToolScope, treatment: Treatment): ToolOutput {
-  const { keepRef, refs, targets, unknown } = treatment;
-  const failed: string[] = [];
-  let deleted = 0;
-  for (const d of targets) {
-    try {
-      deps.docs.deletePermanently(d.id, { trigger: 'agent' });
-      deleted += 1;
-    } catch (error) {
-      failed.push(`${ctx.refs.doc(d.id)}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  return {
-    content: `${deleted} Duplikat(e) von ${keepRef} endgültig gelöscht (${refs}); ${keepRef} bleibt.${failed.length ? `\nFehlgeschlagen: ${failed.join('; ')}` : ''}${unknownNote(unknown)}`,
-    summary: `${deleted} gelöscht`,
-    change: `${deleted} Duplikat(e) endgültig gelöscht`,
-    changed: deleted,
-    isError: deleted === 0,
-  };
 }
 
 /** Moves the duplicates into the subfolder „Duplikate“ / „Ältere Versionen“ next to the kept document; returns the report lines and the change. */
@@ -116,7 +95,6 @@ async function treatDuplicates(scope: ToolScope, args: MarkArgs): Promise<ToolOu
   const targets = duplicates.filter((d) => d.id !== keepId);
   if (!targets.length) return { content: `Keine Duplikate angegeben (keep wird nie verändert).${unknownNote(unknown)}`, isError: true };
   const treatment = { keep, targets, keepRef: ctx.refs.doc(keepId), refs: targets.map((d) => ctx.refs.doc(d.id)).join(', '), unknown };
-  if (args.action === 'delete') return deleteDuplicates(scope, treatment);
   return markDuplicates(scope, { treatment, args });
 }
 
@@ -205,19 +183,17 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'mark_duplicates',
       description:
-        'Behandelt Duplikate bzw. ältere Versionen eines Dokuments (keep bleibt unverändert): action "mark" verknüpft und setzt das Schlagwort „Duplikat“ bzw. „ältere Version“; "subfolder" verschiebt sie zusätzlich in den Unterordner Duplikate bzw. Ältere Versionen neben keep; "delete" löscht sie endgültig (nicht rückgängig zu machen, immer mit Rückfrage).',
+        'Behandelt Duplikate bzw. ältere Versionen eines Dokuments (keep bleibt unverändert): action "mark" verknüpft und setzt das Schlagwort „Duplikat“ bzw. „ältere Version“; "subfolder" verschiebt sie zusätzlich in den Unterordner Duplikate bzw. Ältere Versionen neben keep. Gelöscht wird nie etwas.',
       schema: z.object({
         keep: z.string().min(1),
         duplicates: list,
         as: z.enum(['duplicate', 'older_version']).default('duplicate'),
-        action: z.enum(['mark', 'subfolder', 'delete']).default('mark'),
+        action: z.enum(['mark', 'subfolder']).default('mark'),
       }),
-      risk: (a) => (a.action === 'delete' ? 'critical' : 'write'),
+      risk: 'write',
       count: (a, ctx) => affectedCount(ctx, a.duplicates),
       label: (a) =>
-        a.action === 'delete'
-          ? `Lösche ${a.duplicates.length} Duplikat(e) endgültig`
-          : `Markiere ${a.duplicates.length} Dokument(e) als ${a.as === 'duplicate' ? 'Duplikat' : 'ältere Version'}${a.action === 'subfolder' ? ' und verschiebe sie' : ''}`,
+        `Markiere ${a.duplicates.length} Dokument(e) als ${a.as === 'duplicate' ? 'Duplikat' : 'ältere Version'}${a.action === 'subfolder' ? ' und verschiebe sie' : ''}`,
       run: (a, ctx) => treatDuplicates({ deps, ctx }, a),
     }),
     defineTool({

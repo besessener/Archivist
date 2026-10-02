@@ -17,7 +17,6 @@ import { isArchivedStatus, type DocRow, type DocumentDeps, type NewDocument } fr
 import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
 import { documentRecord, newDocumentRow, searchContent } from './document-record';
 import { DocumentRereader } from './document-reread';
-import { deleteDocumentPermanently } from './document-removal';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
@@ -298,10 +297,5 @@ export class DocumentService {
     } catch (err) {
       this.ctx.logger.warn('documents', 'Indexing failed', { documentId: id, error: err });
     }
-  }
-
-  /** Final deletion through a confirmed critical agent tool (#308); never the user's original, not undoable. */
-  deletePermanently(id: string, opts: { trigger?: string } = {}): void {
-    deleteDocumentPermanently(this.deps, { id, trigger: opts.trigger });
   }
 }

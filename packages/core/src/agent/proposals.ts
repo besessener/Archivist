@@ -35,7 +35,7 @@ export interface ProposalCardInput {
   refs: RefState;
 }
 
-/** ONE proposal card per run with every change it prepared (#298); deleting needs the strong confirmation. */
+/** ONE proposal card per run with every change it prepared (#298). */
 export function proposalCard({
   runId,
   conversationId,
@@ -48,7 +48,7 @@ export function proposalCard({
     rationale: [...new Set(items.map((item) => item.reason))].join(' '),
     confidence: 0.8,
     affectedEntities: [],
-    requiredConfirmation: items.some((item) => (item.args as { action?: string } | null)?.action === 'delete') ? 'strong' : 'confirm',
+    requiredConfirmation: 'confirm',
     proposedParameters: { runId, conversationId, items, refs: structuredClone(refs) },
     conversationId,
   };
