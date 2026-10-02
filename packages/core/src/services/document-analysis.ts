@@ -1,7 +1,7 @@
 import { DocumentClassification, type DocumentProposal, type LlmStatus } from '@archivist/shared';
 import { and, eq, inArray, ne, notInArray } from 'drizzle-orm';
 import { documents, scanFiles } from '../db/schema';
-import type { ParsedDocument } from '../parsers';
+import type { ParsedDocument } from '../parsers/parsed-document';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
 import { classifyLocally } from './classifier';

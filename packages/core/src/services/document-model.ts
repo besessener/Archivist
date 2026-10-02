@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { DocumentRecord, DocumentStatus, LlmStatus } from '@archivist/shared';
 import type { AppContext } from '../context';
 import type { documents } from '../db/schema';
-import type { ParsedDocument } from '../parsers';
+import type { ParsedDocument } from '../parsers/parsed-document';
 import { sha256Text } from '../util/hash';
 import { normalizeName } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
