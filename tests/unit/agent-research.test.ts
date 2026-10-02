@@ -1,23 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import {
-  addPeriod,
-  diffLines,
-  findAmounts,
-  findDeadlines,
-  formatEuro,
-  invoiceNumber,
-  invoiceTotal,
-  matchPayments,
-  monthGaps,
-  normalizeSubject,
-  numberGaps,
-  parseAmount,
-  parseStatement,
-  problemReasons,
-  scanSecrets,
-  sequenceNumber,
-  sumAmounts,
-} from '../../packages/core/src/agent/tools/research';
+import { findAmounts, formatEuro, invoiceTotal, parseAmount, sumAmounts } from '../../packages/core/src/agent/tools/research/amounts';
+import { addPeriod } from '../../packages/core/src/agent/tools/research/dates';
+import { findDeadlines } from '../../packages/core/src/agent/tools/research/deadlines';
+import { diffLines } from '../../packages/core/src/agent/tools/research/diff';
+import { monthGaps, numberGaps, sequenceNumber } from '../../packages/core/src/agent/tools/research/gaps';
+import { normalizeSubject } from '../../packages/core/src/agent/tools/research/mail';
+import { invoiceNumber, matchPayments, parseStatement } from '../../packages/core/src/agent/tools/research/payments';
+import { problemReasons } from '../../packages/core/src/agent/tools/research/problems';
+import { scanSecrets } from '../../packages/core/src/agent/tools/research/secrets';
 import { looksLikeVersions, versionKey } from '../../packages/core/src/agent/tools/duplicates';
 
 const TODAY = new Date(2026, 9, 2);
@@ -88,7 +78,7 @@ describe('research helpers of the agent', () => {
 
   describe('deadlines', () => {
     it('computes a notice period back from the contract end, with the computation path', () => {
-      const hits = findDeadlines('Kündigungsfrist 3 Monate zum Vertragsende 31.12.2026.', '2025-01-01', TODAY);
+      const hits = findDeadlines('Kündigungsfrist 3 Monate zum Vertragsende 31.12.2026.', { baseDate: '2025-01-01', today: TODAY });
       const k = hits.find((h) => h.kind === 'kuendigung');
       expect(k?.date).toBe('2026-09-30');
       expect(k?.rechenweg).toContain('31.12.2026 − 3 Monate = 30.09.2026');
@@ -98,30 +88,34 @@ describe('research helpers of the agent', () => {
 
     it('uses a contract end named elsewhere in the text', () => {
       const text = 'Vertragsende: 30.06.2027\nEs gilt eine Kündigungsfrist von 6 Wochen zum Vertragsende.';
-      expect(findDeadlines(text, null, TODAY).find((h) => h.kind === 'kuendigung')?.date).toBe('2027-05-19');
+      expect(findDeadlines(text, { baseDate: null, today: TODAY }).find((h) => h.kind === 'kuendigung')?.date).toBe('2027-05-19');
     });
 
     it('counts warranty and objection periods from the document date', () => {
       const text = 'Garantie 24 Monate ab Kaufdatum.\nSie können innerhalb von 4 Wochen Widerspruch einlegen.';
-      const hits = findDeadlines(text, '2026-03-15', TODAY);
+      const hits = findDeadlines(text, { baseDate: '2026-03-15', today: TODAY });
       expect(hits.find((h) => h.kind === 'garantie')).toMatchObject({ date: '2028-03-15', rechenweg: 'Dokumentdatum 15.03.2026 + 24 Monate = 15.03.2028' });
       expect(hits.find((h) => h.kind === 'widerspruch')?.date).toBe('2026-04-12');
     });
 
     it('recognizes TÜV month/year, ID expiry and due dates; marks past ones', () => {
-      const hits = findDeadlines('Personalausweis\nGültig bis 14.02.2031', null, TODAY);
+      const hits = findDeadlines('Personalausweis\nGültig bis 14.02.2031', { baseDate: null, today: TODAY });
       expect(hits[0]).toMatchObject({ kind: 'ausweis', date: '2031-02-14', past: false });
-      expect(findDeadlines('Nächste HU 08/2027', null, TODAY)[0]).toMatchObject({ kind: 'tuev', date: '2027-08-31' });
-      expect(findDeadlines('Der Betrag ist fällig am 01.03.2026.', null, TODAY)[0]).toMatchObject({ kind: 'faelligkeit', date: '2026-03-01', past: true });
-      expect(findDeadlines('Kfz-Versicherung, Ablauf 31.12.2026', null, TODAY)[0]?.kind).toBe('versicherung');
-      expect(findDeadlines('Am 12.05.2026 war schönes Wetter.', null, TODAY)).toEqual([]);
+      expect(findDeadlines('Nächste HU 08/2027', { baseDate: null, today: TODAY })[0]).toMatchObject({ kind: 'tuev', date: '2027-08-31' });
+      expect(findDeadlines('Der Betrag ist fällig am 01.03.2026.', { baseDate: null, today: TODAY })[0]).toMatchObject({
+        kind: 'faelligkeit',
+        date: '2026-03-01',
+        past: true,
+      });
+      expect(findDeadlines('Kfz-Versicherung, Ablauf 31.12.2026', { baseDate: null, today: TODAY })[0]?.kind).toBe('versicherung');
+      expect(findDeadlines('Am 12.05.2026 war schönes Wetter.', { baseDate: null, today: TODAY })).toEqual([]);
     });
 
     it('adds and subtracts periods with month clamping', () => {
-      expect(addPeriod('2026-01-31', 1, 'monat')).toBe('2026-02-28');
-      expect(addPeriod('2026-06-30', -3, 'monat')).toBe('2026-03-31');
-      expect(addPeriod('2026-03-01', 2, 'woche')).toBe('2026-03-15');
-      expect(addPeriod('2024-02-29', 1, 'jahr')).toBe('2025-02-28');
+      expect(addPeriod('2026-01-31', { count: 1, unit: 'monat' })).toBe('2026-02-28');
+      expect(addPeriod('2026-06-30', { count: -3, unit: 'monat' })).toBe('2026-03-31');
+      expect(addPeriod('2026-03-01', { count: 2, unit: 'woche' })).toBe('2026-03-15');
+      expect(addPeriod('2024-02-29', { count: 1, unit: 'jahr' })).toBe('2025-02-28');
     });
   });
 

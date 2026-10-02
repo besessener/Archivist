@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { localToday } from '@archivist/shared';
 import type { Services } from '../../packages/core/src';
-import { addPeriod, fmtDe } from '../../packages/core/src/agent/tools/research';
+import { addPeriod, formatGermanDate } from '../../packages/core/src/agent/tools/research/dates';
 import { makePptx } from '../helpers/fixtures';
 
 /**
@@ -52,28 +52,28 @@ export const DATES = {
   today: TODAY,
   /** old lease (2021): ends in 3 months, notice 3 months before → end of this month */
   leaseOldEnd: monthEnd(3),
-  leaseOldNotice: addPeriod(monthEnd(3), -3, 'monat'),
+  leaseOldNotice: addPeriod(monthEnd(3), { count: -3, unit: 'monat' }),
   /** new lease version: ends in 6 months, notice 3 months before (the correct answer) */
   leaseNewEnd: monthEnd(6),
-  leaseNewNotice: addPeriod(monthEnd(6), -3, 'monat'),
+  leaseNewNotice: addPeriod(monthEnd(6), { count: -3, unit: 'monat' }),
   /** household insurance: termination possible until the end of next month */
   insuranceNotice: monthEnd(1),
   insuranceEnd: monthEnd(4),
   /** mobile contract: 1 month notice before the end of the minimum term */
   mobileEnd: monthDay(5, 14),
-  mobileNotice: addPeriod(monthDay(5, 14), -1, 'monat'),
+  mobileNotice: addPeriod(monthDay(5, 14), { count: -1, unit: 'monat' }),
   /** washing machine bought 20 months ago with 24 months warranty */
   washerBought: monthDay(-20, 15),
-  washerWarrantyEnd: addPeriod(monthDay(-20, 15), 24, 'monat'),
+  washerWarrantyEnd: addPeriod(monthDay(-20, 15), { count: 24, unit: 'monat' }),
   /** corrected purchase date for the metadata task */
   washerCorrected: monthDay(-20, 10),
   /** identity card expires in about two months */
   idCardExpiry: monthDay(2, 20),
   /** a date for explicit reminders */
-  inThreeWeeks: addPeriod(TODAY, 3, 'woche'),
-  inFiveDays: addPeriod(TODAY, 5, 'tag'),
-  inTenDays: addPeriod(TODAY, 10, 'tag'),
-  threeDaysAgo: addPeriod(TODAY, -3, 'tag'),
+  inThreeWeeks: addPeriod(TODAY, { count: 3, unit: 'woche' }),
+  inFiveDays: addPeriod(TODAY, { count: 5, unit: 'tag' }),
+  inTenDays: addPeriod(TODAY, { count: 10, unit: 'tag' }),
+  threeDaysAgo: addPeriod(TODAY, { count: -3, unit: 'tag' }),
 };
 
 /** Ways a date may be written in an answer: 31.12.2026, 31.12.26, 2026-12-31, 31. Dezember 2026. */
@@ -81,10 +81,10 @@ export function dateForms(iso: string): string[] {
   const months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   const d = Number(iso.slice(8, 10));
   const m = Number(iso.slice(5, 7));
-  return [fmtDe(iso), `${pad2(d)}.${pad2(m)}.${iso.slice(2, 4)}`, iso, `${d}. ${months[m - 1]} ${iso.slice(0, 4)}`, `${d}.${m}.${iso.slice(0, 4)}`];
+  return [formatGermanDate(iso), `${pad2(d)}.${pad2(m)}.${iso.slice(2, 4)}`, iso, `${d}. ${months[m - 1]} ${iso.slice(0, 4)}`, `${d}.${m}.${iso.slice(0, 4)}`];
 }
 
-const de = fmtDe;
+const de = formatGermanDate;
 
 // ---------- documents ----------
 const statement = (month: number, lines: string[]): EvalDoc => {
@@ -353,7 +353,7 @@ export const BASE_DOCS: EvalDoc[] = [
     title: 'Schreiben Hausratversicherung',
     folder: 'versicherungen/hausrat',
     docType: 'Brief',
-    documentDate: addPeriod(TODAY, -2, 'monat'),
+    documentDate: addPeriod(TODAY, { count: -2, unit: 'monat' }),
     persons: ['Sicher & Gut Versicherung'],
     content: [
       'Sicher & Gut Versicherung AG',
@@ -369,7 +369,7 @@ export const BASE_DOCS: EvalDoc[] = [
     title: 'Mobilfunkvertrag',
     folder: 'privat/vertraege',
     docType: 'Vertrag',
-    documentDate: addPeriod(DATES.mobileEnd, -24, 'monat'),
+    documentDate: addPeriod(DATES.mobileEnd, { count: -24, unit: 'monat' }),
     persons: ['FunkNetz'],
     content: `FunkNetz Mobilfunkvertrag\nTarif: Allnet 20 GB\nMonatlicher Preis: 19,99 €\nMindestlaufzeit bis ${de(DATES.mobileEnd)}.\nKündigungsfrist: 1 Monat zum Laufzeitende ${de(DATES.mobileEnd)}.`,
   },
@@ -379,7 +379,7 @@ export const BASE_DOCS: EvalDoc[] = [
     title: 'Personalausweis Kopie',
     folder: 'privat/dokumente',
     docType: 'Ausweis',
-    documentDate: addPeriod(DATES.idCardExpiry, -10, 'jahr'),
+    documentDate: addPeriod(DATES.idCardExpiry, { count: -10, unit: 'jahr' }),
     content: `Personalausweis (Kopie für die eigenen Unterlagen)\nName: Max Muster\nGültig bis ${de(DATES.idCardExpiry)}`,
   },
   // offer and its final version, mails about the bathroom
