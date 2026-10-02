@@ -105,10 +105,7 @@ export const MUST_RE = /^\s*(?:ich|wir|du|man)\s+(?:muss|müssen|musst|sollte|so
 
 export const OPEN_TRIGGER_RE = /(offene[rn]?\s+punkt|offen\s*:|todo|to-do|aufgabe|noch\s+(?:zu\s+)?klären|muss\s+noch|müssen\s+noch|sollten?\s+noch)/i;
 
-/**
- * Short title and description for an open item from its part of the text: prefixes like „Offener Punkt:“
- * or „Ich muss noch …“ are dropped, the title is the first clause, the details go into the description.
- */
+/** Open item from its part of the text: prefixes („Offener Punkt:“, „Ich muss noch …“) dropped, first clause as title, the rest as description. */
 export function deriveOpenItem(text: string): { title: string; description: string | null } {
   const sentences = text
     .replace(/\s+/g, ' ')
@@ -208,10 +205,7 @@ export const NO_FILL = new Set([
   'tun',
 ]);
 
-/**
- * Short approval or refusal („ja“, „ja, mach das“, „nein danke“) – without LLM the only form that counts as an
- * answer to a proposal. „Bitte zeig mir …“ or „Nicht vergessen: …“ are not answers.
- */
+/** Short approval or refusal („ja, mach das“, „nein danke“) – without LLM the only answer to a proposal; „Bitte zeig mir …“ is none. */
 export function shortAnswer(text: string): 'yes' | 'no' | null {
   const words = normalizeName(text).split(' ').filter(Boolean);
   if (!words.length || words.length > 6) return null;
@@ -221,7 +215,6 @@ export function shortAnswer(text: string): 'yes' | 'no' | null {
   return null;
 }
 
-// ---------- Helpers ----------
 export function decisionRef(d: Decision): EntityRef {
   return { type: 'decision', id: d.id, label: d.title, detail: d.decidedAt?.slice(0, 10) ?? null };
 }
@@ -239,16 +232,22 @@ export function decisionSource(d: Decision, score = 1): SourceReference {
   };
 }
 
+const CONTEXT_KEYS = ['topics', 'projects', 'persons', 'decisions', 'openItems', 'documents', 'contradictions'] as const;
+
+/** The context entries of several replies, each entry once per list. */
+function mergedContext(replies: Reply[]): Partial<ChatContext> {
+  const context: Partial<ChatContext> = {};
+  for (const key of CONTEXT_KEYS) {
+    const seen = new Map<string, EntityRef>();
+    for (const r of replies) for (const e of r.context?.[key] ?? []) seen.set(`${e.type}:${e.id}`, e);
+    if (seen.size) context[key] = [...seen.values()];
+  }
+  return context;
+}
+
 export function mergeReplies(replies: Reply[], finalState: ConvState): Reply {
   const last = replies[replies.length - 1]!;
   if (replies.length === 1) return { ...last, state: finalState };
-  const contextKeys = ['topics', 'projects', 'persons', 'decisions', 'openItems', 'documents', 'contradictions'] as const;
-  const context: Partial<ChatContext> = {};
-  for (const k of contextKeys) {
-    const seen = new Map<string, EntityRef>();
-    for (const r of replies) for (const e of r.context?.[k] ?? []) seen.set(`${e.type}:${e.id}`, e);
-    if (seen.size) (context as Record<string, EntityRef[]>)[k] = [...seen.values()];
-  }
   const sources = new Map<string, SourceReference>();
   for (const r of replies) for (const src of r.sources ?? []) sources.set(`${src.type}:${src.id}`, src);
   const actions = new Map<string, StoredAgentAction>();
@@ -258,7 +257,7 @@ export function mergeReplies(replies: Reply[], finalState: ConvState): Reply {
     intent: replies.find((r) => r.intent !== 'clarification')?.intent ?? last.intent,
     content: replies.map((r) => r.content).join('\n\n'),
     sources: [...sources.values()],
-    context,
+    context: mergedContext(replies),
     actions: [...actions.values()],
     confidence: confidences.length ? Math.min(...confidences) : null,
     uncertainties: [...new Set(replies.flatMap((r) => r.uncertainties ?? []))],

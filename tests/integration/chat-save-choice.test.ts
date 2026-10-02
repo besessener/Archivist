@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseSaveChoice } from '../../packages/core/src/services/chat';
+import { parseSaveChoice } from '../../packages/core/src/services/chat/intents';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
