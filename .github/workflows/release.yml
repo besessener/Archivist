@@ -1,0 +1,64 @@
+name: Release
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
+# Veröffentlicht Installer und portable EXE als GitHub Release, sobald ein Versions-Tag (v1.2.3) gepusht wird.
+# Merges auf main und Pull Requests bauen die Pakete weiterhin nur (siehe ci.yml).
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Tag und Version abgleichen
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/check-release-version.mjs "$TAG"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  publish:
+    runs-on: windows-latest
+    needs: verify
+    permissions:
+      # Release anlegen und Dateien hochladen
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # bewusst ohne npm-/Next-Cache: ein Release wird immer frisch gebaut
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - name: Bauen, signieren und als GitHub Release veröffentlichen
+        run: npm run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tags mit Zusatz (v1.2.3-beta.1) erscheinen als Vorabversion
+          EP_PRE_RELEASE: ${{ contains(github.ref_name, '-') }}
+          # Secrets: WIN_CSC_LINK (Base64-kodierte .pfx) und WIN_CSC_KEY_PASSWORD. Fehlen sie, bleibt der Build unsigniert.
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}

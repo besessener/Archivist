@@ -25,6 +25,14 @@ asarUnpack:
 # (die Ressourcen-Bearbeitung/Signierung der .exe braucht trotzdem Windows oder Wine, daher baut die CI auf windows-latest).
 npmRebuild: false
 nodeGypRebuild: false
+# Veröffentlichen nur über den Release-Workflow (.github/workflows/release.yml, Versions-Tags v*): `npm run release:win`
+# lädt Installer und portable EXE in ein GitHub Release. Ohne electron-updater werden keine Update-Metadaten (latest.yml) hochgeladen.
+publish:
+  provider: github
+  owner: besessener
+  repo: Archivist
+  releaseType: release
+  publishAutoUpdate: false
 electronLanguages:
   - de
   - en-US

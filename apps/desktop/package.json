@@ -17,7 +17,8 @@
     "start": "electron .",
     "pack": "npm run build && electron-builder --dir",
     "dist": "electron-builder --win nsis portable --x64 --publish never",
-    "dist:win": "electron-builder --win nsis portable --x64 --publish never"
+    "dist:win": "electron-builder --win nsis portable --x64 --publish never",
+    "release:win": "electron-builder --win nsis portable --x64 --publish always"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.9",
