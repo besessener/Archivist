@@ -81,6 +81,10 @@ export function retryDelayMs(failedAttempts: number, baseMs: number, maxMs: numb
 type Row = typeof jobs.$inferSelect;
 type Registration = { handler: JobHandler<never>; hooks: JobHooks<never> };
 
+/** A handler may return `{ summary: string }` (besides other data) to describe its outcome in the job history. */
+const resultSummary = (result: Row['result']): string | null =>
+  result && typeof result === 'object' && !Array.isArray(result) && typeof result.summary === 'string' ? result.summary : null;
+
 const mapJob = (r: Row): Job => ({
   id: r.id,
   type: r.type,
@@ -90,6 +94,7 @@ const mapJob = (r: Row): Job => ({
   progressMessage: r.progressMessage,
   attempts: r.attempts,
   error: r.error,
+  summary: resultSummary(r.result),
   cancelRequested: r.cancelRequested,
   createdAt: r.createdAt,
   startedAt: r.startedAt,

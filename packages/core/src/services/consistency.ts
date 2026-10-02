@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DECISION_FIELD_LABELS, localDate, localToday, type Decision, type DocumentProposal } from '@archivist/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents, relations } from '../db/schema';
+import { documents, insights as insightsTable, notifications as notificationsTable, relations } from '../db/schema';
 import { newId } from '../util/ids';
 import { sha256Text } from '../util/hash';
 import { truncate } from '../util/text';
@@ -17,7 +17,7 @@ import type { InsightService } from './insights';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { OpenItemService } from './open-items';
-import { IntervalSchedule } from './scheduler';
+import { IntervalSchedule, type LastRunStore } from './scheduler';
 import type { SettingsService } from './settings';
 
 export interface ConsistencyReport {
@@ -25,6 +25,10 @@ export interface ConsistencyReport {
   notifications: number;
   contradictions: number;
   byKind: Record<string, number>;
+  /** Hints that were not open before this run (new or reopened insights, new notifications). */
+  newFindings: number;
+  /** Short German summary for the job history. */
+  summary: string;
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -89,8 +93,9 @@ export class ConsistencyService {
     private readonly insights: InsightService,
     private readonly notifications: NotificationService,
     private readonly entityDuplicates: EntityDuplicateCheck,
+    lastRun?: LastRunStore,
   ) {
-    this.schedule = new IntervalSchedule({ name: 'consistency', run: () => this.enqueueInterval?.(), logger: ctx.logger });
+    this.schedule = new IntervalSchedule({ name: 'consistency', run: () => this.enqueueInterval?.(), logger: ctx.logger, lastRun });
   }
 
   private get db() {
@@ -213,6 +218,7 @@ export class ConsistencyService {
     };
     const byKind: Record<string, number> = {};
     let notifs = 0;
+    const openBefore = this.openFindingIds();
     const count = (k: string, n = 1) => (byKind[k] = (byKind[k] ?? 0) + n);
     // local calendar day, otherwise items are "due today" for two more hours after midnight (#77)
     const today = localToday();
@@ -534,15 +540,19 @@ export class ConsistencyService {
     for (const prefix of RECONCILED_NOTIFICATIONS) this.notifications.resolveStale(prefix, currentNotifications);
 
     const total = Object.values(byKind).reduce((a, b) => a + b, 0);
-    if (trigger !== 'startup' || total > 0)
+    const newFindings = [...this.openFindingIds()].filter((id) => !openBefore.has(id)).length;
+    const overview =
+      total === 0
+        ? 'keine Auffälligkeiten'
+        : `${total} Hinweis(e): ${Object.entries(byKind)
+            .map(([k, v]) => `${v}× ${KIND_LABELS[k] ?? k}`)
+            .join(', ')}`;
+    const summary = `${newFindings === 0 ? 'Nichts Neues' : newFindings === 1 ? '1 neuer Hinweis' : `${newFindings} neue Hinweise`} – ${overview}.`;
+    // the completion is recorded in the job history; a notification only announces new findings (#80)
+    if (newFindings > 0)
       this.notifications.create({
-        title: 'Archivprüfung abgeschlossen',
-        description:
-          total === 0
-            ? 'Keine Auffälligkeiten gefunden.'
-            : `${total} Hinweis(e): ${Object.entries(byKind)
-                .map(([k, v]) => `${v}× ${KIND_LABELS[k] ?? k}`)
-                .join(', ')}.`,
+        title: newFindings === 1 ? 'Archivprüfung: 1 neuer Hinweis' : `Archivprüfung: ${newFindings} neue Hinweise`,
+        description: `Insgesamt ${overview}.`,
         type: 'consistency_done',
         priority: 'low',
         proposedActions: [{ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' }],
@@ -550,14 +560,30 @@ export class ConsistencyService {
       });
     this.schedule.markRun();
     report?.(1, 'Fertig');
-    this.ctx.logger.info('consistency', 'Archivprüfung abgeschlossen', { trigger, byKind });
+    this.ctx.logger.info('consistency', 'Archivprüfung abgeschlossen', { trigger, byKind, newFindings });
     this.ctx.events.changed('insights', 'notifications', 'status');
-    return { insights: total, notifications: notifs, contradictions: found.length, byKind };
+    return { insights: total, notifications: notifs, contradictions: found.length, byKind, newFindings, summary };
   }
 
-  /** Periodic check while the application runs; `enqueue` starts one check. */
-  startTimer(enqueue: () => void): void {
+  /** Ids of open insights and unresolved notifications (except completion notices); compared before and after a run. */
+  private openFindingIds(): Set<string> {
+    const open = this.db.select({ id: insightsTable.id }).from(insightsTable).where(eq(insightsTable.status, 'open')).all();
+    const unresolved = this.db
+      .select({ id: notificationsTable.id })
+      .from(notificationsTable)
+      .where(and(isNull(notificationsTable.resolvedAt), ne(notificationsTable.type, 'consistency_done')))
+      .all();
+    return new Set([...open, ...unresolved].map((r) => r.id));
+  }
+
+  /**
+   * Periodic check while the application runs; `enqueue` starts one check. The interval continues from the last run
+   * (also across restarts); `startupCheckQueued` counts a check queued at startup as that run, so an overdue
+   * interval does not start a second one.
+   */
+  startTimer(enqueue: () => void, opts: { startupCheckQueued?: boolean } = {}): void {
     this.enqueueInterval = enqueue;
+    if (opts.startupCheckQueued) this.schedule.markRun();
     this.applySettings();
     this.schedule.start();
   }

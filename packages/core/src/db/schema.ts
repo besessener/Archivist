@@ -402,3 +402,10 @@ export const llmTransmissions = sqliteTable('llm_transmissions', {
 });
 
 export type { Json };
+
+/** Small key-value store for application state that must survive restarts (e.g. when a periodic task last ran). */
+export const appState = sqliteTable('app_state', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
