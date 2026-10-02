@@ -132,6 +132,18 @@ export class NotificationService {
     return this.get(id);
   }
 
+  /** Resolves all open notifications ("Alle leeren" in the bell). Returns how many were closed. */
+  resolveAll(): number {
+    const now = nowIso();
+    const res = this.db
+      .update(notifications)
+      .set({ resolvedAt: now, readAt: sql`coalesce(${notifications.readAt}, ${now})` })
+      .where(isNull(notifications.resolvedAt))
+      .run();
+    if (res.changes > 0) this.ctx.events.changed('notifications', 'status');
+    return res.changes;
+  }
+
   /** Resolves all open notifications with the key prefix (e.g. when the cause no longer exists). */
   resolveByDedupePrefix(prefix: string): void {
     this.db

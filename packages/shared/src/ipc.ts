@@ -281,6 +281,7 @@ export const ipcContract = {
   ),
   'notifications:markRead': ch(z.object({ ids: z.array(Id).min(1) }), Ok),
   'notifications:resolve': ch(z.object({ id: Id }), AppNotification),
+  'notifications:resolveAll': ch(Empty, z.object({ resolved: z.number().int() })),
   'notifications:snooze': ch(z.object({ id: Id, remindAt: IsoDate }), Reminder),
 
   // --- Insights / consistency / contradictions ---

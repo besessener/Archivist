@@ -217,6 +217,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return { ok: true as const };
     },
     'notifications:resolve': (i) => s.notifications.resolve(i.id),
+    'notifications:resolveAll': () => ({ resolved: s.notifications.resolveAll() }),
     'notifications:snooze': (i) => {
       const n = s.notifications.get(i.id);
       s.notifications.resolve(i.id);
