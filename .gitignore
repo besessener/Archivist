@@ -6,6 +6,7 @@ out/
 *.log
 .DS_Store
 coverage/
+eval-results/
 test-results/
 playwright-report/
 .env

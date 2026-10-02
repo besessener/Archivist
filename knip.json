@@ -3,7 +3,7 @@
   "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.mjs", "tests/**/*.{test,spec}.ts"],
+      "entry": ["scripts/*.mjs", "tests/**/*.{test,spec}.ts", "tests/eval/**/*.eval.ts"],
       "project": ["scripts/**", "tests/**"],
       "ignoreDependencies": ["electron"]
     },

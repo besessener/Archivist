@@ -18,6 +18,7 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 - [Sicherheits- und Datenschutzmodell](#sicherheits--und-datenschutzmodell)
 - [LLM-Anbindung](#llm-anbindung)
 - [Entwicklung, Tests, Build](#entwicklung-tests-build)
+- [Evaluation des Agenten](#evaluation-des-agenten)
 - [Packaging](#packaging)
 - [Bewusste Abweichungen und ehrliche Grenzen](#bewusste-abweichungen-und-ehrliche-grenzen)
 - [Fehlerbehebung](#fehlerbehebung)
@@ -214,6 +215,45 @@ Alle Actions sind auf Commit-SHAs gepinnt (Kommentar nennt den Tag), Workflows l
 **Ansprache**: Wir duzen – in der Oberfläche, im Chat, in Benachrichtigungen, Fehlermeldungen und der Dokumentation. Die LLM-Prompts weisen das Modell entsprechend an, den Benutzer mit „du“ anzusprechen.
 
 **Sprache**: Alles, was programmiert ist, ist Englisch – Bezeichner, Code-Kommentare, Testnamen, Log-Meldungen, Build- und CI-Ausgaben. Alles, was Benutzer sehen, ist Deutsch – Oberfläche, Fehlermeldungen, Benachrichtigungen, Hinweise, Chat-Antworten. Deutsch bleiben auch die LLM-Prompts (sie erzeugen deutsche Antworten), Muster für deutsche Eingaben und Testdaten.
+
+## Evaluation des Agenten
+
+`npm run eval:agent` prüft den Agentenmodus mit **echten Modellen** (Claude und ChatGPT) an knapp 60 realistischen Aufgaben aus allen Stories des Epics #294 (`tests/eval/tasks.ts`): „Verschiebe alle Folien nach presentations“, „Wie viel habe ich 2025 für Handwerker ausgegeben?“, „Wann muss ich den Mietvertrag spätestens kündigen?“, „Fehlt ein Kontoauszug?“, „Merk dir: Rechnungen der Stadtwerke immer nach finanzen/energie“, „Leg zu allen Kündigungsfristen Erinnerungen an“, unklare Anliegen, ein Dokument mit eingeschleuster Anweisung, Modus „Fragen“, Massenaktionen über der Schwelle, Hintergrund-Läufe u. v. m.
+
+- Jede Aufgabe läuft in einer frischen App mit einem Test-Archiv aus ~40 kleinen Dokumenten (Folien, Handwerkerrechnungen, Kontoauszüge mit Lücke, Mietvertrag in zwei Fassungen, Garantie, Versicherung, E-Mails, Duplikate, ein gesperrtes Dokument). Das Archiv wird **ohne LLM** aufgebaut (Import nur lokal, Ordner, Typ und Datum explizit); Fristen liegen relativ zu heute.
+- Bewertet wird das **Ergebnis im Archiv**, nicht der Weg: Dateien im richtigen Ordner und sonst nichts verändert (Vorher/Nachher-Abgleich aller Pfade und Metadaten), Erinnerungen mit dem richtigen Datum, eine Rückfrage bei unklarem Anliegen (Laufstatus `ask_user`), ignorierte Anweisungen aus Dokumenten, die deterministische Summe in der Antwort usw.
+- **Kostet Geld** und ist deshalb **nicht Teil von `npm test` und der CI** (eigene Konfiguration `vitest.eval.config.mts`, nur `tests/eval/**/*.eval.ts`, Aufgaben nacheinander). Ohne konfigurierte Anbieter wird sie sauber übersprungen. Damit der Code nicht veraltet, prüft `tests/unit/agent-eval-tasks.test.ts` im normalen Testlauf Aufgabenliste und Archivaufbau mit dem Fake-LLM.
+
+Konfiguration über Umgebungsvariablen:
+
+| Variable | Bedeutung |
+|---|---|
+| `ARCHIVIST_EVAL_PROVIDERS` | Kommaliste von Namen, z. B. `claude,gpt` |
+| `ARCHIVIST_EVAL_<NAME>_BASE_URL` | Base URL wie im Einrichtungsassistenten (bestimmt den Adapter) |
+| `ARCHIVIST_EVAL_<NAME>_MODEL` | Modell- bzw. Deployment-Name |
+| `ARCHIVIST_EVAL_<NAME>_API_KEY` | API-Key |
+| `ARCHIVIST_EVAL_<NAME>_EFFORT` | optional: `low`, `medium`, `high` (Standard), `xhigh`, `max` |
+| `ARCHIVIST_EVAL_<NAME>_ADAPTER` | optional: `auto` (Standard), `anthropic`, `openai` |
+| `ARCHIVIST_EVAL_TASKS` | optional: nur diese Aufgaben-IDs oder Stories, z. B. `move-slides,#309` |
+
+`<NAME>` ist der Name in Großbuchstaben (Sonderzeichen werden zu `_`).
+
+```bash
+# Claude auf Microsoft Foundry (Anthropic-Endpunkt) und GPT auf Azure OpenAI
+export ARCHIVIST_EVAL_PROVIDERS=claude,gpt
+export ARCHIVIST_EVAL_CLAUDE_BASE_URL=https://<resource>.services.ai.azure.com/anthropic
+export ARCHIVIST_EVAL_CLAUDE_MODEL=claude-opus-5-5
+export ARCHIVIST_EVAL_CLAUDE_API_KEY=...
+export ARCHIVIST_EVAL_CLAUDE_EFFORT=high
+export ARCHIVIST_EVAL_GPT_BASE_URL=https://<resource>.openai.azure.com/openai/v1
+export ARCHIVIST_EVAL_GPT_MODEL=<deployment>
+export ARCHIVIST_EVAL_GPT_API_KEY=...
+npm run eval:agent
+```
+
+Ergebnis: `eval-results/agent-<Zeitstempel>.json` und `.md` (nicht im Repository) – je Anbieter Quote, Kosten, Tokens, Ø Runden und Ø Dauer, je Aufgabe bestanden/fehlgeschlagen mit Grund, dazu der Vergleich mit dem vorigen Ergebnis (neue Fehlschläge und Behobenes hervorgehoben). Am Ende werden die Kosten des Laufs ausgegeben (Schätzung aus der Preistabelle; ein Modell ohne Eintrag zählt mit 0).
+
+**Effort und Budgets abstimmen**: Denselben Anbieter mehrfach mit unterschiedlichem Effort eintragen (z. B. `claude-high` und `claude-medium` mit gleicher URL) und Quote gegen Kosten und Dauer abwägen; nach Änderungen an Prompt, Werkzeugen oder Grenzen zeigt der Vergleich mit dem vorigen Lauf, welche Aufgaben neu scheitern. Läufe, die an `limit` scheitern oder sehr viele Runden brauchen, sprechen für höhere `chatLimits`/`backgroundLimits` – oder für ein Werkzeug, das die Arbeit deterministisch erledigt. Für schnelle Iterationen mit `ARCHIVIST_EVAL_TASKS` nur die betroffenen Aufgaben laufen lassen.
 
 ## Packaging
 

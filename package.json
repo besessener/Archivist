@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test",
+    "eval:agent": "vitest run --config vitest.eval.config.mts",
     "db:generate": "npm run db:generate -w @archivist/core",
     "build": "npm run build -w @archivist/renderer && npm run build -w archivist",
     "dev": "npm run dev -w archivist",
