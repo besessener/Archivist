@@ -13,8 +13,30 @@ export class JobCancelledError extends Error {
   }
 }
 
-/** True if `err` means "the job was cancelled" (thrown by `throwIfCancelled` or `signal.throwIfAborted()`). */
+/**
+ * The job was interrupted because the app quits. Unlike a cancellation the job is not over: it stays `pending`
+ * and runs again after the next start. Handlers treat it like a cancellation (stop the work, keep no partial state
+ * that would block a later run) – `isJobCancelled` is true for it as well.
+ */
+export class JobInterruptedError extends JobCancelledError {
+  constructor() {
+    super();
+    this.message = 'Job beim Beenden unterbrochen';
+    this.name = 'JobInterruptedError';
+  }
+}
+
+/**
+ * True if `err` means "stop the job's work now" (thrown by `throwIfCancelled` or `signal.throwIfAborted()`):
+ * a cancellation or an interruption on quit.
+ */
 export const isJobCancelled = (err: unknown): boolean => err instanceof JobCancelledError;
+
+/** True if `err` is an interruption on quit: the job resumes after the next start, so it is no final cancellation. */
+export const isJobInterrupted = (err: unknown): boolean => err instanceof JobInterruptedError;
+
+/** Message of a job that was interrupted on quit and waits for the next start. */
+export const INTERRUPTED_JOB_MESSAGE = 'Beim Beenden unterbrochen – wird beim nächsten Start fortgesetzt';
 
 export interface JobContext<P = unknown> {
   id: string;
@@ -25,8 +47,9 @@ export interface JobContext<P = unknown> {
   isCancelled(): boolean;
   throwIfCancelled(): void;
   /**
-   * Aborted as soon as the job is cancelled. Its `reason` is a `JobCancelledError`, so `signal.throwIfAborted()`
-   * behaves like `throwIfCancelled()`. Pass it on to cancellable work (e.g. LLM requests).
+   * Aborted as soon as the job is cancelled or interrupted on quit. Its `reason` is a `JobCancelledError` (or a
+   * `JobInterruptedError`), so `signal.throwIfAborted()` behaves like `throwIfCancelled()`. Pass it on to
+   * cancellable work (e.g. LLM requests).
    */
   signal: AbortSignal;
 }
@@ -85,8 +108,13 @@ export class JobQueueService {
   private handlers = new Map<string, Registration>();
   private running = new Set<string>();
   private active = new Map<string, Promise<void>>();
-  /** Abort controllers of the running jobs (aborted by `cancel`). */
+  /** Abort controllers of the running jobs (aborted by `cancel` and `interrupt`). */
   private controllers = new Map<string, AbortController>();
+  /**
+   * Running jobs given up by `interrupt` after its timeout: their rows are already back to `pending`, so whatever
+   * the still running handler does afterwards is no longer recorded (the database may be closed by then).
+   */
+  private abandoned = new Set<string>();
   /** Pending jobs waiting for their next attempt: job id → earliest start (epoch ms). */
   private retryAt = new Map<string, number>();
   private retryTimer: NodeJS.Timeout | null = null;
@@ -231,11 +259,44 @@ export class JobQueueService {
     return res.changes;
   }
 
+  /** Pauses the queue: no further job starts, and running jobs are awaited until they end on their own. */
   async stop(): Promise<void> {
     this.stopping = true;
     this.started = false;
     this.clearRetryTimer();
     await Promise.allSettled([...this.active.values()]);
+  }
+
+  /**
+   * Stops the queue for quitting the app without hanging on running jobs. No further job starts; running jobs are
+   * interrupted (their `signal` aborts with a `JobInterruptedError`) and go back to `pending` without using up an
+   * attempt, so they run again after the next `start()`. Waits at most `timeoutMs` for them to end; jobs still
+   * running then are put back to `pending` right away and whatever they do afterwards is ignored. Waiting jobs
+   * (including those waiting for a retry) simply stay `pending`.
+   *
+   * Returns how many jobs were interrupted and how many of them did not end within the timeout.
+   */
+  async interrupt(timeoutMs = 5_000): Promise<{ interrupted: number; unfinished: number }> {
+    this.stopping = true;
+    this.started = false;
+    this.clearRetryTimer();
+    const running = [...this.active.keys()].filter((id) => !this.abandoned.has(id));
+    for (const id of running) this.controllers.get(id)?.abort(new JobInterruptedError());
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, Math.max(0, timeoutMs));
+      timer.unref?.();
+    });
+    await Promise.race([Promise.allSettled(running.flatMap((id) => this.active.get(id) ?? [])), timeout]);
+    clearTimeout(timer);
+    const unfinished = running.filter((id) => this.active.has(id));
+    for (const id of unfinished) {
+      this.abandoned.add(id);
+      const row = this.db.select().from(jobs).where(eq(jobs.id, id)).get();
+      if (row?.status === 'running') this.requeueInterrupted(row, row.attempts - 1);
+    }
+    if (running.length) this.ctx.logger.info('jobs', 'Jobs beim Beenden unterbrochen', { interrupted: running.length, unfinished: unfinished.length });
+    return { interrupted: running.length, unfinished: unfinished.length };
   }
 
   /** Wartet, bis keine pending/running Jobs mehr existieren (v. a. für Tests und Shutdown). */
@@ -332,6 +393,7 @@ export class JobQueueService {
       payload: job.payload,
       attempts,
       report: (progress: number | null, message?: string) => {
+        if (this.abandoned.has(job.id)) return;
         this.db
           .update(jobs)
           .set({ progress, progressMessage: message ?? null })
@@ -341,28 +403,66 @@ export class JobQueueService {
       },
       isCancelled,
       throwIfCancelled: () => {
-        if (isCancelled()) throw new JobCancelledError();
+        if (!isCancelled()) return;
+        // the signal's reason tells a cancellation from an interruption on quit
+        throw controller.signal.reason instanceof JobCancelledError ? controller.signal.reason : new JobCancelledError();
       },
       signal: controller.signal,
     };
+    let outcome: { ok: true; result: unknown } | { ok: false; error: unknown };
     try {
       if (!registered) throw new AppError('validation_error', `Kein Handler für Jobtyp „${job.type}“ registriert.`);
       ctx.throwIfCancelled();
-      const result = await registered.handler(ctx as never);
+      outcome = { ok: true, result: await registered.handler(ctx as never) };
+    } catch (err) {
+      outcome = { ok: false, error: err };
+    } finally {
+      this.controllers.delete(job.id);
+    }
+    if (this.abandoned.delete(job.id)) return; // given up by `interrupt`: the row is already back to `pending`
+    if (!outcome.ok && controller.signal.reason instanceof JobInterruptedError) {
+      // interrupted on quit: whatever the handler threw then (an aborted request, a closed worker pool …) is no failure
+      this.requeueInterrupted(job, job.attempts);
+      return;
+    }
+    this.settle(job, attempts, outcome, registered, isCancelled);
+  }
+
+  /** Puts a job interrupted on quit back to `pending`; `attempts` is the count before the interrupted attempt. */
+  private requeueInterrupted(job: Row, attempts: number): void {
+    this.db
+      .update(jobs)
+      .set({ status: 'pending', attempts: Math.max(0, attempts), progressMessage: INTERRUPTED_JOB_MESSAGE, startedAt: null })
+      .where(eq(jobs.id, job.id))
+      .run();
+    this.ctx.logger.info('jobs', `Job beim Beenden unterbrochen: ${job.type}`, { jobId: job.id });
+    const row = this.db.select().from(jobs).where(eq(jobs.id, job.id)).get();
+    if (row) this.notify(row);
+  }
+
+  /** Stores the final status of an attempt (succeeded, cancelled, waiting for a retry or failed). */
+  private settle(
+    job: Row,
+    attempts: number,
+    outcome: { ok: true; result: unknown } | { ok: false; error: unknown },
+    registered: Registration | undefined,
+    isCancelled: () => boolean,
+  ): void {
+    if (outcome.ok) {
+      const result = outcome.result;
       this.db
         .update(jobs)
         .set({ status: 'succeeded', progress: 1, progressMessage: null, result: (result ?? null) as ArchivistJson | null, finishedAt: nowIso() })
         .where(eq(jobs.id, job.id))
         .run();
-    } catch (err) {
+    } else {
+      const err = outcome.error;
       if (isJobCancelled(err) || isCancelled()) {
         // whatever the handler threw after a cancel request (e.g. an aborted LLM request): the job was cancelled
         this.db.update(jobs).set({ status: 'cancelled', progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
         this.ctx.logger.info('jobs', `Job abgebrochen: ${job.type}`, { jobId: job.id, attempts });
         this.runHook(job.type, 'onCancelled', () => registered?.hooks.onCancelled?.({ id: job.id, payload: job.payload as never }));
       } else this.recordFailure(job, attempts, err, registered);
-    } finally {
-      this.controllers.delete(job.id);
     }
     const row = this.db.select().from(jobs).where(eq(jobs.id, job.id)).get();
     if (row) this.notify(row);

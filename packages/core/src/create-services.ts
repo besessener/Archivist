@@ -264,11 +264,15 @@ function buildServices(opts: CreateServicesOptions) {
           .catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
     },
 
-    async shutdown(): Promise<void> {
+    /**
+     * Stops background work and closes the database. Running jobs are interrupted and resume after the next start;
+     * waits at most `jobTimeoutMs` for them (default 5 s), so quitting never hangs on a long scan or OCR.
+     */
+    async shutdown(opts: { jobTimeoutMs?: number } = {}): Promise<void> {
       reminders.stop();
       scanner.stop();
       consistency.stopTimer();
-      await jobs.stop();
+      await jobs.interrupt(opts.jobTimeoutMs);
       await pool.close();
       database.close();
       await logger.close();

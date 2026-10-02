@@ -349,7 +349,7 @@ export class ScannerService {
         this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary }).where(eq(scanRoots.id, root.id)).run();
         this.notifyScan(root, summary);
       } catch (err) {
-        if (err instanceof Error && err.name === 'JobCancelledError') throw err;
+        if (isJobCancelled(err)) throw err; // cancelled or interrupted on quit – no scan error
         summary.errors.push(err instanceof Error ? err.message : String(err));
         this.ctx.logger.error('scanner', 'Scan fehlgeschlagen', { root: root.path, error: err });
         this.notifications.create({
