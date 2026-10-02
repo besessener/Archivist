@@ -33,7 +33,7 @@ const quitter = new QuitController({
 const dataRoot = () => process.env.ARCHIVIST_DATA_DIR ?? path.join(app.getPath('documents'), 'Archivist');
 const resource = (...p: string[]) => path.join(__dirname, ...p);
 
-/** Verschlüsselung über Electron safeStorage (DPAPI / Keychain / libsecret). */
+/** Verschlüsselung über Electron safeStorage (Windows DPAPI; die Linux-Zweige dienen nur Entwicklung und CI). */
 const cipher: SecretCipher = {
   isAvailable: () => {
     if (!safeStorage.isEncryptionAvailable()) return false;
@@ -44,7 +44,7 @@ const cipher: SecretCipher = {
     }
     return true;
   },
-  backend: () => (process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform === 'darwin' ? 'macOS Keychain' : 'Windows DPAPI'),
+  backend: () => (process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : 'Windows DPAPI'),
   encrypt: (plain) => safeStorage.encryptString(plain),
   decrypt: (data) => safeStorage.decryptString(data),
 };
@@ -157,7 +157,6 @@ function showMainWindow(): void {
 
 function buildMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
     { role: 'editMenu' },
     {
       label: 'Ansicht',

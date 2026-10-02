@@ -91,7 +91,7 @@ function samePath(a: string, b: string): boolean {
     }
   };
   const [x, y] = [norm(a), norm(b)];
-  return process.platform === 'win32' || process.platform === 'darwin' ? x.toLowerCase() === y.toLowerCase() : x === y;
+  return process.platform === 'win32' ? x.toLowerCase() === y.toLowerCase() : x === y;
 }
 
 /**
