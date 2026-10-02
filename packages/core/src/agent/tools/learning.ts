@@ -44,7 +44,7 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
   /** Documents with matching rules: the given refs, else every archived document. */
   const planFor = (documents: string[] | null | undefined, ctx: ToolContext) => {
     const ids = documents?.length
-      ? resolveDocs(deps, ctx, documents).docs.map((d) => d.id)
+      ? resolveDocs({ deps, ctx }, documents).docs.map((d) => d.id)
       : allDocs(deps)
           .filter((d) => d.status === 'archived')
           .map((d) => d.id);
@@ -169,7 +169,7 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
         const conflicts = plan.filter((p) => p.conflict);
         const work = plan.filter((p) => !p.conflict);
         const line = (p: (typeof plan)[number]) =>
-          `- ${docLine(p.doc, ctx, deps.privacy)} ← ${p.rules.map((r) => `[${r.entry.id}] ${r.entry.name}`).join(', ')}${
+          `- ${docLine({ deps, ctx }, p.doc)} ← ${p.rules.map((r) => `[${r.entry.id}] ${r.entry.name}`).join(', ')}${
             p.conflict
               ? ` ⚠ ${p.conflict}`
               : ` → ${Object.entries(p.then)

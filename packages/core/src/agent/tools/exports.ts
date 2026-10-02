@@ -320,7 +320,7 @@ function markdownPdfLines(title: string, markdown: string): PdfLine[] {
 const DocRefs = list.describe('Dokument-IDs (D…) oder Ergebnismengen (S…)');
 
 function modelLines(deps: ToolDeps, ctx: ToolContext, docs: DocumentRecord[], max = 25): string[] {
-  const lines = docs.slice(0, max).map((d) => `- ${docLine(d, ctx, deps.privacy)}`);
+  const lines = docs.slice(0, max).map((d) => `- ${docLine({ deps, ctx }, d)}`);
   if (docs.length > max) lines.push(`- … und ${docs.length - max} weitere`);
   return lines;
 }
@@ -352,7 +352,7 @@ export function exportTools(deps: ToolDeps): AgentTool[] {
       label: (a) => `Stelle Mappe „${truncate(a.title, 60)}“ als ${a.format.toUpperCase()} zusammen`,
       count: () => 1,
       run: async (a, ctx) => {
-        const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
+        const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
         if (!docs.length) return { content: `Keine Dokumente gefunden.${unknownNote(unknown)}`, isError: true };
         const items = collect(deps, docs);
         const missing = items.filter((i) => !i.file);
@@ -480,7 +480,7 @@ export function exportTools(deps: ToolDeps): AgentTool[] {
         `Exportiere ${a.documents.length === 1 && /^S/i.test(a.documents[0]!) ? 'eine Ergebnismenge' : `${a.documents.length} Dokument(e)`} als CSV`,
       count: () => 1,
       run: async (a, ctx) => {
-        const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
+        const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
         if (!docs.length) return { content: `Keine Dokumente gefunden.${unknownNote(unknown)}`, isError: true };
         const items = collect(deps, docs).toSorted((x, y) => docDay(x.doc).localeCompare(docDay(y.doc)));
         const columns = a.columns?.length ? CSV_COLUMNS.filter((c) => a.columns!.includes(c)) : CSV_COLUMNS;
@@ -539,7 +539,7 @@ export function exportTools(deps: ToolDeps): AgentTool[] {
       label: () => 'Lege einen Antwortentwurf an',
       count: () => 1,
       run: async (a, ctx) => {
-        const { docs, unknown } = resolveDocs(deps, ctx, [a.document]);
+        const { docs, unknown } = resolveDocs({ deps, ctx }, [a.document]);
         const d = docs[0];
         if (!d) return { content: `Unbekannte Dokument-ID „${a.document}“.${unknownNote(unknown)}`, isError: true };
         const title = a.title ?? `Antwortentwurf: ${d.title}`;
@@ -548,7 +548,7 @@ export function exportTools(deps: ToolDeps): AgentTool[] {
         const file = await writeExport(deps, ctx, title, 'md', `# ${title}\n\nBezug: ${d.title} (${docDay(d)})\n\n${a.text.trim()}\n`);
         const change = `Antwortentwurf ${created ? 'angelegt' : 'war schon vorhanden'}`;
         return {
-          content: `${change}: Notiz ${ctx.refs.entry(note.id)}, verknüpft mit ${docLine(d, ctx, privacy)}\nLokale Datei: ${file}\nEs wurde nichts versendet – der Entwurf liegt nur lokal.`,
+          content: `${change}: Notiz ${ctx.refs.entry(note.id)}, verknüpft mit ${docLine({ deps, ctx }, d)}\nLokale Datei: ${file}\nEs wurde nichts versendet – der Entwurf liegt nur lokal.`,
           summary: 'Entwurf gespeichert (nicht versendet)',
           change,
         };

@@ -627,7 +627,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
   const text = (id: string) => docs.findRow(id)?.extractedText ?? '';
   /** Shareable documents of the refs; the rest is counted. */
   const shareable = (ctx: ToolContext, refs: readonly string[]) => {
-    const { docs: found, unknown } = resolveDocs(deps, ctx, refs);
+    const { docs: found, unknown } = resolveDocs({ deps, ctx }, refs);
     const ok = found.filter((d) => privacy.mayShareDocument(d));
     return { docs: ok, skipped: found.length - ok.length, unknown };
   };
@@ -654,7 +654,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
           }
           values.push(total.amount);
           rows.push(
-            `- ${docLine(d, ctx, privacy)}\n  Datum: ${docDay(d)} | Betrag: ${formatEuro(total.amount)} | Fundstelle: ${asData(ctx.refs.doc(d.id), total.line)}`,
+            `- ${docLine({ deps, ctx }, d)}\n  Datum: ${docDay(d)} | Betrag: ${formatEuro(total.amount)} | Fundstelle: ${asData(ctx.refs.doc(d.id), total.line)}`,
           );
         }
         const sum = sumAmounts(values);
@@ -728,7 +728,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: () => 'Vergleiche zwei Dokumente',
       run: async (a, ctx) => {
-        const { docs: found, unknown } = resolveDocs(deps, ctx, [a.a, a.b]);
+        const { docs: found, unknown } = resolveDocs({ deps, ctx }, [a.a, a.b]);
         const da = found.find((d) => d.id === ctx.refs.resolve(a.a));
         const db = found.find((d) => d.id === ctx.refs.resolve(a.b));
         if (!da || !db) return { content: `Zwei bekannte Dokument-IDs nötig.${unknownNote(unknown)}`, isError: true };
@@ -740,8 +740,8 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
         const show = (lines: string[]) => lines.slice(0, 80).join('\n') + (lines.length > 80 ? `\n… und ${lines.length - 80} weitere Zeilen` : '');
         return {
           content: [
-            `A = ${docLine(da, ctx, privacy)}`,
-            `B = ${docLine(db, ctx, privacy)}`,
+            `A = ${docLine({ deps, ctx }, da)}`,
+            `B = ${docLine({ deps, ctx }, db)}`,
             `${r.common} gemeinsame Zeilen, ${r.onlyA.length} nur in A, ${r.onlyB.length} nur in B${r.capped ? ` (nur die ersten ${MAX_DIFF_LINES} Zeilen verglichen)` : ''}.`,
             r.onlyA.length ? `Nur in A:\n${asData(`${ra}-nur-A`, show(r.onlyA))}` : 'Nur in A: –',
             r.onlyB.length ? `Nur in B:\n${asData(`${rb}-nur-B`, show(r.onlyB))}` : 'Nur in B: –',
@@ -758,7 +758,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: () => 'Suche Fristen und Ablaufdaten',
       run: async (a, ctx) => {
-        const { docs: found, unknown } = resolveDocs(deps, ctx, a.documents);
+        const { docs: found, unknown } = resolveDocs({ deps, ctx }, a.documents);
         const pending = deps.reminders.list('pending');
         const today = new Date();
         const lines: string[] = [];
@@ -777,7 +777,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
               lines.push(`- ${ctx.refs.doc(d.id)} [nicht freigegeben]: Frist am ${h.date ?? 'unbekannt'} (Art: ${DEADLINE_LABEL[h.kind]})${reminderNote}`);
             continue;
           }
-          lines.push(`- ${docLine(d, ctx, privacy)}${reminderNote}`);
+          lines.push(`- ${docLine({ deps, ctx }, d)}${reminderNote}`);
           for (const h of hits)
             lines.push(
               `  • ${DEADLINE_LABEL[h.kind]}: ${h.date ?? 'Datum offen'}${h.past ? ' (bereits vorbei)' : ''} – Rechenweg: ${h.rechenweg}\n    Fundstelle: ${asData(ctx.refs.doc(d.id), h.evidence)}`,
@@ -795,7 +795,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: () => 'Suche nach Passwörtern und Zugangsdaten',
       run: async (a, ctx) => {
-        const { docs: found, unknown } = a.documents?.length ? resolveDocs(deps, ctx, a.documents) : { docs: archivedDocs(), unknown: [] as string[] };
+        const { docs: found, unknown } = a.documents?.length ? resolveDocs({ deps, ctx }, a.documents) : { docs: archivedDocs(), unknown: [] as string[] };
         const lines: string[] = [];
         for (const d of found) {
           const kinds = scanSecrets(text(d.id));
@@ -803,7 +803,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
           if (!entries.length) continue;
           const what = entries.map(([k, n]) => `${n}× ${k}`).join(', ');
           lines.push(
-            privacy.mayShareDocument(d) ? `- ${docLine(d, ctx, privacy)}\n  enthält: ${what}` : `- ${ctx.refs.doc(d.id)} [nicht freigegeben]: enthält ${what}`,
+            privacy.mayShareDocument(d) ? `- ${docLine({ deps, ctx }, d)}\n  enthält: ${what}` : `- ${ctx.refs.doc(d.id)} [nicht freigegeben]: enthält ${what}`,
           );
         }
         if (!lines.length) return { content: `In ${found.length} geprüften Dokumenten nichts gefunden.${unknownNote(unknown)}`, summary: 'nichts gefunden' };
@@ -830,7 +830,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
             skipped += 1;
             continue;
           }
-          lines.push(`- ${docLine(d, ctx, privacy)}\n  ${reasons.join('\n  ')}`);
+          lines.push(`- ${docLine({ deps, ctx }, d)}\n  ${reasons.join('\n  ')}`);
         }
         if (!lines.length) return { content: `Keine Problemdateien gefunden.${skippedNote(skipped)}`, summary: 'keine Probleme' };
         return {
@@ -869,13 +869,13 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
           content: [
             `Archiv: ${all.length} Dokumente, ${mb(total)} gesamt.`,
             `Größte Dateien:`,
-            ...largest.map((d) => `- ${mb(d.size)}: ${docLine(d, ctx, privacy)}`),
+            ...largest.map((d) => `- ${mb(d.size)}: ${docLine({ deps, ctx }, d)}`),
             dupGroups.length ? `Exakte Duplikate (gleicher Inhalt): ${dupGroups.length} Gruppen, ${mb(wasted)} verschwendet:` : 'Keine exakten Duplikate.',
             ...dupGroups
               .slice(0, 15)
               .map((g) => `- ${g.length}× ${mb(g[0]!.size)}: ${g.map((d) => ctx.refs.doc(d.id)).join(', ')} – „${truncate(g[0]!.title, 60)}“`),
             lonely.length ? 'Lange nicht genutzt (älteste archivierte Dokumente ohne Thema, Projekt oder Verknüpfung):' : null,
-            ...lonely.map((d) => `- ${docLine(d, ctx, privacy)}`),
+            ...lonely.map((d) => `- ${docLine({ deps, ctx }, d)}`),
             'Nur Hinweise – gelöscht oder verschoben wird nichts ohne ausdrücklichen Auftrag (find_duplicates / mark_duplicates).',
           ]
             .filter(Boolean)
@@ -893,7 +893,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
       label: () => 'Fasse E-Mails zu Verläufen zusammen',
       run: async (a, ctx) => {
         const source = a.documents?.length
-          ? resolveDocs(deps, ctx, a.documents)
+          ? resolveDocs({ deps, ctx }, a.documents)
           : { docs: allDocs(deps).filter((d) => lower(d.ext) === 'eml' && d.status !== 'ignored'), unknown: [] as string[] };
         const mails = source.docs.filter((d) => lower(d.ext) === 'eml');
         const ok = mails.filter((d) => privacy.mayShareDocument(d));
@@ -911,7 +911,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
           };
         const lines = threads.slice(0, 40).map(([subject, g]) => {
           const sorted = g.toSorted((x, y) => (x.documentDate ?? docDay(x)).localeCompare(y.documentDate ?? docDay(y)));
-          return `Verlauf „${truncate(subject, 80)}“ (${g.length} Nachrichten, Ergebnismenge ${ctx.refs.set(sorted.map((d) => d.id))}):\n${sorted.map((d) => `  - ${docLine(d, ctx, privacy)}`).join('\n')}`;
+          return `Verlauf „${truncate(subject, 80)}“ (${g.length} Nachrichten, Ergebnismenge ${ctx.refs.set(sorted.map((d) => d.id))}):\n${sorted.map((d) => `  - ${docLine({ deps, ctx }, d)}`).join('\n')}`;
         });
         return { content: lines.join('\n') + skippedNote(mails.length - ok.length) + unknownNote(source.unknown), summary: `${threads.length} Verläufe` };
       },
@@ -934,7 +934,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
         const r = matchPayments(infos, payments);
         const byId = new Map(inv.docs.map((d) => [d.id, d]));
         const label = (i: InvoiceInfo) =>
-          `${docLine(byId.get(i.id)!, ctx, privacy)} | ${i.amount === null ? 'Betrag unbekannt' : formatEuro(i.amount)}${i.number ? ` | Nr. ${i.number}` : ''}`;
+          `${docLine({ deps, ctx }, byId.get(i.id)!)} | ${i.amount === null ? 'Betrag unbekannt' : formatEuro(i.amount)}${i.number ? ` | Nr. ${i.number}` : ''}`;
         const payLine = (p: Payment) => asData('Kontoauszug', `${p.date} ${formatEuro(p.amount)} ${truncate(p.text, 120)}`);
         return {
           content: [
@@ -962,7 +962,7 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: () => 'Suche Beispiele ähnlich abgelegter Dokumente',
       run: async (a, ctx) => {
-        const { docs: found, unknown } = resolveDocs(deps, ctx, [a.document]);
+        const { docs: found, unknown } = resolveDocs({ deps, ctx }, [a.document]);
         const target = found[0];
         if (!target) return { content: `Unbekannte Dokument-ID „${a.document}“.${unknownNote(unknown)}`, isError: true };
         const persons = new Set(target.persons.map((p) => p.toLowerCase()));
@@ -980,10 +980,10 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
         if (!scored.length) return { content: 'Keine ähnlich abgelegten Dokumente gefunden.', summary: 'keine Beispiele' };
         return {
           content: [
-            `BEISPIELE (keine Regel) – so wurden ähnliche Dokumente zu ${docLine(target, ctx, privacy)} abgelegt:`,
+            `BEISPIELE (keine Regel) – so wurden ähnliche Dokumente zu ${docLine({ deps, ctx }, target)} abgelegt:`,
             ...scored.map(
               (x) =>
-                `- Ordner ${folderLabel(folderOf(x.d))}: ${docLine(x.d, ctx, privacy)} (ähnlich wegen ${[x.sameType ? 'gleichem Typ' : null, x.shared ? 'gleichen Personen' : null, x.title >= 0.5 ? 'ähnlichem Titel' : null].filter(Boolean).join(', ') || 'Titel'})`,
+                `- Ordner ${folderLabel(folderOf(x.d))}: ${docLine({ deps, ctx }, x.d)} (ähnlich wegen ${[x.sameType ? 'gleichem Typ' : null, x.shared ? 'gleichen Personen' : null, x.title >= 0.5 ? 'ähnlichem Titel' : null].filter(Boolean).join(', ') || 'Titel'})`,
             ),
           ].join('\n'),
           summary: `${scored.length} Beispiel(e)`,

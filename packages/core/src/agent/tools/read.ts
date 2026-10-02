@@ -13,8 +13,8 @@ import {
   docDay,
   docLine,
   lower,
-  normExt,
-  normFolder,
+  normalizeExtension,
+  normalizeFolder,
   resolveDocs,
   unknownNote,
   type ToolDeps,
@@ -48,17 +48,17 @@ const FindArgs = z.object({
 });
 
 export function filterDocuments(deps: ToolDeps, ctx: ToolContext, a: z.output<typeof FindArgs>): DocumentRecord[] {
-  const exts = new Set((a.ext ?? []).map(normExt));
+  const exts = new Set((a.ext ?? []).map(normalizeExtension));
   const statuses =
     a.status === 'all' ? null : a.status === 'inbox' ? INBOX : a.status === 'failed' ? ['failed'] : a.status === 'quarantined' ? ['quarantined'] : ARCHIVED;
   const has = (value: string | null | undefined, wanted: string | null) => !wanted || lower(value).includes(wanted.toLowerCase());
-  const folder = a.folder ? normFolder(a.folder).toLowerCase() : null;
+  const folder = a.folder ? normalizeFolder(a.folder).toLowerCase() : null;
   const within = a.within ? new Set(ctx.refs.resolveMany([a.within]).ids) : null;
   const hits = allDocs(deps).filter(
     (d) =>
       (!within || within.has(d.id)) &&
       (!statuses || statuses.includes(d.status)) &&
-      (!exts.size || exts.has(normExt(d.ext))) &&
+      (!exts.size || exts.has(normalizeExtension(d.ext))) &&
       (!a.name || has(d.title, a.name) || has(d.originalName, a.name)) &&
       (!folder || (d.archiveRelPath !== null && (folderOf(d).toLowerCase() === folder || folderOf(d).toLowerCase().startsWith(`${folder}/`)))) &&
       has(d.topicName, a.topic) &&
@@ -92,7 +92,7 @@ export function pageOf(deps: ToolDeps, ctx: ToolContext, docs: DocumentRecord[],
   const shown = docs.slice((page - 1) * pageSize, page * pageSize);
   return [
     `${docs.length} Dokument(e), Ergebnismenge ${set} (steht für ALLE Treffer)${pages > 1 ? `; Seite ${page}/${pages} – weitere mit page` : ''}:`,
-    ...shown.map((d) => `- ${docLine(d, ctx, deps.privacy)}`),
+    ...shown.map((d) => `- ${docLine({ deps, ctx }, d)}`),
   ].join('\n');
 }
 
@@ -157,7 +157,7 @@ export function readTools(deps: ToolDeps): AgentTool[] {
             const passage = privacy.mayShareDocument(d)
               ? `\n  Fundstelle${locate(docs.getRow(d.id).extractedText, h.passage)}: ${asData(ctx.refs.doc(d.id), truncate(h.passage.replace(/\s+/g, ' '), 400))}`
               : '';
-            return `- ${docLine(d, ctx, privacy)}${passage}`;
+            return `- ${docLine({ deps, ctx }, d)}${passage}`;
           })
           .filter(Boolean);
         return { content: lines.join('\n'), summary: `${lines.length} Treffer` };
@@ -170,14 +170,14 @@ export function readTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: () => 'Sehe mir ein Dokument genauer an',
       run: async (a, ctx) => {
-        const { docs: found, unknown } = resolveDocs(deps, ctx, [a.id]);
+        const { docs: found, unknown } = resolveDocs({ deps, ctx }, [a.id]);
         const d = found[0];
         if (!d) return { content: `Unbekannte Dokument-ID „${a.id}“.${unknownNote(unknown)}`, isError: true };
-        if (!privacy.mayShareDocument(d)) return { content: `${docLine(d, ctx, privacy)}\nWeitere Angaben sind nicht zur Übertragung freigegeben.` };
+        if (!privacy.mayShareDocument(d)) return { content: `${docLine({ deps, ctx }, d)}\nWeitere Angaben sind nicht zur Übertragung freigegeben.` };
         const sections = Math.max(1, Math.ceil(d.textLength / SECTION_CHARS));
         return {
           content: [
-            docLine(d, ctx, privacy),
+            docLine({ deps, ctx }, d),
             d.tags.length ? `Tags: ${d.tags.join(', ')}` : null,
             d.dates.length ? `Daten im Dokument: ${d.dates.slice(0, 10).join(', ')}` : null,
             `Textlänge: ${d.textLength} Zeichen in ${sections} Abschnitt(en) – read_document liest sie`,
@@ -195,7 +195,7 @@ export function readTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: (a) => `Lese ein Dokument${a.section && a.section > 1 ? ` (Abschnitt ${a.section})` : ''}`,
       run: async (a, ctx) => {
-        const { docs: found, unknown } = resolveDocs(deps, ctx, [a.id]);
+        const { docs: found, unknown } = resolveDocs({ deps, ctx }, [a.id]);
         const d = found[0];
         if (!d) return { content: `Unbekannte Dokument-ID „${a.id}“.${unknownNote(unknown)}`, isError: true };
         if (!privacy.mayShareDocument(d))
@@ -219,7 +219,7 @@ export function readTools(deps: ToolDeps): AgentTool[] {
       risk: 'read',
       label: (a) => `Sehe mir die Ordner${a.under ? ` unter ${a.under}` : ''} an`,
       run: async (a) => {
-        const prefix = a.under ? normFolder(a.under).toLowerCase() : null;
+        const prefix = a.under ? normalizeFolder(a.under).toLowerCase() : null;
         const groups = groupByFolder(allDocs(deps).filter((d) => d.status === 'archived' && d.archiveRelPath)).filter(
           (g) => !prefix || g.folder.toLowerCase() === prefix || g.folder.toLowerCase().startsWith(`${prefix}/`),
         );
@@ -427,7 +427,7 @@ function describeEntity(deps: ToolDeps, ctx: ToolContext, id: string, type: Enti
   if (type === 'document') {
     const d = deps.docs.findRow(id);
     if (!d) return `${ctx.refs.doc(id)} Dokument`;
-    return docLine(deps.docs.get(id), ctx, deps.privacy);
+    return docLine({ deps, ctx }, deps.docs.get(id));
   }
   return `${ctx.refs.entry(id)} ${TYPE_LABEL[type] ?? type}: ${truncate(name, 90)}`;
 }

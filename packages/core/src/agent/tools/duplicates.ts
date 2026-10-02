@@ -3,7 +3,7 @@ import type { DocumentRecord, EntityType } from '@archivist/shared';
 import { nameSimilarity, normalizeName, truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
 import { defineTool, list, type AgentTool, type ToolContext } from '../registry';
-import { ARCHIVED, allDocs, docDay, docLine, normExt, resolveDocs, unknownNote, type ToolDeps } from './common';
+import { ARCHIVED, allDocs, docDay, docLine, normalizeExtension, resolveDocs, unknownNote, type ToolDeps } from './common';
 
 /**
  * Duplicates and versions (#308, #230): find exact duplicates, near duplicates and older versions of documents, mark
@@ -79,7 +79,7 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
     const set = ctx.refs.set(g.map((d) => d.id));
     return [
       `${kind === 'exact' ? 'Exaktes Duplikat' : kind === 'near' ? 'Fast gleich' : 'Versionen'} (${g.length} Dokumente, ${set}) – ${reason}. Neueste: ${ctx.refs.doc(newest.id)}`,
-      ...g.map((d) => `  - ${docLine(d, ctx, privacy)}`),
+      ...g.map((d) => `  - ${docLine({ deps, ctx }, d)}`),
     ].join('\n');
   };
 
@@ -98,7 +98,7 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
       label: () => 'Suche Duplikate und Versionen',
       run: async (a, ctx) => {
         const { docs: found, unknown } = a.documents?.length
-          ? resolveDocs(deps, ctx, a.documents)
+          ? resolveDocs({ deps, ctx }, a.documents)
           : { docs: allDocs(deps).filter((d) => ARCHIVED.includes(d.status)), unknown: [] as string[] };
         const kinds = new Set<DuplicateKind>(a.kinds?.length ? a.kinds : ['exact', 'near', 'versions']);
         const grouped = new Set<string>();
@@ -154,7 +154,7 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
             'versions',
             bucketBy((d) => {
               const k = versionKey(d.originalName).key;
-              return k ? `${normExt(d.ext)}|${k}` : null;
+              return k ? `${normalizeExtension(d.ext)}|${k}` : null;
             }).flatMap((b) => cluster(b, (x, y) => looksLikeVersions({ name: x.originalName, title: x.title }, { name: y.originalName, title: y.title }))),
             (g) => {
               const marked = g.filter((d) => versionKey(d.originalName).marker).map((d) => ctx.refs.doc(d.id));
@@ -207,7 +207,7 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
         const keepId = resolveOne(ctx, a.keep);
         const keep = keepId ? docs.findRow(keepId) : undefined;
         if (!keepId || !keep) return { content: `Unbekannte Dokument-ID „${a.keep}“ für keep.`, isError: true };
-        const { docs: dups, unknown } = resolveDocs(deps, ctx, a.duplicates);
+        const { docs: dups, unknown } = resolveDocs({ deps, ctx }, a.duplicates);
         const targets = dups.filter((d) => d.id !== keepId);
         if (!targets.length) return { content: `Keine Duplikate angegeben (keep wird nie verändert).${unknownNote(unknown)}`, isError: true };
         const keepRef = ctx.refs.doc(keepId);

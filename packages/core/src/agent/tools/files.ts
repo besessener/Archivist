@@ -8,7 +8,7 @@ import { folderOf } from '../../services/archive-structure';
 import { fillPattern } from '../../services/rename-pattern';
 import type { ArchiveConsent, FileOp, FileOpResult } from '../file-jobs';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
-import { docLine, normFolder, resolveDocs, unknownNote, type ToolDeps } from './common';
+import { docLine, normalizeFolder, resolveDocs, unknownNote, type ToolDeps } from './common';
 
 /** Moves and renames go through the file jobs: larger amounts as a job of their own, in chunks either way (#304). */
 function bulk(deps: ToolDeps, ctx: ToolContext, op: FileOp, items: Parameters<ToolDeps['fileJobs']['run']>[1], label: string, consent?: ArchiveConsent) {
@@ -56,14 +56,14 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       count: (a, ctx) => count(a.documents, ctx),
       label: (a) => `Verschiebe ${a.documents.length === 1 && !a.documents[0]!.toUpperCase().startsWith('S') ? 'ein Dokument' : 'Dokumente'} nach ${a.folder}`,
       run: async (a, ctx) => {
-        const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
+        const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
         if (!docs.length) return { content: `Keine Dokumente angegeben.${unknownNote(unknown)}`, isError: true };
         const target = canonical(a.folder);
         const main = categories.needsApproval(target);
         // only reached after the user confirmed (critical) – then the new main category is created with that confirmation
         if (main) categories.create(main, true);
         const inbox = docs.filter((d) => d.status !== 'archived');
-        const movable = docs.filter((d) => d.status === 'archived' && d.archiveRelPath && normFolder(folderOf(d)).toLowerCase() !== target.toLowerCase());
+        const movable = docs.filter((d) => d.status === 'archived' && d.archiveRelPath && normalizeFolder(folderOf(d)).toLowerCase() !== target.toLowerCase());
         const already = docs.length - inbox.length - movable.length;
         if (!movable.length)
           return {
@@ -112,7 +112,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
           }
           const main = categories.needsApproval(target);
           if (main) categories.create(main, true);
-          const { docs, unknown } = resolveDocs(deps, ctx, g.documents);
+          const { docs, unknown } = resolveDocs({ deps, ctx }, g.documents);
           unknownAll.push(...unknown);
           for (const d of docs)
             if (d.status === 'archived' && d.archiveRelPath && folderOf(d).toLowerCase() !== target.toLowerCase())
@@ -138,7 +138,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       count: (a, ctx) => count(a.documents, ctx),
       label: (a) => (a.preview ? 'Plane neue Dateinamen' : 'Benenne Dateien um'),
       run: async (a, ctx) => {
-        const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
+        const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
         if (!docs.length) return { content: `Keine Dokumente angegeben.${unknownNote(unknown)}`, isError: true };
         if (!a.pattern && !a.name) return { content: 'Gib name (einzeln) oder pattern (Schema) an.', isError: true };
         if (a.name && docs.length > 1) return { content: 'Ein fester Name passt nur für ein Dokument – für mehrere ein pattern verwenden.', isError: true };
@@ -203,7 +203,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       schema: z.object({ from: z.string().min(1), to: z.string().min(1) }),
       risk: (a) => (newMain(a.to) ? 'critical' : 'write'),
       count: (a) => {
-        const from = normFolder(a.from).toLowerCase();
+        const from = normalizeFolder(a.from).toLowerCase();
         return deps.docs.list({ status: 'archived', limit: 50_000 }).filter((d) => {
           const f = folderOf(d).toLowerCase();
           return f === from || f.startsWith(`${from}/`);
@@ -211,7 +211,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       },
       label: (a) => `Lege den Ordner ${a.from} nach ${a.to} um`,
       run: async (a, ctx) => {
-        const from = normFolder(a.from);
+        const from = normalizeFolder(a.from);
         let to: string;
         try {
           to = canonical(sanitizeCategoryPath(a.to));
@@ -266,7 +266,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       count: (a, ctx) => count(a.documents, ctx),
       label: (a) => `Archiviere ${a.documents.length === 1 ? 'ein Dokument' : 'Dokumente'} aus dem Eingang${a.folder ? ` nach ${a.folder}` : ''}`,
       run: async (a, ctx) => {
-        const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
+        const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
         const open = docs.filter((d) => ['staged', 'proposed', 'failed'].includes(d.status));
         if (!open.length) return { content: `Keine Dokumente im Eingang darunter.${unknownNote(unknown)}`, isError: true };
         const folder = a.folder ? canonical(a.folder) : undefined;
@@ -353,7 +353,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       count: (a, ctx) => count(a.documents, ctx),
       label: () => 'Analysiere Dokumente erneut',
       run: async (a, ctx) => {
-        const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
+        const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
         if (!docs.length) return { content: `Keine Dokumente angegeben.${unknownNote(unknown)}`, isError: true };
         const archived = docs.filter((d) => d.status === 'archived' || d.status === 'indexed_only');
         const skipped = docs.filter((d) => d.status === 'quarantined');
@@ -365,7 +365,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
           inbox.length ? `${inbox.length} Dokument(e) im Eingang werden neu analysiert.` : null,
           rereadJob ? `${archived.length} archivierte(s) Dokument(e) werden neu gelesen (Auftrag ${rereadJob}); Zuordnungen bleiben.` : null,
           skipped.length ? `Nicht analysiert (in Quarantäne): ${skipped.map((d) => ctx.refs.doc(d.id)).join(', ')}` : null,
-          ...docs.slice(0, 30).map((d) => `- ${docLine(d, ctx, deps.privacy)}`),
+          ...docs.slice(0, 30).map((d) => `- ${docLine({ deps, ctx }, d)}`),
         ];
         return {
           content: `${lines.filter(Boolean).join('\n')}${unknownNote(unknown)}`,
