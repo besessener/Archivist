@@ -198,6 +198,12 @@ function buildServices(opts: CreateServicesOptions) {
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
   const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+  // entries without any link (#290): targets as proposals, one bundled hint per archive check
+  consistency.addCheck(async (count) => {
+    const r = await links.checkOrphans({ propose: settings.get().links.autoPropose });
+    if (r.pending) count('orphan_entries');
+    notifyLinkProposals(r.proposed);
+  });
   links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
   /**
    * ONE notification for open link proposals, only when new ones came up (#280): while the current one is unread it is

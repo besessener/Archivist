@@ -55,7 +55,7 @@ export function LinkProposals() {
   const groupOf = new Map(data.groups.map((g) => [g.key, g]));
 
   return (
-    <section aria-labelledby="link-proposals-title" className="mb-8" data-testid="link-proposals">
+    <section id="link-proposals" aria-labelledby="link-proposals-title" className="mb-8 scroll-mt-4" data-testid="link-proposals">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 id="link-proposals-title" className="flex items-center gap-2 text-sm font-semibold">
           <Link2 className="size-4" aria-hidden /> Verknüpfungsvorschläge{' '}

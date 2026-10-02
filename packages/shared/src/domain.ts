@@ -445,6 +445,8 @@ export const InsightKind = z.enum([
   'learned_rule',
   /** Similar entries without a topic: „Neues Thema ‚…‘ anlegen?“ (#281) */
   'topic_cluster',
+  /** Entries without any link, with proposed targets (#290) */
+  'orphan_entries',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
 /**

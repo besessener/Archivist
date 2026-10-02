@@ -101,6 +101,10 @@ export interface BackfillResult {
 }
 
 const BACKFILL_CURSOR = 'links.backfill.cursor';
+/** Where the orphan check of the archive check continues (#290). */
+const ORPHAN_CURSOR = 'links.orphans.cursor';
+/** The one bundled hint about entries without a link (#290). */
+export const ORPHAN_INSIGHT = 'orphan-entries';
 /** Entries indexed since the last similarity pass (#271); kept across restarts. */
 const SIMILAR_PENDING = 'links.similar.pending';
 /** Up to this many entries created together are linked pairwise; more are linked in a chain (#272). */
@@ -337,19 +341,109 @@ export class LinkMethodsService {
     return { total: all.length, items: all.slice(offset, offset + (opts.limit ?? 10)) };
   }
 
+  /** Entries without any confirmed or proposed relation (#290); a folder (category) alone does not count. */
+  private orphanWhere(): string {
+    return `${ENTRY_SQL('e', LINK_ENTRY_TYPES)} AND NOT EXISTS (
+      SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = e.id THEN r.target_entity_id ELSE r.source_entity_id END
+      WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND o.type <> 'category')`;
+  }
+
   /**
    * Entries without any confirmed or proposed relation (#290); a folder (category) alone does not count. Plain SQL, no
    * texts are loaded (#213); paged, with the total.
    */
   orphans(opts: { limit?: number; offset?: number } = {}): OrphanPage {
-    const where = `${ENTRY_SQL('e', LINK_ENTRY_TYPES)} AND NOT EXISTS (
-      SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = e.id THEN r.target_entity_id ELSE r.source_entity_id END
-      WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND o.type <> 'category')`;
+    const where = this.orphanWhere();
     const total = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${where}`).get() as { c: number }).c;
     const items = this.sqlite
       .prepare(`SELECT e.id, e.type, e.name, e.created_at AS createdAt FROM entities e WHERE ${where} ORDER BY e.created_at, e.id LIMIT ? OFFSET ?`)
       .all(opts.limit ?? 50, opts.offset ?? 0) as OrphanPage['items'];
     return { total, items };
+  }
+
+  /** Whether the entry has a confirmed relation to anything but a folder. */
+  private hasConfirmedLink(id: string): boolean {
+    return Boolean(
+      this.sqlite
+        .prepare(
+          `SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
+           WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status = 'confirmed' AND o.type <> 'category' LIMIT 1`,
+        )
+        .get(id, id, id),
+    );
+  }
+
+  /** Whether the entry has an open proposal to anything but a folder. */
+  private hasOpenProposal(id: string): boolean {
+    return Boolean(
+      this.sqlite
+        .prepare(
+          `SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
+           WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status = 'proposed' AND o.type <> 'category' LIMIT 1`,
+        )
+        .get(id, id, id),
+    );
+  }
+
+  /**
+   * Archive check step for entries without any link (#290): proposes up to two targets for each orphan (similar entries,
+   * mentioned topics and projects), at most `maxEntries` per run – in a stable order that continues where the last run
+   * stopped, so entries without a target do not block the others. ONE bundled hint per run lists the entries that are
+   * still without a confirmed link and leads to the list of link proposals (#280); it closes once none is left.
+   * Plain SQL and the search index, no full texts in the main process (#213).
+   */
+  async checkOrphans(opts: { propose?: boolean; maxEntries?: number; signal?: AbortSignal } = {}): Promise<{ pending: number; proposed: number }> {
+    const where = this.orphanWhere();
+    const orphanIds = (this.sqlite.prepare(`SELECT e.id FROM entities e WHERE ${where} ORDER BY e.id`).all() as Array<{ id: string }>).map((r) => r.id);
+    let proposed = 0;
+    if (opts.propose !== false && orphanIds.length) {
+      const cursor = this.appState.get(ORPHAN_CURSOR) ?? '';
+      const max = opts.maxEntries ?? 50;
+      const batch = [...orphanIds.filter((id) => id > cursor), ...orphanIds.filter((id) => id <= cursor)].slice(0, max);
+      for (const id of batch) {
+        if (opts.signal?.aborted) break;
+        try {
+          for (const c of await this.candidates(id, { limit: 2 })) {
+            const type = c.method === 'similarity' ? 'related_to' : c.type === 'project' ? 'belongs_to' : 'relates_to';
+            const r = this.graph.link(id, c.id, type, { status: 'proposed', confidence: c.score, method: c.method, evidence: c.reason });
+            if (r?.created) proposed += 1;
+          }
+        } catch (err) {
+          this.ctx.logger.warn('links', 'Targets for an entry without links skipped', { error: err, id });
+        }
+        this.appState.set(ORPHAN_CURSOR, id);
+      }
+    }
+    const previous = this.insights.byDedupeKey(ORPHAN_INSIGHT)?.sourceIds ?? [];
+    const pending = [...new Set([...orphanIds, ...previous])].filter((id) => this.isEntry(id) && !this.hasConfirmedLink(id));
+    if (!pending.length) {
+      this.insights.reconcile(ORPHAN_INSIGHT, new Set());
+      return { pending: 0, proposed };
+    }
+    const withTargets = pending.filter((id) => this.hasOpenProposal(id)).length;
+    const rest = pending.length - withTargets;
+    const shown = pending.slice(0, 15).flatMap((id) => {
+      const e = this.graph.getEntity(id);
+      return e ? [{ type: e.type, id: e.id, label: e.name }] : [];
+    });
+    this.insights.upsert({
+      kind: 'orphan_entries',
+      title: `${pending.length} ${pending.length === 1 ? 'Eintrag' : 'Einträge'} ohne Verknüpfung`,
+      explanation: [
+        withTargets
+          ? `Für ${withTargets === 1 ? 'einen davon' : `${withTargets} davon`} gibt es passende Ziele – du findest sie oben unter „Verknüpfungsvorschläge“.`
+          : null,
+        rest ? `${rest === 1 ? 'Einer hat' : `${rest} haben`} noch kein passendes Ziel; verknüpfe ${rest === 1 ? 'ihn' : 'sie'} in der Detailansicht unter „Verwandte Einträge“.` : null,
+        'Der Hinweis schließt sich, sobald jeder dieser Einträge eine bestätigte Verknüpfung hat.',
+      ]
+        .filter(Boolean)
+        .join(' '),
+      confidence: 0.7,
+      affected: shown,
+      sourceIds: pending,
+      dedupeKey: ORPHAN_INSIGHT,
+    });
+    return { pending: pending.length, proposed };
   }
 
   /** Entries without a topic and without a project (candidates for a new topic, #281), newest first. */

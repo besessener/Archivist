@@ -170,7 +170,8 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - **mögliche Dubletten bei Themen, Projekten und Tags** (Schreibvarianten, Singular/Plural, Tippfehler; „Urlaub“ ↔ „Urlaub 2026“ nur als Frage),
 - **gleicher Name als Thema und als Projekt** (Rückfrage „Projekt“ / „Thema“ / „Beides ist richtig“),
 - Ablageort vs. Klassifikation, Datenbank vs. Dateisystem,
-- [Personen-Dubletten](#personen-und-eigene-identität).
+- [Personen-Dubletten](#personen-und-eigene-identität),
+- **Einträge ohne Verknüpfung** (Dokumente, Notizen, Entscheidungen, offene Punkte, Ereignisse ohne bestätigte oder vorgeschlagene Beziehung; ein Ordner allein zählt nicht): Je Lauf schlägt die Prüfung für bis zu 50 davon je zwei Ziele vor (ähnliche Einträge, genannte Themen und Projekte) – beim nächsten Lauf geht es mit den nächsten weiter. Ein gebündelter Hinweis führt in die Verknüpfungsvorschläge und schließt sich, sobald jeder dieser Einträge eine bestätigte Verknüpfung hat. Mit ausgeschalteten automatischen Vorschlägen meldet sie nur.
 
 **Doppelte offene Punkte, Notizen und Ereignisse** folgen demselben Muster: Ein Eintrag wird behalten, fehlende Angaben, Quellen, Erinnerungen und Verknüpfungen werden übernommen, der andere wird als „verworfen (Duplikat)“ markiert. Nichts wird gelöscht, alles ist rückgängig machbar, „Verschieden“ wird gemerkt. Auch der Chat fragt vor dem Anlegen eines offenen Punkts nach, wenn es schon einen ähnlichen gibt.
 

@@ -33,6 +33,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   unclear_person: 'Unklare Personen',
   learned_rule: 'Gelernte Regel',
   topic_cluster: 'Vorschläge für neue Themen',
+  orphan_entries: 'Einträge ohne Verknüpfung',
 };
 
 export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {

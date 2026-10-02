@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { BellPlus, Check, Lightbulb, Play, ShieldAlert, X } from 'lucide-react';
+import { BellPlus, Check, Lightbulb, Link2, Play, ShieldAlert, X } from 'lucide-react';
 import type { InsightChoice, InsightKind } from '@archivist/shared';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
@@ -156,6 +156,16 @@ export default function InsightsPage() {
                           {c.label}
                         </Button>
                       ))}
+                      {i.kind === 'orphan_entries' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid="insight-show-link-proposals"
+                          onClick={() => document.getElementById('link-proposals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                        >
+                          <Link2 aria-hidden /> Vorschläge prüfen
+                        </Button>
+                      )}
                       {i.choices.length === 0 && (
                         <Button size="sm" onClick={() => setAccepting(i)} data-testid="insight-accept">
                           <Check aria-hidden /> {acceptLabel(i.kind)}
