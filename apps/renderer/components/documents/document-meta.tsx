@@ -6,6 +6,7 @@ import { Field } from '@/components/common/states';
 import { Input } from '@/components/ui/input';
 import { formatDate, formatDateTime } from '@/lib/format';
 import type { DocRecord } from '@/lib/types';
+import { PathText } from '@/components/common/path-text';
 
 type ExtraSubjects = ReturnType<typeof useExtraSubjects>;
 
@@ -35,7 +36,9 @@ export function DocumentMeta({ doc, extra }: { doc: DocRecord; extra: ExtraSubje
       <dt className="text-muted-foreground">Archiviert am</dt>
       <dd>{formatDateTime(doc.archivedAt)}</dd>
       <dt className="text-muted-foreground">Pfad</dt>
-      <dd className="break-all text-xs">{doc.archivePath ?? '–'}</dd>
+      <dd className="text-xs">
+        <PathText path={doc.archivePath ?? '–'} />
+      </dd>
       <dt className="text-muted-foreground">Prüfsumme</dt>
       <dd className="break-all font-mono text-xs">{doc.sha256}</dd>
     </dl>

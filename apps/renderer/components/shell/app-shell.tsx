@@ -85,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             id="main"
             data-testid="dropzone"
             // the chat scrolls its message list itself: a second scroll bar on the main area would only move it by a few pixels
-            className={cn('relative min-w-0 flex-1', isChat ? 'overflow-hidden' : 'overflow-y-auto')}
+            className={cn('relative min-w-0 flex-1', isChat ? 'overflow-hidden' : 'overflow-y-auto [scrollbar-gutter:stable]')}
             onDragEnter={(e) => {
               if (!hasFiles(e)) return;
               depth.current += 1;

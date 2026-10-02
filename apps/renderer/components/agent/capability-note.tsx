@@ -36,8 +36,10 @@ export function AgentCapabilityNote({
     <div className="mt-2 flex flex-col gap-1 text-xs" data-testid={testId}>
       <p className="flex flex-wrap items-center gap-x-2">
         <span>Agentenmodus: {adapterLabel(capability.adapter)} –</span>
-        <YesNo ok={capability.toolCalling} label="Werkzeuge" />
-        <span aria-hidden>,</span>
+        <span className="inline-flex items-center">
+          <YesNo ok={capability.toolCalling} label="Werkzeuge" />
+          <span aria-hidden>,</span>
+        </span>
         <YesNo ok={capability.streaming} label="Streaming" />
       </p>
       {capability.message && <p>{capability.message}</p>}

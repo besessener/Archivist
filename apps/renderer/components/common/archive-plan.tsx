@@ -8,6 +8,7 @@ import type { ArchivePlanRecord } from '@/lib/types';
 import { ConfidenceBadge } from './confidence';
 import { EntityChip } from './entity-chip';
 import { Notice } from './states';
+import { PathText } from '@/components/common/path-text';
 
 type PlanItem = ArchivePlanRecord['items'][number];
 
@@ -28,12 +29,18 @@ export function ArchivePlanItem({ item, included, onIncludedChange }: { item: Pl
       </div>
       {(item.sourcePath || item.targetPath) && (
         <div className="mt-2 grid items-center gap-1 text-xs sm:grid-cols-[1fr_auto_1fr]">
-          <code className="break-all rounded bg-muted px-1.5 py-1" data-testid="archive-plan-source" title="Quelle">
-            {item.sourcePath ?? '–'}
+          <code className="rounded bg-muted px-1.5 py-1" data-testid="archive-plan-source" title="Quelle">
+            <PathText path={item.sourcePath ?? '–'} />
           </code>
           <ArrowRight className="mx-auto size-4 rotate-90 text-muted-foreground sm:rotate-0" aria-hidden />
-          <code className="break-all rounded bg-muted px-1.5 py-1" data-testid="archive-plan-target" title="Ziel">
-            {item.targetPath ?? (item.action === 'index_only' ? 'Wird nur durchsuchbar gemacht (keine Datei wird kopiert)' : '–')}
+          <code className="rounded bg-muted px-1.5 py-1" data-testid="archive-plan-target" title="Ziel">
+            {item.targetPath ? (
+              <PathText path={item.targetPath} />
+            ) : item.action === 'index_only' ? (
+              'Wird nur durchsuchbar gemacht (keine Datei wird kopiert)'
+            ) : (
+              '–'
+            )}
           </code>
         </div>
       )}

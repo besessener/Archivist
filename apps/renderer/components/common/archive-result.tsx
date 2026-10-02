@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
 import { call, errorMessage } from '@/lib/ipc';
 import type { ArchiveResultRecord } from '@/lib/types';
+import { PathText } from '@/components/common/path-text';
 
 type ResultItem = ArchiveResultRecord['items'][number];
 
@@ -77,7 +78,11 @@ function ResultRow({ item, title, undo, onUndo }: { item: ResultItem; title: str
         <span className="font-medium">{title}</span>
         <Badge variant={outcomeVariant(item.outcome)}>{OUTCOME_LABELS[item.outcome]}</Badge>
       </div>
-      {item.targetPath && <code className="mt-1 block break-all rounded bg-muted px-1.5 py-1 text-xs">{item.targetPath}</code>}
+      {item.targetPath && (
+        <code className="mt-1 block rounded bg-muted px-1.5 py-1 text-xs">
+          <PathText path={item.targetPath} />
+        </code>
+      )}
       {item.message && <p className="mt-1 text-xs text-muted-foreground">{item.message}</p>}
       {item.auditId && item.outcome === 'success' && !undo?.undone && (
         <Button size="sm" variant="outline" className="mt-2" disabled={undo?.busy} data-testid="archive-undo" onClick={onUndo}>

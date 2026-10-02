@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { formatDate } from '@/lib/format';
 import { withMembership } from '@/lib/utils';
+import { PathText } from '@/components/common/path-text';
 type ListedDocument = IpcOutput<'documents:list'>[number];
 
 export interface DocumentsTableProps {
@@ -40,7 +41,7 @@ export function DocumentsTable({ documents, subjects, selected, setSelected, onO
             <TH>Thema</TH>
             <TH>Projekt</TH>
             <TH>Datum</TH>
-            <TH>Pfad</TH>
+            <TH className="hidden xl:table-cell">Pfad</TH>
           </tr>
         </THead>
         <TBody>
@@ -78,7 +79,9 @@ export function DocumentsTable({ documents, subjects, selected, setSelected, onO
                   </span>
                 )}
               </TD>
-              <TD className="max-w-xs break-all text-xs text-muted-foreground">{doc.archivePath ?? doc.archiveRelPath ?? '–'}</TD>
+              <TD className="hidden min-w-48 max-w-xs text-xs text-muted-foreground xl:table-cell">
+                <PathText path={doc.archivePath ?? doc.archiveRelPath ?? '–'} />
+              </TD>
             </TR>
           ))}
         </TBody>

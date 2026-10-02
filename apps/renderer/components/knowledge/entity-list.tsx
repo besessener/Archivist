@@ -62,7 +62,7 @@ type ListedEntity = EntityListState['items'][number]['entity'];
 export function EntityListPanel({ state, selectedId }: { state: EntityListState; selectedId: string | null }) {
   const { type, setType, search, setSearch, list, selection, items } = state;
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3 lg:min-h-0">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input
@@ -93,7 +93,7 @@ export function EntityListPanel({ state, selectedId }: { state: EntityListState;
         <EmptyState title="Nichts gefunden" description="Lege ein Thema, Projekt oder eine Person an oder ändere den Filter." />
       )}
       <BulkAssignBar ids={selection.ids} noun={['Eintrag', 'Einträge']} onClear={selection.clear} onDone={() => void list.refetch()} />
-      <ul className="flex max-h-[65vh] flex-col gap-1 overflow-y-auto" data-testid="knowledge-list">
+      <ul className="flex flex-col gap-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto" data-testid="knowledge-list">
         {items.map(({ entity, depth }) => (
           <EntityListItem key={entity.id} entity={entity} depth={depth} selection={selection} current={entity.id === selectedId} />
         ))}

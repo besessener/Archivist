@@ -98,11 +98,11 @@ export default function InsightsPage() {
 
       {insights.error && !insights.data && <ErrorNote error={insights.error} onRetry={() => void insights.refetch()} />}
       {!insights.data && insights.loading && <Loading />}
-      {insights.data && grouped.length === 0 && (
-        <EmptyState icon={<Lightbulb />} title="Keine Hinweise" description="Im Moment gibt es nichts, was deine Aufmerksamkeit braucht." />
-      )}
 
       <div className="flex flex-col gap-8">
+        {insights.data && grouped.length === 0 && (
+          <EmptyState icon={<Lightbulb />} title="Keine Hinweise" description="Im Moment gibt es nichts, was deine Aufmerksamkeit braucht." />
+        )}
         {grouped.map(([kind, list]) => (
           <section key={kind} aria-labelledby={`k-${kind}`}>
             <h2 id={`k-${kind}`} className="mb-2 flex items-center gap-2 text-sm font-semibold">

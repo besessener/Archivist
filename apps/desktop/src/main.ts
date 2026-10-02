@@ -11,6 +11,8 @@ import { APP_ORIGIN, serveRenderer } from './renderer-server';
 const isDev = Boolean(process.env.ARCHIVIST_DEV_URL);
 const testMode = process.env.ARCHIVIST_TEST_MODE === '1';
 
+// the interface is German only: date and time fields follow Chromium's language, not the operating system's
+app.commandLine.appendSwitch('lang', 'de-DE');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 if (process.env.ARCHIVIST_DATA_DIR) app.setPath('userData', path.join(process.env.ARCHIVIST_DATA_DIR, '.electron'));

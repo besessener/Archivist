@@ -37,7 +37,7 @@ function KnowledgeInner() {
   };
 
   return (
-    <Page wide>
+    <Page wide className="lg:flex lg:h-full lg:flex-col">
       <PageHeader
         title="Wissen"
         description="Alles, was Archivist über deine Themen, Projekte und Personen weiß – und wie es zusammenhängt."
@@ -53,9 +53,9 @@ function KnowledgeInner() {
           </Button>
         }
       />
-      <div className="grid gap-4 lg:grid-cols-[20rem_1fr]">
+      <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[20rem_1fr] lg:grid-rows-[minmax(0,1fr)]">
         <EntityListPanel state={entityList} selectedId={id} />
-        <div className="min-w-0">
+        <div className="min-w-0 lg:overflow-y-auto">
           {id ? (
             <EntityView key={id} id={id} />
           ) : (

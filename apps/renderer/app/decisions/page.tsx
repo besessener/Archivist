@@ -41,7 +41,7 @@ function DecisionsInner() {
   const selection = useSelection();
 
   return (
-    <Page wide>
+    <Page wide className="lg:flex lg:h-full lg:flex-col">
       <PageHeader
         title="Entscheidungen"
         description="Was wurde wann, von wem und warum entschieden? Unvollständige Entwürfe sind hervorgehoben."
@@ -57,8 +57,8 @@ function DecisionsInner() {
           </Button>
         }
       />
-      <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-        <div className="flex min-w-0 flex-col gap-3">
+      <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[22rem_1fr] lg:grid-rows-[minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-3 lg:min-h-0">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
@@ -92,7 +92,7 @@ function DecisionsInner() {
             />
           )}
           <BulkAssignBar ids={selection.ids} noun={['Entscheidung', 'Entscheidungen']} onClear={selection.clear} onDone={() => void active.refetch()} />
-          <ul className="flex max-h-[68vh] flex-col gap-2 overflow-y-auto" data-testid="decision-list">
+          <ul className="flex flex-col gap-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto" data-testid="decision-list">
             {sorted.map((decision) => (
               <DecisionListItem
                 key={decision.id}
@@ -105,7 +105,7 @@ function DecisionsInner() {
             ))}
           </ul>
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 lg:overflow-y-auto">
           {id ? (
             <DecisionDetail
               key={id}
