@@ -343,6 +343,8 @@ export const EventRecord = z.object({
   topicName: z.string().nullable(),
   projectId: z.string().nullable(),
   projectName: z.string().nullable(),
+  /** Names of the persons involved (canonical names, like decision participants). */
+  participants: z.array(z.string()),
   sourceIds: z.array(z.string()),
   createdAt: IsoDate,
   updatedAt: IsoDate,
@@ -356,6 +358,8 @@ export const EventInput = z.object({
   occurredAt: IsoDate,
   topic: z.string().nullish(),
   project: z.string().nullish(),
+  /** Persons involved; left out = unchanged on update. */
+  participants: z.array(z.string()).optional(),
   sourceIds: z.array(z.string()).default([]),
 });
 export type EventInput = z.infer<typeof EventInput>;

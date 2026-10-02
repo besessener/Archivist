@@ -30,6 +30,7 @@ export const RelationType = z.enum([
   'supports',
   'contradicts',
   'participated_in',
+  'responsible_for',
   'concerns',
   'affects',
   'supersedes',

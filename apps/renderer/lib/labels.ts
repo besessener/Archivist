@@ -103,6 +103,7 @@ export const RELATION_TYPE_LABELS: Record<RelationType, string> = {
   supports: 'unterstützt',
   contradicts: 'widerspricht',
   participated_in: 'beteiligt an',
+  responsible_for: 'verantwortlich für',
   concerns: 'betrifft',
   affects: 'wirkt auf',
   supersedes: 'ersetzt',

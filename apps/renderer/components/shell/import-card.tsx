@@ -22,6 +22,9 @@ const STATUS_TEXT: Record<string, string> = {
   ignored: 'Ignoriert',
 };
 
+/** Imported files whose status the card follows (one list request); the rest is only counted (#222). */
+const TRACKED = 1000;
+
 /** Progress and result of the last file import (drag and drop or file picker). */
 export function ImportCard() {
   const { importState, dismissImport, importing } = useApp();
@@ -30,8 +33,12 @@ export function ImportCard() {
   useEffect(() => {
     if (importState && pathname.startsWith('/inbox')) dismissImport();
   }, [importState, pathname, dismissImport]);
-  const importedIds = importState?.result.imported.slice(0, 1000).map((d) => d.id) ?? [];
-  const { data: docs } = useQuery('documents:list', { ids: importedIds, limit: 1000 }, { scopes: ['documents'], jobs: true, enabled: importedIds.length > 0 });
+  const importedIds = importState?.result.imported.slice(0, TRACKED).map((d) => d.id) ?? [];
+  const { data: docs } = useQuery(
+    'documents:list',
+    { ids: importedIds, limit: TRACKED },
+    { scopes: ['documents'], jobs: true, enabled: importedIds.length > 0 },
+  );
   if (!importState && !importing) return null;
   if (!importState) {
     return (
@@ -43,7 +50,8 @@ export function ImportCard() {
   }
   const { imported, duplicates, rejected } = importState.result;
   const byId = new Map((docs ?? []).map((d) => [d.id, d]));
-  const current = imported.map((d) => byId.get(d.id) ?? d);
+  // only the followed files: a status from the import result would stay „Wartet auf Analyse“ forever
+  const current = imported.slice(0, TRACKED).map((d) => byId.get(d.id) ?? d);
   const pending = current.filter((d) => d.status === 'analyzing' || (d.status === 'staged' && d.processingStatus === 'pending')).length;
   const done = current.length - pending;
   const pct = current.length === 0 ? 100 : Math.round((done / current.length) * 100);
@@ -70,8 +78,16 @@ export function ImportCard() {
           <div>
             <Progress value={pct} aria-label="Verarbeitungsfortschritt" />
             <p className="mt-1 text-xs text-muted-foreground">
-              {pending > 0 ? `${done} von ${current.length} verarbeitet …` : 'Alle Dateien sind verarbeitet.'}
+              {pending > 0
+                ? `${done} von ${current.length} verarbeitet …`
+                : `${current.length === imported.length ? 'Alle' : 'Diese'} Dateien sind verarbeitet.`}
             </p>
+            {imported.length > current.length && (
+              <p className="mt-1 text-xs text-muted-foreground" data-testid="import-tracked">
+                Fortschritt der ersten {current.length.toLocaleString('de-DE')} von {imported.length.toLocaleString('de-DE')} Dateien; den Stand der übrigen
+                zeigt die Inbox.
+              </p>
+            )}
             <ul className="mt-2 flex flex-col gap-1">
               {current.map((d) => (
                 <li key={d.id} className="flex items-start gap-2 text-xs">

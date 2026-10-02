@@ -27,11 +27,8 @@ export interface DocumentListRows {
   names: Array<[string, string]>;
 }
 
-/**
- * Newest documents matching the filter, with the topic/project names – a pure read that runs on the main
- * connection or in the read worker (#214, #215). Reads only the beginning of each text.
- */
-export function queryDocumentList(db: Db, opts: DocumentListQuery = {}): DocumentListRows {
+/** The WHERE clause of a document list (everything but the limit). */
+function listFilter(opts: DocumentListQuery) {
   const conds = [];
   if (opts.status) conds.push(eq(documents.status, opts.status));
   if (opts.statuses) conds.push(inArray(documents.status, opts.statuses));
@@ -42,6 +39,14 @@ export function queryDocumentList(db: Db, opts: DocumentListQuery = {}): Documen
     const q = `%${opts.query.trim()}%`;
     conds.push(or(like(documents.title, q), like(documents.originalName, q), like(documents.summary, q)));
   }
+  return conds.length ? and(...conds) : undefined;
+}
+
+/**
+ * Newest documents matching the filter, with the topic/project names – a pure read that runs on the main
+ * connection or in the read worker (#214, #215). Reads only the beginning of each text.
+ */
+export function queryDocumentList(db: Db, opts: DocumentListQuery = {}): DocumentListRows {
   const rows = db
     .select({
       ...LIST_COLUMNS,
@@ -49,7 +54,7 @@ export function queryDocumentList(db: Db, opts: DocumentListQuery = {}): Documen
       textLength: sql<number>`length(${documents.extractedText})`,
     })
     .from(documents)
-    .where(conds.length ? and(...conds) : undefined)
+    .where(listFilter(opts))
     .orderBy(desc(documents.createdAt))
     .limit(opts.limit ?? 300)
     .all();
@@ -69,4 +74,9 @@ export function queryDocumentList(db: Db, opts: DocumentListQuery = {}): Documen
 export function documentCounts(db: Db): Partial<Record<DocumentStatus, number>> {
   const rows = db.select({ status: documents.status, n: count() }).from(documents).groupBy(documents.status).all();
   return Object.fromEntries(rows.map((r) => [r.status, r.n]));
+}
+
+/** Number of documents matching a list filter, regardless of its limit – lists say „N von M“ instead of passing N off as the total (#222). */
+export function countDocumentList(db: Db, opts: Omit<DocumentListQuery, 'limit'> = {}): number {
+  return db.select({ n: count() }).from(documents).where(listFilter(opts)).get()?.n ?? 0;
 }

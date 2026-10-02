@@ -67,6 +67,9 @@ export interface CreateServicesOptions {
 
 export type Services = ReturnType<typeof buildServices>;
 
+/** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
+const AUTO_ANALYZE_BATCH = 500;
+
 /** Composition root: creates and wires all services. */
 export function createServices(opts: CreateServicesOptions) {
   return buildServices(opts);
@@ -118,7 +121,7 @@ function buildServices(opts: CreateServicesOptions) {
   const documentsSvc = new DocumentService(ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
   const decisions = new DecisionService(ctx, graph, persons, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, persons, search, audit, undo);
-  const eventsSvc = new EventService(ctx, graph, search, audit, undo);
+  const eventsSvc = new EventService(ctx, graph, search, audit, persons, undo);
   const notes = new NoteService(ctx, graph, search);
   const memory = new MemoryService(ctx);
   const agentRuns = new AgentRunService(ctx, audit, undo);
@@ -144,12 +147,13 @@ function buildServices(opts: CreateServicesOptions) {
     entityDuplicates,
     appState.lastRunStore('consistency.lastRunAt'),
   );
-  const backup = new BackupService(ctx, settings, audit);
+  const backup = new BackupService(ctx, settings, audit, archive);
   const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
   consistency.addCheck((count) => {
     openItemDuplicates.check(count);
   });
   const personDuplicates = new PersonDuplicateService(ctx, settings, graph, insights, () => self.ownNameKeys());
+  consistency.setIndexRefresher((id, signal) => documentsSvc.refreshIndexedOnly(id, { signal }));
   consistency.addCheck((count) => personDuplicates.check(count));
   const personQuestions = new PersonQuestionService(ctx, graph, insights, llm, privacy);
   consistency.addCheck((count) => personQuestions.check(count));
@@ -179,7 +183,8 @@ function buildServices(opts: CreateServicesOptions) {
     notes,
   );
 
-  const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1 });
+  // a check that is still queued or running covers a new request (startup, interval and manual triggers can meet)
+  const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1, sameAs: () => true });
   const agent = new AgentService(
     ctx,
     {
@@ -274,12 +279,12 @@ function buildServices(opts: CreateServicesOptions) {
     // optional: analyze new files automatically (only if explicitly enabled and the privacy mode allows it)
     const s = settings.get();
     if (s.scan.autoAnalyze && privacy.mode() === 'auto') {
-      const ids = scanner
-        .getResults({ limit: 2000 })
-        .files.filter((f) => f.status === 'new' || f.status === 'changed')
-        .filter((f) => f.llmStatus !== 'excluded')
-        .map((f) => f.id);
-      if (ids.length) jobs.enqueue('scanner.analyze', `Analysiere ${ids.length} neue Dateien`, { fileIds: ids, confirmLlm: false });
+      // every waiting file (oldest first), in batches like a manual analysis
+      const ids = scanner.filesAwaitingAnalysis();
+      for (let i = 0; i < ids.length; i += AUTO_ANALYZE_BATCH) {
+        const batch = ids.slice(i, i + AUTO_ANALYZE_BATCH);
+        jobs.enqueue('scanner.analyze', `Analysiere ${batch.length} neue Dateien`, { fileIds: batch, confirmLlm: false });
+      }
     }
     return summaries;
   });

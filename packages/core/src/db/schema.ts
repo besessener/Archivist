@@ -171,6 +171,8 @@ export const events = sqliteTable(
     occurredAt: text('occurred_at').notNull(),
     topicId: text('topic_id'),
     projectId: text('project_id'),
+    /** Names of the persons involved (#274). */
+    participants: jsonArr('participants'),
     sourceIds: jsonArr('source_ids'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),

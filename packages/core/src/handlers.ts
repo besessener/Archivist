@@ -230,6 +230,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'documents:import': async (i) => s.documents.importPaths(i.paths),
     'documents:list': async (i) => s.documents.recordsFrom(await s.reader.run('documentList', i)),
     'documents:counts': () => s.reader.run('documentCounts', {}),
+    'documents:count': (i) => s.reader.run('documentCount', i),
     'documents:get': (i) => s.documents.get(i.id),
     'documents:classify': (i) => ({ jobId: s.documents.enqueueAnalysis(i.documentId, i.allowLlm) }),
     'documents:previewArchive': (i) => s.archive.preview(i.items),

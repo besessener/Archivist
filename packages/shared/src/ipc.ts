@@ -281,6 +281,17 @@ export const ipcContract = {
   'documents:get': ch(z.object({ id: Id }), DocumentRecord),
   /** Number of documents per status (for badges, without loading the list). */
   'documents:counts': ch(z.object({}), z.record(z.string(), z.number())),
+  /** Number of documents matching a list filter (without limit), so a capped list can say „N von M“. */
+  'documents:count': ch(
+    z.object({
+      status: DocumentStatus.optional(),
+      statuses: z.array(DocumentStatus).min(1).optional(),
+      topicId: z.string().optional(),
+      projectId: z.string().optional(),
+      query: z.string().optional(),
+    }),
+    z.number(),
+  ),
   'documents:classify': ch(z.object({ documentId: Id, allowLlm: z.boolean().default(true) }), z.object({ jobId: Id })),
   'documents:previewArchive': ch(z.object({ items: z.array(ArchiveItemRequest).min(1) }), ArchivePlan),
   'documents:archive': ch(

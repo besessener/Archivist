@@ -145,8 +145,15 @@
     {
       "idx": 20,
       "version": "6",
-      "when": 1790940814761,
-      "tag": "0020_agent_mode",
+      "when": 1790834047730,
+      "tag": "0020_event_participants",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1790941913174,
+      "tag": "0021_agent_mode",
       "breakpoints": true
     }
   ]

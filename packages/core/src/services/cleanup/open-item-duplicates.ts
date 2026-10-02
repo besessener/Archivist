@@ -258,7 +258,13 @@ export class OpenItemDuplicateService {
   }
 
   /** Links `from → to` in the graph and returns the relation id when it did not exist before (undo removes it again). */
-  private linkNew(from: string, to: string, type: 'relates_to' | 'belongs_to' | 'results_from', confidence: number, sourceIds: string[] = []): string | null {
+  private linkNew(
+    from: string,
+    to: string,
+    type: 'relates_to' | 'belongs_to' | 'results_from' | 'responsible_for',
+    confidence: number,
+    sourceIds: string[] = [],
+  ): string | null {
     const exists = this.db
       .select({ id: relations.id })
       .from(relations)
@@ -317,6 +323,8 @@ export class OpenItemDuplicateService {
       const add = (id: string | null) => id && createdRelationIds.push(id);
       if (patch.topicId) add(this.linkNew(keep.id, patch.topicId, 'relates_to', keep.confidence, patch.sourceIds ?? keep.sourceIds));
       if (patch.projectId) add(this.linkNew(keep.id, patch.projectId, 'belongs_to', keep.confidence, patch.sourceIds ?? keep.sourceIds));
+      if (patch.responsiblePersonId)
+        add(this.linkNew(patch.responsiblePersonId, keep.id, 'responsible_for', keep.confidence, patch.sourceIds ?? keep.sourceIds));
       for (const src of (patch.sourceIds ?? []).filter((s) => !keep.sourceIds.includes(s))) {
         const type = this.graph.getEntity(src)?.type;
         if (type === 'decision' || type === 'document') add(this.linkNew(keep.id, src, 'results_from', keep.confidence, [src]));

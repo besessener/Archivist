@@ -79,6 +79,25 @@ async function filesExist(files: string[], signal?: AbortSignal, batch = 64): Pr
   return out;
 }
 
+/** Size of each file, or null if it does not exist (asynchronous, in batches). */
+async function fileSizes(files: string[], signal?: AbortSignal, batch = 64): Promise<(number | null)[]> {
+  const out: (number | null)[] = [];
+  for (let i = 0; i < files.length; i += batch) {
+    signal?.throwIfAborted();
+    out.push(
+      ...(await Promise.all(
+        files.slice(i, i + batch).map((f) =>
+          fs.promises.stat(f).then(
+            (st) => st.size,
+            () => null,
+          ),
+        ),
+      )),
+    );
+  }
+  return out;
+}
+
 /** The document columns the check reads – never extracted_text (#213). */
 const CHECKED_COLUMNS = {
   id: documents.id,
@@ -87,6 +106,8 @@ const CHECKED_COLUMNS = {
   sha256: documents.sha256,
   textHash: documents.textHash,
   archiveRelPath: documents.archiveRelPath,
+  sourcePath: documents.sourcePath,
+  size: documents.size,
   categoryPath: documents.categoryPath,
   topicId: documents.topicId,
   projectId: documents.projectId,
@@ -101,6 +122,7 @@ const RECONCILED_INSIGHTS = [
   'missing-category',
   'dup:',
   'missing-file:',
+  'missing-source:',
   'misplaced:',
   'incomplete-decision:',
   'superseded:',
@@ -115,13 +137,16 @@ const h = (ids: string[]) => sha256Text([...ids].sort().join('|')).slice(0, 12);
 
 /**
  * Active archive maintenance: regularly checks the archive for consistency and only creates hints
- * (insights, notifications, action proposals) – without changing anything itself.
+ * (insights, notifications, action proposals) – without changing anything itself. The one exception is the search
+ * index: an index-only document whose original changed is re-read, so the search never shows outdated content.
  */
 export class ConsistencyService {
   /** Periodic check; every completed run (also manual or on startup) restarts the interval */
   private readonly schedule: IntervalSchedule;
   private enqueueInterval: (() => void) | null = null;
   private readonly extraChecks: ConsistencyCheck[] = [];
+  /** Re-reads an index-only document whose original changed (DocumentService.refreshIndexedOnly). */
+  private refreshIndexedOnly: ((id: string, signal?: AbortSignal) => Promise<boolean>) | null = null;
 
   constructor(
     private readonly ctx: AppContext,
@@ -142,9 +167,48 @@ export class ConsistencyService {
     return this.ctx.database.db;
   }
 
+  setIndexRefresher(fn: (id: string, signal?: AbortSignal) => Promise<boolean>): void {
+    this.refreshIndexedOnly = fn;
+  }
+
   /** Registers an additional check step; it runs after the open-item checks of every archive check. */
   addCheck(check: ConsistencyCheck): void {
     this.extraChecks.push(check);
+  }
+
+  /**
+   * Index-only documents have no archive copy, only their original (#229): a vanished original becomes a hint
+   * (the document would otherwise stay searchable as a ghost); a changed one (other size) is re-read in place.
+   */
+  private async checkIndexedOriginals(archived: CheckedDocument[], current: Set<string>, count: (kind: string) => void, signal?: AbortSignal) {
+    const indexed = archived.filter((d) => d.status === 'indexed_only' && d.sourcePath);
+    const sizes = await fileSizes(
+      indexed.map((d) => d.sourcePath!),
+      signal,
+    );
+    for (const [i, d] of indexed.entries()) {
+      if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
+      const size = sizes[i];
+      if (size === null) {
+        current.add(`missing-source:${d.id}`);
+        this.insights.upsert({
+          kind: 'misplaced_file',
+          title: `Original fehlt: ${d.title}`,
+          explanation: `Das Dokument ist nur indexiert, sein Original wurde aber nicht mehr gefunden: ${d.sourcePath}. Es wurde möglicherweise verschoben oder gelöscht; die Suche zeigt noch den alten Inhalt.`,
+          confidence: 0.95,
+          affected: [{ type: 'document', id: d.id, label: d.title }],
+          dedupeKey: `missing-source:${d.id}`,
+        });
+        count('misplaced_file');
+      } else if (size !== d.size && this.refreshIndexedOnly) {
+        try {
+          if (await this.refreshIndexedOnly(d.id, signal)) count('refreshed_index');
+        } catch (err) {
+          if (signal?.aborted) throw err;
+          this.ctx.logger.warn('consistency', 'Index-only document not refreshed', { documentId: d.id, error: err });
+        }
+      }
+    }
   }
 
   /** Documents of the same topic or project that lie in different archive directories: hint plus relocation proposal. */
@@ -388,6 +452,8 @@ export class ConsistencyService {
         count('misplaced_file');
       }
     }
+
+    await this.checkIndexedOriginals(archived, current, count, signal);
 
     // ---- Scattered filing: documents of the same topic/project lie in different directories ----
     await step(0.4, 'Prüfe Verzeichnisse');

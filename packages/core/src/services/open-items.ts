@@ -280,6 +280,12 @@ export class OpenItemService {
     return matchOpenItems(hint, this.list({ onlyActive: true }));
   }
 
+  /** The responsible person as a `responsible_for` relation; a relation to a former responsible person becomes outdated (#274). */
+  private syncResponsible(id: string, personId: string | null, sourceIds: string[]): void {
+    if (personId) this.graph.link(personId, id, 'responsible_for', { confidence: 0.9, status: 'confirmed', sourceIds });
+    this.graph.unlinkSystemRelations(id, 'responsible_for', personId ? [personId] : [], { direction: 'in', otherType: 'person' });
+  }
+
   create(input: OpenItemInput, ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {}): OpenItem {
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
@@ -312,6 +318,7 @@ export class OpenItemService {
       this.graph.registerNode('task', row.id, row.title, row.description);
       if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
       if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
+      this.syncResponsible(row.id, row.responsiblePersonId, row.sourceIds);
       for (const src of row.sourceIds) this.linkSource(row.id, src, row.confidence);
     });
     this.audit.log({
@@ -372,6 +379,7 @@ export class OpenItemService {
         // the previous topic/project no longer applies
         if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
         if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+        if (set.responsiblePersonId !== undefined) this.syncResponsible(id, set.responsiblePersonId, cur.sourceIds);
       }),
     );
     const before = Object.fromEntries(Object.keys(set).flatMap((k) => (k === 'updatedAt' ? [] : [[k, cur[k as keyof Row]]]))) as Partial<Row>;
@@ -424,6 +432,7 @@ export class OpenItemService {
     this.db.transaction(() => {
       this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
       if (set.description) this.graph.registerNode('task', id, cur.title, set.description);
+      if (set.responsiblePersonId) this.syncResponsible(id, set.responsiblePersonId, set.sourceIds ?? cur.sourceIds);
       this.linkSource(id, sourceId, cur.confidence);
     });
     this.audit.log({
