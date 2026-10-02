@@ -65,6 +65,20 @@ const mapFile = (r: FileRow): ScanFile => ({
  * Controlled directory scan. Only explicitly approved directories are examined;
  * a plain file scan never sends content to the LLM. Originals are never modified.
  */
+/** Progress of a `scanner.analyze` job: the file ids handled so far and the results collected for them. */
+interface AnalyzeCheckpoint {
+  done: string[];
+  analyzed: string[];
+  skipped: string[];
+}
+
+const stringList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+
+function analyzeCheckpoint(raw: unknown): AnalyzeCheckpoint {
+  const c = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return { done: stringList(c.done), analyzed: stringList(c.analyzed), skipped: stringList(c.skipped) };
+}
+
 export class ScannerService {
   /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
   private readonly schedule: IntervalSchedule;
@@ -255,11 +269,13 @@ export class ScannerService {
       throw permissionError('Die lokale Dokumentensuche ist deaktiviert. Bitte zuerst in den Scan-Einstellungen aktivieren.');
     const roots = this.listDirectories().filter((r) => r.enabled && (!rootId || r.id === rootId));
     if (roots.length === 0) throw validationError('Es ist kein freigegebenes Scan-Verzeichnis vorhanden.');
-    return this.jobs.enqueue(
+    // a scan of the same folder (or of all folders) that is still queued or running covers this request:
+    // two concurrent scans of one folder would collide on its scan_files rows
+    return this.jobs.enqueue<{ rootId: string | null; trigger: string }>(
       'scanner.scan',
       rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
       { rootId: rootId ?? null, trigger },
-      { maxAttempts: 1 },
+      { maxAttempts: 1, sameAs: (active) => active.rootId === null || active.rootId === (rootId ?? null) },
     );
   }
 
@@ -529,101 +545,119 @@ export class ScannerService {
   // ---------- Content analysis ----------
   /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
   async analyzeFiles(fileIds: string[], confirmLlm: boolean, job?: JobContext): Promise<{ analyzed: string[]; skipped: string[] }> {
-    const analyzed: string[] = [];
-    const skipped: string[] = [];
+    // A re-run after a crash or a quit continues after the files already handled instead of analysing
+    // (and paying the LLM for) them again.
+    const resumed = analyzeCheckpoint(job?.checkpoint);
+    const analyzed: string[] = [...resumed.analyzed];
+    const skipped: string[] = [...resumed.skipped];
+    const done = new Set(resumed.done);
     const mode = this.privacy.mode();
     let i = 0;
     for (const id of fileIds) {
       job?.throwIfCancelled();
       i += 1;
-      const f = this.db.select().from(scanFiles).where(eq(scanFiles.id, id)).get();
-      if (!f || f.status === 'excluded') {
-        skipped.push(id);
-        continue;
-      }
-      job?.report((i - 1) / fileIds.length, `Analysiere ${f.name}`);
-      try {
-        const root = this.db.select().from(scanRoots).where(eq(scanRoots.id, f.rootId)).get();
-        if (!root || !isInside(root.path, f.path)) throw permissionError('Datei liegt nicht in einem freigegebenen Verzeichnis.');
-        const real = await fsp.realpath(f.path);
-        if (!isInside(await fsp.realpath(root.path), real)) throw permissionError('Symbolischer Link führt aus dem freigegebenen Verzeichnis heraus.');
-        const st = await fsp.stat(real);
-        const sha = await this.pool.run('hashFile', { path: real });
-        const dup = this.isDup(sha, f.documentId);
-        if (dup) {
-          this.db
-            .update(scanFiles)
-            .set({ status: 'duplicate', duplicateOfDocumentId: dup, sha256: sha, size: st.size, mtimeMs: st.mtimeMs })
-            .where(eq(scanFiles.id, id))
-            .run();
-          skipped.push(id);
-          continue;
-        }
-        const folderLlmAllowed = root.llmAllowed && this.docs.folderLlmAllowedFor(real);
-        let doc = f.documentId ? this.db.select().from(documents).where(eq(documents.id, f.documentId)).get() : undefined;
-        if (doc && doc.sha256 !== sha && !doc.stagedPath && INBOX_DOC_STATUSES.includes(doc.status)) {
-          // The file changed while its entry is still in the inbox: update that entry (re-analyzed below) instead of
-          // leaving the stale proposal next to a second document. The conditional update skips an entry archived meanwhile.
-          this.db
-            .update(documents)
-            .set({ sha256: sha, size: st.size, sourcePath: real, updatedAt: nowIso() })
-            .where(and(eq(documents.id, doc.id), inArray(documents.status, INBOX_DOC_STATUSES)))
-            .run();
-          doc = this.docs.getRow(doc.id);
-        }
-        if (!doc || doc.sha256 !== sha) {
-          const rec = this.docs.insertDocument({
-            originalName: f.name,
-            ext: f.ext,
-            size: st.size,
-            sha256: sha,
-            sourcePath: real,
-            stagedPath: null,
-            folderLlmAllowed,
-          });
-          doc = this.docs.getRow(rec.id);
-        } else if (doc.folderLlmAllowed !== folderLlmAllowed) {
-          this.db.update(documents).set({ folderLlmAllowed }).where(eq(documents.id, doc.id)).run();
-        }
-        const decision = this.privacy.evaluate({ path: real, ext: f.ext, rootLlmAllowed: root.llmAllowed });
-        const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
-        const res = await this.docs.analyze(doc.id, { allowLlm, signal: job?.signal });
-        if (res.skipped) {
-          // the document was archived in the meantime – nothing to propose
-          skipped.push(id);
-          continue;
-        }
-        const updated = this.docs.getRow(doc.id);
-        this.db
-          .update(scanFiles)
-          .set({
-            status: 'analyzed',
-            documentId: doc.id,
-            sha256: sha,
-            size: st.size,
-            mtimeMs: st.mtimeMs,
-            llmStatus: res.usedLlm ? 'analyzed' : updated.llmStatus,
-          })
-          .where(eq(scanFiles.id, id))
-          .run();
-        analyzed.push(doc.id);
-      } catch (err) {
-        if (isJobCancelled(err)) throw err; // the whole job was cancelled – no per-file failure
-        // analyze() has already set the document to `failed` (reprocessable from the inbox), so it is not stuck in `analyzing`
-        this.ctx.logger.warn('scanner', 'Analysis failed', { fileId: id, error: err });
-        this.notifications.create({
-          title: 'Dateianalyse fehlgeschlagen',
-          description: `${f.name}: ${err instanceof Error ? err.message : String(err)}`,
-          type: 'import_failed',
-          priority: 'normal',
-          dedupeKey: `analyze-failed:${id}`,
-        });
-        skipped.push(id);
-      }
+      if (done.has(id)) continue;
+      await this.analyzeFile(id, { mode, confirmLlm, job, progress: (i - 1) / fileIds.length }, analyzed, skipped);
+      done.add(id);
+      job?.saveCheckpoint({ done: [...done], analyzed, skipped } satisfies AnalyzeCheckpoint);
     }
     this.buildProposals(analyzed);
     this.ctx.events.changed('scanner', 'documents', 'status');
     return { analyzed, skipped };
+  }
+
+  /** Analyzes one scanned file; adds the document id to `analyzed` or the file id to `skipped`. */
+  private async analyzeFile(
+    id: string,
+    opts: { mode: ReturnType<PrivacyService['mode']>; confirmLlm: boolean; job?: JobContext; progress: number },
+    analyzed: string[],
+    skipped: string[],
+  ): Promise<void> {
+    const { mode, confirmLlm, job, progress } = opts;
+    const f = this.db.select().from(scanFiles).where(eq(scanFiles.id, id)).get();
+    if (!f || f.status === 'excluded') {
+      skipped.push(id);
+      return;
+    }
+    job?.report(progress, `Analysiere ${f.name}`);
+    try {
+      const root = this.db.select().from(scanRoots).where(eq(scanRoots.id, f.rootId)).get();
+      if (!root || !isInside(root.path, f.path)) throw permissionError('Datei liegt nicht in einem freigegebenen Verzeichnis.');
+      const real = await fsp.realpath(f.path);
+      if (!isInside(await fsp.realpath(root.path), real)) throw permissionError('Symbolischer Link führt aus dem freigegebenen Verzeichnis heraus.');
+      const st = await fsp.stat(real);
+      const sha = await this.pool.run('hashFile', { path: real });
+      const dup = this.isDup(sha, f.documentId);
+      if (dup) {
+        this.db
+          .update(scanFiles)
+          .set({ status: 'duplicate', duplicateOfDocumentId: dup, sha256: sha, size: st.size, mtimeMs: st.mtimeMs })
+          .where(eq(scanFiles.id, id))
+          .run();
+        skipped.push(id);
+        return;
+      }
+      const folderLlmAllowed = root.llmAllowed && this.docs.folderLlmAllowedFor(real);
+      let doc = f.documentId ? this.db.select().from(documents).where(eq(documents.id, f.documentId)).get() : undefined;
+      if (doc && doc.sha256 !== sha && !doc.stagedPath && INBOX_DOC_STATUSES.includes(doc.status)) {
+        // The file changed while its entry is still in the inbox: update that entry (re-analyzed below) instead of
+        // leaving the stale proposal next to a second document. The conditional update skips an entry archived meanwhile.
+        this.db
+          .update(documents)
+          .set({ sha256: sha, size: st.size, sourcePath: real, updatedAt: nowIso() })
+          .where(and(eq(documents.id, doc.id), inArray(documents.status, INBOX_DOC_STATUSES)))
+          .run();
+        doc = this.docs.getRow(doc.id);
+      }
+      if (!doc || doc.sha256 !== sha) {
+        const rec = this.docs.insertDocument({
+          originalName: f.name,
+          ext: f.ext,
+          size: st.size,
+          sha256: sha,
+          sourcePath: real,
+          stagedPath: null,
+          folderLlmAllowed,
+        });
+        doc = this.docs.getRow(rec.id);
+      } else if (doc.folderLlmAllowed !== folderLlmAllowed) {
+        this.db.update(documents).set({ folderLlmAllowed }).where(eq(documents.id, doc.id)).run();
+      }
+      const decision = this.privacy.evaluate({ path: real, ext: f.ext, rootLlmAllowed: root.llmAllowed });
+      const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
+      const res = await this.docs.analyze(doc.id, { allowLlm, signal: job?.signal });
+      if (res.skipped) {
+        // the document was archived in the meantime – nothing to propose
+        skipped.push(id);
+        return;
+      }
+      const updated = this.docs.getRow(doc.id);
+      this.db
+        .update(scanFiles)
+        .set({
+          status: 'analyzed',
+          documentId: doc.id,
+          sha256: sha,
+          size: st.size,
+          mtimeMs: st.mtimeMs,
+          llmStatus: res.usedLlm ? 'analyzed' : updated.llmStatus,
+        })
+        .where(eq(scanFiles.id, id))
+        .run();
+      analyzed.push(doc.id);
+    } catch (err) {
+      if (isJobCancelled(err)) throw err; // the whole job was cancelled – no per-file failure
+      // analyze() has already set the document to `failed` (reprocessable from the inbox), so it is not stuck in `analyzing`
+      this.ctx.logger.warn('scanner', 'Analysis failed', { fileId: id, error: err });
+      this.notifications.create({
+        title: 'Dateianalyse fehlgeschlagen',
+        description: `${f.name}: ${err instanceof Error ? err.message : String(err)}`,
+        type: 'import_failed',
+        priority: 'normal',
+        dedupeKey: `analyze-failed:${id}`,
+      });
+      skipped.push(id);
+    }
   }
 
   private groupKey(p: DocumentProposal | null, category: string | null): { key: string; label: string; topic: string | null; project: string | null } {

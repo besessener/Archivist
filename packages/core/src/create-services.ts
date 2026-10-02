@@ -255,7 +255,8 @@ function buildServices(opts: CreateServicesOptions) {
     if (e.scopes.includes('settings') || e.scopes.includes('scanner')) scanner.applySettings();
   });
 
-  const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1 });
+  // a check that is still queued or running covers a new request (startup, interval and manual triggers can meet)
+  const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1, sameAs: () => true });
 
   return {
     paths,
