@@ -7,6 +7,7 @@ import { chunkText, normalizeName, tokenize, truncate } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
 import type { EmbeddingService, EmbedResult } from './embedding';
 import { LOCAL_MODEL } from './embedding';
+import { VectorIndex } from './vector-index';
 
 export interface IndexInput {
   type: EntityType;
@@ -32,13 +33,17 @@ const REMOTE_QUERY_EMBEDDING_TIMEOUT_MS = 2500;
 
 /** Hybrid search: FTS5 (BM25) + vector similarity (cosine, computed in the worker thread), fused via RRF. */
 export class SearchService {
+  private readonly vectors: VectorIndex;
+
   constructor(
     private readonly ctx: AppContext,
     private readonly embedding: EmbeddingService,
-    private readonly pool: WorkerPool,
+    pool: WorkerPool,
     private readonly remoteAllowed: () => boolean = () => false,
     private readonly remoteQueryTimeoutMs = REMOTE_QUERY_EMBEDDING_TIMEOUT_MS,
-  ) {}
+  ) {
+    this.vectors = new VectorIndex(() => this.ctx.database.sqlite, pool);
+  }
 
   /** Embeds the query; a remote request that does not answer in time is ignored (null). */
   private async embedQuery(query: string, useRemote: boolean): Promise<EmbedResult | null> {
@@ -62,6 +67,11 @@ export class SearchService {
   }
 
   remove(entityId: string): void {
+    this.deleteRows(entityId);
+    this.vectors.remove(entityId);
+  }
+
+  private deleteRows(entityId: string): void {
     this.sqlite.prepare('DELETE FROM search_fts WHERE entity_id = ?').run(entityId);
     this.ctx.database.db.delete(chunks).where(eq(chunks.entityId, entityId)).run();
   }
@@ -74,12 +84,14 @@ export class SearchService {
       { allowRemote: input.allowRemoteEmbedding ?? false, purpose: 'Suchindex', documentIds: input.type === 'document' ? [input.id] : [] },
     );
     const db = this.ctx.database;
+    const written: Array<{ id: string; vector: Float32Array | undefined }> = [];
     db.transaction(() => {
-      this.remove(input.id);
+      this.deleteRows(input.id);
       const insertFts = this.sqlite.prepare('INSERT INTO search_fts (chunk_id, entity_id, entity_type, title, content) VALUES (?, ?, ?, ?, ?)');
       parts.forEach((text, idx) => {
         const chunkId = newId();
         const vec = emb.vectors[idx];
+        written.push({ id: chunkId, vector: vec });
         db.db
           .insert(chunks)
           .values({
@@ -95,6 +107,8 @@ export class SearchService {
         insertFts.run(chunkId, input.id, input.type, input.title, text);
       });
     });
+    // only after the commit: a rolled-back transaction must not leave vectors in the index
+    this.vectors.replace(input.id, input.type, emb.model, written);
     return parts.length;
   }
 
@@ -142,30 +156,35 @@ export class SearchService {
       if (!q || (useRemote && q.model === LOCAL_MODEL)) continue;
       const qvec = q.vectors[0];
       if (!qvec) continue;
-      const rows = this.sqlite
-        .prepare('SELECT id, entity_id AS entityId, entity_type AS entityType, text, embedding FROM chunks WHERE embedding_model = ? AND embedding IS NOT NULL')
-        .all(q.model) as Array<{ id: string; entityId: string; entityType: string; text: string; embedding: Buffer }>;
-      const filtered = typeSet ? rows.filter((r) => typeSet.has(r.entityType)) : rows;
-      if (filtered.length === 0) continue;
-      const dim = q.dim;
-      const matrix = new Float32Array(filtered.length * dim);
-      filtered.forEach((r, i) => {
-        const f = new Float32Array(r.embedding.buffer.slice(r.embedding.byteOffset, r.embedding.byteOffset + r.embedding.byteLength));
-        matrix.set(f.length === dim ? f : f.subarray(0, dim), i * dim);
-      });
-      const top = await this.pool.run('cosineTopK', { query: qvec, matrix, dim, k: 40, minScore: q.model === LOCAL_MODEL ? 0.22 : 0.3 });
+      const top = await this.vectors.search(q.model, qvec, { k: 40, minScore: q.model === LOCAL_MODEL ? 0.22 : 0.3, types: opts.types ?? null });
+      if (top.length === 0) continue;
+      // texts only for the hits, not for the whole corpus
+      const texts = new Map(
+        this.ctx.database.db
+          .select({ id: chunks.id, text: chunks.text })
+          .from(chunks)
+          .where(
+            inArray(
+              chunks.id,
+              top.map((t) => t.chunkId),
+            ),
+          )
+          .all()
+          .map((c) => [c.id, c.text]),
+      );
       for (const t of top) {
-        const row = filtered[t.index]!;
-        const existing = hits.get(row.entityId);
+        const text = texts.get(t.chunkId);
+        if (text === undefined) continue;
+        const existing = hits.get(t.entityId);
         if (existing) {
           existing.vectorRank = Math.min(existing.vectorRank ?? rank, rank);
           existing.vectorScore = Math.max(existing.vectorScore ?? 0, t.score);
         } else {
-          hits.set(row.entityId, {
-            entityId: row.entityId,
-            entityType: row.entityType,
-            chunkText: row.text,
-            snippet: truncate(row.text, 200),
+          hits.set(t.entityId, {
+            entityId: t.entityId,
+            entityType: t.entityType,
+            chunkText: text,
+            snippet: truncate(text, 200),
             vectorRank: rank,
             vectorScore: t.score,
           });
