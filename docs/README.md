@@ -19,6 +19,7 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [LLM-Anbieter verbinden](how-to/llm-anbieter-verbinden.md)
 - [Verzeichnisse scannen](how-to/verzeichnisse-scannen.md)
 - [Ablage prüfen und Dokumente umlagern](how-to/dokumente-umlagern.md)
+- [Verknüpfungsvorschläge prüfen](how-to/verknuepfungen-pruefen.md)
 - [Datenschutz einstellen](how-to/datenschutz-einstellen.md)
 - [Archivpfad ändern](how-to/archivpfad-aendern.md)
 - [Backups anlegen](how-to/backups-anlegen.md)
@@ -50,4 +51,5 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [Sicherheits- und Datenschutzmodell](explanation/sicherheitsmodell.md)
 - [Archivist als Agent](explanation/agent.md)
 - [Wie die Suche funktioniert](explanation/suche.md)
+- [Wie Archivist Wissen verknüpft](explanation/verknuepfungen.md)
 - [Bewusste Abweichungen und ehrliche Grenzen](explanation/grenzen.md)

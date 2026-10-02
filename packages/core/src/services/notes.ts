@@ -5,8 +5,18 @@ import { entities } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId } from '../util/ids';
 import { normalizeName, truncate } from '../util/text';
+import type { AuditService } from './audit';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
+import type { UndoService } from './undo';
+
+/** Undo of a note edit (#273): the former title and text. */
+const NOTE_UPDATE_UNDO = 'note.update';
+interface NoteUpdateUndo {
+  id: string;
+  before: { name: string; description: string | null };
+  afterUpdatedAt: string;
+}
 
 export interface NoteInput {
   /** Full text of the note (stored as the node description and indexed for search). */
@@ -30,7 +40,63 @@ export class NoteService {
     private readonly ctx: AppContext,
     private readonly graph: KnowledgeGraphService,
     private readonly search: SearchService,
-  ) {}
+    private readonly audit?: AuditService,
+    undo?: UndoService,
+  ) {
+    undo?.register(NOTE_UPDATE_UNDO, {
+      check: async (data) => {
+        const d = data as NoteUpdateUndo;
+        const note = this.graph.getEntity(d.id);
+        if (!note) return ['Die Notiz existiert nicht mehr.'];
+        return note.updatedAt === d.afterUpdatedAt ? [] : ['Die Notiz wurde seit der Bearbeitung verändert.'];
+      },
+      run: async (data) => {
+        const d = data as NoteUpdateUndo;
+        this.graph.registerNode('note', d.id, d.before.name, d.before.description);
+        await this.reindex(d.id);
+        // the analysis runs again on the former text: its relations come back, the newer ones become outdated
+        this.ctx.events.emit('entry:updated', { id: d.id, type: 'note' });
+        this.ctx.events.changed('knowledge');
+        return `Notiz „${d.before.name}“ wiederhergestellt.`;
+      },
+    });
+  }
+
+  /**
+   * Changes title and/or text of a note (#273). Logged with undo; afterwards the note is indexed and analysed again
+   * (`entry:updated`).
+   */
+  async update(
+    id: string,
+    patch: { title?: string | null; content?: string | null },
+    opts: { trigger?: string; actor?: 'user' | 'agent' } = {},
+  ): Promise<GraphEntity> {
+    const note = this.graph.getEntity(id);
+    if (note?.type !== 'note') throw new AppError('validation_error', 'Notiz nicht gefunden.');
+    if (note.duplicateOfId) throw new AppError('validation_error', 'Diese Notiz wurde als Duplikat verworfen.');
+    const content = patch.content?.trim() || note.description || note.name;
+    const title = collapse(patch.title ?? '') || (patch.content !== undefined ? truncate(collapse(content), 70) : note.name);
+    if (title === note.name && content === (note.description ?? note.name)) return note;
+    this.graph.registerNode('note', id, title, content);
+    const after = this.graph.getEntity(id)!;
+    this.audit?.log({
+      action: 'note.update',
+      actor: opts.actor ?? 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { title: note.name },
+      after: { title },
+      undo: {
+        type: NOTE_UPDATE_UNDO,
+        data: { id, before: { name: note.name, description: note.description }, afterUpdatedAt: after.updatedAt } satisfies NoteUpdateUndo,
+      },
+    });
+    await this.reindex(id);
+    this.ctx.events.emit('entry:updated', { id, type: 'note' });
+    this.ctx.events.changed('knowledge');
+    return after;
+  }
 
   private resolve(input: NoteInput): { title: string; content: string } {
     const content = input.content.trim();
@@ -57,6 +123,7 @@ export class NoteService {
     const id = newId();
     this.graph.registerNode('note', id, title, content);
     this.applyLinks(id, input);
+    this.ctx.events.created({ id, type: 'note' });
     await this.search.index({ type: 'note', id, title, content });
     this.ctx.events.changed('knowledge');
     return this.graph.getEntity(id)!;

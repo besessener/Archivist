@@ -212,8 +212,9 @@ describe('Links and cases (#306, #277, #286)', () => {
 
   it('related entries come with a reason (#276)', async () => {
     const a = await archived(app, 'a.txt', 'A', 'private/x', { topic: 'Wohnung' });
-    const rel = await app.ok('knowledge:related', { id: a, depth: 2 });
-    expect(rel.some((r) => r.entity.type === 'topic' && r.reason.length > 0)).toBe(true);
+    const b = await archived(app, 'b.txt', 'B', 'private/x', { topic: 'Wohnung' });
+    const rel = await app.ok('knowledge:related', { id: a });
+    expect(rel.items.find((r) => r.entity.id === b)?.reason).toBe('gleiches Thema „Wohnung“');
   });
 });
 

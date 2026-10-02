@@ -70,6 +70,23 @@ export function sourceDateLabel(s: Pick<GatheredSource, 'type' | 'date' | 'dateK
   }
 }
 
+/** Sources that come in over confirmed relations of the best hits (#289). */
+const MAX_LINKED_SOURCES = 3;
+const LINKED_SOURCE_TYPES = new Set<string>(['document', 'decision', 'event', 'task', 'note']);
+/** The relation in words, from the hit's point of view („stützt“, „ersetzt“ …). */
+const RELATION_LABEL_DE: Partial<Record<string, string>> = {
+  supports: 'stützt',
+  contradicts: 'widerspricht',
+  supersedes: 'ersetzt',
+  blocks: 'blockiert',
+  results_from: 'folgt aus',
+  related_to: 'verwandt mit',
+  relates_to: 'bezieht sich auf',
+  belongs_to: 'gehört zu',
+  concerns: 'betrifft',
+  affects: 'wirkt sich aus auf',
+};
+
 /** Characters of the matched passage per source (a whole chunk of the search index). */
 export const PASSAGE_CHARS = 1000;
 
@@ -140,93 +157,143 @@ export class KnowledgeAnswerService {
     const supporting: GatheredSource[] = [];
     for (const h of hits) {
       if (out.length >= limit) break;
-      if (h.type === 'document') {
-        const d = this.docs.getRow(h.id);
-        if (d.status !== 'archived' && d.status !== 'indexed_only') continue;
-        // Folder permission, exclusions and – in mode „vorher fragen“ – the user's release for external analysis
-        const shareable = this.privacy.mayShareDocument(d);
-        // the matched passage itself, not only the summary and a few words around the hit (#157)
-        const text = shareable
-          ? [
-              d.summary && `Zusammenfassung: ${truncate(d.summary, 400)}`,
-              `Textstelle: ${truncate(h.passage, PASSAGE_CHARS)}`,
-              d.persons.length && `Personen: ${d.persons.join(', ')}`,
-              d.dates.length && `Im Text genannte Daten: ${d.dates.slice(0, 4).join(', ')}`,
-            ]
-              .filter(Boolean)
-              .join('\n')
-          : '';
-        out.push({
-          ...(shareable ? {} : { _local: true }),
-          id: h.id,
-          type: 'document',
-          title: d.title,
-          snippet: truncate(d.summary ?? h.snippet, 220),
-          path: d.archiveRelPath ? `${this.settings.get().archiveRoot}/${d.archiveRelPath}` : d.sourcePath,
-          ...documentDateRef(d),
-          score: h.score,
-          _archivedAt: d.archivedAt,
-          _text: text,
-          _topics: [d.topicId, d.projectId].filter((x): x is string => Boolean(x)),
-          _dates: documentDates(d),
-        });
-      } else if (h.type === 'decision') {
-        const d = this.decisions.get(h.id);
-        const backing = this.decisionDocuments(d);
-        out.push({
-          ...decisionSource(d, h.score),
-          _text: this.decisionPromptText(d, backing),
-          _topics: [d.topicId, d.projectId].filter((x): x is string => Boolean(x)),
-          _dates: d.decidedAt ? [d.decidedAt] : [],
-        });
-        // the documents the decision was taken from become sources of their own (#165)
-        for (const b of backing) if (!out.some((o) => o.id === b.id) && !supporting.some((o) => o.id === b.id)) supporting.push(b);
-      } else if (h.type === 'event') {
-        // events from the timeline: the date (occurredAt) belongs in the source and its text
-        const e = this.events.get(h.id);
-        const day = localDate(e.occurredAt);
-        out.push({
-          id: e.id,
-          type: 'event',
-          title: e.title,
-          snippet: truncate(`Am ${day}${e.description ? `: ${e.description}` : ''}`, 220),
-          path: null,
-          date: e.occurredAt,
-          dateKind: 'occurred',
-          score: h.score,
-          _text: `Ereignis am ${day}: ${e.title}.${e.description ? ` ${e.description}` : ''}${e.topicName ? ` Thema: ${e.topicName}.` : ''}${e.projectName ? ` Projekt: ${e.projectName}.` : ''}`,
-          _topics: [e.topicId, e.projectId].filter((x): x is string => Boolean(x)),
-          _dates: [e.occurredAt],
-        });
-      } else if (h.type === 'task') {
-        const i = this.openItems.get(h.id);
-        out.push({
-          id: i.id,
-          type: 'task',
-          title: i.title,
-          snippet: `Status: ${i.status}${i.dueAt ? `, fällig ${i.dueAt.slice(0, 10)}` : ''}`,
-          path: null,
-          date: i.createdAt,
-          dateKind: 'created',
-          score: h.score,
-          _text: `Offener Punkt: ${i.title}. ${i.description ?? ''} Status: ${i.status}. Fällig: ${i.dueAt?.slice(0, 10) ?? 'unbekannt'}. Verantwortlich: ${i.responsibleName ?? 'unbekannt'}.`,
-        });
-      } else {
-        out.push({
-          id: h.id,
-          type: h.type,
-          title: h.title,
-          snippet: truncate(h.snippet, 220),
-          path: null,
-          date: h.date,
-          score: h.score,
-          _text: truncate(h.passage, PASSAGE_CHARS),
-        });
-      }
+      const src = this.sourceOf(h, supporting);
+      if (src) out.push(src);
     }
     // up to 3 supporting documents of retrieved decisions, after the hits
     const ids = new Set(out.map((o) => o.id));
-    return [...out, ...supporting.filter((b) => !ids.has(b.id)).slice(0, 3)];
+    const support = supporting.filter((b, i) => !ids.has(b.id) && supporting.findIndex((x) => x.id === b.id) === i).slice(0, 3);
+    for (const b of support) ids.add(b.id);
+    // entries the user linked with the best hits (#289): confirmed relations only, weighted lower, with the path
+    return [...out, ...support, ...this.linkedSources(out.slice(0, 3), ids, queries[0] ?? '')];
+  }
+
+  /**
+   * Sources over the knowledge graph (#289): confirmed relations of the best hits to other entries (documents,
+   * decisions, events, open items, notes) – at most 2 per hit and 3 in all, half the score of the hit. Rejected, proposed
+   * and outdated relations are never used. Each one says over which relation it came in (`via`).
+   */
+  private linkedSources(top: GatheredSource[], taken: Set<string>, query: string): GatheredSource[] {
+    const out: GatheredSource[] = [];
+    for (const parent of top) {
+      let perHit = 0;
+      for (const r of this.graph.relationsOf(parent.id, { statuses: ['confirmed'] })) {
+        if (out.length >= MAX_LINKED_SOURCES || perHit >= 2) break;
+        if (r.relationType === 'duplicate_of') continue;
+        const otherId = r.sourceEntityId === parent.id ? r.targetEntityId : r.sourceEntityId;
+        const other = this.graph.getEntity(otherId);
+        if (!other || taken.has(otherId) || other.duplicateOfId || !LINKED_SOURCE_TYPES.has(other.type)) continue;
+        const passage = this.search.bestPassage(otherId, query) ?? other.description ?? other.name;
+        const src = this.sourceOf(
+          {
+            id: other.id,
+            type: other.type,
+            title: other.name,
+            snippet: truncate(passage, 220),
+            passage,
+            score: parent.score / 2,
+            path: null,
+            date: other.updatedAt,
+            matchedBy: [],
+          },
+          [],
+        );
+        if (!src) continue;
+        const label = RELATION_LABEL_DE[r.relationType] ?? r.relationType;
+        const via = r.sourceEntityId === parent.id ? `„${parent.title}“ ${label} diesen Eintrag` : `${label} „${parent.title}“`;
+        out.push({ ...src, via, _text: `${src._text}\n(Hinzugekommen über die bestätigte Verknüpfung: ${via})` });
+        taken.add(otherId);
+        perHit += 1;
+      }
+    }
+    return out;
+  }
+
+  /** One hit as an answer source (null: a document that is not archived); decisions add their backing documents to `supporting`. */
+  private sourceOf(h: SearchHit, supporting: GatheredSource[]): GatheredSource | null {
+    if (h.type === 'document') {
+      const d = this.docs.getRow(h.id);
+      if (d.status !== 'archived' && d.status !== 'indexed_only') return null;
+      // Folder permission, exclusions and – in mode „vorher fragen“ – the user's release for external analysis
+      const shareable = this.privacy.mayShareDocument(d);
+      // the matched passage itself, not only the summary and a few words around the hit (#157)
+      const text = shareable
+        ? [
+            d.summary && `Zusammenfassung: ${truncate(d.summary, 400)}`,
+            `Textstelle: ${truncate(h.passage, PASSAGE_CHARS)}`,
+            d.persons.length && `Personen: ${d.persons.join(', ')}`,
+            d.dates.length && `Im Text genannte Daten: ${d.dates.slice(0, 4).join(', ')}`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : '';
+      return {
+        ...(shareable ? {} : { _local: true }),
+        id: h.id,
+        type: 'document',
+        title: d.title,
+        snippet: truncate(d.summary ?? h.snippet, 220),
+        path: d.archiveRelPath ? `${this.settings.get().archiveRoot}/${d.archiveRelPath}` : d.sourcePath,
+        ...documentDateRef(d),
+        score: h.score,
+        _archivedAt: d.archivedAt,
+        _text: text,
+        _topics: [d.topicId, d.projectId].filter((x): x is string => Boolean(x)),
+        _dates: documentDates(d),
+      };
+    } else if (h.type === 'decision') {
+      const d = this.decisions.get(h.id);
+      const backing = this.decisionDocuments(d);
+      // the documents the decision was taken from become sources of their own (#165)
+      supporting.push(...backing);
+      return {
+        ...decisionSource(d, h.score),
+        _text: this.decisionPromptText(d, backing),
+        _topics: [d.topicId, d.projectId].filter((x): x is string => Boolean(x)),
+        _dates: d.decidedAt ? [d.decidedAt] : [],
+      };
+    } else if (h.type === 'event') {
+      // events from the timeline: the date (occurredAt) belongs in the source and its text
+      const e = this.events.get(h.id);
+      const day = localDate(e.occurredAt);
+      return {
+        id: e.id,
+        type: 'event',
+        title: e.title,
+        snippet: truncate(`Am ${day}${e.description ? `: ${e.description}` : ''}`, 220),
+        path: null,
+        date: e.occurredAt,
+        dateKind: 'occurred',
+        score: h.score,
+        _text: `Ereignis am ${day}: ${e.title}.${e.description ? ` ${e.description}` : ''}${e.topicName ? ` Thema: ${e.topicName}.` : ''}${e.projectName ? ` Projekt: ${e.projectName}.` : ''}`,
+        _topics: [e.topicId, e.projectId].filter((x): x is string => Boolean(x)),
+        _dates: [e.occurredAt],
+      };
+    } else if (h.type === 'task') {
+      const i = this.openItems.get(h.id);
+      return {
+        id: i.id,
+        type: 'task',
+        title: i.title,
+        snippet: `Status: ${i.status}${i.dueAt ? `, fällig ${i.dueAt.slice(0, 10)}` : ''}`,
+        path: null,
+        date: i.createdAt,
+        dateKind: 'created',
+        score: h.score,
+        _text: `Offener Punkt: ${i.title}. ${i.description ?? ''} Status: ${i.status}. Fällig: ${i.dueAt?.slice(0, 10) ?? 'unbekannt'}. Verantwortlich: ${i.responsibleName ?? 'unbekannt'}.`,
+      };
+    } else {
+      return {
+        id: h.id,
+        type: h.type,
+        title: h.title,
+        snippet: truncate(h.snippet, 220),
+        path: null,
+        date: h.date,
+        score: h.score,
+        _text: truncate(h.passage, PASSAGE_CHARS),
+      };
+    }
   }
 
   /** A decision as answer source: its fields, the verbatim evidence of a document decision (#175) and the backing documents. */

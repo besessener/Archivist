@@ -337,19 +337,27 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'knowledge:link': (i) => {
       const type = RelationType.safeParse(i.relationType);
       if (!type.success) throw new AppError('validation_error', 'Unbekannte Art der Beziehung.');
-      return s.graph.linkEntries(i.sourceId, i.targetId, type.data, { status: 'confirmed', trigger }).relation;
+      return s.graph.linkEntries(i.sourceId, i.targetId, type.data, { status: 'confirmed', trigger, method: i.method, evidence: i.evidence }).relation;
     },
+    'knowledge:updateNote': (i) => s.notes.update(i.id, { title: i.title, content: i.content }, { trigger }),
     'knowledge:unlink': (i) => {
       s.graph.unlinkEntries(i.relationId, { trigger });
       return { ok: true as const };
     },
-    'knowledge:related': (i) => s.graph.related(i.id, { depth: i.depth }),
+    'knowledge:related': (i) => s.links.related(i.id, i),
     'links:suggestions': (i) => s.links.candidates(i.id, { limit: i.limit }),
     'links:unlinked': (i) => s.links.orphans(i),
     'links:startRun': () => ({ jobId: s.enqueueLinkRun('manual').id }),
+    'links:proposals': (i) => s.links.proposals(i),
+    'links:decide': (i) => ({ decided: s.graph.decideRelations(i.relationIds, i.decision, { trigger }) }),
+    'links:decideGroup': (i) => ({ decided: s.links.decideGroup(i.groupBy, i.key, i.decision, { trigger }) }),
     'knowledge:resolveRelation': (i) => {
-      s.graph.setRelationStatus(i.relationId, i.status);
-      s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });
+      // confirming and rejecting are undoable decisions (#280); other statuses are only logged
+      if (i.status === 'confirmed' || i.status === 'rejected') s.graph.decideRelation(i.relationId, i.status, { trigger });
+      else {
+        s.graph.setRelationStatus(i.relationId, i.status);
+        s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });
+      }
       return { ok: true as const };
     },
     'knowledge:createEntity': async (i) => {

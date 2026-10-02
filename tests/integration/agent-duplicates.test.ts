@@ -152,7 +152,7 @@ describe('agent duplicate tools', () => {
 
     const marked = await call('mark_different', { a: ctx.refs.doc(v1), b: ctx.refs.doc(v2) });
     expect(marked.content).toContain('sind verschieden');
-    expect(app.services.graph.rejectedBetween(v1, v2)?.relationType).toBe('duplicate_of');
+    expect(app.services.graph.rejectedBetween(v1, v2, { includeDuplicateOf: true })?.relationType).toBe('duplicate_of');
     expect(lastAudit('relation.markDifferent')).toMatchObject({ undoable: false });
 
     const again = await call('find_duplicates', { kinds: ['versions'] });

@@ -298,6 +298,7 @@ export class DecisionService {
       entityIds: [row.id],
       after: { title: row.title, status, missing },
     });
+    this.ctx.events.created({ id: row.id, type: 'decision' });
     void this.reindex(row.id);
     this.ctx.events.changed('decisions', 'knowledge', 'status');
     return this.get(row.id);

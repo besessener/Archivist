@@ -157,6 +157,7 @@ export class EventService {
       entityIds: [row.id],
       after: { title: row.title, occurredAt },
     });
+    this.ctx.events.created({ id: row.id, type: 'event' });
     void this.reindex(row.id);
     this.ctx.events.changed('events', 'knowledge', 'status');
     return this.get(row.id);

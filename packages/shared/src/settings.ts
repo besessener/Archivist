@@ -52,6 +52,17 @@ const ConsistencySettings = z.object({
   autoMergePersons: z.boolean().default(true),
 });
 
+/** Link proposals of the fixed link methods (Epic #269). */
+export const LinkSettings = z.object({
+  /**
+   * Propose links automatically: similar entries after every new or changed entry (#271), entries created by the same
+   * message or taken from the same document (#272).
+   */
+  autoPropose: z.boolean().default(true),
+  /** At most this many open similarity proposals per entry (#271). */
+  maxProposalsPerEntry: z.number().int().min(1).max(10).default(3),
+});
+
 /** Who uses Archivist? Name and nicknames help to assign „ich/mir/mich“ and mentions of the user's own person. */
 export const ProfileSettings = z.object({
   name: z.string().max(200).default(''),
@@ -91,6 +102,7 @@ export const Settings = z.object({
   consistency: ConsistencySettings.default(() => ConsistencySettings.parse({})),
   ocr: OcrSettings.default(() => OcrSettings.parse({})),
   agent: AgentSettings.default(() => AgentSettings.parse({})),
+  links: LinkSettings.default(() => LinkSettings.parse({})),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -110,5 +122,6 @@ export const SettingsPatch = z.object({
   agent: patchSchema(AgentSettings)
     .extend({ background: patchSchema(BackgroundAgentSettings).optional() })
     .optional(),
+  links: patchSchema(LinkSettings).optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

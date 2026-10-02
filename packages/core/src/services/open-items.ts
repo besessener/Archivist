@@ -329,6 +329,7 @@ export class OpenItemService {
       entityIds: [row.id],
       after: { title: row.title, dueAt },
     });
+    this.ctx.events.created({ id: row.id, type: 'task' });
     void this.reindex(row.id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');
     return this.get(row.id);

@@ -6,6 +6,7 @@ import type { InsightChoice, InsightKind } from '@archivist/shared';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
+import { LinkProposals } from '@/components/knowledge/link-proposals';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { QuickDate } from '@/components/common/quick-date';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
@@ -83,6 +84,8 @@ export default function InsightsPage() {
           </Button>
         }
       />
+      <LinkProposals />
+
       <div className="mb-4 w-52">
         <Select value={status} onChange={(e) => setStatus(e.target.value as InsightStatus)} aria-label="Status filtern" data-testid="insight-status-filter">
           {(Object.keys(STATUS_LABELS) as InsightStatus[]).map((s) => (

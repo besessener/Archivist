@@ -27,6 +27,7 @@ import { KnowledgeGraphService } from './services/knowledge-graph';
 import { LinkMethodsService } from './services/link-methods';
 import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
+import { NoteAnalysisService } from './services/note-analysis';
 import { NotificationService } from './services/notifications';
 import { EventService } from './services/events';
 import { NoteEventDuplicateService } from './services/cleanup/note-event-duplicates';
@@ -73,6 +74,10 @@ export type Services = ReturnType<typeof buildServices>;
 
 /** Job of the retroactive link run (#279). */
 const LINK_RUN_JOB = 'links.run';
+/** Job that analyses a new or edited note (#273). */
+const NOTE_ANALYZE_JOB = 'notes.analyze';
+/** Job that proposes similar entries for newly indexed ones (#271). */
+const LINK_SIMILAR_JOB = 'links.similar';
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -129,7 +134,8 @@ function buildServices(opts: CreateServicesOptions) {
   const decisions = new DecisionService(ctx, graph, persons, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, persons, search, audit, undo);
   const eventsSvc = new EventService(ctx, graph, search, audit, persons, undo);
-  const notes = new NoteService(ctx, graph, search);
+  const notes = new NoteService(ctx, graph, search, audit, undo);
+  const noteAnalysis = new NoteAnalysisService(ctx, graph, persons, llm, privacy);
   const memory = new MemoryService(ctx);
   const agentRuns = new AgentRunService(ctx, audit, undo);
   registerCreatedUndo(ctx, undo, graph, search);
@@ -192,6 +198,36 @@ function buildServices(opts: CreateServicesOptions) {
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
   const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+  links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
+  /**
+   * ONE notification for open link proposals, only when new ones came up (#280): while the current one is unread it is
+   * updated in place; once it was read or dismissed, the next new proposals bring a new one.
+   */
+  const notifyLinkProposals = (created: number) => {
+    if (created <= 0) return;
+    const open = links.proposals({ limit: 1 }).total;
+    if (!open) return;
+    let key = appState.get('links.notification.key');
+    const current = key ? notifications.byDedupeKey(key) : null;
+    if (!key || current?.readAt || current?.resolvedAt) {
+      key = `link-proposals:${Date.now()}`;
+      appState.set('links.notification.key', key);
+    }
+    notifications.create({
+      title: 'Verknüpfungsvorschläge',
+      description: `${open === 1 ? 'Ein Vorschlag wartet' : `${open} Vorschläge warten`} auf deine Prüfung. Du entscheidest, was übernommen wird.`,
+      type: 'assignment_proposal',
+      priority: 'low',
+      proposedActions: [{ label: 'Vorschläge prüfen', kind: 'navigate', target: '/insights/' }],
+      dedupeKey: key,
+    });
+  };
+  // after every new or changed entry: look for similar ones in a job of its own, never on the caller's path (#271)
+  search.onIndexed(({ id }) => {
+    if (!settings.get().links.autoPropose || !links.queueSimilar([id])) return;
+    // a job that has not started yet takes the entry along; a running one picks it up before it ends
+    jobs.enqueue(LINK_SIMILAR_JOB, 'Verknüpfungen für neue Einträge suchen', {}, { maxAttempts: 2, sameAs: (_p, status) => status === 'pending' });
+  });
 
   // large file operations of the agent run as jobs of their own, under the run id (#304)
   const agentFileJobs = new AgentFileJobs(jobs, archive, agentRuns);
@@ -258,7 +294,36 @@ function buildServices(opts: CreateServicesOptions) {
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
-  chat.wire({ actions, archive, agent });
+  chat.wire({
+    actions,
+    archive,
+    agent,
+    createdTogether: (entries, message) => {
+      if (settings.get().links.autoPropose)
+        notifyLinkProposals(links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] }));
+    },
+  });
+  // a new or edited note is analysed like a document, in a job of its own (#273)
+  const enqueueNoteAnalysis = (entry: { id: string; type: string }) => {
+    if (entry.type !== 'note' || !settings.get().links.autoPropose) return;
+    jobs.enqueue(
+      NOTE_ANALYZE_JOB,
+      'Notiz analysieren',
+      { noteId: entry.id },
+      { maxAttempts: 2, sameAs: (p, status) => status === 'pending' && p.noteId === entry.id },
+    );
+  };
+  events.on('entry:created', enqueueNoteAnalysis);
+  events.on('entry:updated', enqueueNoteAnalysis);
+  // entries extracted from the same document belong together (#272)
+  events.on('entry:created', (entry: { id: string }) => {
+    if (!settings.get().links.autoPropose) return;
+    try {
+      notifyLinkProposals(links.linkSameDocument(entry.id));
+    } catch (err) {
+      logger.warn('links', 'Linking entries of one document failed', { error: err, id: entry.id });
+    }
+  });
   capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));
   graph.setReindexer(async (refs) => {
@@ -357,6 +422,17 @@ function buildServices(opts: CreateServicesOptions) {
       });
     return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${clusters.length} Themen vorgeschlagen` };
   });
+  jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, async (job) => {
+    const r = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
+    notifyLinkProposals(r?.proposed ?? 0);
+    return { summary: r ? `${r.proposed} Verknüpfungen vorgeschlagen, ${r.outdated} veraltet` : 'Notiz nicht (mehr) vorhanden' };
+  });
+  jobs.register(LINK_SIMILAR_JOB, async (job) => {
+    const r = await links.runPendingSimilar({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
+    notifyLinkProposals(r.proposed);
+    job.throwIfCancelled();
+    return { summary: `${r.processed} Einträge geprüft, ${r.proposed} Verknüpfungen vorgeschlagen` };
+  });
   jobs.register<{ trigger?: string }>('consistency.check', async (job) => {
     await archive.cleanupInbox(); // retries inbox copies that were locked right after archiving
     return consistency.run(job.payload.trigger ?? 'manual', (p, m) => job.report(p, m), job.signal);
@@ -405,6 +481,7 @@ function buildServices(opts: CreateServicesOptions) {
     solutions,
     eventRecords: eventsSvc,
     notes,
+    noteAnalysis,
     noteEventDuplicates,
     personDuplicates,
     personQuestions,
@@ -451,9 +528,11 @@ function buildServices(opts: CreateServicesOptions) {
       const startupCheck = settings.get().consistency.onStartup;
       if (startupCheck) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'), { startupCheckQueued: startupCheck });
-      // the retroactive link run starts once after the update that brought it (#279); later only on request or by the agent
-      if (!appState.get('links.run.initial')) {
-        appState.set('links.run.initial', new Date().toISOString());
+      // the retroactive link run starts once after the update that brought it – again from the start once all methods of
+      // Epic #269 take part (#279); later only on request or by the agent
+      if (!appState.get('links.run.initial.v2')) {
+        appState.set('links.run.initial.v2', new Date().toISOString());
+        links.restartBackfill();
         enqueueLinkRun('update');
       }
       const BG_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };

@@ -1,4 +1,5 @@
-import type { EntityDetail, EntityType, GraphEntity, GraphRelation, RelationStatus, RelationType } from '@archivist/shared';
+import { RELATION_METHOD_LABELS, RELATION_PROVENANCE_LABELS, relationProvenance } from '@archivist/shared';
+import type { EntityDetail, EntityType, GraphEntity, GraphRelation, RelationMethod, RelationStatus, RelationType } from '@archivist/shared';
 import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { currentRun } from '../agent/scope';
@@ -230,6 +231,9 @@ const mapRelation = (r: RelationRow): GraphRelation => ({
   status: r.status as RelationStatus,
   origin: r.origin,
   runId: r.runId,
+  method: (r.method as RelationMethod | null) ?? null,
+  evidence: r.evidence,
+  resolvedByUser: r.resolvedByUser,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -263,12 +267,31 @@ const stateOf = (r: RelationRow): RelationState => ({ status: r.status as Relati
 const sameState = (a: RelationState, b: RelationState) =>
   a.status === b.status && a.confidence === b.confidence && JSON.stringify(a.sourceIds) === JSON.stringify(b.sourceIds);
 
+/** Named nodes a field of an entry points to (topic, project, persons, tags, folder, case): relations to them mirror fields. */
+export const HUB_TYPES = new Set<string>(['topic', 'project', 'person', 'tag', 'category', 'case']);
+/** Relation types the analysis of a document or a capture proposes between two entries. */
+const ANALYSIS_TYPES = new Set<string>(['supports', 'results_from', 'supersedes', 'contradicts', 'duplicate_of']);
+/** Maximum length of the stored evidence of a relation. */
+const EVIDENCE_MAX = 300;
+const clipEvidence = (e: string | null | undefined): string | null => {
+  const t = e?.replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  return t.length > EVIDENCE_MAX ? `${t.slice(0, EVIDENCE_MAX - 1)}…` : t;
+};
+
 /** Statuses that count as a current, visible assignment. */
 const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 
 /** Undo of a link or unlink made through {@link KnowledgeGraphService.linkEntries} / `unlinkEntries` (#277). */
 const LINK_UNDO_TYPE = 'relation.link';
 const CASE_UNDO_TYPE = 'case.status';
+/** Undo of several proposals decided at once (#280). */
+const DECIDE_MANY_UNDO_TYPE = 'relation.decideMany';
+interface DecideManyUndoData {
+  before: Array<Pick<RelationRow, 'id' | 'status' | 'resolvedByUser' | 'updatedAt'>>;
+  /** updatedAt of each relation right after the decision; a later change blocks the undo. */
+  after: Record<string, string>;
+}
 interface LinkUndoData {
   /** The relation as it was before (null: the call created it). */
   before: RelationRow | null;
@@ -304,11 +327,13 @@ const RELATION_LABEL: Record<RelationType, string> = {
   related_to: 'verwandt mit',
 };
 
+/** Plain-language reason of a relation: type, status, who stands behind it, how it came about and its evidence (#270, #276). */
 export function relationReason(r: GraphRelation): string {
-  const status = r.status === 'confirmed' ? 'bestätigt' : r.status === 'proposed' ? 'vorgeschlagen' : r.status;
-  const origin = r.origin === 'agent' ? ', vom Agenten' : r.origin === 'user' ? ', vom Benutzer' : '';
-  const evidence = r.sourceIds.length ? `, ${r.sourceIds.length} Beleg(e)` : '';
-  return `${RELATION_LABEL[r.relationType] ?? r.relationType} (${status}${origin}${evidence}, Sicherheit ${Math.round(r.confidence * 100)} %)`;
+  const status = r.status === 'confirmed' ? 'bestätigt' : r.status === 'proposed' ? 'vorgeschlagen' : r.status === 'outdated' ? 'veraltet' : 'abgelehnt';
+  const who = r.origin === 'agent' && relationProvenance(r) === 'auto' ? 'vom Agenten' : RELATION_PROVENANCE_LABELS[relationProvenance(r)];
+  const how = r.method && r.method !== 'manual' ? `, ${RELATION_METHOD_LABELS[r.method]}` : '';
+  const evidence = r.evidence ? ` – „${r.evidence}“` : '';
+  return `${RELATION_LABEL[r.relationType] ?? r.relationType} (${status}, ${who}${how})${evidence}`;
 }
 
 /** Knowledge graph over entity and relation tables in SQLite. */
@@ -335,6 +360,24 @@ export class KnowledgeGraphService {
         this.db.update(entities).set({ status: d.before, updatedAt: d.beforeUpdatedAt }).where(eq(entities.id, d.id)).run();
         this.ctx.events.changed('knowledge');
         return 'Status des Vorgangs zurückgesetzt.';
+      },
+    });
+    undo.register(DECIDE_MANY_UNDO_TYPE, {
+      check: async (data) => {
+        const d = data as DecideManyUndoData;
+        const ids = Object.keys(d.after);
+        const now = new Map((ids.length ? this.db.select().from(relations).where(inArray(relations.id, ids)).all() : []).map((r) => [r.id, r.updatedAt]));
+        const changed = ids.filter((id) => now.get(id) !== d.after[id]).length;
+        return changed ? [`${changed} der Verknüpfungen wurde${changed === 1 ? '' : 'n'} seither verändert oder entfernt.`] : [];
+      },
+      run: async (data) => {
+        const d = data as DecideManyUndoData;
+        this.ctx.database.transaction(() => {
+          for (const b of d.before)
+            this.db.update(relations).set({ status: b.status, resolvedByUser: b.resolvedByUser, updatedAt: b.updatedAt }).where(eq(relations.id, b.id)).run();
+        });
+        this.ctx.events.changed('knowledge');
+        return `${d.before.length} Entscheidung${d.before.length === 1 ? '' : 'en'} über Verknüpfungen zurückgenommen.`;
       },
     });
     undo.register(LINK_UNDO_TYPE, {
@@ -467,9 +510,27 @@ export class KnowledgeGraphService {
     sourceId: string,
     targetId: string,
     relationType: RelationType,
-    opts: { confidence?: number; status?: RelationStatus; sourceIds?: string[]; resolvedByUser?: boolean; origin?: 'system' | 'user' | 'agent' } = {},
+    opts: {
+      confidence?: number;
+      status?: RelationStatus;
+      sourceIds?: string[];
+      resolvedByUser?: boolean;
+      origin?: 'system' | 'user' | 'agent';
+      /** How it came about (#270); derived when missing: a relation to a topic, project, person … mirrors a field. */
+      method?: RelationMethod;
+      /** Why it was proposed: passage, message, date and person … (#270) */
+      evidence?: string | null;
+    } = {},
   ): LinkResult | null {
     if (sourceId === targetId) return null;
+    const status0 = opts.status ?? 'proposed';
+    const method = opts.method ?? this.inferMethod(sourceId, targetId, relationType);
+    const evidence = clipEvidence(opts.evidence);
+    // a pair of entries the user rejected is never proposed again – by no method, in either direction, whatever the type (#270)
+    if (status0 === 'proposed' && !opts.resolvedByUser && relationType !== 'duplicate_of' && method !== 'field') {
+      const rejected = this.rejectedBetween(sourceId, targetId);
+      if (rejected) return { ...rejected, created: false };
+    }
     const existing = this.db
       .select()
       .from(relations)
@@ -488,8 +549,14 @@ export class KnowledgeGraphService {
             : (opts.status ?? existing.status);
       const sourceIds = [...new Set([...existing.sourceIds, ...(opts.sourceIds ?? [])])];
       const confidence = Math.max(existing.confidence, opts.confidence ?? 0);
-      this.db.update(relations).set({ status, sourceIds, confidence, updatedAt: now }).where(eq(relations.id, existing.id)).run();
-      return { ...mapRelation({ ...existing, status, sourceIds, confidence, updatedAt: now }), created: false };
+      // origin and evidence of the first finding are kept; a relation without them takes them over
+      const keep = { method: existing.method ?? method, evidence: existing.evidence ?? evidence };
+      this.db
+        .update(relations)
+        .set({ status, sourceIds, confidence, ...keep, updatedAt: now })
+        .where(eq(relations.id, existing.id))
+        .run();
+      return { ...mapRelation({ ...existing, status, sourceIds, confidence, ...keep, updatedAt: now }), created: false };
     }
     const row: RelationRow = {
       id: newId(),
@@ -503,12 +570,26 @@ export class KnowledgeGraphService {
       // inside an agent run the relation is the agent's (origin and run id, #270/#299)
       origin: currentRun() ? 'agent' : (opts.origin ?? (opts.resolvedByUser ? 'user' : 'system')),
       runId: currentRun()?.runId ?? null,
+      method,
+      evidence,
       createdAt: now,
       updatedAt: now,
     };
     this.db.insert(relations).values(row).run();
     this.ctx.events.changed('knowledge');
     return { ...mapRelation(row), created: true };
+  }
+
+  /** `field` for a relation to a named node (topic, project, person …), `analysis` for the fixed record relations, else null. */
+  private inferMethod(sourceId: string, targetId: string, relationType: RelationType): RelationMethod | null {
+    const types = this.db
+      .select({ type: entities.type })
+      .from(entities)
+      .where(inArray(entities.id, [sourceId, targetId]))
+      .all()
+      .map((r) => r.type);
+    if (types.some((t) => HUB_TYPES.has(t))) return 'field';
+    return ANALYSIS_TYPES.has(relationType) ? 'analysis' : null;
   }
 
   getRelation(id: string): GraphRelation | undefined {
@@ -615,15 +696,34 @@ export class KnowledgeGraphService {
       .slice(0, opts.limit ?? 100);
   }
 
-  /** A relation between the two entries (either direction) that the user rejected – such pairs are never proposed again (#270). */
-  rejectedBetween(a: string, b: string): GraphRelation | undefined {
+  /**
+   * A relation between the two entries (either direction, any type) that the user rejected – such pairs are never proposed
+   * again (#270). Also counts for records discarded as duplicates of one of the two, so a rejection survives merging them.
+   * A rejected „Duplikat“ only means „different“, not „unrelated“, and does not count unless `includeDuplicateOf`.
+   */
+  rejectedBetween(a: string, b: string, opts: { includeDuplicateOf?: boolean } = {}): GraphRelation | undefined {
+    const side = (id: string) => [
+      id,
+      ...this.db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(eq(entities.duplicateOfId, id))
+        .all()
+        .map((r) => r.id),
+    ];
+    const as = side(a);
+    const bs = side(b);
     const r = this.db
       .select()
       .from(relations)
       .where(
         and(
-          or(and(eq(relations.sourceEntityId, a), eq(relations.targetEntityId, b)), and(eq(relations.sourceEntityId, b), eq(relations.targetEntityId, a))),
+          or(
+            and(inArray(relations.sourceEntityId, as), inArray(relations.targetEntityId, bs)),
+            and(inArray(relations.sourceEntityId, bs), inArray(relations.targetEntityId, as)),
+          ),
           eq(relations.status, 'rejected'),
+          opts.includeDuplicateOf ? undefined : sql`${relations.relationType} <> 'duplicate_of'`,
         ),
       )
       .get();
@@ -647,7 +747,15 @@ export class KnowledgeGraphService {
     sourceId: string,
     targetId: string,
     relationType: RelationType,
-    opts: { status: 'confirmed' | 'proposed'; trigger?: string; confidence?: number; origin?: 'user' | 'system' },
+    opts: {
+      status: 'confirmed' | 'proposed';
+      trigger?: string;
+      confidence?: number;
+      origin?: 'user' | 'system';
+      /** Default: `manual` for a link the user asked for, `agent` for a proposal of the agent (#270). */
+      method?: RelationMethod;
+      evidence?: string | null;
+    },
   ): { relation: GraphRelation; created: boolean } {
     if (sourceId === targetId) throw new AppError('validation_error', 'Ein Eintrag kann nicht mit sich selbst verknüpft werden.');
     const a = this.getEntity(sourceId);
@@ -674,6 +782,8 @@ export class KnowledgeGraphService {
             resolvedByUser: confirmed,
             // proposals of the fixed link methods are the system's, not the user's (#270)
             origin: opts.origin ?? 'user',
+            method: opts.method ?? (confirmed ? 'manual' : currentRun() ? 'agent' : undefined),
+            evidence: opts.evidence,
           });
     const after = this.db
       .select()
@@ -731,6 +841,52 @@ export class KnowledgeGraphService {
       undo: { type: LINK_UNDO_TYPE, data: { before, after } satisfies LinkUndoData },
     });
     return mapRelation(after);
+  }
+
+  /**
+   * Confirms or rejects several proposals at once („Alle bestätigen“, #280): ONE audit entry, ONE undo step. Relations that
+   * are no longer proposals are left as they are. Returns the number decided.
+   */
+  decideRelations(ids: string[], status: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): number {
+    const unique = [...new Set(ids)];
+    if (!unique.length) return 0;
+    const rows = this.db
+      .select()
+      .from(relations)
+      .where(and(inArray(relations.id, unique), eq(relations.status, 'proposed')))
+      .all();
+    if (!rows.length) return 0;
+    const updatedAt = nowIso();
+    this.ctx.database.transaction(() => {
+      this.db
+        .update(relations)
+        .set({ status, resolvedByUser: true, updatedAt })
+        .where(
+          inArray(
+            relations.id,
+            rows.map((r) => r.id),
+          ),
+        )
+        .run();
+      this.audit.log({
+        action: status === 'confirmed' ? 'relation.confirmMany' : 'relation.rejectMany',
+        actor: 'user',
+        trigger: opts.trigger ?? 'manual',
+        confirmed: true,
+        entityIds: rows.map((r) => r.id).slice(0, 200),
+        before: { count: rows.length, status: 'proposed' },
+        after: { count: rows.length, status },
+        undo: {
+          type: DECIDE_MANY_UNDO_TYPE,
+          data: {
+            before: rows.map((r) => ({ id: r.id, status: r.status, resolvedByUser: r.resolvedByUser, updatedAt: r.updatedAt })),
+            after: Object.fromEntries(rows.map((r) => [r.id, updatedAt])),
+          } satisfies DecideManyUndoData,
+        },
+      });
+    });
+    this.ctx.events.changed('knowledge');
+    return rows.length;
   }
 
   /** Opens or closes a case („Vorgang“, #286); logged with undo. */

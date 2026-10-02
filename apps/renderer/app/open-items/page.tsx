@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { BellPlus, Check, ListChecks, MessageSquare, Pencil, Plus, X } from 'lucide-react';
+import { BellPlus, Check, ListChecks, MessageSquare, Network, Pencil, Plus, X } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { SolutionSection } from '@/components/open-items/solution';
+import { RelatedEntries } from '@/components/knowledge/related';
 import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { QuickDate } from '@/components/common/quick-date';
@@ -50,6 +51,7 @@ export default function OpenItemsPage() {
   const [editItem, setEditItem] = useState<OpenItemRecord | null>(null);
   const [closeItem, setCloseItem] = useState<OpenItemRecord | null>(null);
   const [remindItem, setRemindItem] = useState<OpenItemRecord | null>(null);
+  const [relatedItem, setRelatedItem] = useState<OpenItemRecord | null>(null);
   const { settings } = useSettings();
   const { status } = useApp();
   const llmMode = settings?.privacy.llmMode ?? 'confirm';
@@ -157,6 +159,9 @@ export default function OpenItemsPage() {
                         <Button size="sm" variant="outline" onClick={() => setRemindItem(i)} data-testid="open-item-remind">
                           <BellPlus aria-hidden /> Erinnern
                         </Button>
+                        <Button size="sm" variant="outline" onClick={() => setRelatedItem(i)} data-testid="open-item-related">
+                          <Network aria-hidden /> Zusammenhänge
+                        </Button>
                         <Button size="sm" onClick={() => setCloseItem(i)} data-testid="open-item-close">
                           <Check aria-hidden /> Erledigt …
                         </Button>
@@ -175,6 +180,15 @@ export default function OpenItemsPage() {
       {editItem && <ItemFormDialog key={editItem.id} open onOpenChange={(o) => !o && setEditItem(null)} item={editItem} onSaved={() => void refetch()} />}
       <CloseDialog item={closeItem} onClose={() => setCloseItem(null)} onDone={() => void refetch()} />
       <ReminderDialog item={remindItem} onClose={() => setRemindItem(null)} onDone={() => void refetch()} />
+      <Dialog open={relatedItem !== null} onOpenChange={(o) => !o && setRelatedItem(null)}>
+        <DialogContent className="max-w-2xl" data-testid="open-item-related-dialog">
+          <DialogHeader>
+            <DialogTitle>Zusammenhänge</DialogTitle>
+            <DialogDescription>{relatedItem?.title}</DialogDescription>
+          </DialogHeader>
+          {relatedItem && <RelatedEntries id={relatedItem.id} link={{ name: relatedItem.title }} />}
+        </DialogContent>
+      </Dialog>
     </Page>
   );
 }

@@ -33,6 +33,11 @@ function SourceChip({ source }: { source: SourceRef }) {
       <span className="min-w-0 text-left">
         <span className="block truncate text-xs font-medium">{source.title}</span>
         {source.snippet && <span className="line-clamp-2 block text-[11px] text-muted-foreground">{source.snippet}</span>}
+        {source.via && (
+          <span className="block text-[11px] text-muted-foreground" data-testid="chat-source-via">
+            über Verknüpfung: {source.via}
+          </span>
+        )}
         {source.date && (
           <span className="block text-[11px] text-muted-foreground">
             {source.dateKind ? `${DATE_KIND_LABEL[source.dateKind]} ` : ''}

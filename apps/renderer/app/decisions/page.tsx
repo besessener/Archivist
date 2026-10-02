@@ -24,6 +24,7 @@ import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { ActionRecord, DecisionRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { RelatedEntries } from '@/components/knowledge/related';
 
 /** Where the decision was captured – a decision from a document is no dictated one (#175). */
 const ORIGIN_LABELS: Record<NonNullable<DecisionRecord['origin']>, string> = {
@@ -305,6 +306,7 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
           <ConfidenceBadge value={d.confidence} />
         </Row>
       </dl>
+      <RelatedEntries id={d.id} link={{ name: d.title }} />
       {action && (
         <div data-testid="supersede-action">
           <h3 className="mb-2 text-sm font-semibold">Vorschlag</h3>

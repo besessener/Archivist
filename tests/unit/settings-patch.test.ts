@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Settings, SettingsPatch } from '@archivist/shared';
 import { SettingsService } from '../../packages/core/src/services/settings';
 
-type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent';
+type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent' | 'links';
 
 /**
  * Two complete, valid, non-default value sets per section. Every field differs between A and B,
@@ -47,6 +47,10 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
   ocr: {
     a: { enabled: false, languages: 'eng' },
     b: { enabled: true, languages: 'deu+fra' },
+  },
+  links: {
+    a: { autoPropose: false, maxProposalsPerEntry: 2 },
+    b: { autoPropose: true, maxProposalsPerEntry: 5 },
   },
   agent: {
     a: {

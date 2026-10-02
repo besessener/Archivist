@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Confidence, EntityRef, EntityType, Id, IsoDate, patchSchema, RelationStatus, RelationType, SourceReference } from './common';
+import { Confidence, EntityRef, EntityType, Id, IsoDate, patchSchema, RelationMethod, RelationStatus, RelationType, SourceReference } from './common';
 
 // ---------- Documents ----------
 export const DocumentStatus = z.enum(['staged', 'analyzing', 'proposed', 'archived', 'indexed_only', 'ignored', 'failed', 'quarantined']);
@@ -531,10 +531,48 @@ export const GraphRelation = z.object({
   /** system = fixed methods, user, agent (#270); null for relations from before. */
   origin: z.string().nullish(),
   runId: z.string().nullish(),
+  /** How the relation came about (#270); null if unknown (older relations). */
+  method: RelationMethod.nullish(),
+  /** Short, readable evidence – why it was proposed (#270). */
+  evidence: z.string().nullish(),
+  /** The user confirmed or rejected it explicitly (a confirmed field mirror without this flag was never decided by the user, #189). */
+  resolvedByUser: z.boolean().optional(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
 export type GraphRelation = z.infer<typeof GraphRelation>;
+
+/** How a relation came about, in words (#270). */
+export const RELATION_METHOD_LABELS: Record<RelationMethod, string> = {
+  field: 'aus den Angaben des Eintrags',
+  analysis: 'aus der Analyse',
+  similarity: 'ähnlicher Inhalt',
+  mention: 'im Text genannt',
+  co_origin: 'gemeinsam entstanden',
+  date_person: 'gleicher Tag, gleiche Person',
+  wikilink: 'Wiki-Link',
+  manual: 'von dir verknüpft',
+  agent: 'vom Agenten vorgeschlagen',
+};
+
+/**
+ * Who stands behind a relation (#270, #189): `manual` – the user made it; `user_confirmed` / `user_rejected` – the user
+ * decided a proposal; `auto` – Archivist (or the agent) found it and nobody decided yet. A field mirror is never shown as
+ * confirmed by the user unless the user actually confirmed it.
+ */
+export type RelationProvenance = 'manual' | 'user_confirmed' | 'user_rejected' | 'auto';
+export function relationProvenance(r: Pick<GraphRelation, 'origin' | 'method' | 'resolvedByUser' | 'status'>): RelationProvenance {
+  if (r.method === 'manual' || r.method === 'wikilink') return 'manual';
+  if (r.resolvedByUser && r.status === 'confirmed') return 'user_confirmed';
+  if (r.resolvedByUser && r.status === 'rejected') return 'user_rejected';
+  return 'auto';
+}
+export const RELATION_PROVENANCE_LABELS: Record<RelationProvenance, string> = {
+  manual: 'manuell',
+  user_confirmed: 'von dir bestätigt',
+  user_rejected: 'von dir abgelehnt',
+  auto: 'automatisch',
+};
 export const EntityDetail = z.object({
   entity: GraphEntity,
   relations: z.array(

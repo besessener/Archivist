@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppErrorInfo, EntityType, Id, IsoDate, RelationStatus, SourceReference, type Result } from './common';
+import { AppErrorInfo, EntityType, Id, IsoDate, RelationMethod, RelationStatus, SourceReference, type Result } from './common';
 import {
   AgentActionProposal,
   AgentActionStatus,
@@ -133,14 +133,26 @@ const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benu
 export const UndoRunResult = z.object({ undone: z.number().int(), failed: z.number().int(), conflicts: z.array(z.string()), message: z.string() });
 export type UndoRunResult = z.infer<typeof UndoRunResult>;
 
-export const RelatedEntry = z.object({
-  entity: GraphEntity,
-  depth: z.number().int(),
-  relation: GraphRelation,
+/** A related entry – direct or over shared topics, projects, persons, tags, cases – with strength and reason (#276). */
+const RelatedItem = z.object({
+  entity: z.object({ id: z.string(), type: EntityType, name: z.string(), description: z.string().nullable() }),
+  score: z.number(),
   reason: z.string(),
-  via: GraphEntity.nullable(),
+  relation: GraphRelation.nullable(),
+  shared: z.array(z.object({ id: z.string(), type: EntityType, name: z.string() })),
 });
-export type RelatedEntry = z.infer<typeof RelatedEntry>;
+export const RelatedPage = z.object({ total: z.number().int(), items: z.array(RelatedItem) });
+export type RelatedPage = z.infer<typeof RelatedPage>;
+
+/** An open link proposal with both ends, for the review list (#280). */
+const LinkProposalEnd = z.object({ id: z.string(), type: EntityType, name: z.string() });
+export const LinkProposalPage = z.object({
+  total: z.number().int(),
+  groups: z.array(z.object({ key: z.string(), label: z.string(), count: z.number().int() })),
+  items: z.array(z.object({ relation: GraphRelation, source: LinkProposalEnd, target: LinkProposalEnd, groupKey: z.string() })),
+});
+export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
+const LinkGroupBy = z.enum(['method', 'entry']);
 
 /** A link candidate of the fixed link methods with its reason (#271, #283, #313). */
 export const LinkCandidate = z.object({
@@ -493,16 +505,45 @@ export const ipcContract = {
     KnowledgeCreateResult,
   ),
   /** Links two entries (same service function as the agent's link tool, #277); `confirmed` = the user's own link. */
-  'knowledge:link': ch(z.object({ sourceId: Id, targetId: Id, relationType: z.string().min(1), confirmed: Confirmed }), GraphRelation),
+  'knowledge:link': ch(
+    z.object({
+      sourceId: Id,
+      targetId: Id,
+      relationType: z.string().min(1),
+      /** Set when the user takes over a proposal of a link method (#270): its method and evidence are kept. */
+      method: RelationMethod.optional(),
+      evidence: z.string().max(500).optional(),
+      confirmed: Confirmed,
+    }),
+    GraphRelation,
+  ),
   'knowledge:unlink': ch(z.object({ relationId: Id, confirmed: Confirmed }), Ok),
+  /** Edits a note's title and/or text; it is analysed again afterwards (#273). Undoable. */
+  'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
   /** Related entries with the reason (#276, #289). */
-  'knowledge:related': ch(z.object({ id: Id, depth: z.number().int().min(1).max(2).default(1) }), z.array(RelatedEntry)),
+  /** Related entries of an entry, strongest first, paged (#276). */
+  'knowledge:related': ch(z.object({ id: Id, limit: z.number().int().min(1).max(50).default(10), offset: z.number().int().min(0).default(0) }), RelatedPage),
   /** Link proposals for an entry: similar entries and mentioned topics/projects (#283); the same function as the agent's suggest_links. */
   'links:suggestions': ch(z.object({ id: Id, limit: z.number().int().min(1).max(5).default(3) }), z.array(LinkCandidate)),
   /** Entries without any link (#290), paged with the total. */
   'links:unlinked': ch(
     z.object({ limit: z.number().int().min(1).max(200).default(50), offset: z.number().int().min(0).default(0) }),
     z.object({ total: z.number().int(), items: z.array(z.object({ id: z.string(), type: EntityType, name: z.string(), createdAt: IsoDate })) }),
+  ),
+  /** Open link proposals, grouped by method or entry, paged with the total (#280). */
+  'links:proposals': ch(
+    z.object({ groupBy: LinkGroupBy.default('method'), limit: z.number().int().min(1).max(200).default(50), offset: z.number().int().min(0).default(0) }),
+    LinkProposalPage,
+  ),
+  /** Confirms or rejects the given proposals – one undo step (#280). */
+  'links:decide': ch(
+    z.object({ relationIds: z.array(Id).min(1).max(500), decision: z.enum(['confirmed', 'rejected']), confirmed: Confirmed }),
+    z.object({ decided: z.number().int() }),
+  ),
+  /** Confirms or rejects every open proposal of a group („Alle bestätigen“) – one undo step (#280). */
+  'links:decideGroup': ch(
+    z.object({ groupBy: LinkGroupBy, key: z.string().min(1), decision: z.enum(['confirmed', 'rejected']), confirmed: Confirmed }),
+    z.object({ decided: z.number().int() }),
   ),
   /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. */
   'links:startRun': ch(Empty, z.object({ jobId: Id })),

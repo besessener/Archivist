@@ -6,6 +6,7 @@ Genaues Verhalten jedes Funktionsbereichs. Für den Agentenmodus siehe [Agentenm
 - [Decision Tracking](#decision-tracking)
 - [Dokumente](#dokumente)
 - [Wissensgraph](#wissensgraph)
+- [Verknüpfungen](#verknüpfungen)
 - [Personen und eigene Identität](#personen-und-eigene-identität)
 - [Suche](#suche)
 - [Verzeichnisscan](#verzeichnisscan)
@@ -26,6 +27,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Rückfrage statt Raten** bei unklarer Absicht und **bevor eine unsichere „Entscheidung“ gespeichert wird** (Entscheidung / Ereignis / Notiz / nichts speichern).
 - **Ereignisse** („am 01.10.2026 eingereicht“) landen mit Datum in der Timeline.
 - **Antworten** mit Quellen, getrennten Fakten/Interpretation und sichtbaren Unsicherheiten. Wie Quellen geprüft werden: [LLM-Schnittstelle](llm-schnittstelle.md#antworten-auf-wissensfragen).
+- **Wissensgraph in Antworten**: Bestätigte Verknüpfungen der besten Treffer bringen weitere Quellen mit (z. B. die Entscheidung, die ein gefundenes Dokument stützt); unter der Quelle steht, über welche Verknüpfung sie dazukam.
 - **Abbrechen**: Eine laufende Anfrage lässt sich abbrechen; Erledigtes bleibt, der Rest entfällt.
 - **Ausfall-Schutz**: Nach einer Zeitüberschreitung oder einem unerreichbaren Endpunkt scheitern LLM-Anfragen 60 s lang sofort, statt erneut zu warten (der Verbindungstest geht immer durch).
 - **Bestätigen per „ja“**: bestätigt nur Vorschläge, die **in diesem Gespräch** als Karte angezeigt werden und noch offen sind; sind es mehrere, fragt Archivist nach.
@@ -58,6 +60,46 @@ Der Chat ist die zentrale Schnittstelle.
 - Beim Archivieren werden **alle** Personen und Tags verknüpft.
 - **„Neu anlegen“** auf der Wissen-Seite erzeugt echte Einträge (Ereignisse mit Datum über den Timeline-Dialog, Notizen indexiert) und öffnet bei einem bereits vorhandenen Eintrag diesen mit dem Hinweis „existiert bereits“.
 - **Unbestätigte Themen und Projekte**: Unverändert aus einem Dokument übernommene Themen und Projekte sind auf der Wissen-Seite „unbestätigt“ und werden dem Modell erst nach deiner Bestätigung (oder sobald du den Namen selbst verwendest) als bekannt genannt.
+- **Notizen bearbeiten**: „Bearbeiten“ auf der Wissen-Seite ändert Titel und Text einer Notiz; danach wird sie neu indexiert und neu analysiert. Rückgängig im Änderungsprotokoll.
+
+## Verknüpfungen
+
+Wie und warum Archivist Einträge verknüpft: [Wie Archivist Wissen verknüpft](../explanation/verknuepfungen.md). Vorschläge prüfen: [Verknüpfungsvorschläge prüfen](../how-to/verknuepfungen-pruefen.md).
+
+**Herkunft, Methode und Beleg.** Jede Beziehung speichert:
+
+| Feld | Werte |
+| --- | --- |
+| Herkunft (`origin`) | `system` (feste Methoden), `user`, `agent` (mit Lauf-ID) |
+| Methode (`method`) | `field` (Feld des Eintrags: Thema, Projekt, Personen, Tags, Ordner), `analysis` (Analyse eines Dokuments oder einer Notiz), `similarity`, `mention`, `co_origin`, `date_person`, `wikilink`, `manual`, `agent` |
+| Beleg (`evidence`) | kurzer Text, höchstens 300 Zeichen: die ähnlichste Textstelle, die Nachricht, „Am 01.09.2026 mit „Anna““ … |
+
+Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von dir bestätigt“, „von dir abgelehnt“ oder „manuell“, dazu Methode und Beleg. Ein bestätigter Feld-Spiegel gilt nur dann als „von dir bestätigt“, wenn du ihn bestätigt hast.
+
+**Automatische Methoden** – alle legen nur Vorschläge (`proposed`) an:
+
+| Methode | Wann | Was |
+| --- | --- | --- |
+| Ähnlicher Inhalt (`similarity`) | nach jedem (Neu-)Indexieren eines Eintrags, im Job `links.similar` | `related_to` zu ähnlichen Einträgen (Kosinus der Abschnittsvektoren; Schwelle 0,45 mit Embeddings, 0,5 mit lokalen Vektoren), höchstens N offene je Eintrag (Standard 3) |
+| Gleicher Tag + gleiche Person (`date_person`) | im selben Job | Ereignisse, Entscheidungen und Dokumente mit demselben fachlichen Datum (Ortszeit) und einer gemeinsamen Person; die eigene Person zählt nicht |
+| Gemeinsam entstanden (`co_origin`) | sofort | Einträge aus derselben Chat-Nachricht (paarweise, ab 7 in einer Kette) und Einträge aus demselben Quelldokument |
+| Analyse einer Notiz (`analysis`) | nach Anlegen und Bearbeiten, im Job `notes.analyze` | Thema, Projekt, Personen und Tags; per LLM nur im Modus „automatisch“, sonst lokal (bekannte Namen, Aliasse, `#Hashtags`). Was eine neue Analyse nicht mehr findet, wird `outdated` |
+
+- Übersprungen werden schon verknüpfte Paare, Eingangsdokumente, verworfene Duplikate und **abgelehnte Paare**: Ein abgelehntes Paar schlägt keine Methode wieder vor – in beiden Richtungen, unabhängig von der Art, auch nachdem einer der beiden als Duplikat in einen anderen Eintrag zusammengeführt wurde. Ein abgelehntes „Duplikat“ heißt nur „verschieden“ und blockiert nichts.
+- Abschaltbar unter Einstellungen → Agent → Agentenläufe → „Verknüpfungen automatisch vorschlagen“ (`links.autoPropose`), dort auch die Höchstzahl je Eintrag.
+
+**Verknüpfungsvorschläge prüfen** (Insights, ganz oben): alle offenen Vorschläge der Methoden, gruppiert nach Methode oder Eintrag, je mit Beleg; 20 je Seite mit Gesamtzahl. „Bestätigen“, „Ablehnen“ und „Alle bestätigen“ (die ganze Gruppe, auch über die Seite hinaus) sind je ein Rückgängig-Schritt. Widersprüche, Versionen und Dubletten haben eigene Abläufe und erscheinen dort nicht. Benachrichtigt wird nur bei neuen Vorschlägen: eine Benachrichtigung, die sich aktualisiert, solange sie ungelesen ist.
+
+**Verwandte Einträge** in Dokument- und Entscheidungsdetails, auf der Wissen-Seite und als „Zusammenhänge“ bei offenen Punkten:
+
+- direkte Beziehungen und Verbindungen über gemeinsame Projekte, Vorgänge, Themen, Personen (nicht die eigene) und Tags;
+- sortiert nach Stärke (bestätigt 10, vorgeschlagen 5, Projekt/Vorgang 4, Thema 3, Person 2, Tag 1) mit Begründung wie „gleiches Projekt „Hausbau“ + gleiche Person „Anna““;
+- Vorschläge direkt bestätigen oder ablehnen; 10 je Seite;
+- Knoten mit mehr als 500 Einträgen zählen nicht; abgelehnte Paare fehlen.
+
+**Manuell verknüpfen**: „Verknüpfen“ wählt per Suche einen Eintrag beliebiger Art und die Art der Beziehung (verwandt, folgt aus, ersetzt, blockiert …). Manuelle Verknüpfungen sind sofort bestätigt, stehen im Änderungsprotokoll, lassen sich rückgängig machen und wieder entfernen. Im Chat verknüpft der Agent auf Wunsch („Verknüpfe das mit dem Mietvertrag“) und fragt bei mehreren Treffern nach.
+
+**Rückwirkender Lauf** (Job `links.run`): wendet alle Methoden auf das vorhandene Archiv an, abbrechbar, mit Fortschritt; nach einem Neustart geht er hinter dem letzten vollständig erledigten Eintrag weiter, nichts wird doppelt bezahlt. Er startet einmal nach dem Update und auf Knopfdruck unter Einstellungen → Agent → Agentenläufe; am Ende ein gebündelter Hinweis.
 
 ## Personen und eigene Identität
 

@@ -42,6 +42,13 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen. Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen.
 - Bleibt keine belegte Aussage übrig, erscheint die Antwort des Modells nur als „Nicht belegt (Einschätzung des Modells)“, die Sicherheit wird auf höchstens 30 % gesetzt, und gefundene, aber nicht zitierte Quellen sind als „gefunden, nicht zitiert“ gekennzeichnet.
 - Zu gefundenen Entscheidungen kommen ihre Quelldokumente mit der passenden Textstelle in den Prompt.
+- Über **bestätigte** Beziehungen der drei besten Treffer kommen bis zu drei weitere Einträge hinzu (höchstens zwei je Treffer, halbe Gewichtung), mit dem Vermerk „Hinzugekommen über die bestätigte Verknüpfung: …“. Vorgeschlagene, abgelehnte und veraltete Beziehungen werden nie genutzt; Freigaben gelten wie für Treffer.
+
+## Analyse von Notizen
+
+- Schema `NoteAnalysis`: Thema, Projekt, Personen, Tags. Nur im Modus „automatisch“; sonst lokal.
+- Der Notiztext ist im Prompt als Daten markiert; bekannte (bestätigte) Themen und Projekte gehen als Kontext mit.
+- Das Ergebnis wird nur ein Vorschlag (Methode `analysis`); neue Themen und Projekte daraus bleiben unbestätigt.
 
 ## Schutz vor Prompt-Injection
 
