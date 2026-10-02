@@ -286,7 +286,7 @@ describe('Secrets, backups, settings', () => {
 
   it('refuses to save when no secure storage is available', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-sec-'));
-    const s = createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher(false) });
+    const s = createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher({ available: false }) });
     expect(() => s.secrets.setApiKey('sk-abc123456')).toThrow(/sicher/i);
     expect(s.secrets.hasApiKey()).toBe(false);
     await s.shutdown();

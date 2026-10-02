@@ -66,8 +66,12 @@ describe('Entries created together are linked (#272)', () => {
 
   it('entries taken from the same document are linked with each other – also when created at different times', async () => {
     app = await createTestApp({ privacy: 'auto', autoLinks: true });
-    const doc = await archived(app, 'protokoll.md', 'Protokoll der Eigentümerversammlung: Dach wird saniert, Angebote einholen.', 'private/haus');
-    const other = await archived(app, 'rechnung.md', 'Rechnung Handwerker für die Heizung.', 'private/haus');
+    const doc = await archived(app, {
+      name: 'protokoll.md',
+      content: 'Protokoll der Eigentümerversammlung: Dach wird saniert, Angebote einholen.',
+      folder: 'private/haus',
+    });
+    const other = await archived(app, { name: 'rechnung.md', content: 'Rechnung Handwerker für die Heizung.', folder: 'private/haus' });
     const decision = app.services.decisions.create({
       decisionText: 'Das Dach wird 2027 saniert.',
       title: 'Dachsanierung',
@@ -91,7 +95,7 @@ describe('Entries created together are linked (#272)', () => {
 
   it('a pair the user rejected or already linked is not proposed again', async () => {
     app = await createTestApp({ privacy: 'auto', autoLinks: true });
-    const doc = await archived(app, 'protokoll.md', 'Protokoll: drei Punkte.', 'private/haus');
+    const doc = await archived(app, { name: 'protokoll.md', content: 'Protokoll: drei Punkte.', folder: 'private/haus' });
     const mk = (title: string) => app.services.openItems.create({ title, sourceIds: [doc], priority: 'normal', confidence: 0.8 });
     const a = mk('Punkt A');
     const b = mk('Punkt B');

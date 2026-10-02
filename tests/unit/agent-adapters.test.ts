@@ -68,9 +68,9 @@ describe.each(PROVIDERS)('agent scenario find → move → done via $name', ({ i
 
   it('finds the md files, moves them and reports', async () => {
     app = await agentApp(opts);
-    const a = await archived(app, 'folien-q1.md', '# Q1', 'work/misc');
-    const b = await archived(app, 'folien-q2.md', '# Q2', 'work/misc');
-    const other = await archived(app, 'notiz.txt', 'Notiz', 'work/misc');
+    const a = await archived(app, { name: 'folien-q1.md', content: '# Q1', folder: 'work/misc' });
+    const b = await archived(app, { name: 'folien-q2.md', content: '# Q2', folder: 'work/misc' });
+    const other = await archived(app, { name: 'notiz.txt', content: 'Notiz', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       ({ provider }) => {
         expect(provider).toBe(id);
@@ -145,7 +145,7 @@ describe('switching the provider within a conversation (#297)', () => {
 
   it('keeps the neutral history: the other provider gets text and tool calls instead of foreign raw blocks', async () => {
     app = await agentApp();
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: { ext: 'md' } }], text: 'Ich suche.' }, { text: 'Gefunden: D1.' });
     const first = await app.ok('chat:send', { text: 'Welche md-Dateien gibt es?' });
     expect(first.assistantMessage.content).toBe('Gefunden: „a“.');

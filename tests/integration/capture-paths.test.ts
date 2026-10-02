@@ -329,7 +329,11 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
 
   it('verified_answer uses the same answer logic as the chat: the matched passage goes to the model, only cited facts count', async () => {
     app = await agentApp();
-    await archived(app, 'protokoll.txt', 'Beschluss: Die Plattform zieht bis Ende März nach Frankfurt um, verantwortlich ist Jana.', 'work/protokolle');
+    await archived(app, {
+      name: 'protokoll.txt',
+      content: 'Beschluss: Die Plattform zieht bis Ende März nach Frankfurt um, verantwortlich ist Jana.',
+      folder: 'work/protokolle',
+    });
     app.llm.on('KnowledgeAnswer', () => ({
       answer: 'Nach Frankfurt.',
       facts: [{ statement: 'Die Plattform zieht nach Frankfurt.', sourceIds: ['S1'] }],
