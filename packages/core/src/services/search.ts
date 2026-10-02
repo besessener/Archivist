@@ -18,6 +18,12 @@ export interface IndexInput {
   allowRemoteEmbedding?: boolean;
 }
 
+/** Search result plus the matched chunk text (main process only; not part of the IPC result). */
+export interface SearchHit extends SearchResult {
+  /** The best matching chunk of the entity – the passage an answer should be based on (#157). */
+  passage: string;
+}
+
 interface Hit {
   entityId: string;
   entityType: string;
@@ -118,7 +124,7 @@ export class SearchService {
     return toks.map((t) => `"${t.replace(/"/g, '')}"*`).join(' OR ');
   }
 
-  async search(query: string, opts: { types?: EntityType[]; limit?: number; allowRemoteEmbedding?: boolean } = {}): Promise<SearchResult[]> {
+  async search(query: string, opts: { types?: EntityType[]; limit?: number; allowRemoteEmbedding?: boolean } = {}): Promise<SearchHit[]> {
     const limit = opts.limit ?? 30;
     const hits = new Map<string, Hit>();
     const typeSet = opts.types ? new Set<string>(opts.types) : null;
@@ -246,6 +252,7 @@ export class SearchService {
           score: Math.round((score / max) * 1000) / 1000,
           path: d?.rel ?? d?.src ?? null,
           date: d ? (d.at ?? d.created) : (decs.get(h.entityId)?.at ?? ent.updatedAt),
+          passage: h.chunkText,
           matchedBy: [...(h.keywordRank !== undefined ? (['keyword'] as const) : []), ...(h.vectorRank !== undefined ? (['semantic'] as const) : [])],
         },
       ];
@@ -253,7 +260,7 @@ export class SearchService {
   }
 
   /** Documents whose content is close to a name/topic (for assignment proposals). */
-  async similarEntities(text: string, types: EntityType[], limit = 10): Promise<SearchResult[]> {
+  async similarEntities(text: string, types: EntityType[], limit = 10): Promise<SearchHit[]> {
     const q = normalizeName(text).split(' ').slice(0, 60).join(' ');
     return q ? this.search(q, { types, limit }) : [];
   }
