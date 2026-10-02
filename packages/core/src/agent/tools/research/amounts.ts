@@ -23,8 +23,7 @@ function splitDecimal(digits: string): { integer: string; fraction: string } {
   const separator = lastComma >= 0 ? ',' : '.';
   const index = digits.lastIndexOf(separator);
   const tail = digits.slice(index + 1);
-  // exactly three digits after a single separator: thousands („1.234“); otherwise decimals
-  if (tail.length === 3 && digits.indexOf(separator) === index) return { integer: digits.replace(separator, ''), fraction: '' };
+  // exactly three digits after the last separator: thousands („1.234“, „1.234.567“); otherwise decimals
   if (tail.length === 3) return { integer: digits.split(separator).join(''), fraction: '' };
   return { integer: digits.slice(0, index), fraction: tail };
 }

@@ -10,18 +10,26 @@ const SEPARATOR = /[\\/]/;
 // eslint-disable-next-line sonarjs/publicly-writable-directories -- not used as a storage location, only to compare path prefixes
 const TEMP_PREFIXES = ['/tmp/', '/var/tmp/', '/var/folders/', '/private/var/folders/', '/private/tmp/'];
 
-/** true if `candidate` equals `root` or lies below it (purely lexical, after normalization). */
-export function isInside(root: string, candidate: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  if (relative === '') return true;
-  return !(relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
+type PathApi = typeof path.posix;
+
+/** `isInside` for one path flavour; win32 compares case-insensitively. */
+function insideFor(pathApi: PathApi): (root: string, candidate: string) => boolean {
+  return (root, candidate) => {
+    const relative = pathApi.relative(pathApi.resolve(root), pathApi.resolve(candidate));
+    return !(relative === '..' || relative.startsWith(`..${pathApi.sep}`) || pathApi.isAbsolute(relative));
+  };
 }
+
+/** true if `candidate` equals `root` or lies below it (purely lexical, after normalization). */
+export const isInside = insideFor(path);
+const isInsidePosix = insideFor(path.posix);
+const isInsideWindows = insideFor(path.win32);
 
 /** Resolves a relative path strictly inside `root` (no path traversal, no absolute paths). */
 export function resolveInside(root: string, relativePath: string): string {
   if (relativePath.includes('\0')) throw validationError('Ungültiger Pfad (Nullbyte).');
   if (path.isAbsolute(relativePath) || /^[A-Za-z]:/.test(relativePath)) throw permissionError('Absolute Pfade sind hier nicht erlaubt.', relativePath);
-  const parts = relativePath.split(SEPARATOR).filter((part) => part !== '');
+  const parts = relativePath.split(SEPARATOR);
   if (parts.some((part) => part === '..')) throw permissionError('Pfad verlässt den erlaubten Bereich (..).', relativePath);
   const absolute = path.resolve(root, ...parts);
   if (!isInside(root, absolute)) throw permissionError('Pfad liegt außerhalb des erlaubten Bereichs.', relativePath);
@@ -152,26 +160,28 @@ function posixForbiddenReason(resolved: string, home: string): string | null {
   const lower = resolved.toLowerCase();
   if (!POSIX_SYSTEM_DIRS.some((sys) => lower === sys || lower.startsWith(`${sys}/`))) return null;
   // everything below the user's own home directory is allowed (e.g. /home/me/Downloads)
-  if (isInside(home, resolved) && resolved !== path.dirname(home)) return null;
+  if (isInsidePosix(home, resolved)) return null;
   // /tmp and /var/tmp are allowed for tests/temporary folders, unless they are the root itself
   if (TEMP_PREFIXES.some((prefix) => lower.startsWith(prefix))) return null;
-  if (lower.startsWith('/volumes/') || lower.startsWith('/mnt/')) return null;
+  if (lower.startsWith('/volumes/')) return null;
   return SYSTEM_DIR_REASON;
 }
 
 function windowsForbiddenReason(resolved: string, home: string): string | null {
   const lower = resolved.toLowerCase();
   if (!WINDOWS_SYSTEM_DIRS.some((sys) => lower === sys || lower.startsWith(`${sys}\\`))) return null;
-  if (isInside(home, resolved) && lower !== path.dirname(home).toLowerCase()) return null;
+  if (isInsideWindows(home, resolved)) return null;
   return SYSTEM_DIR_REASON;
 }
 
-/** System directories and roots that may never be approved as a scan directory. */
-export function isForbiddenScanRoot(dir: string, opts: { home?: string; username?: string } = {}): string | null {
-  const resolved = path.resolve(dir);
-  const home = path.resolve(opts.home ?? os.homedir());
-  if (path.dirname(resolved) === resolved) return 'Laufwerks- oder Systemwurzeln dürfen nicht gescannt werden.';
-  return process.platform === 'win32' ? windowsForbiddenReason(resolved, home) : posixForbiddenReason(resolved, home);
+/** System directories and roots that may never be approved as a scan directory; `platform` picks the rules and path flavour. */
+export function isForbiddenScanRoot(dir: string, opts: { home?: string; platform?: NodeJS.Platform } = {}): string | null {
+  const windows = (opts.platform ?? process.platform) === 'win32';
+  const pathApi = windows ? path.win32 : path.posix;
+  const resolved = pathApi.resolve(dir);
+  const home = pathApi.resolve(opts.home ?? os.homedir());
+  if (pathApi.dirname(resolved) === resolved) return 'Laufwerks- oder Systemwurzeln dürfen nicht gescannt werden.';
+  return windows ? windowsForbiddenReason(resolved, home) : posixForbiddenReason(resolved, home);
 }
 
 /** Normalizes a path for comparison and storage (absolute, without trailing separator). */

@@ -72,6 +72,12 @@ describe('privacy gate: what may be sent to the external LLM?', () => {
     expect(privacy.evaluate({ ext: 'txt' })).toEqual(allowed);
   });
 
+  it('strips only a single leading dot and compares the whole extension', () => {
+    expect(gate({ neverAnalyzeExtensions: ['targz'] }).evaluate({ ext: 'tar.gz' })).toEqual(allowed);
+    expect(gate({ neverAnalyzeExtensions: ['tar.gz'] }).evaluate({ ext: 'targz' })).toEqual(allowed);
+    expect(gate({ neverAnalyzeExtensions: ['tar.gz'] }).evaluate({ ext: '.tar.gz' })).toMatchObject({ allowed: false });
+  });
+
   it('blocks individual files, even when the path is written differently', () => {
     const privacy = gate({ neverAnalyzeFiles: ['/daten/geheim/../privat.txt'] });
 
@@ -137,6 +143,37 @@ describe('privacy gate: exclusions compare paths like the file system (#56)', ()
     expect(privacy.evaluate({ path: 'd:\\daten\\geheim.txt', ext: 'txt' })).toMatchObject({ allowed: false });
     expect(privacy.evaluate({ path: 'c:\\users\\anna\\steuer-alt\\x.pdf', ext: 'pdf' })).toEqual(allowed);
     expect(privacy.evaluate({ path: 'd:\\daten\\geheim.txt.bak', ext: 'bak' })).toEqual(allowed);
+  });
+
+  it('resolves symlinks also for files that do not exist yet', () => {
+    const dir = sandbox();
+    const privacy = gate({ neverAnalyzeDirs: [path.join(dir, 'real', 'tax')] });
+
+    expect(privacy.evaluate({ path: path.join(dir, 'link', 'tax', 'neu', 'bescheid.pdf'), ext: 'pdf' })).toMatchObject({ allowed: false });
+  });
+
+  it('excludes the real files of a directory that was entered via a symlink', () => {
+    const dir = sandbox();
+    const privacy = gate({ neverAnalyzeDirs: [path.join(dir, 'link', 'tax')] });
+
+    expect(privacy.evaluate({ path: path.join(dir, 'real', 'tax', 'notice.pdf'), ext: 'pdf' })).toMatchObject({ allowed: false });
+    expect(privacy.evaluate({ path: path.join(dir, 'real', 'other.pdf'), ext: 'pdf' })).toEqual(allowed);
+  });
+
+  it('compares paths of another platform lexically only, without consulting this file system', () => {
+    const dir = sandbox();
+    const otherPosixPlatform = process.platform === 'linux' ? 'darwin' : 'linux';
+    const privacy = gate({ neverAnalyzeDirs: [path.join(dir, 'real', 'tax')] }, otherPosixPlatform);
+
+    expect(privacy.evaluate({ path: path.join(dir, 'link', 'tax', 'notice.pdf'), ext: 'pdf' })).toEqual(allowed);
+    expect(privacy.evaluate({ path: path.join(dir, 'real', 'tax', 'notice.pdf'), ext: 'pdf' })).toMatchObject({ allowed: false });
+  });
+
+  it('does not exclude the parent of an excluded directory or another Windows drive', () => {
+    expect(gate({ neverAnalyzeDirs: ['/daten/steuer'] }).evaluate({ path: '/daten', ext: '' })).toEqual(allowed);
+    const windows = gate({ neverAnalyzeDirs: ['C:\\Daten'] }, 'win32');
+    expect(windows.evaluate({ path: 'D:\\Daten\\x.pdf', ext: 'pdf' })).toEqual(allowed);
+    expect(windows.evaluate({ path: 'C:\\', ext: '' })).toEqual(allowed);
   });
 
   it('stays case-sensitive on Linux', () => {

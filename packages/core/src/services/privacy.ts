@@ -63,7 +63,6 @@ export class PathMatcher {
 
   private insideLexically(root: string, candidate: string): boolean {
     const relative = this.pathApi.relative(root, candidate);
-    if (relative === '') return true;
     return !(relative === '..' || relative.startsWith(`..${this.pathApi.sep}`) || this.pathApi.isAbsolute(relative));
   }
 
