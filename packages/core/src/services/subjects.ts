@@ -1,4 +1,4 @@
-import type { EntityType, RelationType } from '@archivist/shared';
+import type { EntityType, GraphEntity } from '@archivist/shared';
 import { and, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { relations } from '../db/schema';
@@ -6,42 +6,24 @@ import { AppError } from '../util/errors';
 import { normalizeName } from '../util/text';
 import { nowIso } from '../util/ids';
 import type { AuditService } from './audit';
-import { LINK_MANY_UNDO_TYPE, type KnowledgeGraphService, type LinkManyUndoData } from './knowledge-graph';
+import { LINK_MANY_UNDO_TYPE, type KnowledgeGraphService, type LinkManyUndoData, type LinkUndoData } from './knowledge-graph';
+import {
+  planBulkAssignment,
+  subjectRelation,
+  SUBJECT_TABLE,
+  type BulkAssignmentPlan,
+  type BulkPlanSources,
+  type LinkSpec,
+  type MainSubjects,
+  type SubjectKind,
+} from './subject-assignment';
+import { MAIN_UNDO_TYPE, registerSubjectUndo, TAGS_UNDO_TYPE } from './subject-undo';
 import { COMPOSITE_UNDO_TYPE, type CompositeUndoData, type UndoService } from './undo';
 
-/** Undo of main topics/projects a bulk assignment set (#291). */
-const MAIN_UNDO = 'subjects.main';
-interface MainUndo {
-  table: string;
-  col: 'topic_id' | 'project_id';
-  id: string;
-  value: string;
-}
-/** Undo of a tag a bulk assignment added to documents (#291). */
-const TAGS_UNDO = 'subjects.docTags';
-interface TagUndo {
-  id: string;
-  before: string[];
-  /** The tags this assignment added. */
-  added: string[];
-}
 /** Entries the lists can select for a bulk assignment (#291). */
 const BULK_TYPES: EntityType[] = ['document', 'note', 'decision', 'task', 'question', 'event'];
-
-/** The table of each kind of entry that has a main topic/project column. */
-const TABLE: Partial<Record<EntityType, string>> = {
-  document: 'documents',
-  decision: 'decisions',
-  task: 'open_items',
-  question: 'open_items',
-  event: 'events',
-};
-
-/** The relation an entry has to a topic or project – the same the field mirror of the main column uses. */
-export function subjectRelation(entryType: EntityType, subject: 'topic' | 'project'): RelationType {
-  if (entryType === 'decision') return subject === 'topic' ? 'concerns' : 'affects';
-  return subject === 'topic' ? 'relates_to' : 'belongs_to';
-}
+const SUBJECT_KINDS = ['topic', 'project'] as const;
+const NO_MAIN: MainSubjects = { topicId: null, projectId: null };
 
 export interface SubjectRef {
   id: string;
@@ -57,13 +39,26 @@ export interface EntrySubjects {
   extraProjects: SubjectRef[];
 }
 
-/**
- * Several topics and projects per entry (#287): the topic/project column of a document, decision, open item or event
- * stays its main assignment – the archive folder follows it – and further topics and projects are confirmed relations of
- * the same kind as the field mirror. Lists and filters count both; changing the further ones is ONE undo step.
- */
+interface SubjectPatch {
+  topics?: string[];
+  projects?: string[];
+}
+
+type SubjectReindexer = (refs: { documents: string[]; decisions: string[]; openItems: string[]; events: string[] }) => Promise<void>;
+
+interface SubjectRow {
+  entryId: string;
+  id: string;
+  name: string;
+  kind: SubjectKind;
+}
+
+const namesOf = (patch: SubjectPatch, kind: SubjectKind) => (kind === 'topic' ? patch.topics : patch.projects);
+const extrasOf = (subjects: EntrySubjects, kind: SubjectKind) => (kind === 'topic' ? subjects.extraTopics : subjects.extraProjects);
+
+/** Several topics and projects per entry (#287): the column stays the main one, further ones are confirmed relations. */
 export class SubjectService {
-  private reindexer: ((refs: { documents: string[]; decisions: string[]; openItems: string[]; events: string[] }) => Promise<void>) | null = null;
+  private reindexer: SubjectReindexer = async () => {};
 
   constructor(
     private readonly ctx: AppContext,
@@ -71,62 +66,23 @@ export class SubjectService {
     private readonly audit: AuditService,
     undo: UndoService,
   ) {
-    undo.register(MAIN_UNDO, {
-      check: async (data) => {
-        const changed = (data as MainUndo[]).filter(
-          (m) => (this.sqlite.prepare(`SELECT ${m.col} AS v FROM ${m.table} WHERE id = ?`).get(m.id) as { v: string | null } | undefined)?.v !== m.value,
-        ).length;
-        return changed ? [`Bei ${changed} Einträgen wurde Thema bzw. Projekt seither geändert.`] : [];
-      },
-      run: async (data) => {
-        const items = data as MainUndo[];
-        for (const m of items) this.sqlite.prepare(`UPDATE ${m.table} SET ${m.col} = NULL, updated_at = ? WHERE id = ?`).run(nowIso(), m.id);
-        await this.reindexEntries(items.map((m) => m.id));
-        this.ctx.events.changed('documents', 'decisions', 'openItems', 'events');
-        return `Zuordnung bei ${items.length} Einträgen zurückgenommen.`;
-      },
-    });
-    undo.register(TAGS_UNDO, {
-      check: async (data) => {
-        const changed = (data as TagUndo[]).filter((t) => {
-          const now = JSON.parse(
-            (this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(t.id) as { tags: string } | undefined)?.tags ?? '[]',
-          ) as string[];
-          return t.added.some((x) => !now.includes(x));
-        }).length;
-        return changed ? [`Bei ${changed} Dokumenten wurden die Tags seither geändert.`] : [];
-      },
-      run: async (data) => {
-        const items = data as TagUndo[];
-        for (const t of items) {
-          const now = JSON.parse((this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(t.id) as { tags: string }).tags) as string[];
-          this.sqlite
-            .prepare('UPDATE documents SET tags = ?, updated_at = ? WHERE id = ?')
-            .run(JSON.stringify(now.filter((x) => !t.added.includes(x))), nowIso(), t.id);
-        }
-        await this.reindexEntries(items.map((t) => t.id));
-        this.ctx.events.changed('documents');
-        return `Tags bei ${items.length} Dokumenten entfernt.`;
-      },
-    });
+    registerSubjectUndo(undo, { ctx, reindex: (ids) => this.reindexEntries(ids) });
   }
 
   /** Rebuilds the search entries of changed entries (their topic and project names are part of the indexed text). */
-  setReindexer(fn: (refs: { documents: string[]; decisions: string[]; openItems: string[]; events: string[] }) => Promise<void>): void {
-    this.reindexer = fn;
+  setReindexer(reindexer: SubjectReindexer): void {
+    this.reindexer = reindexer;
   }
 
   private get sqlite() {
     return this.ctx.database.sqlite;
   }
 
-  private main(id: string, type: EntityType): { topicId: string | null; projectId: string | null } {
-    const table = TABLE[type];
-    if (!table) return { topicId: null, projectId: null };
-    return (
-      (this.sqlite.prepare(`SELECT topic_id AS topicId, project_id AS projectId FROM ${table} WHERE id = ?`).get(id) as
-        { topicId: string | null; projectId: string | null } | undefined) ?? { topicId: null, projectId: null }
-    );
+  private main(id: string, type: EntityType): MainSubjects {
+    const table = SUBJECT_TABLE[type];
+    if (!table) return NO_MAIN;
+    const row = this.sqlite.prepare(`SELECT topic_id AS topicId, project_id AS projectId FROM ${table} WHERE id = ?`).get(id) as MainSubjects | undefined;
+    return row ?? NO_MAIN;
   }
 
   /** Main and further topics/projects of several entries at once (one query each – for lists). */
@@ -142,201 +98,165 @@ export class SubjectService {
          WHERE r.source_entity_id IN (${marks}) AND r.status = 'confirmed' AND s.type IN ('topic','project')
          ORDER BY s.name`,
       )
-      .all(...unique) as Array<{ entryId: string; entryType: EntityType; id: string; name: string; kind: 'topic' | 'project' }>;
-    const types = new Map(
-      (this.sqlite.prepare(`SELECT id, type FROM entities WHERE id IN (${marks})`).all(...unique) as Array<{ id: string; type: EntityType }>).map((r) => [
-        r.id,
-        r.type,
-      ]),
-    );
-    const name = (id: string | null) => (id ? { id, name: this.graph.getEntity(id)?.name ?? '' } : null);
+      .all(...unique) as SubjectRow[];
+    const entryRows = this.sqlite.prepare(`SELECT id, type FROM entities WHERE id IN (${marks})`).all(...unique) as Array<{ id: string; type: EntityType }>;
+    const types = new Map(entryRows.map((row) => [row.id, row.type]));
     for (const id of unique) {
       const type = types.get(id);
-      if (!type) continue;
-      const m = this.main(id, type);
-      const mine = rows.filter((r) => r.entryId === id);
-      out[id] = {
-        topic: name(m.topicId),
-        project: name(m.projectId),
-        extraTopics: mine.filter((r) => r.kind === 'topic' && r.id !== m.topicId).map((r) => ({ id: r.id, name: r.name })),
-        extraProjects: mine.filter((r) => r.kind === 'project' && r.id !== m.projectId).map((r) => ({ id: r.id, name: r.name })),
-      };
+      if (type) out[id] = this.subjectsOf(id, type, rows);
     }
     return out;
   }
 
-  of(id: string): EntrySubjects {
-    const s = this.ofMany([id])[id];
-    if (!s) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
-    return s;
+  private subjectsOf(id: string, type: EntityType, rows: SubjectRow[]): EntrySubjects {
+    const main = this.main(id, type);
+    const mine = rows.filter((row) => row.entryId === id);
+    const ref = (subjectId: string | null) => (subjectId ? { id: subjectId, name: this.graph.getEntity(subjectId)?.name ?? '' } : null);
+    const extras = (kind: SubjectKind, mainId: string | null) =>
+      mine.filter((row) => row.kind === kind && row.id !== mainId).map((row) => ({ id: row.id, name: row.name }));
+    return {
+      topic: ref(main.topicId),
+      project: ref(main.projectId),
+      extraTopics: extras('topic', main.topicId),
+      extraProjects: extras('project', main.projectId),
+    };
   }
 
-  private resolve(kind: 'topic' | 'project', name: string): string {
+  of(id: string): EntrySubjects {
+    const subjects = this.ofMany([id])[id];
+    if (!subjects) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
+    return subjects;
+  }
+
+  private resolve(kind: SubjectKind | 'tag', name: string): string {
     return (this.graph.findByNameOrAlias(kind, name) ?? this.graph.ensureEntity(kind, name)).id;
   }
 
-  /**
-   * Sets the further topics and/or projects of an entry (by name; new names are created) – the main one stays. What is
-   * no longer named is removed. ONE undo step. Returns the entry's topics/projects afterwards.
-   */
-  setExtras(id: string, patch: { topics?: string[]; projects?: string[] }, opts: { trigger?: string } = {}): EntrySubjects {
+  /** Ids of the confirmed relations from an entry to a topic or project. */
+  private confirmedLinkIds(id: string, targetId: string): string[] {
+    return this.graph
+      .relationsOf(id, { statuses: ['confirmed'] })
+      .filter((relation) => relation.sourceEntityId === id && relation.targetEntityId === targetId)
+      .map((relation) => relation.id);
+  }
+
+  /** Sets the further topics/projects by name (new names are created, unnamed ones removed) in ONE undo step. */
+  setExtras(id: string, patch: SubjectPatch, opts: { trigger?: string } = {}): EntrySubjects {
     const entry = this.graph.getEntity(id);
-    if (!entry || !TABLE[entry.type]) throw new AppError('validation_error', 'Diesem Eintrag lassen sich keine Themen oder Projekte zuordnen.');
+    if (!entry || !SUBJECT_TABLE[entry.type]) throw new AppError('validation_error', 'Diesem Eintrag lassen sich keine Themen oder Projekte zuordnen.');
     const current = this.of(id);
-    const add: Array<{ sourceId: string; targetId: string; relationType: RelationType }> = [];
+    const add: LinkSpec[] = [];
     const remove: string[] = [];
-    for (const kind of ['topic', 'project'] as const) {
-      const names = kind === 'topic' ? patch.topics : patch.projects;
+    for (const kind of SUBJECT_KINDS) {
+      const names = namesOf(patch, kind);
       if (!names) continue;
-      const main = kind === 'topic' ? current.topic?.id : current.project?.id;
-      const wanted = new Set(
-        names
-          .map((n) => n.trim())
-          .filter(Boolean)
-          .map((n) => this.resolve(kind, n))
-          .filter((x) => x !== main),
-      );
-      const now = kind === 'topic' ? current.extraTopics : current.extraProjects;
-      for (const t of wanted) if (!now.some((n) => n.id === t)) add.push({ sourceId: id, targetId: t, relationType: subjectRelation(entry.type, kind) });
-      for (const n of now)
-        if (!wanted.has(n.id))
-          remove.push(
-            ...this.graph
-              .relationsOf(id, { statuses: ['confirmed'] })
-              .filter((r) => r.sourceEntityId === id && r.targetEntityId === n.id)
-              .map((r) => r.id),
-          );
+      const changes = this.extraChanges(entry, kind, names, current);
+      add.push(...changes.add);
+      remove.push(...changes.remove);
     }
     this.graph.changeLinks({ add, remove }, { trigger: opts.trigger, action: 'subjects.update', summary: { entry: entry.name } });
     if (add.length || remove.length) this.ctx.events.changed('documents', 'decisions', 'openItems', 'events');
     return this.of(id);
   }
 
-  /**
-   * Removes further topics/projects (#287) by name from several entries – ONE undo step; the main ones stay (they are
-   * changed with the entry itself). Returns the number of removed assignments.
-   */
-  removeFurther(ids: string[], patch: { topics?: string[]; projects?: string[] }, opts: { trigger?: string } = {}): number {
-    const subjects = this.ofMany(ids);
-    const remove: string[] = [];
-    for (const [id, s] of Object.entries(subjects))
-      for (const kind of ['topic', 'project'] as const) {
-        const names = new Set((kind === 'topic' ? patch.topics : patch.projects)?.map((n) => normalizeName(n)) ?? []);
-        const further = kind === 'topic' ? s.extraTopics : s.extraProjects;
-        for (const f of further.filter((x) => names.has(normalizeName(x.name))))
-          remove.push(
-            ...this.graph
-              .relationsOf(id, { statuses: ['confirmed'] })
-              .filter((r) => r.sourceEntityId === id && r.targetEntityId === f.id)
-              .map((r) => r.id),
-          );
-      }
-    const n = this.graph.changeLinks({ remove }, { trigger: opts.trigger, action: 'subjects.removeFurther', summary: { ...patch } });
-    if (n) this.ctx.events.changed('documents', 'decisions', 'openItems', 'events');
-    return n;
+  private extraChanges(entry: GraphEntity, kind: SubjectKind, names: string[], current: EntrySubjects): { add: LinkSpec[]; remove: string[] } {
+    const mainId = kind === 'topic' ? current.topic?.id : current.project?.id;
+    const wanted = new Set(
+      names
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .map((name) => this.resolve(kind, name))
+        .filter((targetId) => targetId !== mainId),
+    );
+    const existing = extrasOf(current, kind);
+    const add = [...wanted]
+      .filter((targetId) => !existing.some((extra) => extra.id === targetId))
+      .map((targetId) => ({ sourceId: entry.id, targetId, relationType: subjectRelation(entry.type, kind) }));
+    const remove = existing.filter((extra) => !wanted.has(extra.id)).flatMap((extra) => this.confirmedLinkIds(entry.id, extra.id));
+    return { add, remove };
   }
 
-  /**
-   * Bulk assignment of a list's selection (#291) – ONE undo step for all of it: a topic or project becomes the main
-   * value of an entry that has none and a further one of the others (#287); a tag is added; a case collects the entries.
-   */
+  /** Removes further topics/projects (#287) by name from several entries in ONE undo step; returns how many were removed. */
+  removeFurther(ids: string[], patch: SubjectPatch, opts: { trigger?: string } = {}): number {
+    const remove: string[] = [];
+    for (const [id, subjects] of Object.entries(this.ofMany(ids)))
+      for (const kind of SUBJECT_KINDS) {
+        const names = new Set(namesOf(patch, kind)?.map((name) => normalizeName(name)) ?? []);
+        for (const further of extrasOf(subjects, kind).filter((extra) => names.has(normalizeName(extra.name))))
+          remove.push(...this.confirmedLinkIds(id, further.id));
+      }
+    const removed = this.graph.changeLinks({ remove }, { trigger: opts.trigger, action: 'subjects.removeFurther', summary: { ...patch } });
+    if (removed) this.ctx.events.changed('documents', 'decisions', 'openItems', 'events');
+    return removed;
+  }
+
+  /** Bulk assignment of a list's selection (#291) in ONE undo step: main value where missing, else a further one (#287). */
   async bulkAssign(
     ids: string[],
-    patch: { topics?: string[]; projects?: string[]; tags?: string[]; caseId?: string | null },
+    patch: SubjectPatch & { tags?: string[]; caseId?: string | null },
     opts: { trigger?: string } = {},
   ): Promise<{ updated: number; auditId: string | null }> {
     const entries = [...new Set(ids)].flatMap((id) => {
-      const e = this.graph.getEntity(id);
-      return e && BULK_TYPES.includes(e.type) ? [e] : [];
+      const entry = this.graph.getEntity(id);
+      return entry && BULK_TYPES.includes(entry.type) ? [entry] : [];
     });
     if (!entries.length) throw new AppError('validation_error', 'Keine passenden Einträge ausgewählt.');
-    const caseNode = patch.caseId ? this.graph.getEntity(patch.caseId) : null;
+    const caseNode = patch.caseId ? this.graph.getEntity(patch.caseId) : undefined;
     if (patch.caseId && caseNode?.type !== 'case') throw new AppError('validation_error', 'Vorgang nicht gefunden.');
-    const main: MainUndo[] = [];
-    const tags: TagUndo[] = [];
-    const mirrors: Array<{ sourceId: string; targetId: string; relationType: RelationType }> = [];
-    const add: Array<{ sourceId: string; targetId: string; relationType: RelationType }> = [];
-    const touched = new Set<string>();
-    const clean = (xs: string[] | undefined) => [...new Set((xs ?? []).map((x) => x.trim()).filter(Boolean))];
-    // a main value set earlier in this call counts: the second topic of an entry without one becomes a further one
-    const newMain = new Map<string, string>();
-    for (const kind of ['topic', 'project'] as const)
-      for (const name of clean(kind === 'topic' ? patch.topics : patch.projects)) {
-        const targetId = this.resolve(kind, name);
-        for (const e of entries) {
-          const table = TABLE[e.type];
-          const col = kind === 'topic' ? 'topic_id' : 'project_id';
-          const cur = table ? (newMain.get(`${e.id}:${kind}`) ?? this.main(e.id, e.type)[kind === 'topic' ? 'topicId' : 'projectId']) : null;
-          if (cur === targetId) continue;
-          if (table && !cur) {
-            newMain.set(`${e.id}:${kind}`, targetId);
-            main.push({ table, col, id: e.id, value: targetId });
-            mirrors.push({ sourceId: e.id, targetId, relationType: subjectRelation(e.type, kind) });
-          } else add.push({ sourceId: e.id, targetId, relationType: subjectRelation(e.type, kind) });
-          touched.add(e.id);
-        }
-      }
-    for (const tagName of clean(patch.tags)) {
-      const tagId = (this.graph.findByNameOrAlias('tag', tagName) ?? this.graph.ensureEntity('tag', tagName)).id;
-      for (const e of entries) {
-        if (e.type === 'document') {
-          let t = tags.find((x) => x.id === e.id);
-          if (!t) {
-            t = {
-              id: e.id,
-              before: JSON.parse((this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(e.id) as { tags: string }).tags) as string[],
-              added: [],
-            };
-            tags.push(t);
-          }
-          if ([...t.before, ...t.added].some((x) => x.toLowerCase() === tagName.toLowerCase())) continue;
-          t.added.push(tagName);
-          mirrors.push({ sourceId: e.id, targetId: tagId, relationType: 'relates_to' });
-        } else add.push({ sourceId: e.id, targetId: tagId, relationType: 'relates_to' });
-        touched.add(e.id);
-      }
-    }
-    if (caseNode)
-      for (const e of entries.filter((x) => x.type !== 'case')) {
-        add.push({ sourceId: e.id, targetId: caseNode.id, relationType: 'belongs_to' });
-        touched.add(e.id);
-      }
-    const steps: CompositeUndoData['steps'] = [];
-    this.ctx.database.transaction(() => {
-      const now = nowIso();
-      for (const m of main) this.sqlite.prepare(`UPDATE ${m.table} SET ${m.col} = ?, updated_at = ? WHERE id = ?`).run(m.value, now, m.id);
-      for (const t of tags)
-        if (t.added.length)
-          this.sqlite.prepare('UPDATE documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify([...t.before, ...t.added]), now, t.id);
-      // the mirror of a main value is a field relation (it follows later changes of the field), added ones are the user's
-      const mirrored = mirrors.flatMap((m) => {
-        const before = this.relationRow(m.sourceId, m.targetId, m.relationType);
-        if (before?.status === 'confirmed') return [];
-        this.graph.link(m.sourceId, m.targetId, m.relationType, { status: 'confirmed', confidence: 0.9, method: 'field' });
-        return [{ before, after: this.relationRow(m.sourceId, m.targetId, m.relationType) }];
-      });
-      const { items } = this.graph.applyLinkChanges({ add });
-      if (main.length) steps.push({ type: MAIN_UNDO, data: main });
-      const tagged = tags.filter((t) => t.added.length);
-      if (tagged.length) steps.push({ type: TAGS_UNDO, data: tagged });
-      if (mirrored.length || items.length) steps.push({ type: LINK_MANY_UNDO_TYPE, data: { items: [...mirrored, ...items] } satisfies LinkManyUndoData });
-    });
+    const plan = planBulkAssignment(this.planSources(), { entries, patch, caseId: caseNode?.id ?? null });
+    const steps = this.ctx.database.transaction(() => this.applyPlan(plan));
     if (!steps.length) return { updated: 0, auditId: null };
     const auditId = this.audit.log({
       action: 'entries.bulkAssign',
       actor: 'user',
       trigger: opts.trigger ?? 'manual',
       confirmed: true,
-      entityIds: [...touched, ...(caseNode ? [caseNode.id] : [])],
-      after: { ...patch, count: touched.size },
+      entityIds: [...plan.touched, ...(caseNode ? [caseNode.id] : [])],
+      after: { ...patch, count: plan.touched.size },
       undo: { type: COMPOSITE_UNDO_TYPE, data: { steps } satisfies CompositeUndoData },
     });
-    await this.reindexEntries([...touched]);
+    await this.reindexEntries([...plan.touched]);
     this.ctx.events.changed('documents', 'decisions', 'openItems', 'events', 'knowledge');
-    return { updated: touched.size, auditId };
+    return { updated: plan.touched.size, auditId };
   }
 
-  private relationRow(sourceId: string, targetId: string, relationType: RelationType) {
+  private planSources(): BulkPlanSources {
+    return {
+      resolve: (kind, name) => this.resolve(kind, name),
+      mainOf: (id, type) => this.main(id, type),
+      documentTags: (id) => JSON.parse((this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(id) as { tags: string }).tags) as string[],
+    };
+  }
+
+  /** Writes the plan and returns its undo steps (none when nothing changed). */
+  private applyPlan(plan: BulkAssignmentPlan): CompositeUndoData['steps'] {
+    const now = nowIso();
+    for (const main of plan.main) this.sqlite.prepare(`UPDATE ${main.table} SET ${main.col} = ?, updated_at = ? WHERE id = ?`).run(main.value, now, main.id);
+    const tagged = plan.tags.filter((tagUndo) => tagUndo.added.length);
+    for (const tagUndo of tagged)
+      this.sqlite
+        .prepare('UPDATE documents SET tags = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify([...tagUndo.before, ...tagUndo.added]), now, tagUndo.id);
+    const mirrored = this.linkMirrors(plan.mirrors);
+    const { items } = this.graph.applyLinkChanges({ add: plan.add });
+    const steps: CompositeUndoData['steps'] = [];
+    if (plan.main.length) steps.push({ type: MAIN_UNDO_TYPE, data: plan.main });
+    if (tagged.length) steps.push({ type: TAGS_UNDO_TYPE, data: tagged });
+    if (mirrored.length || items.length) steps.push({ type: LINK_MANY_UNDO_TYPE, data: { items: [...mirrored, ...items] } satisfies LinkManyUndoData });
+    return steps;
+  }
+
+  /** The mirror of a main value is a field relation (it follows later changes of the field); added ones are the user's. */
+  private linkMirrors(mirrors: LinkSpec[]): LinkUndoData[] {
+    return mirrors.flatMap((mirror) => {
+      const before = this.relationRow(mirror);
+      if (before?.status === 'confirmed') return [];
+      this.graph.link(mirror.sourceId, mirror.targetId, mirror.relationType, { status: 'confirmed', confidence: 0.9, method: 'field' });
+      return [{ before, after: this.relationRow(mirror) }];
+    });
+  }
+
+  private relationRow({ sourceId, targetId, relationType }: LinkSpec) {
     return (
       this.ctx.database.db
         .select()
@@ -347,7 +267,6 @@ export class SubjectService {
   }
 
   private async reindexEntries(ids: string[]): Promise<void> {
-    if (!this.reindexer) return;
     const byType = (types: EntityType[]) => ids.filter((id) => types.includes(this.graph.getEntity(id)?.type as EntityType));
     try {
       await this.reindexer({
