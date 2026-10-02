@@ -404,6 +404,7 @@ export const InsightKind = z.enum([
   'low_confidence_relation',
   'topic_project_name',
   'persons_merged',
+  'unclear_person',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
 /**
