@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
-/** Datum als YYYY-MM-DD (lokale Zeit). */
+/** Date as YYYY-MM-DD (local time). */
 export function toIsoDay(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -19,7 +19,7 @@ export function addDays(days: number, from: Date = new Date()): Date {
   return d;
 }
 
-/** Nächster Montag (mindestens morgen). */
+/** Next Monday (tomorrow at the earliest). */
 export function nextMonday(from: Date = new Date()): Date {
   const d = new Date(from);
   const diff = (8 - d.getDay()) % 7 || 7;

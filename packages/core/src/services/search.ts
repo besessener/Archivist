@@ -13,7 +13,7 @@ export interface IndexInput {
   id: string;
   title: string;
   content: string;
-  /** false: Vektoren nur lokal erzeugen */
+  /** false: create vectors locally only */
   allowRemoteEmbedding?: boolean;
 }
 
@@ -30,7 +30,7 @@ interface Hit {
 /** How long a search waits for the remote query embedding before it answers with local results only. */
 const REMOTE_QUERY_EMBEDDING_TIMEOUT_MS = 2500;
 
-/** Hybride Suche: FTS5 (BM25) + Vektorähnlichkeit (Cosine, Berechnung im Worker-Thread), fusioniert per RRF. */
+/** Hybrid search: FTS5 (BM25) + vector similarity (cosine, computed in the worker thread), fused via RRF. */
 export class SearchService {
   constructor(
     private readonly ctx: AppContext,
@@ -50,7 +50,7 @@ export class SearchService {
     });
     try {
       const res = await Promise.race([pending.catch(() => null), timeout]);
-      if (!res) this.ctx.logger.warn('search', 'Embedding-Endpunkt antwortet nicht rechtzeitig – nur lokale Treffer', { timeoutMs: this.remoteQueryTimeoutMs });
+      if (!res) this.ctx.logger.warn('search', 'Embedding endpoint did not answer in time – local hits only', { timeoutMs: this.remoteQueryTimeoutMs });
       return res;
     } finally {
       clearTimeout(timer);
@@ -109,7 +109,7 @@ export class SearchService {
     const hits = new Map<string, Hit>();
     const typeSet = opts.types ? new Set<string>(opts.types) : null;
 
-    // 1) Stichwortsuche
+    // 1) keyword search
     const fts = this.ftsQuery(query);
     if (fts) {
       try {
@@ -129,11 +129,11 @@ export class SearchService {
           rank += 1;
         }
       } catch (err) {
-        this.ctx.logger.warn('search', 'FTS-Abfrage fehlgeschlagen', { error: err });
+        this.ctx.logger.warn('search', 'FTS query failed', { error: err });
       }
     }
 
-    // 2) Semantische Suche (lokale Vektoren und – falls erlaubt – Embedding-Modell des Endpunkts)
+    // 2) semantic search (local vectors and – if allowed – the endpoint's embedding model)
     const wantRemote = opts.allowRemoteEmbedding ?? this.remoteAllowed();
     let rank = 0;
     for (const useRemote of [false, true]) {
@@ -174,7 +174,7 @@ export class SearchService {
       }
     }
 
-    // 3) Fusion (Reciprocal Rank Fusion) und Anreicherung
+    // 3) fusion (Reciprocal Rank Fusion) and enrichment
     const K = 60;
     const scored = [...hits.values()]
       .map((h) => ({ h, score: (h.keywordRank !== undefined ? 1 / (K + h.keywordRank) : 0) + (h.vectorRank !== undefined ? 1 / (K + h.vectorRank) : 0) }))
@@ -233,7 +233,7 @@ export class SearchService {
     });
   }
 
-  /** Dokumente, die einem Namen/Thema inhaltlich nahe sind (für Zuordnungsvorschläge). */
+  /** Documents whose content is close to a name/topic (for assignment proposals). */
   async similarEntities(text: string, types: EntityType[], limit = 10): Promise<SearchResult[]> {
     const q = normalizeName(text).split(' ').slice(0, 60).join(' ');
     return q ? this.search(q, { types, limit }) : [];

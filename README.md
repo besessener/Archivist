@@ -213,6 +213,8 @@ Alle Actions sind auf Commit-SHAs gepinnt (Kommentar nennt den Tag), Workflows l
 
 **Ansprache**: Wir duzen – in der Oberfläche, im Chat, in Benachrichtigungen, Fehlermeldungen und der Dokumentation. Die LLM-Prompts weisen das Modell entsprechend an, den Benutzer mit „du“ anzusprechen.
 
+**Sprache**: Alles, was programmiert ist, ist Englisch – Bezeichner, Code-Kommentare, Testnamen, Log-Meldungen, Build- und CI-Ausgaben. Alles, was Benutzer sehen, ist Deutsch – Oberfläche, Fehlermeldungen, Benachrichtigungen, Hinweise, Chat-Antworten. Deutsch bleiben auch die LLM-Prompts (sie erzeugen deutsche Antworten), Muster für deutsche Eingaben und Testdaten.
+
 ## Packaging
 
 - **Native Module**: `better-sqlite3` (≥ 13) und `sharp` liefern **N-API-Prebuilds** für Windows; dieselbe Binärdatei läuft in Node und Electron. Ein `electron-rebuild` ist deshalb nicht nötig (`npmRebuild: false`), das Cross-Packaging ist reproduzierbar. `npm run native:check` beweist das für Node *und* die Electron-Laufzeit. In der Anwendung liegen die Module per `asarUnpack` außerhalb des ASAR-Archivs.

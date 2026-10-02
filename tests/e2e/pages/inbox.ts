@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { pageObject } from './page-object';
 
-/** Datei-Import (Dateiauswahl, entspricht dem Drag-and-Drop-Pfad) und die Inbox mit Klassifikationsvorschlägen. */
+/** File import (file picker, equivalent to the drag-and-drop path) and the inbox with classification proposals. */
 export function initInbox(page: Page) {
   const locators = {
     fileInput: page.getByTestId('file-input'),
@@ -45,7 +45,7 @@ export function initInbox(page: Page) {
     importFile: async (file: string) => {
       await locators.fileInput.setInputFiles(file);
     },
-    /** Wartet auf den ersten Eintrag samt Vorschlag und gibt dessen Ziel zurück. */
+    /** Waits for the first entry including its proposal and checks that the proposal shows the given target. */
     waitForProposal: async (target: string) => {
       await expect(locators.items.first()).toBeVisible();
       await expect(locators.proposals.first()).toContainText(target, { timeout: 30_000 });

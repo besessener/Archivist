@@ -1,4 +1,4 @@
-/* eslint-disable no-empty-pattern -- Playwright verlangt ein Destructuring als erstes Argument einer Fixture */
+/* eslint-disable no-empty-pattern -- Playwright requires destructuring as the first argument of a fixture */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,15 +9,15 @@ import { createPageTree, type PageTree } from './pages';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const electronPath = require('electron') as unknown as string;
 const appDir = path.resolve(__dirname, '../../apps/desktop');
-// ARCHIVIST_E2E_PACKAGED=1: die gepackte Anwendung (electron-builder --dir) statt des Entwicklungsaufbaus testen
+// ARCHIVIST_E2E_PACKAGED=1: test the packaged application (electron-builder --dir) instead of the development build
 const packaged = process.env.ARCHIVIST_E2E_PACKAGED === '1';
 const packagedBinary = path.join(appDir, 'release', 'linux-unpacked', 'archivist');
 
-/** Frisches, isoliertes Arbeitsverzeichnis pro Test: Datenordner der App und ein „Downloads“-Ordner, der als Scan-Ziel dient. */
+/** Fresh, isolated working directory per test: the app's data folder and a "Downloads" folder that serves as scan target. */
 export interface Workspace {
   dataDir: string;
   downloads: string;
-  /** Schreibt eine Datei in den Downloads-Ordner und gibt ihren Pfad zurück. */
+  /** Writes a file into the Downloads folder and returns its path. */
   addDownload(name: string, content: string): string;
 }
 
@@ -26,13 +26,13 @@ interface Fixtures {
   workspace: Workspace;
   electronApp: ElectronApplication;
   page: Page;
-  /** Page Objects für eine Seite; als Funktion von `page`, damit ein Spec auch ein zweites Fenster ansprechen kann. */
+  /** Page objects for a page; a function of `page` so that a spec can also address a second window. */
   on: (page: Page) => PageTree;
 }
 
 async function launch(env: Record<string, string>): Promise<ElectronApplication> {
-  // Der Start der Electron-Binärdatei hängt auf CI-Runnern gelegentlich (Chromium/D-Bus/Xvfb-Race) – ein Neustart behebt das,
-  // ohne dass Testinhalte übersprungen werden. Es wird höchstens zweimal wiederholt.
+  // Launching the Electron binary occasionally hangs on CI runners (Chromium/D-Bus/Xvfb race); a restart fixes that
+  // without skipping any test content. It is retried at most twice.
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await electron.launch({
@@ -78,19 +78,19 @@ export const test = base.extend<Fixtures>({
       ARCHIVIST_TEST_MODE: '1',
       ARCHIVIST_TEST_PICK_DIR: workspace.downloads,
     };
-    delete env.DBUS_SESSION_BUS_ADDRESS; // ein ungültiger Bus verursacht nur Fehlermeldungen von Chromium
+    delete env.DBUS_SESSION_BUS_ADDRESS; // an invalid bus only causes error messages from Chromium
     const app = await launch(env);
     await provide(app);
     await app.close();
   },
 
-  // Überschreibt die Browser-Fixture `page`: das Fenster der Electron-Anwendung.
+  // Overrides the browser fixture `page`: the window of the Electron application.
   page: async ({ electronApp }, provide, testInfo) => {
     const page = await electronApp.firstWindow();
     await page.waitForLoadState('domcontentloaded');
     await provide(page);
     if (testInfo.status !== testInfo.expectedStatus) {
-      await testInfo.attach('fenster-nach-fehler', { body: await page.screenshot(), contentType: 'image/png' });
+      await testInfo.attach('window-after-failure', { body: await page.screenshot(), contentType: 'image/png' });
     }
   },
 

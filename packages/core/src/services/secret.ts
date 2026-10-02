@@ -3,7 +3,7 @@ import path from 'node:path';
 import { permissionError } from '../util/errors';
 import type { Logger } from '../util/logger';
 
-/** Abstraktion über Electron safeStorage (im Test durch eine Fake-Implementierung ersetzbar). */
+/** Abstraction over Electron safeStorage (replaceable by a fake implementation in tests). */
 export interface SecretCipher {
   isAvailable(): boolean;
   backend(): string;
@@ -12,8 +12,8 @@ export interface SecretCipher {
 }
 
 /**
- * Speichert den LLM-API-Key ausschließlich verschlüsselt (Betriebssystem-Credential-Store über
- * Electron safeStorage). Der Key liegt nie im Klartext in Konfigurationsdateien oder Logs.
+ * Stores the LLM API key in encrypted form only (operating system credential store via
+ * Electron safeStorage). The key never appears in plain text in configuration files or logs.
  */
 export class SecretService {
   private cache: string | null | undefined;
@@ -43,7 +43,7 @@ export class SecretService {
       const data = fs.readFileSync(this.file);
       this.cache = this.cipher.decrypt(data);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') this.logger.warn('secret', 'API-Key konnte nicht entschlüsselt werden');
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') this.logger.warn('secret', 'API key could not be decrypted');
       this.cache = null;
     }
     return this.cache;
@@ -61,12 +61,12 @@ export class SecretService {
     fs.renameSync(tmp, this.file);
     this.cache = key;
     this.logger.registerSecret(key);
-    this.logger.info('secret', 'API-Key gespeichert');
+    this.logger.info('secret', 'API key saved');
   }
 
   clear(): void {
     fs.rmSync(this.file, { force: true });
     this.cache = null;
-    this.logger.info('secret', 'API-Key gelöscht');
+    this.logger.info('secret', 'API key deleted');
   }
 }

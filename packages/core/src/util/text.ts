@@ -8,7 +8,7 @@ export function stripDiacritics(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
-/** Name für Vergleiche: klein, ohne Akzente, nur Buchstaben/Ziffern, einfache Leerzeichen. */
+/** Name for comparisons: lower case, without accents, only letters/digits, single spaces. */
 export function normalizeName(s: string): string {
   return stripDiacritics(s.toLowerCase().replace(/ß/g, 'ss'))
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
@@ -42,7 +42,7 @@ export function levenshtein(a: string, b: string): number {
   return prev[b.length] ?? 0;
 }
 
-/** Namensähnlichkeit 0..1 (normalisierte Levenshtein-Distanz, Token-Überlappung). */
+/** Name similarity 0..1 (normalized Levenshtein distance, token overlap). */
 export function nameSimilarity(a: string, b: string): number {
   const na = normalizeName(a);
   const nb = normalizeName(b);
@@ -59,7 +59,7 @@ export function nameSimilarity(a: string, b: string): number {
   return Math.max(lev, jac);
 }
 
-/** Teilt Text an Absatz-/Satzgrenzen in überlappende Stücke. */
+/** Splits text at paragraph/sentence boundaries into overlapping chunks. */
 export function chunkText(text: string, size = 900, overlap = 120): string[] {
   const clean = text
     .replace(/\r\n/g, '\n')

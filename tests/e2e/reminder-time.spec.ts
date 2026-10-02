@@ -7,8 +7,8 @@ function savedReminderTime(dataDir: string): string {
   return settings.notifications.reminderTime;
 }
 
-test.describe('Erinnerungszeit', () => {
-  test('ist einstellbar und wird gespeichert (#77)', async ({ llm, on, page, workspace }) => {
+test.describe('reminder time', () => {
+  test('can be configured and is saved (#77)', async ({ llm, on, page, workspace }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('settings');

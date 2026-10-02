@@ -1,7 +1,7 @@
 import { expect, test } from './fixture';
 
-test.describe('Entscheidungen: Statuswechsel im Formular', () => {
-  test('Widerrufen und Ersetzen laufen nur über einen Bestätigungsdialog', async ({ llm, on, page }) => {
+test.describe('decisions: status change in the form', () => {
+  test('revoking and superseding only go through a confirmation dialog', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('decisions');

@@ -43,30 +43,30 @@ import { Logger } from './util/logger';
 import { WorkerPool } from './workers/pool';
 
 export interface CreateServicesOptions {
-  /** Wurzel der lokalen Datenhaltung (Standard: ~/Documents/Archivist) */
+  /** Root of the local data storage (default: ~/Documents/Archivist) */
   dataRoot: string;
-  /** Ordner mit den Drizzle-Migrationen */
+  /** Folder with the Drizzle migrations */
   migrationsFolder: string;
   cipher: SecretCipher;
-  /** Pfad zum gebündelten Worker-Skript; null/undefined = Aufgaben laufen inline (Tests) */
+  /** Path to the bundled worker script; null/undefined = tasks run inline (tests) */
   workerFile?: string | null;
   fetchImpl?: FetchLike;
   jobConcurrency?: number;
   /** Wait before the first job retry; doubles with every further attempt (default 5 s, tests: 0) */
   jobRetryDelayMs?: number;
-  /** Wartezeit zwischen LLM-Wiederholungen (Tests: 0) */
+  /** Delay between LLM retries (tests: 0) */
   llmRetryDelayMs?: number;
 }
 
 export type Services = ReturnType<typeof buildServices>;
 
-/** Kompositionswurzel: erzeugt und verdrahtet alle Services. */
+/** Composition root: creates and wires all services. */
 export function createServices(opts: CreateServicesOptions) {
   return buildServices(opts);
 }
 
 function buildServices(opts: CreateServicesOptions) {
-  // 1) Verzeichnisstruktur + Einstellungen
+  // 1) directory structure + settings
   const baseline = resolveDataPaths(opts.dataRoot);
   ensureDataDirs(baseline);
   const events = new EventBus();
@@ -74,14 +74,14 @@ function buildServices(opts: CreateServicesOptions) {
   const paths = resolveDataPaths(opts.dataRoot, settings.get().archiveRoot);
   fs.mkdirSync(paths.archive, { recursive: true });
 
-  // 2) Logging, Datenbank, Migrationen
+  // 2) logging, database, migrations
   const logger = new Logger(paths.logs, settings.get().logs.level);
   const database = new DatabaseService(path.join(paths.database, 'archivist.db'), logger);
   const migration: MigrationStatus = database.migrate(opts.migrationsFolder);
-  logger.info('app', 'Datenbank bereit', { migrations: migration });
+  logger.info('app', 'Database ready', { migrations: migration });
   const ctx: AppContext = { paths, database, logger, events };
 
-  // 3) Basisdienste
+  // 3) base services
   const secrets = new SecretService(path.join(paths.config, 'llm-api-key.enc'), opts.cipher, logger);
   const audit = new AuditService(ctx);
   const undo = new UndoService(ctx, audit);
@@ -102,11 +102,11 @@ function buildServices(opts: CreateServicesOptions) {
   // Settings are loaded before the database exists; report a repaired or unreadable settings.json now.
   const settingsProblem = settings.takeLoadProblem();
   if (settingsProblem) {
-    logger.warn('settings', 'settings.json war ungültig und wurde repariert', { ...settingsProblem });
+    logger.warn('settings', 'settings.json was invalid and has been repaired', { ...settingsProblem });
     notifications.create(settingsLoadNotification(settingsProblem));
   }
 
-  // 4) Fachdienste
+  // 4) domain services
   const documentsSvc = new DocumentService(ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
   const decisions = new DecisionService(ctx, graph, persons, search, audit, undo);
   const openItems = new OpenItemService(ctx, graph, persons, search, audit, undo);
@@ -168,7 +168,7 @@ function buildServices(opts: CreateServicesOptions) {
     notes,
   );
 
-  // 5) zyklische Abhängigkeiten auflösen
+  // 5) resolve cyclic dependencies
   actions.wire({
     archive,
     documents: documentsSvc,
@@ -196,7 +196,7 @@ function buildServices(opts: CreateServicesOptions) {
     ]);
   });
 
-  // 6) Job-Handler
+  // 6) job handlers
   // A failed attempt keeps the document in `analyzing` while a retry follows; only after the last attempt
   // it becomes `failed` and the user is notified. Archived documents are never touched.
   jobs.register<{ documentId: string; allowLlm: boolean }>(
@@ -221,7 +221,7 @@ function buildServices(opts: CreateServicesOptions) {
   );
   jobs.register<{ rootId: string | null }>('scanner.scan', async (job) => {
     const summaries = await scanner.runScan(job.payload.rootId, job);
-    // optional: neue Dateien automatisch analysieren (nur wenn ausdrücklich aktiviert und der Datenschutzmodus es erlaubt)
+    // optional: analyze new files automatically (only if explicitly enabled and the privacy mode allows it)
     const s = settings.get();
     if (s.scan.autoAnalyze && privacy.mode() === 'auto') {
       const ids = scanner
@@ -239,14 +239,14 @@ function buildServices(opts: CreateServicesOptions) {
     return consistency.run(job.payload.trigger ?? 'manual', (p, m) => job.report(p, m), job.signal);
   });
 
-  // 7) Reaktion auf geänderte Einstellungen
+  // 7) reaction to changed settings
   // Schedules are re-planned on every change of settings or scan folders; an unchanged plan keeps its timer.
   events.on('data:changed', (e: { scopes: string[] }) => {
     if (e.scopes.includes('settings')) {
       logger.setLevel(settings.get().logs.level);
       consistency.applySettings();
       // a new profile name renames the own person or merges a person with that name into it
-      self.syncProfile().catch((err: unknown) => logger.warn('persons', 'Eigene Person nicht angepasst', { error: err }));
+      self.syncProfile().catch((err: unknown) => logger.warn('persons', 'Own person not adjusted', { error: err }));
     }
     if (e.scopes.includes('settings') || e.scopes.includes('scanner')) scanner.applySettings();
   });
@@ -299,7 +299,7 @@ function buildServices(opts: CreateServicesOptions) {
     chat,
     enqueueConsistency,
 
-    /** Startet Hintergrundarbeit (nur solange die Anwendung läuft). */
+    /** Starts background work (only while the application runs). */
     start(): void {
       logger.prune(settings.get().logs.retentionDays);
       // before the queue resumes: documents stuck in `analyzing` without a job become `failed` (reprocessable)
@@ -308,7 +308,7 @@ function buildServices(opts: CreateServicesOptions) {
       reminders.start();
       // exactly one own person („Du“): created now, renamed to the profile name if that changed meanwhile
       self.ensure();
-      self.syncProfile().catch((err: unknown) => logger.warn('persons', 'Eigene Person nicht angepasst', { error: err }));
+      self.syncProfile().catch((err: unknown) => logger.warn('persons', 'Own person not adjusted', { error: err }));
       scanner.startSchedule();
       scanner.startupScan();
       void archive.cleanupInbox();
@@ -316,9 +316,7 @@ function buildServices(opts: CreateServicesOptions) {
       if (startupCheck) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'), { startupCheckQueued: startupCheck });
       if (settings.get().backups.autoOnStartup)
-        void backup
-          .create(settings.get().backups.includeArchive, 'startup')
-          .catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
+        void backup.create(settings.get().backups.includeArchive, 'startup').catch((err) => logger.warn('backup', 'Automatic backup failed', { error: err }));
     },
 
     /**

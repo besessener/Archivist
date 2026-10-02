@@ -3,7 +3,7 @@ import { normalizeDateInput, parseGermanDate } from '../util/dates';
 import { firstSentence, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { detectOpenItemSentences } from './open-items';
 
-/** Lokale Heuristiken (ohne LLM) für Dokumentklassifikation und Zielordner. */
+/** Local heuristics (without LLM) for document classification and target folders. */
 
 export interface LocalClassification {
   docType: string;
@@ -124,7 +124,7 @@ const TYPE_FOLDERS = new Set([
   'files',
 ]);
 
-/** Entfernt reine Dateityp-Ordner und kryptische Segmente (Hash/UUID) aus einem vorgeschlagenen Pfad. */
+/** Removes pure file-type folders and cryptic segments (hash/UUID) from a proposed path. */
 export function humanizeCategoryPath(p: string): string {
   const segs = p
     .split(/[\\/]/)
@@ -171,7 +171,7 @@ export function keywordTags(text: string, max = 5): string[] {
     .map(([t]) => t);
 }
 
-/** Findet bekannte Themen/Projekte, die im Text vorkommen. */
+/** Finds known topics/projects that occur in the text. */
 export function matchKnownNames(text: string, names: string[]): string | null {
   const norm = ` ${normalizeName(text.slice(0, 30_000))} `;
   let best: { name: string; score: number } | null = null;
@@ -244,7 +244,7 @@ export function classifyLocally(input: {
   };
 }
 
-/** Ordnet einen vom LLM genannten Namen einem bekannten Namen zu (verhindert Dubletten wie „ProdPlat“/„prod-plat“). */
+/** Maps a name returned by the LLM to a known name (prevents duplicates like „ProdPlat“/„prod-plat“). */
 export function snapToKnown(name: string | null | undefined, known: string[], threshold = 0.86): string | null {
   const clean = name?.trim();
   if (!clean) return null;

@@ -14,7 +14,7 @@ export interface NotificationInput {
   priority?: 'low' | 'normal' | 'high';
   affectedEntityIds?: string[];
   proposedActions?: AppNotification['proposedActions'];
-  /** Verhindert Duplikate: gleiche (nicht erledigte) Benachrichtigung wird nur aktualisiert. */
+  /** Prevents duplicates: the same (unresolved) notification is only updated. */
   dedupeKey?: string;
 }
 
@@ -31,7 +31,7 @@ const map = (r: Row): AppNotification => ({
   resolvedAt: r.resolvedAt,
 });
 
-/** In-App-Benachrichtigungen (Notification Bell). Desktop-Benachrichtigungen übernimmt die Host-Schicht. */
+/** In-app notifications (notification bell). Desktop notifications are handled by the host layer. */
 export class NotificationService {
   constructor(private readonly ctx: AppContext) {}
 
@@ -47,7 +47,7 @@ export class NotificationService {
         .where(and(eq(notifications.dedupeKey, input.dedupeKey)))
         .get();
       if (existing) {
-        if (existing.resolvedAt) return map(existing); // erledigte Hinweise nicht wiederbeleben
+        if (existing.resolvedAt) return map(existing); // do not revive resolved notifications
         this.db
           .update(notifications)
           .set({
@@ -132,7 +132,7 @@ export class NotificationService {
     return this.get(id);
   }
 
-  /** Löst alle offenen Benachrichtigungen mit dem Schlüssel-Präfix auf (z. B. wenn die Ursache entfallen ist). */
+  /** Resolves all open notifications with the key prefix (e.g. when the cause no longer exists). */
   resolveByDedupePrefix(prefix: string): void {
     this.db
       .update(notifications)

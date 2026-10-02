@@ -11,8 +11,8 @@ afterEach(async () => {
 
 const deleteAudit = async () => (await app.ok('audit:list', { onlyUndoable: true })).find((e) => e.action === 'event.delete')!;
 
-describe('Ereignis löschen mit Undo', () => {
-  it('stellt ein gelöschtes Ereignis mit Thema, Projekt, Verknüpfungen und Suchtreffer exakt wieder her', async () => {
+describe('Deleting an event with undo', () => {
+  it('restores a deleted event exactly, with topic, project, links and search hit', async () => {
     const ev = await app.ok('events:create', {
       title: 'Beitrag beim German Testing Day eingereicht',
       occurredAt: '2026-10-01',
@@ -43,7 +43,7 @@ describe('Ereignis löschen mit Undo', () => {
     expect((await app.ok('timeline:get', {})).some((e) => e.id === `event:${ev.id}`)).toBe(true);
   });
 
-  it('lässt sich nur einmal rückgängig machen', async () => {
+  it('can be undone only once', async () => {
     const ev = await app.ok('events:create', { title: 'Release', occurredAt: '2026-09-01' });
     await app.ok('events:delete', { id: ev.id, confirmed: true });
     const entry = await deleteAudit();
@@ -52,7 +52,7 @@ describe('Ereignis löschen mit Undo', () => {
     expect(await app.ok('events:list', {})).toHaveLength(1);
   });
 
-  it('stellt das Ereignis auch dann wieder her, wenn das Thema inzwischen entfernt wurde, und meldet das', async () => {
+  it('restores the event even when the topic has since been removed, and reports that', async () => {
     const ev = await app.ok('events:create', { title: 'Kick-off', occurredAt: '2026-09-15', topic: 'Alte Planung' });
     await app.ok('events:delete', { id: ev.id, confirmed: true });
     app.services.graph.removeNode(ev.topicId!);

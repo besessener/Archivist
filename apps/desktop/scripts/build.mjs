@@ -1,4 +1,4 @@
-// Bündelt Main-Prozess, Preload und Worker mit esbuild und kopiert Migrationen + statisches Frontend nach dist/.
+// Bundles the main process, preload and worker with esbuild and copies migrations + static frontend to dist/.
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,7 +12,7 @@ const dist = path.join(desktop, 'dist');
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
 
-// Native bzw. nicht bündelbare Module bleiben extern und werden von electron-builder mitgeliefert (siehe package.json dependencies).
+// Native or otherwise unbundleable modules stay external and are shipped by electron-builder (see package.json dependencies).
 const external = ['electron', 'better-sqlite3', 'sharp', 'pdfjs-dist', 'pdfjs-dist/*', 'tesseract.js', '@napi-rs/canvas'];
 const common = { bundle: true, platform: 'node', target: 'node22', format: 'cjs', sourcemap: true, external, logLevel: 'warning', legalComments: 'none' };
 
@@ -24,8 +24,8 @@ fs.cpSync(path.join(repo, 'packages/core/migrations'), path.join(dist, 'migratio
 
 const rendererOut = path.join(repo, 'apps/renderer/out');
 if (!fs.existsSync(path.join(rendererOut, 'index.html'))) {
-  console.error('Fehler: apps/renderer/out fehlt – bitte zuerst `npm run build -w @archivist/renderer` ausführen.');
+  console.error('Error: apps/renderer/out is missing – run `npm run build -w @archivist/renderer` first.');
   process.exit(1);
 }
 fs.cpSync(rendererOut, path.join(dist, 'renderer'), { recursive: true });
-console.log('Desktop-Build fertig:', dist);
+console.log('Desktop build done:', dist);

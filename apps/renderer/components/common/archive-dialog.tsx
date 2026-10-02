@@ -54,13 +54,13 @@ export interface ArchiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: ArchiveItemRequest[];
-  /** Wird nach erfolgreicher Ausführung aufgerufen. */
+  /** Called after successful execution. */
   onDone?: (result: ArchiveResultRecord) => void;
 }
 
 /**
- * Gemeinsamer Archivier-Dialog (Inbox + Scan): zeigt zuerst die Vorschau (`documents:previewArchive`),
- * führt erst nach ausdrücklicher Bestätigung `documents:archive` mit `confirmed: true` aus.
+ * Shared archive dialog (inbox + scan): first shows the preview (`documents:previewArchive`),
+ * and only runs `documents:archive` with `confirmed: true` after explicit confirmation.
  */
 export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDialogProps) {
   const [plan, setPlan] = useState<ArchivePlanRecord | null>(null);

@@ -11,7 +11,7 @@ export function Progress({ className, value, ...props }: React.ComponentProps<ty
   );
 }
 
-/** Unbestimmter Fortschritt. */
+/** Indeterminate progress. */
 export function ProgressIndeterminate({ className }: { className?: string }) {
   return (
     <div className={cn('relative h-2 w-full overflow-hidden rounded-full bg-muted', className)} role="progressbar" aria-busy="true" aria-label="In Arbeit">

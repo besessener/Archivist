@@ -1,11 +1,11 @@
 /**
- * Erkennung und Maskierung potenzieller Zugangsdaten und technischer Geheimnisse.
- * Wird vor jeder externen LLM-Übertragung und für Logs verwendet.
+ * Detection and masking of potential credentials and technical secrets.
+ * Used before every external LLM transmission and for logs.
  */
 interface Rule {
   kind: string;
   re: RegExp;
-  /** Ersetzung; $1.. dürfen referenziert werden */
+  /** Replacement; $1.. may be referenced */
   replace: (match: string, ...groups: string[]) => string;
 }
 

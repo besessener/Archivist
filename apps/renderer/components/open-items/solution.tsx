@@ -28,8 +28,8 @@ export interface SolutionSectionProps {
 }
 
 /**
- * „Lösungsvorschlag generieren“ für einen aktiven offenen Punkt: Aktion (mit Datenschutz-Abfrage, Ladezustand und Abbruch)
- * sowie Anzeige und Übernahme des gespeicherten Vorschlags. Steht in der Aktionsleiste; Hinweise und Vorschlag belegen eine eigene Zeile.
+ * „Lösungsvorschlag generieren“ (generate solution proposal) for an active open item: the action (with privacy prompt, loading state and
+ * cancellation) as well as display and adoption of the saved proposal. Sits in the action bar; notices and proposal take up a row of their own.
  */
 export function SolutionSection({ item, mode, llmConfigured, onChanged }: SolutionSectionProps) {
   const { toast, reportError } = useToast();
@@ -37,7 +37,7 @@ export function SolutionSection({ item, mode, llmConfigured, onChanged }: Soluti
   const [generating, setGenerating] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [stepsOpen, setStepsOpen] = useState(false);
-  /** Zähler je Erzeugung: Ergebnisse abgebrochener Läufe werden ignoriert. */
+  /** Counter per generation: results of cancelled runs are ignored. */
   const runId = useRef(0);
   const hintId = `solution-hint-${item.id}`;
 
@@ -78,7 +78,7 @@ export function SolutionSection({ item, mode, llmConfigured, onChanged }: Soluti
     try {
       await call('openItems:cancelSolution', { id: item.id });
     } catch {
-      /* das Ergebnis wird ohnehin verworfen */
+      /* the result is discarded anyway */
     }
     toast({ variant: 'info', title: 'Erzeugung abgebrochen – es wurde nichts geändert.' });
   }
@@ -268,7 +268,7 @@ function SolutionPanel({
   );
 }
 
-/** Modus „vorher fragen“: zeigt, was an das LLM gesendet wird. */
+/** Mode „vorher fragen“ (ask first): shows what is sent to the LLM. */
 function PreviewDialog({ preview, onClose, onConfirm }: { preview: Preview | null; onClose: () => void; onConfirm: () => void }) {
   const titleOnly = preview?.sources.filter((s) => !s.contentIncluded).length ?? 0;
   return (
@@ -328,7 +328,7 @@ function PreviewDialog({ preview, onClose, onConfirm }: { preview: Preview | nul
   );
 }
 
-/** Schritte als eigene offene Punkte anlegen (Auswahl + Bestätigung). */
+/** Create steps as separate open items (selection + confirmation). */
 function StepsDialog({ open, item, steps, onClose, onDone }: { open: boolean; item: OpenItemRecord; steps: Claim[]; onClose: () => void; onDone: () => void }) {
   const { run } = useRun();
   const [selected, setSelected] = useState<Set<number>>(() => new Set(steps.map((_, i) => i)));

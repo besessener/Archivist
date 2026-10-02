@@ -22,7 +22,7 @@ function Dot({ tone }: { tone: 'ok' | 'warn' | 'error' | 'unknown' }) {
   );
 }
 
-/** Verarbeitungsstatus mit Jobs-Popover. */
+/** Processing status with jobs popover. */
 export function JobsIndicator() {
   const { status } = useApp();
   const running = (status?.jobs.running ?? 0) + (status?.jobs.pending ?? 0);
@@ -52,7 +52,7 @@ export function JobsIndicator() {
   );
 }
 
-/** Status der lokalen Dienste und der LLM-Verbindung. */
+/** Status of the local services and the LLM connection. */
 export function ServiceStatus() {
   const { status } = useApp();
   if (!status) return null;

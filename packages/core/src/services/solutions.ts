@@ -25,17 +25,17 @@ import type { PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
 
-/** Quelle samt dem Text, der an das LLM gesendet wird. */
+/** A source together with the text that is sent to the LLM. */
 interface GatheredSource extends Omit<SolutionSource, 'used'> {
   date: string | null;
   text: string;
 }
 
-/** Verknüpfte Einträge, die als Quelle taugen (Graph-Beziehungen und sourceIds). */
+/** Linked entries that qualify as a source (graph relations and sourceIds). */
 const LINKED_TYPES: EntityType[] = ['document', 'decision', 'event', 'note', 'task'];
-/** Treffer der Hybrid-Suche, die als Quelle taugen. */
+/** Hybrid search hits that qualify as a source. */
 const SEARCH_TYPES: EntityType[] = ['document', 'decision', 'event', 'note', 'task'];
-/** Dokumente in diesen Zuständen sind keine Quelle. */
+/** Documents in these states are not a source. */
 const SKIPPED_DOC_STATUSES = new Set(['ignored', 'failed', 'quarantined']);
 const MAX_SOURCES = 10;
 const MAX_LINKED = 6;
@@ -66,11 +66,11 @@ const normalizeRef = (ref: string) =>
     .toUpperCase();
 
 /**
- * Lösungsvorschläge zu offenen Punkten: sammelt passende Quellen aus dem Archiv (verknüpfte Einträge und
- * Hybrid-Suche), sendet sie – unter Beachtung des Datenschutzes – an das LLM und speichert das validierte Ergebnis am Punkt.
+ * Solution proposals for open items: gathers matching sources from the archive (linked entries and
+ * hybrid search), sends them – respecting privacy – to the LLM and stores the validated result on the item.
  */
 export class SolutionService {
-  /** laufende Erzeugungen je Punkt (für den Abbruch) */
+  /** running generations per item (for cancellation) */
   private readonly running = new Map<string, AbortController>();
 
   constructor(
@@ -88,7 +88,7 @@ export class SolutionService {
     private readonly notes: NoteService,
   ) {}
 
-  /** Grund, warum für diesen Punkt (derzeit) kein Vorschlag erzeugt werden kann – oder null. */
+  /** Reason why no proposal can (currently) be generated for this item – or null. */
   private blocked(item: OpenItem): { category: ErrorCategory; message: string } | null {
     if (!ACTIVE_STATUSES.includes(item.status)) return { category: 'validation_error', message: 'Lösungsvorschläge gibt es nur für aktive offene Punkte.' };
     if (this.privacy.mode() === 'local_only')
@@ -115,7 +115,7 @@ export class SolutionService {
     ];
   }
 
-  /** Beschreibt einen Eintrag als Quelle; ausgeschlossene Dokumente liefern nur ihren Titel. */
+  /** Describes an entry as a source; excluded documents only provide their title. */
   private describe(id: string, snippet?: string): Omit<GatheredSource, 'ref'> | null {
     const ent = this.graph.getEntity(id);
     if (!ent) return null;
@@ -177,11 +177,11 @@ export class SolutionService {
           return null;
       }
     } catch {
-      return null; // Quelle nicht (mehr) lesbar → weglassen
+      return null; // source not readable (any more) → leave it out
     }
   }
 
-  /** Verknüpfte Einträge (sourceIds, Graph) zuerst, danach Treffer der Hybrid-Suche (ohne externe Embeddings). */
+  /** Linked entries (sourceIds, graph) first, then hybrid search hits (without external embeddings). */
   private async gather(item: OpenItem): Promise<GatheredSource[]> {
     const out: Array<Omit<GatheredSource, 'ref'>> = [];
     const seen = new Set<string>([item.id]);
@@ -194,13 +194,13 @@ export class SolutionService {
     for (const id of item.sourceIds) add(id, MAX_LINKED);
     for (const n of this.graph.neighbors(item.id, { types: LINKED_TYPES })) add(n.id, MAX_LINKED);
     const query = [item.title, item.description, item.topicName, item.projectName].filter(Boolean).join(' ');
-    // keine externen Embeddings: vor der Bestätigung darf nichts das Gerät verlassen
+    // no external embeddings: nothing may leave the device before the confirmation
     const hits = await this.search.search(query, { types: SEARCH_TYPES, limit: MAX_SOURCES * 2, allowRemoteEmbedding: false });
     for (const h of hits) add(h.id, MAX_SOURCES, h.snippet);
     return out.map((s, i) => ({ ...s, ref: `S${i + 1}` }));
   }
 
-  /** Was gesendet würde – ohne LLM-Aufruf (für den Bestätigungsdialog im Modus „vorher fragen“). */
+  /** What would be sent – without an LLM call (for the confirmation dialog in mode „vorher fragen“). */
   async preview(id: string): Promise<SolutionPreview> {
     const item = this.openItems.get(id);
     const blocked = this.blocked(item);
@@ -224,7 +224,7 @@ export class SolutionService {
     return `Heutiges Datum: ${localToday()}\n\nOffener Punkt:\n${fields}\n\nQuellen aus dem Archiv:\n${src}`;
   }
 
-  /** Erzeugt einen Lösungsvorschlag und speichert ihn am Punkt (ersetzt einen vorhandenen). */
+  /** Generates a solution proposal and stores it on the item (replaces an existing one). */
   async generate(id: string, opts: { confirmed: boolean }): Promise<OpenItem> {
     const item = this.openItems.get(id);
     const blocked = this.blocked(item);
@@ -270,7 +270,7 @@ export class SolutionService {
     }
   }
 
-  /** Bricht eine laufende Erzeugung ab; das Ergebnis wird verworfen. */
+  /** Cancels a running generation; the result is discarded. */
   cancel(id: string): boolean {
     const c = this.running.get(id);
     if (!c) return false;
@@ -279,7 +279,7 @@ export class SolutionService {
     return true;
   }
 
-  /** Validiert die Quellenbelege: Aussagen ohne gültige Quelle werden als unsicher markiert. */
+  /** Validates the source citations: claims without a valid source are marked as uncertain. */
   private compose(ans: SolutionProposal, sources: GatheredSource[], model: string): OpenItemSolution {
     const refs = new Set(sources.map((s) => s.ref));
     const valid = (ids: string[]) => [...new Set(ids.map(normalizeRef).filter((r) => refs.has(r)))];
@@ -316,7 +316,7 @@ export class SolutionService {
     };
   }
 
-  /** Lesbare Textform eines Vorschlags (für Beschreibung und Notiz). */
+  /** Readable text form of a proposal (for description and note). */
   format(s: OpenItemSolution): string {
     const mark = (c: { sourceRefs: string[]; uncertain: boolean }) => (c.uncertain ? ' (unbelegt)' : ` [${c.sourceRefs.join(', ')}]`);
     const list = (title: string, items: string[]) => (items.length ? [`${title}:`, ...items.map((i) => `- ${i}`)].join('\n') : '');
@@ -339,7 +339,7 @@ export class SolutionService {
       .join('\n\n');
   }
 
-  /** Übernimmt den gespeicherten Vorschlag: Beschreibung ergänzen, Schritte als eigene Punkte oder als Notiz. */
+  /** Applies the stored proposal: extend the description, steps as separate items or as a note. */
   async apply(
     input: { target: 'description'; id: string } | { target: 'items'; id: string; stepIndexes: number[]; confirmed: boolean } | { target: 'note'; id: string },
   ): Promise<{ item: OpenItem; created: OpenItem[]; noteId: string | null }> {

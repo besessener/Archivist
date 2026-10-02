@@ -4,7 +4,7 @@ title = "Archivist"
 useDefault = true
 
 [[allowlists]]
-description = "Platzhalter und Testdaten, keine echten Zugangsdaten"
+description = "Placeholders and test data, no real credentials"
 paths = [
   '''(^|/)\.env\.example$''',
   '''^config\.example\.json$''',

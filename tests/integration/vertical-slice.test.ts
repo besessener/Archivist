@@ -34,8 +34,8 @@ const classification = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-describe('LLM-Anbindung', () => {
-  it('testet die Verbindung erfolgreich', async () => {
+describe('LLM connection', () => {
+  it('tests the connection successfully', async () => {
     const r = await app.ok('llm:testConnection', {});
     expect(r.ok).toBe(true);
     expect(r.modelReply).toBe('OK');
@@ -43,7 +43,7 @@ describe('LLM-Anbindung', () => {
     expect(tx[0]?.purpose).toBe('Verbindungstest');
   });
 
-  it('meldet einen nicht erreichbaren Endpunkt verständlich', async () => {
+  it('reports an unreachable endpoint understandably', async () => {
     app.llm.down = true;
     const r = await app.ok('llm:testConnection', {});
     expect(r.ok).toBe(false);
@@ -52,8 +52,8 @@ describe('LLM-Anbindung', () => {
   });
 });
 
-describe('Datei importieren, klassifizieren, archivieren, rückgängig machen', () => {
-  it('führt den Dokument-Slice vollständig aus', async () => {
+describe('Import, classify, archive and undo a file', () => {
+  it('runs the document slice completely', async () => {
     app.llm.on('DocumentClassification', () => classification());
     const src = app.file('Downloads/jour-fixe.txt', 'Jour Fixe prod-plat am 12.06.2026.\nTeilnehmer: Anna, Ben.\nDas Budget muss noch geklärt werden.');
 
@@ -69,12 +69,12 @@ describe('Datei importieren, klassifizieren, archivieren, rückgängig machen', 
     expect(doc.stagedPath && fs.existsSync(doc.stagedPath)).toBe(true);
     expect(fs.existsSync(src)).toBe(true);
 
-    // Plan zeigt Quelle/Ziel; nichts wurde bisher kopiert
+    // the plan shows source/target; nothing has been copied yet
     const plan = await app.ok('documents:previewArchive', { items: [{ documentId: id, mode: 'copy' }] });
     expect(plan.items[0]!.targetPath).toContain(path.join('work', 'projects', 'prod-plat', 'jour-fixe.txt'));
     expect(fs.existsSync(plan.items[0]!.targetPath!)).toBe(false);
 
-    // ohne Bestätigung → Ablehnung an der IPC-Grenze
+    // without confirmation → rejection at the IPC boundary
     const denied = await app.call('documents:archive', { items: [{ documentId: id, mode: 'copy' }], confirmed: false as unknown as true });
     expect(denied.ok).toBe(false);
 
@@ -82,19 +82,19 @@ describe('Datei importieren, klassifizieren, archivieren, rückgängig machen', 
     expect(res.success).toBe(1);
     const target = res.items[0]!.targetPath!;
     expect(fs.readFileSync(target, 'utf8')).toContain('Jour Fixe');
-    expect(fs.existsSync(src)).toBe(true); // Original unverändert
+    expect(fs.existsSync(src)).toBe(true); // original unchanged
 
     const archived = await app.ok('documents:get', { id });
     expect(archived.status).toBe('archived');
     expect(archived.projectName).toBe('prod-plat');
 
-    // Suche und Wissensgraph aktualisiert
+    // search and knowledge graph updated
     const hits = await app.ok('search:global', { query: 'Jour Fixe Budget', limit: 5 });
     expect(hits.some((h) => h.id === id)).toBe(true);
     const topics = await app.ok('knowledge:listEntities', { type: 'project' });
     expect(topics.map((t) => t.name)).toContain('prod-plat');
 
-    // Audit + Undo
+    // audit + undo
     const audit = await app.ok('audit:list', { limit: 20, onlyUndoable: true });
     const entry = audit.find((a) => a.action === 'archive.copy');
     expect(entry?.undoable).toBe(true);
@@ -107,7 +107,7 @@ describe('Datei importieren, klassifizieren, archivieren, rückgängig machen', 
     expect(after.stagedPath && fs.existsSync(after.stagedPath)).toBe(true);
   });
 
-  it('erkennt Duplikate beim Import', async () => {
+  it('detects duplicates on import', async () => {
     app.llm.on('DocumentClassification', () => classification());
     const a = app.file('a.txt', 'identischer Inhalt für den Duplikattest, lang genug.');
     const b = app.file('b.txt', 'identischer Inhalt für den Duplikattest, lang genug.');

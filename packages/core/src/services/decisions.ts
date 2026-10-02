@@ -41,8 +41,8 @@ interface DecisionStatusUndo {
 export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'];
 
 /**
- * Pflichtfelder: Wann, Thema, Beteiligte, Entscheidung.
- * Ein Feld gilt als erfüllt, wenn es vorhanden ist ODER der Benutzer es ausdrücklich als unbekannt bestätigt hat.
+ * Required fields: when, topic, participants, decision.
+ * A field counts as fulfilled if it is present OR the user has explicitly confirmed it as unknown.
  */
 export function computeMissingFields(d: {
   decisionText?: string | null;
@@ -60,7 +60,7 @@ export function computeMissingFields(d: {
   return missing;
 }
 
-/** Gezielte Rückfragen je fehlendem Pflichtfeld. */
+/** Targeted follow-up questions per missing required field. */
 export function questionFor(field: DecisionField, ctx: { topic?: string | null } = {}): string {
   switch (field) {
     case 'decidedAt':
@@ -207,7 +207,7 @@ export class DecisionService {
     );
   }
 
-  /** Aktive Entscheidungen zu Thema oder Projekt (für Widerspruchs-/Überholt-Prüfung). */
+  /** Active decisions on a topic or project (for the contradiction/superseded check). */
   activeFor(topicId: string | null, projectId: string | null, excludeId?: string): Decision[] {
     const all = this.list().filter((d) => ACTIVE_DECISION_STATUSES.includes(d.status) && d.id !== excludeId);
     return all.filter((d) => (topicId && d.topicId === topicId) || (!topicId && projectId && d.projectId === projectId));
@@ -234,7 +234,7 @@ export class DecisionService {
   }
 
   /**
-   * Legt eine Entscheidung an. Sind Pflichtfelder offen (und nicht als unbekannt bestätigt), wird sie als Entwurf gespeichert.
+   * Creates a decision. If required fields are open (and not confirmed as unknown), it is saved as a draft.
    */
   create(input: DecisionInput, opts: { actor?: 'user' | 'agent'; trigger?: string } = {}): Decision {
     const now = nowIso();
@@ -337,7 +337,7 @@ export class DecisionService {
       unknownFields: merged.unknownFields as DecisionField[],
     });
     set.missingFields = missing;
-    // Entwurf wird final, sobald alle Pflichtfelder erfüllt sind (oder ausdrücklich als unbekannt bestätigt wurden)
+    // a draft becomes final as soon as all required fields are fulfilled (or explicitly confirmed as unknown)
     if (patch.status && patch.status !== cur.status) set.status = patch.status;
     else if (!patch.status && cur.status === 'draft' && missing.length === 0 && !patch.asDraft) set.status = 'active';
 
@@ -383,7 +383,7 @@ export class DecisionService {
     }
   }
 
-  /** Menschenlesbare Darstellung (Wann/Thema/Beteiligte/…). */
+  /** Human-readable rendering (when/topic/participants/…). */
   format(d: Decision): string {
     const unknown = (f: DecisionField) => d.unknownFields.includes(f);
     return [
@@ -404,7 +404,7 @@ export class DecisionService {
   }
 
   /**
-   * Stufe 2: ältere Entscheidung als überholt markieren (nur nach Bestätigung durch den Benutzer).
+   * Stage 2: mark an older decision as superseded (only after confirmation by the user).
    */
   supersede(oldId: string, newId: string, opts: { confirmed: boolean; trigger?: string }): { old: Decision; new: Decision } {
     if (!opts.confirmed) throw new AppError('permission_error', 'Eine Entscheidung darf nur nach ausdrücklicher Bestätigung als überholt markiert werden.');
@@ -499,7 +499,7 @@ export class DecisionService {
           .join('\n'),
       });
     } catch (err) {
-      this.ctx.logger.warn('decisions', 'Indexierung fehlgeschlagen', { error: err });
+      this.ctx.logger.warn('decisions', 'Indexing failed', { error: err });
     }
   }
 

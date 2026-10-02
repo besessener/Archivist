@@ -3,7 +3,7 @@ import { pageObject } from './page-object';
 
 type PrivacyMode = 'auto' | 'confirm' | 'local_only';
 
-/** Einrichtungsdialog beim ersten Start. */
+/** Setup wizard on first launch. */
 export function initSetupWizard(page: Page) {
   const root = page.getByTestId('setup-wizard');
   const locators = {
@@ -24,7 +24,7 @@ export function initSetupWizard(page: Page) {
     },
   };
   const interactions = {
-    /** Trägt den LLM-Endpunkt ein und prüft die Verbindung. */
+    /** Enters the LLM endpoint and tests the connection. */
     connectLlm: async (baseUrl: string, apiKey = 'sk-e2e-SECRET-0123456789', model = 'e2e-model') => {
       await locators.buttons.next.click();
       await locators.inputs.baseUrl.fill(baseUrl);
@@ -33,7 +33,7 @@ export function initSetupWizard(page: Page) {
       await locators.buttons.testConnection.click();
       await expect(locators.texts.testResult).toContainText('erfolgreich');
     },
-    /** Von der Verbindungsprüfung bis zum Abschluss; Verzeichnisse werden übersprungen, Modus: automatisch (Standard). */
+    /** From the connection test to the end; directories are skipped, mode: automatic (default). */
     finish: async (mode: PrivacyMode = 'auto') => {
       await locators.buttons.next.click();
       await locators.buttons.next.click();

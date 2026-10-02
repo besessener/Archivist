@@ -17,10 +17,10 @@ export interface LlmRequest {
   purpose: string;
   documentIds?: string[];
   json?: boolean;
-  /** nur für den ausdrücklichen Verbindungstest (sendet ausschließlich festen Text) */
+  /** only for the explicit connection test (sends fixed text only) */
   bypassPrivacy?: boolean;
   maxOutputTokens?: number;
-  /** Abbruch durch den Benutzer: laufende Anfrage wird beendet, es folgt keine Wiederholung. */
+  /** Cancellation by the user: the running request is ended and not retried. */
   signal?: AbortSignal;
 }
 
@@ -41,16 +41,16 @@ interface ResponsesBody {
 }
 
 /**
- * Eindeutige Meldungen zu unbekannten bzw. nicht unterstützten Parametern: Die Meldung muss einen Parameter
- * benennen UND ihn als nicht unterstützt/unbekannt bezeichnen. Allgemeine Formatfehler (z. B. „invalid input format“)
- * lösen keine Ersatzanfrage aus, sondern werden als Fehler sichtbar.
+ * Unambiguous messages about unknown or unsupported parameters: the message must name a parameter
+ * AND call it unsupported/unknown. General format errors (e.g. "invalid input format")
+ * do not trigger a fallback request but surface as errors.
  */
 const UNSUPPORTED_PARAM_PATTERNS = [
-  // „Unsupported parameter: 'store'“, „Unknown parameter“, „Unrecognized request argument supplied: reasoning“
+  // "Unsupported parameter: 'store'", "Unknown parameter", "Unrecognized request argument supplied: reasoning"
   /\b(?:unsupported|unknown|unrecognized)\s+(?:request\s+)?(?:parameter|argument|field)s?\b/i,
-  // „'text.format' is not supported“, „reasoning.effort is unsupported“
+  // "'text.format' is not supported", "reasoning.effort is unsupported"
   /['"`]?\b(?:store|reasoning(?:\.effort)?|text(?:\.format)?|max_output_tokens)\b['"`]?\s+(?:is|are)\s+(?:not\s+supported|unsupported|not\s+recognized|unknown)\b/i,
-  // „does not support the 'reasoning' parameter“
+  // "does not support the 'reasoning' parameter"
   /\bdoes\s+not\s+support\b[^.\n]{0,80}\b(?:parameters?|arguments?|store|reasoning|text\.format|max_output_tokens)\b/i,
 ];
 
@@ -59,10 +59,10 @@ function isUnsupportedParamError(text: string): boolean {
 }
 
 /**
- * OpenAI-kompatibler Client für die Responses API (typisierter Fetch-Client).
- * - Modell, Base URL, Timeout und reasoning effort sind konfigurierbar.
- * - Jede Übertragung wird (maskiert, gekürzt) protokolliert → Transparenz für den Benutzer.
- * - Strukturierte Ausgaben werden mit Zod validiert; ungültige Ausgaben lösen nie Aktionen aus.
+ * OpenAI-compatible client for the Responses API (typed fetch client).
+ * - Model, base URL, timeout and reasoning effort are configurable.
+ * - Every transmission is logged (masked, truncated) → transparency for the user.
+ * - Structured outputs are validated with Zod; invalid outputs never trigger actions.
  */
 export class LlmService {
   private lastStatus: { state: 'unknown' | 'ok' | 'error'; lastError: string | null; lastCheckedAt: string | null } = {
@@ -88,7 +88,7 @@ export class LlmService {
     return Boolean(s.baseUrl && s.model && this.secrets.getApiKey());
   }
 
-  /** Konfiguriert UND vom Datenschutzmodus erlaubt (Modus „nur lokal“ sperrt jede externe Übertragung). */
+  /** Configured AND allowed by the privacy mode (mode „nur lokal“ blocks every external transmission). */
   canUse(): boolean {
     return this.isConfigured() && this.settings.get().privacy.llmMode !== 'local_only';
   }
@@ -99,7 +99,7 @@ export class LlmService {
   }
 
   private endpoint(baseUrl: string, pathPart: string): string {
-    // eslint-disable-next-line sonarjs/super-linear-regex -- Base-URL bzw. einzelne Modellantwort, Länge begrenzt
+    // eslint-disable-next-line sonarjs/super-linear-regex -- base URL or a single model answer, length is bounded
     return `${baseUrl.replace(/\/+$/, '')}/${pathPart}`;
   }
 
@@ -156,7 +156,7 @@ export class LlmService {
     return parts.join('');
   }
 
-  /** Einfache Textantwort über /responses. */
+  /** Plain text answer via /responses. */
   async complete(req: LlmRequest, overrides: LlmOverrides = {}): Promise<string> {
     const cfg = this.settings.get().llm;
     const baseUrl = (overrides.baseUrl ?? cfg.baseUrl).trim();
@@ -196,7 +196,7 @@ export class LlmService {
         try {
           let res = await this.post(url, apiKey, body, cfg.timeoutMs, req.signal);
           if (res.status === 400 && body === full && isUnsupportedParamError(res.text)) {
-            // manche kompatible Endpunkte kennen optionale Parameter nicht → ohne diese erneut versuchen
+            // some compatible endpoints do not know optional parameters → retry without them
             const { store: _s, reasoning: _r, text: _t, max_output_tokens: _m, ...minimal } = full;
             void _s;
             void _r;
@@ -235,7 +235,7 @@ export class LlmService {
         }
       }
     } catch (err) {
-      // ein Abbruch durch den Benutzer sagt nichts über den Zustand des Endpunkts
+      // a cancellation by the user says nothing about the state of the endpoint
       if (!req.signal?.aborted) this.markStatus(false, toErrorInfo(err).message);
       throw err;
     } finally {
@@ -253,8 +253,8 @@ export class LlmService {
   }
 
   /**
-   * Strukturierte Antwort: Prompt enthält das JSON-Schema, die Antwort wird mit Zod validiert.
-   * Bei ungültiger Ausgabe genau eine Korrekturanfrage; danach Fehler (es wird nichts ausgeführt).
+   * Structured answer: the prompt contains the JSON schema, the answer is validated with Zod.
+   * On invalid output exactly one correction request; after that an error (nothing is executed).
    */
   async completeJson<T extends z.ZodType>(
     schema: T,
@@ -281,7 +281,7 @@ export class LlmService {
             .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
             .join('; ')
         : 'kein gültiges JSON';
-      this.ctx.logger.warn('llm', 'Ungültige strukturierte LLM-Ausgabe', { schema: req.schemaName, issues: lastIssues, attempt });
+      this.ctx.logger.warn('llm', 'Invalid structured LLM output', { schema: req.schemaName, issues: lastIssues, attempt });
     }
     throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
       details: `${req.schemaName}: ${lastIssues}; Auszug: ${lastRaw.slice(0, 160)}`,
@@ -290,7 +290,7 @@ export class LlmService {
 
   private parseJson(raw: string): { ok: true; value: unknown } | { ok: false } {
     let text = raw.trim();
-    // eslint-disable-next-line sonarjs/super-linear-regex -- Base-URL bzw. einzelne Modellantwort, Länge begrenzt
+    // eslint-disable-next-line sonarjs/super-linear-regex -- base URL or a single model answer, length is bounded
     const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
     if (fence?.[1]) text = fence[1].trim();
     const start = text.indexOf('{');
@@ -303,7 +303,7 @@ export class LlmService {
     }
   }
 
-  /** Embeddings über /embeddings (nur wenn ein Embedding-Modell konfiguriert ist). */
+  /** Embeddings via /embeddings (only if an embedding model is configured). */
   async embeddings(texts: string[], purpose: string, documentIds: string[] = []): Promise<number[][]> {
     const cfg = this.settings.get().llm;
     const apiKey = this.secrets.getApiKey();
@@ -358,9 +358,9 @@ export class LlmService {
         .insert(llmTransmissions)
         .values({ id: newId(), at: nowIso(), ...t })
         .run();
-      this.ctx.logger.info('llm', 'LLM-Übertragung', { purpose: t.purpose, model: t.model, bytes: t.bytes, redactions: t.redactions, success: t.success });
+      this.ctx.logger.info('llm', 'LLM transmission', { purpose: t.purpose, model: t.model, bytes: t.bytes, redactions: t.redactions, success: t.success });
     } catch {
-      /* Protokollierung darf Aufrufe nicht scheitern lassen */
+      /* logging must not make calls fail */
     }
   }
 

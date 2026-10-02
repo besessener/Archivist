@@ -56,7 +56,7 @@ export function ChatBubble({
 }: {
   message: ChatMsg;
   pending?: boolean;
-  /** Nur für die letzte Antwort gesetzt: ein Klick auf einen Antwortknopf sendet dessen Text. */
+  /** Only set for the last reply: clicking a reply button sends its text. */
   onQuickReply?: (text: string) => void;
 }) {
   const isUser = message.role === 'user';

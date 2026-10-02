@@ -1,6 +1,6 @@
 import { expect, test } from './fixture';
 
-test.describe('Wissen: Neu anlegen', () => {
+test.describe('knowledge: create new', () => {
   test('creates real entries and opens an existing one instead of claiming it was created', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);

@@ -11,18 +11,18 @@ export interface ConfirmDialogProps {
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: React.ReactNode;
-  /** Sichtbare Details: Pfade, Auswirkungen etc. */
+  /** Visible details: paths, effects, etc. */
   children?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
-  /** Wenn gesetzt, muss diese Checkbox aktiviert werden. */
+  /** If set, this checkbox must be checked. */
   requireCheckbox?: string;
   confirmTestId?: string;
   onConfirm: (checked: boolean) => void | Promise<void>;
 }
 
-/** Allgemeiner Bestätigungsdialog. Aktionen mit `confirmed: true` werden erst nach dessen Bestätigung gesendet. */
+/** Generic confirmation dialog. Actions with `confirmed: true` are only sent after it has been confirmed. */
 export function ConfirmDialog({
   open,
   onOpenChange,

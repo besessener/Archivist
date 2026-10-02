@@ -23,7 +23,7 @@ describe('matchOpenItems (#39)', () => {
     expect(titlesOf(r)).toEqual(expected);
   });
 
-  it('sucht auch in der Beschreibung', () => {
+  it('also searches the description', () => {
     const r = matchOpenItems('Rabatt', [
       { title: 'Angebot prüfen', description: 'Müller wollte Rabatt' },
       { title: 'Zahnarzt anrufen', description: null },
@@ -31,7 +31,7 @@ describe('matchOpenItems (#39)', () => {
     expect(titlesOf(r)).toEqual(['Angebot prüfen']);
   });
 
-  it('ein Titeltreffer schlägt einen Treffer nur in der Beschreibung', () => {
+  it('a title match beats a match in the description only', () => {
     const r = matchOpenItems('Rabatt', [
       { title: 'Rabatt verhandeln', description: null },
       { title: 'Angebot prüfen', description: 'Müller wollte Rabatt' },

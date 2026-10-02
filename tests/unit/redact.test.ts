@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { redactSecrets } from '../../packages/core/src/util/redact';
 
-/** Eine Zeichenkette aus `n` Zeichen des Alphabets (für Grenzwerte der Mindestlängen). */
+/** A string of `n` characters from the alphabet (for minimum length boundaries). */
 const chars = (n: number, alphabet = 'a1B2c3D4e5F6g7H8i9J0') => alphabet.repeat(Math.ceil(n / alphabet.length)).slice(0, n);
 
-describe('Maskierung von Zugangsdaten', () => {
-  describe('erkennt und ersetzt jede Art von Geheimnis', () => {
+describe('masking credentials', () => {
+  describe('detects and replaces every kind of secret', () => {
     const cases: Array<{ kind: string; input: string; expected: string }> = [
       {
         kind: 'private_key',
@@ -42,15 +42,15 @@ describe('Maskierung von Zugangsdaten', () => {
     }
   });
 
-  describe('lässt zu kurze Werte unverändert (Grenzwerte der Mindestlängen)', () => {
+  describe('leaves values that are too short unchanged (minimum length boundaries)', () => {
     const boundaries: Array<{ name: string; short: string; long: string }> = [
-      { name: 'AWS-Schlüssel (16 Zeichen nach dem Präfix)', short: `AKIA${chars(15, 'ABCDEFGH23456789')}`, long: `AKIA${chars(16, 'ABCDEFGH23456789')}` },
-      { name: 'sk-Schlüssel (16 Zeichen)', short: `sk-${chars(15)}`, long: `sk-${chars(16)}` },
-      { name: 'Bearer-Token (16 Zeichen)', short: `Bearer ${chars(15)}`, long: `Bearer ${chars(16)}` },
-      { name: 'GitHub-Token (30 Zeichen)', short: `ghp_${chars(29)}`, long: `ghp_${chars(30)}` },
-      { name: 'Slack-Token (10 Zeichen)', short: `xoxb-${chars(9)}`, long: `xoxb-${chars(10)}` },
-      { name: 'Passwort in der URL (3 Zeichen)', short: 'https://user:ab@example.org', long: 'https://user:abc@example.org' },
-      { name: 'Wert einer Zuweisung (4 Zeichen)', short: 'password=abc', long: 'password=abcd' },
+      { name: 'AWS key (16 characters after the prefix)', short: `AKIA${chars(15, 'ABCDEFGH23456789')}`, long: `AKIA${chars(16, 'ABCDEFGH23456789')}` },
+      { name: 'sk- key (16 characters)', short: `sk-${chars(15)}`, long: `sk-${chars(16)}` },
+      { name: 'bearer token (16 characters)', short: `Bearer ${chars(15)}`, long: `Bearer ${chars(16)}` },
+      { name: 'GitHub token (30 characters)', short: `ghp_${chars(29)}`, long: `ghp_${chars(30)}` },
+      { name: 'Slack token (10 characters)', short: `xoxb-${chars(9)}`, long: `xoxb-${chars(10)}` },
+      { name: 'password in the URL (3 characters)', short: 'https://user:ab@example.org', long: 'https://user:abc@example.org' },
+      { name: 'value of an assignment (4 characters)', short: 'password=abc', long: 'password=abcd' },
     ];
 
     for (const { name, short, long } of boundaries) {
@@ -61,7 +61,7 @@ describe('Maskierung von Zugangsdaten', () => {
     }
   });
 
-  it('lässt gewöhnlichen Text, leere Eingaben und Wörter ohne Wertzuweisung unverändert', () => {
+  it('leaves ordinary text, empty input and words without a value assignment unchanged', () => {
     for (const text of [
       '',
       'Jour Fixe am 4. Mai mit Anna und Ben.',
@@ -73,7 +73,7 @@ describe('Maskierung von Zugangsdaten', () => {
     }
   });
 
-  it('zählt jeden Treffer, meldet jede Art nur einmal und maskiert mehrere Geheimnisse in einem Text', () => {
+  it('counts every match, reports each kind only once and masks several secrets in one text', () => {
     const r = redactSecrets(`erst sk-${chars(20)} dann sk-${chars(20, 'zyxw9876')} und password=geheim99`);
 
     expect(r.text).toBe('erst [REDACTED:api_key] dann [REDACTED:api_key] und password=[REDACTED:secret]');
@@ -81,7 +81,7 @@ describe('Maskierung von Zugangsdaten', () => {
     expect(r.kinds.toSorted()).toEqual(['api_key', 'assignment']);
   });
 
-  it('enthält nach der Maskierung kein Geheimnis mehr und ist wiederholbar', () => {
+  it('contains no secret after masking and is idempotent', () => {
     const once = redactSecrets(`token=abcdef123456 und sk-${chars(24)}`);
     const twice = redactSecrets(once.text);
 
@@ -89,7 +89,7 @@ describe('Maskierung von Zugangsdaten', () => {
     expect(twice.text).toBe(once.text);
   });
 
-  describe('Zuweisungen: jedes Schlüsselwort wird erkannt', () => {
+  describe('assignments: every keyword is detected', () => {
     const keywords = [
       'password',
       'passwd',
@@ -121,17 +121,17 @@ describe('Maskierung von Zugangsdaten', () => {
       });
     }
 
-    it('erkennt Trenner mit Leerraum und Anführungszeichen, aber nicht ohne Trenner', () => {
+    it('detects separators with whitespace and quotes, but not without a separator', () => {
       expect(redactSecrets("token  :  'Wert12345'").text).toBe("token  :  '[REDACTED:secret]'");
       expect(redactSecrets('tokenWert12345').count).toBe(0);
     });
 
-    it('ein Wort mit angehängtem Schlüsselwort ist kein Treffer (Wortgrenze)', () => {
+    it('a word with an attached keyword is no match (word boundary)', () => {
       expect(redactSecrets('mypassword=Wert12345').count).toBe(0);
     });
   });
 
-  it('Bearer-Token: auch mit mehreren Leerzeichen oder Zeilenumbruch dazwischen', () => {
+  it('bearer token: also with several spaces or a line break in between', () => {
     expect(redactSecrets(`Bearer    ${chars(24)}`).text).toBe('Bearer [REDACTED:bearer]');
     expect(redactSecrets(`Bearer\n${chars(24)}`).count).toBe(1);
   });

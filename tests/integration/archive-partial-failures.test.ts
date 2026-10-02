@@ -89,8 +89,8 @@ async function archived(name: string, content: string, loc: string): Promise<str
   return id;
 }
 
-describe('Archivieren: Eingangskopie lässt sich nach dem Commit nicht entfernen', () => {
-  it('bleibt gültig archiviert mit Undo-Eintrag; die Eingangskopie wird vorgemerkt und später entfernt', async () => {
+describe('Archiving: the inbox copy cannot be removed after the commit', () => {
+  it('stays validly archived with an undo entry; the inbox copy is marked and removed later', async () => {
     const { src, id } = await imported('offen.txt', 'Im Viewer geöffnetes Dokument');
     const staged = row(id).stagedPath!;
     lockForUnlink((p) => p === staged);
@@ -122,7 +122,7 @@ describe('Archivieren: Eingangskopie lässt sich nach dem Commit nicht entfernen
     expect(fs.existsSync(src)).toBe(true);
   });
 
-  it('räumt vorgemerkte Kopien beim nächsten Archivieren und bei der Archivprüfung auf', async () => {
+  it('cleans up marked copies on the next archiving and during the archive check', async () => {
     const a = await imported('a.txt', 'Dokument A mit Inhalt');
     const b = await imported('b.txt', 'Dokument B mit Inhalt');
     const stagedA = row(a.id).stagedPath!;
@@ -147,7 +147,7 @@ describe('Archivieren: Eingangskopie lässt sich nach dem Commit nicht entfernen
     expect(row(c.id).stagedPath).toBeNull();
   });
 
-  it('entfernt die Eingangskopie nie, wenn die Archivdatei fehlt oder verändert wurde', async () => {
+  it('never removes the inbox copy when the archive file is missing or was changed', async () => {
     const { id } = await imported('x.txt', 'Dokument X mit Inhalt');
     const staged = row(id).stagedPath!;
     const lock = lockForUnlink((p) => p === staged);
@@ -161,7 +161,7 @@ describe('Archivieren: Eingangskopie lässt sich nach dem Commit nicht entfernen
     expect(row(id).stagedPath).toBe(staged);
   });
 
-  it('Undo funktioniert auch, solange die Eingangskopie noch vorgemerkt ist', async () => {
+  it('undo also works while the inbox copy is still marked', async () => {
     const { id } = await imported('y.txt', 'Dokument Y mit Inhalt');
     const staged = row(id).stagedPath!;
     const lock = lockForUnlink((p) => p === staged);
@@ -177,8 +177,8 @@ describe('Archivieren: Eingangskopie lässt sich nach dem Commit nicht entfernen
   });
 });
 
-describe('Archivieren: Kopie bricht mittendrin ab', () => {
-  it('lässt keine Teilkopie im Archiv zurück und meldet „nichts verändert“', async () => {
+describe('Archiving: the copy aborts midway', () => {
+  it('leaves no partial copy in the archive and reports „nichts verändert“', async () => {
     const { id } = await imported('gross.txt', 'Ein großes Dokument, das nicht ganz passt');
     const staged = row(id).stagedPath!;
     diskFullDuringCopy();
@@ -192,7 +192,7 @@ describe('Archivieren: Kopie bricht mittendrin ab', () => {
     expect(fs.existsSync(staged)).toBe(true);
   });
 
-  it('meldet eine Teilkopie, die sich nicht entfernen lässt, mit ihrem Pfad', async () => {
+  it('reports a partial copy that cannot be removed, with its path', async () => {
     const { id } = await imported('gross.txt', 'Ein großes Dokument, das nicht ganz passt');
     diskFullDuringCopy();
     lockForUnlink((p) => p.startsWith(archiveRoot()));
@@ -209,8 +209,8 @@ describe('Archivieren: Kopie bricht mittendrin ab', () => {
   });
 });
 
-describe('Umlagern bei Teilfehlern', () => {
-  it('Hardlink angelegt, Original gesperrt: der neue Eintrag wird zurückgenommen, nichts ist verändert', async () => {
+describe('Relocating with partial failures', () => {
+  it('hardlink created, original locked: the new entry is rolled back, nothing is changed', async () => {
     const id = await archived('antrag.txt', 'Antrag', 'work/hr');
     const original = abs(id);
     lockForUnlink((p) => p === original);
@@ -223,7 +223,7 @@ describe('Umlagern bei Teilfehlern', () => {
     expect(row(id).archiveRelPath).toBe('work/hr/antrag.txt');
   });
 
-  it('Hardlink bleibt übrig, weil auch das Zurücknehmen scheitert: die Meldung nennt den zusätzlichen Eintrag', async () => {
+  it('hardlink remains because the rollback fails too: the message names the additional entry', async () => {
     const id = await archived('antrag.txt', 'Antrag', 'work/hr');
     const original = abs(id);
     lockForUnlink((p) => p.startsWith(archiveRoot()));
@@ -240,7 +240,7 @@ describe('Umlagern bei Teilfehlern', () => {
     expect(row(id).archiveRelPath, 'the database still points to the original, which still exists').toBe('work/hr/antrag.txt');
   });
 
-  it('ohne Hardlinks: eine abgebrochene Kopie wird entfernt', async () => {
+  it('without hardlinks: an aborted copy is removed', async () => {
     const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'work/hr');
     const original = abs(id);
     vi.spyOn(fsp, 'link').mockRejectedValue(errno('EXDEV'));
@@ -254,7 +254,7 @@ describe('Umlagern bei Teilfehlern', () => {
     expect(row(id).archiveRelPath).toBe('work/hr/antrag.txt');
   });
 
-  it('ohne Hardlinks: Kopie gelingt, Original gesperrt – die Kopie wird wieder entfernt', async () => {
+  it('without hardlinks: copy succeeds, original locked – the copy is removed again', async () => {
     const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'work/hr');
     const original = abs(id);
     vi.spyOn(fsp, 'link').mockRejectedValue(errno('EXDEV'));
@@ -267,7 +267,7 @@ describe('Umlagern bei Teilfehlern', () => {
     expect(filesIn(archiveRoot())).toEqual([original]);
   });
 
-  it('Datenbankfehler nach dem Verschieben: die Datei liegt wieder am alten Ort, ohne Rückstände', async () => {
+  it('database error after moving: the file is back at its old location, with no leftovers', async () => {
     const id = await archived('antrag.txt', 'Antrag', 'work/hr');
     const original = abs(id);
     vi.spyOn(app.services.categories, 'create').mockImplementation(() => {
@@ -282,7 +282,7 @@ describe('Umlagern bei Teilfehlern', () => {
   });
 });
 
-describe('Umlager-Vorschlag: „0 verschoben“ ist kein Erfolg', () => {
+describe('Relocation proposal: „0 verschoben“ is not a success', () => {
   async function scatteredInsight() {
     await archived('a.txt', 'Inhalt A', 'work/a');
     await archived('b.txt', 'Inhalt B', 'work/a');
@@ -293,7 +293,7 @@ describe('Umlager-Vorschlag: „0 verschoben“ ist kein Erfolg', () => {
     return { c, insight };
   }
 
-  it('meldet „fehlgeschlagen“, das Insight bleibt offen und lässt sich nach der nächsten Prüfung erneut ausführen', async () => {
+  it('reports „fehlgeschlagen“, the insight stays open and can be run again after the next check', async () => {
     const { c, insight } = await scatteredInsight();
     fs.appendFileSync(abs(c), ' – bearbeitet'); // conflict: nothing can be moved
 
@@ -318,7 +318,7 @@ describe('Umlager-Vorschlag: „0 verschoben“ ist kein Erfolg', () => {
     expect(row(c).archiveRelPath).toBe('work/a/c.txt');
   });
 
-  it('teilweise verschoben gilt als ausgeführt', async () => {
+  it('partially moved counts as executed', async () => {
     await archived('a.txt', 'Inhalt A', 'work/a');
     await archived('b.txt', 'Inhalt B', 'work/a');
     await archived('c.txt', 'Inhalt C', 'work/c');

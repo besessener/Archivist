@@ -54,8 +54,8 @@ const archive = (
   extra: Record<string, unknown> = {},
 ) => app.ok('documents:archive', { items, confirmed: true, approveNewCategories: [], confirmMove: false, ...extra } as never);
 
-describe('Archivierung durch Kopieren', () => {
-  it('überschreibt nie vorhandene Dateien, sondern vergibt einen freien Namen', async () => {
+describe('Archiving by copying', () => {
+  it('never overwrites existing files but picks a free name', async () => {
     const a = await importOne('bericht.txt', 'Erster Bericht, Inhalt eins');
     const b = await importOne('bericht2.txt', 'Zweiter Bericht, ganz anderer Inhalt');
     const r1 = await archive([{ documentId: a.id, mode: 'copy', fileName: 'bericht.txt' }]);
@@ -66,10 +66,10 @@ describe('Archivierung durch Kopieren', () => {
     expect(fs.readFileSync(r2.items[0]!.targetPath!, 'utf8')).toContain('Zweiter');
   });
 
-  it('zeigt im Plan Namenskonflikte, Duplikate und neue Hauptkategorien', async () => {
+  it('shows name conflicts, duplicates and new top-level categories in the plan', async () => {
     const a = await importOne('x.txt', 'Inhalt x ausreichend lang');
     await archive([{ documentId: a.id, mode: 'copy' }]);
-    // zweites Dokument mit anderem Inhalt, gleicher Zielname
+    // second document with different content, same target name
     const b = await importOne('x.txt', 'Anderer Inhalt für x');
     const plan = await app.ok('documents:previewArchive', { items: [{ documentId: b.id, mode: 'copy', categoryPath: 'finanzen/steuern' }] });
     expect(plan.newCategories).toEqual(['finanzen']);
@@ -79,7 +79,7 @@ describe('Archivierung durch Kopieren', () => {
     expect(plan2.items[0]!.renamed).toBe(true);
   });
 
-  it('legt neue Hauptkategorien nur nach ausdrücklicher Bestätigung an', async () => {
+  it('creates new top-level categories only after explicit confirmation', async () => {
     const a = await importOne('s.txt', 'Steuerunterlagen 2026 ausführlich');
     const denied = await archive([{ documentId: a.id, mode: 'copy', categoryPath: 'finanzen/steuern' }]);
     expect(denied.conflicts).toBe(1);
@@ -89,7 +89,7 @@ describe('Archivierung durch Kopieren', () => {
     expect((await app.ok('categories:list', {})).map((c) => c.path)).toContain('finanzen/steuern');
   });
 
-  it('verhindert Path Traversal im Zielordner und Dateinamen', async () => {
+  it('prevents path traversal in the target folder and file name', async () => {
     const a = await importOne('t.txt', 'Traversal-Test Inhalt lang genug');
     const plan = await app.ok('documents:previewArchive', { items: [{ documentId: a.id, mode: 'copy', categoryPath: '../../etc' }] });
     expect(plan.items[0]!.blocked).toBe(true);
@@ -101,7 +101,7 @@ describe('Archivierung durch Kopieren', () => {
     expect(path.basename(res2.items[0]!.targetPath!)).not.toContain('/');
   });
 
-  it('verhindert Ausbruch über Symlinks im Archiv', async () => {
+  it('prevents escaping via symlinks in the archive', async () => {
     const a = await importOne('l.txt', 'Symlink-Test Inhalt lang genug');
     const outside = path.join(app.root, 'outside');
     fs.mkdirSync(outside);
@@ -112,7 +112,7 @@ describe('Archivierung durch Kopieren', () => {
     expect(fs.readdirSync(outside)).toHaveLength(0);
   });
 
-  it('erkennt, wenn sich die Quelle seit der Analyse verändert hat', async () => {
+  it('detects when the source has changed since the analysis', async () => {
     const a = await importOne('c.txt', 'Version eins des Dokuments');
     const staged = (await app.ok('documents:get', { id: a.id })).stagedPath!;
     fs.writeFileSync(staged, 'Verändert!');
@@ -121,12 +121,12 @@ describe('Archivierung durch Kopieren', () => {
     expect(res.items[0]!.message).toMatch(/verändert/);
   });
 
-  it('archiviert hochgeladene Dateien aus dem Eingang und lässt das Original unberührt; Undo stellt den Eingang her', async () => {
+  it('archives uploaded files from the inbox and leaves the original untouched; undo restores the inbox', async () => {
     const a = await importOne('u.txt', 'Upload-Dokument mit Inhalt');
     const before = await app.ok('documents:get', { id: a.id });
     expect(before.stagedPath).toContain(path.join('Archivist', 'inbox'));
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
-    expect(fs.existsSync(before.stagedPath!)).toBe(false); // eigene Staging-Kopie wanderte ins Archiv
+    expect(fs.existsSync(before.stagedPath!)).toBe(false); // own staging copy moved into the archive
     expect(fs.existsSync(a.src)).toBe(true);
     expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(true);
     const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
@@ -135,7 +135,7 @@ describe('Archivierung durch Kopieren', () => {
     expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(false);
   });
 
-  it('Undo meldet Konflikte, wenn die archivierte Datei seitdem geändert wurde, und überschreibt nichts', async () => {
+  it('undo reports conflicts when the archived file was changed since, and overwrites nothing', async () => {
     const a = await importOne('k.txt', 'Konflikt-Dokument Inhalt');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
     fs.appendFileSync(res.items[0]!.targetPath!, ' (nachträglich bearbeitet)');
@@ -145,17 +145,17 @@ describe('Archivierung durch Kopieren', () => {
     expect(fs.readFileSync(res.items[0]!.targetPath!, 'utf8')).toContain('nachträglich');
   });
 
-  it('Undo löscht nie die einzige Kopie', async () => {
+  it('undo never deletes the only copy', async () => {
     const a = await importOne('o.txt', 'Einzige Kopie Dokument');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
-    fs.unlinkSync(a.src); // Original des Benutzers verschwindet; Staging-Kopie wurde ins Archiv verschoben → Undo würde sie zurückkopieren
+    fs.unlinkSync(a.src); // the user's original disappears; the staging copy was moved into the archive → undo would copy it back
     const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
-    expect(undo.undone).toBe(true); // Staging-Kopie wird wiederhergestellt → Datei bleibt erhalten
+    expect(undo.undone).toBe(true); // the staging copy is restored → the file is preserved
     expect(fs.existsSync((await app.ok('documents:get', { id: a.id })).stagedPath!)).toBe(true);
   });
 });
 
-describe('Undo nach Archivierung einer gescannten Datei (Original bleibt am Quellort)', () => {
+describe('Undo after archiving a scanned file (original stays at its source location)', () => {
   async function scanOne(name: string, content: string) {
     app.services.settings.update({ scan: { enabled: true } });
     const dl = path.join(app.home, 'Downloads');
@@ -170,7 +170,7 @@ describe('Undo nach Archivierung einer gescannten Datei (Original bleibt am Quel
     return { src, dl, id: doc.id };
   }
 
-  it('Original unverändert: Undo entfernt nur die Archivkopie', async () => {
+  it('original unchanged: undo removes only the archive copy', async () => {
     const a = await scanOne('gleich.txt', 'Unveränderter Inhalt aus den Downloads');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
     const target = res.items[0]!.targetPath!;
@@ -180,7 +180,7 @@ describe('Undo nach Archivierung einer gescannten Datei (Original bleibt am Quel
     expect(fs.readdirSync(a.dl)).toEqual(['gleich.txt']);
   });
 
-  it('Original nach dem Kopieren bearbeitet: Undo legt die archivierte Fassung als „Name (2).ext“ zurück und löscht nichts', async () => {
+  it('original edited after copying: undo puts the archived version back as "Name (2).ext" and deletes nothing', async () => {
     const a = await scanOne('bericht.txt', 'Archivierte Fassung des Berichts');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
     const target = res.items[0]!.targetPath!;
@@ -199,7 +199,7 @@ describe('Undo nach Archivierung einer gescannten Datei (Original bleibt am Quel
     expect(doc.sourcePath).toBe(fs.realpathSync(restored));
   });
 
-  it('Original nach dem Kopieren gelöscht: Undo legt die archivierte Fassung unter dem ursprünglichen Namen zurück', async () => {
+  it('original deleted after copying: undo puts the archived version back under the original name', async () => {
     const a = await scanOne('weg.txt', 'Inhalt, dessen Original gelöscht wird');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
     fs.unlinkSync(a.src);
@@ -209,7 +209,7 @@ describe('Undo nach Archivierung einer gescannten Datei (Original bleibt am Quel
     expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(false);
   });
 
-  it('Ursprünglicher Ordner fehlt: Undo wird abgelehnt und die archivierte Fassung bleibt erhalten', async () => {
+  it('original folder missing: undo is refused and the archived version is preserved', async () => {
     const a = await scanOne('ordner.txt', 'Inhalt, dessen Ordner verschwindet');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
     fs.rmSync(a.dl, { recursive: true });
@@ -220,8 +220,8 @@ describe('Undo nach Archivierung einer gescannten Datei (Original bleibt am Quel
   });
 });
 
-describe('Archivzustand und Verarbeitungsstatus', () => {
-  it('vergleicht Datenbank und Dateisystem', async () => {
+describe('Archive state and processing status', () => {
+  it('compares database and file system', async () => {
     const a = await importOne('v.txt', 'Verifikationsdokument Inhalt');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
     expect((await app.ok('archive:verify', {})).ok).toBe(true);
@@ -233,12 +233,12 @@ describe('Archivzustand und Verarbeitungsstatus', () => {
     expect(rep.untrackedFiles.some((f) => f.endsWith('fremd.txt'))).toBe(true);
     fs.unlinkSync(res.items[0]!.targetPath!);
     expect((await app.ok('archive:verify', {})).missingFiles).toHaveLength(1);
-    // Konsistenzprüfung meldet die fehlende Datei
+    // the consistency check reports the missing file
     await app.services.consistency.run('test');
     expect((await app.ok('insights:list', {})).some((i) => i.kind === 'misplaced_file' && i.title.includes('fehlt'))).toBe(true);
   });
 
-  it('verwirft defekte Dateien nicht, sondern zeigt den Status und erlaubt erneute Verarbeitung', async () => {
+  it('does not discard broken files but shows the status and allows reprocessing', async () => {
     const bad = app.file('in/kaputt.pdf', '%PDF-1.4 kein echtes pdf');
     const imp = await app.ok('documents:import', { paths: [bad] });
     await app.services.jobs.whenIdle();
@@ -246,14 +246,14 @@ describe('Archivzustand und Verarbeitungsstatus', () => {
     expect(d.processingStatus).toBe('failed');
     expect(d.processingError).toBeTruthy();
     expect(d.status).toBe('proposed');
-    // erneut verarbeiten
+    // reprocess
     makePdf(d.stagedPath!, ['Jetzt ist es ein gültiges Dokument zum Test']);
     await app.ok('documents:classify', { documentId: d.id, allowLlm: true });
     await app.services.jobs.whenIdle();
     expect((await app.ok('documents:get', { id: d.id })).processingStatus).toBe('extracted');
   });
 
-  it('lehnt falsche Dateitypen ab bzw. stellt sie unter Quarantäne und meldet nicht unterstützte Formate', async () => {
+  it('rejects wrong file types or quarantines them, and reports unsupported formats', async () => {
     const fake = app.file('in/fake.pdf', 'MZ\x90 das ist keine pdf');
     const exe = app.file('in/tool.exe', 'MZ');
     const empty = app.file('in/leer.txt', '');

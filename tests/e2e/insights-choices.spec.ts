@@ -21,7 +21,7 @@ const entryTypes = (page: Page) =>
     return res.ok ? res.data.map((e) => e.type).sort() : [];
   });
 
-test.describe('Insights: Rückfrage mit mehreren Antworten', () => {
+test.describe('insights: question with several answers', () => {
   test.beforeEach(async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
@@ -30,7 +30,7 @@ test.describe('Insights: Rückfrage mit mehreren Antworten', () => {
     await app.insights.do.runCheck();
   });
 
-  test('„Projekt“ führt Thema und Projekt nach Bestätigung zu einem Projekt zusammen', async ({ on, page }) => {
+  test('„Projekt“ merges topic and project into one project after confirmation', async ({ on, page }) => {
     const app = on(page);
     const card = app.insights.card(QUESTION);
     await expect(app.insights.choices(card)).toHaveText(['Projekt', 'Thema', 'Beides ist richtig (verschieden)'], { timeout: 30_000 });
@@ -42,7 +42,7 @@ test.describe('Insights: Rückfrage mit mehreren Antworten', () => {
     await expect(card.getByTestId('insight-chosen')).toHaveText('Antwort: Projekt');
   });
 
-  test('„Beides ist richtig“ lässt beide Einträge bestehen und merkt sich die Antwort', async ({ on, page }) => {
+  test('„Beides ist richtig“ keeps both entries and remembers the answer', async ({ on, page }) => {
     const app = on(page);
     const card = app.insights.card(QUESTION);
     await expect(app.insights.choices(card)).toHaveCount(3, { timeout: 30_000 });

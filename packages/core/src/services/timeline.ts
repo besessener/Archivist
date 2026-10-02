@@ -14,7 +14,7 @@ export interface TimelineQuery {
 }
 
 /**
- * Chronologische Sicht auf Dokumente, Entscheidungen, offene Punkte und Widersprüche – jeder Eintrag verweist auf seine Objekte.
+ * Chronological view of documents, decisions, open items and contradictions – every entry links to its objects.
  * Returns the newest `limit` entries matching the filter, sorted oldest first.
  */
 export class TimelineService {
@@ -33,7 +33,7 @@ export class TimelineService {
     };
     const ref = (type: EntityRef['type'], id: string | null, label?: string | null): EntityRef[] =>
       id ? [{ type, id, label: label ?? this.graph.getEntity(id)?.name ?? id }] : [];
-    // Der Widerspruch selbst steht vorn (führt zu den Insights), danach die betroffenen Entscheidungen
+    // the contradiction itself comes first (leads to the insights), then the affected decisions
     const contraRefs = (c: { id: string; title: string; affectedEntityIds: string[] }): EntityRef[] => [
       { type: 'contradiction', id: c.id, label: c.title },
       ...c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: this.graph.getEntity(id)?.name ?? id })),
@@ -114,7 +114,7 @@ export class TimelineService {
         });
       }
     } else {
-      // Widersprüche, die Entscheidungen dieses Themas/Projekts betreffen
+      // contradictions affecting decisions of this topic/project
       const decIds = new Set(
         db
           .select()

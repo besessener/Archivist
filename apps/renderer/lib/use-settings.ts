@@ -5,7 +5,7 @@ import { Settings } from '@archivist/shared';
 import { call } from './ipc';
 import { useQuery } from './use-query';
 
-/** Normalisiert Einstellungen (füllt Standardwerte), da der Kanal Eingabetypen liefert. */
+/** Normalizes settings (fills in default values), since the channel returns input types. */
 export function normalizeSettings(raw: unknown): Settings {
   return Settings.parse(raw);
 }

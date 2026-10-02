@@ -4,7 +4,7 @@ import { LlmService } from '../../packages/core/src/services/llm';
 import type { SecretService } from '../../packages/core/src/services/secret';
 import type { SettingsService } from '../../packages/core/src/services/settings';
 
-/** LLM-Client mit festen Einstellungen und einem Endpunkt, der optionale Parameter mit HTTP 400 ablehnt. */
+/** LLM client with fixed settings and an endpoint that rejects optional parameters with HTTP 400. */
 const client = (rejection: string) => {
   const bodies: Array<Record<string, unknown>> = [];
   const fetchImpl = async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -27,14 +27,14 @@ const client = (rejection: string) => {
 
 const request = { instructions: 'Test', input: 'Hallo', purpose: 'Test', json: true };
 
-describe('LLM-Client: Ersatzanfrage ohne optionale Parameter', () => {
+describe('LLM client: fallback request without optional parameters', () => {
   it.each([
     "Unsupported parameter: 'store' is not supported with this model.",
     'Unrecognized request argument supplied: reasoning',
     "Unknown parameter: 'text.format'.",
     "'text.format' is not supported",
     "This model does not support the 'reasoning' parameter.",
-  ])('wiederholt bei eindeutig nicht unterstütztem Parameter ohne diese: %s', async (message) => {
+  ])('retries without them when a parameter is clearly unsupported: %s', async (message) => {
     const { llm, bodies } = client(message);
 
     await expect(llm.complete(request)).resolves.toBe('OK');
@@ -45,7 +45,7 @@ describe('LLM-Client: Ersatzanfrage ohne optionale Parameter', () => {
     expect(bodies[1]).not.toHaveProperty('text');
   });
 
-  it.each(['invalid input format', "Invalid 'input': format error"])('meldet echte Formatfehler ohne Ersatzanfrage: %s', async (message) => {
+  it.each(['invalid input format', "Invalid 'input': format error"])('reports genuine format errors without a fallback request: %s', async (message) => {
     const { llm, bodies } = client(message);
 
     await expect(llm.complete(request)).rejects.toMatchObject({

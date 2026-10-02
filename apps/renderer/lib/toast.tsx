@@ -27,7 +27,7 @@ export interface ToastInput {
 
 interface ToastApi {
   toast: (t: ToastInput) => void;
-  /** Zeigt einen Fehler verständlich an; bei `retryable` mit „Erneut versuchen“. */
+  /** Shows an error in an understandable way; with „Erneut versuchen“ (retry) if `retryable`. */
   reportError: (err: unknown, retry?: () => void, title?: string) => void;
 }
 
@@ -137,6 +137,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 export function useToast(): ToastApi {
   const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error('useToast außerhalb von ToastProvider');
+  if (!ctx) throw new Error('useToast used outside of ToastProvider');
   return ctx;
 }

@@ -4,9 +4,9 @@ import type { LlmStatus } from '@archivist/shared';
 import type { SettingsService } from './settings';
 
 export interface PrivacyDecision {
-  /** Dürfen Inhalte an den externen LLM-Endpunkt gesendet werden? */
+  /** May content be sent to the external LLM endpoint? */
   allowed: boolean;
-  /** Status für die UI, falls nicht erlaubt */
+  /** Status for the UI if not allowed */
   status: Extract<LlmStatus, 'excluded' | 'local_only'> | null;
   reason: string | null;
 }
@@ -83,7 +83,7 @@ export class PathMatcher {
   }
 }
 
-/** Regeln, ob und welche Inhalte an das LLM übertragen werden dürfen (Datenschutz-Gate). */
+/** Rules on whether and which content may be transmitted to the LLM (privacy gate). */
 export class PrivacyService {
   readonly paths: PathMatcher;
 

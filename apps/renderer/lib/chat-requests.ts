@@ -1,34 +1,34 @@
 import type { ChatMsg } from './types';
 
-/** Ergebnis von `chat:send` (nur die Felder, die die Oberfläche braucht). */
+/** Result of `chat:send` (only the fields the UI needs). */
 export interface ChatSendOutcome {
   conversationId: string;
   userMessage: ChatMsg;
   assistantMessage: ChatMsg;
 }
 
-/** Eine abgeschickte Chat-Anfrage, deren Antwort noch nicht in der geladenen Historie steht. */
+/** A sent chat request whose reply is not yet in the loaded history. */
 export interface ChatRequest {
-  /** Temporäre ID (zugleich ID der vorläufigen Benutzernachricht, beginnt mit `pending-`). */
+  /** Temporary ID (also the ID of the provisional user message, starts with `pending-`). */
   id: string;
-  /** Unterhaltung der Anfrage; `null` = neue Unterhaltung, deren ID erst mit der Antwort bekannt wird. */
+  /** Conversation of the request; `null` = new conversation whose ID only becomes known with the reply. */
   conversationId: string | null;
-  /** Vorläufige Benutzernachricht, bis die gespeicherte Nachricht in der Historie steht. */
+  /** Provisional user message until the saved message is in the history. */
   message: ChatMsg;
-  /** Gespeicherte Nachrichten, sobald die Antwort da ist (bis die Historie sie enthält). */
+  /** Saved messages once the reply has arrived (until the history contains them). */
   result: [ChatMsg, ChatMsg] | null;
 }
 
 export interface ChatRequestState {
   requests: ChatRequest[];
-  /** Angezeigte Unterhaltung; `undefined` = noch nicht gewählt (dann die zuletzt aktive). Überdauert einen Seitenwechsel. */
+  /** Displayed conversation; `undefined` = not chosen yet (then the most recently active one). Survives a page change. */
   activeConversationId: string | null | undefined;
 }
 
 /**
- * Hält laufende Chat-Anfragen außerhalb der Chat-Seite. Die Anfrage selbst läuft im Hauptprozess weiter,
- * wenn der Benutzer den Reiter wechselt; dieser Speicher sorgt dafür, dass die Chat-Seite nach der Rückkehr
- * die laufende Anfrage („Archivist denkt nach …“) und danach die Antwort in der richtigen Unterhaltung zeigt.
+ * Keeps running chat requests outside the chat page. The request itself keeps running in the main process
+ * when the user switches tabs; this store ensures that after returning, the chat page shows the running
+ * request („Archivist denkt nach …“) and then the reply in the right conversation.
  */
 export function createChatRequestStore() {
   let state: ChatRequestState = { requests: [], activeConversationId: undefined };
@@ -53,8 +53,8 @@ export function createChatRequestStore() {
       if (state.activeConversationId !== id) update({ ...state, activeConversationId: id });
     },
     /**
-     * Schickt eine Nachricht über `sendFn` ab und merkt sie sich, bis die Antwort da ist.
-     * `sendFn` liefert `undefined` bei einem Fehler (der Aufrufer zeigt ihn an); dann wird die Anfrage verworfen.
+     * Sends a message via `sendFn` and remembers it until the reply has arrived.
+     * `sendFn` returns `undefined` on an error (the caller shows it); the request is then discarded.
      */
     async send(conversationId: string | null, content: string, sendFn: () => Promise<ChatSendOutcome | undefined>): Promise<ChatSendOutcome | undefined> {
       const now = new Date();
@@ -85,12 +85,12 @@ export function createChatRequestStore() {
         removeRequest(id);
         return undefined;
       }
-      // Eine neue Unterhaltung bleibt im Blick, solange der Benutzer nicht zu einer anderen gewechselt ist.
+      // A new conversation stays in view as long as the user has not switched to another one.
       if (conversationId === null && state.activeConversationId === null) update({ ...state, activeConversationId: res.conversationId });
       patchRequest(id, { conversationId: res.conversationId, result: [res.userMessage, res.assistantMessage] });
       return res;
     },
-    /** Vergisst beantwortete Anfragen, deren Antwort in der geladenen Historie steht. */
+    /** Forgets answered requests whose reply is in the loaded history. */
     settle(history: ChatMsg[]) {
       const ids = new Set(history.map((m) => m.id));
       const done = state.requests.filter((r) => r.result && ids.has(r.result[1].id));
@@ -99,15 +99,15 @@ export function createChatRequestStore() {
   };
 }
 
-/** Anfragen einer Unterhaltung (`null` = neue Unterhaltung). */
+/** Requests of a conversation (`null` = new conversation). */
 export function requestsFor(requests: ChatRequest[], conversationId: string | null): ChatRequest[] {
   return requests.filter((r) => r.conversationId === conversationId);
 }
 
 /**
- * Führt die geladene Historie mit den Anfragen der Unterhaltung zusammen: beantwortete Anfragen liefern ihre
- * gespeicherten Nachrichten, laufende ihre vorläufige Benutzernachricht – außer der Hauptprozess hat sie
- * schon gespeichert und die Historie enthält sie (gleicher Text, nicht älter als die Anfrage).
+ * Merges the loaded history with the conversation's requests: answered requests contribute their
+ * saved messages, running ones their provisional user message – unless the main process has already
+ * saved it and the history contains it (same text, not older than the request).
  */
 export function mergeChatMessages(history: ChatMsg[], requests: ChatRequest[]): ChatMsg[] {
   const out = [...history];
@@ -123,5 +123,5 @@ export function mergeChatMessages(history: ChatMsg[], requests: ChatRequest[]): 
   return out;
 }
 
-/** Gemeinsamer Speicher der App (lebt so lange wie das Fenster, nicht nur so lange wie die Chat-Seite). */
+/** Shared app store (lives as long as the window, not just as long as the chat page). */
 export const chatRequests = createChatRequestStore();

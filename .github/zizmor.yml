@@ -1,4 +1,4 @@
-# Konfiguration für den Workflow-Linter zizmor (läuft über .pre-commit-config.yaml).
+# Configuration for the workflow linter zizmor (runs via .pre-commit-config.yaml).
 rules:
   unpinned-uses:
     config:

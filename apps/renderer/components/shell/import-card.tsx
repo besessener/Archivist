@@ -22,11 +22,11 @@ const STATUS_TEXT: Record<string, string> = {
   ignored: 'Ignoriert',
 };
 
-/** Fortschritt und Ergebnis des letzten Datei-Imports (Drag-and-Drop oder Dateiauswahl). */
+/** Progress and result of the last file import (drag and drop or file picker). */
 export function ImportCard() {
   const { importState, dismissImport, importing } = useApp();
   const pathname = usePathname();
-  // Auf der Inbox-Seite ist der Hinweis überflüssig und würde Bedienelemente verdecken.
+  // On the inbox page the notice is redundant and would cover controls.
   useEffect(() => {
     if (importState && pathname.startsWith('/inbox')) dismissImport();
   }, [importState, pathname, dismissImport]);

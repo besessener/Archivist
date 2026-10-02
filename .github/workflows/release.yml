@@ -3,8 +3,8 @@ name: Release
 env:
   NEXT_TELEMETRY_DISABLED: 1
 
-# Veröffentlicht Installer und portable EXE als GitHub Release, sobald ein Versions-Tag (v1.2.3) gepusht wird.
-# Merges auf main und Pull Requests bauen die Pakete weiterhin nur (siehe ci.yml).
+# Publishes the installer and portable EXE as a GitHub Release as soon as a version tag (v1.2.3) is pushed.
+# Merges to main and pull requests still only build the packages (see ci.yml).
 on:
   push:
     tags: ['v*']
@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Tag und Version abgleichen
+      - name: Check tag against version
         env:
           TAG: ${{ github.ref_name }}
         run: node scripts/check-release-version.mjs "$TAG"
@@ -41,24 +41,24 @@ jobs:
     runs-on: windows-latest
     needs: verify
     permissions:
-      # Release anlegen und Dateien hochladen
+      # Create the release and upload files
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # bewusst ohne npm-/Next-Cache: ein Release wird immer frisch gebaut
+      # deliberately without npm/Next cache: a release is always built from scratch
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
-      - name: Bauen, signieren und als GitHub Release veröffentlichen
+      - name: Build, sign and publish as GitHub Release
         run: npm run release:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tags mit Zusatz (v1.2.3-beta.1) erscheinen als Vorabversion
+          # Tags with a suffix (v1.2.3-beta.1) appear as a pre-release
           EP_PRE_RELEASE: ${{ contains(github.ref_name, '-') }}
-          # Secrets: WIN_CSC_LINK (Base64-kodierte .pfx) und WIN_CSC_KEY_PASSWORD. Fehlen sie, bleibt der Build unsigniert.
+          # Secrets: WIN_CSC_LINK (Base64-encoded .pfx) and WIN_CSC_KEY_PASSWORD. If they are missing, the build stays unsigned.
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}

@@ -50,7 +50,7 @@ interface RelocateUndoData {
   /** updatedAt before relocating; undo restores it so that the archiving itself stays undoable. Missing in old entries. */
   beforeUpdatedAt?: string;
   afterUpdatedAt: string;
-  /** Beziehung zur neuen Kategorie, falls sie durch das Umlagern entstand (wird bei Undo wieder entfernt). */
+  /** Relation to the new category, if relocating created it (removed again on undo). */
   addedRelationId: string | null;
   /** Legacy entries only: category whose relation was deleted; undo re-links it as confirmed. */
   removedCategory?: string | null;
@@ -60,7 +60,7 @@ interface RelocateUndoData {
   relationsChanged?: RelationRow[];
 }
 
-/** Wunsch: ein bereits archiviertes Dokument in einen anderen Archivordner verschieben. */
+/** Request: move an already archived document into another archive folder. */
 export interface RelocateRequest {
   documentId: string;
   categoryPath: string;
@@ -71,10 +71,10 @@ export interface RelocatePlanItem {
   title: string;
   fromRelPath: string | null;
   toRelPath: string | null;
-  /** Zielordner (relativ zum Archiv), wie er nach der Bereinigung lautet. */
+  /** Target folder (relative to the archive) as it reads after sanitizing. */
   categoryPath: string | null;
   renamed: boolean;
-  /** liegt schon im Zielordner */
+  /** already lies in the target folder */
   unchanged: boolean;
   blocked: boolean;
   conflicts: string[];
@@ -115,12 +115,12 @@ export interface ExecuteOptions {
 }
 
 /**
- * Kontrollierte Dateiaktionen. Garantien:
- *  - nichts wird ohne `confirmed` ausgeführt,
- *  - Zieldateien werden nie überschrieben (COPYFILE_EXCL, automatische Umbenennung),
- *  - Kopien werden per Prüfsumme verifiziert, bevor Quellen entfernt werden,
- *  - Pfade bleiben innerhalb des Archivs (kein Traversal, kein Symlink-Ausbruch),
- *  - Undo prüft vorher, ob sich seitdem etwas geändert hat.
+ * Controlled file actions. Guarantees:
+ *  - nothing is executed without `confirmed`,
+ *  - target files are never overwritten (COPYFILE_EXCL, automatic renaming),
+ *  - copies are verified by checksum before sources are removed,
+ *  - paths stay inside the archive (no traversal, no symlink escape),
+ *  - undo first checks whether anything has changed since.
  */
 export class ArchiveService {
   private actions!: ActionService;
@@ -304,7 +304,7 @@ export class ArchiveService {
     };
   }
 
-  // ---------- Ausführung ----------
+  // ---------- Execution ----------
   /**
    * Removes a file this service has just created (partial copy, unverified copy, extra hardlink).
    * Returns false when the file is still there afterwards; the caller must then report it to the user.
@@ -315,7 +315,7 @@ export class ArchiveService {
       return true;
     } catch (err) {
       if (errCode(err) === 'ENOENT') return true;
-      this.ctx.logger.error('archive', 'Soeben angelegte Datei konnte nicht wieder entfernt werden', { path: p, error: err });
+      this.ctx.logger.error('archive', 'Could not remove the file just created', { path: p, error: err });
       return false;
     }
   }
@@ -355,7 +355,7 @@ export class ArchiveService {
         outcome = await this.executeOne(req, opts);
       } catch (err) {
         const info = toErrorInfo(err);
-        this.ctx.logger.error('archive', 'Archivierung fehlgeschlagen', { documentId: req.documentId, error: err });
+        this.ctx.logger.error('archive', 'Archiving failed', { documentId: req.documentId, error: err });
         this.audit.log({
           action: `archive.${req.mode}`,
           actor: 'user',
@@ -417,7 +417,7 @@ export class ArchiveService {
       persons: row.persons,
     };
 
-    // --- Ignorieren ---
+    // --- Ignore ---
     if (req.mode === 'ignore') {
       const updatedAt = nowIso();
       this.db.update(documents).set({ status: 'ignored', archiveMode: 'ignore', updatedAt }).where(eq(documents.id, row.id)).run();
@@ -450,7 +450,7 @@ export class ArchiveService {
       return { documentId: row.id, outcome: 'success', targetPath: null, message: 'Ignoriert (keine Dateiaktion).', auditId };
     }
 
-    // --- neue Hauptkategorie braucht ausdrückliche Bestätigung ---
+    // --- a new main category needs explicit confirmation ---
     if (plan.newCategories.length > 0 && !plan.newCategories.every((c) => opts.approveNewCategories.some((a) => a.toLowerCase() === c.toLowerCase()))) {
       return {
         documentId: row.id,
@@ -488,7 +488,7 @@ export class ArchiveService {
     const cat = plan._cat ?? null;
 
     if (req.mode === 'index_only') {
-      // keine Dateiaktion
+      // no file action
     } else {
       targetAbs = await this.copyExclusive(source, plan._targetDir!, plan._name!);
       let verified: boolean;
@@ -507,7 +507,7 @@ export class ArchiveService {
       archiveRel = toPosix(path.relative(this.root, targetAbs));
     }
 
-    // --- Datenbank + Wissensgraph in einer Transaktion ---
+    // --- database + knowledge graph in one transaction ---
     const updatedAt = nowIso();
     try {
       // only relations the archiving created or changed go into the undo data, never pre-existing (e.g. rejected) ones
@@ -549,7 +549,7 @@ export class ArchiveService {
         }),
       ));
     } catch (err) {
-      // keine halbfertige Dateioperation zurücklassen
+      // never leave a half-finished file operation behind
       if (targetAbs && !(await this.removeCreated(targetAbs))) {
         const info = toErrorInfo(err);
         throw new AppError(info.category, `${info.message} ${leftoverNote('Die bereits angelegte Archivkopie', targetAbs)}`, {
@@ -560,7 +560,7 @@ export class ArchiveService {
       throw err;
     }
 
-    // --- Quellen entfernen (erst nach erfolgreichem Commit; eigene Staging-Kopie bzw. bestätigtes Verschieben) ---
+    // --- remove sources (only after a successful commit; our own staging copy or a confirmed move) ---
     let removedStaged = false;
     let removedSource = false;
     const warnings: string[] = [];
@@ -576,7 +576,7 @@ export class ArchiveService {
             // The archive copy is verified and committed; a locked inbox copy (EBUSY/EPERM on Windows: open in a viewer,
             // held by a virus scanner) must not turn that into a failure. The row keeps its stagedPath, which marks the
             // copy for cleanupInbox().
-            this.ctx.logger.warn('archive', 'Kopie im Eingang konnte nach dem Archivieren nicht entfernt werden', { documentId: row.id, error: err });
+            this.ctx.logger.warn('archive', 'Could not remove the inbox copy after archiving', { documentId: row.id, error: err });
             warnings.push('Die Kopie im Eingang konnte noch nicht entfernt werden (z. B. weil sie gerade geöffnet ist); sie wird später automatisch entfernt.');
           }
         }
@@ -630,7 +630,7 @@ export class ArchiveService {
     try {
       this.proposeExtractedItems(row, proposal);
     } catch (err) {
-      this.ctx.logger.error('archive', 'Vorschläge aus dem Dokument konnten nicht angelegt werden', { documentId: row.id, error: err });
+      this.ctx.logger.error('archive', 'Could not create proposals from the document', { documentId: row.id, error: err });
     }
     return {
       documentId: row.id,
@@ -646,7 +646,7 @@ export class ArchiveService {
     try {
       await this.docs.indexDocument(documentId);
     } catch (err) {
-      this.ctx.logger.error('archive', 'Suchindex konnte nicht aktualisiert werden', { documentId, error: err });
+      this.ctx.logger.error('archive', 'Could not update the search index', { documentId, error: err });
       warnings.push('Der Suchindex konnte nicht aktualisiert werden.');
     }
   }
@@ -678,19 +678,19 @@ export class ArchiveService {
         cleaned += 1;
       }
     } catch (err) {
-      this.ctx.logger.error('archive', 'Aufräumen des Eingangs fehlgeschlagen', { error: err });
+      this.ctx.logger.error('archive', 'Inbox cleanup failed', { error: err });
     }
     if (cleaned > 0) {
-      this.ctx.logger.info('archive', 'Vorgemerkte Kopien im Eingang entfernt', { count: cleaned });
+      this.ctx.logger.info('archive', 'Removed pending inbox copies', { count: cleaned });
       this.ctx.events.changed('documents');
     }
     return cleaned;
   }
 
   /**
-   * Vorschläge für in Dokumenten erkannte Entscheidungen/offene Punkte (Stufe 1: nur Vorschlag, keine Änderung).
-   * Offene Punkte werden vorher gegen die aktiven abgeglichen: Bei einem Treffer wird der bestehende Punkt um das
-   * Dokument als Quelle ergänzt statt doppelt angelegt.
+   * Proposals for decisions/open items recognized in documents (stage 1: proposal only, no change).
+   * Open items are first matched against the active ones: on a match the document is added as a source to the
+   * existing item instead of creating a duplicate.
    */
   private proposeExtractedItems(row: DocRow, proposal: DocumentProposal | null): void {
     if (!proposal) return;
@@ -702,7 +702,7 @@ export class ArchiveService {
     const openActions = proposal.possibleOpenItems.slice(0, 3).flatMap((it) => {
       const m = matchOpenItems(it.title, active, { threshold: 0.75 });
       if (m.status === 'match') {
-        // Dokument ist bereits Quelle (z. B. erneut archiviert) – nichts vorzuschlagen
+        // the document is already a source (e.g. archived again) – nothing to propose
         if (m.item.sourceIds.includes(row.id)) return [];
         return [
           this.actions.propose({
@@ -777,7 +777,7 @@ export class ArchiveService {
     notify('decision', decisionActions);
   }
 
-  // ---------- Umlagern innerhalb des Archivs ----------
+  // ---------- Relocating within the archive ----------
   private sameDir(a: string, b: string): boolean {
     return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
   }
@@ -836,15 +836,15 @@ export class ArchiveService {
     };
   }
 
-  /** Vorschau (ändert nichts): was würde beim Umlagern passieren? */
+  /** Preview (changes nothing): what would relocating do? */
   async previewRelocate(items: RelocateRequest[]): Promise<RelocatePlanItem[]> {
     const planned = await Promise.all(items.map((i) => this.planRelocate(i)));
     return planned.map(({ _src, _dir, _name, _cat, ...rest }) => (void _src, void _dir, void _name, void _cat, rest));
   }
 
   /**
-   * Legt eine zweite, verifizierte Fassung von `src` im Ordner `dir` unter `name` ab, ohne etwas zu überschreiben.
-   * Bevorzugt ein Hardlink (atomar, schlägt bei vorhandenem Ziel fehl); wo das nicht geht, Kopie mit Prüfsumme.
+   * Places a second, verified version of `src` in folder `dir` under `name` without overwriting anything.
+   * Prefers a hard link (atomic, fails if the target exists); where that is not possible, a copy with checksum.
    * On failure nothing new is left behind, or the error names the leftover partial copy.
    */
   private async placeExclusive(src: string, dir: string, name: string, sha256: string, exactName: boolean): Promise<{ dest: string; linked: boolean }> {
@@ -863,7 +863,7 @@ export class ArchiveService {
           continue;
         }
       }
-      // Dateisystem ohne Hardlinks (oder anderes Laufwerk): Kopie mit Prüfsumme
+      // file system without hard links (or another drive): copy with checksum
       let verified: boolean;
       try {
         await fsp.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
@@ -887,7 +887,7 @@ export class ArchiveService {
   }
 
   /**
-   * Legt `src` im Ordner `dir` unter `name` ab, ohne etwas zu überschreiben, und entfernt danach `src`.
+   * Places `src` in folder `dir` under `name` without overwriting anything, then removes `src`.
    * If `src` cannot be removed (e.g. EBUSY), the new entry is taken back; if that fails too, the error says that the
    * file now exists twice (extra hardlink or copy) instead of claiming nothing changed.
    */
@@ -897,7 +897,7 @@ export class ArchiveService {
       await fsp.unlink(src);
     } catch (err) {
       const what = `Die ursprüngliche Datei konnte nicht entfernt werden${errCode(err) ? ` (${errCode(err)})` : ''}.`;
-      // nur den soeben angelegten Eintrag zurücknehmen
+      // only take back the entry just created
       if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
       throw fsError(
         `${what} Die Datei liegt weiterhin am bisherigen Ort; ${linked ? 'ein zusätzlicher Verweis (Hardlink) auf dieselbe Datei' : 'eine zusätzliche Kopie'} liegt noch unter „${dest}“ und muss von Hand entfernt werden.`,
@@ -907,7 +907,7 @@ export class ArchiveService {
     return dest;
   }
 
-  /** Entfernt leere Ordner von `dir` aufwärts bis zum Archivwurzelordner (nie nicht-leere, nie die Wurzel). */
+  /** Removes empty folders from `dir` upwards to the archive root folder (never non-empty ones, never the root). */
   private async pruneEmptyDirs(dir: string): Promise<void> {
     while (dir !== this.root && dir.startsWith(this.root)) {
       try {
@@ -919,7 +919,7 @@ export class ArchiveService {
     }
   }
 
-  /** Verschiebt bereits archivierte Dokumente in andere Archivordner. Erfordert ausdrückliche Bestätigung. */
+  /** Moves already archived documents into other archive folders. Requires explicit confirmation. */
   async relocate(items: RelocateRequest[], opts: { confirmed: boolean; trigger?: string }): Promise<ArchiveResult> {
     if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
     return this.guarded(() => this.relocateAll(items, opts));
@@ -933,7 +933,7 @@ export class ArchiveService {
         outcome = await this.relocateOne(req, opts);
       } catch (err) {
         const info = toErrorInfo(err);
-        this.ctx.logger.error('archive', 'Umlagern fehlgeschlagen', { documentId: req.documentId, error: err });
+        this.ctx.logger.error('archive', 'Relocating failed', { documentId: req.documentId, error: err });
         this.audit.log({
           action: 'archive.relocate',
           actor: 'user',
@@ -1005,7 +1005,7 @@ export class ArchiveService {
         }
       });
     } catch (err) {
-      // Datenbank nicht angepasst: Datei an den ursprünglichen Ort zurücklegen
+      // database not updated: put the file back in its original place
       const note = await this.putBackAfterFailedRelocate(newAbs, src, row.sha256);
       if (!note) throw err;
       const info = toErrorInfo(err);
@@ -1057,7 +1057,7 @@ export class ArchiveService {
     try {
       await this.placeExclusive(moved, path.dirname(original), path.basename(original), sha256, true);
     } catch (back) {
-      this.ctx.logger.error('archive', 'Zurücklegen nach Fehler beim Umlagern gescheitert', { error: back });
+      this.ctx.logger.error('archive', 'Could not put the file back after a failed relocation', { error: back });
       return `Die Datei konnte nicht an den bisherigen Ort zurückgelegt werden und liegt jetzt unter „${moved}“; die Datenbank verweist noch auf „${original}“.`;
     }
     if (await this.removeCreated(moved)) return null;
@@ -1206,7 +1206,7 @@ export class ArchiveService {
         await verifyRestored(putBackPath);
       }
       await fsp.unlink(abs);
-      // leere Zwischenordner im Archiv wieder entfernen (nie nicht-leere)
+      // remove empty intermediate folders in the archive again (never non-empty ones)
       let dir = path.dirname(abs);
       while (dir !== this.root && dir.startsWith(this.root)) {
         try {
@@ -1245,8 +1245,8 @@ export class ArchiveService {
         : 'Archivierung rückgängig gemacht; die Datei liegt wieder am ursprünglichen Ort.';
   }
 
-  // ---------- Archivzustand ----------
-  /** Vergleicht Datenbank- und Dateisystemzustand des Archivs. */
+  // ---------- Archive state ----------
+  /** Compares the database and file system state of the archive. */
   async verify(): Promise<VerifyReport> {
     const rows = this.db
       .select()

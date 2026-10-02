@@ -136,7 +136,7 @@ export class DocumentService {
     return this.ctx.database.db;
   }
 
-  // ---------- Abbildung ----------
+  // ---------- Mapping ----------
   private archiveAbs(rel: string | null): string | null {
     return rel ? path.join(this.settings.get().archiveRoot, ...rel.split('/')) : null;
   }
@@ -267,8 +267,8 @@ export class DocumentService {
   }
 
   /**
-   * Datei-Upload (Drag-and-Drop): Datei wird in den sicheren Eingang (inbox/) kopiert, geprüft, gehasht und
-   * zur Analyse eingereiht. Das Original bleibt unverändert.
+   * File upload (drag and drop): the file is copied into the safe inbox (inbox/), checked, hashed and
+   * queued for analysis. The original stays unchanged.
    */
   async importPaths(inputPaths: string[], opts: { allowLlm?: boolean } = {}): Promise<ImportResult> {
     const out: ImportResult = { imported: [], duplicates: [], rejected: [] };
@@ -310,7 +310,7 @@ export class DocumentService {
         const sha = await sha256File(staged);
         const dup = this.findDuplicates(sha)[0];
         if (dup) {
-          await fsp.unlink(staged); // eigene temporäre Kopie
+          await fsp.unlink(staged); // our own temporary copy
           staged = null;
           out.duplicates.push({ path: input, existingDocumentId: dup.id });
           this.notifications.create({
@@ -347,7 +347,7 @@ export class DocumentService {
       } catch (err) {
         if (staged) await fsp.unlink(staged).catch(() => undefined);
         const e = err as NodeJS.ErrnoException;
-        this.ctx.logger.error('documents', 'Import fehlgeschlagen', { error: err, path: input });
+        this.ctx.logger.error('documents', 'Import failed', { error: err, path: input });
         out.rejected.push({
           path: input,
           reason: e.code === 'ENOENT' ? 'Datei nicht gefunden.' : e.code === 'EACCES' ? 'Keine Leseberechtigung.' : `Import fehlgeschlagen: ${e.message}`,
@@ -437,7 +437,7 @@ export class DocumentService {
       await fsp.unlink(staged).catch(() => undefined);
       throw err;
     }
-    await fsp.unlink(file).catch((err: unknown) => this.ctx.logger.warn('documents', 'Quarantäne-Kopie nicht entfernt', { error: err, path: file }));
+    await fsp.unlink(file).catch((err: unknown) => this.ctx.logger.warn('documents', 'Quarantine copy not removed', { error: err, path: file }));
     this.audit.log({
       action: 'document.releaseQuarantine',
       actor: 'user',
@@ -453,7 +453,7 @@ export class DocumentService {
     return this.get(id);
   }
 
-  /** Legt einen Dokumentdatensatz an (Upload oder Scan-Datei). */
+  /** Creates a document record (upload or scanned file). */
   insertDocument(input: {
     originalName: string;
     ext: string;
@@ -507,8 +507,8 @@ export class DocumentService {
     return this.toRecord(row);
   }
 
-  // ---------- Analyse ----------
-  /** Datei, aus der gelesen wird (bevorzugt die eigene Kopie im Eingang). */
+  // ---------- Analysis ----------
+  /** File to read from (preferably our own copy in the inbox). */
   readablePath(r: DocRow): string {
     for (const p of [r.stagedPath, r.sourcePath]) if (p && fs.existsSync(p)) return p;
     throw fsError('Die Quelldatei ist nicht mehr vorhanden.', undefined, false);
@@ -519,8 +519,8 @@ export class DocumentService {
   }
 
   /**
-   * Inhaltliche Analyse: lokal extrahieren, optional per LLM klassifizieren, Zielordner vorschlagen.
-   * Schreibt ausschließlich Vorschläge – die Datei selbst wird nicht angefasst.
+   * Content analysis: extract locally, optionally classify via LLM, propose a target folder.
+   * Writes proposals only – the file itself is not touched.
    */
   async analyze(id: string, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const row = this.getRow(id);
@@ -533,7 +533,7 @@ export class DocumentService {
       .where(and(eq(documents.id, id), notInArray(documents.status, ARCHIVED_STATUSES)))
       .run();
     if (!claimed.changes) {
-      this.ctx.logger.info('documents', 'Analyse übersprungen: Dokument ist bereits archiviert', { documentId: id, status: row.status });
+      this.ctx.logger.info('documents', 'Analysis skipped: document is already archived', { documentId: id, status: row.status });
       return { usedLlm: false, warning: null, skipped: true };
     }
     this.ctx.events.changed('documents');
@@ -547,7 +547,7 @@ export class DocumentService {
       }
       // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
       if (opts.deferFailure ? this.isAnalyzing(id) : this.markAnalysisFailed(id, err)) throw err;
-      this.ctx.logger.info('documents', 'Analysefehler ignoriert: Dokumentstatus hat sich inzwischen geändert', { documentId: id, error: err });
+      this.ctx.logger.info('documents', 'Analysis error ignored: document status has changed meanwhile', { documentId: id, error: err });
       return { usedLlm: false, warning: null, skipped: true };
     }
   }
@@ -604,7 +604,7 @@ export class DocumentService {
       .set({ status: 'failed', processingStatus: 'failed', processingError: INTERRUPTED_ANALYSIS_REASON, updatedAt: nowIso() })
       .where(and(inArray(documents.id, orphaned), eq(documents.status, 'analyzing')))
       .run();
-    this.ctx.logger.info('documents', 'Unterbrochene Analysen zurückgesetzt', { count: orphaned.length });
+    this.ctx.logger.info('documents', 'Reset interrupted analyses', { count: orphaned.length });
     this.ctx.events.changed('documents', 'status');
     return orphaned.length;
   }
@@ -691,7 +691,7 @@ export class DocumentService {
       } catch (err) {
         signal?.throwIfAborted(); // a cancelled request is no LLM problem – stop instead of falling back
         warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
-        this.ctx.logger.warn('documents', 'LLM-Klassifikation fehlgeschlagen', { documentId: id, error: err });
+        this.ctx.logger.warn('documents', 'LLM classification failed', { documentId: id, error: err });
         this.notifications.create({
           title: 'LLM-Analyse fehlgeschlagen',
           description: warning,
@@ -755,7 +755,7 @@ export class DocumentService {
       .where(and(eq(documents.id, id), eq(documents.status, 'analyzing')))
       .run();
     if (!stored.changes) {
-      this.ctx.logger.info('documents', 'Analyseergebnis verworfen: Dokumentstatus hat sich währenddessen geändert', { documentId: id });
+      this.ctx.logger.info('documents', 'Analysis result discarded: document status changed in the meantime', { documentId: id });
       return { usedLlm, warning, skipped: true };
     }
     this.graph.registerNode('document', id, title.slice(0, 200), summary);
@@ -772,7 +772,7 @@ export class DocumentService {
     return { usedLlm, warning };
   }
 
-  /** Stößt eine (erneute) Verarbeitung an. `allowLlm=true` entspricht der ausdrücklichen Freigabe durch den Benutzer. */
+  /** Triggers (re)processing. `allowLlm=true` corresponds to the user's explicit permission. */
   enqueueAnalysis(id: string, allowLlm: boolean): string {
     const doc = this.getRow(id);
     if (doc.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
@@ -781,8 +781,8 @@ export class DocumentService {
     return this.jobs.enqueue('document.analyze', `Analysiere ${doc.originalName}`, { documentId: id, allowLlm }).id;
   }
 
-  // ---------- Metadaten ----------
-  /** Ordnet das Dokument Thema/Projekt zu (bestätigte Beziehungen); ohne Dateiaktion. */
+  // ---------- Metadata ----------
+  /** Assigns the document to a topic/project (confirmed relations); without a file action. */
   assign(id: string, target: { topic?: string; project?: string }, opts: { trigger?: string } = {}): DocumentRecord {
     const row = this.getRow(id);
     const set: Partial<DocRow> = { updatedAt: nowIso() };
@@ -935,7 +935,7 @@ export class DocumentService {
     return changed;
   }
 
-  /** Aktualisiert den Suchindex für archivierte/indexierte Dokumente. */
+  /** Updates the search index for archived/indexed documents. */
   async indexDocument(id: string): Promise<void> {
     try {
       const r = this.getRow(id);
@@ -964,7 +964,7 @@ export class DocumentService {
         allowRemoteEmbedding: this.privacy.mode() === 'auto' && r.llmStatus === 'analyzed' && this.privacy.evaluateDocument(r).allowed,
       });
     } catch (err) {
-      this.ctx.logger.warn('documents', 'Indexierung fehlgeschlagen', { documentId: id, error: err });
+      this.ctx.logger.warn('documents', 'Indexing failed', { documentId: id, error: err });
     }
   }
 }

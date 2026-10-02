@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 
-/** Inline: **fett**, *kursiv*, `code`. Ausschließlich React-Elemente, kein HTML. */
+/** Inline: **bold**, *italic*, `code`. React elements only, no HTML. */
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   const re = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
@@ -47,11 +47,11 @@ function parse(text: string): Block[] {
       flush();
       continue;
     }
-    // eslint-disable-next-line sonarjs/super-linear-regex -- am Zeilenanfang verankert, Eingabe ist eine einzelne Zeile
+    // eslint-disable-next-line sonarjs/super-linear-regex -- anchored at the start of the line, input is a single line
     const heading = /^(#{1,3})\s+(.*)$/.exec(line);
-    // eslint-disable-next-line sonarjs/super-linear-regex -- am Zeilenanfang verankert, Eingabe ist eine einzelne Zeile
+    // eslint-disable-next-line sonarjs/super-linear-regex -- anchored at the start of the line, input is a single line
     const ul = /^\s*[-*•]\s+(.*)$/.exec(line);
-    // eslint-disable-next-line sonarjs/super-linear-regex -- am Zeilenanfang verankert, Eingabe ist eine einzelne Zeile
+    // eslint-disable-next-line sonarjs/super-linear-regex -- anchored at the start of the line, input is a single line
     const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
     if (heading) {
       flush();
@@ -80,7 +80,7 @@ function parse(text: string): Block[] {
   return blocks;
 }
 
-/** Leichtgewichtiges, sicheres Markdown-Rendering (Absätze, Listen, Überschriften, fett, kursiv, Code). */
+/** Lightweight, safe Markdown rendering (paragraphs, lists, headings, bold, italic, code). */
 export function Markdown({ text }: { text: string }) {
   const blocks = parse(text);
   return (

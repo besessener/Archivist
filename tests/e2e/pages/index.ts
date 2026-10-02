@@ -12,7 +12,7 @@ import { initSettings } from './settings';
 import { initSetupWizard } from './setup';
 import { initTimeline } from './timeline';
 
-/** Getter, damit ein Spec nur die Locators der Seiten aufbaut, die er braucht. */
+/** Getters, so that a spec only builds the locators of the pages it needs. */
 export type PageTree = ReturnType<typeof createPageTree>;
 
 export function createPageTree(page: Page) {

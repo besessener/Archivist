@@ -11,7 +11,7 @@ afterEach(async () => {
 
 type OpenItemHit = { title: string; description?: string | null; dueAt?: string | null; responsible?: string | null };
 
-/** Dokument importieren, (Fake-)LLM klassifizieren lassen und archivieren – erkannte offene Punkte werden vorgeschlagen. */
+/** Import a document, let the (fake) LLM classify it and archive it – detected open items are proposed. */
 async function archived(name: string, openItems: OpenItemHit[]): Promise<string> {
   app.llm.on('DocumentClassification', () => ({
     docType: 'Protokoll',
@@ -52,8 +52,8 @@ const ANGEBOT: OpenItemHit = {
   responsible: 'Anna Schmidt',
 };
 
-describe('Offene Punkte aus Dokumenten', () => {
-  it('übernimmt Verantwortlichen, Fälligkeit und Beschreibung und verknüpft den Punkt mit dem Dokument', async () => {
+describe('Open items from documents', () => {
+  it('takes over responsible person, due date and description and links the item to the document', async () => {
     const doc = await archived('Protokoll Baubesprechung', [ANGEBOT]);
 
     const [action] = await proposedFor(doc);
@@ -70,7 +70,7 @@ describe('Offene Punkte aus Dokumenten', () => {
     expect(rel[0]).toMatchObject({ sourceEntityId: item!.id, targetEntityId: doc, status: 'confirmed' });
   });
 
-  it('schlägt beim selben Punkt in einem zweiten Dokument „um Quelle ergänzen“ vor statt einen neuen Punkt', async () => {
+  it('proposes „um Quelle ergänzen“ for the same item in a second document instead of a new item', async () => {
     const first = await archived('Protokoll Baubesprechung', [{ title: ANGEBOT.title }]);
     await approve((await proposedFor(first))[0]!.id);
 
@@ -82,7 +82,7 @@ describe('Offene Punkte aus Dokumenten', () => {
 
     const items = await app.ok('openItems:list', {});
     expect(items).toHaveLength(1);
-    // fehlende Angaben kommen aus der neuen Quelle dazu
+    // missing details are added from the new source
     expect(items[0]).toMatchObject({ sourceIds: [first, second], description: ANGEBOT.description, responsibleName: 'Anna Schmidt' });
     expect(items[0]!.dueAt?.slice(0, 10)).toBe('2026-11-15');
 
@@ -90,7 +90,7 @@ describe('Offene Punkte aus Dokumenten', () => {
     expect(targets.sort()).toEqual([first, second].sort());
   });
 
-  it('legt einen anderen Punkt aus dem zweiten Dokument weiterhin neu an', async () => {
+  it('still creates a different item from the second document as new', async () => {
     const first = await archived('Protokoll Baubesprechung', [ANGEBOT]);
     await approve((await proposedFor(first))[0]!.id);
 

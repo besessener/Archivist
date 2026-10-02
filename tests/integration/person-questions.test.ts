@@ -16,14 +16,14 @@ const questions = (status: 'open' | 'rejected' | 'accepted' = 'open') => app.ser
 const choose = (id: string, choiceId: string) => app.ok('insights:respond', { response: 'choose', id, choiceId, confirmed: true, strongConfirmed: false });
 const hintCalls = () => app.llm.calls.filter((c) => c.schema === 'PersonHints');
 
-describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
+describe('Asking about unclear person assignments (#27)', () => {
   it.each([
     ['Monika', 'Monika Lor-Zade', /nur der Vorname/],
     ['Lor-Zade', 'Monika Lor-Zade', /nur der Nachname/],
     ['M. Lor-Zade', 'Monika Lor-Zade', /Initiale/],
     ['Anna Schmidt', 'Anna Maria Schmidt', /zweiten Vornamen/],
     ['Monika Lorzadeh', 'Monika Lor-Zade', /ähnlich geschrieben/],
-  ])('fragt bei „%s“ ↔ „%s“, statt zu raten', async (a, b, reason) => {
+  ])('asks about „%s“ ↔ „%s“ instead of guessing', async (a, b, reason) => {
     await start();
     // the complete name is known first, the unclear mention comes later
     person(b);
@@ -37,7 +37,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(graph().listEntities({ type: 'person' })).toHaveLength(2);
   });
 
-  it('zeigt Belege: gemeinsame Entscheidungen und Themen', async () => {
+  it('shows evidence: shared decisions and topics', async () => {
     await start();
     const monika = person('Monika');
     const full = person('Monika Lor-Zade');
@@ -63,7 +63,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(q!.explanation).toContain('• „Monika“: 0 Dokumente, 1 Entscheidung, Themen/Projekte: Budget 2027');
   });
 
-  it('„Gleich“ führt zusammen, merkt die Schreibweise als Alias und lässt sich rückgängig machen', async () => {
+  it('„Gleich“ merges, remembers the spelling as an alias and can be undone', async () => {
     await start();
     const short = person('M. Lor-Zade');
     const full = person('Monika Lor-Zade');
@@ -80,7 +80,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(graph().getEntity(short.id)).toBeDefined();
   });
 
-  it('„Verschieden“ wird dauerhaft gemerkt – auch nach einer Umbenennung', async () => {
+  it('„Verschieden“ is remembered permanently – also after a rename', async () => {
     await start();
     const short = person('Monika');
     const full = person('Monika Lor-Zade');
@@ -100,7 +100,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(questions('rejected').some((q) => q.sourceIds.includes(short.id) && q.sourceIds.includes(full.id))).toBe(true);
   });
 
-  it('stellt bei mehreren Kandidaten eine Frage „Welche … ist gemeint?“ mit „Keine davon“', async () => {
+  it('with several candidates asks one question „Welche … ist gemeint?“ with „Keine davon“', async () => {
     await start();
     const short = person('Monika');
     const a = person('Monika Lor-Zade');
@@ -117,7 +117,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(graph().getEntity(a.id)).toBeDefined();
   });
 
-  it('„Keine davon“ wird pro Kandidat gemerkt', async () => {
+  it('„Keine davon“ is remembered per candidate', async () => {
     await start();
     person('Monika');
     person('Monika Lor-Zade');
@@ -133,7 +133,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(questions().map((q) => q.title)).toEqual(['Ist „Monika“ dieselbe Person wie „Monika Weber“?']);
   });
 
-  it('zieht Fragen zurück, die nicht mehr zutreffen – samt ihren Vorschlägen', async () => {
+  it('withdraws questions that no longer apply – along with their proposals', async () => {
     await start();
     const short = person('Monika');
     const full = person('Monika Lor-Zade');
@@ -149,7 +149,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(graph().getEntity(other.id)).toBeDefined();
   });
 
-  it('holt im Modus „automatisch“ einen LLM-Hinweis ein (nur Namen), der nichts entscheidet', async () => {
+  it('in mode „automatisch“ obtains an LLM hint (names only) that decides nothing', async () => {
     await start({ privacy: 'auto' });
     app.llm.on('PersonHints', () => ({ questions: [{ nr: 1, verdict: 'same', reason: 'Initiale passt zum Vornamen.' }] }));
     person('M. Lor-Zade');
@@ -167,7 +167,7 @@ describe('Unklare Personen-Zuordnung erfragen (#27)', () => {
     expect(questions()[0]!.explanation).toContain('Hinweis des Sprachmodells');
   });
 
-  it.each(['confirm', 'local_only'] as const)('sendet im Datenschutzmodus %s nichts an das LLM', async (privacy) => {
+  it.each(['confirm', 'local_only'] as const)('sends nothing to the LLM in privacy mode %s', async (privacy) => {
     await start({ privacy });
     person('M. Lor-Zade');
     person('Monika Lor-Zade');

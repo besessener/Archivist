@@ -52,7 +52,7 @@ export default function OpenItemsPage() {
   const { settings } = useSettings();
   const { status } = useApp();
   const llmMode = settings?.privacy.llmMode ?? 'confirm';
-  // solange der Status lädt, nicht vorschnell sperren – der Main-Prozess prüft ohnehin
+  // do not lock prematurely while the status is loading – the main process checks anyway
   const llmConfigured = status ? status.llm.configured : true;
 
   const groups = useMemo(() => {

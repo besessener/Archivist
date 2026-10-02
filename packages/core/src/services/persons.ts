@@ -207,7 +207,7 @@ export class PersonService {
     if (!create || !parsed.cleanName) return result(null, null, candidates);
     const created = this.graph.ensureEntity('person', parsed.cleanName, opts.description);
     if (candidates.length) {
-      this.ctx.logger.info('persons', 'Unklare Personen-Erwähnung als eigene Person angelegt', {
+      this.ctx.logger.info('persons', 'Unclear person mention created as a separate person', {
         name: created.name,
         candidates: candidates.map((c) => ({ id: c.entity.id, name: c.entity.name, relation: c.relation })),
       });

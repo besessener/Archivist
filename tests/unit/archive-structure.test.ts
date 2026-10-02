@@ -9,14 +9,14 @@ const doc = (id: string, rel: string | null, topic: string | null = null, projec
   projectName: project,
 });
 
-describe('Ablage im Archiv auswerten', () => {
+describe('evaluating where documents are filed in the archive', () => {
   describe('folderOf', () => {
-    it('liefert den Ordner der Archivdatei, auch bei Windows-Trennzeichen', () => {
+    it('returns the folder of the archive file, also with Windows separators', () => {
       expect(folderOf({ archiveRelPath: 'private/bildungsurlaub/2026/antrag.pdf' })).toBe('private/bildungsurlaub/2026');
       expect(folderOf({ archiveRelPath: 'work\\hr\\antrag.pdf' })).toBe('work/hr');
     });
 
-    it('meldet für Dateien auf der obersten Ebene und ohne Pfad einen leeren Ordner', () => {
+    it('reports an empty folder for files at the top level and without a path', () => {
       expect(folderOf({ archiveRelPath: 'antrag.pdf' })).toBe('');
       expect(folderOf({ archiveRelPath: null })).toBe('');
       expect(folderLabel('')).toBe('(oberste Ebene des Archivs)');
@@ -25,7 +25,7 @@ describe('Ablage im Archiv auswerten', () => {
   });
 
   describe('groupByFolder', () => {
-    it('fasst Dokumente je Ordner zusammen, die größte Gruppe zuerst, bei Gleichstand alphabetisch', () => {
+    it('groups documents per folder, largest group first, alphabetically on a tie', () => {
       const groups = groupByFolder([doc('1', 'b/x.pdf'), doc('2', 'a/y.pdf'), doc('3', 'c/z.pdf'), doc('4', 'c/w.pdf')]);
 
       expect(groups.map((g) => [g.folder, g.docs.map((d) => d.id)])).toEqual([
@@ -35,7 +35,7 @@ describe('Ablage im Archiv auswerten', () => {
       ]);
     });
 
-    it('liefert für keine Dokumente keine Gruppen', () => {
+    it('returns no groups for no documents', () => {
       expect(groupByFolder([])).toEqual([]);
     });
   });
@@ -43,27 +43,27 @@ describe('Ablage im Archiv auswerten', () => {
   describe('chooseTargetFolder', () => {
     const pick = (...rels: string[]) => chooseTargetFolder(groupByFolder(rels.map((rel, i) => doc(String(i), rel))));
 
-    it('nimmt den Ordner, in dem die meisten Dokumente schon liegen', () => {
+    it('picks the folder that already holds the most documents', () => {
       expect(pick('a/1.pdf', 'b/2.pdf', 'b/3.pdf', 'c/4.pdf')).toBe('b');
     });
 
-    it('nimmt bei Gleichstand den spezielleren (tieferen) Ordner, dann den alphabetisch ersten', () => {
+    it('on a tie picks the more specific (deeper) folder, then the alphabetically first one', () => {
       expect(pick('a/1.pdf', 'b/c/2.pdf')).toBe('b/c');
       expect(pick('z/1.pdf', 'a/2.pdf')).toBe('a');
     });
 
-    it('wählt nie die oberste Ebene, auch wenn dort die meisten liegen', () => {
+    it('never picks the top level, even if most documents are there', () => {
       expect(pick('1.pdf', '2.pdf', '3.pdf', 'a/4.pdf')).toBe('a');
     });
 
-    it('liefert null, wenn es nur die oberste Ebene gibt oder gar nichts', () => {
+    it('returns null if there is only the top level or nothing at all', () => {
       expect(pick('1.pdf', '2.pdf')).toBeNull();
       expect(chooseTargetFolder([])).toBeNull();
     });
   });
 
   describe('splitSubjects', () => {
-    it('findet Themen und Projekte, deren Dokumente in mehreren Ordnern liegen', () => {
+    it('finds topics and projects whose documents are spread across several folders', () => {
       const split = splitSubjects([
         doc('1', 'a/x.pdf', 'Bildungsurlaub 2026'),
         doc('2', 'b/y.pdf', 'Bildungsurlaub 2026'),
@@ -80,13 +80,13 @@ describe('Ablage im Archiv auswerten', () => {
       ]);
     });
 
-    it('ignoriert leere Namen, trimmt Namen und meldet nichts, wenn alles beisammen liegt', () => {
+    it('ignores empty names, trims names and reports nothing when everything is in one place', () => {
       expect(splitSubjects([doc('1', 'a/x.pdf', '  '), doc('2', 'b/y.pdf', ''), doc('3', 'c/z.pdf', null)])).toEqual([]);
       expect(splitSubjects([doc('1', 'a/x.pdf', ' Steuer '), doc('2', 'b/y.pdf', 'Steuer')])).toHaveLength(1);
       expect(splitSubjects([])).toEqual([]);
     });
 
-    it('sortiert nach der Zahl der Ordner, bei Gleichstand nach Name', () => {
+    it('sorts by number of folders, by name on a tie', () => {
       const split = splitSubjects([
         doc('1', 'a/1.pdf', 'Zeta'),
         doc('2', 'b/2.pdf', 'Zeta'),

@@ -19,7 +19,7 @@ const row = (id: string) => app.services.documents.getRow(id);
 const abs = (id: string) => path.join(archiveRoot(), ...row(id).archiveRelPath!.split('/'));
 const relocate = (items: Array<{ documentId: string; categoryPath: string }>, confirmed = true) => app.services.archive.relocate(items, { confirmed });
 
-/** Importiert eine Textdatei und archiviert sie (Kopie) in `loc`; `topic` wird dem Dokument zugeordnet. */
+/** Imports a text file and archives it (copy) into `loc`; `topic` is assigned to the document. */
 async function archived(name: string, content: string, loc: string, topic: string | null = TOPIC, mode: 'copy' | 'move' = 'copy'): Promise<string> {
   app.llm.on('DocumentClassification', () => ({
     docType: 'Notiz',
@@ -60,8 +60,8 @@ const categoryNames = (id: string) =>
     .filter((r) => r.sourceEntityId === id)
     .map((r) => app.services.graph.getEntity(r.targetEntityId)?.name);
 
-describe('Archivierte Dokumente umlagern', () => {
-  it('verschiebt die Datei, passt Datenbank und Wissensgraph an und räumt den leeren Ordner auf', async () => {
+describe('Relocating archived documents', () => {
+  it('moves the file, updates the database and knowledge graph and cleans up the empty folder', async () => {
     const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'work/hr/abwesenheiten');
     const before = abs(id);
     expect(categoryNames(id)).toContain('work/hr/abwesenheiten');
@@ -75,11 +75,11 @@ describe('Archivierte Dokumente umlagern', () => {
     expect(row(id).archiveRelPath).toBe('private/bildungsurlaub/2026/antrag.txt');
     expect(categoryNames(id)).toContain('private/bildungsurlaub/2026');
     expect(categoryNames(id)).not.toContain('work/hr/abwesenheiten');
-    expect(fs.existsSync(path.dirname(before)), 'der leere alte Ordner wird entfernt').toBe(false);
-    expect(fs.existsSync(path.dirname(path.dirname(before))), 'auch leere Elternordner werden aufgeräumt (wie beim Undo der Archivierung)').toBe(false);
+    expect(fs.existsSync(path.dirname(before)), 'the empty old folder is removed').toBe(false);
+    expect(fs.existsSync(path.dirname(path.dirname(before))), 'empty parent folders are cleaned up too (as with undoing an archiving)').toBe(false);
   });
 
-  it('lässt einen Ordner stehen, in dem noch andere Dateien liegen', async () => {
+  it('leaves a folder in place that still contains other files', async () => {
     const a = await archived('a.txt', 'Inhalt A', 'work/hr');
     await archived('b.txt', 'Inhalt B', 'work/hr');
     const oldDir = path.dirname(abs(a));
@@ -90,7 +90,7 @@ describe('Archivierte Dokumente umlagern', () => {
     expect(fs.readdirSync(oldDir)).toEqual(['b.txt']);
   });
 
-  it('überschreibt nie: ist der Name im Zielordner belegt, wird die Datei umbenannt', async () => {
+  it('never overwrites: if the name is taken in the target folder, the file is renamed', async () => {
     const a = await archived('bericht.txt', 'Erster Bericht', 'work/a');
     const b = await archived('bericht.txt', 'Zweiter Bericht, anderer Inhalt', 'work/b');
 
@@ -103,7 +103,7 @@ describe('Archivierte Dokumente umlagern', () => {
     expect(fs.readFileSync(abs(b), 'utf8')).toBe('Zweiter Bericht, anderer Inhalt');
   });
 
-  it('verlangt eine ausdrückliche Bestätigung und ändert vorher nichts', async () => {
+  it('requires explicit confirmation and changes nothing before', async () => {
     const id = await archived('antrag.txt', 'Antrag', 'work/hr');
     const before = abs(id);
 
@@ -113,7 +113,7 @@ describe('Archivierte Dokumente umlagern', () => {
     expect(row(id).categoryPath).toBe('work/hr');
   });
 
-  it('die Vorschau ändert nichts und nennt Ziel, Umbenennung und Sperrgründe', async () => {
+  it('the preview changes nothing and names target, renaming and blocking reasons', async () => {
     const a = await archived('bericht.txt', 'Erster Bericht', 'work/a');
     const b = await archived('bericht.txt', 'Zweiter Bericht, anderer Inhalt', 'work/b');
     const before = abs(b);
@@ -125,7 +125,7 @@ describe('Archivierte Dokumente umlagern', () => {
     expect(row(a).archiveRelPath).toBe('work/a/bericht.txt');
   });
 
-  it('überspringt Dokumente, die schon im Zielordner liegen', async () => {
+  it('skips documents that are already in the target folder', async () => {
     const id = await archived('antrag.txt', 'Antrag', 'work/hr');
 
     const res = await relocate([{ documentId: id, categoryPath: 'work/hr' }]);
@@ -134,8 +134,8 @@ describe('Archivierte Dokumente umlagern', () => {
     expect(row(id).archiveRelPath).toBe('work/hr/antrag.txt');
   });
 
-  describe('sperrt, was nicht sicher ist', () => {
-    it('Ordner außerhalb des Archivs (Path Traversal) und absolute Pfade', async () => {
+  describe('blocks what is not safe', () => {
+    it('folders outside the archive (path traversal) and absolute paths', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
 
       for (const categoryPath of ['../draussen', 'work/../../draussen', '/etc', 'C:\\Windows']) {
@@ -146,7 +146,7 @@ describe('Archivierte Dokumente umlagern', () => {
       expect(fs.existsSync(abs(id))).toBe(true);
     });
 
-    it('einen Zielordner, der über einen Symlink aus dem Archiv herausführt', async () => {
+    it('a target folder that leads out of the archive via a symlink', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
       const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-outside-'));
       try {
@@ -162,7 +162,7 @@ describe('Archivierte Dokumente umlagern', () => {
       }
     });
 
-    it('eine unbekannte Hauptkategorie (muss erst ausdrücklich angelegt werden)', async () => {
+    it('an unknown top-level category (must be created explicitly first)', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
 
       const res = await relocate([{ documentId: id, categoryPath: 'neuehauptkategorie/unter' }]);
@@ -172,7 +172,7 @@ describe('Archivierte Dokumente umlagern', () => {
       expect(fs.existsSync(path.join(archiveRoot(), 'neuehauptkategorie'))).toBe(false);
     });
 
-    it('Dokumente, die noch nicht archiviert sind, und fehlende Dateien', async () => {
+    it('documents that are not archived yet, and missing files', async () => {
       app.llm.on('DocumentClassification', () => ({
         docType: 'Notiz',
         title: 'offen',
@@ -204,7 +204,7 @@ describe('Archivierte Dokumente umlagern', () => {
       expect(res.items[1]!.message).toMatch(/fehlt/);
     });
 
-    it('Dateien, die im Archiv seit der Archivierung verändert wurden', async () => {
+    it('files that were changed in the archive since archiving', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
       fs.appendFileSync(abs(id), ' – nachträglich bearbeitet');
 
@@ -216,8 +216,8 @@ describe('Archivierte Dokumente umlagern', () => {
     });
   });
 
-  describe('Rückgängig machen', () => {
-    it('legt die Datei an den alten Ort zurück und stellt Datenbank und Wissensgraph wieder her', async () => {
+  describe('Undo', () => {
+    it('puts the file back at its old location and restores the database and knowledge graph', async () => {
       const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'work/hr/abwesenheiten');
       const original = abs(id);
       const res = await relocate([{ documentId: id, categoryPath: 'private/bildungsurlaub' }]);
@@ -229,7 +229,7 @@ describe('Archivierte Dokumente umlagern', () => {
       expect(row(id)).toMatchObject({ archiveRelPath: 'work/hr/abwesenheiten/antrag.txt', categoryPath: 'work/hr/abwesenheiten' });
       expect(categoryNames(id)).toContain('work/hr/abwesenheiten');
       expect(categoryNames(id)).not.toContain('private/bildungsurlaub');
-      expect(fs.existsSync(path.join(archiveRoot(), 'private', 'bildungsurlaub')), 'der leere neue Ordner wird entfernt').toBe(false);
+      expect(fs.existsSync(path.join(archiveRoot(), 'private', 'bildungsurlaub')), 'the empty new folder is removed').toBe(false);
     });
 
     it('relocate, undo relocate, then undo archiving succeeds and puts the moved original back', async () => {
@@ -301,7 +301,7 @@ describe('Archivierte Dokumente umlagern', () => {
       expect(row(id).archiveRelPath).toBe('work/neu/antrag.txt');
     });
 
-    it('lehnt ab, wenn die Datei seit dem Umlagern verändert wurde oder der alte Platz belegt ist', async () => {
+    it('refuses when the file was changed since relocating or the old location is taken', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
       const original = abs(id);
       const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);

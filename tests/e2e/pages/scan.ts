@@ -18,7 +18,7 @@ export function initScan(page: Page) {
   };
   const fileRow = (name: string) => locators.fileRows.filter({ hasText: name });
   const interactions = {
-    /** Gibt ein Verzeichnis frei (der Auswahldialog wird im Test durch ARCHIVIST_TEST_PICK_DIR ersetzt). */
+    /** Allows a directory (in tests the picker dialog is replaced by ARCHIVIST_TEST_PICK_DIR). */
     allowDirectory: async (name: string) => {
       await locators.buttons.enable.click();
       await locators.buttons.addDirectory.click();
@@ -27,7 +27,7 @@ export function initScan(page: Page) {
     scan: async () => {
       await locators.buttons.start.click();
     },
-    /** Analysiert eine Datei mit ausdrücklicher LLM-Freigabe. */
+    /** Analyses a file with explicit LLM permission. */
     analyzeWithLlm: async (name: string) => {
       await fileRow(name).getByTestId('scan-file-checkbox').check();
       await locators.buttons.analyze.click();

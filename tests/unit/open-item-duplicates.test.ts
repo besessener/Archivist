@@ -15,7 +15,7 @@ describe('assessOpenItemPair (#35)', () => {
     expect(assessOpenItemPair({ title: a }, { title: b }).duplicate).toBe(expected);
   });
 
-  it('abweichende Angaben (Verantwortlicher, Thema, Projekt) schließen eine Dublette aus', () => {
+  it('differing details (responsible person, topic, project) rule out a duplicate', () => {
     const base = { title: 'Präsentation vorbereiten' };
     expect(assessOpenItemPair({ ...base, responsiblePersonId: 'p1' }, { ...base, responsiblePersonId: 'p2' })).toMatchObject({
       duplicate: false,
@@ -27,7 +27,7 @@ describe('assessOpenItemPair (#35)', () => {
     expect(assessOpenItemPair({ ...base, responsiblePersonId: 'p1' }, base).duplicate).toBe(true);
   });
 
-  it('übereinstimmende Angaben und Beschreibung stützen einen nur ähnlichen Titel', () => {
+  it('matching details and description support a title that is only similar', () => {
     const a = { title: 'Angebot Müller prüfen', description: 'Rabatt klären' };
     const b = { title: 'Angebot Müller nachverhandeln', description: 'Rabatt klären' };
     const loose = assessOpenItemPair({ title: a.title }, { title: b.title });
@@ -36,7 +36,7 @@ describe('assessOpenItemPair (#35)', () => {
     expect(withContext).toMatchObject({ duplicate: true, reasons: ['gleiches Thema', 'gleicher Verantwortlicher', 'gleiche Beschreibung'] });
   });
 
-  it('ist symmetrisch', () => {
+  it('is symmetric', () => {
     const a = { title: 'Angebot prüfen' };
     const b = { title: 'Angebot für Müller prüfen, er wollte Rabatt' };
     expect(titleSimilarity(a, b)).toBeCloseTo(titleSimilarity(b, a));
@@ -48,20 +48,20 @@ describe('findOpenItemDuplicate (#35)', () => {
     { id: '1', title: 'Angebot für Müller prüfen', description: 'Rabatt klären, Konditionen vergleichen' },
     { id: '2', title: 'Zahnarzt anrufen', description: null },
   ];
-  it('findet einen Entwurf, dessen Titel im bestehenden Punkt steckt', () => {
+  it('finds a draft whose title is contained in the existing item', () => {
     expect(findOpenItemDuplicate({ title: 'Angebot Müller' }, items)?.id).toBe('1');
   });
-  it('keine Dublette bei abweichendem Verantwortlichen oder ohne Ähnlichkeit', () => {
+  it('no duplicate with a different responsible person or without similarity', () => {
     expect(findOpenItemDuplicate({ title: 'Angebot Müller', responsiblePersonId: 'b' }, [{ ...items[0]!, responsiblePersonId: 'a' }])).toBeNull();
     expect(findOpenItemDuplicate({ title: 'Steuer abgeben' }, items)).toBeNull();
   });
 });
 
-describe('takeOverMissing / Hilfen zum Zusammenführen (#35, auch für Notizen/Ereignisse)', () => {
+describe('takeOverMissing / merge helpers (#35, also for notes/events)', () => {
   type R = { description: string | null; dueAt: string | null; owner: string | null; sources: string[] };
   const rules = { description: 'append', dueAt: 'fill', owner: 'fill', sources: 'union' } as const;
 
-  it('füllt nur Fehlendes, hängt Text an und vereinigt Listen', () => {
+  it('fills only missing values, appends text and unions lists', () => {
     const keep: R = { description: 'Konditionen klären', dueAt: null, owner: 'Anna', sources: ['a'] };
     const dup: R = { description: 'er wollte Rabatt', dueAt: '2026-11-15', owner: 'Bernd', sources: ['a', 'b'] };
     expect(takeOverMissing(keep, dup, rules)).toEqual({
@@ -71,13 +71,13 @@ describe('takeOverMissing / Hilfen zum Zusammenführen (#35, auch für Notizen/E
     });
   });
 
-  it('übernimmt nichts, wenn der Duplikat-Datensatz nichts Neues hat', () => {
+  it('takes over nothing if the duplicate record has nothing new', () => {
     const keep: R = { description: 'Rabatt klären', dueAt: '2026-01-01', owner: 'Anna', sources: ['a'] };
     const dup: R = { description: 'rabatt KLÄREN', dueAt: null, owner: null, sources: [] };
     expect(takeOverMissing(keep, dup, rules).fields).toEqual([]);
   });
 
-  it('appendText, duplicatePairKey und chooseKept', () => {
+  it('appendText, duplicatePairKey and chooseKept', () => {
     expect(appendText(null, ' neu ')).toBe('neu');
     expect(appendText('alt', null)).toBe('alt');
     expect(appendText('Alt und neu', 'neu')).toBe('Alt und neu');

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ChatMessage, EntityType, RefType } from '@archivist/shared';
 import { ENTITY_TYPE_LABELS, entityHref } from '../../apps/renderer/lib/nav';
 
-describe('Verweisziele im Renderer (entityHref)', () => {
-  it('führt jede Verweisart zur passenden Ansicht', () => {
+describe('link targets in the renderer (entityHref)', () => {
+  it('leads every reference type to the matching view', () => {
     expect(entityHref('document', 'd 1')).toBe('/documents/?id=d%201');
     expect(entityHref('decision', 'x')).toBe('/decisions/?id=x');
     expect(entityHref('task', 'x')).toBe('/open-items/');
@@ -14,16 +14,16 @@ describe('Verweisziele im Renderer (entityHref)', () => {
     expect(entityHref('topic', 't-1')).toBe('/knowledge/?id=t-1');
   });
 
-  it('hat für jede Verweisart eine Bezeichnung', () => {
+  it('has a label for every reference type', () => {
     for (const t of RefType.options) expect(ENTITY_TYPE_LABELS[t]).toBeTruthy();
     expect(ENTITY_TYPE_LABELS.reminder).toBe('Erinnerung');
     expect(ENTITY_TYPE_LABELS.contradiction).toBe('Widerspruch');
   });
 
-  it('Verweisarten erweitern die Wissensobjekte, ohne gespeicherte Nachrichten ungültig zu machen', () => {
+  it('reference types extend the knowledge objects without invalidating saved messages', () => {
     expect(EntityType.options.every((t) => RefType.options.includes(t))).toBe(true);
     expect(EntityType.safeParse('reminder').success).toBe(false);
-    // alte Nachricht: Erinnerung noch als Notiz, Widerspruch noch als Entscheidung gespeichert
+    // old message: reminder still stored as a note, contradiction still stored as a decision
     const old = {
       id: 'm1',
       conversationId: 'c1',
@@ -39,11 +39,11 @@ describe('Verweisziele im Renderer (entityHref)', () => {
       errorMessage: null,
     };
     expect(ChatMessage.safeParse(old).success).toBe(true);
-    const neu = {
+    const current = {
       ...old,
       sources: [{ id: 'r1', type: 'reminder', title: 'E' }],
       context: { contradictions: [{ type: 'contradiction', id: 'k1', label: 'W' }] },
     };
-    expect(ChatMessage.safeParse(neu).success).toBe(true);
+    expect(ChatMessage.safeParse(current).success).toBe(true);
   });
 });

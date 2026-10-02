@@ -19,7 +19,7 @@ export function Checkbox({ className, ...props }: React.ComponentProps<typeof Ch
   );
 }
 
-/** Checkbox mit klickbarem Beschriftungstext. */
+/** Checkbox with clickable label text. */
 export function CheckboxField({ label, className, id, children, ...props }: React.ComponentProps<typeof CheckboxPrimitive.Root> & { label?: React.ReactNode }) {
   const autoId = React.useId();
   const fieldId = id ?? autoId;

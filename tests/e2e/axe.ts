@@ -6,15 +6,15 @@ import type { Result } from 'axe-core';
 /** WCAG 2.2 AA. */
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag22aa'];
 
-/** Regeln, die eslint-plugin-jsx-a11y bereits statisch prüft; axe ist für das gerenderte DOM da. */
+/** Rules that eslint-plugin-jsx-a11y already checks statically; axe is for the rendered DOM. */
 const COVERED_BY_LINT = ['image-alt', 'aria-valid-attr-value', 'aria-allowed-attr'];
 
 const describeViolation = (violation: Result) => {
   const targets = violation.nodes.slice(0, 3).map((node) => node.target.join(' '));
-  return `${violation.id} (${violation.impact}): ${violation.help} – ${violation.nodes.length} Element(e): ${targets.join(' | ')}`;
+  return `${violation.id} (${violation.impact}): ${violation.help} – ${violation.nodes.length} element(s): ${targets.join(' | ')}`;
 };
 
-/** Nicht blockierende Funde landen in der Job-Zusammenfassung der CI, damit sie beurteilt werden können. */
+/** Non-blocking findings go into the CI job summary so that they can be assessed. */
 async function reportNonBlockingFindings(testInfo: TestInfo, violations: Result[]) {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   if (!summaryPath || violations.length === 0) return;
@@ -22,16 +22,16 @@ async function reportNonBlockingFindings(testInfo: TestInfo, violations: Result[
   const body = violations.map((violation) => `- ${describeViolation(violation)}`).join('\n');
   await appendFile(
     summaryPath,
-    `### ♿ Barrierefreiheit – ${title}\n\nNicht blockierend, bitte beurteilen (Details: Anhang \`axe-verstoesse.json\` am Test).\n\n${body}\n\n`,
+    `### ♿ Accessibility – ${title}\n\nNon-blocking, please assess (details: attachment \`axe-violations.json\` on the test).\n\n${body}\n\n`,
   );
 }
 
-/** Schwere und kritische Funde lassen den Test fehlschlagen; mittlere und leichte werden angehängt und zusammengefasst. */
+/** Serious and critical findings fail the test; moderate and minor ones are attached and summarised. */
 export async function expectNoSeriousA11yViolations(page: Page, testInfo: TestInfo) {
-  // Legacy-Modus: der Standardmodus öffnet für die Auswertung eine neue Seite, was Electron nicht unterstützt (Target.createTarget).
+  // Legacy mode: the default mode opens a new page for the analysis, which Electron does not support (Target.createTarget).
   const results = await new AxeBuilder({ page }).setLegacyMode().withTags(WCAG_TAGS).disableRules(COVERED_BY_LINT).analyze();
   if (results.violations.length > 0) {
-    await testInfo.attach('axe-verstoesse.json', { body: JSON.stringify(results.violations, null, 2), contentType: 'application/json' });
+    await testInfo.attach('axe-violations.json', { body: JSON.stringify(results.violations, null, 2), contentType: 'application/json' });
   }
   const blocking = results.violations.filter((violation) => violation.impact === 'serious' || violation.impact === 'critical');
   await reportNonBlockingFindings(

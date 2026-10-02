@@ -28,8 +28,8 @@ const mk = (decisionText: string, topic: string, decidedAt: string) =>
     asDraft: false,
   });
 
-describe('Unsichere Entscheidungen nie ungefragt speichern (#44)', () => {
-  it('fragt auch dann nach, wenn schon ein Entscheidungs-Entwurf offen ist, und ergänzt den Entwurf nicht', async () => {
+describe('Never save uncertain decisions without asking (#44)', () => {
+  it('asks back even when a decision draft is already open, and does not add to the draft', async () => {
     app.llm.on('ChatIntent', (_s, input) => {
       if (/prod-plat/.test(userText(input)))
         return intent({
@@ -58,7 +58,7 @@ describe('Unsichere Entscheidungen nie ungefragt speichern (#44)', () => {
   });
 });
 
-describe('„ersetzt“ ohne Thema trifft keine fremde Entscheidung (#44)', () => {
+describe('„ersetzt“ without a topic does not hit an unrelated decision (#44)', () => {
   const supersede = () =>
     intent({
       intent: 'decision_supersede',
@@ -66,9 +66,9 @@ describe('„ersetzt“ ohne Thema trifft keine fremde Entscheidung (#44)', () =
       decision: decisionEx({ decisionText: 'Urlaub im Juli', title: 'Urlaub', decidedAt: '2026-05-01', participants: ['Anna'], unknownFields: ['topic'] }),
     });
 
-  it('schlägt ohne eindeutigen Treffer nichts vor, sondern fragt „Welche Entscheidung wird ersetzt?“', async () => {
+  it('proposes nothing without an unambiguous match but asks „Welche Entscheidung wird ersetzt?“', async () => {
     const kafka = await mk('Wir nutzen Kafka', 'Messaging', '2026-01-10');
-    const urlaub = await mk('Urlaub im Juni', 'Urlaub', '2026-01-05');
+    const vacation = await mk('Urlaub im Juni', 'Urlaub', '2026-01-05');
     app.llm.on('ChatIntent', supersede);
 
     const r = await send('Neue Entscheidung: Urlaub im Juli, ersetzt die alte.');
@@ -84,12 +84,12 @@ describe('„ersetzt“ ohne Thema trifft keine fremde Entscheidung (#44)', () =
 
     const action = r2.assistantMessage.actions[0]!;
     expect(action).toMatchObject({ actionType: 'supersede_decision', status: 'proposed' });
-    expect((action.proposedParameters as { oldDecisionId: string }).oldDecisionId).toBe(urlaub.id);
+    expect((action.proposedParameters as { oldDecisionId: string }).oldDecisionId).toBe(vacation.id);
     expect((await app.ok('decisions:get', { id: kafka.id })).status).toBe('active');
-    expect((await app.ok('decisions:get', { id: urlaub.id })).status, 'erst nach Bestätigung').toBe('active');
+    expect((await app.ok('decisions:get', { id: vacation.id })).status, 'only after confirmation').toBe('active');
   });
 
-  it('„keine“ beendet die Rückfrage ohne Vorschlag', async () => {
+  it('„keine“ ends the follow-up question without a proposal', async () => {
     await mk('Wir nutzen Kafka', 'Messaging', '2026-01-10');
     app.llm.on('ChatIntent', supersede);
     const r = await send('Neue Entscheidung: Urlaub im Juli, ersetzt die alte.');
@@ -98,9 +98,9 @@ describe('„ersetzt“ ohne Thema trifft keine fremde Entscheidung (#44)', () =
     expect(app.services.actions.list('proposed').some((a) => a.actionType === 'supersede_decision')).toBe(false);
   });
 
-  it('mit eindeutigem Thema wird die passende Entscheidung direkt vorgeschlagen', async () => {
+  it('with an unambiguous topic the matching decision is proposed directly', async () => {
     await mk('Wir nutzen Kafka', 'Messaging', '2026-01-10');
-    const urlaub = await mk('Urlaub im Juni', 'Urlaub', '2026-01-05');
+    const vacation = await mk('Urlaub im Juni', 'Urlaub', '2026-01-05');
     app.llm.on('ChatIntent', () =>
       intent({
         intent: 'decision_supersede',
@@ -112,6 +112,6 @@ describe('„ersetzt“ ohne Thema trifft keine fremde Entscheidung (#44)', () =
     const r = await send('Urlaub im Juli statt Juni, ersetzt die alte Entscheidung.');
     const sup = r.assistantMessage.actions.filter((a) => a.actionType === 'supersede_decision');
     expect(sup).toHaveLength(1);
-    expect((sup[0]!.proposedParameters as { oldDecisionId: string }).oldDecisionId).toBe(urlaub.id);
+    expect((sup[0]!.proposedParameters as { oldDecisionId: string }).oldDecisionId).toBe(vacation.id);
   });
 });

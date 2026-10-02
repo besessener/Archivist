@@ -1,4 +1,4 @@
-// Entwicklungsmodus: startet den Next.js-Dev-Server und Electron (Hot Reload für das Frontend).
+// Development mode: starts the Next.js dev server and Electron (hot reload for the frontend).
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 
 const run = (cmd, args, opts = {}) => spawn(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32', ...opts });
 
-// Frontend-Build wird für den Dev-Modus nicht benötigt, aber dist/ (Main, Preload, Worker, Migrationen) schon.
+// The frontend build is not needed in dev mode, but dist/ (main, preload, worker, migrations) is.
 const buildDist = run(process.execPath, [path.join(here, 'build.mjs')], { cwd: desktop, env: { ...process.env } });
 buildDist.on('exit', (code) => {
   if (code !== 0) process.exit(code ?? 1);

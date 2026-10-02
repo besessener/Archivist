@@ -77,8 +77,8 @@ async function monikaArchive() {
   return { ids, monika, ich, dec, item, doc };
 }
 
-describe('Personen-Dubletten automatisch zusammenführen (#26)', () => {
-  it('führt die eindeutigen Schreibweisen zu einer Person zusammen, speichert Rollen und hängt alle Verweise um', async () => {
+describe('Automatically merging person duplicates (#26)', () => {
+  it('merges the unambiguous spellings into one person, stores roles and re-links all references', async () => {
     const { ids, monika, ich, dec, item, doc } = await monikaArchive();
     expect(persons()).toHaveLength(7 + 1); // + „Anna“
 
@@ -114,7 +114,7 @@ describe('Personen-Dubletten automatisch zusammenführen (#26)', () => {
     expect(report.byKind.persons_merged).toBe(5);
   });
 
-  it('„Rückgängig“ stellt die 4 zusammengeführten Einträge exakt wieder her und führt sie danach nicht erneut zusammen', async () => {
+  it('„Rückgängig“ restores the 4 merged entries exactly and does not merge them again afterwards', async () => {
     const { ids } = await monikaArchive();
     const before = state();
     await app.services.consistency.run('manual');
@@ -133,7 +133,7 @@ describe('Personen-Dubletten automatisch zusammenführen (#26)', () => {
     expect(app.services.insights.list('open').filter((i) => i.kind === 'persons_merged')).toHaveLength(0);
   });
 
-  it('„Behalten“ lässt die Zusammenführung bestehen; spätere Läufe finden nichts mehr', async () => {
+  it('„Behalten“ keeps the merge; later runs find nothing more', async () => {
     await monikaArchive();
     await app.services.consistency.run('manual');
     const insight = app.services.insights.list('open').find((i) => i.kind === 'persons_merged')!;
@@ -148,7 +148,7 @@ describe('Personen-Dubletten automatisch zusammenführen (#26)', () => {
     ).toEqual(['Anna', 'Monika', 'Monika Lor-Zade', 'ich']);
   });
 
-  it('wählt die sauberste Schreibweise als Namen, auch wenn kein Eintrag sie trägt', async () => {
+  it('picks the cleanest spelling as the name, even when no entry carries it', async () => {
     const a = graph().ensureEntity('person', 'monika lor zade (chefin)');
     const b = graph().ensureEntity('person', 'Lor-Zade, Monika');
     await app.services.consistency.run('manual');
@@ -158,7 +158,7 @@ describe('Personen-Dubletten automatisch zusammenführen (#26)', () => {
     expect([a.id, b.id]).toContain(left[0]!.id);
   });
 
-  it('lässt sich abschalten', async () => {
+  it('can be switched off', async () => {
     await monikaArchive();
     app.services.settings.update({ consistency: { autoMergePersons: false } });
     const report = await app.services.consistency.run('manual');

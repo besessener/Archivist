@@ -40,7 +40,7 @@ export function getBridge(): ArchivistBridge | null {
   return window.archivist ?? null;
 }
 
-/** Ruft einen IPC-Kanal auf und wirft bei Fehlern eine IpcError mit deutscher Meldung. */
+/** Calls an IPC channel and throws an IpcError with a German message on errors. */
 export async function call<C extends IpcChannel>(channel: C, input?: IpcInput<C>): Promise<IpcOutput<C>> {
   const bridge = getBridge();
   if (!bridge) {

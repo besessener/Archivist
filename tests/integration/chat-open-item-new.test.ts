@@ -27,8 +27,8 @@ afterEach(async () => {
 });
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
-describe('Neue offene Punkte vollständig anlegen (#41)', () => {
-  it('ohne LLM: kurzer Titel aus dem passenden Abschnitt, Details in der Beschreibung, Quelle ist die Chat-Nachricht', async () => {
+describe('Creating new open items completely (#41)', () => {
+  it('without an LLM: short title from the matching section, details in the description, the source is the chat message', async () => {
     app.llm.down = true;
     const r = await send('Offener Punkt: Ich muss noch das Angebot für Müller prüfen, er wollte Rabatt.');
     const item = (await app.ok('openItems:list', {}))[0]!;
@@ -39,7 +39,7 @@ describe('Neue offene Punkte vollständig anlegen (#41)', () => {
     expect(item.sourceConversationId).toBe(r.conversationId);
   });
 
-  it('mit LLM: ein „Titel“, der die ganze Nachricht ist, wird gekürzt; „ich“ wird zum Benutzer (nie zur Person „ich“)', async () => {
+  it('with LLM: a "title" that is the whole message is shortened; „ich“ becomes the user (never the person „ich“)', async () => {
     app.services.settings.update({ profile: { name: 'Max Mustermann', nicknames: [] } });
     const text = 'Ich muss noch das Angebot für Müller prüfen, er wollte Rabatt.';
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', segment: text, openItem: { title: text, responsible: 'ich' } }));
@@ -51,7 +51,7 @@ describe('Neue offene Punkte vollständig anlegen (#41)', () => {
     expect(r.assistantMessage.content).not.toMatch(/Wer ist verantwortlich/);
   });
 
-  it('ohne hinterlegten Namen wird „ich“ der Platzhalter „Ich“ (die eigene Person), und der Chat sagt, wie man den Namen einträgt', async () => {
+  it('without a stored name „ich“ becomes the placeholder „Ich“ (the own person), and the chat explains how to enter the name', async () => {
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Zahnarzt anrufen', responsible: 'mir' } }));
     const r = await send('Zahnarzt anrufen bleibt an mir hängen');
     const item = (await app.ok('openItems:list', {}))[0]!;
@@ -62,7 +62,7 @@ describe('Neue offene Punkte vollständig anlegen (#41)', () => {
     expect(app.services.graph.findByName('person', 'mir')).toBeFalsy();
   });
 
-  it('Dublettenprüfung: fragt „ergänzen oder neu anlegen?“; „Ergänzen“ hängt die Details an', async () => {
+  it('duplicate check: asks „ergänzen oder neu anlegen?“; „Ergänzen“ appends the details', async () => {
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Angebot Müller prüfen', description: 'er wollte Rabatt' } }));
     const r1 = await send('Angebot Müller prüfen, er wollte Rabatt');
     expect(await app.ok('openItems:list', {})).toHaveLength(1);
@@ -79,7 +79,7 @@ describe('Neue offene Punkte vollständig anlegen (#41)', () => {
     expect(items[0]!.description).toBe('er wollte Rabatt\nbis Freitag Rückmeldung');
   });
 
-  it('„Neu anlegen“ legt trotz ähnlichem Punkt einen neuen an', async () => {
+  it('„Neu anlegen“ creates a new item despite a similar one', async () => {
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Angebot Müller prüfen' } }));
     const r1 = await send('Angebot Müller prüfen');
     await send('Angebot Müller prüfen', r1.conversationId);
@@ -87,7 +87,7 @@ describe('Neue offene Punkte vollständig anlegen (#41)', () => {
     expect(await app.ok('openItems:list', {})).toHaveLength(2);
   });
 
-  it('Ergänzungen per Chat hängen an die Beschreibung an', async () => {
+  it('additions via chat are appended to the description', async () => {
     const item = await app.ok('openItems:create', { title: 'Budget planen', description: 'für 2027', priority: 'normal', sourceIds: [], confidence: 0.9 });
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_update', openItem: { targetHint: 'Budget', description: 'inklusive Reisekosten' } }));
     await send('Beim Budget bitte auch die Reisekosten einplanen');

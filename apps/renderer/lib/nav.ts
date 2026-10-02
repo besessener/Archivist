@@ -6,7 +6,7 @@ export function entityHref(type: RefType, id: string): string {
       return `/documents/?id=${encodeURIComponent(id)}`;
     case 'decision':
       return `/decisions/?id=${encodeURIComponent(id)}`;
-    // Erinnerungen hängen an offenen Punkten; fällige erscheinen zusätzlich in der Notification Bell
+    // Reminders are attached to open items; due ones additionally appear in the notification bell
     case 'task':
     case 'question':
     case 'reminder':

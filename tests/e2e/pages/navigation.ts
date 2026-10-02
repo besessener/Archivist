@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { pageObject } from './page-object';
 
-/** Die Bereiche der Hauptnavigation (data-testid `nav-<name>`). */
+/** The sections of the main navigation (data-testid `nav-<name>`). */
 export const SECTIONS = ['chat', 'inbox', 'knowledge', 'decisions', 'documents', 'timeline', 'open-items', 'insights', 'scan', 'settings'] as const;
 export type Section = (typeof SECTIONS)[number];
 

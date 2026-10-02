@@ -7,8 +7,8 @@ import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
 /**
- * Electron-Main-Prozess: App-Lebenszyklus, sichere Fenster, IPC-Allowlist und Betriebssystemzugriffe.
- * Die Geschäftslogik liegt vollständig im Service-Layer (@archivist/core); rechenintensive Arbeit läuft in Worker-Threads.
+ * Electron main process: app lifecycle, secure windows, IPC allowlist and operating system access.
+ * The business logic lives entirely in the service layer (@archivist/core); compute-heavy work runs in worker threads.
  */
 const isDev = Boolean(process.env.ARCHIVIST_DEV_URL);
 const testMode = process.env.ARCHIVIST_TEST_MODE === '1';
@@ -36,13 +36,13 @@ const quitter = new QuitController({
 const dataRoot = () => process.env.ARCHIVIST_DATA_DIR ?? path.join(app.getPath('documents'), 'Archivist');
 const resource = (...p: string[]) => path.join(__dirname, ...p);
 
-/** Verschlüsselung über Electron safeStorage (Windows DPAPI; die Linux-Zweige dienen nur Entwicklung und CI). */
+/** Encryption via Electron safeStorage (Windows DPAPI; the Linux branches only serve development and CI). */
 const cipher: SecretCipher = {
   isAvailable: () => {
     if (!safeStorage.isEncryptionAvailable()) return false;
     if (process.platform === 'linux') {
       const backend = safeStorage.getSelectedStorageBackend();
-      // „basic_text“ legt Schlüssel nur obfuskiert ab – nur im ausdrücklichen Testmodus zulässig
+      // "basic_text" only stores keys obfuscated – allowed only in explicit test mode
       return backend !== 'basic_text' && backend !== 'unknown' ? true : testMode;
     }
     return true;
@@ -57,7 +57,7 @@ const host: HostApi = {
   platform: process.platform,
   selectDirectory: async (title) => {
     const opts: Electron.OpenDialogOptions = { title: title ?? 'Verzeichnis auswählen', properties: ['openDirectory'] };
-    if (process.env.ARCHIVIST_TEST_PICK_DIR) return process.env.ARCHIVIST_TEST_PICK_DIR; // E2E: kein nativer Dialog
+    if (process.env.ARCHIVIST_TEST_PICK_DIR) return process.env.ARCHIVIST_TEST_PICK_DIR; // E2E: no native dialog
     const res = mainWindow ? await dialog.showOpenDialog(mainWindow, opts) : await dialog.showOpenDialog(opts);
     return res.canceled || res.filePaths.length === 0 ? null : (res.filePaths[0] ?? null);
   },
@@ -72,7 +72,7 @@ function isTrustedSender(event: IpcMainInvokeEvent): boolean {
 }
 
 function registerIpc(svc: Services): void {
-  const dispatch = createIpcDispatcher(createHandlers(svc, host), (channel, err) => svc.logger.error('ipc', `Fehler in ${channel}`, { error: err }));
+  const dispatch = createIpcDispatcher(createHandlers(svc, host), (channel, err) => svc.logger.error('ipc', `Error in ${channel}`, { error: err }));
   for (const channel of IPC_CHANNELS) {
     ipcMain.handle(channel, async (event, input: unknown) => {
       if (!isTrustedSender(event)) {
@@ -179,7 +179,7 @@ function buildMenu(): void {
 }
 
 async function start(): Promise<void> {
-  // Nur im ausdrücklichen Testmodus (CI ohne Schlüsselbund) ist der unsichere Fallback zulässig.
+  // The insecure fallback is allowed only in explicit test mode (CI without a keyring).
   if (testMode && process.platform === 'linux') safeStorage.setUsePlainTextEncryption(true);
   const migrations = resource('migrations');
   services = createServices({
@@ -190,14 +190,14 @@ async function start(): Promise<void> {
   });
   const svc = services;
 
-  // Renderer wird über ein eigenes Protokoll ausgeliefert (kein HTTP-Server, kein file://)
+  // The renderer is served via a custom protocol (no HTTP server, no file://)
   const rendererRoot = resource('renderer');
   protocol.handle('app', async (request) => {
     const res = await serveRenderer(rendererRoot, request.url);
     return new Response(res.body as ConstructorParameters<typeof Response>[0], { status: res.status, headers: res.headers });
   });
 
-  // Berechtigungsanfragen (Kamera, Standort …) grundsätzlich ablehnen
+  // Always deny permission requests (camera, location …)
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
 
@@ -220,12 +220,12 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(start)
     .catch((err: unknown) => {
-      process.stderr.write(`[archivist] Start fehlgeschlagen: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
+      process.stderr.write(`[archivist] Startup failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
       dialog.showErrorBox('Archivist konnte nicht gestartet werden', err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err));
       app.exit(1);
     });
   app.on('window-all-closed', () => {
-    // Hintergrundbetrieb bei geschlossener Oberfläche ist (noch) nicht implementiert: Anwendung beenden.
+    // Running in the background with the UI closed is not implemented (yet): quit the application.
     app.quit();
   });
   app.on('activate', () => {

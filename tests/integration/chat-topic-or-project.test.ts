@@ -14,7 +14,7 @@ const decisionEx = (over: Record<string, unknown> = {}) => ({ participants: [], 
 const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
-/** vollständige Entscheidung zu „prod-plat“, bei der offen ist, ob es ein Thema oder ein Projekt ist */
+/** complete decision on „prod-plat“ where it is unclear whether it is a topic or a project */
 const complete = (over: Record<string, unknown> = {}) =>
   intent({
     intent: 'decision_new',
@@ -34,8 +34,8 @@ const question = /Ist „prod-plat“ das Thema oder der Name des Projekts\?/;
 const reminder = () =>
   intent({ intent: 'reminder_create', segment: 'Erinnere mich am 15.11.2026', reminder: { remindAt: '2026-11-15', title: 'Feedback einholen' } });
 
-describe('Rückfrage „Thema oder Projekt?“ (#51)', () => {
-  it('speichert eine sonst vollständige Entscheidung und fragt trotzdem, ob der Name ein Thema oder ein Projekt ist', async () => {
+describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
+  it('saves an otherwise complete decision and still asks whether the name is a topic or a project', async () => {
     app.llm.on('ChatIntent', () => complete());
     const r = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
     expect(r.assistantMessage.content).toContain('Die Entscheidung ist gespeichert');
@@ -46,7 +46,7 @@ describe('Rückfrage „Thema oder Projekt?“ (#51)', () => {
     expect(d.missingFields).toEqual([]);
   });
 
-  it('übernimmt die Antwort „Projekt“ als Projekt und fragt danach nicht erneut', async () => {
+  it('takes the answer „Projekt“ as a project and does not ask again afterwards', async () => {
     app.llm.on('ChatIntent', (_s, input) =>
       /^Projekt$/.test(userText(input)) ? intent({ intent: 'decision_amend', decision: decisionEx({ topicIsProject: true }) }) : complete(),
     );
@@ -59,11 +59,11 @@ describe('Rückfrage „Thema oder Projekt?“ (#51)', () => {
     expect(await app.ok('decisions:list', {})).toHaveLength(1);
   });
 
-  it('versteht „Thema“ und „Projekt“ auch ohne LLM', async () => {
+  it('understands „Thema“ and „Projekt“ without an LLM too', async () => {
     app.llm.down = true;
     const r1 = await send('Wir haben am 03.03.2026 mit prod-plat entschieden: Pause.');
     expect(r1.assistantMessage.content).toMatch(question);
-    // die Frage bleibt über die Ergänzungen hinweg gestellt
+    // the question stays asked across the additions
     const r2 = await send('Anna und Ben', r1.conversationId);
     expect(r2.assistantMessage.content).toContain('Die Entscheidung ist gespeichert');
     expect(r2.assistantMessage.content).toMatch(question);
@@ -82,7 +82,7 @@ describe('Rückfrage „Thema oder Projekt?“ (#51)', () => {
     expect(nl.projectName).toBe('nord-licht');
   });
 
-  it('fragt nicht, wenn der Name schon als Projekt bekannt ist, und speichert die Entscheidung beim Projekt', async () => {
+  it('does not ask when the name is already known as a project, and saves the decision with the project', async () => {
     app.services.graph.ensureEntity('project', 'prod-plat');
     app.llm.on('ChatIntent', () => complete());
     const r = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
@@ -93,7 +93,7 @@ describe('Rückfrage „Thema oder Projekt?“ (#51)', () => {
     expect(d.status).toBe('active');
   });
 
-  it('fragt nicht, wenn der Name schon als Thema bekannt ist', async () => {
+  it('does not ask when the name is already known as a topic', async () => {
     app.services.graph.ensureEntity('topic', 'prod-plat');
     app.llm.on('ChatIntent', () => complete());
     const r = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
@@ -103,14 +103,14 @@ describe('Rückfrage „Thema oder Projekt?“ (#51)', () => {
     expect(d.projectName).toBeNull();
   });
 
-  it('blockiert keine weitere Absicht derselben Nachricht und bleibt über ein anderes Anliegen hinweg gestellt', async () => {
+  it('does not block a further intent of the same message and stays asked across another request', async () => {
     app.llm.on('ChatIntent', () => ({ intents: [complete(), reminder()] }));
     const r1 = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, prod-plat zu pausieren. Erinnere mich am 15.11.2026.');
     expect(r1.assistantMessage.content).toMatch(question);
     expect(r1.assistantMessage.content).not.toContain('Danach erledige ich noch');
     expect(await app.ok('reminders:list', {})).toHaveLength(1);
 
-    // nächste Nachricht mit anderem Anliegen: wird sofort erledigt, die Frage bleibt offen
+    // next message with a different request: done immediately, the question stays open
     app.llm.on('ChatIntent', (_s, input) =>
       /^Projekt$/.test(userText(input))
         ? intent({ intent: 'decision_amend', decision: decisionEx({ topicIsProject: true }) })

@@ -12,8 +12,8 @@ import { Logger } from '../../packages/core/src/util/logger';
 import { makePdf } from '../helpers/fixtures';
 import { createTestApp, MIGRATIONS, TestCipher } from '../helpers/harness';
 
-describe('Datenbankmigrationen', () => {
-  it('legt das Schema inkl. FTS5 an, ist idempotent und meldet den Stand', () => {
+describe('Database migrations', () => {
+  it('creates the schema incl. FTS5, is idempotent and reports the version', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-mig-'));
     const log = new Logger(null);
     const db = new DatabaseService(path.join(dir, 'database', 'archivist.db'), log);
@@ -48,7 +48,7 @@ describe('Datenbankmigrationen', () => {
       expect(tables).toContain(t);
     const s2 = db.migrate(MIGRATIONS);
     expect(s2.applied).toBe(s1.applied);
-    // WAL + Foreign Keys + konsistentes Backup über die SQLite-Backup-API
+    // WAL + foreign keys + consistent backup via the SQLite backup API
     expect(db.sqlite.pragma('journal_mode', { simple: true })).toBe('wal');
     db.sqlite.prepare("insert into categories (id, path, approved, created_at) values ('1','test',1,'now')").run();
     return db.backupTo(path.join(dir, 'backup.db')).then(() => {
@@ -60,7 +60,7 @@ describe('Datenbankmigrationen', () => {
     });
   });
 
-  it('scheitert verständlich bei defekten Migrationen', () => {
+  it('fails understandably on broken migrations', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-mig-bad-'));
     const db = new DatabaseService(path.join(dir, 'a.db'), new Logger(null));
     expect(() => db.migrate(path.join(dir, 'gibt-es-nicht'))).toThrow(/Datenbankmigration/);
@@ -69,16 +69,16 @@ describe('Datenbankmigrationen', () => {
   });
 });
 
-describe('Persistente Job-Queue', () => {
-  it('setzt unterbrochene Jobs nach einem Neustart fort und kennt Wiederholen/Abbrechen', async () => {
+describe('Persistent job queue', () => {
+  it('resumes interrupted jobs after a restart and supports retry/cancel', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-jobs-'));
     const make = () =>
       createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher(), jobConcurrency: 1, llmRetryDelayMs: 0 });
 
     const s1 = make();
-    const job = s1.jobs.enqueue('test.echo', 'Echo', { n: 7 }); // Queue nicht gestartet → bleibt pending
+    const job = s1.jobs.enqueue('test.echo', 'Echo', { n: 7 }); // queue not started → stays pending
     const waiting = s1.jobs.enqueue('test.echo', 'Wartend', { n: 8 });
-    s1.database.sqlite.prepare("update jobs set status='running' where id=?").run(job.id); // Absturz simulieren
+    s1.database.sqlite.prepare("update jobs set status='running' where id=?").run(job.id); // simulate a crash
     await s1.shutdown();
 
     const s2 = make();
@@ -88,14 +88,14 @@ describe('Persistente Job-Queue', () => {
       seen.push(j.payload.n);
       return { echoed: j.payload.n };
     });
-    expect(s2.jobs.start()).toBe(1); // 1 unterbrochener Job wieder eingereiht
+    expect(s2.jobs.start()).toBe(1); // 1 interrupted job requeued
     await s2.jobs.whenIdle();
     expect(seen.sort()).toEqual([7, 8]);
     expect(s2.jobs.get(job.id).status).toBe('succeeded');
     expect(s2.jobs.getResult(job.id)).toEqual({ echoed: 7 });
     expect(s2.jobs.get(waiting.id).status).toBe('succeeded');
 
-    // Fehler → failed → retry
+    // error → failed → retry
     let attempt = 0;
     s2.jobs.register('test.flaky', async () => {
       attempt += 1;
@@ -109,7 +109,7 @@ describe('Persistente Job-Queue', () => {
     await s2.jobs.whenIdle();
     expect(s2.jobs.get(flaky.id).status).toBe('succeeded');
 
-    // Abbrechen: wartend sofort, laufend kooperativ
+    // cancel: queued immediately, running cooperatively
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     s2.jobs.register('test.long', async (j) => {
@@ -132,11 +132,11 @@ describe('Persistente Job-Queue', () => {
   });
 });
 
-describe('Worker-Threads', () => {
+describe('Worker threads', () => {
   let tmp: string;
   let workerFile: string;
   beforeAll(async () => {
-    // Das Worker-Bundle muss innerhalb des Repos liegen, damit externe Module (pdfjs-dist, sharp) auflösbar sind – wie in der gepackten App.
+    // The worker bundle must be inside the repo so external modules (pdfjs-dist, sharp) can be resolved – as in the packaged app.
     const cache = path.resolve(__dirname, '../../node_modules/.cache/archivist-test');
     fs.mkdirSync(cache, { recursive: true });
     tmp = fs.mkdtempSync(path.join(cache, 'worker-'));
@@ -154,7 +154,7 @@ describe('Worker-Threads', () => {
   });
   afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-  it('verarbeitet Aufgaben außerhalb des Hauptthreads (Hash, Scan, Textextraktion)', async () => {
+  it('processes tasks outside the main thread (hash, scan, text extraction)', async () => {
     const pool = new WorkerPool(workerFile, 2);
     expect(pool.mode).toBe('thread');
     const f = path.join(tmp, 'a.pdf');
@@ -169,12 +169,12 @@ describe('Worker-Threads', () => {
     expect(parsed.text).toContain('Worker Thread Test');
     expect(scan.entries.map((e) => e.name).sort()).toEqual(['a.pdf', 'b.txt']);
     await expect(pool.run('hashFile', { path: path.join(tmp, 'gibt-es-nicht') })).rejects.toThrow();
-    // Pool bleibt nach Fehlern benutzbar
+    // the pool stays usable after errors
     expect(await pool.run('hashFile', { path: path.join(tmp, 'b.txt') })).toBe(hash);
     await pool.close();
   });
 
-  it('die komplette Anwendung funktioniert mit Worker-Threads (Import + Suche)', async () => {
+  it('the complete application works with worker threads (import + search)', async () => {
     const app = await createTestApp({ privacy: 'auto', workerFile });
     app.llm.on('DocumentClassification', () => ({
       docType: 'Notiz',
@@ -204,8 +204,8 @@ describe('Worker-Threads', () => {
   });
 });
 
-describe('IPC-Vertrag und Eingabevalidierung', () => {
-  it('jeder Kanal hat Input- und Output-Schema', () => {
+describe('IPC contract and input validation', () => {
+  it('every channel has an input and output schema', () => {
     expect(IPC_CHANNELS.length).toBeGreaterThan(70);
     for (const c of IPC_CHANNELS) {
       expect(ipcContract[c].input).toBeDefined();
@@ -241,7 +241,7 @@ describe('IPC-Vertrag und Eingabevalidierung', () => {
       expect(IPC_CHANNELS).toContain(required);
   });
 
-  it('lehnt unbekannte Kanäle, ungültige Eingaben und fehlende Bestätigungen ab', async () => {
+  it('rejects unknown channels, invalid input and missing confirmations', async () => {
     const app = await createTestApp();
     const unknown = await app.dispatch('fs:readFile', { path: '/etc/passwd' });
     expect(unknown).toMatchObject({ ok: false, error: { category: 'permission_error' } });
@@ -263,8 +263,8 @@ describe('IPC-Vertrag und Eingabevalidierung', () => {
   });
 });
 
-describe('Geheimnisse, Backups, Einstellungen', () => {
-  it('speichert den API-Key nur verschlüsselt und nie in Konfiguration oder Logs', async () => {
+describe('Secrets, backups, settings', () => {
+  it('stores the API key only encrypted and never in configuration or logs', async () => {
     const app = await createTestApp();
     const KEY = 'sk-test-SECRET-0123456789abcdef';
     await app.ok('llm:testConnection', {});
@@ -275,7 +275,7 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     walk(app.services.paths.root);
     for (const f of files.filter((x) => !x.endsWith('.db') && !x.endsWith('.db-wal') && !x.endsWith('.db-shm')))
       expect(fs.readFileSync(f, 'utf8'), f).not.toContain(KEY);
-    // auch die Datenbank enthält ihn nicht
+    // the database does not contain it either
     for (const f of files.filter((x) => x.endsWith('.db') || x.endsWith('-wal'))) expect(fs.readFileSync(f).includes(Buffer.from(KEY)), f).toBe(false);
     const s = await app.ok('settings:get', {});
     expect(JSON.stringify(s)).not.toContain(KEY);
@@ -284,7 +284,7 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     await app.cleanup();
   });
 
-  it('verweigert das Speichern, wenn kein sicherer Speicher verfügbar ist', async () => {
+  it('refuses to save when no secure storage is available', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-sec-'));
     const s = createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher(false) });
     expect(() => s.secrets.setApiKey('sk-abc123456')).toThrow(/sicher/i);
@@ -293,7 +293,7 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('legt konsistente Backups an (Metadaten vs. vollständig) ohne API-Key', async () => {
+  it('creates consistent backups (metadata vs. full) without the API key', async () => {
     const app = await createTestApp({ privacy: 'auto' });
     app.llm.on('DocumentClassification', () => ({
       docType: 'Notiz',
@@ -333,7 +333,7 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     await app.cleanup();
   });
 
-  it('validiert Einstellungen (URL, Archivpfad) und hält Standardwerte datenschutzfreundlich', async () => {
+  it('validates settings (URL, archive path) and keeps privacy-friendly defaults', async () => {
     const app = await createTestApp({ configured: false });
     const s = Settings.parse((await app.ok('settings:get', {})).settings);
     expect(s.scan.enabled).toBe(false);
@@ -370,7 +370,7 @@ describe('Geheimnisse, Backups, Einstellungen', () => {
     await app.cleanup();
   });
 
-  it('verhält sich bei nicht konfiguriertem oder fehlerhaftem LLM verständlich', async () => {
+  it('behaves understandably with an unconfigured or faulty LLM', async () => {
     const app = await createTestApp({ configured: false });
     const r = await app.ok('llm:testConnection', {});
     expect(r).toMatchObject({ ok: false, message: expect.stringMatching(/nicht konfiguriert/) });

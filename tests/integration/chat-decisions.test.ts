@@ -12,8 +12,8 @@ afterEach(async () => {
 const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 const decisionEx = (over: Record<string, unknown> = {}) => ({ participants: [], alternatives: [], unknownFields: [], confidence: 0.85, ...over });
 
-describe('Decision-Workflow mit Rückfragen (LLM)', () => {
-  it('stellt gezielte Rückfragen, speichert erst vollständig und findet die Entscheidung wieder', async () => {
+describe('Decision workflow with follow-up questions (LLM)', () => {
+  it('asks targeted follow-up questions, saves only when complete and finds the decision again', async () => {
     let step = 0;
     app.llm.on('ChatIntent', (_s, input) => {
       step += 1;
@@ -81,7 +81,7 @@ describe('Decision-Workflow mit Rückfragen (LLM)', () => {
     expect(a.context?.decisions?.length).toBeGreaterThan(0);
   });
 
-  it('speichert Felder, die ausdrücklich als unbekannt bestätigt wurden', async () => {
+  it('saves fields that were explicitly confirmed as unknown', async () => {
     let n = 0;
     app.llm.on('ChatIntent', () => {
       n += 1;
@@ -103,8 +103,8 @@ describe('Decision-Workflow mit Rückfragen (LLM)', () => {
   });
 });
 
-describe('Decision-Workflow ohne LLM (regelbasierter Fallback)', () => {
-  it('fragt schrittweise nach und weist auf den fehlenden LLM hin', async () => {
+describe('Decision workflow without an LLM (rule-based fallback)', () => {
+  it('asks step by step and points out the missing LLM', async () => {
     app.llm.down = true;
     const r1 = await app.ok('chat:send', { text: 'Wir haben entschieden, dass wir mit prod-plat erstmal nicht weitermachen.' });
     expect(r1.assistantMessage.content).toContain('Wann wurde das entschieden?');
@@ -120,7 +120,7 @@ describe('Decision-Workflow ohne LLM (regelbasierter Fallback)', () => {
     expect(d.topicName).toBe('prod-plat');
   });
 
-  it('liefert bei Wissensfragen ohne LLM eine lokale Trefferliste mit Quellen', async () => {
+  it('returns a local hit list with sources for knowledge questions without an LLM', async () => {
     await app.ok('decisions:create', {
       decisionText: 'Wir pausieren prod-plat.',
       title: 'prod-plat pausiert',
@@ -141,14 +141,14 @@ describe('Decision-Workflow ohne LLM (regelbasierter Fallback)', () => {
     expect(r.assistantMessage.confidence).toBeLessThan(0.6);
   });
 
-  it('gibt offen zu, wenn nichts gefunden wurde', async () => {
+  it('openly admits when nothing was found', async () => {
     const r = await app.ok('chat:send', { text: 'Haben wir jemals über Vault gesprochen?' });
     expect(r.assistantMessage.content).toMatch(/nichts/);
     expect(r.assistantMessage.sources).toHaveLength(0);
   });
 });
 
-describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
+describe('Contradictions and replacing only after confirmation', () => {
   const mk = (text: string, date: string) => ({
     decisionText: text,
     title: text.slice(0, 40),
@@ -162,8 +162,8 @@ describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
     asDraft: false,
   });
 
-  it('erkennt zwei widersprüchliche Entscheidungen, zeigt Insight + Hinweis und ersetzt erst nach Bestätigung', async () => {
-    app.llm.down = true; // rein lexikalische Prüfung mit kontrollierten Beispieldaten
+  it('detects two contradicting decisions, shows insight + hint and replaces only after confirmation', async () => {
+    app.llm.down = true; // purely lexical check with controlled sample data
     const a = await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const b = await app.ok('decisions:create', mk('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01'));
     const list = await app.ok('contradictions:list', {});
@@ -178,10 +178,10 @@ describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
     const notes = await app.ok('notifications:list', {});
     expect(notes.some((n) => n.type === 'contradiction')).toBe(true);
 
-    // keine autonome Änderung
+    // no autonomous change
     expect((await app.ok('decisions:get', { id: a.id })).status).toBe('active');
 
-    // ohne Bestätigung abgelehnt
+    // rejected without confirmation
     const denied = await app.call('insights:respond', { response: 'accept', id: ins.id, confirmed: false as unknown as true, strongConfirmed: false });
     expect(denied.ok).toBe(false);
     expect((await app.ok('decisions:get', { id: a.id })).status).toBe('active');
@@ -191,7 +191,7 @@ describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
     expect(old.status).toBe('superseded');
     expect((await app.ok('decisions:get', { id: b.id })).supersedesDecisionId).toBe(a.id);
 
-    // Undo prüft vorher auf neuere Änderungen
+    // undo first checks for newer changes
     const audit = await app.ok('audit:list', { limit: 50, onlyUndoable: true });
     const entry = audit.find((e) => e.action === 'decision.supersede')!;
     await app.ok('decisions:update', { id: a.id, patch: { rationale: 'nachträglich ergänzt' } });
@@ -200,7 +200,7 @@ describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
     expect(blocked.conflicts.join(' ')).toMatch(/verändert/);
   });
 
-  it('Undo stellt den Status wieder her, wenn nichts geändert wurde', async () => {
+  it('undo restores the status when nothing was changed', async () => {
     app.llm.down = true;
     const a = await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const b = await app.ok('decisions:create', mk('prod-plat wird eingestellt.', '2026-03-01'));
@@ -213,11 +213,11 @@ describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
     expect((await app.ok('decisions:get', { id: b.id })).supersedesDecisionId).toBeNull();
   });
 
-  it('zeigt im Chat den Ersetzen-Vorschlag, wenn eine neue Entscheidung im Widerspruch steht', async () => {
+  it('shows the replace proposal in the chat when a new decision contradicts', async () => {
     app.llm.down = true;
     await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const r = await app.ok('chat:send', { text: 'Wir haben entschieden, dass wir prod-plat pausieren. Datum 01.03.2026.' });
-    // regelbasiert: Datum erkannt, Thema prod-plat erkannt, Beteiligte fehlen → Rückfrage
+    // rule-based: date detected, topic prod-plat detected, participants missing → follow-up question
     expect(r.assistantMessage.content).toContain('Wer war an der Entscheidung beteiligt?');
     const r2 = await app.ok('chat:send', { conversationId: r.conversationId, text: 'Anna' });
     expect(r2.assistantMessage.content).toMatch(/Widerspruch|widersprüchlich/);
@@ -225,8 +225,8 @@ describe('Widersprüche und Ersetzen nur nach Bestätigung', () => {
   });
 });
 
-describe('Offene Punkte, Erinnerungen und Notification Bell', () => {
-  it('legt einen offenen Punkt an, fragt nach Fehlendem, erinnert und schließt nur nach Bestätigung', async () => {
+describe('Open items, reminders and notification bell', () => {
+  it('creates an open item, asks for missing details, reminds and closes only after confirmation', async () => {
     let n = 0;
     app.llm.on('ChatIntent', () => {
       n += 1;
@@ -251,14 +251,14 @@ describe('Offene Punkte, Erinnerungen und Notification Bell', () => {
     const reminders = await app.ok('reminders:list', {});
     expect(reminders[0]!.targetId).toBe(item.id);
 
-    // Erinnerung wird fällig → Notification Bell
+    // reminder becomes due → notification bell
     app.services.ctx.database.sqlite.prepare('UPDATE reminders SET remind_at = ?').run('2020-01-01');
     expect(app.services.reminders.checkDue()).toBe(1);
     const notes = await app.ok('notifications:list', {});
     expect(notes.some((x) => x.type === 'reminder' && x.title.includes('Finanzierungszusage'))).toBe(true);
     expect((await app.ok('app:getStatus', {})).unreadNotifications).toBeGreaterThan(0);
 
-    // Schließen: nur Vorschlag, bis bestätigt
+    // closing: only a proposal until confirmed
     const r4 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Schließe den Punkt Finanzierungszusage' });
     expect(r4.assistantMessage.actions).toHaveLength(1);
     expect((await app.ok('openItems:list', {}))[0]!.status).toBe('open');
@@ -271,7 +271,7 @@ describe('Offene Punkte, Erinnerungen und Notification Bell', () => {
     expect((await app.ok('openItems:list', {}))[0]!.status).toBe('open');
   });
 
-  it('meldet überfällige offene Punkte bei der Archivprüfung', async () => {
+  it('reports overdue open items during the archive check', async () => {
     app.llm.down = true;
     await app.ok('openItems:create', { title: 'Steuerbescheid prüfen', dueAt: '2020-01-01', priority: 'normal', sourceIds: [], confidence: 0.9 });
     await app.services.consistency.run('test');
@@ -281,18 +281,18 @@ describe('Offene Punkte, Erinnerungen und Notification Bell', () => {
   });
 });
 
-describe('Ungültige LLM-Ausgaben lösen nichts aus', () => {
-  it('verwirft Antworten, die nicht dem Schema entsprechen, und verändert nichts', async () => {
+describe('Invalid LLM outputs trigger nothing', () => {
+  it('discards answers that do not match the schema and changes nothing', async () => {
     app.llm.on('ChatIntent', () => ({ intent: 'decision_new', confidence: 7, decision: { participants: 'Anna' } }));
     const r = await app.ok('chat:send', { text: 'Wir haben entschieden, X zu tun.' });
-    // fällt auf regelbasierte Auswertung zurück und kennzeichnet den technischen Fehler sichtbar
+    // falls back to rule-based evaluation and visibly flags the technical error
     expect(r.assistantMessage.errorMessage).toMatch(/Format/);
     const calls = app.llm.calls.filter((c) => c.schema === 'ChatIntent');
-    expect(calls.length).toBe(2); // eine Korrekturanfrage
+    expect(calls.length).toBe(2); // one correction request
     expect(calls[1]!.input).toContain('ungültig');
   });
 
-  it('akzeptiert eine korrigierte Antwort im zweiten Versuch', async () => {
+  it('accepts a corrected answer on the second attempt', async () => {
     let k = 0;
     app.llm.on('ChatIntent', () => (++k === 1 ? 'das ist kein json' : intent({ intent: 'smalltalk' })));
     const r = await app.ok('chat:send', { text: 'Hallo' });
@@ -300,7 +300,7 @@ describe('Ungültige LLM-Ausgaben lösen nichts aus', () => {
     expect(k).toBe(2);
   });
 
-  it('lehnt Aktionen mit ungültigen Parametern ab', () => {
+  it('rejects actions with invalid parameters', () => {
     expect(() =>
       app.services.actions.propose({
         actionType: 'supersede_decision',
@@ -315,14 +315,14 @@ describe('Ungültige LLM-Ausgaben lösen nichts aus', () => {
   });
 });
 
-describe('Rückfrage nach dem Erinnerungsdatum behält den Kontext', () => {
+describe('Follow-up question about the reminder date keeps the context', () => {
   const note = 'Bezüglich AI und Stackit hatten wir ein Mini-Projekt. Es wurde noch nicht im ACT-Team vorgestellt. Dafür bräuchte ich eine Erinnerung.';
 
-  it('versteht „31.10.“ als Antwort auf „Wann soll ich dich erinnern?“ (mit LLM)', async () => {
+  it('understands „31.10.“ as the answer to „Wann soll ich dich erinnern?“ (with LLM)', async () => {
     let n = 0;
     app.llm.on('ChatIntent', (_s, input) => {
       n += 1;
-      // der LLM bekommt die offene Rückfrage mitgeteilt
+      // the LLM is told about the open follow-up question
       if (n === 2) expect(input).toMatch(/WANN er an .* erinnern soll/);
       return n === 1
         ? intent({ intent: 'reminder_create', reminder: { title: 'Mini-PoC im ACT-Team vorstellen' } })
@@ -335,7 +335,7 @@ describe('Rückfrage nach dem Erinnerungsdatum behält den Kontext', () => {
     const rem = (await app.ok('reminders:list', {}))[0]!;
     expect(rem.remindAt).toBe('2026-10-31');
     expect(rem.title).toBe('Mini-PoC im ACT-Team vorstellen');
-    // Aus der Erinnerung entsteht ein offener Punkt (mit Fälligkeit) und eine Notiz – beides erscheint in Timeline und Suche
+    // the reminder yields an open item (with due date) and a note – both appear in timeline and search
     const items = await app.ok('openItems:list', {});
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ title: 'Mini-PoC im ACT-Team vorstellen', status: 'open' });
@@ -349,7 +349,7 @@ describe('Rückfrage nach dem Erinnerungsdatum behält den Kontext', () => {
     expect((await app.ok('search:global', { query: 'Stackit Mini-Projekt', limit: 5 })).some((h) => h.type === 'note')).toBe(true);
   });
 
-  it('funktioniert auch ohne LLM und verfällt nach einer fremden Nachricht', async () => {
+  it('also works without an LLM and expires after an unrelated message', async () => {
     app.llm.down = true;
     const r1 = await app.ok('chat:send', { text: 'Erinnere mich bitte an das Treffen mit dem Team.' });
     expect(r1.assistantMessage.content).toContain('Wann soll ich dich erinnern?');
@@ -360,20 +360,20 @@ describe('Rückfrage nach dem Erinnerungsdatum behält den Kontext', () => {
     const r3 = await app.ok('chat:send', { text: 'Erinnere mich an die Steuererklärung.' });
     await app.ok('chat:send', { conversationId: r3.conversationId, text: 'Wie viele Dokumente gibt es?' });
     const r5 = await app.ok('chat:send', { conversationId: r3.conversationId, text: '15.11.' });
-    expect(r5.assistantMessage.content).not.toContain('angelegt'); // Rückfrage ist nicht mehr offen
+    expect(r5.assistantMessage.content).not.toContain('angelegt'); // the follow-up question is no longer open
     expect(await app.ok('reminders:list', {})).toHaveLength(1);
   });
 });
 
-describe('Unterhaltungen umbenennen', () => {
-  it('ändert nur den Titel, bereinigt Eingaben und lehnt Leeres ab', async () => {
+describe('Renaming conversations', () => {
+  it('changes only the title, sanitizes input and rejects empty values', async () => {
     app.llm.down = true;
     const r = await app.ok('chat:send', { text: 'Hallo Archivist' });
     const renamed = await app.ok('chat:renameConversation', { id: r.conversationId, title: '  Konferenz   Beitrag  ' });
     expect(renamed.title).toBe('Konferenz Beitrag');
     expect((await app.ok('chat:conversations', {}))[0]!.title).toBe('Konferenz Beitrag');
     expect((await app.ok('chat:history', { conversationId: r.conversationId })).length).toBe(2);
-    // der neue Titel wird von späteren Nachrichten nicht überschrieben
+    // the new title is not overwritten by later messages
     await app.ok('chat:send', { conversationId: r.conversationId, text: 'Noch eine Nachricht' });
     expect((await app.ok('chat:conversations', {}))[0]!.title).toBe('Konferenz Beitrag');
     expect((await app.call('chat:renameConversation', { id: r.conversationId, title: '   ' })).ok).toBe(false);
@@ -381,7 +381,7 @@ describe('Unterhaltungen umbenennen', () => {
   });
 });
 
-describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
+describe('Multiple intents and follow-up questions under uncertainty', () => {
   const msg =
     'Für den Konferenzbeitrag habe ich es leicht abgewandelt und am 01.10.2026 beim German Testing Day eingereicht. Erinnere mich am 15.11.2026 an das Feedback.';
   const decisionUnsure = () =>
@@ -400,24 +400,24 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
     intent({ intent: 'reminder_create', segment: 'Erinnere mich am 15.11.2026', reminder: { remindAt: '2026-11-15', title: 'Feedback zum Konferenzbeitrag' } });
   const multi = (...intents: unknown[]) => ({ intents });
 
-  it('speichert eine unsichere Entscheidung nicht ungefragt, setzt die weitere Absicht danach fort und legt bei „Notiz“ nur eine Notiz an', async () => {
+  it('does not save an uncertain decision without asking, continues the further intent afterwards and creates only a note for „Notiz“', async () => {
     app.llm.on('ChatIntent', () => multi(decisionUnsure(), reminder()));
     const r1 = await app.ok('chat:send', { text: msg });
     expect(r1.assistantMessage.content).toMatch(/nicht sicher, ob das eine getroffene \*\*Entscheidung\*\*/);
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
-    expect(await app.ok('reminders:list', {})).toHaveLength(0); // wartet bis zur Antwort
+    expect(await app.ok('reminders:list', {})).toHaveLength(0); // waits for the answer
 
-    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' })); // die Antwort wird nicht per LLM ausgewertet
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' })); // the answer is not evaluated by the LLM
     const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Nur als Notiz' });
     expect(r2.assistantMessage.content).toMatch(/^Notiz gespeichert/);
-    // die Notiz enthält wirklich den Abschnitt zur unsicheren Entscheidung (nicht nur die Erinnerung)
+    // the note really contains the section on the uncertain decision (not just the reminder)
     expect((await app.ok('search:global', { query: 'eingereicht', limit: 5 })).some((h) => h.type === 'note')).toBe(true);
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
     expect((await app.ok('reminders:list', {}))[0]).toMatchObject({ remindAt: '2026-11-15' });
     expect((await app.ok('search:global', { query: 'German Testing Day', limit: 5 })).some((h) => h.type === 'note')).toBe(true);
   });
 
-  it('erfasst die Entscheidung erst nach ausdrücklicher Bestätigung, „nichts speichern“ verwirft sie', async () => {
+  it('records the decision only after explicit confirmation; „nichts speichern“ discards it', async () => {
     app.llm.on('ChatIntent', () => multi(decisionUnsure()));
     const r1 = await app.ok('chat:send', { text: msg });
     app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
@@ -433,7 +433,7 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
     expect(await app.ok('decisions:list', {})).toHaveLength(1);
   });
 
-  it('führt mehrere eindeutige Absichten einer Nachricht nacheinander aus und fasst die Antwort zusammen', async () => {
+  it('executes several unambiguous intents of one message in sequence and summarizes the answer', async () => {
     app.llm.on('ChatIntent', () =>
       multi(
         intent({ intent: 'note_capture', segment: 'Notiz', note: 'Stackit-PoC läuft seit Mai.' }),
@@ -453,7 +453,7 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
   });
 
-  it('stellt eine Rückfrage statt zu raten, wenn die Absicht unklar ist', async () => {
+  it('asks a follow-up question instead of guessing when the intent is unclear', async () => {
     app.llm.on('ChatIntent', () => ({
       intents: [intent({ intent: 'unknown', confidence: 0.2 })],
       clarification: 'Meinst du, dass ich Nordlicht archivieren oder pausieren soll?',
@@ -464,8 +464,8 @@ describe('Mehrere Absichten und Rückfragen bei Unsicherheit', () => {
   });
 });
 
-describe('Optionale Rückfrage zum offenen Punkt hält weitere Absichten nicht auf (#41)', () => {
-  it('legt die Erinnerung sofort an; die Antwort auf die Rückfrage ergänzt danach den Punkt', async () => {
+describe('Optional follow-up question about the open item does not hold up further intents (#41)', () => {
+  it('creates the reminder immediately; the answer to the follow-up question then completes the item', async () => {
     let n = 0;
     app.llm.on('ChatIntent', () => {
       n += 1;
@@ -488,7 +488,7 @@ describe('Optionale Rückfrage zum offenen Punkt hält weitere Absichten nicht a
   });
 });
 
-describe('Ereignisse in der Timeline', () => {
+describe('Events in the timeline', () => {
   const ev = (over: Record<string, unknown> = {}) =>
     intent({
       intent: 'event_record',
@@ -498,7 +498,7 @@ describe('Ereignisse in der Timeline', () => {
       ...over,
     });
 
-  it('trägt ein Ereignis mit Datum direkt ein, es erscheint in Timeline und Suche und lässt sich nur bestätigt löschen', async () => {
+  it('records an event with a date directly; it appears in timeline and search and can only be deleted with confirmation', async () => {
     app.llm.on('ChatIntent', () => ({ intents: [ev()] }));
     const r = await app.ok('chat:send', { text: 'Ich habe den Beitrag am 01.10.2026 beim German Testing Day eingereicht.' });
     expect(r.assistantMessage.content).toMatch(/Ereignis in der Timeline eingetragen/);
@@ -514,7 +514,7 @@ describe('Ereignisse in der Timeline', () => {
     expect((await app.ok('timeline:get', {})).some((e) => e.kind === 'event')).toBe(false);
   });
 
-  it('fragt nach dem Datum, wenn es fehlt, und merkt sich das Ereignis bis zur Antwort', async () => {
+  it('asks for the date when it is missing and remembers the event until the answer', async () => {
     app.llm.on('ChatIntent', () => ({ intents: [ev({ segment: 'Beitrag eingereicht', event: { title: 'Beitrag eingereicht', occurredAt: null } })] }));
     const r1 = await app.ok('chat:send', { text: 'Ich habe den Beitrag eingereicht.' });
     expect(r1.assistantMessage.content).toMatch(/An welchem Datum/);
@@ -525,7 +525,7 @@ describe('Ereignisse in der Timeline', () => {
     expect(await app.ok('events:list', {})).toHaveLength(1);
   });
 
-  it('bietet bei unsicherer Entscheidung auch „Ereignis“ an und legt es bei dieser Antwort an', async () => {
+  it('also offers „Ereignis“ for an uncertain decision and creates it on that answer', async () => {
     app.llm.on('ChatIntent', () => ({
       intents: [
         intent({
@@ -545,14 +545,14 @@ describe('Ereignisse in der Timeline', () => {
     expect((await app.ok('events:list', {}))[0]).toMatchObject({ occurredAt: expect.stringMatching(/^2026-10-01/) });
   });
 
-  it('legt Ereignisse auch manuell an', async () => {
+  it('also creates events manually', async () => {
     const e = await app.ok('events:create', { title: 'Kickoff', occurredAt: '2026-03-03', project: 'Nordlicht', sourceIds: [] });
     expect(e.projectName).toBe('Nordlicht');
     await expect(app.call('events:create', { title: 'x', occurredAt: 'kein Datum', sourceIds: [] })).resolves.toMatchObject({ ok: false });
   });
 });
 
-describe('Verweise im Chat führen zum richtigen Objekt', () => {
+describe('References in the chat lead to the right object', () => {
   const mk = (text: string, date: string) => ({
     decisionText: text,
     title: text.slice(0, 40),
@@ -566,18 +566,18 @@ describe('Verweise im Chat führen zum richtigen Objekt', () => {
     asDraft: false,
   });
 
-  it('liefert die Erinnerung als Quelle vom Typ „reminder“ (nicht als Notiz)', async () => {
+  it('returns the reminder as a source of type "reminder" (not as a note)', async () => {
     app.llm.down = true;
     const r1 = await app.ok('chat:send', { text: 'Erinnere mich bitte an das Treffen mit dem Team.' });
     const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: '31.10.' });
     const rem = (await app.ok('reminders:list', {}))[0]!;
     expect(r2.assistantMessage.sources.find((s) => s.id === rem.id)?.type).toBe('reminder');
-    // auch aus der gespeicherten Historie gelesen bleibt der Typ erhalten
+    // the type is preserved when read from the stored history too
     const history = await app.ok('chat:history', { conversationId: r1.conversationId });
     expect(history.at(-1)!.sources.find((s) => s.id === rem.id)?.type).toBe('reminder');
   });
 
-  it('kennzeichnet Widersprüche im Kontext als „contradiction“ – nach neuer Entscheidung und bei der Prüfung', async () => {
+  it('marks contradictions in the context as "contradiction" – after a new decision and during the check', async () => {
     app.llm.down = true;
     await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const r = await app.ok('chat:send', { text: 'Wir haben entschieden, dass wir prod-plat pausieren. Datum 01.03.2026.' });
@@ -595,7 +595,7 @@ describe('Verweise im Chat führen zum richtigen Objekt', () => {
     expect(fromCheck.every((c) => c.type === 'contradiction')).toBe(true);
   });
 
-  it('verlinkt Widersprüche im Zeitverlauf auf den Widerspruch selbst', async () => {
+  it('links contradictions in the timeline to the contradiction itself', async () => {
     app.llm.down = true;
     await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     await app.ok('decisions:create', mk('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01'));

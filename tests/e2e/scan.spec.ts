@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { expect, test } from './fixture';
 
-test.describe('Scan freigegebener Verzeichnisse', () => {
+test.describe('scanning allowed directories', () => {
   test.beforeEach(async ({ llm, on, page, workspace }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
@@ -9,7 +9,7 @@ test.describe('Scan freigegebener Verzeichnisse', () => {
     await app.scan.do.allowDirectory(path.basename(workspace.downloads));
   });
 
-  test('findet neue Dateien und überspringt bekannte, unveränderte', async ({ on, page, workspace }) => {
+  test('finds new files and skips known, unchanged ones', async ({ on, page, workspace }) => {
     const scan = on(page).scan;
     workspace.addDownload('urlaub.txt', 'Urlaubsantrag für den 12.06.2026, bitte genehmigen.');
     workspace.addDownload('notiz.txt', 'Eine kurze Notiz.');
@@ -21,7 +21,7 @@ test.describe('Scan freigegebener Verzeichnisse', () => {
     await expect(scan.locators.summary).toContainText(/unverändert/i, { timeout: 30_000 });
   });
 
-  test('analysiert eine Datei nur mit ausdrücklicher LLM-Freigabe und schlägt ein Ziel vor', async ({ on, page, workspace }) => {
+  test('analyses a file only with explicit LLM permission and proposes a target', async ({ on, page, workspace }) => {
     const scan = on(page).scan;
     workspace.addDownload('urlaub.txt', 'Urlaubsantrag für den 12.06.2026, bitte genehmigen.');
     await scan.do.scan();

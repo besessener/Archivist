@@ -47,13 +47,13 @@ export class QuitController {
         resolve();
       };
       const timer = setTimeout(() => {
-        this.deps.log?.(`Beenden dauerte länger als ${Math.round(deadlineMs / 1000)} s – Prozess wird beendet.`);
+        this.deps.log?.(`Quitting took longer than ${Math.round(deadlineMs / 1000)} s – exiting the process.`);
         finish(0);
       }, deadlineMs);
       this.deps.shutdown().then(
         () => finish(0),
         (err: unknown) => {
-          this.deps.log?.('Fehler beim Beenden', err);
+          this.deps.log?.('Error while quitting', err);
           finish(0);
         },
       );

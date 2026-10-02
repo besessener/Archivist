@@ -71,7 +71,7 @@ export async function makePng(file: string): Promise<void> {
     .toFile(file);
 }
 
-/** Minimales einseitiges PDF mit Text (Helvetica). */
+/** Minimal single-page PDF with text (Helvetica). */
 export function makePdf(file: string, lines: string[]): void {
   const esc = (s: string) => s.replace(/[\\()]/g, '\\$&');
   const content = `BT /F1 12 Tf 50 750 Td 14 TL ${lines.map((l) => `(${esc(l)}) Tj T*`).join(' ')} ET`;

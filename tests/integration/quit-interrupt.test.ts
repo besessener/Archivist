@@ -47,13 +47,13 @@ async function makeQueue(): Promise<{ app: TestApp; q: JobQueueService }> {
 async function waitFor(cond: () => boolean, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!cond()) {
-    if (Date.now() > deadline) throw new Error('Bedingung nicht rechtzeitig erfüllt');
+    if (Date.now() > deadline) throw new Error('condition not met in time');
     await delay(5);
   }
 }
 
-describe('Job-Queue beim Beenden', () => {
-  it('unterbricht laufende Jobs, ohne einen Versuch zu verbrauchen, und setzt sie nach dem Neustart fort', async () => {
+describe('Job queue on quit', () => {
+  it('interrupts running jobs without using up an attempt and resumes them after the restart', async () => {
     const { app, q } = await makeQueue();
     const onCancelled = vi.fn();
     const onFailed = vi.fn();
@@ -89,7 +89,7 @@ describe('Job-Queue beim Beenden', () => {
     expect(q2.get(waiting.id).status).toBe('succeeded');
   });
 
-  it('wartet höchstens die vorgegebene Zeit auf Jobs, die das Signal ignorieren', async () => {
+  it('waits at most the given time for jobs that ignore the signal', async () => {
     const { app, q } = await makeQueue();
     let finish!: () => void;
     const gate = new Promise<void>((r) => (finish = r));
@@ -128,7 +128,7 @@ describe('Job-Queue beim Beenden', () => {
     expect(q2.get(job.id)).toMatchObject({ status: 'succeeded', attempts: 1 });
   });
 
-  it('wertet Fehler nach der Unterbrechung nicht als Fehlschlag', async () => {
+  it('does not count errors after the interruption as a failure', async () => {
     const { q } = await makeQueue();
     const onFailed = vi.fn();
     let thrown: unknown;
@@ -155,7 +155,7 @@ describe('Job-Queue beim Beenden', () => {
     expect(onFailed).not.toHaveBeenCalled();
   });
 
-  it('lässt einen vorher abgebrochenen Job abgebrochen', async () => {
+  it('leaves a previously cancelled job cancelled', async () => {
     const { q } = await makeQueue();
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -174,8 +174,8 @@ describe('Job-Queue beim Beenden', () => {
   });
 });
 
-describe('Anwendung beenden während einer Analyse', () => {
-  it('beendet sich zügig und analysiert das Dokument nach dem Neustart weiter', async () => {
+describe('Quitting the application during an analysis', () => {
+  it('quits promptly and continues analysing the document after the restart', async () => {
     const app = await newApp();
     const src = app.file('in/gross.txt', 'Ein großes Dokument, dessen Analyse beim Beenden unterbrochen wird.');
     const pool = app.services.pool;
@@ -207,7 +207,7 @@ describe('Anwendung beenden während einer Analyse', () => {
     expect(fs.existsSync(src)).toBe(true);
   });
 
-  it('bricht eine kooperative Analyse ab, ohne das Dokument als abgebrochen zu markieren', async () => {
+  it('aborts a cooperative analysis without marking the document as cancelled', async () => {
     const app = await newApp();
     const src = app.file('in/kurz.txt', 'Dokument, dessen Analyse beim Beenden am nächsten Prüfpunkt endet.');
     const pool = app.services.pool;

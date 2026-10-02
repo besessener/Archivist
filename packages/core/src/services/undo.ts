@@ -3,14 +3,14 @@ import { AppError } from '../util/errors';
 import type { AuditService } from './audit';
 
 export interface UndoHandler {
-  /** Liefert Konflikte (Zielobjekte/Dateien seit der Aktion verändert). Leer = Undo ist sicher. */
+  /** Returns conflicts (target objects/files changed since the action). Empty = undo is safe. */
   check(data: unknown): Promise<string[]>;
   run(data: unknown): Promise<string>;
 }
 
 /**
- * Undo-Grundlage: Handler registrieren sich pro Aktionstyp. Vor dem Rückgängigmachen wird geprüft,
- * ob neuere Änderungen existieren – diese werden nie unbemerkt überschrieben.
+ * Undo foundation: handlers register per action type. Before undoing, it is checked
+ * whether newer changes exist – they are never overwritten unnoticed.
  */
 export class UndoService {
   private readonly handlers = new Map<string, UndoHandler>();
@@ -32,7 +32,7 @@ export class UndoService {
     if (!handler) throw new AppError('validation_error', `Kein Undo-Handler für „${row.undoType}“.`);
     const conflicts = await handler.check(row.undoData);
     if (conflicts.length > 0) {
-      this.ctx.logger.warn('undo', 'Undo wegen Konflikten abgelehnt', { auditId, conflicts });
+      this.ctx.logger.warn('undo', 'Undo rejected because of conflicts', { auditId, conflicts });
       return { undone: false, message: 'Rückgängig machen nicht möglich: Seit der Aktion wurde etwas verändert.', conflicts };
     }
     try {

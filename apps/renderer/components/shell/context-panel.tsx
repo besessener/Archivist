@@ -21,7 +21,7 @@ function Section({ title, items }: { title: string; items: EntityRef[] | undefin
   );
 }
 
-/** Rechtes Kontextpanel der Chat-Seite: Kontext der letzten Assistentenantwort. */
+/** Right-hand context panel of the chat page: context of the last assistant reply. */
 export function ContextPanel() {
   const { contextMessage: m } = useApp();
   const ctx = m?.context ?? null;

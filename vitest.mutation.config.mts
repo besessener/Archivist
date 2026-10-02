@@ -1,8 +1,8 @@
 import type { VitestPluginContext } from 'vitest/node';
 import { defineConfig } from 'vitest/config';
 
-// Stryker filtert Tests über den mit Leerzeichen verbundenen Suite-Pfad; Vitest 5 gleicht Namen ab, die mit ' > ' verbunden sind.
-// Ohne diese Anpassung führt jeder gefilterte Mutantenlauf keinen Test aus und alle Mutanten überleben (Idee aus CollectionBuddy).
+// Stryker filters tests by the space-joined suite path; Vitest 5 matches names joined with ' > '.
+// Without this adjustment every filtered mutant run executes no test and all mutants survive (idea from CollectionBuddy).
 const strykerTestNameSeparator = {
   name: 'stryker-test-name-separator',
   configureVitest({ project }: VitestPluginContext) {
@@ -18,7 +18,7 @@ const strykerTestNameSeparator = {
   },
 };
 
-// Eigene Konfiguration für Stryker: ohne Coverage-Schwellen; das `github-actions`-Reporting von Vitest würde jeden getöteten Mutanten als Fehler melden.
+// Separate configuration for Stryker: without coverage thresholds; Vitest's `github-actions` reporting would report every killed mutant as an error.
 export default defineConfig({
   plugins: [strykerTestNameSeparator],
   test: {

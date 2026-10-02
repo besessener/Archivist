@@ -1,7 +1,7 @@
-# Packaging-Konfiguration für Archivist (electron-builder)
-# Reverse-DNS-ID einer Domain, die uns gehört (besessener.github.io). Nicht mehr ändern: NSIS leitet daraus die
-# Installer-GUID ab (stille Updates) und setzt sie als AppUserModelID der Verknüpfungen (Benachrichtigungen);
-# muss mit APP_ID in src/app-id.ts übereinstimmen.
+# Packaging configuration for Archivist (electron-builder)
+# Reverse-DNS ID of a domain we own (besessener.github.io). Do not change it anymore: NSIS derives the installer
+# GUID from it (silent updates) and sets it as the AppUserModelID of the shortcuts (notifications);
+# must match APP_ID in src/app-id.ts.
 appId: io.github.besessener.archivist
 productName: Archivist
 copyright: Copyright © 2026 Matthias Eggert
@@ -12,7 +12,7 @@ files:
   - dist/**/*
   - package.json
 asar: true
-# Native Module müssen außerhalb des ASAR-Archivs liegen, damit sie geladen werden können.
+# Native modules must live outside the ASAR archive so that they can be loaded.
 asarUnpack:
   - '**/node_modules/better-sqlite3/**'
   - '**/node_modules/sharp/**'
@@ -21,12 +21,12 @@ asarUnpack:
   - '**/node_modules/tesseract.js/**'
   - '**/node_modules/tesseract.js-core/**'
   - '**/node_modules/@tesseract.js-data/**'
-# Archivist wird nur für Windows gepackt. better-sqlite3 (>= 13) und sharp liefern N-API-Prebuilds → kein Rebuild nötig
-# (die Ressourcen-Bearbeitung/Signierung der .exe braucht trotzdem Windows oder Wine, daher baut die CI auf windows-latest).
+# Archivist is only packaged for Windows. better-sqlite3 (>= 13) and sharp ship N-API prebuilds → no rebuild needed
+# (editing resources/signing the .exe still requires Windows or Wine, so CI builds on windows-latest).
 npmRebuild: false
 nodeGypRebuild: false
-# Veröffentlichen nur über den Release-Workflow (.github/workflows/release.yml, Versions-Tags v*): `npm run release:win`
-# lädt Installer und portable EXE in ein GitHub Release. Ohne electron-updater werden keine Update-Metadaten (latest.yml) hochgeladen.
+# Publishing only via the release workflow (.github/workflows/release.yml, version tags v*): `npm run release:win`
+# uploads the installer and portable EXE to a GitHub Release. Without electron-updater no update metadata (latest.yml) is uploaded.
 publish:
   provider: github
   owner: besessener
@@ -43,9 +43,9 @@ win:
     - target: portable
       arch: [x64]
   icon: build/icon.png
-  # Authenticode-Signatur: electron-builder signiert automatisch, sobald ein Zertifikat per Umgebungsvariable vorliegt
-  # (CSC_LINK = Pfad/Base64 der .pfx-Datei, CSC_KEY_PASSWORD = Kennwort; alternativ WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD).
-  # Ohne Zertifikat entstehen unsignierte Builds (lokale Entwicklung, Pull Requests aus Forks).
+  # Authenticode signature: electron-builder signs automatically as soon as a certificate is provided via environment variable
+  # (CSC_LINK = path/Base64 of the .pfx file, CSC_KEY_PASSWORD = password; alternatively WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD).
+  # Without a certificate, unsigned builds are produced (local development, pull requests from forks).
   signtoolOptions:
     signingHashAlgorithms: [sha256]
     rfc3161TimeStampServer: http://timestamp.digicert.com

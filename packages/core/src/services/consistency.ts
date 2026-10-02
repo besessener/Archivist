@@ -76,8 +76,8 @@ const RECONCILED_NOTIFICATIONS = ['dup:', 'incomplete-decision:', 'no-owner:', '
 const h = (ids: string[]) => sha256Text([...ids].sort().join('|')).slice(0, 12);
 
 /**
- * Aktive Archivpflege: prüft das Archiv regelmäßig auf Konsistenz und erzeugt ausschließlich Hinweise
- * (Insights, Benachrichtigungen, Aktionsvorschläge) – ohne selbst etwas zu ändern.
+ * Active archive maintenance: regularly checks the archive for consistency and only creates hints
+ * (insights, notifications, action proposals) – without changing anything itself.
  */
 export class ConsistencyService {
   /** Periodic check; every completed run (also manual or on startup) restarts the interval */
@@ -109,7 +109,7 @@ export class ConsistencyService {
     this.extraChecks.push(check);
   }
 
-  /** Dokumente zum selben Thema oder Projekt, die in verschiedenen Archivverzeichnissen liegen: Hinweis plus Umlager-Vorschlag. */
+  /** Documents of the same topic or project that lie in different archive directories: hint plus relocation proposal. */
   private checkScatteredDocuments(archived: Array<typeof documents.$inferSelect>, count: (kind: string) => void): void {
     const entityIds = new Map<string, string>();
     const entityName = (kind: 'topic' | 'project', id: string | null) => {
@@ -226,7 +226,7 @@ export class ConsistencyService {
     const today = localToday();
     const staleDays = this.settings.get().consistency.staleOpenItemDays;
 
-    // ---- Dokumente ----
+    // ---- Documents ----
     step(0.1, 'Prüfe Dokumente');
     const archived = this.db
       .select()
@@ -273,7 +273,7 @@ export class ConsistencyService {
       count('missing_metadata');
     }
 
-    // ---- Duplikate ----
+    // ---- Duplicates ----
     const bySha = new Map<string, typeof archived>();
     for (const d of archived) bySha.set(d.sha256, [...(bySha.get(d.sha256) ?? []), d]);
     const bySimilarText = new Map<string, typeof archived>();
@@ -310,7 +310,7 @@ export class ConsistencyService {
       count('duplicate');
     }
 
-    // ---- Ablageort vs. Klassifikation (Datenbank gegen Dateisystem) ----
+    // ---- Storage location vs. classification (database against file system) ----
     step(0.3, 'Prüfe Ablageorte');
     const root = this.settings.get().archiveRoot;
     for (const d of archived.filter((x) => x.archiveRelPath)) {
@@ -340,7 +340,7 @@ export class ConsistencyService {
       }
     }
 
-    // ---- Verstreute Ablage: Dokumente zum selben Thema/Projekt liegen in verschiedenen Verzeichnissen ----
+    // ---- Scattered filing: documents of the same topic/project lie in different directories ----
     step(0.4, 'Prüfe Verzeichnisse');
     this.checkScatteredDocuments(archived, count);
 
@@ -348,10 +348,10 @@ export class ConsistencyService {
     step(0.45, 'Prüfe Themen, Projekte und Tags');
     await this.entityDuplicates.run(count, signal);
 
-    // ---- Gleicher Name als Thema und als Projekt ----
+    // ---- Same name as topic and as project ----
     checkTopicProjectNames({ graph: this.graph, insights: this.insights }, count);
 
-    // ---- Entscheidungen ----
+    // ---- Decisions ----
     step(0.6, 'Prüfe Entscheidungen');
     const allDecisions = this.decisions.list();
     for (const d of allDecisions) {
@@ -387,7 +387,7 @@ export class ConsistencyService {
     count('contradiction', found.length);
     this.checkSuperseded(allDecisions, current, count);
 
-    // ---- Offene Punkte ----
+    // ---- Open items ----
     step(0.85, 'Prüfe offene Punkte');
     const active = this.openItems.list({ onlyActive: true });
     // notifications that were dismissed are never revived, so aggregated ones keep their member hash; outdated ones are closed
@@ -472,7 +472,7 @@ export class ConsistencyService {
         count('open_item');
       }
     }
-    // Aufgabe gleichzeitig offen und abgeschlossen dokumentiert
+    // task documented as open and completed at the same time
     const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
     const all = this.openItems.list();
     for (const o of all.filter((x) => ['open', 'waiting', 'blocked'].includes(x.status))) {
@@ -496,7 +496,7 @@ export class ConsistencyService {
 
     for (const check of this.extraChecks) await check(count);
 
-    // ---- Beziehungen mit niedriger Confidence ----
+    // ---- Relations with low confidence ----
     const lowRelIds = this.db
       .select({ id: relations.id })
       .from(relations)
@@ -517,7 +517,7 @@ export class ConsistencyService {
       count('low_confidence_relation');
     }
 
-    // ---- Externe, bereits analysierte Dateien mit Bezug zu bekannten Themen ----
+    // ---- External, already analyzed files related to known topics ----
     const pending = this.db.select().from(documents).where(eq(documents.status, 'proposed')).all();
     for (const p of pending) {
       const prop = p.proposal as DocumentProposal | null;
@@ -562,7 +562,7 @@ export class ConsistencyService {
       });
     this.schedule.markRun();
     report?.(1, 'Fertig');
-    this.ctx.logger.info('consistency', 'Archivprüfung abgeschlossen', { trigger, byKind, newFindings });
+    this.ctx.logger.info('consistency', 'Archive check completed', { trigger, byKind, newFindings });
     this.ctx.events.changed('insights', 'notifications', 'status');
     return { insights: total, notifications: notifs, contradictions: found.length, byKind, newFindings, summary };
   }

@@ -75,7 +75,7 @@ export function SetupWizard() {
         setHasKey(s.hasApiKey);
         setDirs(await call('scanner:listDirectories'));
       } catch {
-        /* Standardwerte genügen */
+        /* default values are sufficient */
       }
     })();
   }, []);

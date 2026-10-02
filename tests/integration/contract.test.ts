@@ -71,8 +71,8 @@ beforeAll(async () => {
 });
 afterAll(() => app.cleanup());
 
-describe('IPC-Vertrag: Ausgaben echter Daten entsprechen den Schemas', () => {
-  it('alle lesenden Kanäle antworten schemakonform', async () => {
+describe('IPC contract: outputs from real data match the schemas', () => {
+  it('all read channels answer schema-conformant', async () => {
     const topic = (await app.ok('knowledge:listEntities', { type: 'topic' }))[0]!;
     const decision = (await app.ok('decisions:list', {}))[0]!;
     const doc = (await app.ok('documents:list', {}))[0]!;
@@ -118,7 +118,7 @@ describe('IPC-Vertrag: Ausgaben echter Daten entsprechen den Schemas', () => {
     expect(IPC_CHANNELS.length).toBeGreaterThan(calls.length);
   });
 
-  it('die Beispieldaten enthalten die erwarteten Objekte (kein leerer Scheinerfolg)', async () => {
+  it('the sample data contains the expected objects (no empty fake success)', async () => {
     expect((await app.ok('timeline:get', {})).length).toBeGreaterThan(4);
     expect((await app.ok('contradictions:list', {})).length).toBeGreaterThanOrEqual(1);
     expect((await app.ok('insights:list', {})).length).toBeGreaterThan(1);

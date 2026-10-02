@@ -70,7 +70,7 @@ const map = (r: Row): Insight => ({
   updatedAt: r.updatedAt,
 });
 
-/** Agentisch erzeugte Hinweise (Zuordnungen, Duplikate, Widersprüche, …) mit Bestätigen/Ablehnen/Später. */
+/** Hints created by the agent (assignments, duplicates, contradictions, …) with confirm/reject/later. */
 export class InsightService {
   private actions!: ActionService;
   private reminders!: ReminderService;
@@ -104,8 +104,8 @@ export class InsightService {
   }
 
   /**
-   * Legt einen Insight an oder aktualisiert den offenen mit gleichem Schlüssel. Abgelehnte Insights werden nicht erneut
-   * geöffnet; bestätigte nur, wenn neue Objekte betroffen sind oder die Ursache Tage nach dem Bestätigen noch besteht.
+   * Creates an insight or updates the open one with the same key. Rejected insights are not opened again;
+   * accepted ones only if new objects are affected or the cause still exists days after accepting.
    */
   upsert(input: InsightInput): Insight {
     const existing = this.db.select().from(insights).where(eq(insights.dedupeKey, input.dedupeKey)).get();
@@ -243,8 +243,8 @@ export class InsightService {
   }
 
   /**
-   * Abgleich nach einem Prüflauf: Insights eines Schlüsselpräfixes, deren Ursache nicht mehr besteht, werden entfernt
-   * (offene Vorschläge dazu zurückgezogen). Tritt die Ursache später wieder auf, wird sie erneut gemeldet.
+   * Reconciliation after a check run: insights of a key prefix whose cause no longer exists are removed
+   * (their open proposals withdrawn). If the cause reappears later, it is reported again.
    */
   reconcile(prefix: string, currentKeys: Set<string>): void {
     const rows = this.db
@@ -256,7 +256,7 @@ export class InsightService {
     for (const r of rows) this.remove(r, 'Die Ursache besteht nicht mehr.');
   }
 
-  /** Entfernt den Insight mit diesem Schlüssel (gleich welchen Status) und zieht seinen offenen Vorschlag zurück. */
+  /** Removes the insight with this key (whatever its status) and withdraws its open proposal. */
   retire(dedupeKey: string, reason: string): void {
     const r = this.db.select().from(insights).where(eq(insights.dedupeKey, dedupeKey)).get();
     if (r) this.remove(r, reason);
@@ -268,7 +268,7 @@ export class InsightService {
     this.ctx.events.changed('insights', 'status');
   }
 
-  /** Schließt einen offenen Insight, dessen Sache anderweitig entschieden wurde; sein offener Vorschlag wird zurückgezogen. */
+  /** Closes an open insight whose matter was decided elsewhere; its open proposal is withdrawn. */
   settle(dedupeKey: string, status: 'accepted' | 'rejected', reason: string): void {
     const r = this.db.select().from(insights).where(eq(insights.dedupeKey, dedupeKey)).get();
     if (!r || (r.status !== 'open' && r.status !== 'snoozed')) return;
@@ -316,8 +316,8 @@ export class InsightService {
   }
 
   /**
-   * Bestätigen: führt die empfohlene Aktion aus (nur mit Bestätigung) und markiert den Insight als akzeptiert. Ist die
-   * Aktion zuvor fehlgeschlagen, wird sie erneut versucht; ist sie veraltet, wird nichts ausgeführt.
+   * Accept: executes the recommended action (only with confirmation) and marks the insight as accepted. If the
+   * action failed before, it is retried; if it is outdated, nothing is executed.
    */
   async accept(id: string, opts: { strongConfirmed?: boolean }): Promise<Insight> {
     const i = this.get(id);
@@ -351,7 +351,7 @@ export class InsightService {
       try {
         await this.actions.resolve(i.recommendedActionId, 'reject', {});
       } catch {
-        /* bereits entschieden */
+        /* already decided */
       }
     }
     this.db.update(insights).set({ status: 'rejected', updatedAt: nowIso() }).where(eq(insights.id, id)).run();

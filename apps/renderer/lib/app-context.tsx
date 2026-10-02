@@ -17,7 +17,7 @@ interface AppContextValue {
   status: AppStatus | null;
   statusError: string | null;
   refreshStatus: () => Promise<void>;
-  /** Letzte Assistentenantwort für das rechte Kontextpanel. */
+  /** Last assistant reply for the right-hand context panel. */
   contextMessage: ChatMsg | null;
   setContextMessage: (m: ChatMsg | null) => void;
   importFiles: (files: File[]) => Promise<void>;
@@ -139,6 +139,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
 export function useApp(): AppContextValue {
   const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useApp außerhalb von AppProvider');
+  if (!ctx) throw new Error('useApp used outside of AppProvider');
   return ctx;
 }

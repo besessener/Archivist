@@ -20,7 +20,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Gitleaks installieren (Checksumme geprüft)
+      - name: Install Gitleaks (checksum verified)
         env:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
@@ -29,11 +29,11 @@ jobs:
           echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz gitleaks
           sudo install gitleaks /usr/local/bin/gitleaks
-      - name: Gesamte Historie auf Secrets prüfen
+      - name: Scan entire history for secrets
         run: gitleaks git --redact --verbose --no-banner .
       - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
         env:
-          # gitleaks läuft oben über die ganze Historie; der Hook selbst prüft nur gestagte Änderungen
+          # gitleaks runs over the whole history above; the hook itself only checks staged changes
           SKIP: gitleaks
           GH_TOKEN: ${{ github.token }}
 
@@ -53,18 +53,18 @@ jobs:
       - run: npm run typecheck
       - run: npm run format:check
       - run: npm run lint
-      - name: Architekturgrenzen (dependency-cruiser)
+      - name: Architecture boundaries (dependency-cruiser)
         run: npm run depcruise
-      - name: Toter Code und ungenutzte Abhängigkeiten (Knip)
+      - name: Dead code and unused dependencies (Knip)
         run: npm run knip
       - run: npm run test:coverage
-      - name: Coverage in der Job-Zusammenfassung
+      - name: Coverage in the job summary
         if: ${{ !cancelled() }}
         run: |
           node -e '
             const t = require("./coverage/coverage-summary.json").total;
             const row = (k) => `| ${k} | ${t[k].pct} % | ${t[k].covered}/${t[k].total} |`;
-            console.log(["## Testabdeckung", "", "| Metrik | Abdeckung | Zeilen |", "|---|---|---|", ...["statements", "branches", "functions", "lines"].map(row)].join("\n"));
+            console.log(["## Test coverage", "", "| Metric | Coverage | Lines |", "|---|---|---|", ...["statements", "branches", "functions", "lines"].map(row)].join("\n"));
           ' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ !cancelled() }}
@@ -79,9 +79,9 @@ jobs:
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/renderer/**/*.ts', 'apps/renderer/**/*.tsx') }}
           restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - run: npm run build
-      - name: E2E (Electron unter Xvfb)
+      - name: E2E (Electron under Xvfb)
         run: xvfb-run -a npx playwright test
-      - name: Playwright-Bericht hochladen
+      - name: Upload Playwright report
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -110,13 +110,13 @@ jobs:
           path: apps/renderer/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/renderer/**/*.ts', 'apps/renderer/**/*.tsx') }}
           restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-      - name: Windows-Pakete bauen (signiert, wenn ein Zertifikat hinterlegt ist)
+      - name: Build Windows packages (signed if a certificate is configured)
         run: npm run dist:win
         env:
-          # Secrets: WIN_CSC_LINK (Base64-kodierte .pfx) und WIN_CSC_KEY_PASSWORD. Fehlen sie, bleibt der Build unsigniert.
+          # Secrets: WIN_CSC_LINK (Base64-encoded .pfx) and WIN_CSC_KEY_PASSWORD. If they are missing, the build stays unsigned.
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-      - name: Signatur prüfen
+      - name: Verify signature
         shell: pwsh
         env:
           EXPECT_SIGNED: ${{ secrets.WIN_CSC_LINK != '' }}
@@ -127,9 +127,9 @@ jobs:
             "$($_.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
             if ($env:EXPECT_SIGNED -eq 'true' -and $sig.Status -ne 'Valid') { $bad = $true }
           }
-          if ($bad) { throw 'Mindestens eine ausgelieferte Datei ist nicht gültig signiert.' }
-          if ($env:EXPECT_SIGNED -ne 'true') { Write-Host '::notice::Kein Signaturzertifikat hinterlegt – die Pakete sind unsigniert.' }
-      # Nur Builds von main aufbewahren (PRs bauen die Pakete nur, um das Packaging zu prüfen); siehe prune-windows-artifacts
+          if ($bad) { throw 'At least one shipped file is not validly signed.' }
+          if ($env:EXPECT_SIGNED -ne 'true') { Write-Host '::notice::No signing certificate configured – the packages are unsigned.' }
+      # Only keep builds from main (PRs build the packages only to verify the packaging); see prune-windows-artifacts
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
@@ -139,14 +139,14 @@ jobs:
           retention-days: 30
 
   prune-windows-artifacts:
-    # Installer + portable Version sind groß: bis Releases veröffentlicht werden, reichen die drei neuesten Builds
+    # Installer + portable version are large: until releases are published, the three newest builds are enough
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     needs: windows-installer
     permissions:
       actions: write
     steps:
-      - name: Nur die drei neuesten Windows-Pakete behalten
+      - name: Keep only the three newest Windows packages
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -156,5 +156,5 @@ jobs:
             | sort -r | tail -n +4 | cut -f2 \
             | while read -r id; do
                 gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}"
-                echo "Gelöscht: Artefakt ${id}"
+                echo "Deleted artifact ${id}"
               done

@@ -62,8 +62,8 @@ function interceptExtraction(hook: () => Promise<void>) {
   });
 }
 
-describe('Analyse öffnet archivierte Dokumente nicht wieder', () => {
-  it('Regression: archivieren, danach läuft die wartende Analyse – der Status bleibt „archived“', async () => {
+describe('Analysis does not reopen archived documents', () => {
+  it('regression: archive, then the queued analysis runs – the status stays "archived"', async () => {
     const { id } = await importQueued('notiz.txt', 'Eine Notiz mit ausreichend Inhalt für die Analyse.');
     const res = await archive(id, 'copy');
     const archived = await app.ok('documents:get', { id });
@@ -85,7 +85,7 @@ describe('Analyse öffnet archivierte Dokumente nicht wieder', () => {
     expect(fs.readdirSync(path.dirname(res.items[0]!.targetPath!))).toHaveLength(1);
   });
 
-  it('nach „Verschieben“ schlägt die wartende Analyse nicht fehl und setzt nicht „failed“', async () => {
+  it('after "Verschieben" the queued analysis neither fails nor sets "failed"', async () => {
     const { id } = await importQueued('verschoben.txt', 'Diese Datei wird ins Archiv verschoben, bevor die Analyse läuft.');
     await archive(id, 'move');
     app.services.jobs.start();
@@ -97,7 +97,7 @@ describe('Analyse öffnet archivierte Dokumente nicht wieder', () => {
     expect(analyzeJobs()[0]!.status).toBe('succeeded');
   });
 
-  it('lässt nur indexierte Dokumente unverändert', async () => {
+  it('leaves only indexed documents unchanged', async () => {
     const { id } = await importQueued('index.txt', 'Nur indexiert, nicht kopiert, mit etwas Inhalt.');
     await archive(id, 'index_only');
     app.services.jobs.start();
@@ -105,7 +105,7 @@ describe('Analyse öffnet archivierte Dokumente nicht wieder', () => {
     expect((await app.ok('documents:get', { id })).status).toBe('indexed_only');
   });
 
-  it('verwirft das Ergebnis, wenn während der laufenden Analyse archiviert wurde', async () => {
+  it('discards the result when the document was archived during the running analysis', async () => {
     const src = app.file('in/rennen.txt', 'Dokument, das während der Analyse archiviert wird.');
     let id = '';
     interceptExtraction(async () => {
@@ -123,7 +123,7 @@ describe('Analyse öffnet archivierte Dokumente nicht wieder', () => {
     expect(analyzeJobs()[0]!.status).toBe('succeeded');
   });
 
-  it('lehnt eine erneute Verarbeitung archivierter Dokumente ab', async () => {
+  it('rejects reprocessing of archived documents', async () => {
     const { id } = await importQueued('fertig.txt', 'Schon archiviertes Dokument mit Inhalt.');
     await archive(id, 'copy');
     const r = await app.call('documents:classify', { documentId: id, allowLlm: true });
@@ -132,8 +132,8 @@ describe('Analyse öffnet archivierte Dokumente nicht wieder', () => {
   });
 });
 
-describe('Fehlgeschlagene Analyse blockiert kein Dokument', () => {
-  it('setzt bei einem Fehler im Scanner „failed“ mit Grund und erlaubt „Erneut verarbeiten“', async () => {
+describe('A failed analysis does not block a document', () => {
+  it('sets "failed" with a reason on a scanner error and allows "Erneut verarbeiten"', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     const dl = path.join(app.home, 'Downloads');
     app.file('Downloads/scan.txt', 'Gescannte Datei mit ausreichend Inhalt für die Analyse.');
@@ -159,7 +159,7 @@ describe('Fehlgeschlagene Analyse blockiert kein Dokument', () => {
     expect((await app.ok('documents:get', { id: failed!.id })).status).toBe('proposed');
   });
 
-  it('setzt bei einem Fehler im Analyse-Job „failed“ mit Grund und benachrichtigt', async () => {
+  it('sets "failed" with a reason on an error in the analysis job and notifies', async () => {
     interceptExtraction(async () => {
       throw new Error('Parser abgestürzt');
     });
@@ -174,8 +174,8 @@ describe('Fehlgeschlagene Analyse blockiert kein Dokument', () => {
   });
 });
 
-describe('Startup-Bereinigung verwaister Analysen', () => {
-  it('setzt Dokumente in „analyzing“ ohne laufenden Job auf „failed“, solche mit wartendem Job bleiben', async () => {
+describe('Startup cleanup of orphaned analyses', () => {
+  it('sets documents in "analyzing" without a running job to "failed"; those with a queued job stay', async () => {
     const orphan = await importQueued('verwaist.txt', 'Dokument, dessen Analyse beim Beenden unterbrochen wurde.');
     const queued = await importQueued('wartend.txt', 'Dokument, dessen Analyse nach dem Neustart fortgesetzt wird.');
     app.services.database.db.update(documents).set({ status: 'analyzing' }).run();

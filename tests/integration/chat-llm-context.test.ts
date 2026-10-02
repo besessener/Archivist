@@ -15,11 +15,11 @@ const send = (text: string, conversationId?: string) => app.ok('chat:send', { te
 const item = (title: string, extra: Record<string, unknown> = {}) =>
   app.ok('openItems:create', { title, priority: 'normal', sourceIds: [], confidence: 0.9, ...extra });
 const lastIntentInput = () => app.llm.calls.filter((c) => c.schema === 'ChatIntent').at(-1)!.input;
-/** Kurz-ID eines Titels aus der Kontextliste im Prompt, z. B. „P2“. */
+/** Short ID of a title from the context list in the prompt, e.g. „P2“. */
 const shortId = (input: string, title: string) => new RegExp(`- ([PEV]\\d+): ${title}`).exec(input)?.[1];
 
-describe('Kontext für das LLM (#38)', () => {
-  it('der Prompt enthält offene Punkte, Entscheidungen, Vorschläge und den Benutzer – mit IDs', async () => {
+describe('Context for the LLM (#38)', () => {
+  it('the prompt contains open items, decisions, proposals and the user – with IDs', async () => {
     app.services.settings.update({ profile: { name: 'Max Mustermann', nicknames: ['Maxi'] } });
     await item('Steuererklärung abgeben', { dueAt: '2026-11-30', responsible: 'Anna' });
     await app.ok('decisions:create', {
@@ -45,9 +45,9 @@ describe('Kontext für das LLM (#38)', () => {
     expect(input).toContain('Offene Vorschläge in diesem Gespräch (ID: Beschreibung):\n- keine');
   });
 
-  it('eine gelieferte ID bestimmt den offenen Punkt – nicht die unscharfe Suche', async () => {
+  it('a returned ID determines the open item – not the fuzzy search', async () => {
     await item('Vertrag prüfen');
-    const kuendigen = await item('Vertrag kündigen');
+    const cancelContract = await item('Vertrag kündigen');
     let id: string | undefined;
     app.llm.on('ChatIntent', (_s, input) => {
       id = shortId(input, 'Vertrag kündigen');
@@ -58,27 +58,27 @@ describe('Kontext für das LLM (#38)', () => {
 
     expect(id).toMatch(/^P\d$/);
     const action = r.assistantMessage.actions[0]!;
-    expect((action.proposedParameters as { openItemId: string }).openItemId).toBe(kuendigen.id);
+    expect((action.proposedParameters as { openItemId: string }).openItemId).toBe(cancelContract.id);
   });
 
-  it('unbekannte IDs werden verworfen', async () => {
+  it('unknown IDs are discarded', async () => {
     await item('Zahnarzt anrufen');
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_close', openItem: { targetId: 'P99', targetHint: 'Zahnarzt' } }));
     const r = await send('Zahnarzt ist erledigt');
     expect(r.assistantMessage.actions[0]!.label).toContain('Zahnarzt anrufen');
   });
 
-  it('eine Erinnerung hängt an dem Punkt mit der gelieferten ID', async () => {
+  it('a reminder is attached to the item with the returned ID', async () => {
     await item('Präsentation für Kunde X vorbereiten');
-    const tuev = await item('Auto zum TÜV bringen');
+    const carInspection = await item('Auto zum TÜV bringen');
     app.llm.on('ChatIntent', (_s, input) =>
       intent({ intent: 'reminder_create', reminder: { targetId: shortId(input, 'Auto zum TÜV bringen'), remindAt: '2026-11-02' } }),
     );
     await send('Erinnere mich am 2.11. an den TÜV');
-    expect((await app.ok('reminders:list', {}))[0]!.targetId).toBe(tuev.id);
+    expect((await app.ok('reminders:list', {}))[0]!.targetId).toBe(carInspection.id);
   });
 
-  it('offene Vorschläge dieses Gesprächs stehen mit ID im Prompt; proposalId wählt genau diese Karte', async () => {
+  it('open proposals of this conversation are listed with ID in the prompt; proposalId selects exactly that card', async () => {
     const g = app.services.graph;
     const relA = g.link(g.ensureEntity('topic', 'Hauskauf').id, g.ensureEntity('project', 'Nordlicht').id, 'relates_to', {
       confidence: 0.6,
@@ -96,7 +96,7 @@ describe('Kontext für das LLM (#38)', () => {
     expect(g.getRelation(relA.id)?.status).toBe('proposed');
   });
 
-  it('ohne erlaubte LLM-Auswertung (local_only) wird kein Kontext gesendet', async () => {
+  it('without permitted LLM evaluation (local_only) no context is sent', async () => {
     await item('Geheimes Projekt planen');
     app.services.settings.update({ privacy: { llmMode: 'local_only' } });
     await send('Hallo');

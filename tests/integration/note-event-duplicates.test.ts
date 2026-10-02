@@ -26,8 +26,8 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 
 const PREFIX = 'Für das Sommerfest am 12. Juli brauchen wir noch Zelte, Bänke und Tische vom Sportverein nebenan, ';
 
-describe('Notizen im Chat (#32, Kriterium 1)', () => {
-  it('jede Notiz bekommt einen eigenen Eintrag, auch wenn die ersten 70 Zeichen gleich sind', async () => {
+describe('Notes in the chat (#32, criterion 1)', () => {
+  it('every note gets its own entry, even when the first 70 characters are the same', async () => {
     app.llm.on('ChatIntent', (_s, input) => intent({ intent: 'note_capture', segment: userText(input), note: userText(input) }));
     const r1 = await app.ok('chat:send', { text: `${PREFIX}Teil eins über Getränke.` });
     const r2 = await app.ok('chat:send', { text: `${PREFIX}Teil zwei über das Essen.`, conversationId: r1.conversationId });
@@ -51,8 +51,8 @@ describe('Notizen im Chat (#32, Kriterium 1)', () => {
   });
 });
 
-describe('Doppelte Notizen (Archivprüfung)', () => {
-  it('erkennt gleiche Notizen, schlägt das Zusammenführen vor und lässt es rückgängig machen', async () => {
+describe('Duplicate notes (archive check)', () => {
+  it('detects identical notes, proposes merging and allows undoing it', async () => {
     const topic = app.services.graph.ensureEntity('topic', 'Sommerfest');
     const person = app.services.graph.ensureEntity('person', 'Anna Berg');
     // the more complete note is kept
@@ -106,7 +106,7 @@ describe('Doppelte Notizen (Archivprüfung)', () => {
     expect(insightFor(first.id)).toBeDefined();
   });
 
-  it('Rückgängig wird abgelehnt, wenn die verworfene Notiz seitdem verändert wurde', async () => {
+  it('undo is refused when the discarded note was changed since', async () => {
     const a = await app.services.notes.create({ content: 'Steuerunterlagen bis Ende Mai sammeln' });
     const b = await app.services.notes.create({ content: 'Steuerunterlagen bis Ende Mai sammeln!' });
     const r = app.services.noteEventDuplicates.mergeNotes(a.id, b.id);
@@ -117,7 +117,7 @@ describe('Doppelte Notizen (Archivprüfung)', () => {
     expect(() => app.services.noteEventDuplicates.mergeNotes(a.id, b.id)).toThrow(/bereits als Duplikat/);
   });
 
-  it('„Verschieden“ (Ablehnen) wird dauerhaft gemerkt', async () => {
+  it('„Verschieden“ (reject) is remembered permanently', async () => {
     const a = await app.services.notes.create({ content: 'Angebot vom Dachdecker vergleichen' });
     const b = await app.services.notes.create({ content: 'Angebot vom Dachdekcer vergleichen' });
     await check();
@@ -141,8 +141,8 @@ describe('Doppelte Notizen (Archivprüfung)', () => {
   });
 });
 
-describe('Doppelte Ereignisse (Archivprüfung)', () => {
-  it('erkennt gleiches Datum mit ähnlichem Titel, übernimmt fehlende Angaben und lässt sich rückgängig machen', async () => {
+describe('Duplicate events (archive check)', () => {
+  it('detects the same date with a similar title, takes over missing details and can be undone', async () => {
     const keep = app.services.eventRecords.create({ title: 'Umzug nach Berlin', occurredAt: '2026-03-01', sourceIds: [] });
     await tick();
     const dup = app.services.eventRecords.create({
@@ -190,7 +190,7 @@ describe('Doppelte Ereignisse (Archivprüfung)', () => {
     expect((await app.ok('timeline:get', {})).some((e) => e.id === `event:${dup.id}`)).toBe(true);
   });
 
-  it('Rückgängig wird abgelehnt, wenn das behaltene Ereignis seitdem bearbeitet wurde', async () => {
+  it('undo is refused when the kept event was edited since', async () => {
     const a = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', sourceIds: [] });
     const b = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', description: 'mit Kunde', sourceIds: [] });
     const r = app.services.noteEventDuplicates.mergeEvents(a.id, b.id);
@@ -201,7 +201,7 @@ describe('Doppelte Ereignisse (Archivprüfung)', () => {
     expect(res.conflicts.join(' ')).toMatch(/behaltene Ereignis .* verändert/);
   });
 
-  it('ein veralteter Vorschlag wird nicht ausgeführt, sondern zurückgezogen', async () => {
+  it('an outdated proposal is not executed but withdrawn', async () => {
     const a = app.services.eventRecords.create({ title: 'Sommerfest', occurredAt: '2026-07-12', sourceIds: [] });
     const b = app.services.eventRecords.create({ title: 'Sommerfest!', occurredAt: '2026-07-12', sourceIds: [] });
     await check();
@@ -212,7 +212,7 @@ describe('Doppelte Ereignisse (Archivprüfung)', () => {
     expect(app.services.eventRecords.get(a.id).description).toBeNull();
   });
 
-  it('„Verschieden“ (Ablehnen) wird dauerhaft gemerkt', async () => {
+  it('„Verschieden“ (reject) is remembered permanently', async () => {
     const a = app.services.eventRecords.create({ title: 'Elternabend', occurredAt: '2026-09-10', sourceIds: [] });
     app.services.eventRecords.create({ title: 'Elternabend Klasse', occurredAt: '2026-09-10', sourceIds: [] });
     await check();
