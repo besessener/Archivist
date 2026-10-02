@@ -38,3 +38,24 @@ describe('Search: type filter and limit count entities, not chunks (#159)', () =
     expect(hits.find((h) => h.id === short.id)!.matchedBy).toContain('keyword');
   });
 });
+
+describe('Search ranking: documents with all query terms first (#158)', () => {
+  it('ranks the minutes that contain every term above short documents dense in one term', async () => {
+    for (let i = 0; i < 12; i += 1) await note(`AWS Rechnung ${i}`, `AWS Rechnung für Konto ${i}: AWS EC2, AWS S3, AWS Support.`);
+    const filler = 'Unter Verschiedenes ging es um Parkplätze, die Kaffeemaschine und den Sommerausflug. '.repeat(8);
+    const minutes = await note('Protokoll Jour Fixe März', `${filler}\n\nEntscheidung: Die AWS-Migration startet im April, Ansprechpartner ist Jana.`);
+
+    const hits = await app.services.search.search('Was war die Entscheidung zur AWS Migration?', { limit: 10 });
+
+    expect(hits[0]?.id).toBe(minutes.id);
+  });
+
+  it('question words do not count as search terms', async () => {
+    const a = await note('Gartenarbeiten', 'Beim Zaun am Garten ist alles entschieden: er wird grün gestrichen, dazu kommen neue Beete und ein Komposter.');
+    for (let i = 0; i < 5; i += 1) await note(`Was wann welche ${i}`, `Was? Wann? Welche? Was wann welche Fragen ${i}.`);
+
+    const hits = await app.services.search.search('Was wurde wann zum Zaun entschieden?', { limit: 3 });
+
+    expect(hits[0]?.id).toBe(a.id);
+  });
+});

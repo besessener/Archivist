@@ -30,9 +30,22 @@ interface Hit {
   chunkText: string;
   snippet: string;
   keywordRank?: number;
+  /** Rank in the pass with a real embedding model (votes in the fusion). */
   vectorRank?: number;
+  /** Rank in the local hash-vector pass: only fills in entities the other passes did not find. */
+  localRank?: number;
   vectorScore?: number;
 }
+
+/** Question and filler words that are no search terms (German and English). */
+const QUERY_STOPWORDS = new Set(
+  (
+    'was wer wen wem wessen wann wo wohin woher wie warum weshalb wieso welche welcher welches welchen welchem ' +
+    'gibt gab gibts es uns unser unsere unserem unseren unserer mir mich mein meine meinem meinen meiner dir dich dein deine ' +
+    'zuletzt bitte mal zeig zeige zeigen sag sage sagen kannst koennen konnte gab haben hatten habe hast denn eigentlich genau etwas ' +
+    'what who whom whose when where why how which did do does done we our us my me you your please show tell there any'
+  ).split(' '),
+);
 
 /** Minimum number of entities the keyword pass returns (more when the caller asks for more results). */
 const FTS_ENTITY_LIMIT = 60;
@@ -121,14 +134,44 @@ export class SearchService {
     return parts.length;
   }
 
-  private ftsQuery(query: string): string | null {
-    const toks = tokenize(query).slice(0, 12);
-    if (toks.length === 0) return null;
-    return toks.map((t) => `"${t.replace(/"/g, '')}"*`).join(' OR ');
+  /** Search terms of a query: question and filler words do not count (unless nothing else is left). */
+  private queryTerms(query: string): string[] {
+    const toks = [...new Set(tokenize(query))];
+    const kept = toks.filter((t) => !QUERY_STOPWORDS.has(t));
+    return (kept.length ? kept : toks).slice(0, 12);
+  }
+
+  private ftsQuery(terms: string[], op: 'AND' | 'OR'): string | null {
+    if (terms.length === 0) return null;
+    return terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(` ${op} `);
+  }
+
+  /**
+   * Keyword pass: candidates from an AND query (all terms) and an OR query, ordered by how many distinct
+   * terms the entity's best chunk (with title) contains, then by BM25 (#158). Plain OR-BM25 let short
+   * documents dense in one term bury the document that contains all of them.
+   */
+  private keywordPass(query: string, types: readonly EntityType[] | null, limit: number): Array<Omit<Hit, 'keywordRank'>> {
+    const terms = this.queryTerms(query);
+    const candidates = new Map<string, Omit<Hit, 'keywordRank'> & { title: string; pos: number }>();
+    for (const op of terms.length > 1 ? (['AND', 'OR'] as const) : (['OR'] as const)) {
+      const fts = this.ftsQuery(terms, op);
+      if (!fts) continue;
+      for (const h of this.keywordHits(fts, types, limit)) if (!candidates.has(h.entityId)) candidates.set(h.entityId, { ...h, pos: candidates.size });
+    }
+    const coverage = (title: string, text: string) => {
+      const toks = tokenize(`${title} ${text}`, { keepStopwords: true });
+      return terms.filter((t) => toks.some((tok) => tok.startsWith(t))).length;
+    };
+    return [...candidates.values()]
+      .map((c) => ({ c, cov: coverage(c.title, c.chunkText) }))
+      .sort((a, b) => b.cov - a.cov || a.c.pos - b.c.pos)
+      .slice(0, limit)
+      .map(({ c }) => ({ entityId: c.entityId, entityType: c.entityType, chunkText: c.chunkText, snippet: c.snippet }));
   }
 
   /** Entities matching the FTS query, best (BM25) chunk each, ordered by that chunk's score. */
-  private keywordHits(fts: string, types: readonly EntityType[] | null, limit: number): Array<Omit<Hit, 'keywordRank'>> {
+  private keywordHits(fts: string, types: readonly EntityType[] | null, limit: number): Array<Omit<Hit, 'keywordRank'> & { title: string }> {
     const typeClause = types ? ` AND entity_type IN (${types.map(() => '?').join(', ')})` : '';
     // bare columns next to min() come from the row with the minimum (SQLite) – i.e. the best chunk of the entity
     const best = this.sqlite
@@ -146,15 +189,16 @@ export class SearchService {
       (
         this.sqlite
           .prepare(
-            `SELECT chunk_id AS chunkId, content AS chunkText, snippet(search_fts, 4, '[', ']', '…', 14) AS snippet
+            `SELECT chunk_id AS chunkId, title, content AS chunkText, snippet(search_fts, 4, '[', ']', '…', 14) AS snippet
              FROM search_fts WHERE search_fts MATCH ? AND chunk_id IN (${best.map(() => '?').join(', ')})`,
           )
-          .all(fts, ...best.map((b) => b.chunkId)) as Array<{ chunkId: string; chunkText: string; snippet: string }>
+          .all(fts, ...best.map((b) => b.chunkId)) as Array<{ chunkId: string; title: string; chunkText: string; snippet: string }>
       ).map((d) => [d.chunkId, d]),
     );
     return best.map((b) => ({
       entityId: b.entityId,
       entityType: b.entityType,
+      title: details.get(b.chunkId)?.title ?? '',
       chunkText: details.get(b.chunkId)?.chunkText ?? '',
       snippet: details.get(b.chunkId)?.snippet ?? '',
     }));
@@ -165,19 +209,15 @@ export class SearchService {
     const hits = new Map<string, Hit>();
 
     // 1) keyword search: best chunk per entity, type filter inside the query – the LIMIT counts entities, not chunks (#159)
-    const fts = this.ftsQuery(query);
-    if (fts) {
-      try {
-        for (const [rank, r] of this.keywordHits(fts, opts.types ?? null, Math.max(FTS_ENTITY_LIMIT, limit * 2)).entries())
-          hits.set(r.entityId, { ...r, keywordRank: rank });
-      } catch (err) {
-        this.ctx.logger.warn('search', 'FTS query failed', { error: err });
-      }
+    try {
+      for (const [rank, r] of this.keywordPass(query, opts.types ?? null, Math.max(FTS_ENTITY_LIMIT, limit * 2)).entries())
+        hits.set(r.entityId, { ...r, keywordRank: rank });
+    } catch (err) {
+      this.ctx.logger.warn('search', 'FTS query failed', { error: err });
     }
 
     // 2) semantic search (local vectors and – if allowed – the endpoint's embedding model)
     const wantRemote = opts.allowRemoteEmbedding ?? this.remoteAllowed();
-    let rank = 0;
     for (const useRemote of [false, true]) {
       if (useRemote && !wantRemote) continue;
       const q = await this.embedQuery(query, useRemote);
@@ -200,10 +240,17 @@ export class SearchService {
           .all()
           .map((c) => [c.id, c.text]),
       );
+      // rank per entity and per pass: further chunks of the same entity do not push other entities down (#158)
+      // The local hash vectors are lexical, not semantic: they do not vote on what FTS found, they only add entities it missed.
+      const local = q.model === LOCAL_MODEL;
+      let rank = 0;
+      const ranked = new Set<string>();
       for (const t of top) {
         const text = texts.get(t.chunkId);
-        if (text === undefined) continue;
+        if (text === undefined || ranked.has(t.entityId)) continue;
         const existing = hits.get(t.entityId);
+        if (local && existing) continue;
+        ranked.add(t.entityId);
         if (existing) {
           existing.vectorRank = Math.min(existing.vectorRank ?? rank, rank);
           existing.vectorScore = Math.max(existing.vectorScore ?? 0, t.score);
@@ -213,7 +260,7 @@ export class SearchService {
             entityType: t.entityType,
             chunkText: text,
             snippet: truncate(text, 200),
-            vectorRank: rank,
+            ...(local ? { localRank: rank } : { vectorRank: rank }),
             vectorScore: t.score,
           });
         }
@@ -223,8 +270,14 @@ export class SearchService {
 
     // 3) fusion (Reciprocal Rank Fusion) and enrichment
     const K = 60;
+    const voted = [...hits.values()].filter((h) => h.keywordRank !== undefined || h.vectorRank !== undefined).length;
+    const fuse = (h: Hit) => {
+      const score = (h.keywordRank !== undefined ? 1 / (K + h.keywordRank) : 0) + (h.vectorRank !== undefined ? 1 / (K + h.vectorRank) : 0);
+      // local-only hits rank after everything the voting passes found
+      return score || (h.localRank !== undefined ? 1 / (K + voted + h.localRank) : 0);
+    };
     const scored = [...hits.values()]
-      .map((h) => ({ h, score: (h.keywordRank !== undefined ? 1 / (K + h.keywordRank) : 0) + (h.vectorRank !== undefined ? 1 / (K + h.vectorRank) : 0) }))
+      .map((h) => ({ h, score: fuse(h) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
     if (scored.length === 0) return [];
@@ -275,7 +328,10 @@ export class SearchService {
           path: d?.rel ?? d?.src ?? null,
           date: d ? (d.at ?? d.created) : (decs.get(h.entityId)?.at ?? ent.updatedAt),
           passage: h.chunkText,
-          matchedBy: [...(h.keywordRank !== undefined ? (['keyword'] as const) : []), ...(h.vectorRank !== undefined ? (['semantic'] as const) : [])],
+          matchedBy: [
+            ...(h.keywordRank !== undefined ? (['keyword'] as const) : []),
+            ...(h.vectorRank !== undefined || h.localRank !== undefined ? (['semantic'] as const) : []),
+          ],
         },
       ];
     });
