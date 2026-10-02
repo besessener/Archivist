@@ -39,35 +39,11 @@ export class EventService {
     undo: UndoService,
   ) {
     undo.register('event_update', {
-      check: async (data) => {
-        const d = data as EventUpdateUndo;
-        const row = this.db.select().from(events).where(eq(events.id, d.id)).get();
-        if (!row) return ['Das Ereignis existiert nicht mehr.'];
-        const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : ['Das Ereignis wurde seit der Bearbeitung verändert.'];
-        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
-      },
-      run: async (data) => {
-        const d = data as EventUpdateUndo;
-        this.db.transaction(() => {
-          this.db
-            .update(events)
-            .set({ ...d.before, updatedAt: nowIso() })
-            .where(eq(events.id, d.id))
-            .run();
-          const row = this.db.select().from(events).where(eq(events.id, d.id)).get();
-          if (row) this.graph.registerNode('event', row.id, row.title, row.description);
-          this.graph.revertRelationChanges(d.relations);
-        });
-        void this.reindex(d.id);
-        this.ctx.events.changed('events', 'knowledge', 'status');
-        return 'Bearbeitung des Ereignisses rückgängig gemacht.';
-      },
+      check: async (data) => this.updateConflicts(data as EventUpdateUndo),
+      run: async (data) => this.revertUpdate(data as EventUpdateUndo),
     });
     undo.register('event_delete', {
-      check: async (data) => {
-        const d = data as EventDeleteUndo;
-        return this.db.select({ id: events.id }).from(events).where(eq(events.id, d.event.id)).get() ? ['Das Ereignis ist bereits wiederhergestellt.'] : [];
-      },
+      check: async (data) => (this.row((data as EventDeleteUndo).event.id) ? ['Das Ereignis ist bereits wiederhergestellt.'] : []),
       run: async (data) => this.restore(data as EventDeleteUndo),
     });
   }
@@ -76,29 +52,37 @@ export class EventService {
     return this.ctx.database.db;
   }
 
-  private map(r: Row, names?: Map<string, string>): EventRecord {
-    const nm = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
+  private row(id: string): Row | undefined {
+    return this.db.select().from(events).where(eq(events.id, id)).get();
+  }
+
+  private requireRow(id: string): Row {
+    const row = this.row(id);
+    if (!row) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
+    return row;
+  }
+
+  private map(row: Row, names?: Map<string, string>): EventRecord {
+    const nameOf = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
     return {
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      occurredAt: r.occurredAt,
-      topicId: r.topicId,
-      topicName: nm(r.topicId),
-      projectId: r.projectId,
-      projectName: nm(r.projectId),
-      participants: r.participants,
-      sourceIds: r.sourceIds,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-      duplicateOfId: r.duplicateOfId,
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      occurredAt: row.occurredAt,
+      topicId: row.topicId,
+      topicName: nameOf(row.topicId),
+      projectId: row.projectId,
+      projectName: nameOf(row.projectId),
+      participants: row.participants,
+      sourceIds: row.sourceIds,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      duplicateOfId: row.duplicateOfId,
     };
   }
 
   get(id: string): EventRecord {
-    const r = this.db.select().from(events).where(eq(events.id, id)).get();
-    if (!r) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
-    return this.map(r);
+    return this.map(this.requireRow(id));
   }
 
   list(opts: { topicId?: string; projectId?: string } = {}): EventRecord[] {
@@ -108,38 +92,31 @@ export class EventService {
     const further = this.ctx.database.sqlite.prepare(
       `SELECT source_entity_id AS id FROM relations WHERE target_entity_id = ? AND status = 'confirmed' AND relation_type <> 'subtopic_of'`,
     );
-    const extra = new Set([...tree].flatMap((s) => (further.all(s) as Array<{ id: string }>).map((r) => r.id)));
+    const extra = new Set([...tree].flatMap((subjectId) => (further.all(subjectId) as Array<{ id: string }>).map((row) => row.id)));
+    const inTree = (id: string | null) => id !== null && tree.has(id);
     const rows = this.db
       .select()
       .from(events)
       .orderBy(desc(events.occurredAt))
       .all()
-      .filter(
-        (r) =>
-          (!opts.topicId || (r.topicId !== null && tree.has(r.topicId)) || extra.has(r.id)) &&
-          (!opts.projectId || (r.projectId !== null && tree.has(r.projectId)) || extra.has(r.id)),
-      );
-    const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId]).filter((x): x is string => Boolean(x)))];
-    const names = new Map(
-      ids.length
-        ? this.db
-            .select({ id: entities.id, name: entities.name })
-            .from(entities)
-            .where(inArray(entities.id, ids))
-            .all()
-            .map((e) => [e.id, e.name])
-        : [],
-    );
-    return rows.map((r) => this.map(r, names));
+      .filter((row) => (!opts.topicId || inTree(row.topicId) || extra.has(row.id)) && (!opts.projectId || inTree(row.projectId) || extra.has(row.id)));
+    const names = this.namesOf([...new Set(rows.flatMap((row) => [row.topicId, row.projectId]).filter((id): id is string => Boolean(id)))]);
+    return rows.map((row) => this.map(row, names));
   }
 
-  create(input: EventInput, ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {}): EventRecord {
+  private namesOf(ids: string[]): Map<string, string> {
+    if (!ids.length) return new Map();
+    const rows = this.db.select({ id: entities.id, name: entities.name }).from(entities).where(inArray(entities.id, ids)).all();
+    return new Map(rows.map((row) => [row.id, row.name]));
+  }
+
+  create(input: EventInput, provenance: { actor?: 'user' | 'agent'; trigger?: string } = {}): EventRecord {
     const occurredAt = normalizeDateInput(input.occurredAt ?? null);
     if (!occurredAt) throw new AppError('validation_error', 'Für ein Ereignis wird ein gültiges Datum benötigt.');
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
-    const personContext = mentionContext(ctxInfo.trigger, 'manual');
+    const personContext = mentionContext(provenance.trigger, 'manual');
     const row: Row = {
       id: newId(),
       title: input.title.trim(),
@@ -162,8 +139,8 @@ export class EventService {
     });
     this.audit.log({
       action: 'event.create',
-      actor: ctxInfo.actor ?? 'user',
-      trigger: ctxInfo.trigger ?? 'manual',
+      actor: provenance.actor ?? 'user',
+      trigger: provenance.trigger ?? 'manual',
       confirmed: true,
       entityIds: [row.id],
       after: { title: row.title, occurredAt },
@@ -177,69 +154,47 @@ export class EventService {
   /** Finds an event with the same (normalised) title on the same day (events discarded as duplicates do not count). */
   findIdentical(title: string, occurredAt: string): EventRecord | undefined {
     const day = normalizeDateInput(occurredAt)?.slice(0, 10);
-    const norm = normalizeName(title);
-    if (!day || !norm) return undefined;
+    const normalized = normalizeName(title);
+    if (!day || !normalized) return undefined;
     const hit = this.db
       .select()
       .from(events)
       .where(like(events.occurredAt, `${day}%`))
       .all()
-      .find((r) => !r.duplicateOfId && normalizeName(r.title) === norm);
+      .find((row) => !row.duplicateOfId && normalizeName(row.title) === normalized);
     return hit ? this.map(hit) : undefined;
   }
 
   /** Like `create`, but returns an identical existing event (same title, same day) instead of a duplicate. */
-  createUnlessExists(input: EventInput, ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {}): { event: EventRecord; created: boolean } {
+  createUnlessExists(input: EventInput, provenance: { actor?: 'user' | 'agent'; trigger?: string } = {}): { event: EventRecord; created: boolean } {
     const existing = this.findIdentical(input.title, input.occurredAt);
-    return existing ? { event: existing, created: false } : { event: this.create(input, ctxInfo), created: true };
+    return existing ? { event: existing, created: false } : { event: this.create(input, provenance), created: true };
   }
 
   /** The participants as `participated_in` relations; relations to persons no longer listed become outdated. */
-  private syncParticipants(r: Pick<Row, 'id' | 'participants' | 'sourceIds'>, personContext: PersonMentionContext): void {
+  private syncParticipants(event: Pick<Row, 'id' | 'participants' | 'sourceIds'>, personContext: PersonMentionContext): void {
     const personIds: string[] = [];
-    for (const person of this.persons.resolveNames(r.participants, { context: personContext }).entities) {
+    for (const person of this.persons.resolveNames(event.participants, { context: personContext }).entities) {
       personIds.push(person.id);
-      this.graph.link(person.id, r.id, 'participated_in', { confidence: 0.9, status: 'confirmed', sourceIds: r.sourceIds });
+      this.graph.link(person.id, event.id, 'participated_in', { confidence: 0.9, status: 'confirmed', sourceIds: event.sourceIds });
     }
-    this.graph.unlinkSystemRelations(r.id, 'participated_in', personIds, { direction: 'in', otherType: 'person' });
+    this.graph.unlinkSystemRelations(event.id, 'participated_in', personIds, { direction: 'in', otherType: 'person' });
   }
 
-  update(id: string, patch: Partial<EventInput>, ctxInfo: { trigger?: string } = {}): EventRecord {
-    const cur = this.db.select().from(events).where(eq(events.id, id)).get();
-    if (!cur) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
-    const set: Partial<Row> = { updatedAt: nowIso() };
-    if (patch.title !== undefined) set.title = patch.title.trim();
-    if (patch.description !== undefined) set.description = patch.description?.trim() || null;
-    if (patch.occurredAt !== undefined) {
-      const d = normalizeDateInput(patch.occurredAt);
-      if (!d) throw new AppError('validation_error', 'Ungültiges Datum.');
-      set.occurredAt = d;
-    }
-    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
-    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
-    const personContext = mentionContext(ctxInfo.trigger, 'manual');
-    if (patch.participants !== undefined) set.participants = this.persons.resolveNames(patch.participants, { context: personContext }).names;
-    const { changes } = this.graph.trackRelationChanges(id, () =>
-      this.db.transaction(() => {
-        this.db.update(events).set(set).where(eq(events.id, id)).run();
-        if (set.participants) this.syncParticipants({ ...cur, ...set }, personContext);
-        this.graph.registerNode('event', id, set.title ?? cur.title, set.description === undefined ? cur.description : set.description);
-        if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
-        if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
-        // the previous topic/project no longer applies
-        if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
-        if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
-      }),
-    );
-    const before = Object.fromEntries(Object.keys(set).flatMap((k) => (k === 'updatedAt' ? [] : [[k, cur[k as keyof Row]]]))) as Partial<Row>;
+  update(id: string, patch: Partial<EventInput>, provenance: { trigger?: string } = {}): EventRecord {
+    const current = this.requireRow(id);
+    const personContext = mentionContext(provenance.trigger, 'manual');
+    const set = this.changesOf(patch, personContext);
+    const { changes } = this.graph.trackRelationChanges(id, () => this.db.transaction(() => this.applyUpdate({ current, set, personContext })));
+    const before = Object.fromEntries(Object.keys(set).flatMap((key) => (key === 'updatedAt' ? [] : [[key, current[key as keyof Row]]]))) as Partial<Row>;
     const undoData: EventUpdateUndo = { id, before, afterUpdatedAt: set.updatedAt!, relations: changes };
     this.audit.log({
       action: 'event.update',
       actor: 'user',
-      trigger: ctxInfo.trigger ?? 'manual',
+      trigger: provenance.trigger ?? 'manual',
       confirmed: true,
       entityIds: [id],
-      before: { title: cur.title, occurredAt: cur.occurredAt },
+      before: { title: current.title, occurredAt: current.occurredAt },
       after: patch,
       undo: { type: 'event_update', data: undoData },
     });
@@ -248,11 +203,62 @@ export class EventService {
     return this.get(id);
   }
 
+  /** The columns a patch changes; a named topic or project is created if missing. */
+  private changesOf(patch: Partial<EventInput>, personContext: PersonMentionContext): Partial<Row> {
+    const set: Partial<Row> = { updatedAt: nowIso() };
+    if (patch.title !== undefined) set.title = patch.title.trim();
+    if (patch.description !== undefined) set.description = patch.description?.trim() || null;
+    if (patch.occurredAt !== undefined) {
+      const occurredAt = normalizeDateInput(patch.occurredAt);
+      if (!occurredAt) throw new AppError('validation_error', 'Ungültiges Datum.');
+      set.occurredAt = occurredAt;
+    }
+    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
+    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    if (patch.participants !== undefined) set.participants = this.persons.resolveNames(patch.participants, { context: personContext }).names;
+    return set;
+  }
+
+  private applyUpdate(update: { current: Row; set: Partial<Row>; personContext: PersonMentionContext }): void {
+    const { current, set } = update;
+    const { id } = current;
+    this.db.update(events).set(set).where(eq(events.id, id)).run();
+    if (set.participants) this.syncParticipants({ ...current, ...set }, update.personContext);
+    this.graph.registerNode('event', id, set.title ?? current.title, set.description === undefined ? current.description : set.description);
+    if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
+    if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
+    // the previous topic/project no longer applies
+    if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
+    if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+  }
+
+  private updateConflicts(undoData: EventUpdateUndo): string[] {
+    const row = this.row(undoData.id);
+    if (!row) return ['Das Ereignis existiert nicht mehr.'];
+    const conflicts = row.updatedAt === undoData.afterUpdatedAt ? [] : ['Das Ereignis wurde seit der Bearbeitung verändert.'];
+    return [...conflicts, ...this.graph.relationChangeConflicts(undoData.relations)];
+  }
+
+  private revertUpdate(undoData: EventUpdateUndo): string {
+    this.db.transaction(() => {
+      this.db
+        .update(events)
+        .set({ ...undoData.before, updatedAt: nowIso() })
+        .where(eq(events.id, undoData.id))
+        .run();
+      const row = this.row(undoData.id);
+      if (row) this.graph.registerNode('event', row.id, row.title, row.description);
+      this.graph.revertRelationChanges(undoData.relations);
+    });
+    void this.reindex(undoData.id);
+    this.ctx.events.changed('events', 'knowledge', 'status');
+    return 'Bearbeitung des Ereignisses rückgängig gemacht.';
+  }
+
   delete(id: string, opts: { confirmed: boolean }): void {
     if (!opts.confirmed) throw new AppError('permission_error', 'Das Löschen eines Ereignisses erfordert eine ausdrückliche Bestätigung.');
-    const cur = this.db.select().from(events).where(eq(events.id, id)).get();
-    if (!cur) throw new AppError('validation_error', 'Ereignis nicht gefunden.');
-    const undoData: EventDeleteUndo = { event: cur, node: this.graph.snapshotNode(id) };
+    const current = this.requireRow(id);
+    const undoData: EventDeleteUndo = { event: current, node: this.graph.snapshotNode(id) };
     this.db.transaction(() => {
       this.db.delete(events).where(eq(events.id, id)).run();
       this.graph.removeNode(id);
@@ -264,33 +270,33 @@ export class EventService {
       trigger: 'manual',
       confirmed: true,
       entityIds: [id],
-      before: { title: cur.title, occurredAt: cur.occurredAt },
+      before: { title: current.title, occurredAt: current.occurredAt },
       undo: { type: 'event_delete', data: undoData },
     });
     this.ctx.events.changed('events', 'knowledge', 'status');
   }
 
   /** Undo of `delete`: restores the event with its id, graph node, relations and search entry. */
-  private restore(d: EventDeleteUndo): string {
+  private restore(undoData: EventDeleteUndo): string {
     const exists = (entityId: string | null) => (entityId && this.graph.getEntity(entityId) ? entityId : null);
-    const keptEvent = d.event.duplicateOfId && this.db.select({ id: events.id }).from(events).where(eq(events.id, d.event.duplicateOfId)).get();
+    const keptEvent = undoData.event.duplicateOfId && this.row(undoData.event.duplicateOfId);
     const row: Row = {
-      ...d.event,
-      topicId: exists(d.event.topicId),
-      projectId: exists(d.event.projectId),
-      duplicateOfId: keptEvent ? d.event.duplicateOfId : null,
+      ...undoData.event,
+      topicId: exists(undoData.event.topicId),
+      projectId: exists(undoData.event.projectId),
+      duplicateOfId: keptEvent ? undoData.event.duplicateOfId : null,
     };
     let skipped = 0;
     this.db.transaction(() => {
       this.db.insert(events).values(row).run();
-      if (d.node) skipped = this.graph.restoreNode(d.node);
+      if (undoData.node) skipped = this.graph.restoreNode(undoData.node);
       else this.graph.registerNode('event', row.id, row.title, row.description);
     });
     void this.reindex(row.id);
     this.ctx.events.changed('events', 'knowledge', 'status');
     const lost = [
-      d.event.topicId && !row.topicId && 'das Thema',
-      d.event.projectId && !row.projectId && 'das Projekt',
+      undoData.event.topicId && !row.topicId && 'das Thema',
+      undoData.event.projectId && !row.projectId && 'das Projekt',
       skipped > 0 && (skipped === 1 ? 'eine Verknüpfung' : `${skipped} Verknüpfungen`),
     ].filter(Boolean);
     return lost.length ? `Ereignis wiederhergestellt. Nicht wiederhergestellt, weil inzwischen entfernt: ${lost.join(', ')}.` : 'Ereignis wiederhergestellt.';
@@ -299,21 +305,21 @@ export class EventService {
   /** Rebuilds the search index entry (e.g. after a merge changed names or references); a discarded duplicate is not searchable. */
   async reindex(id: string): Promise<void> {
     try {
-      const e = this.get(id);
-      if (e.duplicateOfId) {
+      const event = this.get(id);
+      if (event.duplicateOfId) {
         this.search.remove(id);
         return;
       }
       await this.search.index({
         type: 'event',
         id,
-        title: e.title,
+        title: event.title,
         content: [
-          e.title,
-          e.description,
-          `Datum: ${e.occurredAt.slice(0, 10)}`,
-          e.topicName && `Thema: ${e.topicName}`,
-          e.projectName && `Projekt: ${e.projectName}`,
+          event.title,
+          event.description,
+          `Datum: ${event.occurredAt.slice(0, 10)}`,
+          event.topicName && `Thema: ${event.topicName}`,
+          event.projectName && `Projekt: ${event.projectName}`,
         ]
           .filter(Boolean)
           .join('\n'),

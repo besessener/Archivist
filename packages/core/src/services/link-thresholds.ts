@@ -14,15 +14,17 @@ const FULL_RATE = 0.9;
 /** Decisions from which a rate counts fully (fewer: the rise is scaled down). */
 const FULL_WEIGHT = 20;
 
-/**
- * Methods whose proposals carry a graded score and can therefore be made a little stricter. The cap keeps every method
- * alive: even at the cap the strongest proposals of the method still pass (a cosine up to 1; two shared persons on the same day).
- */
+/** Methods with a graded score that can be made a little stricter; at the cap their strongest proposals still pass. */
 const LEARNABLE = {
   similarity: { cap: 0.1, measure: 'Mindest-Ähnlichkeit' },
   date_person: { cap: 0.1, measure: 'Mindest-Konfidenz' },
 } as const satisfies Partial<Record<RelationMethod, { cap: number; measure: string }>>;
 export type LearnableMethod = keyof typeof LEARNABLE;
+
+interface Decisions {
+  confirmed: number;
+  rejected: number;
+}
 
 export interface LearnedThreshold {
   method: LearnableMethod;
@@ -36,19 +38,14 @@ export interface LearnedThreshold {
   rejected: number;
 }
 
-/**
- * Learning from rejections, gently (#275): rejected pairs never come back anyway (#270). Beyond that, a method most of
- * whose recent proposals the user rejected becomes a little stricter – the raise grows with the rejection rate, is capped
- * and shrinks again with confirmations (it is computed from the latest decisions, nothing accumulates). No method is ever
- * switched off. Reset in the settings: only decisions after the reset count.
- */
+/** Learning from rejections, gently (#275): a mostly rejected method gets a capped, recomputed raise; none is switched off. */
 export class LinkThresholds {
   constructor(
     private readonly ctx: AppContext,
     private readonly appState: AppStateService,
   ) {}
 
-  private decisions(method: LearnableMethod): { confirmed: number; rejected: number } {
+  private decisions(method: LearnableMethod): Decisions {
     const since = this.appState.get(RESET_AT) ?? '';
     const rows = this.ctx.database.sqlite
       .prepare(
@@ -61,24 +58,23 @@ export class LinkThresholds {
   }
 
   /** The raise for one method from its latest decisions: 0 below the start rate, the cap from the full rate on. */
-  static raise(confirmed: number, rejected: number, cap: number): number {
-    const n = confirmed + rejected;
-    if (n < MIN_DECISIONS) return 0;
-    const rate = rejected / n;
+  static raise(decisions: Decisions, cap: number): number {
+    const total = decisions.confirmed + decisions.rejected;
+    if (total < MIN_DECISIONS) return 0;
+    const rate = decisions.rejected / total;
     const level = Math.min(1, Math.max(0, (rate - START_RATE) / (FULL_RATE - START_RATE)));
-    return Math.round(cap * level * Math.min(1, n / FULL_WEIGHT) * 1000) / 1000;
+    return Math.round(cap * level * Math.min(1, total / FULL_WEIGHT) * 1000) / 1000;
   }
 
   offset(method: LearnableMethod): number {
-    const d = this.decisions(method);
-    return LinkThresholds.raise(d.confirmed, d.rejected, LEARNABLE[method].cap);
+    return LinkThresholds.raise(this.decisions(method), LEARNABLE[method].cap);
   }
 
   list(): LearnedThreshold[] {
     return (Object.keys(LEARNABLE) as LearnableMethod[]).map((method) => {
-      const d = this.decisions(method);
+      const decisions = this.decisions(method);
       const { cap, measure } = LEARNABLE[method];
-      return { method, label: RELATION_METHOD_LABELS[method], measure, offset: LinkThresholds.raise(d.confirmed, d.rejected, cap), cap, ...d };
+      return { method, label: RELATION_METHOD_LABELS[method], measure, offset: LinkThresholds.raise(decisions, cap), cap, ...decisions };
     });
   }
 

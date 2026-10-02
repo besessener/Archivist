@@ -28,14 +28,10 @@ export interface NoteInput {
   links?: Array<{ targetId: string; relationType: RelationType; confidence?: number }>;
 }
 
-const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();
+const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
 const sameText = (a: string, b: string) => collapse(a).toLowerCase() === collapse(b).toLowerCase();
 
-/**
- * The single place where notes are created (knowledge page, chat, solution proposals).
- * Every note is its own graph node with its own id and is indexed for search; notes are
- * never merged just because their titles start the same way.
- */
+/** The single place where notes are created: each is its own indexed graph node, never merged for a similar title. */
 export class NoteService {
   /** `[[Name]]` links in the text (#285). */
   readonly wiki: WikiLinks;
@@ -49,29 +45,29 @@ export class NoteService {
   ) {
     this.wiki = new WikiLinks(ctx, graph);
     undo?.register(NOTE_UPDATE_UNDO, {
-      check: async (data) => {
-        const d = data as NoteUpdateUndo;
-        const note = this.graph.getEntity(d.id);
-        if (!note) return ['Die Notiz existiert nicht mehr.'];
-        return note.updatedAt === d.afterUpdatedAt ? [] : ['Die Notiz wurde seit der Bearbeitung verändert.'];
-      },
-      run: async (data) => {
-        const d = data as NoteUpdateUndo;
-        this.graph.registerNode('note', d.id, d.before.name, d.before.description);
-        this.wiki.sync(d.id, d.before.description ?? d.before.name);
-        await this.reindex(d.id);
-        // the analysis runs again on the former text: its relations come back, the newer ones become outdated
-        this.ctx.events.emit('entry:updated', { id: d.id, type: 'note' });
-        this.ctx.events.changed('knowledge');
-        return `Notiz „${d.before.name}“ wiederhergestellt.`;
-      },
+      check: async (data) => this.updateConflicts(data as NoteUpdateUndo),
+      run: async (data) => this.revertUpdate(data as NoteUpdateUndo),
     });
   }
 
-  /**
-   * Changes title and/or text of a note (#273). Logged with undo; afterwards the note is indexed and analysed again
-   * (`entry:updated`).
-   */
+  private updateConflicts(undoData: NoteUpdateUndo): string[] {
+    const note = this.graph.getEntity(undoData.id);
+    if (!note) return ['Die Notiz existiert nicht mehr.'];
+    return note.updatedAt === undoData.afterUpdatedAt ? [] : ['Die Notiz wurde seit der Bearbeitung verändert.'];
+  }
+
+  private async revertUpdate(undoData: NoteUpdateUndo): Promise<string> {
+    const { id, before } = undoData;
+    this.graph.registerNode('note', id, before.name, before.description);
+    this.wiki.sync(id, before.description ?? before.name);
+    await this.reindex(id);
+    // the analysis runs again on the former text: its relations come back, the newer ones become outdated
+    this.ctx.events.emit('entry:updated', { id, type: 'note' });
+    this.ctx.events.changed('knowledge');
+    return `Notiz „${before.name}“ wiederhergestellt.`;
+  }
+
+  /** Changes title and/or text of a note (#273), with undo; afterwards it is indexed and analysed again (`entry:updated`). */
   async update(
     id: string,
     patch: { title?: string | null; content?: string | null },
@@ -120,7 +116,7 @@ export class NoteService {
       .from(entities)
       .where(and(eq(entities.type, 'note'), eq(entities.normalizedName, normalizeName(title)), isNull(entities.duplicateOfId)))
       .all();
-    const hit = candidates.find((c) => sameText(c.description ?? c.name, content));
+    const hit = candidates.find((candidate) => sameText(candidate.description ?? candidate.name, content));
     return hit ? this.graph.getEntity(hit.id) : undefined;
   }
 
@@ -161,6 +157,7 @@ export class NoteService {
   }
 
   private applyLinks(noteId: string, input: NoteInput): void {
-    for (const l of input.links ?? []) this.graph.link(noteId, l.targetId, l.relationType, { confidence: l.confidence ?? 0.9, status: 'confirmed' });
+    for (const link of input.links ?? [])
+      this.graph.link(noteId, link.targetId, link.relationType, { confidence: link.confidence ?? 0.9, status: 'confirmed' });
   }
 }

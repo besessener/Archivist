@@ -10,14 +10,14 @@ afterEach(async () => {
 describe('Learning from rejections, gently (#275)', () => {
   it('the raise grows with the rejection rate, is capped and needs enough decisions', () => {
     const cap = 0.1;
-    expect(LinkThresholds.raise(0, 7, cap)).toBe(0); // too few decisions
-    expect(LinkThresholds.raise(10, 10, cap)).toBe(0); // half rejected: nothing learned yet
-    expect(LinkThresholds.raise(3, 17, cap)).toBe(0.088);
-    expect(LinkThresholds.raise(0, 20, cap)).toBe(cap);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 7 }, cap)).toBe(0); // too few decisions
+    expect(LinkThresholds.raise({ confirmed: 10, rejected: 10 }, cap)).toBe(0); // half rejected: nothing learned yet
+    expect(LinkThresholds.raise({ confirmed: 3, rejected: 17 }, cap)).toBe(0.088);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 20 }, cap)).toBe(cap);
     // capped: no number of rejections goes beyond it
-    expect(LinkThresholds.raise(0, 1000, cap)).toBe(cap);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 1000 }, cap)).toBe(cap);
     // few decisions only count partly
-    expect(LinkThresholds.raise(0, 10, cap)).toBe(0.05);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 10 }, cap)).toBe(0.05);
   });
 
   it('confirmations lower the threshold again; reset forgets; proposals become stricter but never stop', async () => {
