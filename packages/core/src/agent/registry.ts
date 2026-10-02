@@ -117,6 +117,13 @@ export interface ToolContext {
   webContent?: boolean;
 }
 
+/** A fresh context: nothing shared, applied or changed yet. */
+export function createToolContext(
+  start: Pick<ToolContext, 'runId' | 'conversationId' | 'trigger' | 'mode' | 'refs' | 'signal' | 'userText' | 'lastAnswer' | 'job'>,
+): ToolContext {
+  return { ...start, shared: new Set(), files: [], applied: [], changes: [], actionIds: [], changedCount: 0, tainted: null };
+}
+
 export interface ToolOutput {
   /** Text for the model (data, never instructions). */
   content: string;
