@@ -65,14 +65,9 @@ const LlmHints = z.object({
 });
 const VERDICT_TEXT = { same: 'wahrscheinlich dieselbe Person', different: 'wahrscheinlich verschiedene Personen', unclear: 'unklar' } as const;
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const counted = (n: number, [one, many]: [string, string]) => `${n} ${n === 1 ? one : many}`;
 
-/**
- * Archive check step: asks instead of guessing when two person entries might be the same person (first or last name
- * only, initial, middle name, similar spelling). „Gleich“ merges (undoable, the other spelling becomes an alias),
- * „Verschieden“ is remembered for as long as both entries exist, a short name with several candidates gets one question
- * „Welche … ist gemeint?“ with „keine davon“. Questions that no longer apply are withdrawn with their proposals.
- */
+/** Archive check step: asks instead of guessing when two person entries might be the same person; answers are remembered. */
 export class PersonQuestionService {
   constructor(
     private readonly ctx: AppContext,
@@ -86,7 +81,7 @@ export class PersonQuestionService {
     return this.ctx.database.db;
   }
 
-  async check(countFn: (kind: string, n?: number) => void, signal?: AbortSignal): Promise<void> {
+  async check(count: (kind: string, n?: number) => void, signal?: AbortSignal): Promise<void> {
     const persons = this.db
       .select({ id: entities.id, name: entities.name })
       .from(entities)
@@ -111,16 +106,13 @@ export class PersonQuestionService {
     }
     const hints = await this.llmHints(fresh, signal);
     signal?.throwIfAborted();
-    for (const q of known) if (this.insights.upsert(this.describe(q, null)).status === 'open') countFn('unclear_person');
-    for (const [i, q] of fresh.entries()) if (this.insights.upsert(this.describe(q, hints.get(i) ?? null)).status === 'open') countFn('unclear_person');
+    for (const q of known) if (this.insights.upsert(this.describe(q, null)).status === 'open') count('unclear_person');
+    for (const [i, q] of fresh.entries()) if (this.insights.upsert(this.describe(q, hints.get(i) ?? null)).status === 'open') count('unclear_person');
     this.insights.reconcile(PERSON_PAIR_KEY_PREFIX, current);
     this.insights.reconcile(PERSON_WHICH_KEY_PREFIX, current);
   }
 
-  /**
-   * Pairs answered „verschieden“: rejected pair questions, and every candidate of a rejected „Welche …?“ question
-   * („keine davon“). The latter are stored as rejected pair questions, so the answer outlives the group question.
-   */
+  /** Pairs answered „verschieden“; a rejected „Welche …?“ question is stored per candidate so the answer outlives it. */
   private differentPairs(exists: Set<string>): { has: (a: string, b: string) => boolean; keys: Set<string> } {
     const rejected = (prefix: string) =>
       this.db
@@ -197,22 +189,22 @@ export class PersonQuestionService {
   }
 
   private sharedEvidence(a: string, b: string): string {
-    const na = this.graph.neighbors(a);
-    const nb = new Set(this.graph.neighbors(b).map((n) => n.id));
-    const shared: GraphEntity[] = na.filter((n) => nb.has(n.id));
+    const neighborsA = this.graph.neighbors(a);
+    const neighborIdsB = new Set(this.graph.neighbors(b).map((n) => n.id));
+    const shared: GraphEntity[] = neighborsA.filter((n) => neighborIdsB.has(n.id));
     const docs = shared.filter((n) => n.type === 'document').length;
     const decisions = shared.filter((n) => n.type === 'decision').length;
     const topics = shared.filter((n) => n.type === 'topic' || n.type === 'project').map((n) => `„${n.name}“`);
     const parts = [
-      docs ? count(docs, 'gemeinsames Dokument', 'gemeinsame Dokumente') : null,
-      decisions ? count(decisions, 'gemeinsame Entscheidung', 'gemeinsame Entscheidungen') : null,
+      docs ? counted(docs, ['gemeinsames Dokument', 'gemeinsame Dokumente']) : null,
+      decisions ? counted(decisions, ['gemeinsame Entscheidung', 'gemeinsame Entscheidungen']) : null,
       topics.length ? `gemeinsame Themen/Projekte: ${topics.join(', ')}` : null,
     ].filter(Boolean);
     return parts.length ? parts.join(', ') : 'keine gemeinsamen Dokumente, Entscheidungen oder Themen';
   }
 
   private describeEvidence(e: Evidence): string {
-    const parts = [count(e.documents, 'Dokument', 'Dokumente'), count(e.decisions, 'Entscheidung', 'Entscheidungen')];
+    const parts = [counted(e.documents, ['Dokument', 'Dokumente']), counted(e.decisions, ['Entscheidung', 'Entscheidungen'])];
     if (e.topics.length) parts.push(`Themen/Projekte: ${e.topics.slice(0, 5).join(', ')}`);
     return parts.join(', ');
   }
@@ -301,16 +293,13 @@ export class PersonQuestionService {
     };
   }
 
-  /**
-   * Optional hint of the language model for new questions. Only the names are sent, and only in privacy mode „auto“:
-   * in „vorher fragen“ nobody can confirm a background run, „nur lokal“ sends nothing. The hint never decides.
-   */
+  /** Optional LLM hint (names only, privacy mode „auto“ only: nobody can confirm a background run) that never decides. */
   private async llmHints(questions: Question[], signal?: AbortSignal): Promise<Map<number, string>> {
     const out = new Map<number, string>();
     if (questions.length === 0 || this.privacy.mode() !== 'auto' || !this.llm.canUse()) return out;
     const batch = questions.slice(0, MAX_LLM_QUESTIONS);
     try {
-      const res = await this.llm.completeJson(LlmHints, {
+      const answer = await this.llm.completeJson(LlmHints, {
         schemaName: 'PersonHints',
         purpose: 'Personen-Rückfragen (nur Namen)',
         signal,
@@ -318,7 +307,7 @@ export class PersonQuestionService {
           'Du prüfst Namen von Personen aus einem persönlichen Wissensarchiv. Gib für jede Frage an, ob der erste Name wahrscheinlich dieselbe Person meint wie der (bzw. einer der) weiteren ("same"), verschiedene Personen ("different") oder ob das unklar ist ("unclear"); bei mehreren Kandidaten nenne in "candidate" den wahrscheinlich gemeinten Namen. Begründe kurz auf Deutsch. Du entscheidest nichts, der Benutzer entscheidet. Sprichst du den Benutzer an, dann mit „du“.',
         input: batch.map((q, i) => `${i + 1}. „${q.short.name}“ / ${q.candidates.map((c) => `„${c.person.name}“`).join(' / ')}`).join('\n'),
       });
-      for (const h of res.questions) {
+      for (const h of answer.questions) {
         if (h.nr < 1 || h.nr > batch.length) continue;
         const candidate = h.candidate?.trim() ? ` (${truncate(h.candidate.trim(), 80)})` : '';
         out.set(h.nr - 1, `${VERDICT_TEXT[h.verdict]}${candidate}${h.reason?.trim() ? ` – ${truncate(h.reason.trim(), 200)}` : ''}`);

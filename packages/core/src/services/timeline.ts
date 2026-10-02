@@ -16,10 +16,20 @@ export interface TimelineQuery {
   limit?: number;
 }
 
-/**
- * Chronological view of documents, decisions, open items and contradictions – every entry links to its objects.
- * Returns the newest `limit` entries matching the filter, sorted oldest first.
- */
+type UndatedEntry = Omit<TimelineEntry, 'year'>;
+type SubjectMatch = (row: { id: string; topicId: string | null; projectId: string | null }) => boolean;
+type RefsOf = (type: EntityRef['type'], id: string | null) => EntityRef[];
+type EntityName = (id: string) => string | null;
+
+/** The database handle with the lookups shared by the entry builders. */
+interface TimelineReader {
+  db: Db;
+  match: SubjectMatch;
+  refsOf: RefsOf;
+  entityName: EntityName;
+}
+
+/** Chronological view of documents, decisions, open items and contradictions; the newest `limit` entries, oldest first. */
 export class TimelineService {
   constructor(private readonly ctx: AppContext) {}
 
@@ -28,69 +38,70 @@ export class TimelineService {
   }
 }
 
-/**
- * The timeline as a pure read over a database handle – runs on the main connection or in the read worker with its
- * own read-only connection (#215).
- */
-export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
-  const out: TimelineEntry[] = [];
-  // a further topic/project of an entry counts as well (#287), and so do the subtopics (#282)
-  const tree = (subjectId: string | undefined): string[] => {
-    if (!subjectId) return [];
-    const out = [subjectId];
-    for (let i = 0; i < out.length && out.length < 1000; i += 1)
-      for (const r of db
-        .select({ id: relations.sourceEntityId })
-        .from(relations)
-        .where(and(eq(relations.targetEntityId, out[i]!), eq(relations.relationType, 'subtopic_of'), eq(relations.status, 'confirmed')))
-        .all())
-        if (!out.includes(r.id)) out.push(r.id);
-    return out;
-  };
-  const topicTree = new Set(tree(q.topicId));
-  const projectTree = new Set(tree(q.projectId));
-  const further = (subjects: Set<string>) =>
-    new Set(
-      subjects.size
-        ? db
-            .select({ id: relations.sourceEntityId })
-            .from(relations)
-            .where(and(inArray(relations.targetEntityId, [...subjects]), eq(relations.status, 'confirmed')))
-            .all()
-            .map((r) => r.id)
-        : [],
-    );
-  const furtherTopic = further(topicTree);
-  const furtherProject = further(projectTree);
-  const match = (topicId: string | null, projectId: string | null, id?: string) => {
-    if (q.topicId && !(topicId && topicTree.has(topicId)) && !(id && furtherTopic.has(id))) return false;
-    if (q.projectId && !(projectId && projectTree.has(projectId)) && !(id && furtherProject.has(id))) return false;
-    return true;
-  };
+/** A topic or project with its subtopics (#282). */
+function subjectTree(db: Db, subjectId: string | undefined): Set<string> {
+  if (!subjectId) return new Set();
+  const tree = [subjectId];
+  for (let i = 0; i < tree.length && tree.length < 1000; i += 1)
+    for (const row of db
+      .select({ id: relations.sourceEntityId })
+      .from(relations)
+      .where(and(eq(relations.targetEntityId, tree[i]!), eq(relations.relationType, 'subtopic_of'), eq(relations.status, 'confirmed')))
+      .all())
+      if (!tree.includes(row.id)) tree.push(row.id);
+  return new Set(tree);
+}
+
+/** Entries with a confirmed relation to one of the subjects (a further topic/project, #287). */
+function furtherEntries(db: Db, subjects: Set<string>): Set<string> {
+  if (!subjects.size) return new Set();
+  return new Set(
+    db
+      .select({ id: relations.sourceEntityId })
+      .from(relations)
+      .where(and(inArray(relations.targetEntityId, [...subjects]), eq(relations.status, 'confirmed')))
+      .all()
+      .map((row) => row.id),
+  );
+}
+
+function subjectFilter(db: Db, subjectId: string | undefined): (mainId: string | null, entryId: string) => boolean {
+  if (!subjectId) return () => true;
+  const tree = subjectTree(db, subjectId);
+  const further = furtherEntries(db, tree);
+  return (mainId, entryId) => Boolean(mainId && tree.has(mainId)) || further.has(entryId);
+}
+
+function subjectMatcher(db: Db, q: TimelineQuery): SubjectMatch {
+  const topic = subjectFilter(db, q.topicId);
+  const project = subjectFilter(db, q.projectId);
+  return (row) => topic(row.topicId, row.id) && project(row.projectId, row.id);
+}
+
+function entityNames(db: Db): EntityName {
   const names = new Map<string, string | null>();
-  const entityName = (id: string): string | null => {
+  return (id) => {
     if (!names.has(id)) names.set(id, db.select({ name: entities.name }).from(entities).where(eq(entities.id, id)).get()?.name ?? null);
     return names.get(id) ?? null;
   };
-  const ref = (type: EntityRef['type'], id: string | null, label?: string | null): EntityRef[] =>
-    id ? [{ type, id, label: label ?? entityName(id) ?? id }] : [];
-  // the contradiction itself comes first (leads to the insights), then the affected decisions
-  const contraRefs = (c: { id: string; title: string; affectedEntityIds: string[] }): EntityRef[] => [
-    { type: 'contradiction', id: c.id, label: c.title },
-    ...c.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: entityName(id) ?? id })),
-  ];
-  // Timestamps (createdAt, …) belong to the local day, not the UTC day (#77).
-  const push = (e: Omit<TimelineEntry, 'year'>) => {
-    const date = localDate(e.date);
-    // an undated entry has no date to filter by: it is only shown without a date range
-    if (e.undated && (q.from || q.to)) return;
-    if (q.from && date < localDate(q.from)) return;
-    if (q.to && date > localDate(q.to)) return;
-    out.push({ ...e, date, year: Number(date.slice(0, 4)) || 0 });
-  };
+}
 
-  // filtered in the database and without the extracted text – SELECT * loaded every full text per call (#214)
-  const docRows = db
+/** Timestamps belong to the local day, not the UTC day (#77); an undated entry is only shown without a date range. */
+function inRange(entry: UndatedEntry, q: TimelineQuery): TimelineEntry[] {
+  const date = localDate(entry.date);
+  if (entry.undated && (q.from || q.to)) return [];
+  if (q.from && date < localDate(q.from)) return [];
+  if (q.to && date > localDate(q.to)) return [];
+  return [{ ...entry, date, year: Number(date.slice(0, 4)) || 0 }];
+}
+
+function subjectRefs(refsOf: RefsOf, row: { topicId: string | null; projectId: string | null }): EntityRef[] {
+  return [...refsOf('topic', row.topicId), ...refsOf('project', row.projectId)];
+}
+
+/** Filtered in the database and without the extracted text – SELECT * loaded every full text per call (#214). */
+function documentEntries({ db, refsOf }: TimelineReader, q: TimelineQuery): UndatedEntry[] {
+  const rows = db
     .select({
       id: documents.id,
       title: documents.title,
@@ -111,108 +122,121 @@ export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
       ),
     )
     .all();
-  for (const d of docRows) {
-    push({
-      id: `doc:${d.id}`,
-      date: d.documentDate ?? d.dates[0] ?? d.archivedAt ?? d.createdAt,
-      kind: 'document',
-      title: `Dokument: ${d.title}`,
-      description: d.summary ? truncate(d.summary, 220) : null,
-      refs: [{ type: 'document', id: d.id, label: d.title }, ...ref('topic', d.topicId), ...ref('project', d.projectId)],
-    });
-  }
-  const decisionRows = db
-    .select()
-    .from(decisions)
-    .all()
-    .filter((d) => match(d.topicId, d.projectId, d.id));
-  const dating = decisionDates(db, decisionRows);
-  for (const d of decisionRows) {
-    const dd = dating.get(d.id);
-    const status = d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : '';
-    const dateNote = dd?.basis === 'source' ? ' (Datum laut Quelldokument)' : '';
-    // without a decision date the date of a source document is used; without one either the entry is undated –
-    // the capture day only keeps it in order and is not shown as the decision's date (#168)
-    push({
-      id: `dec:${d.id}`,
-      date: dd?.date ?? d.createdAt,
+  return rows.map((row) => ({
+    id: `doc:${row.id}`,
+    date: row.documentDate ?? row.dates[0] ?? row.archivedAt ?? row.createdAt,
+    kind: 'document',
+    title: `Dokument: ${row.title}`,
+    description: row.summary ? truncate(row.summary, 220) : null,
+    refs: [{ type: 'document', id: row.id, label: row.title }, ...subjectRefs(refsOf, row)],
+  }));
+}
+
+const DECISION_STATUS_NOTE: Record<string, string> = { superseded: ' (überholt)', draft: ' (Entwurf)' };
+
+/** Without a decision or source document date a decision is undated; its capture day only keeps it in order (#168). */
+function decisionEntries({ db, refsOf }: TimelineReader, rows: Array<typeof decisions.$inferSelect>): UndatedEntry[] {
+  const dating = decisionDates(db, rows);
+  return rows.map((row) => {
+    const dated = dating.get(row.id);
+    const dateNote = dated?.basis === 'source' ? ' (Datum laut Quelldokument)' : '';
+    return {
+      id: `dec:${row.id}`,
+      date: dated?.date ?? row.createdAt,
       kind: 'decision',
-      title: `Entscheidung${status}${dateNote}: ${d.title}`,
-      description: truncate(d.decisionText, 240),
-      refs: [{ type: 'decision', id: d.id, label: d.title }, ...ref('topic', d.topicId), ...ref('project', d.projectId)],
-      ...(dd?.date ? {} : { undated: true }),
-    });
-  }
-  for (const e of db.select().from(events).all()) {
-    // a discarded duplicate is represented by the event it was merged into
-    if (e.duplicateOfId || !match(e.topicId, e.projectId, e.id)) continue;
-    push({
-      id: `event:${e.id}`,
-      date: e.occurredAt,
+      title: `Entscheidung${DECISION_STATUS_NOTE[row.status] ?? ''}${dateNote}: ${row.title}`,
+      description: truncate(row.decisionText, 240),
+      refs: [{ type: 'decision', id: row.id, label: row.title }, ...subjectRefs(refsOf, row)],
+      ...(dated?.date ? {} : { undated: true }),
+    };
+  });
+}
+
+/** A discarded duplicate event is represented by the event it was merged into. */
+function eventEntries({ db, match, refsOf }: TimelineReader): UndatedEntry[] {
+  return db
+    .select()
+    .from(events)
+    .all()
+    .filter((row) => !row.duplicateOfId && match(row))
+    .map((row) => ({
+      id: `event:${row.id}`,
+      date: row.occurredAt,
       kind: 'event',
-      title: `Ereignis: ${e.title}`,
-      description: e.description ? truncate(e.description, 240) : null,
-      refs: [{ type: 'event', id: e.id, label: e.title }, ...ref('topic', e.topicId), ...ref('project', e.projectId)],
-    });
-  }
-  for (const o of db.select().from(openItems).all()) {
-    if (!match(o.topicId, o.projectId, o.id)) continue;
-    const refs: EntityRef[] = [{ type: 'task', id: o.id, label: o.title }, ...ref('topic', o.topicId), ...ref('project', o.projectId)];
-    push({
-      id: `task:${o.id}:created`,
-      date: o.createdAt,
+      title: `Ereignis: ${row.title}`,
+      description: row.description ? truncate(row.description, 240) : null,
+      refs: [{ type: 'event', id: row.id, label: row.title }, ...subjectRefs(refsOf, row)],
+    }));
+}
+
+function openItemEntries(row: typeof openItems.$inferSelect, refsOf: RefsOf): UndatedEntry[] {
+  const refs: EntityRef[] = [{ type: 'task', id: row.id, label: row.title }, ...subjectRefs(refsOf, row)];
+  const out: UndatedEntry[] = [
+    {
+      id: `task:${row.id}:created`,
+      date: row.createdAt,
       kind: 'open_item',
-      title: `Offener Punkt angelegt: ${o.title}`,
-      description: o.description ? truncate(o.description, 200) : null,
+      title: `Offener Punkt angelegt: ${row.title}`,
+      description: row.description ? truncate(row.description, 200) : null,
+      refs,
+    },
+  ];
+  if (row.dueAt)
+    out.push({ id: `task:${row.id}:due`, date: row.dueAt, kind: 'open_item', title: `Fällig: ${row.title}`, description: `Status: ${row.status}`, refs });
+  if (row.status === 'resolved' || row.status === 'dismissed')
+    out.push({
+      id: `task:${row.id}:done`,
+      date: row.updatedAt,
+      kind: 'open_item',
+      title: `${row.status === 'resolved' ? 'Erledigt' : 'Verworfen'}: ${row.title}`,
+      description: row.resolutionNote ? truncate(row.resolutionNote, 240) : null,
       refs,
     });
-    if (o.dueAt) push({ id: `task:${o.id}:due`, date: o.dueAt, kind: 'open_item', title: `Fällig: ${o.title}`, description: `Status: ${o.status}`, refs });
-    if (o.status === 'resolved' || o.status === 'dismissed')
-      push({
-        id: `task:${o.id}:done`,
-        date: o.updatedAt,
-        kind: 'open_item',
-        title: `${o.status === 'resolved' ? 'Erledigt' : 'Verworfen'}: ${o.title}`,
-        description: o.resolutionNote ? truncate(o.resolutionNote, 240) : null,
-        refs,
-      });
-  }
-  if (!q.topicId && !q.projectId) {
-    for (const c of db.select().from(contradictions).all()) {
-      push({
-        id: `contra:${c.id}`,
-        date: c.createdAt,
-        kind: 'contradiction',
-        title: c.title,
-        description: truncate(c.description, 240),
-        refs: contraRefs(c),
-      });
-    }
-  } else {
-    // contradictions affecting decisions of this topic/project
-    const decIds = new Set(
-      db
-        .select()
-        .from(decisions)
-        .all()
-        .filter((d) => match(d.topicId, d.projectId, d.id))
-        .map((d) => d.id),
-    );
-    for (const c of db.select().from(contradictions).all()) {
-      if (c.affectedEntityIds.some((id) => decIds.has(id))) {
-        push({
-          id: `contra:${c.id}`,
-          date: c.createdAt,
-          kind: 'contradiction',
-          title: c.title,
-          description: truncate(c.description, 240),
-          refs: contraRefs(c),
-        });
-      }
-    }
-  }
-  // Filter first (above), then keep the NEWEST `limit` entries; the result stays in chronological order.
-  const sorted = out.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  return out;
+}
+
+/** Without a subject filter every contradiction, else those affecting the shown decisions; the contradiction's ref comes first. */
+function contradictionEntries({ db, entityName }: TimelineReader, affecting: Set<string> | 'all'): UndatedEntry[] {
+  return db
+    .select()
+    .from(contradictions)
+    .all()
+    .filter((row) => affecting === 'all' || row.affectedEntityIds.some((id) => affecting.has(id)))
+    .map((row) => ({
+      id: `contra:${row.id}`,
+      date: row.createdAt,
+      kind: 'contradiction',
+      title: row.title,
+      description: truncate(row.description, 240),
+      refs: [
+        { type: 'contradiction', id: row.id, label: row.title },
+        ...row.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: entityName(id) ?? id })),
+      ],
+    }));
+}
+
+/** The timeline as a pure read over a database handle – on the main connection or the read worker's own one (#215). */
+export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
+  const match = subjectMatcher(db, q);
+  const entityName = entityNames(db);
+  const refsOf: RefsOf = (type, id) => (id ? [{ type, id, label: entityName(id) ?? id }] : []);
+  const reader: TimelineReader = { db, match, refsOf, entityName };
+  const decisionRows = db.select().from(decisions).all().filter(match);
+  const filtered = Boolean(q.topicId || q.projectId);
+  const entries = [
+    ...documentEntries(reader, q),
+    ...decisionEntries(reader, decisionRows),
+    ...eventEntries(reader),
+    ...db
+      .select()
+      .from(openItems)
+      .all()
+      .filter(match)
+      .flatMap((row) => openItemEntries(row, refsOf)),
+    ...contradictionEntries(reader, filtered ? new Set(decisionRows.map((row) => row.id)) : 'all'),
+  ].flatMap((entry) => inRange(entry, q));
+  // filter first, then keep the NEWEST `limit` entries in chronological order
+  const sorted = entries.toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const limit = q.limit ?? 300;
   return sorted.length > limit ? sorted.slice(sorted.length - limit) : sorted;
 }

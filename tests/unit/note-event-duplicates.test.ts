@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessEventPair, assessNotePair } from '../../packages/core/src/services/cleanup/note-event-duplicates';
+import { assessEventPair, assessNotePair } from '../../packages/core/src/services/cleanup/note-event-assessment';
 
 const PREFIX = 'Für das Sommerfest am 12. Juli brauchen wir noch Zelte, Bänke und Tische vom Sportverein nebenan. ';
 

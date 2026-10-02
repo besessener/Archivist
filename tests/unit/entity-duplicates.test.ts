@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { classifyNames, duplicateKey } from '../../packages/core/src/services/cleanup/entity-duplicates';
+import { duplicateKey } from '../../packages/core/src/services/cleanup/entity-duplicates';
+import { classifyNames } from '../../packages/core/src/services/cleanup/entity-name-matching';
 
 const c = (a: string, b: string, aliases: { a?: string[]; b?: string[] } = {}) =>
   classifyNames({ name: a, aliases: aliases.a }, { name: b, aliases: aliases.b });

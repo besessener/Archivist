@@ -10,6 +10,12 @@ import type { SettingsService } from './settings';
 
 type Row = typeof reminders.$inferSelect;
 const REMINDER_PREFIX = 'Erinnerung: ';
+/** The action that opens the reminder's target, for targets that have a view. */
+const OPEN_TARGET_ACTIONS = new Map<string, { label: string; kind: 'navigate'; target: string }>([
+  ['open_item', { label: 'Offene Punkte öffnen', kind: 'navigate', target: '/open-items/' }],
+  ['decision', { label: 'Entscheidungen öffnen', kind: 'navigate', target: '/decisions/' }],
+  ['insight', { label: 'Insights öffnen', kind: 'navigate', target: '/insights/' }],
+]);
 const map = (r: Row): Reminder => ({
   id: r.id,
   targetType: r.targetType as Reminder['targetType'],
@@ -20,9 +26,9 @@ const map = (r: Row): Reminder => ({
   createdAt: r.createdAt,
 });
 
-function reached(remindAt: string, now: Date, defaultTime: string, timeZone?: string): boolean {
-  const at = localInstant(remindAt, defaultTime, timeZone);
-  return !at || at.getTime() <= now.getTime();
+function reached(remindAt: string, clock: { now: Date; defaultTime: string; timeZone?: string }): boolean {
+  const at = localInstant(remindAt, clock.defaultTime, clock.timeZone);
+  return !at || at.getTime() <= clock.now.getTime();
 }
 
 /** openItems.reminderAt mirrors the item's next pending reminder (or null). */
@@ -40,10 +46,7 @@ export function syncReminderAt(db: Db, openItemId: string): void {
     .run();
 }
 
-/**
- * Reminders are stored locally, checked on startup and – while the application runs – fired on schedule.
- * (Without a tray/operating system service there is no notification while the application is closed.)
- */
+/** Reminders are stored locally and fired on schedule while the app runs (no notification while it is closed). */
 export class ReminderService {
   private timer: NodeJS.Timeout | null = null;
 
@@ -110,40 +113,36 @@ export class ReminderService {
     this.ctx.events.changed('reminders', 'openItems');
   }
 
-  /**
-   * Whether a reminder time has been reached (#77): a date without a time means the configured
-   * local reminder time (default 08:00) on that day, not midnight UTC. Unparsable values count as due.
-   */
-  isDue(remindAt: string, now: Date = new Date(), timeZone?: string): boolean {
-    return reached(remindAt, now, this.settings.get().notifications.reminderTime, timeZone);
+  /** Whether a reminder time has been reached (#77): a bare date means the local reminder time; unparsable counts as due. */
+  isDue(remindAt: string, at: { now?: Date; timeZone?: string } = {}): boolean {
+    return reached(remindAt, { now: at.now ?? new Date(), defaultTime: this.settings.get().notifications.reminderTime, timeZone: at.timeZone });
   }
 
   /** Fires due reminders (on application start and periodically). Returns the count. */
   checkDue(now: Date = new Date(), timeZone?: string): number {
     const pending = this.db.select().from(reminders).where(eq(reminders.status, 'pending')).orderBy(asc(reminders.remindAt)).all();
-    const time = this.settings.get().notifications.reminderTime;
-    const due = pending.filter((r) => reached(r.remindAt, now, time, timeZone));
-    for (const r of due) {
-      this.db.update(reminders).set({ status: 'fired' }).where(eq(reminders.id, r.id)).run();
-      if (r.targetType === 'open_item' && r.targetId) syncReminderAt(this.db, r.targetId);
-      // A snoozed notification comes back as itself, keeping its actions and target (#79).
-      if (r.targetType === 'notification' && r.targetId && this.notifications.reopen(r.targetId)) continue;
-      const link: { label: string; kind: 'navigate' | 'resolve' | 'snooze'; target?: string }[] = [];
-      if (r.targetType === 'open_item') link.push({ label: 'Offene Punkte öffnen', kind: 'navigate', target: '/open-items/' });
-      if (r.targetType === 'decision') link.push({ label: 'Entscheidungen öffnen', kind: 'navigate', target: '/decisions/' });
-      if (r.targetType === 'insight') link.push({ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' });
-      this.notifications.create({
-        title: r.title.startsWith(REMINDER_PREFIX) ? r.title : `${REMINDER_PREFIX}${r.title}`,
-        description: `Geplant für ${localDate(r.remindAt, timeZone)}.`,
-        type: 'reminder',
-        priority: 'high',
-        affectedEntityIds: r.targetId ? [r.targetId] : [],
-        proposedActions: [...link, { label: 'Morgen erneut', kind: 'snooze' }, { label: 'Erledigt', kind: 'resolve' }],
-        dedupeKey: `reminder:${r.id}:${r.remindAt}`,
-      });
-    }
+    const clock = { now, defaultTime: this.settings.get().notifications.reminderTime, timeZone };
+    const due = pending.filter((r) => reached(r.remindAt, clock));
+    for (const reminder of due) this.fire(reminder, timeZone);
     if (due.length) this.ctx.events.changed('reminders', 'openItems');
     return due.length;
+  }
+
+  private fire(reminder: Row, timeZone: string | undefined): void {
+    this.db.update(reminders).set({ status: 'fired' }).where(eq(reminders.id, reminder.id)).run();
+    if (reminder.targetType === 'open_item' && reminder.targetId) syncReminderAt(this.db, reminder.targetId);
+    // A snoozed notification comes back as itself, keeping its actions and target (#79).
+    if (reminder.targetType === 'notification' && reminder.targetId && this.notifications.reopen(reminder.targetId)) return;
+    const open = OPEN_TARGET_ACTIONS.get(reminder.targetType);
+    this.notifications.create({
+      title: reminder.title.startsWith(REMINDER_PREFIX) ? reminder.title : `${REMINDER_PREFIX}${reminder.title}`,
+      description: `Geplant für ${localDate(reminder.remindAt, timeZone)}.`,
+      type: 'reminder',
+      priority: 'high',
+      affectedEntityIds: reminder.targetId ? [reminder.targetId] : [],
+      proposedActions: [...(open ? [open] : []), { label: 'Morgen erneut', kind: 'snooze' }, { label: 'Erledigt', kind: 'resolve' }],
+      dedupeKey: `reminder:${reminder.id}:${reminder.remindAt}`,
+    });
   }
 
   start(intervalMs = 60_000): void {
