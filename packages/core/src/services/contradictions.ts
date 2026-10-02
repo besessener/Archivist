@@ -167,7 +167,7 @@ export class ContradictionService {
   }
 
   private async confirmWithLlm(a: Decision, b: Decision): Promise<{ isContradiction: boolean; confidence: number; description: string } | null> {
-    if (!this.llm.canUse()) return null;
+    if (!this.llm.canUseInBackground()) return null;
     try {
       const res = await this.llm.completeJson(ContradictionProposal, {
         schemaName: 'ContradictionProposal',

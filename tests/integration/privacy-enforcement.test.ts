@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DecisionInput } from '@archivist/shared';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -222,5 +223,34 @@ describe('search does not wait for a hanging embedding endpoint (#56)', () => {
     expect(hits.map((h) => h.id)).toContain(note.id);
     expect(app.llm.embeddingRequests).toEqual([['Leuchtturm']]);
     release();
+  });
+});
+
+describe('Mode „vorher fragen“: no background checks with the LLM (#201)', () => {
+  it('a new decision is checked for contradictions locally only – no decision text leaves the machine', async () => {
+    app = await createTestApp({ privacy: 'confirm' });
+    app.llm.on('ContradictionProposal', () => ({ isContradiction: true, confidence: 0.9, description: 'x' }));
+    app.services.decisions.create(
+      DecisionInput.parse({ decisionText: 'Wir machen mit der Solaranlage weiter.', topic: 'Strom', participants: ['Anna'], decidedAt: '2026-01-01' }),
+    );
+    const b = app.services.decisions.create(
+      DecisionInput.parse({ decisionText: 'Wir stoppen die Solaranlage.', topic: 'Strom', participants: ['Anna'], decidedAt: '2026-02-01' }),
+    );
+    await app.services.contradictions.checkDecision(b.id);
+    await app.services.consistency.run();
+    expect(app.llm.calls.filter((c) => c.schema === 'ContradictionProposal')).toHaveLength(0);
+  });
+
+  it('in mode „automatisch“ the LLM check runs', async () => {
+    app = await createTestApp({ privacy: 'auto' });
+    app.llm.on('ContradictionProposal', () => ({ isContradiction: false, confidence: 0.9, description: '' }));
+    app.services.decisions.create(
+      DecisionInput.parse({ decisionText: 'Wir machen mit der Solaranlage weiter.', topic: 'Strom', participants: ['Anna'], decidedAt: '2026-01-01' }),
+    );
+    const b = app.services.decisions.create(
+      DecisionInput.parse({ decisionText: 'Wir stoppen die Solaranlage.', topic: 'Strom', participants: ['Anna'], decidedAt: '2026-02-01' }),
+    );
+    await app.services.contradictions.checkDecision(b.id);
+    expect(app.llm.calls.filter((c) => c.schema === 'ContradictionProposal').length).toBeGreaterThan(0);
   });
 });

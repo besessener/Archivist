@@ -17,8 +17,16 @@ import { Section, useSaveSettings, type TabProps } from './shared';
 
 type Mode = 'auto' | 'confirm' | 'local_only';
 const MODES: Array<{ id: Mode; title: string; text: string }> = [
-  { id: 'confirm', title: 'Vor jeder externen Analyse fragen', text: 'Dokumentinhalte gehen erst nach deiner Bestätigung an die KI.' },
-  { id: 'auto', title: 'Automatisch analysieren', text: 'Inhalte werden ohne Rückfrage an die KI gesendet.' },
+  {
+    id: 'confirm',
+    title: 'Vor jeder externen Analyse fragen',
+    text: 'Dokumente gehen erst nach deiner Bestätigung an die KI. Was du im Chat schreibst, wird zur Auswertung an die KI gesendet – zusammen mit Textstellen bereits freigegebener Dokumente. Entscheidungen werden nur lokal auf Widersprüche geprüft.',
+  },
+  {
+    id: 'auto',
+    title: 'Automatisch analysieren',
+    text: 'Dokumente, Chatnachrichten und Entscheidungen (Widerspruchsprüfung) werden ohne Rückfrage an die KI gesendet.',
+  },
   { id: 'local_only', title: 'Nur lokal', text: 'Es wird nie etwas an die KI gesendet. Vorschläge sind weniger genau.' },
 ];
 
