@@ -6,7 +6,7 @@ import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import type { ActionService } from './actions';
 import { InsightAnswers } from './insight-answers';
-import { InsightProposals, type InsightActionSpec, type InsightChoiceSpec, type ProposalInput } from './insight-proposals';
+import { InsightProposals, type InsightChoiceSpec, type ProposalInput } from './insight-proposals';
 import type { ReminderService } from './reminders';
 
 type Row = typeof insights.$inferSelect;
