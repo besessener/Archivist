@@ -12,6 +12,7 @@ import { ChatService } from './services/chat';
 import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
 import { AppStateService } from './services/app-state';
 import { ConsistencyService } from './services/consistency';
+import { PersonDuplicateService } from './services/cleanup/person-duplicates';
 import { ContradictionService } from './services/contradictions';
 import { DecisionService } from './services/decisions';
 import { DocumentService } from './services/documents';
@@ -133,6 +134,8 @@ function buildServices(opts: CreateServicesOptions) {
   consistency.addCheck((count) => {
     openItemDuplicates.check(count);
   });
+  const personDuplicates = new PersonDuplicateService(ctx, settings, graph, insights);
+  consistency.addCheck((count) => personDuplicates.check(count));
   const noteEventDuplicates = new NoteEventDuplicateService(ctx, graph, notes, eventsSvc, audit, undo, insights);
   consistency.addCheck((count) => {
     noteEventDuplicates.check(count);
@@ -172,6 +175,7 @@ function buildServices(opts: CreateServicesOptions) {
     scanner,
     reminders,
     audit,
+    undo,
   });
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
@@ -271,6 +275,7 @@ function buildServices(opts: CreateServicesOptions) {
     eventRecords: eventsSvc,
     notes,
     noteEventDuplicates,
+    personDuplicates,
     insights,
     actions,
     contradictions,

@@ -41,8 +41,8 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
     b: { keep: 20, autoOnStartup: false, includeArchive: false },
   },
   consistency: {
-    a: { onStartup: false, intervalHours: 6, staleOpenItemDays: 14 },
-    b: { onStartup: true, intervalHours: 48, staleOpenItemDays: 60 },
+    a: { onStartup: false, intervalHours: 6, staleOpenItemDays: 14, autoMergePersons: false },
+    b: { onStartup: true, intervalHours: 48, staleOpenItemDays: 60, autoMergePersons: true },
   },
   ocr: {
     a: { enabled: false, languages: 'eng' },

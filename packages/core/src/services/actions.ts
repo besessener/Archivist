@@ -25,6 +25,7 @@ import type { KnowledgeGraphService } from './knowledge-graph';
 import type { OpenItemService } from './open-items';
 import type { ReminderService } from './reminders';
 import type { ScannerService } from './scanner';
+import type { UndoService } from './undo';
 
 type Row = typeof agentActions.$inferSelect;
 
@@ -66,6 +67,7 @@ export interface ActionDeps {
   scanner: ScannerService;
   reminders: ReminderService;
   audit: AuditService;
+  undo: UndoService;
 }
 
 /**
@@ -310,6 +312,11 @@ export class ActionService {
           return { stale: 'Einer der Einträge wurde inzwischen zusammengeführt oder gelöscht.' };
         return { params };
       }
+      case 'undo_change': {
+        const p = ActionParamSchemas.undo_change.parse(params);
+        if (d.audit.getRow(p.auditId).undoneAt) return { stale: 'Die Änderung wurde bereits rückgängig gemacht.' };
+        return { params };
+      }
       case 'merge_open_items': {
         const p = ActionParamSchemas.merge_open_items.parse(params);
         const stale = d.openItemDuplicates.staleReason(p.keepId, p.duplicateId);
@@ -483,6 +490,12 @@ export class ActionService {
         const params = ActionParamSchemas.merge_open_items.parse(p);
         const r = d.openItemDuplicates.merge(params.keepId, params.duplicateId, { trigger });
         return `„${r.duplicate.title}“ als Duplikat von „${r.keep.title}“ verworfen${r.takenOver.length ? `; übernommen: ${r.takenOver.join(', ')}` : ''}.`;
+      }
+      case 'undo_change': {
+        const params = ActionParamSchemas.undo_change.parse(p);
+        const r = await d.undo.undo(params.auditId);
+        if (!r.undone) throw new AppError('validation_error', r.message, { details: r.conflicts.join(' ') || undefined });
+        return r.message;
       }
       case 'record_decision': {
         const params = ActionParamSchemas.record_decision.parse(p);

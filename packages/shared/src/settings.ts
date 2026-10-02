@@ -47,6 +47,8 @@ const ConsistencySettings = z.object({
   onStartup: z.boolean().default(true),
   intervalHours: z.number().min(0).default(24),
   staleOpenItemDays: z.number().int().min(1).default(30),
+  /** Merge unambiguous person duplicates („Monika Lor-Zade (Chefin)“ = „Lor-Zade, Monika“) without asking. */
+  autoMergePersons: z.boolean().default(true),
 });
 
 /** Wer benutzt Archivist? Name und Spitznamen helfen, „ich/mir/mich“ und Erwähnungen der eigenen Person zuzuordnen. */

@@ -25,6 +25,10 @@ export interface MergeRequest {
   targetId: string;
   /** Allows merging a topic into a project or vice versa; the target's type wins. */
   allowCrossType?: boolean;
+  /** New name of the target (e.g. the cleanest spelling of a person); its former name becomes an alias. */
+  targetName?: string;
+  /** Roles added to the target in addition to those of the sources (e.g. parsed from „Monika Lor-Zade (Chefin)“). */
+  addRoles?: string[];
 }
 
 export interface MergeOptions {
@@ -732,21 +736,21 @@ export class KnowledgeGraphService {
     const sourceIds = sources.map((s) => s.id);
     const now = nowIso();
     const step: MergeStep = { target: { ...target }, sources, relationsDeleted: [], relationsUpdated: [], refs: [] };
+    const name = req.targetName?.trim().replace(/\s+/g, ' ') || target.name;
+    const renamed = name !== target.name;
 
     const relationsMoved = this.moveRelations(step, now, touched);
-    const referencesUpdated = this.rehangReferences(step, now, touched, reindex);
+    const referencesUpdated = this.rehangReferences(step, now, touched, reindex, renamed ? name : undefined);
 
-    // the target keeps the merged names as aliases and takes over a missing description
-    const aliases = mergeAliases(
-      target,
-      sources.flatMap((s) => [s.name, ...s.aliases]),
-    );
+    // the target keeps the merged names (and its former name) as aliases and takes over a missing description
+    const normalizedName = normalizeName(name);
+    const aliases = mergeAliases({ normalizedName, aliases: target.aliases }, [
+      ...(renamed ? [target.name] : []),
+      ...sources.flatMap((s) => [s.name, ...s.aliases]),
+    ]);
     const description = target.description ?? sources.find((s) => s.description)?.description ?? null;
-    const roles = mergeRoles(
-      target.roles,
-      sources.flatMap((s) => s.roles),
-    );
-    this.db.update(entities).set({ aliases, roles, description, updatedAt: now }).where(eq(entities.id, target.id)).run();
+    const roles = mergeRoles(target.roles, [...sources.flatMap((s) => s.roles), ...(req.addRoles ?? [])]);
+    this.db.update(entities).set({ name, normalizedName, aliases, roles, description, updatedAt: now }).where(eq(entities.id, target.id)).run();
     touched.add(`entity:${target.id}`);
 
     this.db.delete(entities).where(inArray(entities.id, sourceIds)).run();
@@ -756,7 +760,7 @@ export class KnowledgeGraphService {
       step,
       result: {
         targetId: target.id,
-        targetName: target.name,
+        targetName: name,
         targetType: target.type as EntityType,
         mergedIds: sourceIds,
         mergedNames: sources.map((s) => s.name),
@@ -819,11 +823,16 @@ export class KnowledgeGraphService {
   }
 
   /** Re-hangs topic/project/responsible references and name lists in documents, decisions, open items and events. */
-  private rehangReferences(step: MergeStep, now: string, touched: Set<string>, reindex: RefSets): number {
+  /** `newName`: the target is renamed, so name lists mentioning its former name are updated as well. */
+  private rehangReferences(step: MergeStep, now: string, touched: Set<string>, reindex: RefSets, newName?: string): number {
     const target = step.target;
+    const targetName = newName ?? target.name;
     const sourceIds = step.sources.map((s) => s.id);
     const sourceSet = new Set(sourceIds);
-    const sourceNames = new Set(step.sources.flatMap((s) => [s.normalizedName, ...s.aliases.map(normalizeName)]));
+    const sourceNames = new Set([
+      ...step.sources.flatMap((s) => [s.normalizedName, ...s.aliases.map(normalizeName)]),
+      ...(newName ? [target.normalizedName] : []),
+    ]);
     const touchesTopics = step.sources.some((s) => TOPIC_OR_PROJECT.has(s.type));
     let updated = 0;
     for (const name of REF_TABLE_NAMES) {
@@ -845,7 +854,7 @@ export class KnowledgeGraphService {
         const next: RefRow = { ...row };
         if (touchesTopics) rehangSlots(next, sourceSet, target);
         if (responsible && sourceSet.has(String(next.responsiblePersonId))) next.responsiblePersonId = target.id;
-        if (listCol) next[listCol] = replaceNames(next[listCol] as string[], sourceNames, target.name);
+        if (listCol) next[listCol] = replaceNames(next[listCol] as string[], sourceNames, targetName);
         const changed = spec.cols.filter((c) => c !== 'updatedAt' && JSON.stringify(next[c]) !== JSON.stringify(row[c]));
         if (changed.length === 0) continue;
         const id = String(row.id);

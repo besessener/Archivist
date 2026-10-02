@@ -50,10 +50,11 @@ const KIND_LABELS: Record<string, string> = {
   low_confidence_relation: 'ungeklärte Beziehungen',
   external_file: 'externe Dateien mit Archivbezug',
   duplicate_open_item: 'doppelte offene Punkte',
+  persons_merged: 'automatisch zusammengeführte Personen-Einträge',
 };
 
 /** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */
-export type ConsistencyCheck = (count: (kind: string) => void) => void | Promise<void>;
+export type ConsistencyCheck = (count: (kind: string, n?: number) => void) => void | Promise<void>;
 
 /** Key prefixes of the hints this check owns; a hint whose cause no longer exists is closed after each run. */
 const RECONCILED_INSIGHTS = [
