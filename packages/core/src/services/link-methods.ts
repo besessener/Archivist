@@ -7,7 +7,7 @@ import type { CreatedEntry } from '../util/origin-scope';
 import { normalizeName, tokenize, truncate } from '../util/text';
 import type { AppStateService } from './app-state';
 import type { InsightService } from './insights';
-import type { KnowledgeGraphService } from './knowledge-graph';
+import { relationReason, type KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
 
 /** Knowledge entries the link methods connect (documents only once archived or indexed). */
@@ -53,6 +53,32 @@ export interface LinkProposalPage {
   groups: Array<{ key: string; label: string; count: number }>;
   items: LinkProposal[];
 }
+
+/** An entry related to another one – directly or over shared topics, projects, persons, tags or cases (#276). */
+export interface RelatedItem {
+  entity: { id: string; type: EntityType; name: string; description: string | null };
+  /** Strength: kind and number of the connections. */
+  score: number;
+  /** Plain-language reason, e.g. „gleiches Projekt „Hausbau“ + gleiche Person „Anna““. */
+  reason: string;
+  /** The direct relation, if any (proposals can be confirmed or rejected right there). */
+  relation: GraphRelation | null;
+  shared: Array<{ id: string; type: EntityType; name: string }>;
+}
+
+/** Weight of a shared node for the strength of an indirect connection (#276). */
+const SHARED_WEIGHT: Partial<Record<EntityType, number>> = { project: 4, case: 4, topic: 3, person: 2, tag: 1 };
+const SHARED_LABEL: Partial<Record<EntityType, string>> = {
+  project: 'gleiches Projekt',
+  case: 'gleicher Vorgang',
+  topic: 'gleiches Thema',
+  person: 'gleiche Person',
+  tag: 'gleicher Tag',
+};
+/** Order of the shared nodes in a reason. */
+const SHARED_ORDER: EntityType[] = ['project', 'case', 'topic', 'person', 'tag'];
+/** A node shared with more entries than this says little about two of them (e.g. a tag on every document). */
+const MAX_HUB_MEMBERS = 500;
 
 export interface OrphanPage {
   total: number;
@@ -212,6 +238,82 @@ export class LinkMethodsService {
     const q = this.proposalSql(groupBy);
     const ids = (this.sqlite.prepare(`SELECT r.id AS id ${q.from} AND ${q.key} = ?`).all(key) as Array<{ id: string }>).map((r) => r.id);
     return this.graph.decideRelations(ids, decision, opts);
+  }
+
+  /**
+   * Related entries of an entry (#276): direct relations (confirmed and proposed) and indirect connections over shared
+   * topics, projects, persons (not the user's own), tags and cases – sorted by strength, each with its reason, paged.
+   * Pairs the user rejected and anything that is not an entry (inbox documents, discarded duplicates) are left out.
+   */
+  related(id: string, opts: { limit?: number; offset?: number } = {}): { total: number; items: RelatedItem[] } {
+    const byId = new Map<string, { score: number; relation: GraphRelation | null; shared: RelatedItem['shared'] }>();
+    const slot = (other: string) => {
+      const s = byId.get(other) ?? { score: 0, relation: null, shared: [] };
+      byId.set(other, s);
+      return s;
+    };
+    const rejected = new Set(
+      this.graph
+        .relationsOf(id, { statuses: ['rejected'] })
+        .flatMap((r) => (r.relationType === 'duplicate_of' ? [] : [r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId])),
+    );
+    const hubs: Array<{ id: string; type: EntityType; name: string }> = [];
+    for (const r of this.graph.relationsOf(id, { statuses: ['proposed', 'confirmed'] })) {
+      const otherId = r.sourceEntityId === id ? r.targetEntityId : r.sourceEntityId;
+      const other = this.graph.getEntity(otherId);
+      if (!other) continue;
+      if (SHARED_WEIGHT[other.type] !== undefined) {
+        if (!other.isSelf && !hubs.some((h) => h.id === other.id)) hubs.push({ id: other.id, type: other.type, name: other.name });
+        continue;
+      }
+      if (r.relationType === 'duplicate_of' || !LINK_ENTRY_TYPES.includes(other.type)) continue;
+      const s = slot(otherId);
+      const weight = (r.status === 'confirmed' ? 10 : 5) + r.confidence;
+      if (!s.relation || weight > s.score) s.relation = r;
+      s.score += weight;
+    }
+    const members = this.sqlite.prepare(
+      `SELECT CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END AS other
+       FROM relations r WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status IN ('proposed','confirmed')`,
+    );
+    for (const hub of hubs) {
+      const others = [...new Set((members.all(hub.id, hub.id, hub.id) as Array<{ other: string }>).map((m) => m.other))];
+      if (others.length > MAX_HUB_MEMBERS) continue;
+      for (const other of others) {
+        if (other === id) continue;
+        const s = slot(other);
+        s.score += SHARED_WEIGHT[hub.type] ?? 0;
+        s.shared.push(hub);
+      }
+    }
+    const reasonOf = (s: { relation: GraphRelation | null; shared: RelatedItem['shared'] }) => {
+      const parts: string[] = [];
+      if (s.relation) parts.push(relationReason(s.relation));
+      for (const type of SHARED_ORDER) {
+        const names = s.shared.filter((h) => h.type === type).map((h) => `„${h.name}“`);
+        if (names.length) parts.push(`${SHARED_LABEL[type]} ${names.join(', ')}`);
+      }
+      return parts.join(' + ');
+    };
+    const all = [...byId.entries()]
+      .filter(([other, s]) => s.score > 0 && !rejected.has(other) && this.isEntry(other))
+      .flatMap(([other, s]) => {
+        const e = this.graph.getEntity(other);
+        return e
+          ? [
+              {
+                entity: { id: e.id, type: e.type, name: e.name, description: e.description },
+                score: Math.round(s.score * 100) / 100,
+                reason: reasonOf(s),
+                relation: s.relation,
+                shared: s.shared.toSorted((x, y) => SHARED_ORDER.indexOf(x.type) - SHARED_ORDER.indexOf(y.type) || x.name.localeCompare(y.name, 'de')),
+              },
+            ]
+          : [];
+      })
+      .toSorted((a, b) => b.score - a.score || a.entity.name.localeCompare(b.entity.name, 'de'));
+    const offset = opts.offset ?? 0;
+    return { total: all.length, items: all.slice(offset, offset + (opts.limit ?? 10)) };
   }
 
   /**

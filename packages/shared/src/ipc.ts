@@ -133,14 +133,16 @@ const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benu
 export const UndoRunResult = z.object({ undone: z.number().int(), failed: z.number().int(), conflicts: z.array(z.string()), message: z.string() });
 export type UndoRunResult = z.infer<typeof UndoRunResult>;
 
-export const RelatedEntry = z.object({
-  entity: GraphEntity,
-  depth: z.number().int(),
-  relation: GraphRelation,
+/** A related entry – direct or over shared topics, projects, persons, tags, cases – with strength and reason (#276). */
+const RelatedItem = z.object({
+  entity: z.object({ id: z.string(), type: EntityType, name: z.string(), description: z.string().nullable() }),
+  score: z.number(),
   reason: z.string(),
-  via: GraphEntity.nullable(),
+  relation: GraphRelation.nullable(),
+  shared: z.array(z.object({ id: z.string(), type: EntityType, name: z.string() })),
 });
-export type RelatedEntry = z.infer<typeof RelatedEntry>;
+export const RelatedPage = z.object({ total: z.number().int(), items: z.array(RelatedItem) });
+export type RelatedPage = z.infer<typeof RelatedPage>;
 
 /** An open link proposal with both ends, for the review list (#280). */
 const LinkProposalEnd = z.object({ id: z.string(), type: EntityType, name: z.string() });
@@ -519,7 +521,8 @@ export const ipcContract = {
   /** Edits a note's title and/or text; it is analysed again afterwards (#273). Undoable. */
   'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
   /** Related entries with the reason (#276, #289). */
-  'knowledge:related': ch(z.object({ id: Id, depth: z.number().int().min(1).max(2).default(1) }), z.array(RelatedEntry)),
+  /** Related entries of an entry, strongest first, paged (#276). */
+  'knowledge:related': ch(z.object({ id: Id, limit: z.number().int().min(1).max(50).default(10), offset: z.number().int().min(0).default(0) }), RelatedPage),
   /** Link proposals for an entry: similar entries and mentioned topics/projects (#283); the same function as the agent's suggest_links. */
   'links:suggestions': ch(z.object({ id: Id, limit: z.number().int().min(1).max(5).default(3) }), z.array(LinkCandidate)),
   /** Entries without any link (#290), paged with the total. */

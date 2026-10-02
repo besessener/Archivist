@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Link2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Link2, X } from 'lucide-react';
 import { RELATION_METHOD_LABELS, RELATION_PROVENANCE_LABELS, RelationType, relationProvenance, type GraphRelation } from '@archivist/shared';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { ErrorNote, Field, Loading } from '@/components/common/states';
@@ -44,25 +44,92 @@ export function RelationProvenance({ relation }: { relation: Pick<GraphRelation,
   );
 }
 
-/** Related entries with the reason why (#276), depth 1. */
-export function RelatedEntries({ id }: { id: string }) {
-  const q = useQuery('knowledge:related', { id, depth: 1 }, { scopes: ['knowledge'] });
+const RELATED_PAGE = 10;
+
+/**
+ * Related entries (#276): direct relations and connections over shared topics, projects, persons, tags and cases –
+ * strongest first, each with its reason („gleiches Projekt … + gleiche Person …“). Proposals can be confirmed or rejected
+ * right here (undoable). With `link`, the section brings its own „Verknüpfen“ button (#277).
+ */
+export function RelatedEntries({ id, link }: { id: string; link?: { name: string } }) {
+  const [page, setPage] = useState(0);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const q = useQuery('knowledge:related', { id, limit: RELATED_PAGE, offset: page * RELATED_PAGE }, { scopes: ['knowledge'] });
+  const { run, busy } = useRun();
+  const total = q.data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / RELATED_PAGE));
+  const decide = async (relationId: string, status: 'confirmed' | 'rejected') => {
+    const out = await run(() => call('knowledge:resolveRelation', { relationId, status, confirmed: true }), {
+      success: status === 'confirmed' ? 'Bestätigt. Rückgängig im Änderungsprotokoll.' : 'Abgelehnt – wird nicht wieder vorgeschlagen.',
+    });
+    if (out) void q.refetch();
+  };
   return (
     <section data-testid="related-entries">
-      <h3 className="mb-2 text-sm font-semibold">Verwandte Einträge{q.data ? ` (${q.data.length})` : ''}</h3>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Verwandte Einträge{q.data ? ` (${total})` : ''}</h3>
+        {link && (
+          <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="related-link">
+            <Link2 aria-hidden /> Verknüpfen
+          </Button>
+        )}
+      </div>
       {q.error && !q.data && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}
       {!q.data && q.loading && <Loading />}
-      {q.data && q.data.length === 0 && <p className="text-sm text-muted-foreground">Keine verwandten Einträge gefunden.</p>}
-      {q.data && q.data.length > 0 && (
+      {q.data && total === 0 && <p className="text-sm text-muted-foreground">Keine verwandten Einträge gefunden.</p>}
+      {q.data && q.data.items.length > 0 && (
         <ul className="flex flex-col gap-2">
-          {q.data.map((r) => (
-            <li key={`${r.entity.id}-${r.relation.id}`} className="flex flex-col gap-1 rounded-lg border p-2.5" data-testid="related-entry">
+          {q.data.items.map((r) => (
+            <li key={r.entity.id} className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5" data-testid="related-entry">
               <EntityChip type={r.entity.type} id={r.entity.id} label={r.entity.name} detail={r.entity.description} />
-              {r.reason && <p className="text-xs text-muted-foreground">{r.reason}</p>}
-              {r.via && <p className="text-[11px] text-muted-foreground">über „{r.via.name}“</p>}
+              {r.relation?.status === 'proposed' && (
+                <span className="ml-auto flex gap-1.5">
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => void decide(r.relation!.id, 'confirmed')} data-testid="related-confirm">
+                    <Check aria-hidden /> Bestätigen
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => void decide(r.relation!.id, 'rejected')} data-testid="related-reject">
+                    <X aria-hidden /> Ablehnen
+                  </Button>
+                </span>
+              )}
+              <p className="basis-full text-xs text-muted-foreground" data-testid="related-reason">
+                {r.reason}
+              </p>
             </li>
           ))}
         </ul>
+      )}
+      {pages > 1 && (
+        <div className="mt-2 flex items-center justify-end gap-2 text-sm">
+          <span className="text-muted-foreground">
+            Seite {page + 1} von {pages}
+          </span>
+          <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Vorherige Seite">
+            <ChevronLeft aria-hidden />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={page + 1 >= pages}
+            onClick={() => setPage((p) => p + 1)}
+            aria-label="Nächste Seite"
+            data-testid="related-next"
+          >
+            <ChevronRight aria-hidden />
+          </Button>
+        </div>
+      )}
+      {link && (
+        <LinkDialog
+          open={linkOpen}
+          onOpenChange={setLinkOpen}
+          sourceId={id}
+          sourceName={link.name}
+          onLinked={() => {
+            setLinkOpen(false);
+            void q.refetch();
+          }}
+        />
       )}
     </section>
   );

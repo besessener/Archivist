@@ -24,6 +24,7 @@ import { useRun } from '@/lib/use-run';
 import type { DocRecord } from '@/lib/types';
 import type { DocumentStatus } from '@archivist/shared';
 import { parseList } from '@/lib/utils';
+import { RelatedEntries } from '@/components/knowledge/related';
 
 const ARCHIVED: DocumentStatus[] = ['archived', 'indexed_only'];
 const LIMIT = 1000;
@@ -286,6 +287,8 @@ function DocumentDetail({ doc, onChanged }: { doc: DocRecord; onChanged: () => v
       {doc.textPreview && !editing && (
         <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{doc.textPreview}</p>
       )}
+
+      {(doc.status === 'archived' || doc.status === 'indexed_only') && <RelatedEntries id={doc.id} link={{ name: doc.title }} />}
 
       <DialogFooter className="sm:justify-between">
         <div className="flex flex-wrap gap-2">

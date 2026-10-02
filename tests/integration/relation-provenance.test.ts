@@ -111,7 +111,7 @@ describe('Origin, method and evidence of every relation (#270)', () => {
     const a = await note('Urlaub');
     const b = await note('Flug');
     graph().link(a, b, 'related_to', { status: 'proposed', method: 'co_origin', evidence: 'Wir fliegen am 3. Mai nach Rom.' });
-    const [rel] = await app.ok('knowledge:related', { id: a, depth: 1 });
+    const [rel] = (await app.ok('knowledge:related', { id: a })).items;
     expect(rel!.reason).toContain('automatisch');
     expect(rel!.reason).toContain('gemeinsam entstanden');
     expect(rel!.reason).toContain('Wir fliegen am 3. Mai nach Rom.');

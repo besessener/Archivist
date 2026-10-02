@@ -344,7 +344,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.graph.unlinkEntries(i.relationId, { trigger });
       return { ok: true as const };
     },
-    'knowledge:related': (i) => s.graph.related(i.id, { depth: i.depth }),
+    'knowledge:related': (i) => s.links.related(i.id, i),
     'links:suggestions': (i) => s.links.candidates(i.id, { limit: i.limit }),
     'links:unlinked': (i) => s.links.orphans(i),
     'links:startRun': () => ({ jobId: s.enqueueLinkRun('manual').id }),
