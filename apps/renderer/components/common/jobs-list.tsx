@@ -49,6 +49,11 @@ export function JobRow({ job, onChanged }: { job: JobRecord; onChanged?: () => v
       {job.status === 'running' &&
         (job.progress !== null ? <Progress value={Math.round(job.progress * 100)} aria-label={`Fortschritt ${job.label}`} /> : <ProgressIndeterminate />)}
       {job.progressMessage && active && <p className="text-xs text-muted-foreground">{job.progressMessage}</p>}
+      {job.summary && job.status === 'succeeded' && (
+        <p className="text-xs text-muted-foreground" data-testid="job-summary">
+          {job.summary}
+        </p>
+      )}
       {job.error &&
         (job.status === 'failed' ? (
           <p className="break-words text-xs text-destructive">{job.error}</p>

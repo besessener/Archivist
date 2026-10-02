@@ -687,6 +687,8 @@ export const Job = z.object({
   progressMessage: z.string().nullable(),
   attempts: z.number(),
   error: z.string().nullable(),
+  /** Short outcome of a finished job for the job history (from a handler result with a `summary` string). */
+  summary: z.string().nullable(),
   cancelRequested: z.boolean(),
   createdAt: IsoDate,
   startedAt: IsoDate.nullable(),

@@ -10,6 +10,7 @@ import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
 import { ChatService } from './services/chat';
 import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
+import { AppStateService } from './services/app-state';
 import { ConsistencyService } from './services/consistency';
 import { ContradictionService } from './services/contradictions';
 import { DecisionService } from './services/decisions';
@@ -114,7 +115,19 @@ function buildServices(opts: CreateServicesOptions) {
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
   const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
-  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, entityDuplicates);
+  const appState = new AppStateService(ctx);
+  const consistency = new ConsistencyService(
+    ctx,
+    settings,
+    decisions,
+    openItems,
+    graph,
+    contradictions,
+    insights,
+    notifications,
+    entityDuplicates,
+    appState.lastRunStore('consistency.lastRunAt'),
+  );
   const backup = new BackupService(ctx, settings, audit);
   const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
   consistency.addCheck((count) => {
@@ -266,6 +279,7 @@ function buildServices(opts: CreateServicesOptions) {
     scanner,
     timeline,
     consistency,
+    appState,
     backup,
     chat,
     enqueueConsistency,
@@ -280,8 +294,9 @@ function buildServices(opts: CreateServicesOptions) {
       scanner.startSchedule();
       scanner.startupScan();
       void archive.cleanupInbox();
-      if (settings.get().consistency.onStartup) enqueueConsistency('startup');
-      consistency.startTimer(() => enqueueConsistency('interval'));
+      const startupCheck = settings.get().consistency.onStartup;
+      if (startupCheck) enqueueConsistency('startup');
+      consistency.startTimer(() => enqueueConsistency('interval'), { startupCheckQueued: startupCheck });
       if (settings.get().backups.autoOnStartup)
         void backup
           .create(settings.get().backups.includeArchive, 'startup')
