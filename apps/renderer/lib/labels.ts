@@ -29,6 +29,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   scattered_documents: 'Verstreut abgelegte Dokumente',
   low_confidence_relation: 'Unsichere Verknüpfungen',
   topic_project_name: 'Thema oder Projekt?',
+  persons_merged: 'Zusammengeführte Personen',
 };
 
 export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {

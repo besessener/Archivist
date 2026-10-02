@@ -403,6 +403,7 @@ export const InsightKind = z.enum([
   'scattered_documents',
   'low_confidence_relation',
   'topic_project_name',
+  'persons_merged',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
 /**
@@ -541,6 +542,7 @@ export const AgentActionType = z.enum([
   'add_open_item_source',
   'merge_open_items',
   'record_decision',
+  'undo_change',
 ]);
 export type AgentActionType = z.infer<typeof AgentActionType>;
 export const ConfirmationLevel = z.enum(['none', 'confirm', 'strong']);
@@ -634,6 +636,8 @@ export const ActionParamSchemas = {
   }),
   /** Duplicate open items: keep `keepId`, take over its missing details from `duplicateId`, discard that one as a duplicate (undoable). */
   merge_open_items: z.object({ keepId: Id, duplicateId: Id }),
+  /** Undoes a recorded change (audit entry), e.g. an automatic merge of person duplicates. */
+  undo_change: z.object({ auditId: Id }),
   record_decision: z.object({
     title: z.string(),
     decisionText: z.string(),

@@ -133,6 +133,17 @@ export function ArchiveTab({ settings, reload }: TabProps) {
               aria-label="Beim Start prüfen"
             />
           </SwitchRow>
+          <SwitchRow
+            label="Personen-Dubletten automatisch zusammenführen"
+            hint="Eindeutig gleiche Personen („Monika Lor-Zade (Chefin)“ = „Lor-Zade, Monika“) führt die Archivprüfung ohne Rückfrage zusammen – rückgängig machbar."
+          >
+            <Switch
+              checked={settings.consistency.autoMergePersons}
+              onCheckedChange={(v) => void save({ consistency: { autoMergePersons: v } })}
+              aria-label="Personen-Dubletten automatisch zusammenführen"
+              data-testid="settings-auto-merge-persons"
+            />
+          </SwitchRow>
           <SwitchRow label="Texterkennung in Bildern (OCR)" hint="Liest Text aus Bildern und gescannten PDFs – lokal, ohne Internet.">
             <Switch checked={settings.ocr.enabled} onCheckedChange={(v) => void save({ ocr: { enabled: v } })} aria-label="OCR" data-testid="settings-ocr" />
           </SwitchRow>

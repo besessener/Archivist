@@ -27,6 +27,12 @@ type InsightStatus = 'open' | 'accepted' | 'rejected' | 'snoozed';
 const STATUS_LABELS: Record<InsightStatus, string> = { open: 'Offen', snoozed: 'Zurückgestellt', accepted: 'Bestätigt', rejected: 'Abgelehnt' };
 /** Duplicate questions: confirming merges, rejecting remembers permanently that the entries are different. */
 const DUPLICATE_KINDS = new Set<InsightKind>(['similar_entities']);
+/** Reports of automatic changes: confirming undoes the change, rejecting keeps it. */
+const UNDO_KINDS = new Set<InsightKind>(['persons_merged']);
+const acceptLabel = (k: InsightKind) => (DUPLICATE_KINDS.has(k) ? 'Zusammenführen' : UNDO_KINDS.has(k) ? 'Rückgängig' : 'Bestätigen');
+const rejectLabel = (k: InsightKind) => (DUPLICATE_KINDS.has(k) ? 'Verschieden' : UNDO_KINDS.has(k) ? 'Behalten' : 'Ablehnen');
+const rejectSuccess = (k: InsightKind) =>
+  DUPLICATE_KINDS.has(k) ? 'Als verschieden gemerkt.' : UNDO_KINDS.has(k) ? 'Zusammenführung behalten.' : 'Hinweis abgelehnt.';
 
 export default function InsightsPage() {
   const [status, setStatus] = useState<InsightStatus>('open');
@@ -149,7 +155,7 @@ export default function InsightsPage() {
                       ))}
                       {i.choices.length === 0 && (
                         <Button size="sm" onClick={() => setAccepting(i)} data-testid="insight-accept">
-                          <Check aria-hidden /> {DUPLICATE_KINDS.has(i.kind) ? 'Zusammenführen' : 'Bestätigen'}
+                          <Check aria-hidden /> {acceptLabel(i.kind)}
                         </Button>
                       )}
                       {!i.choices.some((c) => c.actionId === null) && (
@@ -160,12 +166,12 @@ export default function InsightsPage() {
                           data-testid="insight-reject"
                           onClick={async () => {
                             await run(() => call('insights:respond', { response: 'reject', id: i.id }), {
-                              success: DUPLICATE_KINDS.has(i.kind) ? 'Als verschieden gemerkt.' : 'Hinweis abgelehnt.',
+                              success: rejectSuccess(i.kind),
                             });
                             void insights.refetch();
                           }}
                         >
-                          <X aria-hidden /> {DUPLICATE_KINDS.has(i.kind) ? 'Verschieden' : 'Ablehnen'}
+                          <X aria-hidden /> {rejectLabel(i.kind)}
                         </Button>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => setSnoozing(i)} data-testid="insight-snooze">
