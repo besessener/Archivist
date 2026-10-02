@@ -5,7 +5,9 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RefStore, type AgentTool, type ToolContext } from '../../packages/core/src/agent/registry';
 import type { ToolDeps } from '../../packages/core/src/agent/tools/common';
-import { csvCell, exportTools, monthGaps, parseAmount } from '../../packages/core/src/agent/tools/exports';
+import { exportTools } from '../../packages/core/src/agent/tools/exports';
+import { csvCell } from '../../packages/core/src/agent/tools/exports/csv';
+import { monthGaps, parseAmount } from '../../packages/core/src/agent/tools/exports/items';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
