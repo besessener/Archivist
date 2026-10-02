@@ -100,6 +100,8 @@ export interface ToolContext {
   changedCount: number;
   /** Set when a tool result contained text that looks like an instruction to the agent (#301). */
   tainted: string | null;
+  /** Set when the provider's web search brought web pages into the run; changes then need the user's own request. */
+  webContent?: boolean;
 }
 
 export interface ToolOutput {

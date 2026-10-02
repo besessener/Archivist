@@ -21,7 +21,7 @@ import { createAdapter, detectAdapter, anthropicEndpointFor, looksLikeClaude, ty
 import type { MemoryService } from './memory';
 import { CORRECTIONS_FOR_RULE } from './memory';
 import { costOf, emptyUsage } from './pricing';
-import { systemPrompt } from './prompt';
+import { systemPrompt, WEB_SEARCH_RULES, webSourcesMarkdown } from './prompt';
 import { RefStore, ToolRegistry, defineTool, type AgentTool, type RefState, type ToolContext } from './registry';
 import { ASK_USER, AgentRunner, AskUserArgs, type RunOutcome } from './runner';
 import type { AgentRunService, UndoRunResult } from './runs';
@@ -467,9 +467,15 @@ export class AgentService {
         : null,
       `Datenschutzmodus: ${s.privacy.llmMode === 'auto' ? 'automatisch' : 'vorher fragen – nur ausdrücklich freigegebene Dokumentinhalte sind sichtbar'}.`,
       background ? null : 'Anliegen des Benutzers folgen.',
+      !background && s.agent.webSearch ? WEB_SEARCH_RULES : null,
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  /** Web search runs in chat only; background runs never leave the archive (#301). */
+  private webSearchFor(background: boolean): boolean {
+    return !background && this.settings.agent.webSearch;
   }
 
   private learned(): { text: string; ids: Array<{ id: string; kind: string; label: string }> } {
@@ -553,6 +559,7 @@ export class AgentService {
       effort: s.effort,
       massThreshold: s.massActionThreshold,
       ctx,
+      webSearch: this.webSearchFor(o.background),
       propose: (tool, args, label, reason) => {
         proposals.push({ tool: tool.name, args, label, risk: typeof tool.risk === 'function' ? tool.risk(args) : tool.risk, reason });
         return `NICHT AUSGEFÜHRT – als Vorschlag vorbereitet (${reason}). Der Benutzer bestätigt ihn in der Karte unter deiner Antwort; sag ihm das und arbeite mit dem Rest weiter.`;
@@ -738,6 +745,7 @@ export class AgentService {
     } else if (outcome.status === 'error') content = `${content ? `${content}\n\n` : ''}Das hat nicht geklappt: ${outcome.error ?? 'unbekannter Fehler'}`;
     else if (outcome.status === 'refusal') content = content || 'Das Modell hat diese Anfrage abgelehnt.';
     if (!content) content = ctx.changes.length ? `Erledigt:\n${ctx.changes.map((c) => `• ${c}`).join('\n')}` : 'Erledigt.';
+    if (outcome.webSources.length) content = `${content}\n\n${webSourcesMarkdown(outcome.webSources)}`;
     if (override === 'ask' && mode === 'ask' && !state.mode) content = `_Für dieses Gespräch frage ich vor jeder Änderung._\n\n${content}`;
     return {
       content,

@@ -4,10 +4,10 @@ import { cn } from '@/lib/utils';
 /** Hint shown under text fields whose content is rendered with {@link Markdown}. */
 export const MARKDOWN_HINT = 'Markdown möglich: **fett**, *kursiv*, `Code`, Listen mit „-“ oder „1.“, Überschriften mit „#“.';
 
-/** Inline: **bold**, *italic*, `code`. React elements only, no HTML. */
+/** Inline: **bold**, *italic*, `code`, [links](https://…). React elements only, no HTML. */
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
+  const re = /(\[[^\]\n]{1,300}\]\(https?:\/\/[^\s)]{1,2000}\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
   let last = 0;
   let i = 0;
   for (const m of text.matchAll(re)) {
@@ -15,7 +15,15 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
     if (idx > last) out.push(text.slice(last, idx));
     const tok = m[0];
     const key = `${keyPrefix}-${i++}`;
-    if (tok.startsWith('**')) out.push(<strong key={key}>{tok.slice(2, -2)}</strong>);
+    // only http(s) links; they open in the system browser (the main process hands new windows to the OS)
+    const link = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/.exec(tok);
+    if (link)
+      out.push(
+        <a key={key} href={link[2]} target="_blank" rel="noreferrer noopener" className="text-primary underline underline-offset-2 hover:opacity-80">
+          {link[1]}
+        </a>,
+      );
+    else if (tok.startsWith('**')) out.push(<strong key={key}>{tok.slice(2, -2)}</strong>);
     else if (tok.startsWith('`'))
       out.push(
         <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
@@ -84,7 +92,7 @@ function parse(text: string): Block[] {
   return blocks;
 }
 
-/** Lightweight, safe Markdown rendering (paragraphs, lists, headings, bold, italic, code). */
+/** Lightweight, safe Markdown rendering (paragraphs, lists, headings, bold, italic, code, http(s) links). */
 export function Markdown({ text, className, testId }: { text: string; className?: string; testId?: string }) {
   const blocks = parse(text);
   return (

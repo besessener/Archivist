@@ -70,6 +70,7 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
         weeklyReviewDay: 5,
       },
       learning: false,
+      webSearch: false,
     },
     b: {
       enabled: true,
@@ -92,6 +93,7 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
         weeklyReviewDay: 0,
       },
       learning: true,
+      webSearch: true,
     },
   },
 };

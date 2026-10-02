@@ -39,3 +39,24 @@ export function rejectedFeatures(key: string): Set<string> {
   }
   return set;
 }
+
+/** Only http(s) links are kept as web sources; duplicates (same URL) are dropped, the first title wins. */
+export function uniqueSources(sources: Array<{ url?: string | null; title?: string | null }>): Array<{ url: string; title: string }> {
+  const out = new Map<string, { url: string; title: string }>();
+  for (const s of sources) {
+    const url = s.url?.trim();
+    if (!url || !/^https?:\/\//i.test(url) || out.has(url)) continue;
+    out.set(url, { url, title: s.title?.trim() || url });
+  }
+  return [...out.values()];
+}
+
+/** IANA time zone of this machine for localized web search results; null if unknown. */
+export function userTimeZone(): string | null {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz && tz.includes('/') ? tz : null;
+  } catch {
+    return null;
+  }
+}
