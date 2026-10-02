@@ -41,6 +41,21 @@ test.describe('Timeline', () => {
     await expect(tl.locators.inputs.eventProject).toHaveValue('Testing Day');
   });
 
+  test('an event description is rendered as Markdown after saving', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('timeline');
+    const tl = app.timeline;
+
+    await tl.do.addEvent('Workshop vorbereitet', '2026-10-01');
+    await tl.do.editEvent('Workshop vorbereitet', { description: 'Agenda ist **fertig**\n\n- Raum gebucht\n- Catering bestellt' });
+
+    const description = tl.entry('Workshop vorbereitet').getByTestId('timeline-description');
+    await expect(description.locator('strong')).toHaveText('fertig');
+    await expect(description.locator('li')).toHaveText(['Raum gebucht', 'Catering bestellt']);
+    await expect(description).not.toContainText('**');
+  });
+
   test('shows the newest entries first and loads older ones on request', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);

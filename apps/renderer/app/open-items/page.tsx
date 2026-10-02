@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { BellPlus, Check, ListChecks, MessageSquare, Pencil, Plus, X } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { SolutionSection } from '@/components/open-items/solution';
+import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { QuickDate } from '@/components/common/quick-date';
 import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
@@ -96,7 +97,7 @@ export default function OpenItemsPage() {
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className={g === 'done' ? 'font-medium text-muted-foreground line-through' : 'font-medium'}>{i.title}</p>
-                        {i.description && <p className="mt-0.5 whitespace-pre-line text-sm text-muted-foreground">{i.description}</p>}
+                        {i.description && <Markdown text={i.description} className="mt-0.5 text-sm text-muted-foreground" testId="open-item-description" />}
                         {i.sourceConversationId && (
                           <Link
                             href={`/chat/?c=${encodeURIComponent(i.sourceConversationId)}`}
@@ -240,7 +241,7 @@ function ItemFormDialog({
           <Field label="Was ist offen? *" htmlFor="oi-title" className="sm:col-span-2">
             <Input id="oi-title" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="open-item-title" />
           </Field>
-          <Field label="Beschreibung" htmlFor="oi-desc" className="sm:col-span-2">
+          <Field label="Beschreibung" htmlFor="oi-desc" hint={MARKDOWN_HINT} className="sm:col-span-2">
             <Textarea id="oi-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
           <Field label="Verantwortlich" htmlFor="oi-resp">
