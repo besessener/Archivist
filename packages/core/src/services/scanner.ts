@@ -1,115 +1,71 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { DocumentProposal, Job, ScanFile, ScanFileStatus, ScanRoot, ScanSummary } from '@archivist/shared';
-import type { ScanExclusion, ScanProposalGroup } from '@archivist/shared';
+import type { Job, ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
 import { and, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
-import { MIME_BY_EXT } from '../parsers';
 import { AppError, permissionError, validationError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { isForbiddenScanRoot, isInside, normalizeFsPath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
-import { SCAN_MAX_FILES, type ScanEntry } from '../workers/tasks';
+import { SCAN_MAX_FILES } from '../workers/tasks';
 import type { AuditService } from './audit';
 import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
-import { isJobCancelled, type JobContext, type JobQueueService } from './jobs';
+import type { JobContext, JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
 import { IntervalSchedule } from './scheduler';
+import { FileAnalysis } from './scanner/file-analysis';
+import { ScanProposals } from './scanner/proposals';
+import { mapFile, mapRoot, type RootRow } from './scanner/scan-files';
+import { ScanRun } from './scanner/scan-run';
 import type { SettingsService } from './settings';
 
-type RootRow = typeof scanRoots.$inferSelect;
-type FileRow = typeof scanFiles.$inferSelect;
-
-/** Scan file states of files nobody has processed yet (their duplicate state is re-evaluated on every scan). */
-const PENDING_FILE_STATUSES: ScanFileStatus[] = ['new', 'changed', 'known', 'duplicate'];
-/** Document states in which a changed source file updates the existing inbox entry instead of creating a second one. */
-const INBOX_DOC_STATUSES = ['staged', 'proposed', 'failed'];
-
-const mapRoot = (r: RootRow): ScanRoot => ({
-  id: r.id,
-  path: r.path,
-  enabled: r.enabled,
-  recursive: r.recursive,
-  excludedSubdirs: r.excludedSubdirs,
-  extensions: r.extensions,
-  maxFileSizeMb: r.maxFileSizeMb,
-  llmAllowed: r.llmAllowed,
-  lastScanAt: r.lastScanAt,
-  createdAt: r.createdAt,
+const mapExclusion = (row: typeof scanExclusions.$inferSelect): ScanExclusion => ({
+  id: row.id,
+  kind: row.kind as 'file' | 'dir',
+  path: row.path,
+  createdAt: row.createdAt,
 });
 
-const mapFile = (r: FileRow): ScanFile => ({
-  id: r.id,
-  rootId: r.rootId,
-  path: r.path,
-  name: r.name,
-  ext: r.ext,
-  size: r.size,
-  mtimeMs: r.mtimeMs,
-  sha256: r.sha256,
-  mime: r.mime,
-  status: r.status as ScanFileStatus,
-  llmStatus: r.llmStatus as ScanFile['llmStatus'],
-  documentId: r.documentId,
-  duplicateOfDocumentId: r.duplicateOfDocumentId,
-  firstSeenAt: r.firstSeenAt,
-  lastSeenAt: r.lastSeenAt,
-});
-
-/**
- * Controlled directory scan. Only explicitly approved directories are examined;
- * a plain file scan never sends content to the LLM. Originals are never modified.
- */
-/** Progress of a `scanner.analyze` job: the file ids handled so far and the results collected for them. */
-interface AnalyzeCheckpoint {
-  done: string[];
-  analyzed: string[];
-  skipped: string[];
-}
-
-const stringList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-
-function analyzeCheckpoint(raw: unknown): AnalyzeCheckpoint {
-  const c = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  return { done: stringList(c.done), analyzed: stringList(c.analyzed), skipped: stringList(c.skipped) };
-}
-
+/** Controlled scan of explicitly approved directories; a plain file scan never sends content to the LLM, originals stay untouched. */
 export class ScannerService {
   /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
   private readonly schedule: IntervalSchedule;
+  private readonly scans: ScanRun;
+  private readonly analysis: FileAnalysis;
+  private readonly scanProposals: ScanProposals;
   /** Upper bound of files collected per scan root (lowered in tests). */
   maxFilesPerRoot = SCAN_MAX_FILES;
 
   constructor(
     private readonly ctx: AppContext,
     private readonly settings: SettingsService,
-    private readonly pool: WorkerPool,
+    pool: WorkerPool,
     private readonly docs: DocumentService,
-    private readonly graph: KnowledgeGraphService,
-    private readonly privacy: PrivacyService,
-    private readonly notifications: NotificationService,
-    private readonly insights: InsightService,
+    graph: KnowledgeGraphService,
+    privacy: PrivacyService,
+    notifications: NotificationService,
+    insights: InsightService,
     private readonly audit: AuditService,
     private readonly jobs: JobQueueService,
   ) {
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
-    ctx.events.on('document:archived', (e: { documentId: string; sourcePath: string | null }) => {
-      if (!e.sourcePath) return;
-      this.db.update(scanFiles).set({ status: 'archived', documentId: e.documentId }).where(eq(scanFiles.path, e.sourcePath)).run();
+    this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
+    this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });
+    this.scanProposals = new ScanProposals({ ctx, graph, insights, notifications });
+    ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
+      if (!event.sourcePath) return;
+      this.db.update(scanFiles).set({ status: 'archived', documentId: event.documentId }).where(eq(scanFiles.path, event.sourcePath)).run();
       this.ctx.events.changed('scanner');
     });
-    ctx.events.on('document:unarchived', (e: { documentId: string }) => this.resetAfterUnarchive(e.documentId));
+    ctx.events.on('document:unarchived', (event: { documentId: string }) => this.resetAfterUnarchive(event.documentId));
   }
 
-  /**
-   * Undo of an archiving: scan files marked `archived` for the document go back to a processable state, so they
-   * show up in the assignment proposals again (analyzed source of a proposed document) or can be analyzed anew.
-   */
+  /** Undo of an archiving: the document's `archived` scan files become processable again (proposal or new analysis). */
   private resetAfterUnarchive(documentId: string): void {
     const doc = this.db.select().from(documents).where(eq(documents.id, documentId)).get();
     const files = this.db
@@ -118,9 +74,9 @@ export class ScannerService {
       .where(and(eq(scanFiles.documentId, documentId), eq(scanFiles.status, 'archived')))
       .all();
     if (!files.length) return;
-    for (const f of files) {
-      // undo may have put the archived version back under another name: the file at f.path is then a different one
-      const sameFile = doc?.sourcePath === f.path;
+    for (const file of files) {
+      // undo may have put the archived version back under another name: the file at file.path is then a different one
+      const sameFile = doc?.sourcePath === file.path;
       this.db
         .update(scanFiles)
         .set({
@@ -128,7 +84,7 @@ export class ScannerService {
           documentId: sameFile ? documentId : null,
           duplicateOfDocumentId: null,
         })
-        .where(eq(scanFiles.id, f.id))
+        .where(eq(scanFiles.id, file.id))
         .run();
     }
     this.ctx.events.changed('scanner');
@@ -136,6 +92,12 @@ export class ScannerService {
 
   private get db() {
     return this.ctx.database.db;
+  }
+
+  private rootRow(id: string): RootRow {
+    const row = this.db.select().from(scanRoots).where(eq(scanRoots.id, id)).get();
+    if (!row) throw validationError('Verzeichnis nicht gefunden.');
+    return row;
   }
 
   // ---------- Directories ----------
@@ -150,18 +112,18 @@ export class ScannerService {
     if (!(await fsp.stat(real)).isDirectory()) throw validationError('Das ist kein Verzeichnis.');
     const forbidden = isForbiddenScanRoot(real);
     if (forbidden) throw permissionError(forbidden, real);
-    const roots = [this.ctx.paths.root, this.settings.get().archiveRoot].map((p) => normalizeFsPath(p));
-    if (roots.some((r) => isInside(r, real))) throw permissionError('Das Archivist-Datenverzeichnis selbst kann nicht gescannt werden.', real);
+    const ownRoots = [this.ctx.paths.root, this.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
+    if (ownRoots.some((ownRoot) => isInside(ownRoot, real))) throw permissionError('Das Archivist-Datenverzeichnis selbst kann nicht gescannt werden.', real);
     if (this.db.select().from(scanRoots).where(eq(scanRoots.path, real)).get()) throw validationError('Dieses Verzeichnis ist bereits freigegeben.');
-    const s = this.settings.get().scan;
+    const scan = this.settings.get().scan;
     const row: RootRow = {
       id: newId(),
       path: real,
       enabled: true,
       recursive,
       excludedSubdirs: [],
-      extensions: s.allowedExtensions,
-      maxFileSizeMb: s.maxFileSizeMb,
+      extensions: scan.allowedExtensions,
+      maxFileSizeMb: scan.maxFileSizeMb,
       llmAllowed: true,
       lastScanAt: null,
       lastSummary: null,
@@ -174,8 +136,7 @@ export class ScannerService {
   }
 
   removeDirectory(id: string): void {
-    const row = this.db.select().from(scanRoots).where(eq(scanRoots.id, id)).get();
-    if (!row) throw validationError('Verzeichnis nicht gefunden.');
+    const row = this.rootRow(id);
     this.db.delete(scanFiles).where(eq(scanFiles.rootId, id)).run();
     this.db.delete(scanRoots).where(eq(scanRoots.id, id)).run();
     this.audit.log({ action: 'scanner.removeDirectory', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
@@ -186,13 +147,12 @@ export class ScannerService {
     id: string,
     patch: Partial<Pick<ScanRoot, 'enabled' | 'recursive' | 'excludedSubdirs' | 'extensions' | 'maxFileSizeMb' | 'llmAllowed'>>,
   ): ScanRoot {
-    const row = this.db.select().from(scanRoots).where(eq(scanRoots.id, id)).get();
-    if (!row) throw validationError('Verzeichnis nicht gefunden.');
+    const row = this.rootRow(id);
     const set: Partial<RootRow> = {};
     if (patch.enabled !== undefined) set.enabled = patch.enabled;
     if (patch.recursive !== undefined) set.recursive = patch.recursive;
     if (patch.excludedSubdirs) set.excludedSubdirs = patch.excludedSubdirs;
-    if (patch.extensions) set.extensions = patch.extensions.map((e) => e.toLowerCase().replace(/^\./, ''));
+    if (patch.extensions) set.extensions = patch.extensions.map((extension) => extension.toLowerCase().replace(/^\./, ''));
     if (patch.maxFileSizeMb !== undefined) set.maxFileSizeMb = patch.maxFileSizeMb;
     if (patch.llmAllowed !== undefined) set.llmAllowed = patch.llmAllowed;
     this.db.update(scanRoots).set(set).where(eq(scanRoots.id, id)).run();
@@ -207,46 +167,38 @@ export class ScannerService {
   }
 
   // ---------- Exclusions ----------
-  exclude(kind: 'file' | 'dir', p: string): ScanExclusion {
-    if (!path.isAbsolute(p)) throw validationError('Bitte einen absoluten Pfad angeben.');
-    const abs = normalizeFsPath(p);
+  exclude(kind: 'file' | 'dir', target: string): ScanExclusion {
+    if (!path.isAbsolute(target)) throw validationError('Bitte einen absoluten Pfad angeben.');
+    const absolute = normalizeFsPath(target);
     const existing = this.db
       .select()
       .from(scanExclusions)
-      .where(and(eq(scanExclusions.kind, kind), eq(scanExclusions.path, abs)))
+      .where(and(eq(scanExclusions.kind, kind), eq(scanExclusions.path, absolute)))
       .get();
-    const row = existing ?? { id: newId(), kind, path: abs, createdAt: nowIso() };
+    const row = existing ?? { id: newId(), kind, path: absolute, createdAt: nowIso() };
     if (!existing) this.db.insert(scanExclusions).values(row).run();
+    const below = `${absolute}${path.sep}%`;
     const files = this.db
       .select()
       .from(scanFiles)
-      .where(kind === 'file' ? eq(scanFiles.path, abs) : like(scanFiles.path, `${abs}${path.sep}%`))
+      .where(kind === 'file' ? eq(scanFiles.path, absolute) : like(scanFiles.path, below))
       .all();
-    for (const f of files) this.db.update(scanFiles).set({ status: 'excluded' }).where(eq(scanFiles.id, f.id)).run();
+    for (const file of files) this.db.update(scanFiles).set({ status: 'excluded' }).where(eq(scanFiles.id, file.id)).run();
     // remove not yet archived documents from this location from the inbox
-    const docs = this.db
+    const inboxDocs = this.db
       .select()
       .from(documents)
-      .where(
-        and(
-          inArray(documents.status, ['staged', 'proposed']),
-          kind === 'file' ? eq(documents.sourcePath, abs) : like(documents.sourcePath, `${abs}${path.sep}%`),
-        ),
-      )
+      .where(and(inArray(documents.status, ['staged', 'proposed']), kind === 'file' ? eq(documents.sourcePath, absolute) : like(documents.sourcePath, below)))
       .all();
-    for (const d of docs) if (!d.stagedPath) this.db.update(documents).set({ status: 'ignored', updatedAt: nowIso() }).where(eq(documents.id, d.id)).run();
-    this.audit.log({ action: `scanner.exclude.${kind}`, actor: 'user', trigger: 'manual', confirmed: true, paths: [abs] });
+    for (const doc of inboxDocs)
+      if (!doc.stagedPath) this.db.update(documents).set({ status: 'ignored', updatedAt: nowIso() }).where(eq(documents.id, doc.id)).run();
+    this.audit.log({ action: `scanner.exclude.${kind}`, actor: 'user', trigger: 'manual', confirmed: true, paths: [absolute] });
     this.ctx.events.changed('scanner', 'documents');
-    return { id: row.id, kind: row.kind as 'file' | 'dir', path: row.path, createdAt: row.createdAt };
+    return mapExclusion(row);
   }
 
   listExclusions(): ScanExclusion[] {
-    return this.db
-      .select()
-      .from(scanExclusions)
-      .orderBy(desc(scanExclusions.createdAt))
-      .all()
-      .map((r) => ({ id: r.id, kind: r.kind as 'file' | 'dir', path: r.path, createdAt: r.createdAt }));
+    return this.db.select().from(scanExclusions).orderBy(desc(scanExclusions.createdAt)).all().map(mapExclusion);
   }
 
   removeExclusion(id: string): void {
@@ -267,10 +219,9 @@ export class ScannerService {
   startScan(rootId?: string, trigger = 'manual'): Job {
     if (!this.settings.get().scan.enabled)
       throw permissionError('Die lokale Dokumentensuche ist deaktiviert. Bitte zuerst in den Scan-Einstellungen aktivieren.');
-    const roots = this.listDirectories().filter((r) => r.enabled && (!rootId || r.id === rootId));
+    const roots = this.listDirectories().filter((root) => root.enabled && (!rootId || root.id === rootId));
     if (roots.length === 0) throw validationError('Es ist kein freigegebenes Scan-Verzeichnis vorhanden.');
-    // a scan of the same folder (or of all folders) that is still queued or running covers this request:
-    // two concurrent scans of one folder would collide on its scan_files rows
+    // a queued or running scan of the same folder (or of all) covers this one: two scans of a folder would collide on its rows
     return this.jobs.enqueue<{ rootId: string | null; trigger: string }>(
       'scanner.scan',
       rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
@@ -279,267 +230,20 @@ export class ScannerService {
     );
   }
 
-  /**
-   * Existing document with this content in any active state (inbox or archive), apart from the document the scan
-   * file itself belongs to. Uses the same rule as the upload, so a file is neither scanned nor uploaded twice.
-   */
-  private isDup(sha: string, ownDocumentId?: string | null): string | null {
-    return this.docs.findDuplicates(sha, ownDocumentId ?? undefined)[0]?.id ?? null;
+  runScan(rootId: string | null, job?: JobContext): Promise<ScanSummary[]> {
+    return this.scans.run(rootId, job);
   }
 
-  /** Re-evaluates the duplicate state of a not yet processed file whose content did not change. */
-  private recheckDuplicate(prev: FileRow): Pick<FileRow, 'status' | 'duplicateOfDocumentId'> | null {
-    if (!prev.sha256 || !PENDING_FILE_STATUSES.includes(prev.status as ScanFileStatus)) return null;
-    const dupOf = this.isDup(prev.sha256, prev.documentId);
-    if (dupOf) return dupOf === prev.duplicateOfDocumentId && prev.status === 'duplicate' ? null : { status: 'duplicate', duplicateOfDocumentId: dupOf };
-    // the document it duplicated is gone (ignored, deleted): the file is open again
-    return prev.status === 'duplicate' ? { status: 'new', duplicateOfDocumentId: null } : null;
-  }
-
-  async runScan(rootId: string | null, job?: JobContext): Promise<ScanSummary[]> {
-    const roots = this.db
-      .select()
-      .from(scanRoots)
-      .where(rootId ? eq(scanRoots.id, rootId) : eq(scanRoots.enabled, true))
-      .all();
-    const summaries: ScanSummary[] = [];
-    const exclusions = this.db.select().from(scanExclusions).all();
-    let idx = 0;
-    for (const root of roots) {
-      job?.throwIfCancelled();
-      idx += 1;
-      const summary: ScanSummary = {
-        rootId: root.id,
-        scanned: 0,
-        newFiles: 0,
-        changedFiles: 0,
-        unchanged: 0,
-        excluded: 0,
-        skipped: 0,
-        duplicates: 0,
-        errors: [],
-      };
-      try {
-        const real = await fsp.realpath(root.path); // the directory may have been removed/replaced in the meantime
-        if (isForbiddenScanRoot(real)) throw permissionError('Verzeichnis ist nicht (mehr) für Scans zulässig.', real);
-        job?.report((idx - 1) / roots.length, `Durchsuche ${root.path}`);
-        const walked = await this.pool.run('scanDirectory', {
-          root: real,
-          recursive: root.recursive,
-          excludedDirs: [
-            ...exclusions.filter((e) => e.kind === 'dir').map((e) => e.path),
-            ...root.excludedSubdirs.map((d) => (path.isAbsolute(d) ? d : path.join(real, d))),
-            this.ctx.paths.root,
-            this.settings.get().archiveRoot,
-          ],
-          excludedFiles: exclusions.filter((e) => e.kind === 'file').map((e) => e.path),
-          extensions: root.extensions,
-          maxSizeBytes: root.maxFileSizeMb * 1024 * 1024,
-          maxFiles: this.maxFilesPerRoot,
-        });
-        summary.errors.push(...walked.errors.slice(0, 20));
-        summary.skipped = walked.skipped.length;
-        if (walked.limitReached) summary.limitReached = true;
-        const known = new Map(
-          this.db
-            .select()
-            .from(scanFiles)
-            .where(eq(scanFiles.rootId, root.id))
-            .all()
-            .map((f) => [f.path, f]),
-        );
-        const seen = new Set<string>();
-        const now = nowIso();
-        for (const e of walked.entries) {
-          job?.throwIfCancelled();
-          seen.add(e.path);
-          summary.scanned += 1;
-          await this.scanEntry(root, e, known.get(e.path), summary, now);
-        }
-        // Remove vanished, not yet processed files from the list. Whatever lies beyond the file limit or in an
-        // unreadable area was merely not seen and does not count as vanished.
-        if (!walked.limitReached)
-          for (const [p, f] of known)
-            if (!seen.has(p) && PENDING_FILE_STATUSES.includes(f.status as ScanFileStatus) && !walked.unreadable.some((u) => isInside(u, p)))
-              this.db.delete(scanFiles).where(eq(scanFiles.id, f.id)).run();
-        this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary }).where(eq(scanRoots.id, root.id)).run();
-        this.notifyScan(root, summary);
-      } catch (err) {
-        if (isJobCancelled(err)) throw err; // cancelled or interrupted on quit – no scan error
-        summary.errors.push(err instanceof Error ? err.message : String(err));
-        this.ctx.logger.error('scanner', 'Scan failed', { root: root.path, error: err });
-        this.notifications.create({
-          title: 'Scan teilweise fehlgeschlagen',
-          description: `${root.path}: ${summary.errors[summary.errors.length - 1]}`,
-          type: 'scan_partial',
-          priority: 'high',
-          proposedActions: [{ label: 'Scan-Verzeichnis verwalten', kind: 'navigate', target: '/scan/' }],
-        });
-      }
-      summaries.push(summary);
-    }
-    this.ctx.events.changed('scanner', 'status');
-    return summaries;
-  }
-
-  /** Content of a known file is unchanged: refresh it (and its duplicate state) without touching its status otherwise. */
-  private markUnchanged(prev: FileRow, set: Partial<FileRow>, summary: ScanSummary): void {
-    const dup = this.recheckDuplicate(prev);
-    this.db
-      .update(scanFiles)
-      .set({ ...set, ...dup })
-      .where(eq(scanFiles.id, prev.id))
-      .run();
-    if (dup?.status === 'duplicate') summary.duplicates += 1;
-    summary.unchanged += 1;
-  }
-
-  /**
-   * The original of an index-only document changed: the document is re-read in place (no second document, no
-   * stale content in the search) and the scan file keeps its status (#229). False if the file belongs to no
-   * index-only document.
-   */
-  private async refreshIndexedOnly(prev: FileRow, e: ScanEntry, sha: string, now: string): Promise<boolean> {
-    const doc = this.docs.findRow(prev.documentId!);
-    if (doc?.status !== 'indexed_only') return false;
-    try {
-      await this.docs.refreshIndexedOnly(doc.id);
-    } catch (err) {
-      this.ctx.logger.warn('scanner', 'Index-only document not refreshed', { documentId: doc.id, error: err });
-      return false;
-    }
-    this.db.update(scanFiles).set({ size: e.size, mtimeMs: e.mtimeMs, sha256: sha, lastSeenAt: now }).where(eq(scanFiles.id, prev.id)).run();
-    return true;
-  }
-
-  /** Records one walked file: unchanged files are only refreshed, new or changed ones are hashed and checked for duplicates. */
-  private async scanEntry(root: RootRow, e: ScanEntry, prev: FileRow | undefined, summary: ScanSummary, now: string): Promise<void> {
-    if (prev?.status === 'excluded') {
-      summary.excluded += 1;
-      return;
-    }
-    // known and unchanged → do not hash/analyze again
-    if (prev && prev.size === e.size && prev.mtimeMs === e.mtimeMs) {
-      this.markUnchanged(prev, { lastSeenAt: now }, summary);
-      return;
-    }
-    let sha: string;
-    try {
-      sha = await this.pool.run('hashFile', { path: e.path });
-    } catch (err) {
-      summary.errors.push(`${e.path}: ${(err as Error).message}`);
-      return;
-    }
-    if (prev && prev.sha256 === sha) {
-      // only the timestamp changed (touched, or restored by an undo): same content, the status stays
-      this.markUnchanged(prev, { size: e.size, mtimeMs: e.mtimeMs, lastSeenAt: now }, summary);
-      return;
-    }
-    if (prev?.documentId && (await this.refreshIndexedOnly(prev, e, sha, now))) {
-      summary.changedFiles += 1;
-      return;
-    }
-    const decision = this.privacy.evaluate({ path: e.path, ext: e.ext, rootLlmAllowed: root.llmAllowed });
-    const llmStatus = decision.allowed ? 'local_only' : (decision.status ?? 'local_only');
-    const dupOf = this.isDup(sha, prev?.documentId);
-    if (prev) {
-      const wasArchived = prev.status === 'archived' || prev.status === 'analyzed';
-      const status: ScanFileStatus = dupOf ? 'duplicate' : 'changed';
-      this.db
-        .update(scanFiles)
-        .set({ size: e.size, mtimeMs: e.mtimeMs, sha256: sha, status, llmStatus, duplicateOfDocumentId: dupOf, lastSeenAt: now })
-        .where(eq(scanFiles.id, prev.id))
-        .run();
-      summary.changedFiles += 1;
-      if (wasArchived) {
-        this.notifications.create({
-          title: 'Datei seit Archivierung verändert',
-          description: `„${e.name}“ in ${path.dirname(e.path)} wurde nach der Archivierung geändert.`,
-          type: 'file_changed',
-          priority: 'normal',
-          affectedEntityIds: prev.documentId ? [prev.documentId] : [],
-          proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
-          dedupeKey: `file-changed:${prev.id}:${sha}`,
-        });
-      }
-    } else {
-      this.db
-        .insert(scanFiles)
-        .values({
-          id: newId(),
-          rootId: root.id,
-          path: e.path,
-          name: e.name,
-          ext: e.ext,
-          size: e.size,
-          mtimeMs: e.mtimeMs,
-          sha256: sha,
-          mime: MIME_BY_EXT[e.ext] ?? e.mime,
-          status: dupOf ? 'duplicate' : 'new',
-          llmStatus,
-          documentId: null,
-          duplicateOfDocumentId: dupOf,
-          firstSeenAt: now,
-          lastSeenAt: now,
-        })
-        .run();
-      summary.newFiles += 1;
-    }
-    if (dupOf) summary.duplicates += 1;
-  }
-
-  private notifyScan(root: RootRow, s: ScanSummary): void {
-    const fresh = s.newFiles + s.changedFiles;
-    if (fresh > 0) {
-      this.notifications.create({
-        title: `${fresh} neue oder geänderte Dokumente gefunden`,
-        description: `${path.basename(root.path)}: ${s.newFiles} neu, ${s.changedFiles} geändert, ${s.duplicates} mögliche Duplikate, ${s.unchanged} unverändert übersprungen.`,
-        type: 'scan_new_files',
-        priority: 'normal',
-        proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
-        dedupeKey: `scan-new:${root.id}:${s.scanned}:${fresh}:${s.duplicates}`,
-      });
-    }
-    if (s.limitReached) {
-      this.notifications.create({
-        title: 'Scan-Limit erreicht',
-        description: `${path.basename(root.path)}: Es wurden nur die ersten ${this.maxFilesPerRoot.toLocaleString('de-DE')} passenden Dateien geprüft; weitere Dateien wurden nicht erfasst. Bitte Unterordner ausschließen oder kleinere Verzeichnisse einzeln freigeben.`,
-        type: 'scan_partial',
-        priority: 'normal',
-        proposedActions: [{ label: 'Scan-Verzeichnis verwalten', kind: 'navigate', target: '/scan/' }],
-        dedupeKey: `scan-limit:${root.id}`,
-      });
-    }
-    if (s.duplicates > 0) {
-      this.notifications.create({
-        title: `${s.duplicates} Datei(en) entsprechen bereits vorhandenen Dokumenten`,
-        description: `In ${path.basename(root.path)} liegen mögliche externe Duplikate.`,
-        type: 'external_duplicate',
-        priority: 'low',
-        proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
-        dedupeKey: `scan-dup:${root.id}:${s.duplicates}:${s.scanned}`,
-      });
-    }
-    this.notifications.create({
-      title: s.errors.length ? 'Scan teilweise fehlgeschlagen' : 'Scan abgeschlossen',
-      description: `${path.basename(root.path)}: ${s.scanned} Dateien geprüft, ${s.unchanged} unverändert übersprungen${s.errors.length ? `, ${s.errors.length} Fehler` : ''}.`,
-      type: s.errors.length ? 'scan_partial' : 'scan_done',
-      priority: s.errors.length ? 'high' : 'low',
-      proposedActions: [{ label: 'Scan-Ergebnisse prüfen', kind: 'navigate', target: '/scan/' }],
-      dedupeKey: `scan-done:${root.id}:${Date.now()}`,
-    });
-  }
-
-  getResults(opts: { rootId?: string; status?: ScanFileStatus; limit?: number } = {}): { files: ScanFile[]; lastSummary: ScanSummary | null } {
-    const conds = [];
-    if (opts.rootId) conds.push(eq(scanFiles.rootId, opts.rootId));
-    if (opts.status) conds.push(eq(scanFiles.status, opts.status));
+  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number } = {}): { files: ScanFile[]; lastSummary: ScanSummary | null } {
+    const conditions = [];
+    if (options.rootId) conditions.push(eq(scanFiles.rootId, options.rootId));
+    if (options.status) conditions.push(eq(scanFiles.status, options.status));
     const files = this.db
       .select()
       .from(scanFiles)
-      .where(conds.length ? and(...conds) : undefined)
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(scanFiles.lastSeenAt), scanFiles.name)
-      .limit(opts.limit ?? 500)
+      .limit(options.limit ?? 500)
       .all()
       .map(mapFile);
     const latest = this.db
@@ -547,30 +251,27 @@ export class ScannerService {
       .from(scanRoots)
       .orderBy(desc(scanRoots.lastScanAt))
       .all()
-      .find((r) => r.lastSummary);
+      .find((root) => root.lastSummary);
     return { files, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
   }
 
-  /**
-   * New or changed files that may be analysed and are not queued for analysis yet, oldest first. Unlike the result
-   * list (newest 2000, ordered by name) this never picks the same first files after every scan (#222).
-   */
+  /** New or changed analysable files not queued yet, oldest first – unlike the result list, not always the same first ones (#222). */
   filesAwaitingAnalysis(): string[] {
-    const queued = new Set(this.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((p) => p.fileIds ?? []));
+    const queued = new Set(this.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((payload) => payload.fileIds ?? []));
     return this.db
       .select({ id: scanFiles.id })
       .from(scanFiles)
       .where(and(inArray(scanFiles.status, ['new', 'changed']), ne(scanFiles.llmStatus, 'excluded')))
       .orderBy(scanFiles.firstSeenAt, scanFiles.path)
       .all()
-      .map((r) => r.id)
+      .map((row) => row.id)
       .filter((id) => !queued.has(id));
   }
 
   getFile(id: string): ScanFile {
-    const r = this.db.select().from(scanFiles).where(eq(scanFiles.id, id)).get();
-    if (!r) throw new AppError('validation_error', 'Scan-Datei nicht gefunden.');
-    return mapFile(r);
+    const row = this.db.select().from(scanFiles).where(eq(scanFiles.id, id)).get();
+    if (!row) throw new AppError('validation_error', 'Scan-Datei nicht gefunden.');
+    return mapFile(row);
   }
 
   /** Opens a path only if it belongs to an approved root (no arbitrary opening). */
@@ -583,226 +284,20 @@ export class ScannerService {
   // ---------- Content analysis ----------
   /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
   async analyzeFiles(fileIds: string[], confirmLlm: boolean, job?: JobContext): Promise<{ analyzed: string[]; skipped: string[] }> {
-    // A re-run after a crash or a quit continues after the files already handled instead of analysing
-    // (and paying the LLM for) them again.
-    const resumed = analyzeCheckpoint(job?.checkpoint);
-    const analyzed: string[] = [...resumed.analyzed];
-    const skipped: string[] = [...resumed.skipped];
-    const done = new Set(resumed.done);
-    const mode = this.privacy.mode();
-    let i = 0;
-    for (const id of fileIds) {
-      job?.throwIfCancelled();
-      i += 1;
-      if (done.has(id)) continue;
-      await this.analyzeFile(id, { mode, confirmLlm, job, progress: (i - 1) / fileIds.length }, analyzed, skipped);
-      done.add(id);
-      job?.saveCheckpoint({ done: [...done], analyzed, skipped } satisfies AnalyzeCheckpoint);
-    }
-    this.buildProposals(analyzed);
+    const result = await this.analysis.analyzeFiles(fileIds, { confirmLlm, job });
+    this.buildProposals(result.analyzed);
     this.ctx.events.changed('scanner', 'documents', 'status');
-    return { analyzed, skipped };
-  }
-
-  /** Analyzes one scanned file; adds the document id to `analyzed` or the file id to `skipped`. */
-  private async analyzeFile(
-    id: string,
-    opts: { mode: ReturnType<PrivacyService['mode']>; confirmLlm: boolean; job?: JobContext; progress: number },
-    analyzed: string[],
-    skipped: string[],
-  ): Promise<void> {
-    const { mode, confirmLlm, job, progress } = opts;
-    const f = this.db.select().from(scanFiles).where(eq(scanFiles.id, id)).get();
-    if (!f || f.status === 'excluded') {
-      skipped.push(id);
-      return;
-    }
-    job?.report(progress, `Analysiere ${f.name}`);
-    try {
-      const root = this.db.select().from(scanRoots).where(eq(scanRoots.id, f.rootId)).get();
-      if (!root || !isInside(root.path, f.path)) throw permissionError('Datei liegt nicht in einem freigegebenen Verzeichnis.');
-      const real = await fsp.realpath(f.path);
-      if (!isInside(await fsp.realpath(root.path), real)) throw permissionError('Symbolischer Link führt aus dem freigegebenen Verzeichnis heraus.');
-      const st = await fsp.stat(real);
-      const sha = await this.pool.run('hashFile', { path: real });
-      const dup = this.isDup(sha, f.documentId);
-      if (dup) {
-        this.db
-          .update(scanFiles)
-          .set({ status: 'duplicate', duplicateOfDocumentId: dup, sha256: sha, size: st.size, mtimeMs: st.mtimeMs })
-          .where(eq(scanFiles.id, id))
-          .run();
-        skipped.push(id);
-        return;
-      }
-      const folderLlmAllowed = root.llmAllowed && this.docs.folderLlmAllowedFor(real);
-      let doc = f.documentId ? this.db.select().from(documents).where(eq(documents.id, f.documentId)).get() : undefined;
-      if (doc && doc.sha256 !== sha && !doc.stagedPath && INBOX_DOC_STATUSES.includes(doc.status)) {
-        // The file changed while its entry is still in the inbox: update that entry (re-analyzed below) instead of
-        // leaving the stale proposal next to a second document. The conditional update skips an entry archived meanwhile.
-        this.db
-          .update(documents)
-          .set({ sha256: sha, size: st.size, sourcePath: real, updatedAt: nowIso() })
-          .where(and(eq(documents.id, doc.id), inArray(documents.status, INBOX_DOC_STATUSES)))
-          .run();
-        doc = this.docs.getRow(doc.id);
-      }
-      // the file changed after it was archived: the new content becomes a new document that replaces the archived one
-      const replaced = doc && doc.sha256 !== sha && (doc.status === 'archived' || doc.status === 'indexed_only') ? doc : null;
-      if (!doc || doc.sha256 !== sha) {
-        const rec = this.docs.insertDocument({
-          originalName: f.name,
-          ext: f.ext,
-          size: st.size,
-          sha256: sha,
-          sourcePath: real,
-          stagedPath: null,
-          folderLlmAllowed,
-        });
-        doc = this.docs.getRow(rec.id);
-      } else if (doc.folderLlmAllowed !== folderLlmAllowed) {
-        this.db.update(documents).set({ folderLlmAllowed }).where(eq(documents.id, doc.id)).run();
-      }
-      const decision = this.privacy.evaluate({ path: real, ext: f.ext, rootLlmAllowed: root.llmAllowed });
-      const allowLlm = decision.allowed && (mode === 'auto' || confirmLlm);
-      const res = await this.docs.analyze(doc.id, { allowLlm, signal: job?.signal });
-      if (res.skipped) {
-        // the document was archived in the meantime – nothing to propose
-        skipped.push(id);
-        return;
-      }
-      if (replaced)
-        // a proposal only: the user decides whether the new version really replaces the archived one
-        this.graph.link(doc.id, replaced.id, 'supersedes', { confidence: 0.9, status: 'proposed', sourceIds: [doc.id] });
-      const updated = this.docs.getRow(doc.id);
-      this.db
-        .update(scanFiles)
-        .set({
-          status: 'analyzed',
-          documentId: doc.id,
-          sha256: sha,
-          size: st.size,
-          mtimeMs: st.mtimeMs,
-          llmStatus: res.usedLlm ? 'analyzed' : updated.llmStatus,
-        })
-        .where(eq(scanFiles.id, id))
-        .run();
-      analyzed.push(doc.id);
-    } catch (err) {
-      if (isJobCancelled(err)) throw err; // the whole job was cancelled – no per-file failure
-      // analyze() has already set the document to `failed` (reprocessable from the inbox), so it is not stuck in `analyzing`
-      this.ctx.logger.warn('scanner', 'Analysis failed', { fileId: id, error: err });
-      this.notifications.create({
-        title: 'Dateianalyse fehlgeschlagen',
-        description: `${f.name}: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'import_failed',
-        priority: 'normal',
-        dedupeKey: `analyze-failed:${id}`,
-      });
-      skipped.push(id);
-    }
-  }
-
-  private groupKey(p: DocumentProposal | null, category: string | null): { key: string; label: string; topic: string | null; project: string | null } {
-    const project = p?.project ?? null;
-    const topic = p?.topic ?? null;
-    const name = project ?? topic ?? category?.split('/').slice(0, -1).join('/') ?? category ?? 'Unsortiert';
-    return { key: `${project ? 'project' : topic ? 'topic' : 'category'}:${name}`.toLowerCase(), label: name, topic, project };
+    return result;
   }
 
   /** Assignment proposals: groups analyzed documents by topic/project and creates an insight, an action and a notification. */
   buildProposals(docIds: string[]): void {
-    const rows = docIds.length
-      ? this.db
-          .select()
-          .from(documents)
-          .where(and(inArray(documents.id, docIds), eq(documents.status, 'proposed')))
-          .all()
-      : [];
-    const groups = new Map<string, { label: string; topic: string | null; project: string | null; rows: typeof rows }>();
-    for (const r of rows) {
-      const g = this.groupKey(r.proposal as DocumentProposal | null, r.categoryPath);
-      const cur = groups.get(g.key) ?? { label: g.label, topic: g.topic, project: g.project, rows: [] };
-      cur.rows.push(r);
-      groups.set(g.key, cur);
-    }
-    for (const [key, g] of groups) {
-      const known = (g.project && this.graph.findByName('project', g.project)) || (g.topic && this.graph.findByName('topic', g.topic)) || null;
-      const decisions = g.rows.filter((r) => ((r.proposal as DocumentProposal | null)?.possibleDecisions.length ?? 0) > 0).length;
-      const dups = g.rows.filter((r) => (r.proposal as DocumentProposal | null)?.duplicateOfDocumentId).length;
-      const items = g.rows.map((r) => {
-        const p = r.proposal as DocumentProposal | null;
-        return {
-          documentId: r.id,
-          mode: 'copy' as const,
-          categoryPath: p?.location.categoryPath ?? r.categoryPath ?? undefined,
-          // null would mean "explicitly without topic/project"; a group without one only leaves it open.
-          topic: g.topic ?? undefined,
-          project: g.project ?? undefined,
-        };
-      });
-      const label = known ? `${known.type === 'project' ? 'Projekt' : 'Thema'} „${known.name}“` : `„${g.label}“`;
-      const n = g.rows.length;
-      const proposal = {
-        actionType: 'archive_documents' as const,
-        label: `${n} Dokument(e) archivieren und zuordnen (${g.label})`,
-        rationale: `${n} analysierte Datei(en) gehören vermutlich zu ${label}.`,
-        confidence: Math.min(...g.rows.map((r) => r.confidence ?? 0.4)),
-        affectedEntities: g.rows.map((r) => ({ type: 'document' as const, id: r.id, label: r.title })),
-        requiredConfirmation: 'confirm' as const,
-        proposedParameters: { items, approveNewCategories: [] },
-      };
-      const ids = g.rows.map((r) => r.id).sort();
-      const dedupeKey = `scan-group:${key}:${ids.join(',').slice(0, 120)}`;
-      this.insights.upsert({
-        kind: known ? 'assignment' : 'archive_proposal',
-        title: `${n} Dokument${n === 1 ? '' : 'e'} ${known ? 'gehören vermutlich zu' : 'passen zu'} ${label}`,
-        explanation: `${g.rows.map((r) => `• ${r.title} → ${(r.proposal as DocumentProposal | null)?.location.categoryPath ?? r.categoryPath}`).join('\n')}${decisions ? `\n${decisions} enthalten mögliche Entscheidungen.` : ''}${dups ? `\n${dups} scheinen Duplikate zu sein.` : ''}`,
-        confidence: proposal.confidence,
-        affected: proposal.affectedEntities,
-        sourceIds: ids,
-        // proposed only if the insight is (still) open: no orphaned proposals when the group is analyzed again
-        action: { proposal, label: 'Alle kopieren und archivieren' },
-        dedupeKey,
-      });
-      this.notifications.create({
-        title: `${n} Dokument${n === 1 ? '' : 'e'} ${known ? `zu ${label}` : 'bereit zur Archivierung'}`,
-        description: `${n} davon gehören vermutlich zu ${label}${decisions ? `, ${decisions} enthalten mögliche Entscheidungen` : ''}${dups ? `, ${dups} scheinen Duplikate zu sein` : ''}.`,
-        type: 'assignment_proposal',
-        priority: known ? 'high' : 'normal',
-        affectedEntityIds: ids,
-        proposedActions: [
-          { label: 'Prüfen', kind: 'navigate', target: '/scan/' },
-          { label: 'Ablehnen', kind: 'ignore' },
-        ],
-        dedupeKey,
-      });
-    }
+    this.scanProposals.build(docIds);
   }
 
   /** Proposal groups for the scan view (analyzed scan documents that are not archived yet). */
   proposals(): ScanProposalGroup[] {
-    const files = this.db
-      .select()
-      .from(scanFiles)
-      .where(and(eq(scanFiles.status, 'analyzed')))
-      .all();
-    const ids = files.map((f) => f.documentId).filter((x): x is string => Boolean(x));
-    if (ids.length === 0) return [];
-    const rows = this.db
-      .select()
-      .from(documents)
-      .where(and(inArray(documents.id, ids), eq(documents.status, 'proposed')))
-      .all();
-    const groups = new Map<string, ScanProposalGroup>();
-    for (const r of rows) {
-      const g = this.groupKey(r.proposal as DocumentProposal | null, r.categoryPath);
-      const cur = groups.get(g.key) ?? { key: g.key, label: g.label, topic: g.topic, project: g.project, documentIds: [], confidence: 1 };
-      cur.documentIds.push(r.id);
-      cur.confidence = Math.min(cur.confidence, r.confidence ?? 0.4);
-      groups.set(g.key, cur);
-    }
-    return [...groups.values()].sort((a, b) => b.documentIds.length - a.documentIds.length);
+    return this.scanProposals.groups();
   }
 
   // ---------- Scheduling (only while the application runs) ----------
@@ -812,14 +307,11 @@ export class ScannerService {
     this.schedule.start();
   }
 
-  /**
-   * Re-plans the periodic scan from the scan settings and the enabled folders. Cheap and idempotent:
-   * call it after every change of settings or folders; an unchanged plan keeps the pending timer.
-   */
+  /** Re-plans the periodic scan from settings and enabled folders; cheap and idempotent, an unchanged plan keeps its timer. */
   applySettings(): void {
-    const s = this.settings.get().scan;
-    const active = s.enabled && s.periodic && this.listDirectories().some((r) => r.enabled);
-    this.schedule.setInterval(active ? s.intervalMinutes * 60_000 : null);
+    const scan = this.settings.get().scan;
+    const active = scan.enabled && scan.periodic && this.listDirectories().some((root) => root.enabled);
+    this.schedule.setInterval(active ? scan.intervalMinutes * 60_000 : null);
   }
 
   /** When the next periodic scan is due (epoch ms), or null if none is planned. */
@@ -836,13 +328,12 @@ export class ScannerService {
   }
 
   startupScan(): void {
-    const s = this.settings.get().scan;
-    if (s.enabled && s.onStartup && this.listDirectories().length > 0) {
-      try {
-        this.startScan(undefined, 'startup');
-      } catch (err) {
-        this.ctx.logger.warn('scanner', 'Startup scan not started', { error: err });
-      }
+    const scan = this.settings.get().scan;
+    if (!scan.enabled || !scan.onStartup || this.listDirectories().length === 0) return;
+    try {
+      this.startScan(undefined, 'startup');
+    } catch (err) {
+      this.ctx.logger.warn('scanner', 'Startup scan not started', { error: err });
     }
   }
 
@@ -850,7 +341,7 @@ export class ScannerService {
     this.schedule.stop();
   }
 
-  fileExists(p: string): boolean {
-    return fs.existsSync(p);
+  fileExists(target: string): boolean {
+    return fs.existsSync(target);
   }
 }
