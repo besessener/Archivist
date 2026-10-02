@@ -17,6 +17,7 @@ import { useRun } from '@/lib/use-run';
 import { useSettings } from '@/lib/use-settings';
 import type { ScanFileRecord } from '@/lib/types';
 import type { ScanFileStatus } from '@archivist/shared';
+import { withMembership } from '@/lib/utils';
 
 function statusVariant(s: ScanFileStatus) {
   switch (s) {
@@ -59,13 +60,7 @@ export function ScanResults() {
   const llmAllowedRoots = new Set((roots.data ?? []).filter((r) => r.llmAllowed).map((r) => r.id));
   const llmFiles = selectedFiles.filter((f) => llmAllowedRoots.has(f.rootId) && f.llmStatus !== 'excluded');
   const mode = settings?.privacy.llmMode ?? 'confirm';
-  const toggle = (f: ScanFileRecord, v: boolean) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (v) next.add(f.id);
-      else next.delete(f.id);
-      return next;
-    });
+  const toggle = (file: ScanFileRecord, checked: boolean) => setSelected((previous) => withMembership(previous, { value: file.id, present: checked }));
 
   return (
     <section aria-labelledby="scan-results" className="flex flex-col gap-3">

@@ -27,6 +27,14 @@ export function nextMonday(from: Date = new Date()): Date {
   return date;
 }
 
+/** A copy of `set` that contains `value` exactly when `present`. */
+export function withMembership<T>(set: Set<T>, { value, present }: { value: T; present: boolean }): Set<T> {
+  const next = new Set(set);
+  if (present) next.add(value);
+  else next.delete(value);
+  return next;
+}
+
 export function parseList(text: string): string[] {
   return text
     .split(/[,\n]/)

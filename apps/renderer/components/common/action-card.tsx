@@ -12,6 +12,7 @@ import { ConfidenceBadge } from './confidence';
 import { ConfirmDialog } from './confirm-dialog';
 import { EntityChip } from './entity-chip';
 import { formatDate } from '@/lib/format';
+import { withMembership } from '@/lib/utils';
 
 const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondary' | 'success' | 'danger' | 'warning' | 'info' }> = {
   proposed: { label: 'Wartet auf deine Entscheidung', variant: 'warning' },
@@ -161,13 +162,7 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
     return new Set(Array.isArray(preselected) ? preselected.filter((index): index is number => typeof index === 'number') : items.map((_, i) => i));
   });
   const allSelected = selected.size === items.length;
-  const toggle = (index: number, checked: boolean) =>
-    setSelected((previous) => {
-      const next = new Set(previous);
-      if (checked) next.add(index);
-      else next.delete(index);
-      return next;
-    });
+  const toggle = (index: number, checked: boolean) => setSelected((previous) => withMembership(previous, { value: index, present: checked }));
 
   async function resolve({ decision, strongConfirmed }: { decision: 'approve' | 'reject'; strongConfirmed: boolean }) {
     // partial confirmation of an agent batch: only the checked items are executed

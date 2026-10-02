@@ -13,6 +13,7 @@ import { plural } from '@/lib/format';
 import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import type { ArchiveItemRequest, ArchiveMode, ScanProposalGroup } from '@archivist/shared';
+import { withMembership } from '@/lib/utils';
 
 type ArchiveRequest = { ids: string[]; mode: ArchiveMode; group: ScanProposalGroup };
 
@@ -53,14 +54,7 @@ function Group({ group, onArchive }: { group: ScanProposalGroup; onArchive: (req
             <li key={id}>
               <CheckboxField
                 checked={selected.has(id)}
-                onCheckedChange={(v) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    if (v === true) next.add(id);
-                    else next.delete(id);
-                    return next;
-                  })
-                }
+                onCheckedChange={(checked) => setSelected((previous) => withMembership(previous, { value: id, present: checked === true }))}
                 label={
                   <span>
                     {d?.title ?? id}

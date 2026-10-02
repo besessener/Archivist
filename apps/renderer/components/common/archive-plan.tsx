@@ -11,14 +11,6 @@ import { Notice } from './states';
 
 type PlanItem = ArchivePlanRecord['items'][number];
 
-/** A copy of `set` with `value` added or removed. */
-export function withMember<T>(set: Set<T>, value: T, member: boolean): Set<T> {
-  const next = new Set(set);
-  if (member) next.add(value);
-  else next.delete(value);
-  return next;
-}
-
 export function ArchivePlanItem({ item, included, onIncludedChange }: { item: PlanItem; included: boolean; onIncludedChange: (included: boolean) => void }) {
   return (
     <li className="rounded-lg border p-3 text-sm" data-testid="archive-plan-item">

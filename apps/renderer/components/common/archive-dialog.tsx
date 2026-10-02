@@ -9,9 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { call, errorMessage } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
 import type { ArchivePlanRecord, ArchiveResultRecord, DocRecord } from '@/lib/types';
-import { ArchivePlanItem, NewCategoriesNotice, withMember } from './archive-plan';
+import { ArchivePlanItem, NewCategoriesNotice } from './archive-plan';
 import { ArchiveResultView } from './archive-result';
 import { ErrorNote, Loading, Notice } from './states';
+import { withMembership } from '@/lib/utils';
 
 export interface ArchiveEdit {
   mode: ArchiveMode;
@@ -138,7 +139,7 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
                   key={item.documentId}
                   item={item}
                   included={included.has(item.documentId)}
-                  onIncludedChange={(member) => setIncluded((previous) => withMember(previous, item.documentId, member))}
+                  onIncludedChange={(member) => setIncluded((previous) => withMembership(previous, { value: item.documentId, present: member }))}
                 />
               ))}
             </ul>
@@ -147,7 +148,7 @@ export function ArchiveDialog({ open, onOpenChange, items, onDone }: ArchiveDial
               <NewCategoriesNotice
                 categories={categories}
                 approved={approvedCategories}
-                onApprovedChange={(category, member) => setApprovedCategories((previous) => withMember(previous, category, member))}
+                onApprovedChange={(category, member) => setApprovedCategories((previous) => withMembership(previous, { value: category, present: member }))}
               />
             )}
 

@@ -6,6 +6,7 @@ import { ExtraSubjectsNote } from '@/components/common/extra-subjects';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { formatDate } from '@/lib/format';
+import { withMembership } from '@/lib/utils';
 type ListedDocument = IpcOutput<'documents:list'>[number];
 
 export interface DocumentsTableProps {
@@ -19,13 +20,7 @@ export interface DocumentsTableProps {
 export function DocumentsTable({ documents, subjects, selected, setSelected, onOpen }: DocumentsTableProps) {
   const selectedCount = documents.filter((doc) => selected.has(doc.id)).length;
   const allChecked = documents.length > 0 && selectedCount === documents.length;
-  const toggle = (id: string, on: boolean) =>
-    setSelected((previous) => {
-      const next = new Set(previous);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  const toggle = (id: string, on: boolean) => setSelected((previous) => withMembership(previous, { value: id, present: on }));
   return (
     <div className="rounded-xl border bg-card">
       <Table data-testid="documents-table">

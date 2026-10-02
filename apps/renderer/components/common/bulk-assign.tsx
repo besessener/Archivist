@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { call } from '@/lib/ipc';
 import { plural } from '@/lib/format';
 import { useRun } from '@/lib/use-run';
+import { withMembership } from '@/lib/utils';
 
 /** Topic, project, tag and case for all selected entries as ONE undo step (#291); a topic or project is added, never replaced (#287). */
 function BulkAssignDialog({ ids, noun, onClose, onDone }: { ids: string[]; noun: [string, string]; onClose: () => void; onDone: (n: number) => void }) {
@@ -129,13 +130,7 @@ export function useSelection() {
     selected,
     ids: [...selected],
     has: (id: string) => selected.has(id),
-    toggle: (id: string, on: boolean) =>
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (on) next.add(id);
-        else next.delete(id);
-        return next;
-      }),
+    toggle: (id: string, on: boolean) => setSelected((previous) => withMembership(previous, { value: id, present: on })),
     setAll: (ids: string[]) => setSelected(new Set(ids)),
     clear: () => setSelected(new Set()),
   };

@@ -28,7 +28,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
 import type { DecisionRecord } from '@/lib/types';
-import { nonEmpty, parseList } from '@/lib/utils';
+import { nonEmpty, parseList, withMembership } from '@/lib/utils';
 
 function dayOf(value: string | null | undefined): string {
   return value ? localDate(value) : '';
@@ -120,12 +120,7 @@ export function DecisionFormDialog({
   const fieldsChanged = formState !== initialFormState;
 
   function setFieldUnknown(field: DecisionField, isUnknown: boolean) {
-    setUnknown((previous) => {
-      const next = new Set(previous);
-      if (isUnknown) next.add(field);
-      else next.delete(field);
-      return next;
-    });
+    setUnknown((previous) => withMembership(previous, { value: field, present: isUnknown }));
   }
 
   const unknownBox = (field: DecisionField) => (

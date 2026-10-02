@@ -13,6 +13,7 @@ import { call } from '@/lib/ipc';
 import { ENTITY_TYPE_LABELS } from '@/lib/nav';
 import type { OpenItemRecord } from '@/lib/types';
 import { useRun } from '@/lib/use-run';
+import { withMembership } from '@/lib/utils';
 
 export type Preview = IpcOutput<'openItems:solutionPreview'>;
 type Claim = NonNullable<OpenItemRecord['solution']>['nextSteps'][number];
@@ -118,14 +119,7 @@ export function StepsDialog({
           <CheckboxField
             key={i}
             checked={selected.has(i)}
-            onCheckedChange={(checked) =>
-              setSelected((previous) => {
-                const next = new Set(previous);
-                if (checked === true) next.add(i);
-                else next.delete(i);
-                return next;
-              })
-            }
+            onCheckedChange={(checked) => setSelected((previous) => withMembership(previous, { value: i, present: checked === true }))}
             label={
               <>
                 {step.text}

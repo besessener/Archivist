@@ -127,13 +127,13 @@ export function BackupsTab({ settings, reload }: TabProps) {
   const [creating, setCreating] = useState<'metadata' | 'full' | null>(null);
   const [keep, setKeep] = useState(String(settings.backups.keep));
 
-  async function create(includeArchive: boolean) {
+  async function create({ includeArchive }: { includeArchive: boolean }) {
     setCreating(includeArchive ? 'full' : 'metadata');
-    const b = await run(() => call('backup:create', { includeArchive }), {
+    const backup = await run(() => call('backup:create', { includeArchive }), {
       success: includeArchive ? 'Vollständiges Backup erstellt.' : 'Metadaten-Backup erstellt.',
     });
     setCreating(null);
-    if (b) void list.refetch();
+    if (backup) void list.refetch();
   }
 
   return (
@@ -147,7 +147,7 @@ export function BackupsTab({ settings, reload }: TabProps) {
             <p className="text-sm text-muted-foreground">
               Sichert Entscheidungen, offene Punkte, Wissen und Einstellungen – <strong>nicht</strong> deine Dokumentdateien. Klein und schnell.
             </p>
-            <Button variant="outline" disabled={creating !== null} onClick={() => void create(false)} data-testid="backup-metadata">
+            <Button variant="outline" disabled={creating !== null} onClick={() => void create({ includeArchive: false })} data-testid="backup-metadata">
               {creating === 'metadata' && <Loader2 className="animate-spin" aria-hidden />} Metadaten sichern
             </Button>
           </div>
@@ -158,7 +158,7 @@ export function BackupsTab({ settings, reload }: TabProps) {
             <p className="text-sm text-muted-foreground">
               Sichert zusätzlich alle archivierten Dokumentdateien. Kann viel Speicherplatz brauchen und länger dauern.
             </p>
-            <Button variant="outline" disabled={creating !== null} onClick={() => void create(true)} data-testid="backup-full">
+            <Button variant="outline" disabled={creating !== null} onClick={() => void create({ includeArchive: true })} data-testid="backup-full">
               {creating === 'full' && <Loader2 className="animate-spin" aria-hidden />} Alles sichern
             </Button>
           </div>
