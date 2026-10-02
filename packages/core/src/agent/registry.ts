@@ -111,6 +111,8 @@ export interface ToolContext {
   tainted: string | null;
   /** The background job the run is part of: longer steps report their progress to it instead of starting jobs of their own (#304). */
   job?: { report: (progress: number, message: string) => void } | null;
+  /** Set when the provider's web search brought web pages into the run; changes then need the user's own request. */
+  webContent?: boolean;
 }
 
 export interface ToolOutput {

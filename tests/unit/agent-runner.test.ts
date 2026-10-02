@@ -747,3 +747,69 @@ describe('conversation helpers of the agent service', () => {
     expect(modeOverrideIn('Verschiebe die Datei')).toBeNull();
   });
 });
+
+describe('web search of the provider', () => {
+  const web = { queries: ['Mutterschutz Fristen 2026'], sources: [{ url: 'https://example.org/mutterschutz', title: 'Mutterschutz' }] };
+
+  it('passes the setting on to the adapter (off unless the service turns it on)', async () => {
+    const off = setup([{ text: 'ok' }]);
+    await off.runner.run();
+    expect(off.adapter.requests[0]!.webSearch).toBe(false);
+    const on = setup([{ text: 'ok' }], { runner: { webSearch: true } });
+    await on.runner.run();
+    expect(on.adapter.requests[0]!.webSearch).toBe(true);
+  });
+
+  it('every search becomes a visible read step; the cited pages come back once as sources', async () => {
+    const t = setup(
+      [
+        { ...calls(call('lookup', { q: 'mutterschutz' })), web },
+        {
+          text: 'Laut Gesetz 14 Wochen.',
+          web: { queries: ['', 'Mutterschutzgesetz'], sources: [...web.sources, { url: 'https://example.org/b', title: 'B' }] },
+        },
+      ],
+      { runner: { webSearch: true }, ctx: { userText: 'Wie lange dauert der Mutterschutz?' } },
+    );
+    const out = await t.runner.run();
+    expect(out.status).toBe('done');
+    const steps = out.steps.filter((s) => s.tool === 'web_search');
+    expect(steps.map((s) => [s.label, s.risk, s.outcome])).toEqual([
+      ['Websuche: „Mutterschutz Fristen 2026“', 'read', 'ok'],
+      ['Websuche', 'read', 'ok'],
+      ['Websuche: „Mutterschutzgesetz“', 'read', 'ok'],
+    ]);
+    expect(steps[0]!.summary).toBe('1 Quelle');
+    expect(out.webSources).toEqual([
+      { url: 'https://example.org/mutterschutz', title: 'Mutterschutz' },
+      { url: 'https://example.org/b', title: 'B' },
+    ]);
+    expect(t.ctx.webContent).toBe(true);
+  });
+
+  it('after reading the web, a change the user did not ask for is not carried out', async () => {
+    const t = setup([{ ...calls(call('change', { ids: ['x'] })), web }, { text: 'ok' }], {
+      runner: { webSearch: true },
+      ctx: { userText: 'Was ist neu beim Elterngeld?' },
+    });
+    await t.runner.run();
+    expect(t.probe.changes).toBe(0);
+    const r = lastTool(t.adapter.requests[1]!).results[0]!;
+    expect(r.isError).toBe(true);
+    expect(r.content).toContain('Inhalte aus dem Web');
+  });
+
+  it('a change the user asked for still runs after a web search', async () => {
+    const t = setup([{ ...calls(call('change', { ids: ['x'] })), web }, { text: 'ok' }], {
+      runner: { webSearch: true },
+      ctx: { userText: 'Such die aktuelle Frist im Internet und leg eine Notiz an' },
+    });
+    await t.runner.run();
+    expect(t.probe.changes).toBe(1);
+  });
+
+  it('a run without web search has no web sources', async () => {
+    const out = await setup([{ text: 'ok' }]).runner.run();
+    expect(out.webSources).toEqual([]);
+  });
+});

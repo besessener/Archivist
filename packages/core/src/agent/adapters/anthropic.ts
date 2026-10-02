@@ -2,16 +2,19 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicFoundry } from '@anthropic-ai/foundry-sdk';
 import { abortedError } from '../../util/llm-errors';
 import { AppError } from '../../util/errors';
-import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult } from '../types';
-import { previewOf, rejectedFeatures, replayRaw, type AdapterConfig } from './common';
+import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
+import { previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
 
 /** Optional features; an endpoint that rejects one gets requests without it from then on (#296). */
-type Feature = 'effort' | 'task_budget' | 'compaction' | 'eager_streaming' | 'top_cache' | 'fallbacks';
+type Feature = 'web_location' | 'web_search' | 'effort' | 'task_budget' | 'compaction' | 'eager_streaming' | 'top_cache' | 'fallbacks';
 const FEATURE_MENTIONS: Record<Feature, RegExp> = {
   // the specific features come first: „output_config.task_budget: …“ must switch off the task budget, not the effort
+  web_location: /user_location/i,
+  // web search switched off for the organization, or not offered by the endpoint (Bedrock, some Foundry deployments)
+  web_search: /web[_ ]?search/i,
   task_budget: /task[_-]?budget/i,
   eager_streaming: /eager_input_streaming/i,
   compaction: /context_management|compact/i,
@@ -19,6 +22,9 @@ const FEATURE_MENTIONS: Record<Feature, RegExp> = {
   effort: /\beffort\b|output_config/i,
   top_cache: /cache_control/i,
 };
+
+/** Searches per request; enough for comparisons, a brake for runaway searching. */
+export const WEB_SEARCH_MAX_USES = 5;
 
 /** Minimum total of a Claude task budget. */
 const MIN_TASK_BUDGET = 20_000;
@@ -93,6 +99,27 @@ export function toAnthropicMessages(messages: AgentMessage[], model: string): Me
   return out;
 }
 
+interface RawBlock {
+  type?: string;
+  name?: string;
+  input?: { query?: unknown } | null;
+  content?: unknown;
+  citations?: Array<{ type?: string; url?: string; title?: string | null }> | null;
+}
+
+/** Searches and sources of the server-side web search in one answer (`server_tool_use`, `web_search_tool_result`, citations). */
+export function webActivity(blocks: RawBlock[]): { web?: WebSearchActivity } {
+  const queries = blocks
+    .filter((b) => b.type === 'server_tool_use' && b.name === 'web_search')
+    .map((b) => (typeof b.input?.query === 'string' ? b.input.query : ''));
+  if (!queries.length) return {};
+  const cited = uniqueSources(blocks.flatMap((b) => (b.type === 'text' ? (b.citations ?? []) : [])).filter((c) => c.type === 'web_search_result_location'));
+  const found = uniqueSources(
+    blocks.flatMap((b) => (b.type === 'web_search_tool_result' && Array.isArray(b.content) ? (b.content as Array<{ url?: string; title?: string }>) : [])),
+  );
+  return { web: { queries, sources: cited.length ? cited : found.slice(0, 8) } };
+}
+
 /** SDK error → user-facing error; rate limits, server and connection errors are retryable (the core counts retries). */
 function mapError(err: unknown, signal?: AbortSignal): Error {
   if (err instanceof Anthropic.APIUserAbortError || signal?.aborted) return abortedError();
@@ -150,6 +177,16 @@ export class AnthropicAdapter implements ProviderAdapter {
       // the stable tool list is the first cache breakpoint
       ...(i === req.tools.length - 1 ? { cache_control: { type: 'ephemeral' } } : {}),
     }));
+    // basic web search (server tool): available on the Claude API and on Foundry, also for deployments hosted on Azure
+    if (req.webSearch && !off.has('web_search')) {
+      const tz = off.has('web_location') ? null : userTimeZone();
+      tools.unshift({
+        type: 'web_search_20250305',
+        name: 'web_search',
+        max_uses: WEB_SEARCH_MAX_USES,
+        ...(tz ? { user_location: { type: 'approximate', timezone: tz } } : {}),
+      } as never);
+    }
     const betas: string[] = [];
     const outputConfig: Record<string, unknown> = {};
     if (!off.has('effort')) outputConfig.effort = req.effort;
@@ -261,6 +298,7 @@ export class AnthropicAdapter implements ProviderAdapter {
       },
       refusal: stopReason === 'refusal' ? { category: details?.category ?? null, explanation: details?.explanation ?? null } : undefined,
       streamed,
+      ...webActivity(message.content as unknown as RawBlock[]),
     };
   }
 

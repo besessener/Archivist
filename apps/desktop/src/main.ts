@@ -4,6 +4,7 @@ import { createHandlers, createIpcDispatcher, createServices, type HostApi, type
 import { IPC_CHANNELS, type AppNotification } from '@archivist/shared';
 import { appUserModelId } from './app-id';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
+import { isExternalWebUrl } from './external-links';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
 /**
@@ -146,7 +147,11 @@ function createWindow(): void {
   wc.on('will-redirect', (e, url) => {
     if (!allowed(url)) e.preventDefault();
   });
-  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // links (e.g. sources of a web search) open in the system browser – never inside the app window
+  wc.setWindowOpenHandler(({ url }) => {
+    if (isExternalWebUrl(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
   wc.on('will-attach-webview', (e) => e.preventDefault());
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => {

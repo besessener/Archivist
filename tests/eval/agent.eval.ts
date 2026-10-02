@@ -6,7 +6,7 @@ import { TASKS } from './tasks';
 
 /**
  * Evaluation of the agent with REAL models (#316). Costs money – never part of `npm test` or CI.
- * Run: `npm run eval:agent` with ARCHIVIST_EVAL_PROVIDERS and ARCHIVIST_EVAL_<NAME>_* set (see README).
+ * Run: `npm run eval:agent` with ARCHIVIST_EVAL_PROVIDERS and ARCHIVIST_EVAL_<NAME>_* set (see docs/how-to/agent-evaluieren.md).
  */
 
 const { providers, problems } = providersFromEnv();
@@ -15,7 +15,7 @@ const TASK_TIMEOUT = 20 * 60_000;
 
 if (!providers.length) {
   const why = problems.length ? `Konfiguration unvollständig: ${problems.join('; ')}` : 'ARCHIVIST_EVAL_PROVIDERS ist nicht gesetzt';
-  console.info(`Agent-Evaluation übersprungen: ${why} (siehe README, „Evaluation des Agenten“).`);
+  console.info(`Agent-Evaluation übersprungen: ${why} (siehe docs/how-to/agent-evaluieren.md).`);
   describe.skip(`Agent-Evaluation übersprungen – ${why}`, () => {
     it('braucht konfigurierte Anbieter', () => undefined);
   });

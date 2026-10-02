@@ -1,8 +1,8 @@
 import type { AgentEffort } from '@archivist/shared';
 import { abortedError, mapHttpError } from '../../util/llm-errors';
 import { AppError } from '../../util/errors';
-import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult } from '../types';
-import { previewOf, rejectedFeatures, replayRaw, type AdapterConfig } from './common';
+import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
+import { previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
 
 /** Output item of the Responses API as far as the adapter reads it. */
 interface OutputItem {
@@ -13,9 +13,11 @@ interface OutputItem {
   call_id?: string;
   name?: string;
   arguments?: string;
-  content?: Array<{ type?: string; text?: string; refusal?: string }>;
+  content?: Array<{ type?: string; text?: string; refusal?: string; annotations?: Array<{ type?: string; url?: string; title?: string }> }>;
   encrypted_content?: string | null;
   summary?: unknown;
+  /** web_search_call: what the search did (search / open_page / find_in_page). */
+  action?: { type?: string; query?: string; queries?: string[]; url?: string; sources?: Array<{ type?: string; url?: string }> } | null;
 }
 
 interface ResponseBody {
@@ -26,8 +28,8 @@ interface ResponseBody {
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
 }
 
-/** Optional parameters a compatible endpoint (Azure OpenAI, Foundry `…/openai/v1`) may reject. */
-const OPTIONAL = ['stream', 'reasoning', 'include', 'max_output_tokens', 'parallel_tool_calls', 'store'] as const;
+/** Optional parameters a compatible endpoint (Azure OpenAI, Foundry `…/openai/v1`) may reject; `web_search` is the hosted tool. */
+const OPTIONAL = ['web_search', 'stream', 'reasoning', 'include', 'max_output_tokens', 'parallel_tool_calls', 'store'] as const;
 
 const UNSUPPORTED_RE = /\b(?:unsupported|unknown|unrecognized|not\s+supported|does\s+not\s+support|invalid)\b/i;
 
@@ -47,7 +49,8 @@ export function toResponsesInput(messages: AgentMessage[], model: string): unkno
     } else if (replayRaw(m, 'openai', model) && Array.isArray(m.raw)) {
       // own output items go back unchanged (reasoning with encrypted content keeps the chain of thought with store:false)
       for (const item of m.raw as OutputItem[]) {
-        if (item.type === 'reasoning') items.push(item);
+        // web search calls go back as they came (id, status, action) so the reasoning before them keeps its successor
+        if (item.type === 'reasoning' || item.type === 'web_search_call') items.push(item);
         else if (item.type === 'function_call') items.push({ type: 'function_call', call_id: item.call_id, name: item.name, arguments: item.arguments });
         else if (item.type === 'message') items.push({ role: 'assistant', content: textOf([item]) });
       }
@@ -66,6 +69,25 @@ function textOf(output: OutputItem[]): string {
     .filter((c) => c.type === 'output_text' || c.type === 'text')
     .map((c) => c.text ?? '')
     .join('');
+}
+
+/** Searches (`web_search_call`) and cited pages (`url_citation`) of one response. */
+export function webActivity(output: OutputItem[]): { web?: WebSearchActivity } {
+  const calls = output.filter((i) => i.type === 'web_search_call');
+  if (!calls.length) return {};
+  // open_page / find_in_page belong to the search before them; only searches are listed
+  const queries = calls
+    .filter((c) => !c.action?.type || c.action.type === 'search')
+    .map((c) => c.action?.queries?.filter(Boolean).join(' · ') || c.action?.query || '');
+  const cited = uniqueSources(
+    output
+      .filter((i) => i.type === 'message')
+      .flatMap((i) => i.content ?? [])
+      .flatMap((c) => c.annotations ?? [])
+      .filter((a) => a.type === 'url_citation'),
+  );
+  const found = uniqueSources(calls.flatMap((c) => c.action?.sources ?? []).map((s) => ({ url: s.url })));
+  return { web: { queries: queries.length ? queries : [''], sources: cited.length ? cited : found.slice(0, 8) } };
 }
 
 function parseArgs(raw: string | undefined): unknown {
@@ -142,11 +164,13 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
   async turn(req: TurnRequest, onEvent?: (e: StreamEvent) => void): Promise<TurnResult> {
     const key = `${this.url}\n${this.model}`;
     const rejected = rejectedFeatures(key);
+    const functions = req.tools.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false }));
+    const tz = userTimeZone();
     const full: Record<string, unknown> = {
       model: this.model,
       instructions: req.system,
       input: toResponsesInput(req.messages, this.model),
-      tools: req.tools.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false })),
+      tools: functions,
       tool_choice: 'auto',
       store: false,
       stream: true,
@@ -155,7 +179,13 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
       include: ['reasoning.encrypted_content'],
       max_output_tokens: req.maxOutputTokens,
     };
-    const body = () => Object.fromEntries(Object.entries(full).filter(([k]) => !rejected.has(k)));
+    const body = () => {
+      const b = Object.fromEntries(Object.entries(full).filter(([k]) => !rejected.has(k)));
+      // hosted web search (only in chat runs); without a location the results would be localized to the United States
+      if (req.webSearch && !rejected.has('web_search'))
+        b.tools = [{ type: 'web_search', user_location: { type: 'approximate', ...(tz ? { timezone: tz } : {}) } }, ...functions];
+      return b;
+    };
     let success = false;
     let usage: TurnResult['usage'] | null = null;
     const sent = { bytes: 0 };
@@ -223,7 +253,9 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
     return {
       text: textOf(output),
       toolCalls,
-      raw: output.map(({ id, status, ...rest }) => (rest.type === 'reasoning' ? { id, ...rest } : (void status, rest))),
+      raw: output.map(({ id, status, ...rest }) =>
+        rest.type === 'reasoning' ? { id, ...rest } : rest.type === 'web_search_call' ? { id, status, ...rest } : (void status, rest),
+      ),
       stopReason,
       usage: {
         inputTokens: Math.max(0, (r.usage?.input_tokens ?? 0) - cached),
@@ -233,6 +265,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
       },
       refusal: refusal ? { category: null, explanation: refusal.refusal ?? null } : undefined,
       streamed,
+      ...webActivity(output),
     };
   }
 
