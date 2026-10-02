@@ -23,63 +23,60 @@ export interface DocumentPrivacyFields {
 type PathApi = typeof path.posix;
 
 /** realpath of the deepest existing ancestor plus the non-existing rest (synchronous variant). */
-function realpathDeepestSync(pm: PathApi, target: string): string | null {
+function realpathDeepestSync(pathApi: PathApi, target: string): string | null {
   let current = target;
   const rest: string[] = [];
   for (;;) {
     try {
-      return pm.join(fs.realpathSync.native(current), ...rest.toReversed());
+      return pathApi.join(fs.realpathSync.native(current), ...rest.toReversed());
     } catch {
-      const parent = pm.dirname(current);
+      const parent = pathApi.dirname(current);
       if (parent === current) return null;
-      rest.push(pm.basename(current));
+      rest.push(pathApi.basename(current));
       current = parent;
     }
   }
 }
 
-/**
- * Compares paths like the file system does: both the lexical and the real path (symlinks, junctions) count,
- * and on Windows the comparison ignores case.
- */
+/** Compares paths like the file system: lexical and real path (symlinks, junctions) both count, case-insensitive on Windows. */
 export class PathMatcher {
-  private readonly pm: PathApi;
+  private readonly pathApi: PathApi;
   private readonly foldCase: boolean;
 
   constructor(private readonly platform: string = process.platform) {
-    this.pm = platform === 'win32' ? path.win32 : path.posix;
+    this.pathApi = platform === 'win32' ? path.win32 : path.posix;
     // Windows file systems are case-insensitive
     this.foldCase = platform === 'win32';
   }
 
-  /** All spellings under which `p` is reachable (resolved and – if it exists on this machine – real path). */
-  variants(p: string): string[] {
-    const resolved = this.pm.resolve(p);
-    const out = new Set([resolved]);
+  /** All spellings under which `target` is reachable (resolved and – if it exists on this machine – real path). */
+  variants(target: string): string[] {
+    const resolved = this.pathApi.resolve(target);
+    const spellings = new Set([resolved]);
     // Real paths can only be determined for paths of the running platform.
     if (this.platform === process.platform) {
-      const real = realpathDeepestSync(this.pm, resolved);
-      if (real) out.add(real);
+      const real = realpathDeepestSync(this.pathApi, resolved);
+      if (real) spellings.add(real);
     }
-    return [...out].map((v) => (this.foldCase ? v.toLowerCase() : v));
+    return [...spellings].map((spelling) => (this.foldCase ? spelling.toLowerCase() : spelling));
   }
 
   private insideLexically(root: string, candidate: string): boolean {
-    const rel = this.pm.relative(root, candidate);
-    if (rel === '') return true;
-    return !(rel === '..' || rel.startsWith(`..${this.pm.sep}`) || this.pm.isAbsolute(rel));
+    const relative = this.pathApi.relative(root, candidate);
+    if (relative === '') return true;
+    return !(relative === '..' || relative.startsWith(`..${this.pathApi.sep}`) || this.pathApi.isAbsolute(relative));
   }
 
   /** true if `a` and `b` denote the same file. */
   same(a: string, b: string): boolean {
-    const vb = this.variants(b);
-    return this.variants(a).some((x) => vb.includes(x));
+    const variantsOfB = this.variants(b);
+    return this.variants(a).some((variant) => variantsOfB.includes(variant));
   }
 
   /** true if `candidate` equals `root` or lies below it. */
   inside(root: string, candidate: string): boolean {
-    const vr = this.variants(root);
-    return this.variants(candidate).some((c) => vr.some((r) => this.insideLexically(r, c)));
+    const rootVariants = this.variants(root);
+    return this.variants(candidate).some((variant) => rootVariants.some((rootVariant) => this.insideLexically(rootVariant, variant)));
   }
 }
 
@@ -99,34 +96,36 @@ export class PrivacyService {
   }
 
   evaluate(input: { path?: string | null; ext: string; docExcluded?: boolean; rootLlmAllowed?: boolean }): PrivacyDecision {
-    const p = this.settings.get().privacy;
-    if (p.llmMode === 'local_only') return { allowed: false, status: 'local_only', reason: 'Datenschutzmodus „nur lokal“ ist aktiv.' };
+    const privacy = this.settings.get().privacy;
+    if (privacy.llmMode === 'local_only') return { allowed: false, status: 'local_only', reason: 'Datenschutzmodus „nur lokal“ ist aktiv.' };
     if (input.docExcluded) return { allowed: false, status: 'excluded', reason: 'Datei ist von der externen Analyse ausgeschlossen.' };
     if (input.rootLlmAllowed === false) return { allowed: false, status: 'excluded', reason: 'Das Scan-Verzeichnis ist von der LLM-Analyse ausgeschlossen.' };
     const ext = input.ext.toLowerCase().replace(/^\./, '');
-    if (p.neverAnalyzeExtensions.some((e) => e.toLowerCase().replace(/^\./, '') === ext))
+    if (privacy.neverAnalyzeExtensions.some((excluded) => excluded.toLowerCase().replace(/^\./, '') === ext))
       return { allowed: false, status: 'excluded', reason: `Dateityp .${ext} wird nie extern analysiert.` };
     if (input.path) {
       const file = input.path;
-      if (p.neverAnalyzeFiles.some((f) => this.paths.same(f, file)))
+      if (privacy.neverAnalyzeFiles.some((excluded) => this.paths.same(excluded, file)))
         return { allowed: false, status: 'excluded', reason: 'Datei ist von der externen Analyse ausgeschlossen.' };
-      if (p.neverAnalyzeDirs.some((d) => this.paths.inside(d, file)))
+      if (privacy.neverAnalyzeDirs.some((excluded) => this.paths.inside(excluded, file)))
         return { allowed: false, status: 'excluded', reason: 'Verzeichnis ist von der externen Analyse ausgeschlossen.' };
     }
     return { allowed: true, status: null, reason: null };
   }
 
   /** Gate for a stored document: per-document exclusion, folder permission, file type and path exclusions. */
-  evaluateDocument(d: DocumentPrivacyFields): PrivacyDecision {
-    return this.evaluate({ path: d.sourcePath, ext: d.ext, docExcluded: d.llmStatus === 'excluded', rootLlmAllowed: d.folderLlmAllowed });
+  evaluateDocument(document: DocumentPrivacyFields): PrivacyDecision {
+    return this.evaluate({
+      path: document.sourcePath,
+      ext: document.ext,
+      docExcluded: document.llmStatus === 'excluded',
+      rootLlmAllowed: document.folderLlmAllowed,
+    });
   }
 
-  /**
-   * May content of an already analyzed document be sent to the LLM *without asking again* (e.g. as a chat source)?
-   * In mode „vorher fragen“ only documents the user released for external analysis (`llmStatus = analyzed`) qualify.
-   */
-  mayShareDocument(d: DocumentPrivacyFields): boolean {
-    if (!this.evaluateDocument(d).allowed) return false;
-    return this.mode() === 'auto' || d.llmStatus === 'analyzed';
+  /** May an analysed document go to the LLM without asking again? In „vorher fragen“ only released (`analyzed`) ones qualify. */
+  mayShareDocument(document: DocumentPrivacyFields): boolean {
+    if (!this.evaluateDocument(document).allowed) return false;
+    return this.mode() === 'auto' || document.llmStatus === 'analyzed';
   }
 }

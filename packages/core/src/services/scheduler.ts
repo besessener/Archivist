@@ -1,9 +1,6 @@
 import type { Logger } from '../util/logger';
 
-/**
- * Where a schedule keeps the time (epoch ms) of its last run. The default store lives in memory;
- * a persistent store lets the rhythm survive restarts.
- */
+/** Where a schedule keeps the time (epoch ms) of its last run; a persistent store lets the rhythm survive restarts. */
 export interface LastRunStore {
   get(): number | null;
   set(at: number): void;
@@ -31,12 +28,7 @@ export interface IntervalScheduleOptions {
   lastRun?: LastRunStore;
 }
 
-/**
- * A recurring task that runs only while the application runs. The next run is due one interval after the
- * last run (or after the schedule was (re)configured when there was none yet). Changing the interval takes
- * effect immediately; applying an unchanged interval keeps the pending timer, so callers may re-apply
- * their configuration on every relevant change.
- */
+/** Recurring task while the app runs, due one interval after the last run; re-applying an unchanged interval keeps the timer. */
 export class IntervalSchedule {
   private intervalMs: number | null = null;
   private started = false;
@@ -44,8 +36,8 @@ export class IntervalSchedule {
   private timer: NodeJS.Timeout | null = null;
   private readonly lastRun: LastRunStore;
 
-  constructor(private readonly opts: IntervalScheduleOptions) {
-    this.lastRun = opts.lastRun ?? memoryLastRunStore();
+  constructor(private readonly options: IntervalScheduleOptions) {
+    this.lastRun = options.lastRun ?? memoryLastRunStore();
   }
 
   /** Arms the timer for the current interval (if any). */
@@ -98,9 +90,9 @@ export class IntervalSchedule {
     if (Date.now() >= due) {
       this.lastRun.set(Date.now());
       try {
-        this.opts.run();
+        this.options.run();
       } catch (err) {
-        this.opts.logger?.warn('scheduler', 'Scheduled task not started', { schedule: this.opts.name, error: err });
+        this.options.logger?.warn('scheduler', 'Scheduled task not started', { schedule: this.options.name, error: err });
       }
     }
     // the run may have changed the schedule (markRun, stop); arm() picks up the current state
