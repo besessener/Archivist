@@ -81,6 +81,9 @@ export const ChatIntent = z.object({
   confidence: Confidence,
   rationale: z.string().default(''),
   query: opt(z.string()).describe('Such- bzw. Fragetext'),
+  alternativeQueries: opt(z.array(z.string()).transform((a) => a.slice(0, 4))).describe(
+    'Nur bei Fragen/Suchen: 2–4 weitere Suchformulierungen (Synonyme, Umschreibungen, dieselben Kernbegriffe auf Englisch bzw. Deutsch)',
+  ),
   topic: opt(z.string()),
   project: opt(z.string()),
   timeRange: opt(z.object({ from: opt(z.string()), to: opt(z.string()) })),

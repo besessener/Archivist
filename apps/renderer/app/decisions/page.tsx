@@ -278,9 +278,7 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
           {d.sourceIds.length > 0 ? (
             <span className="flex flex-wrap gap-1.5">
               {d.sourceIds.map((s, i) => (
-                <Link key={s} href={`/documents/?id=${encodeURIComponent(s)}`} className="rounded-md border px-2 py-0.5 text-xs hover:bg-accent">
-                  Quelle {i + 1}
-                </Link>
+                <SourceDocument key={s} id={s} index={i} />
               ))}
             </span>
           ) : (
@@ -368,5 +366,22 @@ export default function DecisionsPage() {
     <Suspense fallback={<Loading />}>
       <DecisionsInner />
     </Suspense>
+  );
+}
+
+/** A source document of a decision, named by its title (#165); a removed document stays recognisable as such. */
+function SourceDocument({ id, index }: { id: string; index: number }) {
+  const doc = useQuery('documents:get', { id }, { scopes: ['documents'] });
+  if (doc.error)
+    return <span className="rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground">Quelle {index + 1} (nicht mehr vorhanden)</span>;
+  return (
+    <Link
+      href={`/documents/?id=${encodeURIComponent(id)}`}
+      className="rounded-md border px-2 py-0.5 text-xs hover:bg-accent"
+      data-testid="decision-source"
+      title={doc.data?.originalName ?? undefined}
+    >
+      {doc.data?.title ?? `Quelle ${index + 1}`}
+    </Link>
   );
 }

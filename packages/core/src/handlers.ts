@@ -121,6 +121,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'llm:transmissions': (i) => s.llm.listTransmissions(i.limit),
 
     'chat:send': (i) => s.chat.send(i.conversationId, i.text),
+    'chat:cancel': (i) => ({ cancelled: s.chat.cancel(i.conversationId) }),
     'chat:history': (i) => s.chat.history(i.conversationId),
     'chat:conversations': () => s.chat.listConversations(),
     'chat:newConversation': () => s.chat.newConversation(),

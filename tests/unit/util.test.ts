@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { Logger } from '../../packages/core/src/util/logger';
 import { redactSecrets } from '../../packages/core/src/util/redact';
 import { normalizeDateInput, parseGermanDate, promptNow } from '../../packages/core/src/util/dates';
-import { chunkText, nameSimilarity } from '../../packages/core/src/util/text';
+import { chunkText, nameSimilarity, searchStem } from '../../packages/core/src/util/text';
 import { chosenOption, polarity } from '../../packages/core/src/services/contradictions';
 import { computeMissingFields, questionFor } from '../../packages/core/src/services/decisions';
 import { detectOpenItemSentences } from '../../packages/core/src/services/open-items';
@@ -152,5 +152,22 @@ describe('other helper functions', () => {
     const chunks = chunkText('Satz eins. '.repeat(400), 500, 50);
     expect(chunks.length).toBeGreaterThan(5);
     expect(Math.max(...chunks.map((c) => c.length))).toBeLessThanOrEqual(520);
+  });
+});
+
+describe('searchStem (#162)', () => {
+  it.each([
+    ['entscheidungen', 'entscheid'],
+    ['entscheidung', 'entscheid'],
+    ['entscheiden', 'entscheid'],
+    ['umzuge', 'umzug'],
+    ['migrations', 'migration'],
+    ['decided', 'decid'],
+    ['planning', 'plann'],
+    ['haus', 'haus'],
+    ['bau', 'bau'],
+    ['2026er', '2026er'],
+  ])('%s → %s', (term, stem) => {
+    expect(searchStem(term)).toBe(stem);
   });
 });
