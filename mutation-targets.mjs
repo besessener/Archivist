@@ -4,4 +4,10 @@ export const MUTATE_TARGETS = [
   'packages/core/src/util/redact.ts',
   'packages/core/src/services/privacy.ts',
   'packages/core/src/services/undo.ts',
+  'packages/core/src/agent/gate.ts',
+  'packages/core/src/agent/security.ts',
+  'packages/core/src/agent/history-privacy.ts',
+  'packages/core/src/services/rename-pattern.ts',
+  'packages/core/src/services/decision-fields.ts',
+  'packages/core/src/services/open-item-fields.ts',
 ];
