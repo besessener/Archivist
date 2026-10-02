@@ -146,10 +146,7 @@ function OrphanList({ onClose }: { onClose: () => void }) {
   );
 }
 
-/**
- * How well the archive is linked (#292): share of orphaned entries, open proposals and the confirmation rate per method,
- * with the history of the archive checks. Every figure leads to its list.
- */
+/** How well the archive is linked (#292), with the history of the archive checks; every figure leads to its list. */
 export function LinkageMetrics() {
   const q = useQuery('links:metrics', {}, { scopes: ['knowledge', 'insights'] });
   const [orphans, setOrphans] = useState(false);

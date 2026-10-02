@@ -21,10 +21,7 @@ const PAGE = 20;
 type GroupBy = 'method' | 'entry';
 type Group = LinkProposalPage['groups'][number];
 
-/**
- * All open link proposals in one place (#280): grouped by method or entry, each with its evidence; confirm, reject or
- * confirm a whole group – every decision is undoable in the change log. Paged, with the total.
- */
+/** All open link proposals (#280), grouped by method or entry and paged; every decision is undoable in the change log. */
 export function LinkProposals() {
   const [groupBy, setGroupBy] = useState<GroupBy>('method');
   const [page, setPage] = useState(0);

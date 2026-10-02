@@ -11,10 +11,7 @@ import { OPEN_ITEM_STATUS_LABELS } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 
-/**
- * The page of a case („Vorgang“, #286): status (open/closed), its open items and all its entries as a timeline, newest
- * first. Proposed members (from the similarity of entries) are marked; they are decided in „Verwandte Einträge“.
- */
+/** A case („Vorgang“, #286) with status, open items and entries newest first; proposed members are decided in „Verwandte Einträge“. */
 export function CaseView({ id }: { id: string }) {
   const q = useQuery('cases:detail', { id }, { scopes: ['knowledge', 'openItems', 'events', 'decisions', 'documents'] });
   const { run, busy } = useRun();

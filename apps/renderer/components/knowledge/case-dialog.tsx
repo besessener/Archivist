@@ -14,10 +14,10 @@ import { useRun } from '@/lib/use-run';
 
 const NEW = '__new__';
 
-/**
- * Puts one or several entries into a case („Vorgang“, #286, #291): an open case or a new one. One undo step in the change
- * log; an entry can belong to several cases.
- */
+/** Entries that can belong to a case („Vorgang“, #286). */
+export const CASE_ENTRY_TYPES = new Set<string>(['document', 'note', 'decision', 'task', 'question', 'event']);
+
+/** Puts entries into an open or a new case („Vorgang“, #286, #291) as one undo step; an entry can belong to several cases. */
 export function CaseAssignDialog({
   entryIds,
   open,

@@ -20,10 +20,7 @@ function openLink(text: string, cursor: number): { start: number; query: string 
   return { start, query };
 }
 
-/**
- * Text field with wiki links (#285): typing `[[` offers the entries (names and aliases) to link; choosing one inserts
- * `[[Name]]`. Arrow keys and Enter choose, Escape closes the list.
- */
+/** Text field with wiki links (#285): typing `[[` offers entries by name and alias, choosing one inserts `[[Name]]`. */
 export function WikiTextarea({
   value,
   onChange,
@@ -157,10 +154,7 @@ export function wikiNamesOf(text: string): string[] {
   return out;
 }
 
-/**
- * Linked names without an entry (#285), marked under the text field – with the offer to create a note of that name, so
- * the link resolves when the text is saved.
- */
+/** Linked names without an entry (#285), each with the offer to create a note of that name so the link resolves on save. */
 export function UnknownWikiLinks({ text, noteId }: { text: string; noteId?: string }) {
   const [unknown, setUnknown] = useState<string[]>([]);
   const [round, setRound] = useState(0);
