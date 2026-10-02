@@ -75,6 +75,7 @@ describe('Entries created together are linked (#272)', () => {
       participants: [],
       alternatives: [],
       unknownFields: [],
+      asDraft: false,
       sourceIds: [doc],
       confidence: 0.8,
     });

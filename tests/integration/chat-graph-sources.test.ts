@@ -29,6 +29,7 @@ const decide = (title: string, text: string) =>
     participants: [],
     alternatives: [],
     unknownFields: [],
+    asDraft: false,
     sourceIds: [],
     confidence: 0.9,
   });

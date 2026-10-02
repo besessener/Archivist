@@ -19,7 +19,7 @@ describe('Retroactive link run with all methods (#279)', () => {
     // the archive from before: nothing was proposed automatically
     app = await createTestApp({ privacy: 'auto', autoLinks: false });
     app.llm.on('NoteAnalysis', () => ({ topic: 'Hausbau', project: null, persons: [], tags: [] }));
-    const e = app.services.eventRecords.create({ title: 'Baubesprechung', occurredAt: '2026-09-01', participants: ['Anna Berger'] });
+    const e = app.services.eventRecords.create({ title: 'Baubesprechung', occurredAt: '2026-09-01', participants: ['Anna Berger'], sourceIds: [] });
     const d = app.services.decisions.create({
       decisionText: 'Fenster aus Holz',
       title: 'Fenster',
@@ -27,6 +27,7 @@ describe('Retroactive link run with all methods (#279)', () => {
       participants: ['Anna Berger'],
       alternatives: [],
       unknownFields: [],
+      asDraft: false,
       sourceIds: [],
       confidence: 0.8,
     });

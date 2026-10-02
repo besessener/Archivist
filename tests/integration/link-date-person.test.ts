@@ -18,7 +18,7 @@ const dayPerson = () =>
 const pairKey = (a: string, b: string) => [a, b].toSorted().join('|');
 const pairs = () => dayPerson().map((r) => pairKey(r.s, r.t));
 const event = (title: string, occurredAt: string, participants: string[]) =>
-  app.services.eventRecords.create({ title, description: `${title} – Ablauf`, occurredAt, participants });
+  app.services.eventRecords.create({ title, description: `${title} – Ablauf`, occurredAt, participants, sourceIds: [] });
 const decision = (title: string, decidedAt: string, participants: string[]) =>
   app.services.decisions.create({
     decisionText: `${title} – beschlossen`,
@@ -27,6 +27,7 @@ const decision = (title: string, decidedAt: string, participants: string[]) =>
     participants,
     alternatives: [],
     unknownFields: [],
+    asDraft: false,
     sourceIds: [],
     confidence: 0.8,
   });
