@@ -1,3 +1,21 @@
+// The result shape every parser returns, and the text cleanup they share.
+
+export type ParseStatus = 'extracted' | 'partial' | 'unsupported' | 'failed';
+
+export interface ParsedDocument {
+  text: string;
+  status: ParseStatus;
+  error: string | null;
+  meta: Record<string, string | number | boolean | null>;
+  truncated: boolean;
+}
+
+export interface ParseOptions {
+  ocrEnabled?: boolean;
+  ocrLanguages?: string;
+  tessdataDir?: string;
+}
+
 export const MAX_TEXT_CHARS = 400_000;
 
 const clip = (text: string): { text: string; truncated: boolean } =>

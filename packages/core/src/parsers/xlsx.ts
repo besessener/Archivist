@@ -1,7 +1,6 @@
 import fsp from 'node:fs/promises';
-import type { ParsedDocument } from './index';
 import { coreProps, decodeXml, readZipXml } from './office';
-import { cleanText } from './text';
+import { cleanText, type ParsedDocument } from './parsed-document';
 
 const MAX_LINES_PER_SHEET = 3000;
 

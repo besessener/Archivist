@@ -3,15 +3,11 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { documents, scanFiles } from '../../db/schema';
 import type { DocRow } from '../documents';
-import type { InsightService } from '../insights';
 import type { KnowledgeGraphService } from '../knowledge-graph';
-import type { NotificationService } from '../notifications';
 
 export interface ScanProposalDeps {
   ctx: AppContext;
   graph: KnowledgeGraphService;
-  insights: InsightService;
-  notifications: NotificationService;
 }
 
 interface GroupKey {
@@ -70,13 +66,15 @@ function archiveProposal(group: RowGroup, label: string) {
 
 /** Assignment proposals of a scan: per topic/project group an insight with an archive action and a notification. */
 export class ScanProposals {
+  // the scanner stores the planned insights itself: importing the insight service here would close an import cycle
   constructor(private readonly deps: ScanProposalDeps) {}
 
   private get db() {
     return this.deps.ctx.database.db;
   }
 
-  build(docIds: string[]): void {
+  /** One plan per group, computed lazily so each group sees what the previous one stored. */
+  *plans(docIds: string[]) {
     const rows = docIds.length
       ? this.db
           .select()
@@ -84,10 +82,10 @@ export class ScanProposals {
           .where(and(inArray(documents.id, docIds), eq(documents.status, 'proposed')))
           .all()
       : [];
-    for (const [key, group] of groupRows(rows)) this.proposeGroup(key, group);
+    for (const [key, group] of groupRows(rows)) yield this.planGroup(key, group);
   }
 
-  private proposeGroup(key: string, group: RowGroup): void {
+  private planGroup(key: string, group: RowGroup) {
     const { graph } = this.deps;
     const known = (group.project && graph.findByName('project', group.project)) || (group.topic && graph.findByName('topic', group.topic)) || null;
     const decisions = group.rows.filter((row) => (proposalOf(row)?.possibleDecisions.length ?? 0) > 0).length;
@@ -98,8 +96,8 @@ export class ScanProposals {
     const ids = group.rows.map((row) => row.id).sort();
     const dedupeKey = `scan-group:${key}:${ids.join(',').slice(0, 120)}`;
     const documentLines = group.rows.map((row) => `• ${row.title} → ${proposalOf(row)?.location.categoryPath ?? row.categoryPath}`).join('\n');
-    this.deps.insights.upsert({
-      kind: known ? 'assignment' : 'archive_proposal',
+    const insight = {
+      kind: known ? ('assignment' as const) : ('archive_proposal' as const),
       title: `${count} Dokument${count === 1 ? '' : 'e'} ${known ? 'gehören vermutlich zu' : 'passen zu'} ${label}`,
       explanation: `${documentLines}${decisions ? `\n${decisions} enthalten mögliche Entscheidungen.` : ''}${duplicates ? `\n${duplicates} scheinen Duplikate zu sein.` : ''}`,
       confidence: proposal.confidence,
@@ -108,19 +106,20 @@ export class ScanProposals {
       // proposed only if the insight is (still) open: no orphaned proposals when the group is analyzed again
       action: { proposal, label: 'Alle kopieren und archivieren' },
       dedupeKey,
-    });
-    this.deps.notifications.create({
+    };
+    const notification = {
       title: `${count} Dokument${count === 1 ? '' : 'e'} ${known ? `zu ${label}` : 'bereit zur Archivierung'}`,
       description: `${count} davon gehören vermutlich zu ${label}${decisions ? `, ${decisions} enthalten mögliche Entscheidungen` : ''}${duplicates ? `, ${duplicates} scheinen Duplikate zu sein` : ''}.`,
-      type: 'assignment_proposal',
-      priority: known ? 'high' : 'normal',
+      type: 'assignment_proposal' as const,
+      priority: known ? ('high' as const) : ('normal' as const),
       affectedEntityIds: ids,
       proposedActions: [
-        { label: 'Prüfen', kind: 'navigate', target: '/scan/' },
-        { label: 'Ablehnen', kind: 'ignore' },
+        { label: 'Prüfen', kind: 'navigate' as const, target: '/scan/' },
+        { label: 'Ablehnen', kind: 'ignore' as const },
       ],
       dedupeKey,
-    });
+    };
+    return { insight, notification };
   }
 
   /** Proposal groups for the scan view (analyzed scan documents that are not archived yet). */

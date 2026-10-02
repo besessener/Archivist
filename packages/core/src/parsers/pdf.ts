@@ -1,8 +1,7 @@
 import fsp from 'node:fs/promises';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import type { ParsedDocument, ParseOptions } from './index';
 import { ocrOptionsFor, recognizeImages } from './ocr';
-import { cleanText, errorMessage, MAX_TEXT_CHARS } from './text';
+import { cleanText, errorMessage, MAX_TEXT_CHARS, type ParsedDocument, type ParseOptions } from './parsed-document';
 
 const MAX_PDF_PAGES = 300;
 const MAX_OCR_PAGES = 40;

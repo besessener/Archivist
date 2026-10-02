@@ -5,24 +5,8 @@ import { visibleHtmlText } from './html-text';
 import { ocrOptionsFor, recognizeImages } from './ocr';
 import { parseDocx, parsePptx } from './office';
 import { parsePdf } from './pdf';
-import { cleanText, errorMessage } from './text';
+import { cleanText, errorMessage, type ParsedDocument, type ParseOptions } from './parsed-document';
 import { parseXlsx } from './xlsx';
-
-export type ParseStatus = 'extracted' | 'partial' | 'unsupported' | 'failed';
-
-export interface ParsedDocument {
-  text: string;
-  status: ParseStatus;
-  error: string | null;
-  meta: Record<string, string | number | boolean | null>;
-  truncated: boolean;
-}
-
-export interface ParseOptions {
-  ocrEnabled?: boolean;
-  ocrLanguages?: string;
-  tessdataDir?: string;
-}
 
 const MAX_TEXT_FILE_BYTES = 8 * 1024 * 1024;
 

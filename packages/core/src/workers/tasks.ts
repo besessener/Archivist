@@ -1,7 +1,8 @@
 import type { Stats } from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { parseDocument, MIME_BY_EXT, type ParseOptions, type ParsedDocument } from '../parsers';
+import { parseDocument, MIME_BY_EXT } from '../parsers';
+import type { ParsedDocument, ParseOptions } from '../parsers/parsed-document';
 import { sha256File } from '../util/hash';
 import { isInside } from '../util/paths';
 

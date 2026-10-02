@@ -48,15 +48,15 @@ export class ScannerService {
     private readonly docs: DocumentService,
     graph: KnowledgeGraphService,
     privacy: PrivacyService,
-    notifications: NotificationService,
-    insights: InsightService,
+    private readonly notifications: NotificationService,
+    private readonly insights: InsightService,
     private readonly audit: AuditService,
     private readonly jobs: JobQueueService,
   ) {
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
     this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });
-    this.scanProposals = new ScanProposals({ ctx, graph, insights, notifications });
+    this.scanProposals = new ScanProposals({ ctx, graph });
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
       if (!event.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: event.documentId }).where(eq(scanFiles.path, event.sourcePath)).run();
@@ -292,7 +292,10 @@ export class ScannerService {
 
   /** Assignment proposals: groups analyzed documents by topic/project and creates an insight, an action and a notification. */
   buildProposals(docIds: string[]): void {
-    this.scanProposals.build(docIds);
+    for (const plan of this.scanProposals.plans(docIds)) {
+      this.insights.upsert(plan.insight);
+      this.notifications.create(plan.notification);
+    }
   }
 
   /** Proposal groups for the scan view (analyzed scan documents that are not archived yet). */

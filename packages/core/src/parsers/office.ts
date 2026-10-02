@@ -1,6 +1,5 @@
 import fsp from 'node:fs/promises';
-import type { ParsedDocument } from './index';
-import { cleanText } from './text';
+import { cleanText, type ParsedDocument } from './parsed-document';
 
 export async function readZipXml(buffer: Buffer, names: RegExp): Promise<Array<{ name: string; xml: string }>> {
   const { default: JSZip } = await import('jszip');
@@ -54,7 +53,7 @@ export async function parseDocx(file: string): Promise<ParsedDocument> {
   };
 }
 
-// eslint-disable-next-line sonarjs/super-linear-regex -- file name or HTML excerpt, length is bounded
+// eslint-disable-next-line sonarjs/super-linear-regex -- a ZIP part name, length is bounded
 const slideNumber = (name: string) => Number(/(\d+)\.xml$/.exec(name)?.[1] ?? 0);
 
 const paragraphsOf = (xml: string) =>
