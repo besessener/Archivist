@@ -4,7 +4,6 @@ import type { AppContext } from '../context';
 import { insights } from '../db/schema';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
-import type { ActionService } from './actions';
 import type { InsightProposals } from './insight-proposals';
 
 type Row = typeof insights.$inferSelect;
@@ -16,6 +15,13 @@ export interface InsightRecords {
   notifyRejected: (id: string) => void;
 }
 
+/** The action functions used here, kept structural: importing ActionService would close an import cycle back to insights.ts. */
+interface AnswerActions {
+  getMany(ids: string[]): StoredAgentAction[];
+  repropose(id: string): StoredAgentAction;
+  resolve(id: string, decision: 'approve', opts: { confirmed: boolean; strongConfirmed: boolean }): Promise<StoredAgentAction>;
+}
+
 const OUTDATED = 'Die nächste Archivprüfung bewertet die Lage neu.';
 
 /** Accepting an insight or choosing one of its answers: executes the action behind it (the caller has the user's confirmation). */
@@ -25,7 +31,7 @@ export class InsightAnswers {
 
   constructor(
     private readonly ctx: AppContext,
-    private readonly helpers: { actions: ActionService; proposals: InsightProposals; records: InsightRecords },
+    private readonly helpers: { actions: AnswerActions; proposals: InsightProposals; records: InsightRecords },
   ) {}
 
   private get db() {

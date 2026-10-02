@@ -1,4 +1,4 @@
-import type { AgentActionProposal, EntityRef, Insight, InsightChoice, InsightKind } from '@archivist/shared';
+import type { EntityRef, Insight, InsightChoice, InsightKind } from '@archivist/shared';
 import { desc, eq, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { insights } from '../db/schema';
@@ -6,7 +6,7 @@ import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import type { ActionService } from './actions';
 import { InsightAnswers } from './insight-answers';
-import { InsightProposals } from './insight-proposals';
+import { InsightProposals, type InsightActionSpec, type InsightChoiceSpec, type ProposalInput } from './insight-proposals';
 import type { ReminderService } from './reminders';
 
 type Row = typeof insights.$inferSelect;
@@ -14,36 +14,15 @@ type Row = typeof insights.$inferSelect;
 /** An accepted insight whose cause still exists after this long is shown again (accepting must not hide a problem forever). */
 const REOPEN_ACCEPTED_AFTER_MS = 7 * 86_400_000;
 
-/** Recommended action of an insight: proposed only while the insight is open, replaced when its parameters change. */
-export interface InsightActionSpec {
-  proposal: AgentActionProposal & { label: string };
-  /** label of the recommendation shown on the insight */
-  label: string;
-}
+export type { InsightActionSpec, InsightChoiceSpec };
 
-/** One answer of a question insight; without `proposal`, choosing it changes nothing and rejects the insight („verschieden“). */
-export interface InsightChoiceSpec {
-  /** stable within the insight; identifies the answer across runs (e.g. `project`, `topic`, `different`, an entity id) */
-  id: string;
-  label: string;
-  /** what happens when this answer is chosen (shown before confirming) */
-  description?: string | null;
-  proposal?: (AgentActionProposal & { label: string }) | null;
-}
-
-export interface InsightInput {
+export interface InsightInput extends ProposalInput {
   kind: InsightKind;
   title: string;
   explanation: string;
   confidence: number;
   affected?: EntityRef[];
   sourceIds?: string[];
-  recommendedActionId?: string | null;
-  recommendedActionLabel?: string | null;
-  /** alternative to `recommendedActionId`: the action is only proposed if the insight is (re)opened, never orphaned */
-  action?: InsightActionSpec;
-  /** Turns the insight into a question answered via {@link InsightService.choose}; the answers' actions live only while it is open. */
-  choices?: InsightChoiceSpec[];
   /** stable: kind of finding plus the id of the affected object */
   dedupeKey: string;
 }

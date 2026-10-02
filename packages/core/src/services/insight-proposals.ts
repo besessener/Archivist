@@ -1,19 +1,52 @@
-import type { AgentActionProposal, InsightChoice, StoredAgentAction } from '@archivist/shared';
+import type { AgentActionProposal, AgentActionType, InsightChoice, StoredAgentAction } from '@archivist/shared';
 import type { insights } from '../db/schema';
-import type { ActionService } from './actions';
-import type { InsightInput } from './insights';
 
 type Row = typeof insights.$inferSelect;
 
+/** Recommended action of an insight: proposed only while the insight is open, replaced when its parameters change. */
+export interface InsightActionSpec {
+  proposal: AgentActionProposal & { label: string };
+  /** label of the recommendation shown on the insight */
+  label: string;
+}
+
+/** One answer of a question insight; without `proposal`, choosing it changes nothing and rejects the insight („verschieden“). */
+export interface InsightChoiceSpec {
+  /** stable within the insight; identifies the answer across runs (e.g. `project`, `topic`, `different`, an entity id) */
+  id: string;
+  label: string;
+  /** what happens when this answer is chosen (shown before confirming) */
+  description?: string | null;
+  proposal?: (AgentActionProposal & { label: string }) | null;
+}
+
+/** The parts of an insight that carry proposals. */
+export interface ProposalInput {
+  recommendedActionId?: string | null;
+  recommendedActionLabel?: string | null;
+  /** alternative to `recommendedActionId`: the action is only proposed if the insight is (re)opened, never orphaned */
+  action?: InsightActionSpec;
+  /** Turns the insight into a question answered via `InsightService.choose`; the answers' actions live only while it is open. */
+  choices?: InsightChoiceSpec[];
+}
+
+/** The action functions used here, kept structural: importing ActionService would close an import cycle back to insights.ts. */
+interface ProposalActions {
+  getMany(ids: string[]): StoredAgentAction[];
+  propose(proposal: AgentActionProposal & { label: string }): StoredAgentAction;
+  withdraw(id: string, reason: string): unknown;
+  normalizeParams(actionType: AgentActionType, params: Record<string, unknown>): Record<string, unknown>;
+}
+
 /** The insight being (re)opened and its stored row, if it exists already. */
-export interface InsightUpdate {
-  input: InsightInput;
+interface InsightUpdate {
+  input: ProposalInput;
   existing: Row | undefined;
 }
 
 /** The proposals behind an insight: its recommended action and the actions of its answers, kept while unchanged. */
 export class InsightProposals {
-  constructor(private readonly actions: ActionService) {}
+  constructor(private readonly actions: ProposalActions) {}
 
   /** Recommended action of an (re)opened insight: keeps the current proposal if it is still undecided and unchanged. */
   recommendation({ input, existing }: InsightUpdate): { actionId: string | null; actionLabel: string | null; replaced?: string } {
