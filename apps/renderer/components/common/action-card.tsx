@@ -40,6 +40,9 @@ function proposedValues(action: ActionRecord): Array<[string, string]> {
       ...(str(p.evidence) ? [['Beleg', `„${str(p.evidence)}“`] as [string, string]] : []),
     ];
   }
+  if (action.actionType === 'close_open_item') {
+    return str(p.resolutionNote) ? [[p.status === 'dismissed' ? 'Warum verworfen' : 'Lösung', str(p.resolutionNote)!]] : [];
+  }
   if (action.actionType === 'create_open_item') {
     return [
       ['Punkt', str(p.title) ?? missing],

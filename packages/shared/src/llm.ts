@@ -98,6 +98,9 @@ export const ChatIntent = z.object({
       targetId: opt(z.string()).describe('ID eines bestehenden offenen Punkts aus dem Kontext (z. B. „P2“), wenn ein bestehender Punkt gemeint ist'),
       targetHint: opt(z.string()).describe('Hinweis, welcher bestehende offene Punkt gemeint ist (nur, wenn keine ID passt)'),
       newStatus: opt(z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed'])),
+      resolutionNote: opt(z.string()).describe(
+        'Nur beim Schließen: wie der Punkt gelöst wurde bzw. warum er sich erledigt hat, wenn der Benutzer es sagt (z. B. „Angebot von Müller angenommen“); sonst leer',
+      ),
     }),
   ),
   event: opt(

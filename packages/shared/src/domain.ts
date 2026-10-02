@@ -291,6 +291,8 @@ export const OpenItem = z.object({
   solution: OpenItemSolution.nullable().default(null),
   /** Discarded as a duplicate („verworfen (Duplikat)“, status `dismissed`): the open item it was merged into. */
   duplicateOfId: z.string().nullable().default(null),
+  /** Comment given when closing (how it was solved / why it was dropped); null while open. */
+  resolutionNote: z.string().nullable().default(null),
 });
 export type OpenItem = z.infer<typeof OpenItem>;
 
@@ -632,7 +634,11 @@ export const ActionParamSchemas = {
     supersedeOldDecisionId: Id.optional(),
     supersedeNewDecisionId: Id.optional(),
   }),
-  close_open_item: z.object({ openItemId: Id, status: z.enum(['resolved', 'dismissed']).default('resolved') }),
+  close_open_item: z.object({
+    openItemId: Id,
+    status: z.enum(['resolved', 'dismissed']).default('resolved'),
+    resolutionNote: z.string().max(4000).nullish(),
+  }),
   merge_topics: z.object({ sourceTopicId: Id, targetTopicId: Id }),
   /** Generic merge (topics, projects, persons, tags); `allowCrossType` merges a topic into a project or vice versa (target type wins). */
   merge_entities: z.object({ sourceIds: z.array(Id).min(1), targetId: Id, allowCrossType: z.boolean().default(false) }),

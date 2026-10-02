@@ -147,6 +147,8 @@ export const openItems = sqliteTable(
     solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
     /** Set when the item was discarded as a duplicate: the open item it was merged into (status `dismissed`). */
     duplicateOfId: text('duplicate_of_id'),
+    /** Optional comment given when closing: how it was solved, or why it was dropped. */
+    resolutionNote: text('resolution_note'),
   },
   (t) => [index('open_items_status_idx').on(t.status)],
 );

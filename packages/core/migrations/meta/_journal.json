@@ -127,6 +127,13 @@
       "when": 1790834044730,
       "tag": "0017_documents_created_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1790834045730,
+      "tag": "0018_open_item_resolution_note",
+      "breakpoints": true
     }
   ]
 }

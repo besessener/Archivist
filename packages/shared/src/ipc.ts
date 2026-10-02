@@ -341,7 +341,16 @@ export const ipcContract = {
     OpenItem,
   ),
   /** Closing is a stage-2 action: explicit confirmation required. */
-  'openItems:close': ch(z.object({ id: Id, status: z.enum(['resolved', 'dismissed']).default('resolved'), confirmed: Confirmed }), OpenItem),
+  'openItems:close': ch(
+    z.object({
+      id: Id,
+      status: z.enum(['resolved', 'dismissed']).default('resolved'),
+      /** optional: how it was solved or why it was dropped */
+      resolutionNote: z.string().max(4000).optional(),
+      confirmed: Confirmed,
+    }),
+    OpenItem,
+  ),
   /** What would be sent for a solution proposal (without an LLM call) – for the confirmation dialog. */
   'openItems:solutionPreview': ch(z.object({ id: Id }), SolutionPreview),
   /** Generates a solution proposal via the LLM; in mode „vorher fragen“ only with confirmation. */

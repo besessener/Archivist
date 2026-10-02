@@ -411,7 +411,7 @@ Absichten (intent):
 - document_search: Dokumente suchen oder anzeigen (nicht, um ihre Verzeichnisse zu bewerten).
 - timeline_query: Chronologische Übersicht zu Thema/Projekt/Zeitraum.
 - event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description. Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
-- open_item_new / open_item_update / open_item_close: offene Punkte erfassen/ändern/schließen.
+- open_item_new / open_item_update / open_item_close: offene Punkte erfassen/ändern/schließen. Beim Schließen gehört eine genannte Lösung bzw. ein Grund in openItem.resolutionNote.
 - reminder_create / reminder_snooze: Erinnerung anlegen bzw. verschieben.
 - proposal_confirm / proposal_reject: Zustimmung bzw. Ablehnung eines offenen Agentenvorschlags („ja, mach das“, „nein“).
 - archive_execute: Dokumente, die NOCH NICHT archiviert sind (Inbox, Scan), ins Archiv übernehmen. Bereits archivierte Dateien in andere Verzeichnisse zu legen ist archive_reorganize.
@@ -2369,6 +2369,7 @@ export class ChatService {
     if (!item)
       return { intent: 'open_item_close', content: this.noOpenItemQuestion(target.hinted ? hint : null, 'soll ich schließen'), confidence: 0.3, state };
     const dismiss = intent.openItem?.newStatus === 'dismissed';
+    const note = intent.openItem?.resolutionNote?.trim() || null;
     const action = this.actions.propose({
       actionType: 'close_open_item',
       label: `„${item.title}“ ${dismiss ? 'verwerfen' : 'als erledigt schließen'}`,
@@ -2376,12 +2377,12 @@ export class ChatService {
       confidence: intent.confidence,
       affectedEntities: [{ type: 'task', id: item.id, label: item.title }],
       requiredConfirmation: 'confirm',
-      proposedParameters: { openItemId: item.id, status: dismiss ? 'dismissed' : 'resolved' },
+      proposedParameters: { openItemId: item.id, status: dismiss ? 'dismissed' : 'resolved', resolutionNote: note },
       conversationId: conv,
     });
     return {
       intent: 'open_item_close',
-      content: `Soll ich den offenen Punkt **${item.title}** wirklich ${dismiss ? 'verwerfen' : 'als erledigt schließen'}? Bitte bestätige.`,
+      content: `Soll ich den offenen Punkt **${item.title}** wirklich ${dismiss ? 'verwerfen' : 'als erledigt schließen'}?${note ? ` Als ${dismiss ? 'Grund' : 'Lösung'} halte ich fest: „${truncate(note, 300)}“.` : ''} Bitte bestätige.`,
       actions: [action],
       context: { openItems: [{ type: 'task', id: item.id, label: item.title }] },
       confidence: intent.confidence,

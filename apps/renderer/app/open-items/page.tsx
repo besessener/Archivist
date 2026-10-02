@@ -142,6 +142,12 @@ export default function OpenItemsPage() {
                       {i.topicName && <Badge variant="outline">{i.topicName}</Badge>}
                       {i.projectName && <Badge variant="outline">{i.projectName}</Badge>}
                     </div>
+                    {i.resolutionNote && (
+                      <p className="mt-2 text-sm" data-testid="open-item-resolution-note">
+                        <span className="font-medium">{i.status === 'dismissed' ? 'Warum verworfen: ' : 'Lösung: '}</span>
+                        <span className="whitespace-pre-wrap text-muted-foreground">{i.resolutionNote}</span>
+                      </p>
+                    )}
                     {g !== 'done' && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" onClick={() => setEditItem(i)} data-testid="open-item-edit">
@@ -311,6 +317,7 @@ function ItemFormDialog({
 function CloseDialog({ item, onClose, onDone }: { item: OpenItemRecord | null; onClose: () => void; onDone: () => void }) {
   const { run } = useRun();
   const [dismiss, setDismiss] = useState(false);
+  const [note, setNote] = useState('');
   return (
     <ConfirmDialog
       open={item !== null}
@@ -321,16 +328,29 @@ function CloseDialog({ item, onClose, onDone }: { item: OpenItemRecord | null; o
       confirmTestId="open-item-close-confirm"
       onConfirm={async () => {
         if (!item) return;
-        const out = await run(() => call('openItems:close', { id: item.id, status: dismiss ? 'dismissed' : 'resolved', confirmed: true }), {
+        const resolutionNote = note.trim() || undefined;
+        const out = await run(() => call('openItems:close', { id: item.id, status: dismiss ? 'dismissed' : 'resolved', resolutionNote, confirmed: true }), {
           success: 'Punkt abgeschlossen.',
         });
         if (out) {
+          setNote('');
           onDone();
           onClose();
         }
       }}
     >
       <CheckboxField checked={dismiss} onCheckedChange={(v) => setDismiss(v === true)} label="Nicht erledigt, sondern verworfen (hat sich erübrigt)" />
+      <Field label={dismiss ? 'Warum verworfen? (optional)' : 'Wie wurde es gelöst? (optional)'} htmlFor="oi-resolution-note">
+        <Textarea
+          id="oi-resolution-note"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          maxLength={4000}
+          placeholder={dismiss ? 'z. B. hat sich durch den Umzug erledigt' : 'z. B. Angebot von Müller angenommen, Auftrag am 3.10. erteilt'}
+          data-testid="open-item-resolution-input"
+        />
+      </Field>
     </ConfirmDialog>
   );
 }

@@ -121,7 +121,7 @@ export class TimelineService {
           date: o.updatedAt,
           kind: 'open_item',
           title: `${o.status === 'resolved' ? 'Erledigt' : 'Verworfen'}: ${o.title}`,
-          description: null,
+          description: o.resolutionNote ? truncate(o.resolutionNote, 240) : null,
           refs,
         });
     }
