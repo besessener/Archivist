@@ -47,5 +47,9 @@
   "ocr": {
     "enabled": true,
     "languages": "deu+eng"
+  },
+  "links": {
+    "autoPropose": true,
+    "maxProposalsPerEntry": 3
   }
 }

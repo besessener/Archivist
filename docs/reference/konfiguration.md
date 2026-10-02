@@ -16,6 +16,7 @@ Einstellungen liegen in `config/settings.json` im [Datenverzeichnis](datenverzei
 | `backups` | `keep`, `autoOnStartup`, `includeArchive` |
 | `consistency` | `onStartup`, `intervalHours` (0 = aus), `staleOpenItemDays` |
 | `ocr` | `enabled`, `languages` (z. B. `deu+eng`) |
+| `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3) |
 
 Der API-Key steht **nie** in `settings.json`, sondern verschlüsselt in `config/llm-api-key.enc`.
 

@@ -58,7 +58,8 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`.
 | `ScannerService` | `services/scanner.ts` | Verzeichnisscan |
 | `DecisionService` | `services/decisions.ts` | Entscheidungen |
 | `OpenItemService` | `services/open-items.ts` | offene Punkte |
-| `NoteService` | `services/notes.ts` | Notizen |
+| `NoteService` | `services/notes.ts` | Notizen (anlegen, bearbeiten mit Undo) |
+| `NoteAnalysisService` | `services/note-analysis.ts` | Analyse von Notizen: Thema, Projekt, Personen, Tags als Vorschläge |
 | `EventService` | `services/events.ts` | Ereignisse |
 | `ReminderService` | `services/reminders.ts` | Erinnerungen |
 | `NotificationService` | `services/notifications.ts` | Notification Bell und Desktop-Benachrichtigungen |
@@ -72,7 +73,7 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`.
 | `ChatService` | `services/chat.ts` | Gesprächsablauf; Intent-Erkennung und `dispatch()` als regelbasierter Rückfall |
 | `CaptureService` | `services/capture.ts` | Wissen erfassen (Entscheidungen, Notizen, offene Punkte, Erinnerungen, Ereignisse) – für Agentenwerkzeuge und Rückfall |
 | `KnowledgeAnswerService` | `services/knowledge-answers.ts` | geprüfte Wissensantworten mit Quellen |
-| `LinkMethodsService` | `services/link-methods.ts` | Verknüpfungsmethoden (ähnliche Einträge, verwaiste Einträge, Themen aus Gruppen, rückwirkender Lauf) |
+| `LinkMethodsService` | `services/link-methods.ts` | Verknüpfungsmethoden (ähnliche Einträge, gleicher Tag + Person, gemeinsam entstanden, verwaiste Einträge, Themen aus Gruppen), Vorschlagsliste, verwandte Einträge, rückwirkender Lauf |
 | `AgentService` | `agent/service.ts` | Agentenmodus in Chat und Hintergrund |
 | `AgentRunService` | `agent/runs.ts` | Agentenläufe und „Lauf rückgängig“ |
 | `AgentFileJobs` | `agent/file-jobs.ts` | große Dateiaktionen des Agenten als eigener Auftrag |
