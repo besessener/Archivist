@@ -62,6 +62,7 @@ export const DocumentRecord = z.object({
   dates: z.array(z.string()),
   confidence: z.number().nullable(),
   llmStatus: LlmStatus,
+  folderLlmAllowed: z.boolean().describe('false: liegt in einem Scan-Verzeichnis ohne KI-Freigabe'),
   proposal: DocumentProposal.nullable(),
   archiveMode: ArchiveMode.nullable(),
   textLength: z.number(),
@@ -263,6 +264,8 @@ export const OpenItem = z.object({
   updatedAt: IsoDate,
   /** Zuletzt erzeugter Lösungsvorschlag (mit Datum und Modell) */
   solution: OpenItemSolution.nullable().default(null),
+  /** Discarded as a duplicate („verworfen (Duplikat)“, status `dismissed`): the open item it was merged into. */
+  duplicateOfId: z.string().nullable().default(null),
 });
 export type OpenItem = z.infer<typeof OpenItem>;
 
@@ -388,6 +391,7 @@ export const InsightKind = z.enum([
   'incomplete_decision',
   'duplicate',
   'similar_topics',
+  'similar_entities',
   'orphan_document',
   'outdated_info',
   'missing_metadata',
@@ -396,8 +400,24 @@ export const InsightKind = z.enum([
   'misplaced_file',
   'scattered_documents',
   'low_confidence_relation',
+  'topic_project_name',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
+/**
+ * One answer option of a question insight (e.g. „Projekt“ / „Thema“ / „Beides ist richtig“). Choosing an option with an
+ * `actionId` executes that agent action (with the user's confirmation) and accepts the insight; choosing an option
+ * without an action („verschieden“, „keine davon“) rejects the insight, which is remembered permanently via its dedupe key.
+ */
+export const InsightChoice = z.object({
+  /** Stable id within the insight (e.g. `project`, `topic`, `different`, an entity id). */
+  id: z.string().min(1).max(100),
+  label: z.string(),
+  /** What happens when this option is chosen (shown before confirming). */
+  description: z.string().nullable(),
+  /** Agent action executed on this choice; `null` = nothing changes, the insight is rejected and remembered. */
+  actionId: z.string().nullable(),
+});
+export type InsightChoice = z.infer<typeof InsightChoice>;
 export const Insight = z.object({
   id: Id,
   kind: InsightKind,
@@ -408,6 +428,10 @@ export const Insight = z.object({
   sourceIds: z.array(z.string()),
   recommendedActionId: z.string().nullable(),
   recommendedActionLabel: z.string().nullable(),
+  /** Answer options; non-empty turns the insight into a question that is answered via `insights:respond` `choose`. */
+  choices: z.array(InsightChoice),
+  /** The option the user picked (set once the question was answered). */
+  chosenChoiceId: z.string().nullable(),
   status: z.enum(['open', 'accepted', 'rejected', 'snoozed']),
   snoozedUntil: IsoDate.nullable(),
   createdAt: IsoDate,
@@ -509,6 +533,7 @@ export const AgentActionType = z.enum([
   'set_reminder',
   'create_open_item',
   'add_open_item_source',
+  'merge_open_items',
   'record_decision',
 ]);
 export type AgentActionType = z.infer<typeof AgentActionType>;
@@ -597,6 +622,8 @@ export const ActionParamSchemas = {
     dueAt: z.string().nullish(),
     responsible: z.string().nullish(),
   }),
+  /** Duplicate open items: keep `keepId`, take over its missing details from `duplicateId`, discard that one as a duplicate (undoable). */
+  merge_open_items: z.object({ keepId: Id, duplicateId: Id }),
   record_decision: z.object({
     title: z.string(),
     decisionText: z.string(),
@@ -759,3 +786,71 @@ export const VerifyReport = z.object({
   ok: z.boolean(),
 });
 export type VerifyReport = z.infer<typeof VerifyReport>;
+
+// ---------- Archive root change ----------
+/** `migrate`: copy the archive to the new folder, verify and switch; `pathOnly`: only switch (the files are already there). */
+export const ArchiveRootChangeMode = z.enum(['migrate', 'pathOnly']);
+export type ArchiveRootChangeMode = z.infer<typeof ArchiveRootChangeMode>;
+
+/** Where the archived documents would be found under a (new) archive root. */
+export const ArchiveRootPresence = z.object({
+  /** Archived documents (status `archived` with an archive path). */
+  documents: z.number(),
+  /** Found at the same relative path with the expected size. */
+  present: z.number(),
+  /** No file at the expected path. */
+  missing: z.number(),
+  /** A file exists there but its size differs from the archived one. */
+  different: z.number(),
+  /** Titles of some missing or different documents (at most 5). */
+  examples: z.array(z.string()),
+});
+export type ArchiveRootPresence = z.infer<typeof ArchiveRootPresence>;
+
+export const ArchiveRootPreview = z.object({
+  from: z.string(),
+  to: z.string(),
+  /** Presence of the archived documents in the new folder as it is now. */
+  atTarget: ArchiveRootPresence,
+  migrate: z.object({
+    /** Files in the current archive folder that the move copies (or finds already present). */
+    files: z.number(),
+    bytes: z.number(),
+    /** Files that already exist in the new folder with the same size (verified by checksum during the move). */
+    alreadyPresent: z.number(),
+    /** Reasons why moving the archive is not possible (empty = possible). */
+    blockers: z.array(z.string()),
+  }),
+  /** Reasons why only changing the path is not possible (empty = possible). */
+  pathOnlyBlockers: z.array(z.string()),
+});
+export type ArchiveRootPreview = z.infer<typeof ArchiveRootPreview>;
+
+export const ArchiveRootStatus = z.object({
+  root: z.string(),
+  /** Presence of the archived documents under the current archive root. */
+  current: ArchiveRootPresence,
+  /** Most recent archive root change (if any). */
+  lastChange: z
+    .object({
+      auditId: Id,
+      at: IsoDate,
+      from: z.string(),
+      to: z.string(),
+      mode: ArchiveRootChangeMode,
+      undoable: z.boolean(),
+    })
+    .nullable(),
+});
+export type ArchiveRootStatus = z.infer<typeof ArchiveRootStatus>;
+
+export const ArchiveRootChangeResult = z.object({
+  mode: ArchiveRootChangeMode,
+  /** Background job of a move (`migrate`), null for `pathOnly`. */
+  jobId: Id.nullable(),
+  /** Audit entry of a `pathOnly` change (undoable), null while a move is still running. */
+  auditId: Id.nullable(),
+  /** Archived documents that are not reachable under the new path (`pathOnly` only). */
+  unreachable: z.number(),
+});
+export type ArchiveRootChangeResult = z.infer<typeof ArchiveRootChangeResult>;

@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CalendarDays, FileText, Gavel, ListChecks, Plus, ShieldAlert, StickyNote, Trash2 } from 'lucide-react';
+import { CalendarDays, FileText, Gavel, ListChecks, Pencil, Plus, ShieldAlert, StickyNote, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
-import { EventFormDialog } from '@/components/events/event-form-dialog';
+import { EventFormDialog, eventPatch } from '@/components/events/event-form-dialog';
 import { EntityChip } from '@/components/common/entity-chip';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
@@ -12,11 +12,18 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
+import { useToast } from '@/lib/toast';
 import { formatLongDate } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import type { IpcOutput } from '@archivist/shared';
 
 type Entry = IpcOutput<'timeline:get'>[number];
+type EventRecord = IpcOutput<'events:create'>;
+
+/** Entries per page; "Ältere laden" extends the window by another page of older entries. */
+const PAGE_SIZE = 200;
+/** Must not exceed the `limit` maximum of the `timeline:get` channel. */
+const MAX_ENTRIES = 10000;
 
 const KIND: Record<Entry['kind'], { icon: React.ComponentType<{ className?: string }>; label: string }> = {
   document: { icon: FileText, label: 'Dokument' },
@@ -32,9 +39,13 @@ export default function TimelinePage() {
   const [projectId, setProjectId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [pages, setPages] = useState(1);
+  const limit = Math.min(pages * PAGE_SIZE, MAX_ENTRIES);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editEvent, setEditEvent] = useState<EventRecord | null>(null);
   const { run } = useRun();
+  const { toast } = useToast();
   const topics = useQuery('knowledge:listEntities', { type: 'topic', limit: 1000 }, { scopes: ['knowledge'] });
   const projects = useQuery('knowledge:listEntities', { type: 'project', limit: 1000 }, { scopes: ['knowledge'] });
   const tl = useQuery(
@@ -44,10 +55,19 @@ export default function TimelinePage() {
       ...(projectId ? { projectId } : {}),
       ...(from ? { from } : {}),
       ...(to ? { to } : {}),
-      limit: 500,
+      limit,
     },
     { scopes: ['documents', 'decisions', 'openItems', 'knowledge', 'contradictions', 'events'] },
   );
+
+  // The service returns the newest `limit` entries; a full page means older ones may exist.
+  // While a larger window is loading the previous (smaller) result is still shown, so keep the button visible.
+  const shown = tl.data?.length ?? 0;
+  const canLoadOlder = limit < MAX_ENTRIES && (shown >= limit || (tl.loading && pages > 1 && shown >= limit - PAGE_SIZE));
+  const filter = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    set(e.target.value);
+    setPages(1);
+  };
 
   const groups = useMemo(() => {
     const map = new Map<number, Entry[]>();
@@ -58,6 +78,14 @@ export default function TimelinePage() {
     }
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [tl.data]);
+
+  async function openEdit(eventId: string) {
+    const all = await run(() => call('events:list', {}));
+    if (!all) return;
+    const found = all.find((ev) => ev.id === eventId);
+    if (found) setEditEvent(found);
+    else toast({ variant: 'info', title: 'Dieses Ereignis gibt es nicht mehr.' });
+  }
 
   return (
     <Page>
@@ -72,7 +100,7 @@ export default function TimelinePage() {
       />
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Thema" htmlFor="tl-topic">
-          <Select id="tl-topic" value={topicId} onChange={(e) => setTopicId(e.target.value)} data-testid="timeline-topic">
+          <Select id="tl-topic" value={topicId} onChange={filter(setTopicId)} data-testid="timeline-topic">
             <option value="">Alle Themen</option>
             {(topics.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
@@ -82,7 +110,7 @@ export default function TimelinePage() {
           </Select>
         </Field>
         <Field label="Projekt" htmlFor="tl-project">
-          <Select id="tl-project" value={projectId} onChange={(e) => setProjectId(e.target.value)} data-testid="timeline-project">
+          <Select id="tl-project" value={projectId} onChange={filter(setProjectId)} data-testid="timeline-project">
             <option value="">Alle Projekte</option>
             {(projects.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
@@ -92,10 +120,10 @@ export default function TimelinePage() {
           </Select>
         </Field>
         <Field label="Von" htmlFor="tl-from">
-          <Input id="tl-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="timeline-from" />
+          <Input id="tl-from" type="date" value={from} onChange={filter(setFrom)} data-testid="timeline-from" />
         </Field>
         <Field label="Bis" htmlFor="tl-to">
-          <Input id="tl-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} data-testid="timeline-to" />
+          <Input id="tl-to" type="date" value={to} onChange={filter(setTo)} data-testid="timeline-to" />
         </Field>
       </div>
       {tl.error && !tl.data && <ErrorNote error={tl.error} onRetry={() => void tl.refetch()} />}
@@ -127,6 +155,18 @@ export default function TimelinePage() {
                           variant="ghost"
                           size="icon"
                           className="size-6"
+                          aria-label="Ereignis bearbeiten"
+                          onClick={() => void openEdit(e.id.replace(/^event:/, ''))}
+                          data-testid="event-edit"
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      )}
+                      {e.kind === 'event' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
                           aria-label="Ereignis löschen"
                           onClick={() => setDeleteId(e.id.replace(/^event:/, ''))}
                           data-testid="event-delete"
@@ -150,6 +190,14 @@ export default function TimelinePage() {
           </section>
         ))}
       </div>
+      {tl.data && canLoadOlder && (
+        <div className="mt-8 flex flex-col items-center gap-2">
+          <p className="text-xs text-muted-foreground">Angezeigt werden die neuesten {shown} Einträge.</p>
+          <Button variant="outline" onClick={() => setPages((p) => p + 1)} disabled={tl.loading} data-testid="timeline-load-older">
+            Ältere laden
+          </Button>
+        </div>
+      )}
       <EventFormDialog
         key={`e-${createOpen}`}
         open={createOpen}
@@ -160,6 +208,21 @@ export default function TimelinePage() {
           return out !== undefined;
         }}
       />
+      {editEvent && (
+        <EventFormDialog
+          key={editEvent.id}
+          open
+          event={editEvent}
+          onOpenChange={(o) => !o && setEditEvent(null)}
+          onSubmit={async (input) => {
+            const patch = eventPatch(editEvent, input);
+            if (Object.keys(patch).length === 0) return true;
+            const out = await run(() => call('events:update', { id: editEvent.id, patch }), { success: 'Änderungen gespeichert.' });
+            if (out) void tl.refetch();
+            return out !== undefined;
+          }}
+        />
+      )}
       <ConfirmDialog
         open={deleteId !== null}
         onOpenChange={(o) => !o && setDeleteId(null)}

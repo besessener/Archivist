@@ -67,6 +67,8 @@ export const documents = sqliteTable(
     dates: jsonArr('dates'),
     confidence: real('confidence'),
     llmStatus: text('llm_status').notNull().default('pending'),
+    /** false: the document lies in a scan folder without LLM permission – nothing of it may reach the LLM. */
+    folderLlmAllowed: integer('folder_llm_allowed', { mode: 'boolean' }).notNull().default(true),
     proposal: text('proposal', { mode: 'json' }).$type<ArchivistJson | null>(),
     archiveMode: text('archive_mode'),
     extractedText: text('extracted_text').notNull().default(''),
@@ -126,6 +128,8 @@ export const openItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     /** Zuletzt erzeugter Lösungsvorschlag (OpenItemSolution als JSON) */
     solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
+    /** Set when the item was discarded as a duplicate: the open item it was merged into (status `dismissed`). */
+    duplicateOfId: text('duplicate_of_id'),
   },
   (t) => [index('open_items_status_idx').on(t.status)],
 );
@@ -191,6 +195,10 @@ export const insights = sqliteTable(
     sourceIds: jsonArr('source_ids'),
     recommendedActionId: text('recommended_action_id'),
     recommendedActionLabel: text('recommended_action_label'),
+    /** Answer options of a question insight (`InsightChoice[]`); empty for classic accept/reject insights. */
+    choices: text('choices', { mode: 'json' }).$type<ArchivistJson>().notNull().default([]),
+    /** Id of the choice the user picked (only for insights with choices). */
+    chosenChoiceId: text('chosen_choice_id'),
     status: text('status').notNull().default('open'),
     snoozedUntil: text('snoozed_until'),
     dedupeKey: text('dedupe_key').notNull(),

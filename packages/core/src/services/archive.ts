@@ -15,7 +15,7 @@ import type { ActionService } from './actions';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
 import type { DocRow, DocumentService } from './documents';
-import type { KnowledgeGraphService } from './knowledge-graph';
+import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
 import type { PersonService } from './persons';
 import type { NotificationService } from './notifications';
 import { matchOpenItems, type OpenItemService } from './open-items';
@@ -32,7 +32,10 @@ interface UndoData {
   removedStaged: boolean;
   removedSource: boolean;
   before: Pick<DocRow, 'status' | 'archiveRelPath' | 'categoryPath' | 'topicId' | 'projectId' | 'archiveMode' | 'stagedPath' | 'archivedAt' | 'persons'>;
-  relationIds: string[];
+  /** Relation changes of the archiving (absent in undo data written by older versions). */
+  relations?: RelationChangeSet;
+  /** Older undo data: ids of all relations the archiving linked, including ones that existed before. */
+  relationIds?: string[];
   afterUpdatedAt: string;
 }
 
@@ -122,6 +125,10 @@ export interface ExecuteOptions {
 export class ArchiveService {
   private actions!: ActionService;
   private openItems!: OpenItemService;
+  /** Archive file operations (archive, relocate) currently running. */
+  private inFlight = 0;
+  /** True while the archive root is being changed; file operations are refused meanwhile. */
+  private rootChangeActive = false;
 
   constructor(
     private readonly ctx: AppContext,
@@ -135,8 +142,11 @@ export class ArchiveService {
     private readonly pool: WorkerPool,
     undo: UndoService,
   ) {
-    undo.register('archive_file', { check: (d) => this.undoCheck(d as UndoData), run: (d) => this.undoRun(d as UndoData) });
-    undo.register('archive_relocate', { check: (d) => this.relocateUndoCheck(d as RelocateUndoData), run: (d) => this.relocateUndoRun(d as RelocateUndoData) });
+    undo.register('archive_file', { check: (d) => this.undoCheck(d as UndoData), run: (d) => this.guarded(() => this.undoRun(d as UndoData)) });
+    undo.register('archive_relocate', {
+      check: (d) => this.relocateUndoCheck(d as RelocateUndoData),
+      run: (d) => this.guarded(() => this.relocateUndoRun(d as RelocateUndoData)),
+    });
   }
 
   wire(deps: { actions: ActionService; openItems: OpenItemService }): void {
@@ -150,6 +160,42 @@ export class ArchiveService {
 
   private get root() {
     return this.settings.get().archiveRoot;
+  }
+
+  /**
+   * Blocks archive file operations while the archive root is changed (moved or switched).
+   * Refuses while operations are still running; returns the function that lifts the block again.
+   */
+  beginRootChange(): () => void {
+    if (this.rootChangeActive) throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.');
+    if (this.inFlight > 0)
+      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuchen Sie es gleich noch einmal.', {
+        retryable: true,
+      });
+    this.rootChangeActive = true;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.rootChangeActive = false;
+    };
+  }
+
+  /** True while the archive root is being changed. */
+  isRootChangeActive(): boolean {
+    return this.rootChangeActive;
+  }
+
+  /** Runs an archive file operation unless the archive root is being changed right now. */
+  private async guarded<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.rootChangeActive)
+      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warten Sie, bis das abgeschlossen ist.', { retryable: true });
+    this.inFlight += 1;
+    try {
+      return await fn();
+    } finally {
+      this.inFlight -= 1;
+    }
   }
 
   createCategory(p: string, confirmed: boolean) {
@@ -297,6 +343,10 @@ export class ArchiveService {
 
   async execute(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
     if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
+    return this.guarded(() => this.executeAll(items, opts));
+  }
+
+  private async executeAll(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
     await this.cleanupInbox();
     const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
     for (const req of items) {
@@ -392,7 +442,7 @@ export class ArchiveService {
             removedStaged: false,
             removedSource: false,
             before,
-            relationIds: [],
+            relations: { created: [], changed: [] },
             afterUpdatedAt: updatedAt,
           } satisfies UndoData,
         },
@@ -434,7 +484,7 @@ export class ArchiveService {
 
     let targetAbs: string | null = null;
     let archiveRel: string | null = null;
-    const relationIds: string[] = [];
+    let relationChanges: RelationChangeSet;
     const cat = plan._cat ?? null;
 
     if (req.mode === 'index_only') {
@@ -460,43 +510,44 @@ export class ArchiveService {
     // --- Datenbank + Wissensgraph in einer Transaktion ---
     const updatedAt = nowIso();
     try {
-      this.ctx.database.transaction(() => {
-        if (cat) this.categories.create(cat, true);
-        const topic = topicName ? this.graph.ensureEntity('topic', topicName) : null;
-        const project = projectName ? this.graph.ensureEntity('project', projectName) : null;
-        // persons: the first 12 mentions become persons, the stored list uses canonical names
-        const mentioned = proposal?.persons ?? row.persons;
-        const people = this.persons.resolveNames(mentioned.slice(0, 12), { context: 'document' });
-        const others = this.persons.resolveNames(mentioned.slice(12), { context: 'document', create: false }).names;
-        const known = new Set(people.names.map(normalizeName));
-        this.db
-          .update(documents)
-          .set({
-            status: req.mode === 'index_only' ? 'indexed_only' : 'archived',
-            persons: [...people.names, ...others.filter((n) => !known.has(normalizeName(n)))],
-            archiveRelPath: archiveRel,
-            categoryPath: cat ?? row.categoryPath,
-            archiveMode: req.mode,
-            // An explicitly emptied field means "without topic/project" and clears an earlier assignment.
-            topicId: topic ? topic.id : req.topic !== undefined ? null : row.topicId,
-            projectId: project ? project.id : req.project !== undefined ? null : row.projectId,
-            archivedAt: updatedAt,
-            updatedAt,
-          })
-          .where(eq(documents.id, row.id))
-          .run();
-        const keep = (r: { id: string } | null) => r && relationIds.push(r.id);
-        if (topic) keep(this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] }));
-        if (project) keep(this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] }));
-        if (cat)
-          keep(this.graph.link(row.id, this.graph.ensureEntity('category', cat).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] }));
-        for (const person of people.entities)
-          keep(this.graph.link(person.id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] }));
-        for (const tag of row.tags.slice(0, 8))
-          keep(this.graph.link(row.id, this.graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] }));
-        if (proposal?.duplicateOfDocumentId)
-          keep(this.graph.link(row.id, proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] }));
-      });
+      // only relations the archiving created or changed go into the undo data, never pre-existing (e.g. rejected) ones
+      ({ changes: relationChanges } = this.graph.trackRelationChanges(row.id, () =>
+        this.ctx.database.transaction(() => {
+          if (cat) this.categories.create(cat, true);
+          const topic = topicName ? this.graph.ensureEntity('topic', topicName) : null;
+          const project = projectName ? this.graph.ensureEntity('project', projectName) : null;
+          // persons: the first 12 mentions become persons, the stored list uses canonical names
+          const mentioned = proposal?.persons ?? row.persons;
+          const people = this.persons.resolveNames(mentioned.slice(0, 12), { context: 'document' });
+          const others = this.persons.resolveNames(mentioned.slice(12), { context: 'document', create: false }).names;
+          const known = new Set(people.names.map(normalizeName));
+          this.db
+            .update(documents)
+            .set({
+              status: req.mode === 'index_only' ? 'indexed_only' : 'archived',
+              persons: [...people.names, ...others.filter((n) => !known.has(normalizeName(n)))],
+              archiveRelPath: archiveRel,
+              categoryPath: cat ?? row.categoryPath,
+              archiveMode: req.mode,
+              // An explicitly emptied field means "without topic/project" and clears an earlier assignment.
+              topicId: topic ? topic.id : req.topic !== undefined ? null : row.topicId,
+              projectId: project ? project.id : req.project !== undefined ? null : row.projectId,
+              archivedAt: updatedAt,
+              updatedAt,
+            })
+            .where(eq(documents.id, row.id))
+            .run();
+          if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] });
+          if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] });
+          if (cat)
+            this.graph.link(row.id, this.graph.ensureEntity('category', cat).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] });
+          for (const person of people.entities) this.graph.link(person.id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
+          for (const tag of row.tags.slice(0, 8))
+            this.graph.link(row.id, this.graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] });
+          if (proposal?.duplicateOfDocumentId)
+            this.graph.link(row.id, proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] });
+        }),
+      ));
     } catch (err) {
       // keine halbfertige Dateioperation zurücklassen
       if (targetAbs && !(await this.removeCreated(targetAbs))) {
@@ -557,7 +608,7 @@ export class ArchiveService {
       removedStaged,
       removedSource,
       before,
-      relationIds,
+      relations: relationChanges,
       afterUpdatedAt: finalUpdatedAt,
     };
     const auditId = this.audit.log({
@@ -871,6 +922,10 @@ export class ArchiveService {
   /** Verschiebt bereits archivierte Dokumente in andere Archivordner. Erfordert ausdrückliche Bestätigung. */
   async relocate(items: RelocateRequest[], opts: { confirmed: boolean; trigger?: string }): Promise<ArchiveResult> {
     if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
+    return this.guarded(() => this.relocateAll(items, opts));
+  }
+
+  private async relocateAll(items: RelocateRequest[], opts: { trigger?: string }): Promise<ArchiveResult> {
     const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
     for (const req of items) {
       let outcome: ArchiveResult['items'][number];
@@ -1010,6 +1065,7 @@ export class ArchiveService {
   }
 
   private async relocateUndoCheck(d: RelocateUndoData): Promise<string[]> {
+    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
     const conflicts: string[] = [];
     const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
     if (!row) return ['Das Dokument existiert nicht mehr.'];
@@ -1087,10 +1143,12 @@ export class ArchiveService {
 
   // ---------- Undo ----------
   private async undoCheck(d: UndoData): Promise<string[]> {
+    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
     const conflicts: string[] = [];
     const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
     if (!row) return ['Das Dokument existiert nicht mehr.'];
     if (row.updatedAt !== d.afterUpdatedAt) conflicts.push('Das Dokument wurde seit der Archivierung verändert.');
+    conflicts.push(...this.graph.relationChangeConflicts(d.relations));
     if (d.mode === 'copy' || d.mode === 'move') {
       const abs = d.archiveRel ? path.join(this.root, ...d.archiveRel.split('/')) : null;
       if (!abs || !fs.existsSync(abs)) conflicts.push('Die archivierte Datei fehlt am erwarteten Ort.');
@@ -1171,7 +1229,9 @@ export class ArchiveService {
         })
         .where(eq(documents.id, d.documentId))
         .run();
-      for (const rid of d.relationIds) this.graph.deleteRelation(rid);
+      if (d.relations) this.graph.revertRelationChanges(d.relations);
+      // undo data written before relation tracking existed only lists the linked relations
+      else for (const rid of d.relationIds ?? []) this.graph.deleteRelation(rid);
     });
     await this.docs.indexDocument(d.documentId);
     this.ctx.events.emit('document:unarchived', { documentId: d.documentId });

@@ -19,6 +19,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   incomplete_decision: 'Unvollständige Entscheidungen',
   duplicate: 'Mögliche Duplikate',
   similar_topics: 'Ähnliche Themen',
+  similar_entities: 'Mögliche Dubletten',
   orphan_document: 'Dokumente ohne Zuordnung',
   outdated_info: 'Veraltete Informationen',
   missing_metadata: 'Fehlende Angaben',
@@ -27,6 +28,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   misplaced_file: 'Falsch abgelegte Dateien',
   scattered_documents: 'Verstreut abgelegte Dokumente',
   low_confidence_relation: 'Unsichere Verknüpfungen',
+  topic_project_name: 'Thema oder Projekt?',
 };
 
 export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {
