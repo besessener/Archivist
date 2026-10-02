@@ -40,10 +40,7 @@ const NEIGHBOR_LIST: Partial<Record<string, keyof ChatContext>> = { topic: 'topi
 
 const emptyContext = (): Required<ChatContext> => ({ topics: [], projects: [], persons: [], decisions: [], openItems: [], documents: [], contradictions: [] });
 
-/**
- * Verified knowledge answers (#307), the same for the agent's `verified_answer` and the rule-based chat: the LLM answers only
- * from numbered sources, every statement is checked against its evidence, sources that may not leave the machine are cited locally.
- */
+/** Verified knowledge answers (#307) for the agent and the chat: only from numbered sources, each statement checked, non-shareable sources cited locally. */
 export class KnowledgeAnswerService {
   private readonly gatherer: SourceGatherer;
 

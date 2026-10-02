@@ -117,7 +117,7 @@ describe('golden corpus', () => {
   });
 
   it('similarEntities finds the near-duplicate and not the distractor', async () => {
-    const hits = await app.services.search.similarEntities('Angebot Dachdecker Schulz: Dachsanierung mit Mineralwolle', ['note'], 5);
+    const hits = await app.services.search.similarEntities('Angebot Dachdecker Schulz: Dachsanierung mit Mineralwolle', { types: ['note'], limit: 5 });
     expect(keyById.get(hits[0]!.id)).toBe('dach-angebot-schulz');
     expect(hits.slice(0, 1).map((h) => keyById.get(h.id))).not.toContain('dach-angebot-meier');
   });
