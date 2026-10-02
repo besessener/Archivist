@@ -51,7 +51,6 @@ export default tseslint.config(
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
     },
   },
-  // Accessibility in the renderer (strict). label-has-associated-control is checked by axe in the E2E tests.
   {
     files: ['tests/**/*.ts'],
     rules: {
@@ -59,6 +58,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-assignment': 'off',
     },
   },
+  // Accessibility in the renderer (strict). label-has-associated-control is checked by axe in the E2E tests.
   {
     files: ['apps/renderer/**/*.tsx'],
     plugins: { 'jsx-a11y': jsxA11y },

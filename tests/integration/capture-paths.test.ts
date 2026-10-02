@@ -4,11 +4,7 @@ import { CaptureService } from '../../packages/core/src/services/capture';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { agentApp, archived, scriptedTurns } from '../helpers/agent';
 
-/**
- * Capturing knowledge is one module with two callers (#307): the agent's capture tools and the rule-based chat (fallback
- * without LLM, in mode „nur lokal“ or without tool calling). The fallback keeps its tests in chat-*.test.ts; here the
- * agent path of the same capabilities, and the module itself.
- */
+// The capture module (#307) and its agent path; the rule-based chat path is tested in chat-*.test.ts.
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();

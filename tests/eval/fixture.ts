@@ -25,7 +25,7 @@ export interface EvalDoc {
   excluded?: boolean;
 }
 
-// ---------- dates relative to today ----------
+// dates relative to today
 const TODAY = localToday();
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -82,7 +82,7 @@ export function dateForms(iso: string): string[] {
 
 const de = fmtDe;
 
-// ---------- documents ----------
+// documents
 const statement = (month: number, lines: string[]): EvalDoc => {
   const mm = pad2(month);
   return {

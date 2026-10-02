@@ -116,10 +116,8 @@ describe('Solution proposal for open items (#46)', () => {
     expect(s.sources.find((x) => x.ref === 'S1')).toMatchObject({ id: dec, type: 'decision', used: true });
     expect(s.sources.some((x) => x.id === note.id)).toBe(true);
 
-    // stored and visible in the list
     const listed = (await app.ok('openItems:list', {})).find((i) => i.id === target.id)!;
     expect(listed.solution?.assessment).toBe(PROPOSAL.assessment);
-    // transmission log
     const log = await app.ok('llm:transmissions', {});
     expect(log.some((t) => t.purpose === 'Lösungsvorschlag' && t.success)).toBe(true);
   });

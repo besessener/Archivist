@@ -40,7 +40,6 @@ test.describe('Archive root', () => {
     await expect(root.dialog.root).toBeHidden();
     expect(fs.existsSync(newRoot), 'nothing is created before a choice is confirmed').toBe(false);
 
-    // Move the archive.
     await app.settings.do.startArchiveRootChange(newRoot);
     await root.dialog.migrate.click();
     await expect(root.lastChange).toContainText('umgezogen', { timeout: 60_000 });

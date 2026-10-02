@@ -5,8 +5,7 @@ import { BASE_DOCS, EMPTY_FOLDERS, buildArchive } from '../eval/fixture';
 import { providersFromEnv, selectTasks } from '../eval/runner';
 import { MUST_HAVE, STORIES, TASKS } from '../eval/tasks';
 
-// Keeps the agent evaluation (#316) from rotting without spending money: the task set and the archive builder run here
-// against the FakeLlm; the real evaluation (`npm run eval:agent`) is never part of the normal suite.
+// Keeps the agent evaluation (#316) from rotting without spending money: task set and archive builder against the FakeLlm.
 describe('agent evaluation: task set', () => {
   it('has 40–60 tasks with unique ids, a check and a request each', () => {
     expect(TASKS.length).toBeGreaterThanOrEqual(40);

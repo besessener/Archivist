@@ -13,15 +13,15 @@ const TASK_TIMEOUT = 20 * 60_000;
 if (!providers.length) {
   const why = problems.length ? `Konfiguration unvollständig: ${problems.join('; ')}` : 'ARCHIVIST_EVAL_PROVIDERS ist nicht gesetzt';
   console.info(`Agent-Evaluation übersprungen: ${why} (siehe docs/how-to/agent-evaluieren.md).`);
-  describe.skip(`Agent-Evaluation übersprungen – ${why}`, () => {
-    it('braucht konfigurierte Anbieter', () => undefined);
+  describe.skip(`agent evaluation skipped – ${why}`, () => {
+    it('needs configured providers', () => undefined);
   });
 } else {
   const startedAt = new Date().toISOString();
   const results: TaskResult[] = [];
   const caps = new Map<string, AgentCapability | null>();
 
-  describe('Agent-Evaluation mit echten Modellen', () => {
+  describe('agent evaluation with real models', () => {
     afterAll(() => {
       const report: EvalReport = {
         startedAt,
@@ -41,7 +41,7 @@ if (!providers.length) {
       console.log(`Kosten dieses Laufs: $${out.costUsd.toFixed(4)}`);
     });
 
-    if (problems.length) it.skip(`nicht verwendet: ${problems.join('; ')}`, () => undefined);
+    if (problems.length) it.skip(`not used: ${problems.join('; ')}`, () => undefined);
 
     for (const p of providers) describeProvider(p);
   });

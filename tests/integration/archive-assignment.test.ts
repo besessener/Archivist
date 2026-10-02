@@ -74,7 +74,6 @@ describe('Archive dialog: emptied topic/project', () => {
     expect(doc.projectName).toBeNull();
     expect(linkedEntities(a.id, 'project')).not.toContain('Falsches Projekt');
 
-    // Undo restores the earlier assignment.
     const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
     expect(undo.undone).toBe(true);
     expect((await app.ok('documents:get', { id: a.id })).projectName).toBe('Altes Projekt');

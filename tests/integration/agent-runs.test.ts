@@ -49,7 +49,6 @@ describe('Agent runs: undo (#299)', () => {
       ['link', 'ok'],
       ['move_documents', 'ok'],
     ]);
-    // everything happened
     expect(folderOf(app, a)).toBe('work/steuer/2025');
     expect(doc(a).topicName).toBe('Steuer');
     expect(doc(a).tags).toContain('2025');
@@ -137,7 +136,6 @@ describe('Agent runs: undo (#299)', () => {
     // the user's edit and the change it depends on stay
     expect(doc(a).title).toBe('Mietvertrag (von Hand)');
     expect(doc(a).topicName).toBe('Verträge');
-    // the rest is undone
     expect(folderOf(app, b)).toBe('work/misc');
     expect(await openItemTitles()).not.toContain('Vertrag unterschreiben');
     expect((await app.ok('agent:run', { id: runId })).undoable).toBe(1);

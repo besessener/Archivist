@@ -101,9 +101,7 @@ describe('Retry with backoff', () => {
   });
 
   it('loses no retry that becomes due while the queue is looking for work', async () => {
-    // A clock that moves on by 1 ms with every reading: the retry becomes due between the queue's check for
-    // due work and its decision about the retry timer. Depending on the wait, this happens at a different
-    // point, so several waits are tried; none of the jobs may get stuck waiting for its retry.
+    // Each clock reading adds 1 ms, so the retry falls due between the queue's due check and its timer decision.
     let clock = Date.now();
     vi.spyOn(Date, 'now').mockImplementation(() => clock++);
     for (let retryBaseDelayMs = 1; retryBaseDelayMs <= 8; retryBaseDelayMs += 1) {

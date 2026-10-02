@@ -7,10 +7,7 @@ import { SettingsService } from '../../packages/core/src/services/settings';
 
 type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent' | 'links';
 
-/**
- * Two complete, valid, non-default value sets per section. Every field differs between A and B,
- * so saving a single field from B is observable and must leave the A values of all other fields untouched.
- */
+/** Two valid non-default value sets per section; every field differs between A and B, so a single saved field is observable. */
 const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<string, unknown> }> = {
   profile: {
     a: { name: 'Erika Musterfrau', nicknames: ['Eri'] },
@@ -161,7 +158,6 @@ describe('SettingsService.update: saving one field keeps the rest (Issue #55)', 
     for (const [field, value] of Object.entries(SECTIONS[key].b)) {
       const after = svc.update({ [key]: { [field]: value } });
       expect(after).toEqual({ ...before, [key]: { ...SECTIONS[key].a, [field]: value } });
-      // persisted as well
       expect(new SettingsService(file, archiveRoot).get()).toEqual(after);
       svc.update({ [key]: { [field]: SECTIONS[key].a[field] } });
       expect(svc.get()).toEqual(before);

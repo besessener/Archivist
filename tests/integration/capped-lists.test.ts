@@ -44,10 +44,7 @@ async function archived(name: string, topic: string | null): Promise<string> {
   return id;
 }
 
-/**
- * `n` further copies of document `templateId` (directly in the database: thousands of real imports would take
- * minutes). `set` overrides columns with SQL expressions; `seq.n` numbers the copies.
- */
+/** Copies straight in the database (real imports would take minutes); `set` holds SQL expressions, `seq.n` numbers the copies. */
 function cloneDocs(templateId: string, n: number, set: Record<string, string> = {}): void {
   const db = app.services.database.sqlite;
   const cols = (db.prepare('PRAGMA table_info(documents)').all() as { name: string }[]).map((c) => c.name);

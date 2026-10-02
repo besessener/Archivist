@@ -2,11 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GOLDEN_QUERIES, GOLDEN_RECORDS, type GoldenQuery, type QueryKind } from '../helpers/search-corpus';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
-/**
- * Retrieval quality of the archive search (#255) on a labelled DE/EN corpus, with no API key (local hash vectors + FTS).
- * The thresholds are a ratchet: they sit just below the measured values and are only ever raised.
- * Set SEARCH_QUALITY_REPORT=1 to print the per-kind numbers.
- */
+// Search quality without API key (#255); the floors are a ratchet, only raised; SEARCH_QUALITY_REPORT=1 prints the numbers.
 let app: TestApp;
 const idByKey = new Map<string, string>();
 const keyById = new Map<string, string>();
@@ -60,8 +56,7 @@ describe('golden corpus', () => {
     for (const q of GOLDEN_QUERIES) for (const k of [...q.relevant, ...(q.forbidden ?? [])]) expect(idByKey.has(k), `${q.query}: unknown key ${k}`).toBe(true);
   });
 
-  // recall@10 / MRR floors per kind, just below the values measured on the local (no API key) path.
-  // synonym and cross-lingual are weak by design of the hash vectors: raise these when retrieval improves.
+  // synonym and cross-lingual are weak by design of the local hash vectors: raise them when retrieval improves.
   const FLOORS: Record<Exclude<QueryKind, 'must-not-match'>, { recall: number; mrr: number }> = {
     exact: { recall: 1, mrr: 1 },
     inflection: { recall: 0.85, mrr: 0.95 },
