@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DecisionInput } from '@archivist/shared';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -131,5 +132,42 @@ describe('Knowledge questions search more than one wording (#164)', () => {
 
     expect(knowledgeInput()).toContain('Zaun gestrichen');
     expect(r.assistantMessage.uncertainties.join(' ')).toMatch(/Im genannten Zeitraum .* nichts gefunden/);
+  });
+});
+
+describe('Decision sources are part of the answer (#165)', () => {
+  beforeEach(async () => {
+    app = await createTestApp({ privacy: 'auto' });
+    app.llm.on('KnowledgeAnswer', () => answer);
+  });
+
+  it('adds the documents a retrieved decision was taken from, with the matching passage', async () => {
+    const filler = 'Zunächst ging es um die Kantine und den Betriebsausflug im Sommer. '.repeat(15);
+    const docId = await archiveText(
+      'protokoll-fuhrpark.txt',
+      `${filler}\n\nTOP 3: Der Fuhrpark wird umgestellt – die Dienstwagen werden E-Fahrzeuge, weil die Leasingverträge im Juli auslaufen.`,
+      'Protokoll Geschäftsleitung Juni',
+      'Protokoll der Sitzung der Geschäftsleitung.',
+    );
+    const d = app.services.decisions.create(
+      DecisionInput.parse({
+        title: 'Elektroautos für den Fuhrpark',
+        decisionText: 'Der Fuhrpark wird auf Elektroautos umgestellt.',
+        topic: 'Fuhrpark',
+        decidedAt: '2026-06-12',
+        participants: ['Jana'],
+        sourceIds: [docId],
+      }),
+    );
+    await app.services.decisions.reindex(d.id);
+    app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: 'Elektroautos' }));
+
+    const r = await app.ok('chat:send', { text: 'Welches Dokument belegt die Entscheidung zu den Elektroautos?' });
+
+    const input = knowledgeInput();
+    expect(input).toContain('Belegt durch: Dokument „Protokoll Geschäftsleitung Juni“');
+    expect(input).toContain('Quelle der Entscheidung „Elektroautos für den Fuhrpark“');
+    expect(input).toContain('weil die Leasingverträge im Juli auslaufen');
+    expect(r.assistantMessage.sources.map((s) => s.id)).toEqual(expect.arrayContaining([d.id]));
   });
 });

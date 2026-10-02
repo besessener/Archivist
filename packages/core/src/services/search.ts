@@ -338,6 +338,27 @@ export class SearchService {
     });
   }
 
+  /** The indexed chunk of an entity that shares the most terms with `text` (e.g. a decision's source passage). */
+  bestPassage(entityId: string, text: string): string | null {
+    const rows = this.ctx.database.db.select({ text: chunks.text }).from(chunks).where(eq(chunks.entityId, entityId)).orderBy(chunks.idx).all();
+    if (rows.length === 0) return null;
+    const terms = [...new Set(tokenize(text).map(searchStem))];
+    const score = (chunk: string) => {
+      const toks = tokenize(chunk, { keepStopwords: true });
+      return terms.filter((t) => toks.some((tok) => tok.startsWith(t))).length;
+    };
+    let best = rows[0]!.text;
+    let bestScore = -1;
+    for (const r of rows) {
+      const sc = score(r.text);
+      if (sc > bestScore) {
+        best = r.text;
+        bestScore = sc;
+      }
+    }
+    return best;
+  }
+
   /** Documents whose content is close to a name/topic (for assignment proposals). */
   async similarEntities(text: string, types: EntityType[], limit = 10): Promise<SearchHit[]> {
     const q = normalizeName(text).split(' ').slice(0, 60).join(' ');

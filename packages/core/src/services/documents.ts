@@ -196,6 +196,11 @@ export class DocumentService {
     return rows.map((r) => this.toRecord(r, names));
   }
 
+  /** The row of a document, or undefined if it does not exist (any more). */
+  findRow(id: string): DocRow | undefined {
+    return this.db.select().from(documents).where(eq(documents.id, id)).get();
+  }
+
   getRow(id: string): DocRow {
     const r = this.db.select().from(documents).where(eq(documents.id, id)).get();
     if (!r) throw new AppError('validation_error', 'Dokument nicht gefunden.');

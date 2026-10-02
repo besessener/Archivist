@@ -1616,6 +1616,7 @@ export class ChatService {
     }
     const hits = [...fused.values()].sort((a, b) => b.score - a.score).map((f) => f.hit);
     const out: GatheredSource[] = [];
+    const supporting: GatheredSource[] = [];
     for (const h of hits) {
       if (out.length >= limit) break;
       if (h.type === 'document') {
@@ -1649,12 +1650,15 @@ export class ChatService {
         });
       } else if (h.type === 'decision') {
         const d = this.decisions.get(h.id);
+        const backing = this.decisionDocuments(d);
         out.push({
           ...this.decisionSource(d, h.score),
-          _text: this.decisions.format(d).replace(/\*\*/g, ''),
+          _text: `${this.decisions.format(d).replace(/\*\*/g, '')}${backing.length ? `\nBelegt durch: ${backing.map((b) => `Dokument „${b.title}“`).join(', ')}` : ''}`,
           _topics: [d.topicId, d.projectId].filter((x): x is string => Boolean(x)),
           _dates: d.decidedAt ? [d.decidedAt] : [],
         });
+        // the documents the decision was taken from become sources of their own (#165)
+        for (const b of backing) if (!out.some((o) => o.id === b.id) && !supporting.some((o) => o.id === b.id)) supporting.push(b);
       } else if (h.type === 'event') {
         // events from the timeline: the date (occurredAt) belongs in the source and its text
         const e = this.events.get(h.id);
@@ -1695,6 +1699,41 @@ export class ChatService {
           _text: truncate(h.passage, PASSAGE_CHARS),
         });
       }
+    }
+    // up to 3 supporting documents of retrieved decisions, after the hits
+    const ids = new Set(out.map((o) => o.id));
+    return [...out, ...supporting.filter((b) => !ids.has(b.id)).slice(0, 3)];
+  }
+
+  /** Archived source documents of a decision, with the passage that best matches the decision text. */
+  private decisionDocuments(d: Decision): GatheredSource[] {
+    const out: GatheredSource[] = [];
+    for (const id of d.sourceIds) {
+      const doc = this.docs.findRow(id);
+      if (!doc || (doc.status !== 'archived' && doc.status !== 'indexed_only')) continue;
+      const shareable = this.privacy.mayShareDocument(doc);
+      const passage = this.search.bestPassage(id, `${d.title} ${d.decisionText}`) ?? '';
+      out.push({
+        ...(shareable ? {} : { _local: true }),
+        id: doc.id,
+        type: 'document',
+        title: doc.title,
+        snippet: truncate(doc.summary ?? passage, 220),
+        path: doc.archiveRelPath ? `${this.settings.get().archiveRoot}/${doc.archiveRelPath}` : doc.sourcePath,
+        date: doc.archivedAt,
+        score: 0,
+        _text: shareable
+          ? [
+              `Quelle der Entscheidung „${d.title}“.`,
+              doc.summary && `Zusammenfassung: ${truncate(doc.summary, 400)}`,
+              passage && `Textstelle: ${truncate(passage, PASSAGE_CHARS)}`,
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : '',
+        _topics: [doc.topicId, doc.projectId].filter((x): x is string => Boolean(x)),
+        _dates: [...doc.dates, ...(doc.archivedAt ? [doc.archivedAt] : [])],
+      });
     }
     return out;
   }
