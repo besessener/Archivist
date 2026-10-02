@@ -22,9 +22,6 @@ export interface DocumentPrivacyFields {
 
 type PathApi = typeof path.posix;
 
-/** File systems on these platforms are case-insensitive by default. */
-const CASE_INSENSITIVE_PLATFORMS: ReadonlySet<string> = new Set(['win32', 'darwin']);
-
 /** realpath of the deepest existing ancestor plus the non-existing rest (synchronous variant). */
 function realpathDeepestSync(pm: PathApi, target: string): string | null {
   let current = target;
@@ -43,7 +40,7 @@ function realpathDeepestSync(pm: PathApi, target: string): string | null {
 
 /**
  * Compares paths like the file system does: both the lexical and the real path (symlinks, junctions) count,
- * and on Windows/macOS the comparison ignores case.
+ * and on Windows the comparison ignores case.
  */
 export class PathMatcher {
   private readonly pm: PathApi;
@@ -51,7 +48,8 @@ export class PathMatcher {
 
   constructor(private readonly platform: string = process.platform) {
     this.pm = platform === 'win32' ? path.win32 : path.posix;
-    this.foldCase = CASE_INSENSITIVE_PLATFORMS.has(platform);
+    // Windows file systems are case-insensitive
+    this.foldCase = platform === 'win32';
   }
 
   /** All spellings under which `p` is reachable (resolved and – if it exists on this machine – real path). */

@@ -48,6 +48,8 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 
 ## Schnellstart
 
+**Plattform**: Archivist wird nur für **Windows** gebaut, getestet und gepflegt (NSIS-Installer und portable EXE). Die Entwicklung mit `npm run dev` funktioniert in der Regel auch unter anderen Betriebssystemen, wird dort aber nicht zugesichert.
+
 Voraussetzungen für die **Entwicklung**: Node.js ≥ 22, npm ≥ 10. Endbenutzer brauchen nur den Installer.
 
 ```bash
@@ -64,7 +66,7 @@ npm run typecheck      # tsc strict in allen Workspaces + Tests
 npm run lint           # ESLint (typescript-eslint)
 npm test               # Vitest: Unit- und Integrationstests
 npm run native:check   # prüft die nativen Module in Node UND in der Electron-Laufzeit
-npm run test:e2e       # Playwright (Electron) – unter Linux headless: xvfb-run -a npm run test:e2e
+npm run test:e2e       # Playwright (Electron); in der CI (Ubuntu) headless: xvfb-run -a npm run test:e2e
 ```
 
 Der E2E-Test lässt sich auch gegen die **gepackte** App ausführen:
@@ -162,14 +164,14 @@ Archivist/
 **LLM-Datenschutz** (`Einstellungen → Datenschutz`):
 
 - `auto` – Inhalte automatisch analysieren · `confirm` (Standard) – vor jeder externen Analyse ausdrücklich bestätigen · `local_only` – nie extern (keine Klassifikation, keine Chat-Auswertung, keine Embeddings per LLM). Die Auswahl wird sofort gespeichert; der aktive Modus wird darunter angezeigt.
-- Verzeichnisse, Dateitypen und einzelne Dateien lassen sich dauerhaft von der LLM-Verarbeitung ausschließen. Ausschlüsse vergleichen auch den realen Pfad (Symlinks/Junctions) und ignorieren unter Windows und macOS die Groß-/Kleinschreibung. In der UI sind die Zustände sichtbar: *nur lokal gescannt · zur LLM-Analyse vorgesehen · per LLM analysiert · von externer Analyse ausgeschlossen*.
+- Verzeichnisse, Dateitypen und einzelne Dateien lassen sich dauerhaft von der LLM-Verarbeitung ausschließen. Ausschlüsse vergleichen auch den realen Pfad (Symlinks/Junctions) und ignorieren unter Windows die Groß-/Kleinschreibung. In der UI sind die Zustände sichtbar: *nur lokal gescannt · zur LLM-Analyse vorgesehen · per LLM analysiert · von externer Analyse ausgeschlossen*.
 - Die Freigabe „keine KI-Analyse“ eines Scan-Verzeichnisses wird am Dokument gespeichert (auch für Dateien, die aus diesem Ordner hochgeladen werden) und gilt für Analyse, „Erneut verarbeiten“, Chat-Quellen, Lösungsvorschläge und Embeddings; wird sie später entzogen, gilt das sofort für bereits erfasste Dokumente.
 - Im Modus `confirm` fragt auch „Erneut verarbeiten“ vor der Übertragung nach. Chat-Antworten senden nur Dokumente, die zur externen Analyse freigegeben wurden; andere passende Dokumente werden nur lokal als Quelle aufgeführt. Suchindex und Suchanfragen nutzen in diesem Modus ausschließlich lokale Vektoren. Antwortet der Embedding-Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer.
 - Vor jeder Übertragung werden Zugangsdaten und Geheimnisse (Passwörter – auch in Anführungszeichen mit Leerzeichen –, API-Keys inkl. Google-Keys, Tokens, JWTs, private Schlüssel, Zugangsdaten in URLs sowie Schlüssel und Passwörter in Verbindungsstrings wie `AccountKey=…;`, `SharedAccessKey=…;` oder `Password=…;`) **maskiert**; jede Übertragung wird mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und gekürzter, maskierter Vorschau protokolliert und ist unter *Datenschutz → Übertragungsprotokoll* einsehbar. Gesendet wird mit `store: false`.
 
 **Electron**: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, kein `eval`, Navigation und `window.open` gesperrt, Berechtigungsanfragen abgelehnt. Das Frontend wird über ein eigenes `app://`-Protokoll ausgeliefert (kein HTTP-Server, kein `file://`) mit strenger CSP (`default-src 'none'`, Skripte nur `self` + SHA-256-Hashes der von Next.js erzeugten Inline-Skripte, `connect-src 'self'`). IPC: explizite Kanal-Allowlist, Absender-Prüfung (Frame-URL + WebContents), Zod-Validierung von Ein- **und** Ausgaben. Der Renderer hat keinen Zugriff auf Node, Dateisystem, Datenbank, Shell oder Credential Store; Dateien öffnet nur der Main-Prozess und nur solche, die Archivist kennt.
 
-**Geheimnisse**: Der API-Key wird ausschließlich über Electron `safeStorage` (Windows DPAPI, macOS Keychain, Linux libsecret/kwallet) verschlüsselt in `config/llm-api-key.enc` abgelegt – nie in `settings.json`, Datenbank, Backups oder Logs (der Logger maskiert bekannte Schlüssel zusätzlich aktiv). Ist kein sicherer Speicher verfügbar (z. B. Linux ohne Schlüsselbund), **verweigert** Archivist das Speichern.
+**Geheimnisse**: Der API-Key wird ausschließlich über Electron `safeStorage` (Windows DPAPI) verschlüsselt in `config/llm-api-key.enc` abgelegt – nie in `settings.json`, Datenbank, Backups oder Logs (der Logger maskiert bekannte Schlüssel zusätzlich aktiv). Ist kein sicherer Speicher verfügbar, **verweigert** Archivist das Speichern.
 
 ## LLM-Anbindung
 
@@ -183,12 +185,12 @@ Archivist/
 
 ```bash
 npm run build                       # Renderer (next build → out/) + Main/Preload/Worker (esbuild → apps/desktop/dist)
-npm run dist                        # Installer für die aktuelle Plattform (apps/desktop/release/)
-npm run dist:win                    # Windows: NSIS-Installer + portable EXE
+npm run dist                        # Windows: NSIS-Installer + portable EXE (apps/desktop/release/)
+npm run dist:win                    # dasselbe (Alias)
 npm run db:generate                 # Drizzle-Migration aus Schemaänderungen erzeugen
 ```
 
-Testabdeckung (Vitest, `npm test`): Decision-Rückfragen, Zod-Validierung von LLM-Ausgaben, IPC-Eingabevalidierung, Pfadnormalisierung, Path-Traversal, Symlink-Ausbruch, Scan-Bereichsgrenzen, Datei-Ausschlüsse, Duplikaterkennung, Bestätigungsworkflows, Archivieren durch Kopieren/Verschieben, Undo (inkl. Konflikte), Datenbankmigrationen, Job-Queue nach Neustart, Widerspruchserkennung mit kontrollierten Beispielen, Maskierung von Schlüsseln in Logs, Verhalten bei nicht erreichbarem LLM, Worker-Threads, Backups, Renderer-Auslieferung/CSP. Die Playwright-E2E-Tests (`tests/e2e`) starten pro Test die echte Electron-App mit frischem Datenordner und einem lokalen Fake-LLM-HTTP-Server. Sie sind nach Funktionen aufgeteilt (Einrichtung, Import/Archivierung, OCR, Chat-Entscheidungen, Chat-Eingabe, Timeline, Scan) und nutzen Page Objects (`tests/e2e/pages`) mit `locators` und `do`, sodass die Specs wie eine Beschreibung des Verhaltens lesen. Dazu prüft `accessibility.spec.ts` jeden Bereich der Navigation mit axe-core (WCAG 2.2 AA); schwere und kritische Verstöße lassen den Test fehlschlagen. Lokal: `npm run build && xvfb-run -a npx playwright test` (unter Windows/macOS ohne `xvfb-run`).
+Testabdeckung (Vitest, `npm test`): Decision-Rückfragen, Zod-Validierung von LLM-Ausgaben, IPC-Eingabevalidierung, Pfadnormalisierung, Path-Traversal, Symlink-Ausbruch, Scan-Bereichsgrenzen, Datei-Ausschlüsse, Duplikaterkennung, Bestätigungsworkflows, Archivieren durch Kopieren/Verschieben, Undo (inkl. Konflikte), Datenbankmigrationen, Job-Queue nach Neustart, Widerspruchserkennung mit kontrollierten Beispielen, Maskierung von Schlüsseln in Logs, Verhalten bei nicht erreichbarem LLM, Worker-Threads, Backups, Renderer-Auslieferung/CSP. Die Playwright-E2E-Tests (`tests/e2e`) starten pro Test die echte Electron-App mit frischem Datenordner und einem lokalen Fake-LLM-HTTP-Server. Sie sind nach Funktionen aufgeteilt (Einrichtung, Import/Archivierung, OCR, Chat-Entscheidungen, Chat-Eingabe, Timeline, Scan) und nutzen Page Objects (`tests/e2e/pages`) mit `locators` und `do`, sodass die Specs wie eine Beschreibung des Verhaltens lesen. Dazu prüft `accessibility.spec.ts` jeden Bereich der Navigation mit axe-core (WCAG 2.2 AA); schwere und kritische Verstöße lassen den Test fehlschlagen. Lokal: `npm run build && xvfb-run -a npx playwright test` (unter Windows ohne `xvfb-run`).
 
 ### Qualitätssicherung (CI)
 
@@ -207,11 +209,10 @@ Alle Actions sind auf Commit-SHAs gepinnt (Kommentar nennt den Tag), Workflows l
 
 ## Packaging
 
-- **Native Module**: `better-sqlite3` (≥ 13) und `sharp` liefern **N-API-Prebuilds** für Windows/macOS/Linux; dieselbe Binärdatei läuft in Node und Electron. Ein `electron-rebuild` ist deshalb nicht nötig (`npmRebuild: false`), das Cross-Packaging ist reproduzierbar. `npm run native:check` beweist das für Node *und* die Electron-Laufzeit. In der Anwendung liegen die Module per `asarUnpack` außerhalb des ASAR-Archivs.
+- **Native Module**: `better-sqlite3` (≥ 13) und `sharp` liefern **N-API-Prebuilds** für Windows; dieselbe Binärdatei läuft in Node und Electron. Ein `electron-rebuild` ist deshalb nicht nötig (`npmRebuild: false`), das Cross-Packaging ist reproduzierbar. `npm run native:check` beweist das für Node *und* die Electron-Laufzeit. In der Anwendung liegen die Module per `asarUnpack` außerhalb des ASAR-Archivs.
 - **Gebündelt** (esbuild): Main, Preload, Worker, alle reinen JS-Abhängigkeiten. **Extern** (werden mitgeliefert): `better-sqlite3`, `sharp`, `pdfjs-dist`.
 - **Windows**: `npm run dist:win` (NSIS-Installer mit Installationsverzeichnis-Auswahl + portable EXE). Der letzte Schritt (Ressourcen-Bearbeitung/Signierung der `.exe`) benötigt **Windows oder Wine** – auf einem Linux-Host ohne Wine bricht electron-builder dort ab (verifiziert: Download, ASAR-Paketierung und NSIS-Toolchain laufen bis dahin). Die CI-Konfiguration (`.github/workflows/ci.yml`) baut den Installer daher auf `windows-latest`. **Signierung**: Installer *und* portable EXE werden per Authenticode (SHA-256, RFC-3161-Zeitstempel) signiert, sobald ein Zertifikat vorliegt – lokal über die Umgebungsvariablen `CSC_LINK` (Pfad oder Base64 der `.pfx`) und `CSC_KEY_PASSWORD`. In der CI genügen die Repository-Secrets `WIN_CSC_LINK` (Base64-kodierte `.pfx`, z. B. `base64 -w0 zertifikat.pfx`) und `WIN_CSC_KEY_PASSWORD`; der Job prüft danach mit `Get-AuthenticodeSignature`, dass alle `.exe`-Dateien gültig signiert sind. Ohne Zertifikat bleiben die Pakete unsigniert (SmartScreen zeigt dann eine Warnung); das ist der Normalfall für Pull Requests aus Forks. Hinweis: Ein selbstsigniertes Zertifikat ist nur auf Rechnern vertrauenswürdig, in deren Zertifikatsspeicher es importiert wurde – gegen die SmartScreen-Warnung helfen nur ein Zertifikat einer öffentlichen CA bzw. Azure Trusted Signing.
-- **Linux** (`apps/desktop/release/linux-unpacked/archivist`, AppImage/deb) wurde lokal gebaut und mit dem kompletten E2E-Test geprüft.
-- macOS (`dist:mac`) ist konfiguriert, aber hier nicht getestet.
+- **Nur Windows**: Linux- und macOS-Pakete werden nicht mehr gebaut. Unit-, Integrations- und E2E-Tests laufen in der CI weiterhin auf Ubuntu (schnell und günstig); gepackt wird ausschließlich auf `windows-latest`.
 
 ## Bewusste Abweichungen und ehrliche Grenzen
 
@@ -229,10 +230,8 @@ Alle Actions sind auf Commit-SHAs gepinnt (Kommentar nennt den Tag), Workflows l
 
 | Symptom | Ursache / Lösung |
 | --- | --- |
-| „Sicherer Speicher nicht verfügbar“ (Linux) | libsecret/kwallet bzw. ein laufender Schlüsselbund-Dienst fehlt (`gnome-keyring`). Archivist speichert den Key nie im Klartext. |
 | „Ein natives Modul passt nicht zur Laufzeitumgebung“ | `npm install` erneut ausführen und `npm run native:check` prüfen. |
 | LLM-Test: „nicht erreichbar“ | Base URL/Proxy/Firewall prüfen; Logs unter `…/Archivist/logs/`. |
 | LLM-Test: „Endpunkt oder Modell nicht gefunden“ | Base URL muss auf die API-Wurzel (z. B. `…/openai/v1`) zeigen, Modellname exakt wie im Deployment. |
-| Electron startet unter Linux als root nicht | Mit `--no-sandbox` starten (nur in Containern) oder als normaler Benutzer ausführen. |
 
 Lizenz: MIT (siehe `LICENSE`).
