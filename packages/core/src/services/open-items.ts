@@ -1,13 +1,4 @@
-import {
-  isEditableOpenItemStatus,
-  localDate,
-  localToday,
-  OpenItemSolution,
-  type OpenItem,
-  type OpenItemInput,
-  type OpenItemPatch,
-  type OpenItemStatus,
-} from '@archivist/shared';
+import { localDate, localToday, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
@@ -16,115 +7,27 @@ import { syncReminderAt } from './reminders';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
-import { levenshtein, tokenize } from '../util/text';
 import type { AuditService } from './audit';
-import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import type { KnowledgeGraphService } from './knowledge-graph';
+import { assertEditableStatusChange, newOpenItemRow, openItemIndexContent, plainPatchColumns, toOpenItem, type OpenItemRow } from './open-item-fields';
+import { matchOpenItems, type HintMatch } from './open-item-matching';
+import {
+  OPEN_ITEM_STATUS_UNDO_TYPE,
+  OPEN_ITEM_UPDATE_UNDO_TYPE,
+  registerOpenItemUndo,
+  type OpenItemStatusUndo,
+  type OpenItemUpdateUndo,
+} from './open-item-undo';
 import { mentionContext, type PersonService } from './persons';
+import { previousValues } from './previous-values';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
-type Row = typeof openItems.$inferSelect;
+export { detectOpenItemSentences, hintTokens, matchOpenItems } from './open-item-matching';
 
-interface OpenItemUpdateUndo {
-  id: string;
-  /** Previous values of the edited columns. */
-  before: Partial<Row>;
-  afterUpdatedAt: string;
-  relations: RelationChangeSet;
-}
 export const ACTIVE_STATUSES: OpenItemStatus[] = ['open', 'waiting', 'blocked'];
 
-/** Detects typical "open item" phrasings locally (without LLM). */
-const OPEN_PATTERNS = [
-  /muss\s+noch\s+(?:geklärt|geprüft|entschieden|abgestimmt)\s+werden/i,
-  /noch\s+(?:zu\s+)?(?:klären|prüfen|entscheiden|abstimmen)/i,
-  /offen\s+ist\b|ist\s+(?:noch\s+)?offen\b|offener?\s+punkt/i,
-  /später\s+entscheiden/i,
-  /\bTBD\b|\bTBC\b|\bpending\b/i,
-  /ungeklärt|ungeklaert/i,
-  /rückmeldung\s+(?:steht\s+)?(?:noch\s+)?aus(?:stehend)?|ausstehende\s+rückmeldung/i,
-  /entscheidung\s+(?:steht\s+)?(?:noch\s+)?aus(?:stehend)?|ausstehende\s+entscheidung/i,
-  /follow[- ]?up\s+(?:ist\s+)?erforderlich/i,
-];
-
-export function detectOpenItemSentences(text: string, max = 8): string[] {
-  const sentences = text
-    .replace(/\r/g, '')
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 8 && s.length < 400);
-  return sentences.filter((s) => OPEN_PATTERNS.some((p) => p.test(s))).slice(0, max);
-}
-
-/** Filler words in hints at open items („erledigt“, „schließ den Punkt“) that say nothing about the item. */
-const HINT_FILLERS = new Set(
-  'erledigt erledige erledigen erledigung schliess schliesse schliessen geschlossen punkt punkte offen offene offenen offener aufgabe aufgaben todo todos bitte mach mache machen kann koennen konnen soll sollte done fertig abgeschlossen abhaken hak hake erinnere erinner erinnern erinnerung mich mir daran dran verschieb verschiebe verschieben aendern andern andere setze setz wieder nochmal mal ok okay ja jetzt heute morgen gerade schon endlich raus damit thema zum zur'.split(
-    ' ',
-  ),
-);
-
-/** Time expressions say nothing about which item is meant („erinnere mich in sieben Tagen daran“). */
-const TIME_WORDS = new Set(
-  'tag tage tagen woche wochen monat monaten monate jahr jahren stunde stunden minute minuten montag dienstag mittwoch donnerstag freitag samstag sonntag januar februar marz april mai juni juli august september oktober november dezember naechsten nachsten nachste nachster kommenden kommende uebermorgen ubermorgen am um vom abend abends frueh fruh mittag vormittag nachmittag eins zwei drei vier fuenf funf sechs sieben acht neun zehn elf zwoelf zwolf einer einem einen ein eine bis ab'.split(
-    ' ',
-  ),
-);
-
-/** Words of a hint that actually say something about the item meant (without filler, stop and time words). */
-export function hintTokens(hint: string): string[] {
-  return [...new Set(tokenize(hint).filter((t) => !HINT_FILLERS.has(t) && !TIME_WORDS.has(t) && !/^\d+$/.test(t)))];
-}
-
-export type HintMatch = { status: 'match'; item: OpenItem } | { status: 'ambiguous'; items: OpenItem[] } | { status: 'none' };
-
-const MATCH_THRESHOLD = 0.5;
-const AMBIGUITY_MARGIN = 0.15;
-
-function tokenScore(h: string, tokens: string[]): number {
-  let best = 0;
-  for (const t of tokens) {
-    if (t === h) return 1;
-    // abbreviations and word beginnings: „Präsi“ → „Präsentation“, „Steuer“ in „Steuererklärung“
-    if ((h.length >= 3 && t.startsWith(h)) || (t.length >= 4 && h.startsWith(t))) best = Math.max(best, 0.8);
-    else if (h.length >= 5 && t.length >= 5) {
-      const sim = 1 - levenshtein(h, t) / Math.max(h.length, t.length);
-      if (sim >= 0.8) best = Math.max(best, 0.6);
-    }
-  }
-  return best;
-}
-
-/**
- * Share (0..1) of the hint tokens found in an open item: a title word counts fully, a description word 0.7,
- * abbreviations and near misses less (see tokenScore). `wanted` are {@link hintTokens}.
- */
-export function scoreHintTokens(wanted: string[], item: { title: string; description?: string | null }): number {
-  if (!wanted.length) return 0;
-  const title = tokenize(item.title, { keepStopwords: true });
-  const desc = tokenize(item.description ?? '', { keepStopwords: true });
-  return wanted.reduce((acc, h) => acc + Math.max(tokenScore(h, title), 0.7 * tokenScore(h, desc)), 0) / wanted.length;
-}
-
-/**
- * Ranks open items against a hint: word by word over title and description (filler and stop words do not
- * count, short abbreviations like „TÜV“ only as a whole word), fuzzy only as the last stage. If the best
- * hits are close together, the result is ambiguous; below the threshold there is no hit.
- */
-export function matchOpenItems<T extends { title: string; description?: string | null }>(
-  hint: string,
-  items: T[],
-  opts: { threshold?: number } = {},
-): { status: 'match'; item: T } | { status: 'ambiguous'; items: T[] } | { status: 'none' } {
-  const wanted = hintTokens(hint);
-  if (!wanted.length) return { status: 'none' };
-  const scored = items
-    .map((item) => ({ item, score: scoreHintTokens(wanted, item) }))
-    .filter((x) => x.score >= (opts.threshold ?? MATCH_THRESHOLD))
-    .sort((a, b) => b.score - a.score);
-  if (!scored.length) return { status: 'none' };
-  const close = scored.filter((x) => x.score >= scored[0]!.score - AMBIGUITY_MARGIN);
-  return close.length === 1 ? { status: 'match', item: close[0]!.item } : { status: 'ambiguous', items: close.slice(0, 4).map((x) => x.item) };
-}
+type Origin = { actor?: 'user' | 'agent'; trigger?: string };
 
 /** Open items (tasks/questions) including responsible person, due date and status. */
 export class OpenItemService {
@@ -136,63 +39,22 @@ export class OpenItemService {
     private readonly audit: AuditService,
     undo: UndoService,
   ) {
-    undo.register('open_item_status', {
-      check: async (data) => {
-        const d = data as { id: string; afterUpdatedAt: string };
-        const row = this.db.select().from(openItems).where(eq(openItems.id, d.id)).get();
-        if (!row) return ['Der offene Punkt existiert nicht mehr.'];
-        return row.updatedAt === d.afterUpdatedAt ? [] : ['Der offene Punkt wurde seit der Aktion verändert.'];
-      },
-      run: async (data) => {
-        const d = data as { id: string; previousStatus: OpenItemStatus; previousNote?: string | null; reminders?: Array<{ id: string; status: string }> };
-        this.db.transaction(() => {
-          this.db
-            .update(openItems)
-            .set({ status: d.previousStatus, resolutionNote: d.previousNote ?? null, updatedAt: nowIso() })
-            .where(eq(openItems.id, d.id))
-            .run();
-          // reminders ended on closing come back
-          for (const r of d.reminders ?? []) this.db.update(reminders).set({ status: r.status }).where(eq(reminders.id, r.id)).run();
-          syncReminderAt(this.db, d.id);
-        });
-        this.ctx.events.changed('openItems', 'reminders');
-        return 'Status des offenen Punkts wiederhergestellt.';
-      },
-    });
-    undo.register('open_item_update', {
-      check: async (data) => {
-        const d = data as OpenItemUpdateUndo;
-        const row = this.db.select().from(openItems).where(eq(openItems.id, d.id)).get();
-        if (!row) return ['Der offene Punkt existiert nicht mehr.'];
-        const conflicts = row.updatedAt === d.afterUpdatedAt ? [] : ['Der offene Punkt wurde seit der Bearbeitung verändert.'];
-        return [...conflicts, ...this.graph.relationChangeConflicts(d.relations)];
-      },
-      run: async (data) => {
-        const d = data as OpenItemUpdateUndo;
-        this.db.transaction(() => {
-          this.db
-            .update(openItems)
-            .set({ ...d.before, updatedAt: nowIso() })
-            .where(eq(openItems.id, d.id))
-            .run();
-          const row = this.db.select().from(openItems).where(eq(openItems.id, d.id)).get();
-          if (row) this.graph.registerNode('task', row.id, row.title, row.description);
-          this.graph.revertRelationChanges(d.relations);
-        });
-        void this.reindex(d.id);
-        this.ctx.events.changed('openItems', 'knowledge', 'status');
-        return 'Bearbeitung des offenen Punkts rückgängig gemacht.';
-      },
-    });
+    registerOpenItemUndo(undo, { ctx, graph, reindex: (id) => this.reindex(id) });
   }
 
   private get db() {
     return this.ctx.database.db;
   }
 
+  private row(id: string): OpenItemRow {
+    const row = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
+    if (!row) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
+    return row;
+  }
+
   /** Chat messages among the sources → conversation (to jump back from the open item into the chat). */
-  private conversationsOf(rows: Row[]): Map<string, string> {
-    const ids = [...new Set(rows.flatMap((r) => r.sourceIds))];
+  private conversationsOf(rows: OpenItemRow[]): Map<string, string> {
+    const ids = [...new Set(rows.flatMap((row) => row.sourceIds))];
     if (!ids.length) return new Map();
     return new Map(
       this.db
@@ -200,41 +62,17 @@ export class OpenItemService {
         .from(messages)
         .where(inArray(messages.id, ids))
         .all()
-        .map((m) => [m.id, m.conversationId]),
+        .map((message) => [message.id, message.conversationId]),
     );
   }
 
-  private map(r: Row, names?: Map<string, string>, convs = this.conversationsOf([r])): OpenItem {
-    const nm = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
-    return {
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      topicId: r.topicId,
-      topicName: nm(r.topicId),
-      projectId: r.projectId,
-      projectName: nm(r.projectId),
-      responsiblePersonId: r.responsiblePersonId,
-      responsibleName: nm(r.responsiblePersonId),
-      responsibleUnknown: r.responsibleUnknown,
-      createdAt: r.createdAt,
-      dueAt: r.dueAt,
-      dueUnknown: r.dueUnknown,
-      status: r.status as OpenItemStatus,
-      priority: r.priority as OpenItem['priority'],
-      sourceIds: r.sourceIds,
-      sourceConversationId: r.sourceIds.map((id) => convs.get(id)).find(Boolean) ?? null,
-      reminderAt: r.reminderAt,
-      confidence: r.confidence,
-      updatedAt: r.updatedAt,
-      solution: r.solution ? (OpenItemSolution.safeParse(r.solution).data ?? null) : null,
-      duplicateOfId: r.duplicateOfId,
-      resolutionNote: r.resolutionNote,
-    };
+  private map(row: OpenItemRow, names?: Map<string, string>, conversations = this.conversationsOf([row])): OpenItem {
+    const nameOf = (id: string | null) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null);
+    return toOpenItem(row, { nameOf, conversations });
   }
 
-  private mapMany(rows: Row[]): OpenItem[] {
-    const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId, r.responsiblePersonId]).filter((x): x is string => Boolean(x)))];
+  private mapMany(rows: OpenItemRow[]): OpenItem[] {
+    const ids = [...new Set(rows.flatMap((row) => [row.topicId, row.projectId, row.responsiblePersonId]).filter((id): id is string => Boolean(id)))];
     const names = new Map(
       ids.length
         ? this.db
@@ -242,30 +80,28 @@ export class OpenItemService {
             .from(entities)
             .where(inArray(entities.id, ids))
             .all()
-            .map((e) => [e.id, e.name])
+            .map((entity) => [entity.id, entity.name])
         : [],
     );
-    const convs = this.conversationsOf(rows);
-    return rows.map((r) => this.map(r, names, convs));
+    const conversations = this.conversationsOf(rows);
+    return rows.map((row) => this.map(row, names, conversations));
   }
 
   get(id: string): OpenItem {
-    const r = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
-    if (!r) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
-    return this.map(r);
+    return this.map(this.row(id));
   }
 
   list(opts: { status?: OpenItemStatus; topicId?: string; projectId?: string; onlyActive?: boolean } = {}): OpenItem[] {
-    const conds = [];
-    if (opts.status) conds.push(eq(openItems.status, opts.status));
-    if (opts.onlyActive) conds.push(inArray(openItems.status, ACTIVE_STATUSES));
+    const conditions = [];
+    if (opts.status) conditions.push(eq(openItems.status, opts.status));
+    if (opts.onlyActive) conditions.push(inArray(openItems.status, ACTIVE_STATUSES));
     // the main topic/project or a further one (#287)
-    if (opts.topicId) conds.push(withSubject(openItems.id, openItems.topicId, opts.topicId));
-    if (opts.projectId) conds.push(withSubject(openItems.id, openItems.projectId, opts.projectId));
+    if (opts.topicId) conditions.push(withSubject(openItems.id, openItems.topicId, opts.topicId));
+    if (opts.projectId) conditions.push(withSubject(openItems.id, openItems.projectId, opts.projectId));
     const rows = this.db
       .select()
       .from(openItems)
-      .where(conds.length ? and(...conds) : undefined)
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(openItems.createdAt))
       .all();
     return this.mapMany(rows);
@@ -273,11 +109,11 @@ export class OpenItemService {
 
   /** Finds an active open item by a hint – only on an unambiguous hit. */
   findByHint(hint: string): OpenItem | null {
-    const m = this.matchByHint(hint);
-    return m.status === 'match' ? m.item : null;
+    const match = this.matchByHint(hint);
+    return match.status === 'match' ? match.item : null;
   }
 
-  /** Hit, ambiguous (several close together) or none – see rankOpenItems. */
+  /** Hit, ambiguous (several close together) or none – see matchOpenItems. */
   matchByHint(hint: string): HintMatch {
     return matchOpenItems(hint, this.list({ onlyActive: true }));
   }
@@ -288,48 +124,24 @@ export class OpenItemService {
     this.graph.unlinkSystemRelations(id, 'responsible_for', personId ? [personId] : [], { direction: 'in', otherType: 'person' });
   }
 
-  create(input: OpenItemInput, ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {}): OpenItem {
-    const now = nowIso();
-    const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
-    const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
-    const person = input.responsible?.trim() ? this.persons.resolve(input.responsible, { context: mentionContext(ctxInfo.trigger, 'open_item') }).entity : null;
-    const dueAt = normalizeDateInput(input.dueAt ?? null);
-    const row: Row = {
-      id: newId(),
-      title: input.title.trim(),
-      description: input.description?.trim() || null,
-      topicId: topic?.id ?? null,
-      projectId: project?.id ?? null,
-      responsiblePersonId: person?.id ?? null,
-      responsibleUnknown: false,
-      dueAt,
-      dueUnknown: false,
-      status: 'open',
-      priority: input.priority ?? 'normal',
-      sourceIds: input.sourceIds ?? [],
-      reminderAt: null,
-      confidence: input.confidence ?? 0.9,
-      createdAt: now,
-      updatedAt: now,
-      solution: null,
-      duplicateOfId: null,
-      resolutionNote: null,
-    };
+  create(input: OpenItemInput, origin: Origin = {}): OpenItem {
+    const row = this.newRow(input, origin);
     this.db.transaction(() => {
+      const link = { confidence: row.confidence, status: 'confirmed' as const, sourceIds: row.sourceIds };
       this.db.insert(openItems).values(row).run();
       this.graph.registerNode('task', row.id, row.title, row.description);
-      if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
-      if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence, status: 'confirmed', sourceIds: row.sourceIds });
+      if (row.topicId) this.graph.link(row.id, row.topicId, 'relates_to', link);
+      if (row.projectId) this.graph.link(row.id, row.projectId, 'belongs_to', link);
       this.syncResponsible(row.id, row.responsiblePersonId, row.sourceIds);
-      for (const src of row.sourceIds) this.linkSource(row.id, src, row.confidence);
+      for (const sourceId of row.sourceIds) this.linkSource(row.id, sourceId, row.confidence);
     });
     this.audit.log({
       action: 'open_item.create',
-      actor: ctxInfo.actor ?? 'user',
-      trigger: ctxInfo.trigger ?? 'manual',
+      actor: origin.actor ?? 'user',
+      trigger: origin.trigger ?? 'manual',
       confirmed: true,
       entityIds: [row.id],
-      after: { title: row.title, dueAt },
+      after: { title: row.title, dueAt: row.dueAt },
     });
     this.ctx.events.created({ id: row.id, type: 'task' });
     void this.reindex(row.id);
@@ -337,125 +149,130 @@ export class OpenItemService {
     return this.get(row.id);
   }
 
-  /**
-   * Partial update: only fields present in `patch` change. `status` may only move between open, waiting and
-   * blocked – closing needs `close()` with confirmation, reopening goes through undo.
-   */
+  private newRow(input: OpenItemInput, origin: Origin): OpenItemRow {
+    const now = nowIso();
+    const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
+    const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
+    const person = input.responsible?.trim() ? this.persons.resolve(input.responsible, { context: mentionContext(origin.trigger, 'open_item') }).entity : null;
+    return newOpenItemRow(input, { id: newId(), now, topicId: topic?.id ?? null, projectId: project?.id ?? null, responsiblePersonId: person?.id ?? null });
+  }
+
+  /** Partial update of the fields in `patch`; closing needs `close()` with confirmation, reopening goes through undo. */
   update(id: string, patch: OpenItemPatch, opts: { trigger?: string } = {}): OpenItem {
-    const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
-    if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
-    if (patch.status !== undefined && patch.status !== cur.status) {
-      // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
-      if (!isEditableOpenItemStatus(patch.status))
-        throw new AppError('permission_error', 'Einen offenen Punkt als erledigt oder verworfen zu schließen, erfordert eine ausdrückliche Bestätigung.');
-      if (!isEditableOpenItemStatus(cur.status as OpenItemStatus))
-        throw new AppError(
-          'permission_error',
-          'Ein abgeschlossener Punkt lässt sich nicht durch Bearbeiten wieder öffnen. Mache das Schließen im Änderungsprotokoll rückgängig.',
-        );
-    }
-    const set: Partial<Row> = { updatedAt: nowIso() };
-    if (patch.title !== undefined) set.title = patch.title.trim();
-    if (patch.description !== undefined) set.description = patch.description?.trim() || null;
-    if (patch.priority) set.priority = patch.priority;
-    if (patch.status && patch.status !== cur.status) set.status = patch.status;
-    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
-    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
-    if (patch.responsible !== undefined) {
-      // a pronoun or answer word ("ja", "unbekannt") is not a person and leaves the responsible person unchanged
-      const resolved = patch.responsible?.trim() ? this.persons.resolve(patch.responsible, { context: mentionContext(opts.trigger, 'open_item') }) : null;
-      if (!resolved?.rejected) set.responsiblePersonId = resolved?.entity?.id ?? null;
-      if (set.responsiblePersonId) set.responsibleUnknown = false;
-    }
-    if (patch.dueAt !== undefined) {
-      set.dueAt = normalizeDateInput(patch.dueAt ?? null);
-      if (set.dueAt) set.dueUnknown = false;
-    }
-    if (patch.responsibleUnknown !== undefined) set.responsibleUnknown = patch.responsibleUnknown;
-    if (patch.dueUnknown !== undefined) set.dueUnknown = patch.dueUnknown;
+    const current = this.row(id);
+    // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
+    assertEditableStatusChange(current.status as OpenItemStatus, patch.status);
+    const set: Partial<OpenItemRow> = { updatedAt: nowIso(), ...this.patchColumns(current, patch, opts.trigger) };
     const { changes } = this.graph.trackRelationChanges(id, () =>
       this.db.transaction(() => {
         this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
-        if (set.title) this.graph.registerNode('task', id, set.title, set.description ?? cur.description);
-        if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
-        if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
-        // the previous topic/project no longer applies
-        if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
-        if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
-        if (set.responsiblePersonId !== undefined) this.syncResponsible(id, set.responsiblePersonId, cur.sourceIds);
+        this.syncEditedGraph(current, set);
       }),
     );
-    const before = Object.fromEntries(Object.keys(set).flatMap((k) => (k === 'updatedAt' ? [] : [[k, cur[k as keyof Row]]]))) as Partial<Row>;
-    const undoData: OpenItemUpdateUndo = { id, before, afterUpdatedAt: set.updatedAt!, relations: changes };
+    const undoData: OpenItemUpdateUndo = { id, before: previousValues(current, set), afterUpdatedAt: set.updatedAt!, relations: changes };
     this.audit.log({
       action: 'open_item.update',
       actor: 'user',
       trigger: 'manual',
       confirmed: true,
       entityIds: [id],
-      before: { status: cur.status, dueAt: cur.dueAt },
+      before: { status: current.status, dueAt: current.dueAt },
       after: patch,
-      undo: { type: 'open_item_update', data: undoData },
+      undo: { type: OPEN_ITEM_UPDATE_UNDO_TYPE, data: undoData },
     });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');
     return this.get(id);
   }
 
-  /** Links a source (decision or document) with the item in the graph: item → results_from → source. */
-  private linkSource(id: string, src: string, confidence: number): void {
-    const type = this.graph.getEntity(src)?.type;
-    if (type === 'decision' || type === 'document') this.graph.link(id, src, 'results_from', { confidence, status: 'confirmed', sourceIds: [src] });
+  private patchColumns(current: OpenItemRow, patch: OpenItemPatch, trigger: string | undefined): Partial<OpenItemRow> {
+    const set = plainPatchColumns(current, patch);
+    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
+    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    if (patch.responsible !== undefined) Object.assign(set, this.responsibleColumns(patch.responsible, trigger));
+    if (patch.responsibleUnknown !== undefined) set.responsibleUnknown = patch.responsibleUnknown;
+    if (patch.dueUnknown !== undefined) set.dueUnknown = patch.dueUnknown;
+    return set;
   }
 
-  /**
-   * Adds another source to an existing item (the same item was detected in another document).
-   * Missing details (description, due date, responsible person) are filled in from the new source; existing ones stay.
-   */
+  /** A pronoun or answer word ("ja", "unbekannt") is not a person and leaves the responsible person unchanged. */
+  private responsibleColumns(responsible: string | null, trigger: string | undefined): Partial<OpenItemRow> {
+    const resolved = responsible?.trim() ? this.persons.resolve(responsible, { context: mentionContext(trigger, 'open_item') }) : null;
+    if (resolved?.rejected) return {};
+    const personId = resolved?.entity?.id ?? null;
+    return personId ? { responsiblePersonId: personId, responsibleUnknown: false } : { responsiblePersonId: null };
+  }
+
+  /** Graph after an edit: the previous topic, project or responsible person no longer applies. */
+  private syncEditedGraph(current: OpenItemRow, set: Partial<OpenItemRow>): void {
+    const id = current.id;
+    if (set.title) this.graph.registerNode('task', id, set.title, set.description ?? current.description);
+    if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
+    if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
+    if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
+    if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+    if (set.responsiblePersonId !== undefined) this.syncResponsible(id, set.responsiblePersonId, current.sourceIds);
+  }
+
+  /** Links a source (decision or document) with the item in the graph: item → results_from → source. */
+  private linkSource(id: string, sourceId: string, confidence: number): void {
+    const type = this.graph.getEntity(sourceId)?.type;
+    if (type === 'decision' || type === 'document') this.graph.link(id, sourceId, 'results_from', { confidence, status: 'confirmed', sourceIds: [sourceId] });
+  }
+
+  /** Adds a source where the same item was detected again; missing details are filled in from it, existing ones stay. */
   addSource(
     id: string,
     sourceId: string,
     extra: { description?: string | null; dueAt?: string | null; responsible?: string | null } = {},
-    ctxInfo: { actor?: 'user' | 'agent'; trigger?: string } = {},
+    origin: Origin = {},
   ): OpenItem {
-    const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
-    if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
-    const set: Partial<Row> = { updatedAt: nowIso() };
-    if (!cur.sourceIds.includes(sourceId)) set.sourceIds = [...cur.sourceIds, sourceId];
-    if (!cur.description && extra.description?.trim()) set.description = extra.description.trim();
-    if (!cur.dueAt && extra.dueAt) {
-      set.dueAt = normalizeDateInput(extra.dueAt);
-      if (set.dueAt) set.dueUnknown = false;
-    }
-    const responsible = !cur.responsiblePersonId && extra.responsible?.trim() ? this.persons.resolve(extra.responsible, { context: 'open_item' }).entity : null;
-    if (responsible) {
-      set.responsiblePersonId = responsible.id;
-      set.responsibleUnknown = false;
-    }
+    const current = this.row(id);
+    const set: Partial<OpenItemRow> = { updatedAt: nowIso(), ...this.missingDetails(current, extra) };
+    if (!current.sourceIds.includes(sourceId)) set.sourceIds = [...current.sourceIds, sourceId];
     this.db.transaction(() => {
       this.db.update(openItems).set(set).where(eq(openItems.id, id)).run();
-      if (set.description) this.graph.registerNode('task', id, cur.title, set.description);
-      if (set.responsiblePersonId) this.syncResponsible(id, set.responsiblePersonId, set.sourceIds ?? cur.sourceIds);
-      this.linkSource(id, sourceId, cur.confidence);
+      if (set.description) this.graph.registerNode('task', id, current.title, set.description);
+      if (set.responsiblePersonId) this.syncResponsible(id, set.responsiblePersonId, set.sourceIds ?? current.sourceIds);
+      this.linkSource(id, sourceId, current.confidence);
     });
     this.audit.log({
       action: 'open_item.add_source',
-      actor: ctxInfo.actor ?? 'user',
-      trigger: ctxInfo.trigger ?? 'manual',
+      actor: origin.actor ?? 'user',
+      trigger: origin.trigger ?? 'manual',
       confirmed: true,
       entityIds: [id, sourceId],
-      before: { sourceIds: cur.sourceIds },
-      after: { sourceIds: set.sourceIds ?? cur.sourceIds },
+      before: { sourceIds: current.sourceIds },
+      after: { sourceIds: set.sourceIds ?? current.sourceIds },
     });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'knowledge', 'status');
     return this.get(id);
   }
 
+  private missingDetails(
+    current: OpenItemRow,
+    extra: { description?: string | null; dueAt?: string | null; responsible?: string | null },
+  ): Partial<OpenItemRow> {
+    const set: Partial<OpenItemRow> = {};
+    if (!current.description && extra.description?.trim()) set.description = extra.description.trim();
+    if (!current.dueAt && extra.dueAt) {
+      set.dueAt = normalizeDateInput(extra.dueAt);
+      if (set.dueAt) set.dueUnknown = false;
+    }
+    const responsible =
+      !current.responsiblePersonId && extra.responsible?.trim() ? this.persons.resolve(extra.responsible, { context: 'open_item' }).entity : null;
+    if (responsible) {
+      set.responsiblePersonId = responsible.id;
+      set.responsibleUnknown = false;
+    }
+    return set;
+  }
+
   /** Stores the (latest) solution proposal on the item; an existing one is replaced. */
   setSolution(id: string, solution: OpenItemSolution): OpenItem {
-    const cur = this.db.select({ id: openItems.id }).from(openItems).where(eq(openItems.id, id)).get();
-    if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
+    const found = this.db.select({ id: openItems.id }).from(openItems).where(eq(openItems.id, id)).get();
+    if (!found) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
     this.db
       .update(openItems)
       .set({ solution: OpenItemSolution.parse(solution), updatedAt: nowIso() })
@@ -465,13 +282,12 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  /** Stage 2: closing only with explicit confirmation; with an undo entry. */
-  /** `resolutionNote`: optional comment on how it was solved (or why it was dropped); shown with the item and searchable. */
+  /** Stage 2: closing only with explicit confirmation and an undo entry; `resolutionNote` says how it was solved or why dropped. */
   close(id: string, status: 'resolved' | 'dismissed', opts: { confirmed: boolean; trigger?: string; resolutionNote?: string | null }): OpenItem {
     if (!opts.confirmed) throw new AppError('permission_error', 'Das Schließen eines offenen Punkts erfordert eine ausdrückliche Bestätigung.');
-    const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
-    if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
+    const current = this.row(id);
     const updatedAt = nowIso();
+    const resolutionNote = opts.resolutionNote?.trim() || null;
     // open reminders of the item end with it (undo restores them)
     const ended = this.db
       .select({ id: reminders.id, status: reminders.status })
@@ -479,26 +295,26 @@ export class OpenItemService {
       .where(and(eq(reminders.targetType, 'open_item'), eq(reminders.targetId, id), inArray(reminders.status, ['pending', 'fired'])))
       .all();
     this.db.transaction(() => {
-      this.db
-        .update(openItems)
-        .set({ status, updatedAt, resolutionNote: opts.resolutionNote?.trim() || null })
-        .where(eq(openItems.id, id))
-        .run();
-      for (const r of ended) this.db.update(reminders).set({ status: 'dismissed' }).where(eq(reminders.id, r.id)).run();
+      this.db.update(openItems).set({ status, updatedAt, resolutionNote }).where(eq(openItems.id, id)).run();
+      for (const reminder of ended) this.db.update(reminders).set({ status: 'dismissed' }).where(eq(reminders.id, reminder.id)).run();
       syncReminderAt(this.db, id);
     });
+    const undoData: OpenItemStatusUndo = {
+      id,
+      previousStatus: current.status as OpenItemStatus,
+      previousNote: current.resolutionNote,
+      afterUpdatedAt: updatedAt,
+      reminders: ended,
+    };
     this.audit.log({
       action: 'open_item.close',
       actor: 'user',
       trigger: opts.trigger ?? 'manual',
       confirmed: true,
       entityIds: [id],
-      before: { status: cur.status },
-      after: { status, resolutionNote: opts.resolutionNote?.trim() || null },
-      undo: {
-        type: 'open_item_status',
-        data: { id, previousStatus: cur.status, previousNote: cur.resolutionNote, afterUpdatedAt: updatedAt, reminders: ended },
-      },
+      before: { status: current.status },
+      after: { status, resolutionNote },
+      undo: { type: OPEN_ITEM_STATUS_UNDO_TYPE, data: undoData },
     });
     void this.reindex(id);
     this.ctx.events.changed('openItems', 'status', 'reminders');
@@ -507,30 +323,14 @@ export class OpenItemService {
 
   /** Active items due before `today` (local calendar day, #77). */
   overdue(today = localToday()): OpenItem[] {
-    return this.list({ onlyActive: true }).filter((i) => i.dueAt && localDate(i.dueAt) < today);
+    return this.list({ onlyActive: true }).filter((item) => item.dueAt && localDate(item.dueAt) < today);
   }
 
   /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
   async reindex(id: string): Promise<void> {
     try {
-      const i = this.get(id);
-      await this.search.index({
-        type: 'task',
-        id,
-        title: i.title,
-        content: [
-          i.title,
-          i.description,
-          i.topicName && `Thema: ${i.topicName}`,
-          i.projectName && `Projekt: ${i.projectName}`,
-          i.responsibleName && `Verantwortlich: ${i.responsibleName}`,
-          i.dueAt && `Fällig: ${i.dueAt.slice(0, 10)}`,
-          `Status: ${i.status}`,
-          i.resolutionNote && `${i.status === 'dismissed' ? 'Verworfen' : 'Erledigt'}: ${i.resolutionNote}`,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      });
+      const item = this.get(id);
+      await this.search.index({ type: 'task', id, title: item.title, content: openItemIndexContent(item) });
     } catch (err) {
       this.ctx.logger.warn('open-items', 'Indexing failed', { error: err });
     }

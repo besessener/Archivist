@@ -1,5 +1,5 @@
 import { normalizeName } from '../../util/text';
-import { hintTokens, scoreHintTokens } from '../open-items';
+import { hintTokens, scoreHintTokens } from '../open-item-matching';
 
 /**
  * Building blocks for merging duplicate RECORDS (open items; notes and events can follow the same pattern):

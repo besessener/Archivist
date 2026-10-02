@@ -81,11 +81,6 @@ export function plainPatchColumns(current: DecisionRow, patch: DecisionPatch): P
   return set;
 }
 
-/** Previous values of the columns `set` changes (without `updatedAt`), for the undo. */
-export function previousValues<R extends object>(current: R, set: Partial<R>): Partial<R> {
-  return Object.fromEntries(Object.keys(set).flatMap((key) => (key === 'updatedAt' ? [] : [[key, current[key as keyof R]]]))) as Partial<R>;
-}
-
 export function toDecision(row: DecisionRow, nameOf: (id: string | null) => string | null): Decision {
   return {
     id: row.id,

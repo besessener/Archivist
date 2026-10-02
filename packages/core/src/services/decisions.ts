@@ -16,7 +16,6 @@ import {
   decisionSummary,
   formatDecision,
   plainPatchColumns,
-  previousValues,
   statusAfterEdit,
   toDecision,
   type DecisionRow,
@@ -24,6 +23,7 @@ import {
 import { DECISION_STATUS_UNDO_TYPE, DECISION_UPDATE_UNDO_TYPE, registerDecisionUndo, type DecisionStatusUndo, type DecisionUpdateUndo } from './decision-undo';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import { mentionContext, type PersonMentionContext, type PersonService } from './persons';
+import { previousValues } from './previous-values';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
