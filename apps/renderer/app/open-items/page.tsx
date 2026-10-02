@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { BellPlus, Check, ListChecks, MessageSquare, Pencil, Plus } from 'lucide-react';
+import { BellPlus, Check, ListChecks, MessageSquare, Pencil, Plus, X } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { SolutionSection } from '@/components/open-items/solution';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { QuickDate } from '@/components/common/quick-date';
+import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -72,6 +73,7 @@ export default function OpenItemsPage() {
           </Button>
         }
       />
+      <UpcomingReminders targetType="open_item" className="mb-6" />
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
       {data && data.length === 0 && (
@@ -367,6 +369,24 @@ function ReminderDialog({ item, onClose, onDone }: { item: OpenItemRecord | null
             }
           }}
         />
+        {existing && (
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={async () => {
+                const out = await run(() => call('reminders:dismiss', { id: existing.id }), { success: 'Erinnerung verworfen.' });
+                if (out) {
+                  onDone();
+                  onClose();
+                }
+              }}
+              data-testid="reminder-dialog-dismiss"
+            >
+              <X aria-hidden /> Erinnerung verwerfen
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

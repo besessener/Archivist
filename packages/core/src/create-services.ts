@@ -9,6 +9,7 @@ import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
 import { ChatService } from './services/chat';
+import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
 import { ConsistencyService } from './services/consistency';
 import { ContradictionService } from './services/contradictions';
 import { DecisionService } from './services/decisions';
@@ -109,7 +110,8 @@ function buildServices(opts: CreateServicesOptions) {
   const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
-  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications);
+  const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
+  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, entityDuplicates);
   const backup = new BackupService(ctx, settings, audit);
   const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
   consistency.addCheck((count) => {
@@ -195,11 +197,13 @@ function buildServices(opts: CreateServicesOptions) {
   });
 
   // 7) Reaktion auf geänderte Einstellungen
+  // Schedules are re-planned on every change of settings or scan folders; an unchanged plan keeps its timer.
   events.on('data:changed', (e: { scopes: string[] }) => {
     if (e.scopes.includes('settings')) {
       logger.setLevel(settings.get().logs.level);
-      scanner.applySettings();
+      consistency.applySettings();
     }
+    if (e.scopes.includes('settings') || e.scopes.includes('scanner')) scanner.applySettings();
   });
 
   const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1 });
@@ -251,7 +255,7 @@ function buildServices(opts: CreateServicesOptions) {
       documentsSvc.recoverInterruptedAnalyses();
       jobs.start();
       reminders.start();
-      scanner.applySettings();
+      scanner.startSchedule();
       scanner.startupScan();
       void archive.cleanupInbox();
       if (settings.get().consistency.onStartup) enqueueConsistency('startup');
@@ -262,11 +266,15 @@ function buildServices(opts: CreateServicesOptions) {
           .catch((err) => logger.warn('backup', 'Automatisches Backup fehlgeschlagen', { error: err }));
     },
 
-    async shutdown(): Promise<void> {
+    /**
+     * Stops background work and closes the database. Running jobs are interrupted and resume after the next start;
+     * waits at most `jobTimeoutMs` for them (default 5 s), so quitting never hangs on a long scan or OCR.
+     */
+    async shutdown(opts: { jobTimeoutMs?: number } = {}): Promise<void> {
       reminders.stop();
       scanner.stop();
       consistency.stopTimer();
-      await jobs.stop();
+      await jobs.interrupt(opts.jobTimeoutMs);
       await pool.close();
       database.close();
       await logger.close();
