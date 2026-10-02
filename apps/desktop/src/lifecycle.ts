@@ -1,7 +1,4 @@
-/**
- * Quitting the app without hanging: shutdown gets a hard deadline, and a start of the app while it is still
- * quitting is not lost but relaunches it once it has exited. Kept free of Electron so it can be unit-tested.
- */
+// Quitting without hanging (hard deadline, relaunch requests are kept); free of Electron so it can be unit-tested.
 
 /** How long running jobs may take to stop after they were interrupted on quit. */
 export const JOB_INTERRUPT_TIMEOUT_MS = 5_000;
@@ -32,10 +29,7 @@ export class QuitController {
     return this.started;
   }
 
-  /**
-   * Starts quitting (later calls do nothing): runs shutdown and exits afterwards, but at the latest after the
-   * deadline. Resolves once `exit` was called.
-   */
+  /** Runs shutdown once and exits afterwards, at the latest after the deadline; resolves once `exit` was called. */
   quit(): Promise<void> {
     if (this.started) return Promise.resolve();
     this.started = true;
@@ -60,10 +54,7 @@ export class QuitController {
     });
   }
 
-  /**
-   * The app was started again while this instance is quitting (the new instance found the single-instance lock
-   * still held and gave up): start it anew once this instance has exited.
-   */
+  /** A second start while quitting gave up on the single-instance lock: relaunch once this instance has exited. */
   requestRelaunch(): void {
     this.relaunchRequested = true;
   }

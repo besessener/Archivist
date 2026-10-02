@@ -149,7 +149,7 @@ describe('other helper functions', () => {
   it('name similarity and chunking', () => {
     expect(nameSimilarity('prod-plat', 'ProdPlat')).toBeGreaterThan(0.9);
     expect(nameSimilarity('Hauskauf', 'Urlaub')).toBeLessThan(0.5);
-    const chunks = chunkText('Satz eins. '.repeat(400), 500, 50);
+    const chunks = chunkText('Satz eins. '.repeat(400), { size: 500, overlap: 50 });
     expect(chunks.length).toBeGreaterThan(5);
     expect(Math.max(...chunks.map((c) => c.length))).toBeLessThanOrEqual(520);
   });

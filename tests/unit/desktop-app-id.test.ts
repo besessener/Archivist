@@ -11,7 +11,9 @@ describe('app ID', () => {
   });
 
   it('sets the AppUserModelID of the installed app to the app ID, and to electron.exe in development', () => {
-    expect(appUserModelId(true, 'C:\\Programme\\Archivist\\Archivist.exe')).toBe(APP_ID);
-    expect(appUserModelId(false, 'C:\\repo\\node_modules\\electron\\dist\\electron.exe')).toBe('C:\\repo\\node_modules\\electron\\dist\\electron.exe');
+    expect(appUserModelId({ packaged: true, execPath: 'C:\\Programme\\Archivist\\Archivist.exe' })).toBe(APP_ID);
+    expect(appUserModelId({ packaged: false, execPath: 'C:\\repo\\node_modules\\electron\\dist\\electron.exe' })).toBe(
+      'C:\\repo\\node_modules\\electron\\dist\\electron.exe',
+    );
   });
 });

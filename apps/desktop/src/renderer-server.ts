@@ -59,10 +59,7 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
 };
 
-/**
- * Serves the statically exported Next.js frontend – only files below `root`
- * (no path traversal, no symlink escapes).
- */
+/** Serves the exported Next.js frontend, only files below `root` (no path traversal, no symlink escapes). */
 export async function serveRenderer(root: string, requestUrl: string): Promise<ServedFile> {
   const notFound = (status = 404): ServedFile => ({
     status,
