@@ -75,6 +75,9 @@ export interface ActionDeps {
   agentBatch?: AgentBatchExecutor;
 }
 
+/** From this many documents a relocation counts as especially far-reaching („besonders folgenreich“). */
+const STRONG_RELOCATION_DOCUMENTS = 20;
+
 /**
  * Agent actions: the agent only creates proposals (`propose`). Execution happens exclusively through `resolve`
  * after the user's decision. Parameters are validated with Zod per action type.
@@ -115,6 +118,10 @@ export class ActionService {
 
   propose(input: AgentActionProposal & { label: string; conversationId?: string | null }): StoredAgentAction {
     const params = this.normalizeParams(input.actionType, input.proposedParameters);
+    // moving many archived documents at once is especially far-reaching: it needs the explicit confirmation
+    // dialog, a typed „ja“ in the chat is not enough (#199)
+    const items = input.actionType === 'relocate_documents' ? ((params.items as unknown[] | undefined)?.length ?? 0) : 0;
+    const requiredConfirmation = items >= STRONG_RELOCATION_DOCUMENTS ? 'strong' : input.requiredConfirmation;
     const row: Row = {
       id: newId(),
       conversationId: input.conversationId ?? null,
@@ -123,7 +130,7 @@ export class ActionService {
       rationale: input.rationale,
       confidence: input.confidence,
       affectedEntities: input.affectedEntities,
-      requiredConfirmation: input.requiredConfirmation,
+      requiredConfirmation,
       params: params as ArchivistJson,
       status: 'proposed',
       result: null,

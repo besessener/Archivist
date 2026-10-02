@@ -1,0 +1,1 @@
+ALTER TABLE `entities` ADD `unconfirmed` integer DEFAULT false NOT NULL;

@@ -16,7 +16,7 @@
       "ignore": ["components/ui/**"]
     },
     "packages/core": {
-      "entry": ["src/workers/worker-entry.ts", "drizzle.config.ts"],
+      "entry": ["src/workers/worker-entry.ts", "src/workers/db-reader-entry.ts", "drizzle.config.ts"],
       "project": ["src/**"],
       "ignoreDependencies": ["@tesseract.js-data/deu", "@tesseract.js-data/eng", "@napi-rs/canvas"]
     }

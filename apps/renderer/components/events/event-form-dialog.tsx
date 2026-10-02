@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { IpcInput, IpcOutput } from '@archivist/shared';
+import { MARKDOWN_HINT } from '@/components/common/markdown';
 import { Field } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -79,7 +80,7 @@ export function EventFormDialog({
             <Input id="ev-date" type="date" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} data-testid="event-date" />
           </Field>
           <div />
-          <Field label="Beschreibung" htmlFor="ev-desc" className="sm:col-span-2">
+          <Field label="Beschreibung" htmlFor="ev-desc" hint={MARKDOWN_HINT} className="sm:col-span-2">
             <Textarea id="ev-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="event-description" />
           </Field>
           <Field label="Thema" htmlFor="ev-topic">

@@ -289,6 +289,8 @@ export interface TestAppOptions {
   /** Agent mode (#294); off by default so that the rule-based chat tests keep their intent scripts. */
   agent?: boolean;
   workerFile?: string | null;
+  /** bundled read worker (db-reader-entry); null = queries run inline */
+  readerFile?: string | null;
   dataRoot?: string;
 }
 
@@ -304,6 +306,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     cipher: new TestCipher(),
     fetchImpl: llm.fetch,
     workerFile: opts.workerFile ?? null,
+    readerFile: opts.readerFile ?? null,
     jobConcurrency: 1,
     llmRetryDelayMs: 0,
     jobRetryDelayMs: 0,

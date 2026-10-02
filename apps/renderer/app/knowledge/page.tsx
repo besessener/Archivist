@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
 import { LinkDialog, RelatedEntries } from '@/components/knowledge/related';
+import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -123,6 +124,11 @@ function KnowledgeInner() {
                       Du
                     </Badge>
                   )}
+                  {e.unconfirmed && (
+                    <span className="text-xs text-muted-foreground" data-testid="knowledge-item-unconfirmed">
+                      unbestätigt
+                    </span>
+                  )}
                   {e.duplicateOfId && (
                     <span className="text-xs text-muted-foreground" data-testid="knowledge-item-duplicate">
                       Duplikat
@@ -219,7 +225,7 @@ function CreateEntityDialog({
             data-testid="knowledge-new-name"
           />
         </Field>
-        <Field label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'} htmlFor="new-entity-desc">
+        <Field label={isNote ? 'Inhalt (optional)' : 'Beschreibung (optional)'} htmlFor="new-entity-desc" hint={MARKDOWN_HINT}>
           <Textarea id="new-entity-desc" value={description} onChange={(e) => setDescription(e.target.value)} data-testid="knowledge-new-description" />
         </Field>
         <DialogFooter>
@@ -323,6 +329,15 @@ function EntityView({ id }: { id: string }) {
               Du
             </Badge>
           )}
+          {entity.unconfirmed && (
+            <Badge
+              variant="outline"
+              data-testid="entity-unconfirmed"
+              title="Aus einem Dokument übernommen. Bis du es bestätigst, nennt Archivist es der KI nicht als bekanntes Thema."
+            >
+              unbestätigt
+            </Badge>
+          )}
           {entity.duplicateOfId && (
             <Badge variant="outline" data-testid="entity-duplicate">
               verworfen (Duplikat)
@@ -331,8 +346,28 @@ function EntityView({ id }: { id: string }) {
           <span className="text-xs text-muted-foreground">Aktualisiert {formatDate(entity.updatedAt)}</span>
         </div>
         <h2 className="mt-1 text-2xl font-semibold tracking-tight">{entity.name}</h2>
-        {entity.description && <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{entity.description}</p>}
+        {entity.description && <Markdown text={entity.description} className="mt-2 text-muted-foreground" testId="entity-description" />}
         {entity.roles.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Rollen: {entity.roles.join(', ')}</p>}
+        {entity.unconfirmed && (
+          <div className="mt-3 rounded-md border border-dashed p-3 text-sm" data-testid="entity-unconfirmed-note">
+            <p className="text-muted-foreground">
+              Dieser Name wurde aus einem Dokument übernommen. Erst wenn du ihn bestätigst, nennt Archivist ihn der KI als bekanntes{' '}
+              {entity.type === 'project' ? 'Projekt' : 'Thema'}.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              data-testid="entity-confirm"
+              onClick={async () => {
+                const out = await run(() => call('knowledge:confirmEntity', { id: entity.id }), { success: 'Bestätigt.' });
+                if (out) void detail.refetch();
+              }}
+            >
+              <Check aria-hidden /> Bestätigen
+            </Button>
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="knowledge-link">
             <Link2 aria-hidden /> Verknüpfen

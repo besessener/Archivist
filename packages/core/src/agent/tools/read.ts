@@ -247,7 +247,8 @@ export function readTools(deps: ToolDeps): AgentTool[] {
       label: (a) => `Sehe mir die ${a.type ? (TYPE_LABEL[a.type] ?? a.type) : 'Themen und Projekte'} an`,
       run: async (a, ctx) => {
         const types: EntityType[] = a.type ? [a.type] : ['topic', 'project'];
-        const rows = types.flatMap((type) => graph.listEntities({ type, query: a.contains ?? undefined, limit: 150 }));
+        // names taken from documents and not confirmed yet are never given to the LLM as known subjects (#199)
+        const rows = types.flatMap((type) => graph.listEntities({ type, query: a.contains ?? undefined, limit: 150 })).filter((e) => !e.unconfirmed);
         if (!rows.length) return { content: 'Keine gefunden.' };
         return {
           content: rows

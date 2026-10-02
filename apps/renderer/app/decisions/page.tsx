@@ -8,6 +8,7 @@ import { Pencil, Plus, Replace, Search, TriangleAlert } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { DecisionFormDialog } from '@/components/decisions/decision-form';
+import { Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -247,10 +248,10 @@ function DecisionDetail({ id, onEdit }: { id: string; onEdit: (d: DecisionRecord
           )}
         </Row>
         <Row label={DECISION_FIELD_LABELS.decisionText}>
-          <span className="whitespace-pre-wrap">{d.decisionText}</span>
+          <Markdown text={d.decisionText} testId="decision-text-rendered" />
         </Row>
         <Row label="Begründung">{d.rationale ?? <span className="text-muted-foreground">nicht angegeben</span>}</Row>
-        <Row label="Auswirkungen">{d.consequences ?? <span className="text-muted-foreground">nicht angegeben</span>}</Row>
+        <Row label="Auswirkungen">{d.consequences ? <Markdown text={d.consequences} /> : <span className="text-muted-foreground">nicht angegeben</span>}</Row>
         <Row label="Alternativen">
           {d.alternatives.length > 0 ? (
             <ul className="list-disc pl-5">

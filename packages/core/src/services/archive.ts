@@ -549,8 +549,10 @@ export class ArchiveService {
       ({ changes: relationChanges } = this.graph.trackRelationChanges(row.id, () =>
         this.ctx.database.transaction(() => {
           if (cat) this.categories.create(cat, true);
-          const topic = topicName ? this.graph.ensureEntity('topic', topicName) : null;
-          const project = projectName ? this.graph.ensureEntity('project', projectName) : null;
+          // a name taken over unchanged from the document's analysis stays unconfirmed until the user uses it (#199)
+          const fromDoc = (name: string, proposed: string | null | undefined) => normalizeName(name) === normalizeName(proposed ?? '');
+          const topic = topicName ? this.graph.ensureEntity('topic', topicName, null, { fromDocument: fromDoc(topicName, proposal?.topic) }) : null;
+          const project = projectName ? this.graph.ensureEntity('project', projectName, null, { fromDocument: fromDoc(projectName, proposal?.project) }) : null;
           // persons: the first 12 mentions become persons, the stored list uses canonical names
           const mentioned = proposal?.persons ?? row.persons;
           const people = this.persons.resolveNames(mentioned.slice(0, 12), { context: 'document' });

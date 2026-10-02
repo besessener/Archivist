@@ -23,6 +23,8 @@ export const entities = sqliteTable(
     isSelf: integer('is_self', { mode: 'boolean' }).notNull().default(false),
     /** Lifecycle of a case („Vorgang“, #286): open | closed; null for all other entity types. */
     status: text('status'),
+    /** Topic/project taken from a document and not yet confirmed by the user: kept out of LLM prompts (#199). */
+    unconfirmed: integer('unconfirmed', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

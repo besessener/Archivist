@@ -194,6 +194,7 @@ async function start(): Promise<void> {
     migrationsFolder: migrations,
     cipher,
     workerFile: resource('worker.cjs'),
+    readerFile: resource('db-reader.cjs'),
   });
   const svc = services;
 

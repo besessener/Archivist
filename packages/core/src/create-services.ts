@@ -40,6 +40,7 @@ import { SolutionService } from './services/solutions';
 import { TimelineService } from './services/timeline';
 import { UndoService } from './services/undo';
 import { Logger } from './util/logger';
+import { DbReader } from './workers/db-reader';
 import { WorkerPool } from './workers/pool';
 import { AgentService, type BackgroundKind } from './agent/service';
 import { AgentRunService } from './agent/runs';
@@ -54,6 +55,8 @@ export interface CreateServicesOptions {
   cipher: SecretCipher;
   /** Path to the bundled worker script; null/undefined = tasks run inline (tests) */
   workerFile?: string | null;
+  /** Path to the bundled read worker (own read-only DB connection); null/undefined = queries run inline (tests) */
+  readerFile?: string | null;
   fetchImpl?: FetchLike;
   jobConcurrency?: number;
   /** Wait before the first job retry; doubles with every further attempt (default 5 s, tests: 0) */
@@ -90,6 +93,7 @@ function buildServices(opts: CreateServicesOptions) {
   const audit = new AuditService(ctx);
   const undo = new UndoService(ctx, audit);
   const pool = new WorkerPool(opts.workerFile ?? null);
+  const reader = new DbReader(database.db, { workerFile: opts.readerFile ?? null, databaseFile: database.file, logger });
   const llm = new LlmService(ctx, settings, secrets, opts.fetchImpl, opts.llmRetryDelayMs);
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
@@ -125,7 +129,7 @@ function buildServices(opts: CreateServicesOptions) {
   const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, persons, audit, notifications, pool, undo);
   const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
-  const timeline = new TimelineService(ctx, graph);
+  const timeline = new TimelineService(ctx);
   const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
   const appState = new AppStateService(ctx);
   const consistency = new ConsistencyService(
@@ -318,6 +322,7 @@ function buildServices(opts: CreateServicesOptions) {
     audit,
     undo,
     pool,
+    reader,
     llm,
     privacy,
     embedding,
@@ -391,6 +396,7 @@ function buildServices(opts: CreateServicesOptions) {
       consistency.stopTimer();
       await jobs.interrupt(opts.jobTimeoutMs);
       await pool.close();
+      await reader.close();
       database.close();
       await logger.close();
     },

@@ -219,12 +219,17 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         proposedParameters: { oldDecisionId: o.id, newDecisionId: n.id },
       });
     },
-    'decisions:supersede': (i) => s.decisions.supersede(i.oldDecisionId, i.newDecisionId, { confirmed: i.confirmed, trigger }),
+    'decisions:supersede': (i) => {
+      const out = s.decisions.supersede(i.oldDecisionId, i.newDecisionId, { confirmed: i.confirmed, trigger });
+      // replacing by hand settles the pair's contradiction just like the confirmed proposal (#168)
+      s.contradictions.settlePair(i.oldDecisionId, i.newDecisionId);
+      return out;
+    },
     'decisions:revoke': (i) => s.decisions.revoke(i.id, { confirmed: i.confirmed, trigger }),
 
     'documents:import': async (i) => s.documents.importPaths(i.paths),
-    'documents:list': (i) => s.documents.list(i),
-    'documents:counts': () => s.documents.counts(),
+    'documents:list': async (i) => s.documents.recordsFrom(await s.reader.run('documentList', i)),
+    'documents:counts': () => s.reader.run('documentCounts', {}),
     'documents:get': (i) => s.documents.get(i.id),
     'documents:classify': (i) => ({ jobId: s.documents.enqueueAnalysis(i.documentId, i.allowLlm) }),
     'documents:previewArchive': (i) => s.archive.preview(i.items),
@@ -381,6 +386,11 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.audit.log({ action: `${i.type}.create`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
       return { entity, created: true };
     },
+    'knowledge:confirmEntity': (i) => {
+      const entity = s.graph.confirmEntity(i.id);
+      s.audit.log({ action: `${entity.type}.confirm`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
+      return entity;
+    },
     'knowledge:proposeMerge': (i) => {
       const a = s.graph.getEntity(i.sourceTopicId);
       const b = s.graph.getEntity(i.targetTopicId);
@@ -406,7 +416,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.eventRecords.delete(i.id, { confirmed: i.confirmed });
       return { ok: true as const };
     },
-    'timeline:get': (i) => s.timeline.get(i),
+    // long reads run in the read worker with its own read-only connection, not on the main thread (#215)
+    'timeline:get': (i) => s.reader.run('timeline', i),
     'search:global': (i) => s.search.search(i.query, { types: i.types, limit: i.limit }),
 
     'audit:list': (i) => s.audit.list(i.limit, i.onlyUndoable),
