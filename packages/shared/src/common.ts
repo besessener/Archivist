@@ -107,5 +107,7 @@ export const SourceReference = z.object({
   /** What `date` is: the document's own date, its archive date, the decision date, … – shown as a label (#168). */
   dateKind: z.enum(['document', 'archived', 'decided', 'occurred', 'created']).nullish(),
   score: z.number().default(0),
+  /** The source came in over a confirmed relation of another hit, e.g. „„Angebot“ stützt diesen Eintrag“ (#289). */
+  via: z.string().nullish(),
 });
 export type SourceReference = z.infer<typeof SourceReference>;

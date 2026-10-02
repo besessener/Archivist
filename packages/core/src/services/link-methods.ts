@@ -139,8 +139,20 @@ export class LinkMethodsService {
     private readonly appState: AppStateService,
   ) {}
 
+  private noteAnalyzer: ((id: string, signal?: AbortSignal) => Promise<number>) | null = null;
+
   private get sqlite() {
     return this.ctx.database.sqlite;
+  }
+
+  /** The analysis of notes (#273) for the retroactive run; returns the number of new proposals. */
+  setNoteAnalyzer(fn: (id: string, signal?: AbortSignal) => Promise<number>): void {
+    this.noteAnalyzer = fn;
+  }
+
+  /** The retroactive run starts again from the first entry (e.g. once after an update that brought new methods). */
+  restartBackfill(): void {
+    this.appState.set(BACKFILL_CURSOR, '');
   }
 
   /** Any current or rejected relation between the two (in either direction): no new proposal for them. */
@@ -653,7 +665,7 @@ export class LinkMethodsService {
 
   /**
    * Retroactive link run (#279): goes through all entries in a stable order and PROPOSES `related_to` for each with its
-   * candidates. The position is stored after every entry – a stopped or interrupted run continues where it was and pays for
+   * similar entries, same-day entries with a shared person and entries from the same document, and analyses notes. The position is stored after every entry – a stopped or interrupted run continues where it was and pays for
    * nothing twice. Returns when `maxEntries` are done, the signal aborts or everything is done.
    */
   async backfill(opts: { maxEntries?: number; signal?: AbortSignal; onProgress?: (done: number, total: number) => void } = {}): Promise<BackfillResult> {
@@ -682,6 +694,16 @@ export class LinkMethodsService {
           this.ctx.logger.warn('links', 'Link proposal skipped', { error: err, from: id, to: c.id });
         }
       }
+      // the other methods of Epic #269: same day and person, same source document, the analysis of a note (#279)
+      try {
+        proposed += this.proposeSameDayPerson(id);
+        proposed += this.linkSameDocument(id);
+        if (this.noteAnalyzer && this.graph.getEntity(id)?.type === 'note') proposed += await this.noteAnalyzer(id, opts.signal);
+      } catch (err) {
+        this.ctx.logger.warn('links', 'Link methods skipped for an entry', { error: err, id });
+      }
+      // stopped in the middle of this entry: it is done again next time (nothing finished is paid twice)
+      if (opts.signal?.aborted) break;
       processed += 1;
       this.appState.set(BACKFILL_CURSOR, id);
       opts.onProgress?.(processed, rows.length);

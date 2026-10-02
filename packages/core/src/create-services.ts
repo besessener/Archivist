@@ -198,6 +198,7 @@ function buildServices(opts: CreateServicesOptions) {
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
   const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+  links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
   /**
    * ONE notification for open link proposals, only when new ones came up (#280): while the current one is unread it is
    * updated in place; once it was read or dismissed, the next new proposals bring a new one.
@@ -521,9 +522,11 @@ function buildServices(opts: CreateServicesOptions) {
       const startupCheck = settings.get().consistency.onStartup;
       if (startupCheck) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'), { startupCheckQueued: startupCheck });
-      // the retroactive link run starts once after the update that brought it (#279); later only on request or by the agent
-      if (!appState.get('links.run.initial')) {
-        appState.set('links.run.initial', new Date().toISOString());
+      // the retroactive link run starts once after the update that brought it – again from the start once all methods of
+      // Epic #269 take part (#279); later only on request or by the agent
+      if (!appState.get('links.run.initial.v2')) {
+        appState.set('links.run.initial.v2', new Date().toISOString());
+        links.restartBackfill();
         enqueueLinkRun('update');
       }
       const BG_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
