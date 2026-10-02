@@ -7,22 +7,39 @@ import { CategoryService } from '../services/categories';
 import { EmbeddingService } from '../services/embedding';
 import { JobQueueService } from '../services/jobs';
 import { KnowledgeGraphService } from '../services/knowledge-graph';
-import { LlmService } from '../services/llm';
+import { LlmService, type FetchLike } from '../services/llm';
 import { NotificationService } from '../services/notifications';
 import { PersonService } from '../services/persons';
 import { PrivacyService } from '../services/privacy';
 import { ReminderService } from '../services/reminders';
 import { SearchService } from '../services/search';
-import { SecretService } from '../services/secret';
+import { SecretService, type SecretCipher } from '../services/secret';
 import { SelfService } from '../services/self';
 import { SettingsService, settingsLoadNotification } from '../services/settings';
 import { UndoService } from '../services/undo';
 import { Logger } from '../util/logger';
 import { DbReader } from '../workers/db-reader';
 import { WorkerPool } from '../workers/pool';
-import type { CreateServicesOptions } from '../create-services';
 
 export type BaseServices = ReturnType<typeof createBaseServices>;
+
+export interface CreateServicesOptions {
+  /** Root of the local data storage (default: ~/Documents/Archivist) */
+  dataRoot: string;
+  /** Folder with the Drizzle migrations */
+  migrationsFolder: string;
+  cipher: SecretCipher;
+  /** Path to the bundled worker script; null/undefined = tasks run inline (tests) */
+  workerFile?: string | null;
+  /** Path to the bundled read worker (own read-only DB connection); null/undefined = queries run inline (tests) */
+  readerFile?: string | null;
+  fetchImpl?: FetchLike;
+  jobConcurrency?: number;
+  /** Wait before the first job retry; doubles with every further attempt (default 5 s, tests: 0) */
+  jobRetryDelayMs?: number;
+  /** Delay between LLM retries (tests: 0) */
+  llmRetryDelayMs?: number;
+}
 
 /** Directory structure, settings, logging, database and the services every domain service builds on. */
 export function createBaseServices(options: CreateServicesOptions) {

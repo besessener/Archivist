@@ -1,6 +1,4 @@
-import type { FetchLike } from './services/llm';
-import type { SecretCipher } from './services/secret';
-import { createBaseServices } from './composition/base-services';
+import { createBaseServices, type CreateServicesOptions } from './composition/base-services';
 import { createDomainServices, createLinkingServices } from './composition/domain-services';
 import { createLinkProposalNotifier, linkRunEnqueuer, registerLinkAutomation } from './composition/link-automation';
 import { createAgent } from './composition/agent';
@@ -8,23 +6,7 @@ import { wireServices } from './composition/wiring';
 import { registerJobHandlers } from './composition/job-handlers';
 import { createLifecycle, reactToSettingsChanges } from './composition/lifecycle';
 
-export interface CreateServicesOptions {
-  /** Root of the local data storage (default: ~/Documents/Archivist) */
-  dataRoot: string;
-  /** Folder with the Drizzle migrations */
-  migrationsFolder: string;
-  cipher: SecretCipher;
-  /** Path to the bundled worker script; null/undefined = tasks run inline (tests) */
-  workerFile?: string | null;
-  /** Path to the bundled read worker (own read-only DB connection); null/undefined = queries run inline (tests) */
-  readerFile?: string | null;
-  fetchImpl?: FetchLike;
-  jobConcurrency?: number;
-  /** Wait before the first job retry; doubles with every further attempt (default 5 s, tests: 0) */
-  jobRetryDelayMs?: number;
-  /** Delay between LLM retries (tests: 0) */
-  llmRetryDelayMs?: number;
-}
+export type { CreateServicesOptions } from './composition/base-services';
 
 export type Services = ReturnType<typeof createServices>;
 
