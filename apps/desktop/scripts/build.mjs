@@ -19,6 +19,7 @@ const common = { bundle: true, platform: 'node', target: 'node22', format: 'cjs'
 await build({ ...common, entryPoints: [path.join(desktop, 'src/main.ts')], outfile: path.join(dist, 'main.cjs') });
 await build({ ...common, entryPoints: [path.join(desktop, 'src/preload.ts')], outfile: path.join(dist, 'preload.cjs') });
 await build({ ...common, entryPoints: [path.join(repo, 'packages/core/src/workers/worker-entry.ts')], outfile: path.join(dist, 'worker.cjs') });
+await build({ ...common, entryPoints: [path.join(repo, 'packages/core/src/workers/db-reader-entry.ts')], outfile: path.join(dist, 'db-reader.cjs') });
 
 fs.cpSync(path.join(repo, 'packages/core/migrations'), path.join(dist, 'migrations'), { recursive: true });
 

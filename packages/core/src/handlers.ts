@@ -171,8 +171,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'decisions:revoke': (i) => s.decisions.revoke(i.id, { confirmed: i.confirmed, trigger }),
 
     'documents:import': async (i) => s.documents.importPaths(i.paths),
-    'documents:list': (i) => s.documents.list(i),
-    'documents:counts': () => s.documents.counts(),
+    'documents:list': async (i) => s.documents.recordsFrom(await s.reader.run('documentList', i)),
+    'documents:counts': () => s.reader.run('documentCounts', {}),
     'documents:get': (i) => s.documents.get(i.id),
     'documents:classify': (i) => ({ jobId: s.documents.enqueueAnalysis(i.documentId, i.allowLlm) }),
     'documents:previewArchive': (i) => s.archive.preview(i.items),
@@ -338,7 +338,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.eventRecords.delete(i.id, { confirmed: i.confirmed });
       return { ok: true as const };
     },
-    'timeline:get': (i) => s.timeline.get(i),
+    // long reads run in the read worker with its own read-only connection, not on the main thread (#215)
+    'timeline:get': (i) => s.reader.run('timeline', i),
     'search:global': (i) => s.search.search(i.query, { types: i.types, limit: i.limit }),
 
     'audit:list': (i) => s.audit.list(i.limit, i.onlyUndoable),

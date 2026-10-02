@@ -58,6 +58,8 @@ const KIND_LABELS: Record<string, string> = {
 /** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */
 /** Lets pending I/O and IPC callbacks run before the next synchronous section. */
 const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+/** Long loops of a step hand the main thread back to pending IPC calls every this many items (#215). */
+const YIELD_EVERY = 250;
 
 /** Whether the files exist – checked asynchronously, a limited number at a time, cancellable between batches. */
 async function filesExist(files: string[], signal?: AbortSignal, batch = 64): Promise<boolean[]> {
@@ -360,6 +362,7 @@ export class ConsistencyService {
       signal,
     );
     for (const [i, d] of placed.entries()) {
+      if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
       const abs = path.join(root, ...d.archiveRelPath!.split('/'));
       if (!exists[i]) {
         current.add(`missing-file:${d.id}`);
@@ -400,7 +403,8 @@ export class ConsistencyService {
     // ---- Decisions ----
     await step(0.6, 'Prüfe Entscheidungen');
     const allDecisions = this.decisions.list();
-    for (const d of allDecisions) {
+    for (const [i, d] of allDecisions.entries()) {
+      if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
       if (d.status === 'draft' || (d.missingFields.length > 0 && d.status !== 'revoked' && d.status !== 'superseded')) {
         const key = `incomplete-decision:${d.id}`;
         current.add(key);
