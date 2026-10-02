@@ -41,6 +41,8 @@ export const DocumentProposal = z.object({
       kind: DecisionKind.nullish(),
       /** The sentence of the document that states the decision, verbatim (checked against the text). */
       evidence: z.string().nullish(),
+      /** Who took this decision according to the document – not simply everyone the document names (#178). */
+      participants: z.array(z.string()).nullish(),
     }),
   ),
   possibleOpenItems: z.array(

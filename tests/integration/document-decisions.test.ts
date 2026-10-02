@@ -118,3 +118,36 @@ describe('Decisions from documents: decided vs. discussed, verbatim evidence (#1
     expect(formDecision).toMatchObject({ origin: 'form', evidence: null });
   });
 });
+
+describe('Decisions from documents get their own participants (#178)', () => {
+  it('takes the participants the classification names for the decision, not the first persons of the document', async () => {
+    const doc = await archived([{ ...FASSADE, participants: ['Gerd'] }]);
+    const [proposal] = await decisionProposals(doc);
+    expect(proposal!.proposedParameters.participants).toEqual(['Gerd']);
+
+    await approve(proposal!.id);
+    const [decision] = await app.ok('decisions:list', {});
+    expect(decision!.participants).toEqual(['Gerd']);
+    expect(decision!.status).toBe('active');
+  });
+
+  it('without named participants the decision stays a draft that asks for them', async () => {
+    const doc = await archived([FASSADE]);
+    const [proposal] = await decisionProposals(doc);
+    expect(proposal!.proposedParameters.participants).toEqual([]);
+
+    await approve(proposal!.id);
+    const [decision] = await app.ok('decisions:list', {});
+    expect(decision!.status).toBe('draft');
+    expect(decision!.missingFields).toContain('participants');
+  });
+
+  it('proposes every decision found, not only the first three', async () => {
+    const lines = Array.from({ length: 5 }, (_, i) => `Beschluss ${i + 1}: Punkt ${i + 1} wird umgesetzt.`);
+    const doc = await archived(
+      lines.map((l, i) => ({ title: `Punkt ${i + 1}`, decisionText: l, kind: 'decided', evidence: l })),
+      `Protokoll\n${lines.join('\n')}`,
+    );
+    expect(await decisionProposals(doc)).toHaveLength(5);
+  });
+});

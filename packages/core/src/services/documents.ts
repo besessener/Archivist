@@ -998,6 +998,16 @@ function documentDecisions(found: DocumentClassification['decisions'], text: str
     if (d.kind && d.kind !== 'decided' && d.kind !== 'rejected') return [];
     const evidence = d.evidence?.trim();
     if (!evidence || evidence.length < 8 || !hay.includes(squash(evidence))) return [];
-    return [{ title: d.title, decisionText: d.decisionText, decidedAt: normalizeDecisionDate(d.decidedAt ?? null), kind: d.kind ?? 'decided', evidence }];
+    const participants = [...new Set(d.participants.map((x) => x.trim()).filter(Boolean))];
+    return [
+      {
+        title: d.title,
+        decisionText: d.decisionText,
+        decidedAt: normalizeDecisionDate(d.decidedAt ?? null),
+        kind: d.kind ?? 'decided',
+        evidence,
+        participants,
+      },
+    ];
   });
 }
