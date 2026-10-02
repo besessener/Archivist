@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
+import { FOLDER_CREATE_UNDO, SCAN_EXCLUSION_UNDO, type FolderCreateUndoData, type ScanExclusionUndoData } from './tool-undo';
 import type { ArchiveResult, DocumentRecord } from '@archivist/shared';
 import { sanitizeCategoryPath } from '../../util/paths';
 import { truncate } from '../../util/text';
@@ -166,8 +167,21 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         const target = canonical(a.path);
         const existed = categories.list().some((c) => c.path === target);
         if (existed) return { content: `Der Ordner ${target} existiert bereits.`, summary: 'gab es schon' };
+        const before = new Set(categories.list().map((x) => x.path));
         const c = categories.create(target, true);
-        deps.audit.log({ action: 'category.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [c.id], after: { path: c.path } });
+        const added = categories
+          .list()
+          .map((x) => x.path)
+          .filter((p) => !before.has(p));
+        deps.audit.log({
+          action: 'category.create',
+          actor: 'agent',
+          trigger: 'agent',
+          confirmed: true,
+          entityIds: [c.id],
+          after: { path: c.path },
+          undo: { type: FOLDER_CREATE_UNDO, data: { paths: added } satisfies FolderCreateUndoData },
+        });
         return { content: `Ordner ${c.path} angelegt.`, summary: 'angelegt', change: `Ordner ${c.path} angelegt` };
       },
     }),
@@ -267,20 +281,39 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
     }),
     defineTool({
       name: 'exclude_from_scan',
-      description: 'Eine Datei oder ein Verzeichnis von künftigen Scans ausschließen (remove=true hebt den Ausschluss auf).',
+      description:
+        'Eine Datei oder ein Verzeichnis von künftigen Scans ausschließen (remove=true hebt den Ausschluss auf). Nur innerhalb der freigegebenen Scan-Ordner, absoluter Pfad.',
       schema: z.object({ path: z.string().min(1), kind: z.enum(['file', 'dir']).default('dir'), remove: z.boolean().default(false) }),
       risk: 'write',
       label: (a) => (a.remove ? `Hebe den Scan-Ausschluss für ${truncate(a.path, 60)} auf` : `Schließe ${truncate(a.path, 60)} vom Scan aus`),
       run: async (a) => {
+        // paths stay inside the folders the user released for scanning (#301)
+        const roots = deps.scanner.listDirectories().map((r) => r.path);
+        if (!roots.some((r) => deps.privacy.paths.same(r, a.path) || deps.privacy.paths.inside(r, a.path)))
+          return { content: `„${a.path}“ liegt in keinem freigegebenen Scan-Ordner (${roots.join(', ') || 'keine eingerichtet'}).`, isError: true };
         if (a.remove) {
           const ex = deps.scanner.listExclusions().find((e) => deps.privacy.paths.same(e.path, a.path));
           if (!ex) return { content: `Für „${a.path}“ gibt es keinen Ausschluss.`, summary: 'nicht vorhanden' };
           deps.scanner.removeExclusion(ex.id);
-          deps.audit.log({ action: 'scan.include', actor: 'agent', trigger: 'agent', confirmed: true, paths: [ex.path] });
+          deps.audit.log({
+            action: 'scan.include',
+            actor: 'agent',
+            trigger: 'agent',
+            confirmed: true,
+            paths: [ex.path],
+            undo: { type: SCAN_EXCLUSION_UNDO, data: { kind: ex.kind, path: ex.path, excluded: false } satisfies ScanExclusionUndoData },
+          });
           return { content: `Ausschluss für ${ex.path} aufgehoben.`, summary: 'aufgehoben', change: `Scan-Ausschluss für ${ex.path} aufgehoben` };
         }
         const ex = deps.scanner.exclude(a.kind, a.path);
-        deps.audit.log({ action: 'scan.exclude', actor: 'agent', trigger: 'agent', confirmed: true, paths: [ex.path] });
+        deps.audit.log({
+          action: 'scan.exclude',
+          actor: 'agent',
+          trigger: 'agent',
+          confirmed: true,
+          paths: [ex.path],
+          undo: { type: SCAN_EXCLUSION_UNDO, data: { kind: ex.kind, path: ex.path, excluded: true } satisfies ScanExclusionUndoData },
+        });
         return { content: `${ex.path} wird künftig nicht mehr gescannt.`, summary: 'ausgeschlossen', change: `${ex.path} vom Scan ausgeschlossen` };
       },
     }),
@@ -298,7 +331,8 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
     }),
     defineTool({
       name: 'reanalyze',
-      description: 'Analyse bzw. OCR für ausgewählte Dokumente erneut ausführen (als Hintergrundauftrag).',
+      description:
+        'Analyse bzw. OCR für ausgewählte Dokumente erneut ausführen (als Hintergrundauftrag). Dokumente im Eingang werden neu analysiert; archivierte und nur indexierte werden neu gelesen (Text und OCR, Suchindex) – ihre Zuordnungen bleiben.',
       schema: z.object({ documents: list }),
       risk: 'write',
       count: (a, ctx) => count(a.documents, ctx),
@@ -306,13 +340,23 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const { docs, unknown } = resolveDocs(deps, ctx, a.documents);
         if (!docs.length) return { content: `Keine Dokumente angegeben.${unknownNote(unknown)}`, isError: true };
-        const jobs = docs.map((d) => deps.docs.enqueueAnalysis(d.id, deps.privacy.evaluateDocument(d).allowed && deps.privacy.mode() !== 'local_only'));
+        const archived = docs.filter((d) => d.status === 'archived' || d.status === 'indexed_only');
+        const skipped = docs.filter((d) => d.status === 'quarantined');
+        const inbox = docs.filter((d) => !archived.includes(d) && !skipped.includes(d));
+        const allowLlm = deps.privacy.mode() !== 'local_only';
+        for (const d of inbox) deps.docs.enqueueAnalysis(d.id, allowLlm && deps.privacy.evaluateDocument(d).allowed);
+        const rereadJob = archived.length ? deps.docs.enqueueReread(archived.map((d) => d.id)) : null;
+        const lines = [
+          inbox.length ? `${inbox.length} Dokument(e) im Eingang werden neu analysiert.` : null,
+          rereadJob ? `${archived.length} archivierte(s) Dokument(e) werden neu gelesen (Auftrag ${rereadJob}); Zuordnungen bleiben.` : null,
+          skipped.length ? `Nicht analysiert (in Quarantäne): ${skipped.map((d) => ctx.refs.doc(d.id)).join(', ')}` : null,
+          ...docs.slice(0, 30).map((d) => `- ${docLine(d, ctx, deps.privacy)}`),
+        ];
         return {
-          content: `${jobs.length} Analyse-Auftrag/Aufträge gestartet:\n${docs
-            .slice(0, 30)
-            .map((d) => `- ${docLine(d, ctx, deps.privacy)}`)
-            .join('\n')}`,
-          summary: `${jobs.length} gestartet`,
+          content: `${lines.filter(Boolean).join('\n')}${unknownNote(unknown)}`,
+          summary: `${inbox.length + archived.length} gestartet`,
+          change: `${inbox.length + archived.length} Dokument(e) zur erneuten Analyse gegeben`,
+          changed: inbox.length + archived.length,
         };
       },
     }),

@@ -51,6 +51,8 @@ export interface TurnRequest {
   purpose: string;
   /** Documents whose metadata or content are part of this request (transmission log, #301). */
   documentIds: string[];
+  /** Secrets masked in this request's content so far (transmission log). */
+  redactions?: number;
   /** Offer the provider's own web search (server-side tool); only in chat runs. */
   webSearch?: boolean;
   signal?: AbortSignal;

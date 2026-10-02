@@ -20,6 +20,8 @@ import type { PersonService } from './persons';
 import type { NotificationService } from './notifications';
 import { matchOpenItems, type OpenItemService } from './open-items';
 import type { SettingsService } from './settings';
+
+const FOLDERS_RESTORE_UNDO = 'category_restore';
 import type { UndoService } from './undo';
 
 /** Upper bound of decision proposals per document (protection against a runaway classification). */
@@ -183,6 +185,15 @@ export class ArchiveService {
     undo.register('archive_relocate', {
       check: (d) => this.relocateUndoCheck(d as RelocateUndoData),
       run: (d) => this.guarded(() => this.relocateUndoRun(d as RelocateUndoData)),
+    });
+    // removed empty folders come back as (still empty) folders; main categories are never removed
+    undo.register(FOLDERS_RESTORE_UNDO, {
+      check: async () => [],
+      run: async (d) => {
+        const { paths } = d as { paths: string[] };
+        for (const p of paths) this.categories.create(p, true);
+        return `${paths.length} Ordner wiederhergestellt.`;
+      },
     });
   }
 
@@ -1295,7 +1306,15 @@ export class ArchiveService {
         }
       }
       if (removed.length)
-        this.audit.log({ action: 'category.removeEmpty', actor: 'user', trigger: 'manual', confirmed: true, paths: removed, after: { removed } });
+        this.audit.log({
+          action: 'category.removeEmpty',
+          actor: 'user',
+          trigger: 'manual',
+          confirmed: true,
+          paths: removed,
+          after: { removed },
+          undo: { type: FOLDERS_RESTORE_UNDO, data: { paths: removed } },
+        });
       return removed;
     });
   }

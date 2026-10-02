@@ -202,6 +202,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
         'Themen, Projekte, Personen oder Schlagwörter (K…) zusammenführen – über den bestehenden Ablauf mit Rückgängig. sources werden in target übernommen.',
       schema: z.object({ sources: list, target: z.string().min(1), allowCrossType: z.boolean().default(false) }),
       risk: 'write',
+      count: (a, ctx) => Math.max(1, ctx.refs.resolveMany(a.sources).ids.length),
       label: () => 'Führe Einträge zusammen',
       run: async (a, ctx) => {
         const target = resolveOne(ctx, a.target);

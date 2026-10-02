@@ -161,6 +161,49 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
     expect((await app.ok('decisions:list', {})).find((d) => d.id === old.id)?.status).toBe('superseded');
   });
 
+  it('superseding with several candidates: the agent gets their refs, asks, and proposes the chosen one', async () => {
+    app = await agentApp();
+    const june = await mkDecision('Urlaub im Juni', 'Urlaub', '2026-01-05');
+    await mkDecision('Urlaub an der See', 'Urlaub', '2026-01-06');
+    let candidates: string[] = [];
+    let juneRef = '';
+    app.llm.agent = scriptedTurns(
+      {
+        calls: [
+          {
+            name: 'record_decision',
+            args: {
+              text: 'Urlaub im Juli in den Bergen',
+              title: 'Urlaub Juli',
+              topic: 'Urlaub',
+              decidedAt: '2026-05-01',
+              participants: ['Anna'],
+              supersedes: 'Urlaub',
+            },
+          },
+        ],
+      },
+      () => {
+        const out = lastToolOutputs().at(-1)!;
+        expect(out).toContain('Welche Entscheidung wird ersetzt?');
+        candidates = /Kandidaten[^:]*: (.*)/.exec(out)![1]!.split(', ');
+        expect(candidates).toHaveLength(2);
+        // the numbered list and the refs are in the same order
+        const listed = [...out.matchAll(/^(\d)\. (.+?) \(/gm)].map((m) => m[2]);
+        juneRef = candidates[listed.indexOf('Urlaub im Juni')]!;
+        return { calls: [{ name: 'ask_user', args: { question: 'Welche Entscheidung wird ersetzt?', options: ['Urlaub im Juni', 'Urlaub an der See'] } }] };
+      },
+      () => ({ calls: [{ name: 'supersede_decision', args: { older: juneRef, newer: 'K1' } }] }),
+      { text: 'Bitte bestätige die Karte.' },
+    );
+    const first = await app.ok('chat:send', { text: 'Wir fahren im Juli in die Berge, das ersetzt die alte Urlaubsentscheidung.' });
+    expect(first.assistantMessage.quickReplies).toContain('Urlaub im Juni');
+    const res = await app.ok('chat:send', { conversationId: first.conversationId, text: 'Urlaub im Juni' });
+    const card = res.assistantMessage.actions.find((a) => a.actionType === 'supersede_decision')!;
+    expect((card.proposedParameters as { oldDecisionId: string }).oldDecisionId).toBe(june.id);
+    expect((await app.ok('decisions:list', {})).find((d) => d.id === june.id)?.status).not.toBe('superseded');
+  });
+
   it('contradictions: a new contradicting decision brings the warning and the replace card', async () => {
     app = await agentApp();
     await mkDecision('Wir führen prod-plat weiter.', 'prod-plat', '2026-01-10');

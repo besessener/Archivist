@@ -73,6 +73,8 @@ export interface CaptureResult {
   question: string | null;
   decisionId: string | null;
   openItemId: string | null;
+  /** Older decisions the new one may replace when the hint was not unique („Welche Entscheidung wird ersetzt?“). */
+  supersedeCandidateIds: string[];
 }
 
 /**
@@ -119,7 +121,16 @@ export class CaptureService {
       question: pending && !(pending.kind === 'open_item' && pending.optional) ? reply.content : null,
       decisionId: reply.state?.last?.decisionId ?? null,
       openItemId: pending?.kind === 'open_item_duplicate' ? null : (reply.state?.last?.openItemId ?? null),
+      supersedeCandidateIds: pending?.kind === 'supersede_choice' ? pending.candidateIds : [],
     };
+  }
+
+  /** The agent's answer to „Welche Entscheidung wird ersetzt?“: the same proposal card as the chat's (confirmation required). */
+  proposeSupersedeOf(conversationId: string | null, olderId: string, newerId: string): StoredAgentAction {
+    const older = this.decisions.get(olderId);
+    if (!['active', 'confirmed'].includes(older.status))
+      throw new AppError('validation_error', `„${older.title}“ ist nicht mehr aktiv und kann nicht ersetzt werden.`);
+    return this.proposeSupersede(conversationId ?? '', older, this.decisions.get(newerId));
   }
 
   /** Is this a capture request? (the chat's dispatch hands those over to `handle`) */

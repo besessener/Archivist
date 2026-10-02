@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import type { ChatIntent, DecisionField, OpenItemPatch } from '@archivist/shared';
-import { normalizeDateInput } from '../../util/dates';
+import { normalizeDateInput, normalizeDecisionDate, normalizeDueDate } from '../../util/dates';
 import { truncate } from '../../util/text';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
 import type { CaptureResult } from '../../services/capture';
-import type { ToolDeps } from './common';
+import { unknownNote, type ToolDeps } from './common';
+import { REMINDER_SNOOZE_UNDO, type ReminderSnoozeUndoData } from './tool-undo';
 import { linkHint } from './link-methods';
 import { wikiNames } from '../../services/wiki-links';
 
@@ -55,6 +56,16 @@ function asked(r: CaptureResult): string {
 
 /** A date given in words or numbers → YYYY-MM-DD (deterministic, also for „31.10.“). */
 const dateArg = optText.transform((v) => (v ? (normalizeDateInput(v) ?? v) : null));
+/** A decision lies in the past: „31.10.“ without a year is the last 31 October. A future date stays and is refused by the service. */
+const decisionDateArg = optText.transform((v) => (v ? (normalizeDecisionDate(v) ?? normalizeDateInput(v) ?? v) : null));
+/** A due date lies ahead: „15.1.“ without a year is the next 15 January. */
+const dueDateArg = optText.transform((v) => (v ? (normalizeDueDate(v) ?? v) : null));
+
+/** Candidates of „Welche Entscheidung wird ersetzt?“ with their K-refs, so the agent can pass the user's choice on. */
+function candidateNote(ctx: ToolContext, r: CaptureResult): string {
+  if (!r.supersedeCandidateIds.length) return '';
+  return `\nKandidaten (nach der Antwort des Benutzers supersede_decision aufrufen): ${r.supersedeCandidateIds.map((id) => ctx.refs.entry(id)).join(', ')}`;
+}
 
 export function knowledgeTools(deps: ToolDeps): AgentTool[] {
   const { capture } = deps;
@@ -68,7 +79,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       schema: z.object({
         text: z.string().min(1).describe('Die Entscheidung in einem Satz'),
         title: optText,
-        decidedAt: dateArg.describe('YYYY-MM-DD, nur wenn genannt oder eindeutig ableitbar'),
+        decidedAt: decisionDateArg.describe('YYYY-MM-DD, nur wenn genannt oder eindeutig ableitbar'),
         topic: optText,
         project: optText,
         topicIsProject: z.boolean().nullish(),
@@ -122,9 +133,28 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
         const r = await capture.forAgent(ctx.conversationId, ctx.userText || a.text, intent);
         ctx.actionIds.push(...r.actionIds);
         return {
-          content: `${ref(ctx, r.decisionId)} ${r.content}${asked(r)}${r.actionIds.length ? `\n(${r.actionIds.length} Vorschlagskarte(n) zur Bestätigung angelegt)` : ''}${await linkHint(deps, ctx, r.decisionId)}`,
+          content: `${ref(ctx, r.decisionId)} ${r.content}${asked(r)}${candidateNote(ctx, r)}${r.actionIds.length ? `\n(${r.actionIds.length} Vorschlagskarte(n) zur Bestätigung angelegt)` : ''}${await linkHint(deps, ctx, r.decisionId)}`,
           summary: r.question ? 'als Entwurf, Angaben fehlen' : 'gespeichert',
           change: `Entscheidung „${truncate(a.title ?? a.text, 60)}“ erfasst`,
+        };
+      },
+    }),
+    defineTool({
+      name: 'supersede_decision',
+      description:
+        'Vorschlagen, dass eine neue Entscheidung (newer: K…) eine ältere aktive (older: K…) ersetzt – z. B. nach der Rückfrage „Welche Entscheidung wird ersetzt?“. Es entsteht eine Vorschlagskarte; als überholt markiert wird erst nach Bestätigung durch den Benutzer.',
+      schema: z.object({ older: z.string().min(1), newer: z.string().min(1) }),
+      risk: 'write',
+      label: () => 'Schlage vor, eine ältere Entscheidung als überholt zu markieren',
+      run: async (a, ctx) => {
+        const older = ctx.refs.resolve(a.older);
+        const newer = ctx.refs.resolve(a.newer);
+        if (!older || !newer) return { content: `Unbekannte ID(s).${unknownNote([a.older, a.newer].filter((r) => !ctx.refs.resolve(r)))}`, isError: true };
+        const action = capture.proposeSupersedeOf(ctx.conversationId, older, newer);
+        ctx.actionIds.push(action.id);
+        return {
+          content: `Vorschlagskarte angelegt: ${action.label}. Der Benutzer bestätigt sie unter deiner Antwort.`,
+          summary: 'als Vorschlag vorbereitet',
         };
       },
     }),
@@ -136,7 +166,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
         id: z.string().min(1),
         text: optText,
         title: optText,
-        decidedAt: dateArg,
+        decidedAt: decisionDateArg,
         topic: optText,
         project: optText,
         participants: list.nullish(),
@@ -228,7 +258,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
         title: z.string().min(1).describe('Kurzer Titel aus Subjekt und Tätigkeit'),
         description: optText,
         responsible: optText,
-        dueAt: dateArg,
+        dueAt: dueDateArg,
         priority: z.enum(['low', 'normal', 'high']).nullish(),
         topic: optText,
         project: optText,
@@ -278,7 +308,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
         description: optText,
         appendDescription: z.boolean().default(true),
         responsible: optText,
-        dueAt: dateArg,
+        dueAt: dueDateArg,
         priority: z.enum(['low', 'normal', 'high']).nullish(),
         status: z.enum(['open', 'waiting', 'blocked']).nullish(),
       }),
@@ -329,7 +359,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       risk: 'write',
       label: (a) => `Lege eine Erinnerung an: „${truncate(a.title, 50)}“`,
       run: async (a, ctx) => {
-        const when = normalizeDateInput(a.remindAt) ?? a.remindAt;
+        const when = normalizeDueDate(a.remindAt) ?? a.remindAt;
         if (!/^\d{4}-\d{2}-\d{2}/.test(when)) return { content: `Ungültiges Datum „${a.remindAt}“ – erwartet YYYY-MM-DD.`, isError: true };
         const targetId = a.target ? ctx.refs.resolve(a.target) : null;
         const targetType = !targetId
@@ -385,9 +415,23 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       label: () => 'Verschiebe eine Erinnerung',
       run: async (a, ctx) => {
         const id = ctx.refs.resolve(a.id);
-        const when = normalizeDateInput(a.remindAt) ?? a.remindAt;
+        const when = normalizeDueDate(a.remindAt) ?? a.remindAt;
         if (!id) return { content: `Unbekannte ID „${a.id}“.`, isError: true };
+        const before = deps.reminders.get(id);
         const r = deps.reminders.snooze(id, when);
+        deps.audit.log({
+          action: 'reminder.snooze',
+          actor: 'agent',
+          trigger: 'agent',
+          confirmed: true,
+          entityIds: [id],
+          before: { remindAt: before.remindAt },
+          after: { remindAt: r.remindAt },
+          undo: {
+            type: REMINDER_SNOOZE_UNDO,
+            data: { id, before: { remindAt: before.remindAt, status: before.status }, after: { remindAt: r.remindAt } } satisfies ReminderSnoozeUndoData,
+          },
+        });
         return {
           content: `Erinnerung „${r.title}“ auf ${r.remindAt.slice(0, 16)} verschoben.`,
           summary: 'verschoben',

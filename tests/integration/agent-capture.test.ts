@@ -17,6 +17,20 @@ const lastToolOutputs = () =>
     .map((i) => i.output ?? '');
 
 describe('Capturing knowledge as agent tools (#307)', () => {
+  it('a decision date without a year („31.10.“) is the last such day, never a future one', async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayMonth = `${tomorrow.getDate()}.${tomorrow.getMonth() + 1}.`;
+    const expected = `${tomorrow.getFullYear() - 1}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'record_decision', args: { text: 'Wir kündigen das Zeitungsabo', topic: 'Abos', participants: ['ich'], decidedAt: dayMonth } }] },
+      { text: 'Gespeichert.' },
+    );
+    await app.ok('chat:send', { text: `Am ${dayMonth} haben wir entschieden, das Zeitungsabo zu kündigen.` });
+    const d = (await app.ok('decisions:list', {}))[0]!;
+    expect(d.decidedAt?.slice(0, 10)).toBe(expected);
+  });
+
   it('a decision without a date is saved as a draft; the handler question goes to the agent, which amends after the answer', async () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'record_decision', args: { text: 'Wir nehmen das Angebot von Müller', topic: 'Dach', participants: ['Anna'] } }] },
@@ -132,5 +146,26 @@ describe('Capturing knowledge as agent tools (#307)', () => {
     await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
     const back = (await app.ok('openItems:list', {})).find((o) => o.id === item.id)!;
     expect(back.status).toBe('open');
+  });
+
+  it('moving a reminder is logged and can be undone', async () => {
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_reminder', args: { title: 'Reifen wechseln', remindAt: '2099-10-15' } }] }, { text: 'Angelegt.' });
+    await app.ok('chat:send', { text: 'Erinnere mich am 15.10.2099 an den Reifenwechsel' });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'list_entries', args: { kind: 'reminder' } }] },
+      { calls: [{ name: 'snooze_reminder', args: { id: 'K1', remindAt: '2099-10-20' } }] },
+      { text: 'Verschoben.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Verschieb die Reifen-Erinnerung auf den 20.10.2099' });
+    const remindAt = () =>
+      app.services.reminders
+        .list('pending')
+        .find((r) => r.title.includes('Reifen'))!
+        .remindAt.slice(0, 10);
+    expect(remindAt()).toBe('2099-10-20');
+    const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
+    expect(run.undoable).toBe(1);
+    await app.ok('agent:undoRun', { runId: run.id });
+    expect(remindAt()).toBe('2099-10-15');
   });
 });

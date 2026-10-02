@@ -10,6 +10,8 @@ import type { ToolSpec } from './types';
 export interface RefState {
   ids: Record<string, string>;
   sets: Record<string, string[]>;
+  /** Documents whose title or content went to the LLM in this conversation (replay filter, #202). */
+  shared?: string[];
 }
 
 /** Agent state of a conversation, stored with the conversation (refs survive follow-ups, the mode override too). */

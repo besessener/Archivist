@@ -160,6 +160,18 @@ describe('Agent security: prompt injection (#301)', () => {
     expect(sent).not.toContain('Sup3rGeheim!42');
     expect(sent).not.toContain('sk-live-ABCDEF0123456789abcdef0123');
     expect(sent).toContain('[REDACTED');
+    // the transmission log counts the masked spots instead of claiming none
+    const log = (await app.ok('llm:transmissions', { limit: 100 })).filter((t) => t.purpose === 'Agent');
+    expect(log[0]!.redactions).toBeGreaterThan(0);
+  });
+
+  it('secrets in learned entries are masked in the system instructions too', async () => {
+    app.services.memory.save({ kind: 'fact', name: 'WLAN', content: 'Mein Router: password=Sup3rGeheim!42' });
+    app.llm.agent = scriptedTurns({ text: 'Notiert.' });
+    await app.ok('chat:send', { text: 'Was weißt du über mein WLAN?' });
+    const instructions = String(app.llm.agentRequests.at(-1)!.instructions);
+    expect(instructions).toContain('Mein Router');
+    expect(instructions).not.toContain('Sup3rGeheim!42');
   });
 });
 
@@ -268,6 +280,46 @@ describe('Agent security: documents that may not be shared (#301)', () => {
     expect(ids.has(hidden)).toBe(false);
     // the first request was sent before any document was looked at
     expect(log.at(-1)!.documentIds).toEqual([]);
+  });
+});
+
+describe('Agent security: history replay (#202)', () => {
+  it('a document excluded after it was read does not travel along in later requests of the conversation', async () => {
+    const id = await archived(app, 'befund.txt', 'Befund: Blutwerte unauffällig, Diagnose Heuschnupfen', 'private/gesundheit');
+    const other = await archived(app, 'rechnung.txt', 'Rechnung Nr. 17 über 99 Euro', 'private/finanzen');
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'befund' } }] },
+      { calls: [{ name: 'read_document', args: { id: 'D1' } }] },
+      { text: 'In D1 steht: Diagnose Heuschnupfen.' },
+    );
+    const first = await app.ok('chat:send', { text: 'Was steht im Befund?' });
+    expect(sentText(app)).toContain('Diagnose Heuschnupfen');
+    await app.ok('documents:setLlmExcluded', { id, excluded: true });
+    await app.services.jobs.whenIdle();
+    app.llm.agentRequests.length = 0;
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: { name: 'rechnung' } }] }, { text: 'Gefunden.' });
+    await app.ok('chat:send', { conversationId: first.conversationId, text: 'Und die Rechnung?' });
+    const sent = sentText(app);
+    expect(sent).not.toContain('Heuschnupfen');
+    expect(sent).not.toContain('Blutwerte');
+    expect(sent).toContain('nicht mehr für die Übertragung freigegeben');
+    // the rest of the conversation is still there
+    expect(sent).toContain('Was steht im Befund?');
+    expect(other).toBeTruthy();
+  });
+
+  it('documents that were only listed anonymously keep their earlier results', async () => {
+    const hidden = await archived(app, 'tagebuch.txt', 'Liebes Tagebuch', 'private/notizen');
+    await app.ok('documents:setLlmExcluded', { id: hidden, excluded: true });
+    await archived(app, 'rechnung.txt', 'Rechnung Nr. 17 über 99 Euro', 'private/finanzen');
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: {} }] }, { text: 'Zwei Dokumente.' });
+    const first = await app.ok('chat:send', { text: 'Was liegt im Archiv?' });
+    app.llm.agentRequests.length = 0;
+    app.llm.agent = scriptedTurns({ text: 'Ja.' });
+    await app.ok('chat:send', { conversationId: first.conversationId, text: 'Sind das alle?' });
+    const sent = sentText(app);
+    expect(sent).toContain('[nicht freigegeben]');
+    expect(sent).not.toContain('Ergebnis ausgeblendet');
   });
 });
 

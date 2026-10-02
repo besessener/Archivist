@@ -35,6 +35,7 @@ import { linkTools } from './tools/links';
 import { linkMethodTools } from './tools/link-methods';
 import { learningTools } from './tools/learning';
 import { registerSettingUndo, systemTools } from './tools/system';
+import { registerToolUndo } from './tools/tool-undo';
 import { researchTools } from './tools/research';
 import { duplicateTools } from './tools/duplicates';
 import { exportTools } from './tools/exports';
@@ -43,6 +44,7 @@ import type { AgentMessage, AgentToolCall, ProviderAdapter } from './types';
 import { DeadlineWatcher, type PostToConversation } from './watcher';
 import { AgentShutdownError } from './file-jobs';
 import { agentMessages } from '../db/schema';
+import { withholdWithdrawn } from './history-privacy';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { ArchivistJson } from '../util/json';
 
@@ -135,6 +137,7 @@ export class AgentService {
     private readonly memory: MemoryService,
   ) {
     registerSettingUndo(deps);
+    registerToolUndo(deps);
     const tools = [
       ...readTools(deps),
       ...knowledgeTools(deps),
@@ -365,6 +368,17 @@ export class AgentService {
   }
 
   // ---------- history ----------
+  /** D-refs of documents shared earlier in this conversation that may no longer be shared (excluded, locked or gone). */
+  private withdrawnRefs(refs: RefStore): Set<string> {
+    const out = new Set<string>();
+    const shared = new Set(refs.state.shared ?? []);
+    for (const [ref, id] of Object.entries(refs.state.ids)) {
+      if (!ref.startsWith('D') || !shared.has(id)) continue;
+      if (!this.deps.docs.findRow(id) || !this.deps.privacy.mayShareDocument(this.deps.docs.get(id))) out.add(ref);
+    }
+    return out;
+  }
+
   private loadHistory(conversationId: string): AgentMessage[] {
     return this.ctx.database.db
       .select()
@@ -498,6 +512,8 @@ export class AgentService {
     background: boolean;
     signal?: AbortSignal;
     job?: NonNullable<ToolContext['job']>;
+    /** Secrets masked in the user's message before the run. */
+    redactions?: number;
   }): Promise<{ outcome: RunOutcome; ctx: ToolContext; run: AgentRun; proposals: number }> {
     const s = this.settings.agent;
     const cfg = this.llm.adapterConfig();
@@ -540,16 +556,21 @@ export class AgentService {
     this.emit(progress, true);
     const proposals: Array<{ tool: string; args: unknown; label: string; risk: string; reason: string }> = [];
     const limits = o.background ? s.backgroundLimits : s.chatLimits;
-    const runner = new AgentRunner({
-      adapter,
-      registry: o.background ? this.backgroundRegistry : this.registry,
-      system: systemPrompt({
+    // learned entries and the profile are the user's own words – secrets in them are masked like everything else (#301)
+    const system = maskSecrets(
+      systemPrompt({
         mode: o.mode,
         massThreshold: s.massActionThreshold,
         learned: learned.text,
         background: o.background,
         context: this.context(o.background),
       }),
+    );
+    const runner = new AgentRunner({
+      adapter,
+      registry: o.background ? this.backgroundRegistry : this.registry,
+      system: system.text,
+      redactions: system.count + (o.redactions ?? 0),
       history: historyWindow(o.history),
       onAppend: (m) => o.persist(runId, m),
       limits,
@@ -686,9 +707,9 @@ export class AgentService {
   private async chatNow(conversationId: string, text: string, state: AgentChatState): Promise<AgentChatReply> {
     const override = modeOverrideIn(text) ?? state.mode ?? null;
     const mode = override ?? this.settings.agent.mode;
-    const history = this.loadHistory(conversationId);
     const refs = new RefStore(state.refs ?? { ids: {}, sets: {} });
-    const masked = maskSecrets(text).text;
+    const history = withholdWithdrawn(this.loadHistory(conversationId), this.withdrawnRefs(refs));
+    const { text: masked, count: redactions } = maskSecrets(text);
     const pending = pendingCalls(history);
     let lastAnswer: string | null = null;
     const toAppend: AgentMessage[] = [];
@@ -726,6 +747,7 @@ export class AgentService {
       userText,
       lastAnswer,
       background: false,
+      redactions,
     });
     // a run that failed before its first request still keeps the user's message in the history
     if (!runIdForAppend) for (const d of deferred) this.appendHistory(conversationId, result.run.id, d);
@@ -755,7 +777,11 @@ export class AgentService {
       runId: run.id,
       errorMessage: outcome.status === 'error' ? outcome.error : null,
       uncertainties: ctx.tainted ? ['Ein Dokument enthielt Anweisungen an den Agenten; sie wurden ignoriert.'] : [],
-      state: { refs: refs.state, mode: override, task: outcome.status === 'ask_user' ? userText : null },
+      state: {
+        refs: { ...refs.state, shared: [...new Set([...(refs.state.shared ?? []), ...ctx.shared])] },
+        mode: override,
+        task: outcome.status === 'ask_user' ? userText : null,
+      },
       status: outcome.status,
     };
   }

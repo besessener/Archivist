@@ -34,6 +34,8 @@ import type { SearchService } from './search';
 import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
 
+export const DOCUMENT_REREAD_JOB = 'documents.reread';
+
 export type DocRow = typeof documents.$inferSelect;
 
 interface DocumentMetadataUndo {
@@ -862,6 +864,60 @@ export class DocumentService {
     await this.indexDocument(id);
     this.ctx.events.changed('documents', 'knowledge');
     return true;
+  }
+
+  /**
+   * Archived or index-only documents keep their metadata, but their text can be read again (#220, #305): extraction and
+   * OCR run again on the archive file (index-only: the original), the text replaces the stored one and the search index
+   * is rebuilt. Title, type, assignments and links stay as they are. Returns false if the document is not archived.
+   */
+  async rereadArchived(id: string, opts: { signal?: AbortSignal } = {}): Promise<boolean> {
+    const row = this.findRow(id);
+    if (!row || !ARCHIVED_STATUSES.includes(row.status as DocumentStatus)) return false;
+    const file = row.status === 'indexed_only' ? row.sourcePath : this.archiveAbs(row.archiveRelPath);
+    if (!file || !fs.existsSync(file)) throw fsError('Die Datei des Dokuments ist nicht mehr vorhanden.', undefined, false);
+    const parsed = await this.pool.run('extractDocument', {
+      path: file,
+      options: {
+        ocrEnabled: this.settings.get().ocr.enabled,
+        ocrLanguages: this.settings.get().ocr.languages,
+        tessdataDir: path.join(this.ctx.paths.index, 'tessdata'),
+      },
+    });
+    opts.signal?.throwIfAborted();
+    const text = parsed.text;
+    const textHash = text.length > 200 ? sha256Text(normalizeName(text).slice(0, 20_000)) : null;
+    const updated = this.db
+      .update(documents)
+      .set({
+        extractedText: text,
+        textHash,
+        processingStatus: parsed.status,
+        processingError: parsed.error,
+        technicalMeta: { ...parsed.meta, truncated: parsed.truncated, textHash },
+        updatedAt: nowIso(),
+      })
+      .where(and(eq(documents.id, id), inArray(documents.status, ARCHIVED_STATUSES)))
+      .run();
+    if (!updated.changes) return false;
+    this.audit.log({
+      action: 'document.reread',
+      actor: 'user',
+      trigger: 'reread',
+      confirmed: true,
+      entityIds: [id],
+      paths: [file],
+      before: { chars: row.extractedText.length, processingStatus: row.processingStatus },
+      after: { chars: text.length, processingStatus: parsed.status },
+    });
+    await this.indexDocument(id);
+    this.ctx.events.changed('documents', 'knowledge');
+    return true;
+  }
+
+  /** Re-reads archived documents in one job with progress (see `rereadArchived`). */
+  enqueueReread(ids: string[]): string {
+    return this.jobs.enqueue(DOCUMENT_REREAD_JOB, `Lese ${ids.length} Dokument(e) neu`, { documentIds: ids }).id;
   }
 
   /** Triggers (re)processing. `allowLlm=true` corresponds to the user's explicit permission. */
