@@ -27,23 +27,25 @@ export interface ProviderSummary {
   avgDurationMs: number;
 }
 
+const totalTokens = (tokens: TaskResult['tokens']) => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
+
 export function summarize(results: TaskResult[]): ProviderSummary[] {
-  const by = new Map<string, TaskResult[]>();
-  for (const r of results) by.set(r.provider, [...(by.get(r.provider) ?? []), r]);
-  return [...by].map(([provider, rs]) => {
-    const passed = rs.filter((r) => r.pass).length;
+  const byProvider = new Map<string, TaskResult[]>();
+  for (const result of results) byProvider.set(result.provider, [...(byProvider.get(result.provider) ?? []), result]);
+  return [...byProvider].map(([provider, providerResults]) => {
+    const passed = providerResults.filter((result) => result.pass).length;
     return {
       provider,
-      model: rs[0]!.model,
-      effort: rs[0]!.effort,
-      tasks: rs.length,
+      model: providerResults[0]!.model,
+      effort: providerResults[0]!.effort,
+      tasks: providerResults.length,
       passed,
-      passRate: rs.length ? passed / rs.length : 0,
-      costUsd: Math.round(rs.reduce((s, r) => s + (r.costUsd ?? 0), 0) * 10_000) / 10_000,
-      costIncomplete: rs.some((r) => r.costUsd === null && r.runIds.length > 0),
-      tokens: rs.reduce((s, r) => s + r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite, 0),
-      avgRounds: rs.length ? rs.reduce((s, r) => s + r.rounds, 0) / rs.length : 0,
-      avgDurationMs: rs.length ? rs.reduce((s, r) => s + r.durationMs, 0) / rs.length : 0,
+      passRate: providerResults.length ? passed / providerResults.length : 0,
+      costUsd: Math.round(providerResults.reduce((sum, result) => sum + (result.costUsd ?? 0), 0) * 10_000) / 10_000,
+      costIncomplete: providerResults.some((result) => result.costUsd === null && result.runIds.length > 0),
+      tokens: providerResults.reduce((sum, result) => sum + totalTokens(result.tokens), 0),
+      avgRounds: providerResults.length ? providerResults.reduce((sum, result) => sum + result.rounds, 0) / providerResults.length : 0,
+      avgDurationMs: providerResults.length ? providerResults.reduce((sum, result) => sum + result.durationMs, 0) / providerResults.length : 0,
     };
   });
 }
@@ -53,13 +55,13 @@ export function previousReport(dir = RESULTS_DIR, exclude?: string): { file: str
   if (!fs.existsSync(dir)) return null;
   const files = fs
     .readdirSync(dir)
-    .filter((f) => /^agent-.*\.json$/.test(f) && path.join(dir, f) !== exclude)
+    .filter((file) => /^agent-.*\.json$/.test(file) && path.join(dir, file) !== exclude)
     .toSorted();
-  for (const f of files.toReversed()) {
+  for (const file of files.toReversed()) {
     try {
-      return { file: f, report: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as EvalReport };
+      return { file, report: JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')) as EvalReport };
     } catch {
-      /* unreadable file: try the one before */
+      // unreadable file: try the one before
     }
   }
   return null;
@@ -72,71 +74,102 @@ export interface Comparison {
   deltas: Array<{ provider: string; passRate: number | null; costUsd: number | null }>;
 }
 
+const resultKey = (result: TaskResult) => `${result.provider}|${result.taskId}`;
+
 export function compare(current: TaskResult[], previous: TaskResult[]): Comparison {
-  const prev = new Map(previous.map((r) => [`${r.provider}|${r.taskId}`, r]));
-  const newFailures = current.filter((r) => !r.pass && prev.get(`${r.provider}|${r.taskId}`)?.pass === true);
-  const fixed = current.filter((r) => r.pass && prev.get(`${r.provider}|${r.taskId}`)?.pass === false);
-  const prevSummary = new Map(summarize(previous).map((s) => [s.provider, s]));
-  const deltas = summarize(current).map((s) => {
-    const p = prevSummary.get(s.provider);
-    return { provider: s.provider, passRate: p ? s.passRate - p.passRate : null, costUsd: p ? s.costUsd - p.costUsd : null };
+  const previousByKey = new Map(previous.map((result) => [resultKey(result), result]));
+  const newFailures = current.filter((result) => !result.pass && previousByKey.get(resultKey(result))?.pass === true);
+  const fixed = current.filter((result) => result.pass && previousByKey.get(resultKey(result))?.pass === false);
+  const previousSummary = new Map(summarize(previous).map((summary) => [summary.provider, summary]));
+  const deltas = summarize(current).map((summary) => {
+    const before = previousSummary.get(summary.provider);
+    return {
+      provider: summary.provider,
+      passRate: before ? summary.passRate - before.passRate : null,
+      costUsd: before ? summary.costUsd - before.costUsd : null,
+    };
   });
   return { newFailures, fixed, deltas };
 }
 
-const pct = (x: number) => `${Math.round(x * 100)} %`;
+const percent = (x: number) => `${Math.round(x * 100)} %`;
 const usd = (x: number) => `$${x.toFixed(4)}`;
-const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 const cell = (s: string) => s.replace(/[\\|]/g, '\\$&').replace(/\s+/g, ' ').trim();
-const signed = (x: number, fmt: (v: number) => string) => `${x > 0 ? '+' : x < 0 ? '−' : '±'}${fmt(Math.abs(x))}`;
+const signed = (x: number, format: (value: number) => string) => `${x > 0 ? '+' : x < 0 ? '−' : '±'}${format(Math.abs(x))}`;
 
-export function markdown(report: EvalReport, previous: { file: string; report: EvalReport } | null): string {
-  const lines: string[] = [];
-  const summary = summarize(report.results);
-  lines.push(`# Evaluation des Agenten – ${report.startedAt}`, '');
-  lines.push(`Gestartet ${report.startedAt}, fertig ${report.finishedAt}. Aufgaben je Anbieter: ${summary[0]?.tasks ?? 0}.`, '');
-  lines.push('## Überblick', '');
-  lines.push('| Anbieter | Modell | Effort | bestanden | Quote | Kosten | Tokens | Ø Runden | Ø Dauer |', '|---|---|---|---|---|---|---|---|---|');
+type PreviousReport = { file: string; report: EvalReport } | null;
+
+function overviewSection(report: EvalReport, summary: ProviderSummary[]): string[] {
+  const lines = [
+    `# Evaluation des Agenten – ${report.startedAt}`,
+    '',
+    `Gestartet ${report.startedAt}, fertig ${report.finishedAt}. Aufgaben je Anbieter: ${summary[0]?.tasks ?? 0}.`,
+    '',
+    '## Überblick',
+    '',
+    '| Anbieter | Modell | Effort | bestanden | Quote | Kosten | Tokens | Ø Runden | Ø Dauer |',
+    '|---|---|---|---|---|---|---|---|---|',
+  ];
   for (const s of summary)
     lines.push(
-      `| ${cell(s.provider)} | ${cell(s.model)} | ${s.effort} | ${s.passed}/${s.tasks} | ${pct(s.passRate)} | ${usd(s.costUsd)}${s.costIncomplete ? ' (ohne Preis für einige Läufe)' : ''} | ${s.tokens.toLocaleString('de-DE')} | ${s.avgRounds.toFixed(1)} | ${secs(s.avgDurationMs)} |`,
+      `| ${cell(s.provider)} | ${cell(s.model)} | ${s.effort} | ${s.passed}/${s.tasks} | ${percent(s.passRate)} | ${usd(s.costUsd)}${s.costIncomplete ? ' (ohne Preis für einige Läufe)' : ''} | ${s.tokens.toLocaleString('de-DE')} | ${s.avgRounds.toFixed(1)} | ${seconds(s.avgDurationMs)} |`,
     );
-  const total = summary.reduce((x, s) => x + s.costUsd, 0);
+  const total = summary.reduce((sum, s) => sum + s.costUsd, 0);
   lines.push('', `**Kosten dieses Laufs: ${usd(total)}** (Schätzung aus der Preistabelle; ohne den einmaligen Verbindungstest je Anbieter).`, '');
-  for (const p of report.providers) if (p.capability) lines.push(`- ${p.name}: ${p.capability}`);
+  for (const provider of report.providers) if (provider.capability) lines.push(`- ${provider.name}: ${provider.capability}`);
   lines.push('');
+  return lines;
+}
 
-  if (previous) {
-    const cmp = compare(report.results, previous.report.results);
-    lines.push(`## Vergleich mit ${previous.file}`, '');
-    for (const d of cmp.deltas)
-      lines.push(
-        `- ${d.provider}: Quote ${d.passRate === null ? 'neu' : signed(d.passRate, pct)}, Kosten ${d.costUsd === null ? 'neu' : signed(d.costUsd, usd)}`,
-      );
-    lines.push('');
-    lines.push(`### Neue Fehlschläge (${cmp.newFailures.length})`, '');
-    if (!cmp.newFailures.length) lines.push('Keine.');
-    for (const r of cmp.newFailures) lines.push(`- **${r.provider} / ${r.taskId}** (${r.story}): ${cell(r.reasons.join('; '))}`);
-    lines.push('', `### Behoben (${cmp.fixed.length})`, '');
-    if (!cmp.fixed.length) lines.push('Keine.');
-    for (const r of cmp.fixed) lines.push(`- **${r.provider} / ${r.taskId}** (${r.story})`);
-    lines.push('');
-  } else lines.push('_Kein früheres Ergebnis in eval-results/ – kein Vergleich._', '');
+function comparisonSection(report: EvalReport, previous: PreviousReport): string[] {
+  if (!previous) return ['_Kein früheres Ergebnis in eval-results/ – kein Vergleich._', ''];
+  const comparison = compare(report.results, previous.report.results);
+  const lines = [`## Vergleich mit ${previous.file}`, ''];
+  for (const delta of comparison.deltas)
+    lines.push(
+      `- ${delta.provider}: Quote ${delta.passRate === null ? 'neu' : signed(delta.passRate, percent)}, Kosten ${delta.costUsd === null ? 'neu' : signed(delta.costUsd, usd)}`,
+    );
+  lines.push('', `### Neue Fehlschläge (${comparison.newFailures.length})`, '');
+  if (!comparison.newFailures.length) lines.push('Keine.');
+  for (const r of comparison.newFailures) lines.push(`- **${r.provider} / ${r.taskId}** (${r.story}): ${cell(r.reasons.join('; '))}`);
+  lines.push('', `### Behoben (${comparison.fixed.length})`, '');
+  if (!comparison.fixed.length) lines.push('Keine.');
+  for (const r of comparison.fixed) lines.push(`- **${r.provider} / ${r.taskId}** (${r.story})`);
+  lines.push('');
+  return lines;
+}
 
-  const prevMap = new Map((previous?.report.results ?? []).map((r) => [`${r.provider}|${r.taskId}`, r]));
-  for (const s of summary) {
-    lines.push(`## ${s.provider} (${s.model}, Effort ${s.effort})`, '');
-    lines.push('| Aufgabe | Story | Ergebnis | Status | Runden | Tokens | Kosten | Dauer | Grund |', '|---|---|---|---|---|---|---|---|---|');
-    for (const r of report.results.filter((x) => x.provider === s.provider)) {
-      const before = prevMap.get(`${r.provider}|${r.taskId}`);
-      const mark = r.pass ? (before?.pass === false ? 'bestanden (**behoben**)' : 'bestanden') : before?.pass === true ? 'FEHLER (**neu**)' : 'FEHLER';
-      const tokens = r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite;
-      lines.push(
-        `| ${r.taskId} | ${r.story} | ${mark} | ${r.statuses.join(' → ') || '–'} | ${r.rounds} | ${tokens.toLocaleString('de-DE')} | ${r.costUsd === null ? '–' : usd(r.costUsd)} | ${secs(r.durationMs)} | ${cell(r.reasons.join('; '))} |`,
-      );
-    }
-    lines.push('');
+function resultMark(result: TaskResult, before: TaskResult | undefined): string {
+  if (result.pass) return before?.pass === false ? 'bestanden (**behoben**)' : 'bestanden';
+  return before?.pass === true ? 'FEHLER (**neu**)' : 'FEHLER';
+}
+
+function providerSection(summary: ProviderSummary, rows: { results: TaskResult[]; previous: Map<string, TaskResult> }): string[] {
+  const lines = [
+    `## ${summary.provider} (${summary.model}, Effort ${summary.effort})`,
+    '',
+    '| Aufgabe | Story | Ergebnis | Status | Runden | Tokens | Kosten | Dauer | Grund |',
+    '|---|---|---|---|---|---|---|---|---|',
+  ];
+  for (const r of rows.results.filter((result) => result.provider === summary.provider)) {
+    const mark = resultMark(r, rows.previous.get(resultKey(r)));
+    lines.push(
+      `| ${r.taskId} | ${r.story} | ${mark} | ${r.statuses.join(' → ') || '–'} | ${r.rounds} | ${totalTokens(r.tokens).toLocaleString('de-DE')} | ${r.costUsd === null ? '–' : usd(r.costUsd)} | ${seconds(r.durationMs)} | ${cell(r.reasons.join('; '))} |`,
+    );
   }
+  lines.push('');
+  return lines;
+}
+
+export function markdown(report: EvalReport, previous: PreviousReport): string {
+  const summary = summarize(report.results);
+  const previousResults = new Map((previous?.report.results ?? []).map((result) => [resultKey(result), result]));
+  const lines = [
+    ...overviewSection(report, summary),
+    ...comparisonSection(report, previous),
+    ...summary.flatMap((s) => providerSection(s, { results: report.results, previous: previousResults })),
+  ];
   return `${lines.join('\n')}\n`;
 }
 
