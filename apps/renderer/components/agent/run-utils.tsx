@@ -100,10 +100,6 @@ const OUTCOME: Record<AgentStepOutcome, { label: string; icon: React.ComponentTy
   asked: { label: 'Rückfrage', icon: CircleHelp, cls: 'text-primary' },
 };
 
-export function outcomeLabel(outcome: AgentStepOutcome): string {
-  return OUTCOME[outcome].label;
-}
-
 export function OutcomeIcon({ outcome }: { outcome: AgentStepOutcome }) {
   const o = OUTCOME[outcome];
   const Icon = o.icon;

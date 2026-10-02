@@ -173,7 +173,11 @@ export class FakeLlm {
       // plain text request via Claude (classification, summaries): the same responders as /responses
       const messages = (body.messages as Array<{ content?: unknown }> | undefined) ?? [];
       const first = messages[0]?.content;
-      const text = await this.textAnswer(typeof body.system === 'string' ? body.system : '', typeof first === 'string' ? first : JSON.stringify(first ?? ''), body);
+      const text = await this.textAnswer(
+        typeof body.system === 'string' ? body.system : '',
+        typeof first === 'string' ? first : JSON.stringify(first ?? ''),
+        body,
+      );
       return new Response(
         JSON.stringify({
           id: 'msg_text',

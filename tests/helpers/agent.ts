@@ -1,4 +1,3 @@
-import { RefStore, type ToolContext } from '../../packages/core/src/agent/registry';
 import { createTestApp, scriptedTurns, type TestApp, type TestAppOptions } from './harness';
 
 export { scriptedTurns };
@@ -76,25 +75,3 @@ export const folderOf = (app: TestApp, id: string) => {
 
 /** All texts the agent sent to the model (tool results included) – for privacy and secret checks. */
 export const sentText = (app: TestApp) => JSON.stringify(app.llm.agentRequests);
-
-/** A tool context for calling tools directly. */
-export function toolContext(overrides: Partial<ToolContext> = {}): ToolContext {
-  return {
-    runId: 'test-run',
-    conversationId: null,
-    trigger: 'chat',
-    mode: 'auto',
-    refs: new RefStore(),
-    shared: new Set(),
-    signal: new AbortController().signal,
-    userText: '',
-    lastAnswer: null,
-    files: [],
-    applied: [],
-    changes: [],
-    actionIds: [],
-    changedCount: 0,
-    tainted: null,
-    ...overrides,
-  };
-}

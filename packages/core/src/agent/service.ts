@@ -1,5 +1,4 @@
-import type {
-  ActionParamSchemas} from '@archivist/shared';
+import type { ActionParamSchemas } from '@archivist/shared';
 import {
   type AgentCapability,
   type AgentMode,
@@ -659,7 +658,7 @@ export class AgentService {
       }
       const e = this.deps.graph.getEntity(id);
       if (!e) return match;
-      const type = (TYPE_TO_REF[e.type] ?? e.type);
+      const type = TYPE_TO_REF[e.type] ?? e.type;
       sources.set(id, { id, type, title: e.name, snippet: truncate(e.description ?? '', 200), path: null, date: e.createdAt, score: 1 });
       return `„${truncate(e.name, 80)}“`;
     });

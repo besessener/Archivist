@@ -12,7 +12,9 @@ afterEach(async () => {
 
 /** Text of the last tool results the model saw (Responses API input of the latest request). */
 const lastToolOutputs = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').map((i) => i.output ?? '');
+  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? [])
+    .filter((i) => i.type === 'function_call_output')
+    .map((i) => i.output ?? '');
 
 describe('Capturing knowledge as agent tools (#307)', () => {
   it('a decision without a date is saved as a draft; the handler question goes to the agent, which amends after the answer', async () => {
@@ -37,7 +39,10 @@ describe('Capturing knowledge as agent tools (#307)', () => {
   });
 
   it('„Entscheidung oder nur Notiz?“: certainty unsure saves nothing and asks', async () => {
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'record_decision', args: { text: 'Vielleicht streichen wir die Küche', certainty: 'unsure' } }] }, { text: '?' });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'record_decision', args: { text: 'Vielleicht streichen wir die Küche', certainty: 'unsure' } }] },
+      { text: '?' },
+    );
     await app.ok('chat:send', { text: 'Vielleicht streichen wir die Küche' });
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
     expect(lastToolOutputs()[0]).toContain('NICHT GESPEICHERT');
@@ -51,7 +56,9 @@ describe('Capturing knowledge as agent tools (#307)', () => {
       { calls: [{ name: 'create_open_item', args: { title: 'Angebot Müller prüfen', sources: ['D1'] } }] },
       () => {
         expect(lastToolOutputs().at(-1)).toMatch(/gibt es schon|bereits|ergänzen/i);
-        return { calls: [{ name: 'create_open_item', args: { title: 'Angebot Müller prüfen', description: 'zweiter Punkt', ifDuplicate: 'create', sources: ['D1'] } }] };
+        return {
+          calls: [{ name: 'create_open_item', args: { title: 'Angebot Müller prüfen', description: 'zweiter Punkt', ifDuplicate: 'create', sources: ['D1'] } }],
+        };
       },
       { text: 'Angelegt.' },
     );
@@ -100,7 +107,9 @@ describe('Capturing knowledge as agent tools (#307)', () => {
       },
       { text: 'Alles erfasst.' },
     );
-    const res = await app.ok('chat:send', { text: 'Leg an: Steuer abgeben bis 31.12., notiere dass die Belege im Ordner Steuer liegen, und erinnere mich am 1.12.' });
+    const res = await app.ok('chat:send', {
+      text: 'Leg an: Steuer abgeben bis 31.12., notiere dass die Belege im Ordner Steuer liegen, und erinnere mich am 1.12.',
+    });
     expect(await app.ok('openItems:list', {})).toHaveLength(1);
     const undo = await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
     expect(undo.failed).toBe(0);

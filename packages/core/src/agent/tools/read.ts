@@ -56,7 +56,7 @@ export function filterDocuments(deps: ToolDeps, ctx: ToolContext, a: z.output<ty
   const hits = allDocs(deps).filter(
     (d) =>
       (!within || within.has(d.id)) &&
-      (!statuses || (statuses).includes(d.status)) &&
+      (!statuses || statuses.includes(d.status)) &&
       (!exts.size || exts.has(normExt(d.ext))) &&
       (!a.name || has(d.title, a.name) || has(d.originalName, a.name)) &&
       (!folder || (d.archiveRelPath !== null && (folderOf(d).toLowerCase() === folder || folderOf(d).toLowerCase().startsWith(`${folder}/`)))) &&

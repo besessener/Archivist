@@ -82,8 +82,7 @@ export function toAnthropicMessages(messages: AgentMessage[], model: string): Me
     } else {
       const blocks: ContentBlockParam[] = [];
       if (m.text.trim()) blocks.push({ type: 'text', text: m.text });
-      for (const c of m.toolCalls)
-        blocks.push({ type: 'tool_use', id: c.id.replace(/[^\w-]/g, '_'), name: c.name, input: (c.args ?? {}) });
+      for (const c of m.toolCalls) blocks.push({ type: 'tool_use', id: c.id.replace(/[^\w-]/g, '_'), name: c.name, input: c.args ?? {} });
       if (blocks.length) out.push({ role: 'assistant', content: blocks });
     }
   }

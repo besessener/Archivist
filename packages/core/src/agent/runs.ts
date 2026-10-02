@@ -1,5 +1,5 @@
 import type { AgentMode, AgentRun, AgentRunStatus, AgentStep, AgentUsage, AgentUsageSummary } from '@archivist/shared';
-import { and, desc, eq, gte, isNull, like } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { agentRuns, auditLog } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
@@ -201,11 +201,24 @@ export class AgentRunService {
     return { undone, failed, conflicts: [...new Set(conflicts)], message };
   }
 
+  /**
+   * Undoable entries of a run, newest first. The timestamps have millisecond resolution and several changes of one round
+   * often share one – the insertion order (rowid) decides then, so a later change is always undone before an earlier one.
+   */
+  private undoableNewestFirst(runId: string): Array<typeof auditLog.$inferSelect> {
+    return this.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.runId, runId), isNull(auditLog.undoneAt)))
+      .orderBy(desc(auditLog.at), sql`rowid desc`)
+      .all()
+      .filter((r) => r.undoType && r.success);
+  }
+
   /** „Lauf rückgängig“: all changes of the run in reverse order. */
   async undoRun(runId: string): Promise<UndoRunResult> {
     this.get(runId);
-    const rows = this.audit.forRun(runId).filter((r) => r.undoType && !r.undoneAt && r.success);
-    return this.undoEntries(rows.map((r) => r.id));
+    return this.undoEntries(this.undoableNewestFirst(runId).map((r) => r.id));
   }
 
   /** Undoes a single step of a run (its audit entries, newest first). */
@@ -213,17 +226,12 @@ export class AgentRunService {
     const run = this.get(runId);
     const step = run.steps.find((s) => s.id === stepId);
     if (!step) throw new AppError('validation_error', 'Schritt nicht gefunden.');
-    const rows = this.db
-      .select()
-      .from(auditLog)
-      .where(and(eq(auditLog.runId, runId), isNull(auditLog.undoneAt)))
-      .all();
     const wanted = new Set(step.auditIds);
-    const ids = rows
-      .filter((r) => wanted.has(r.id) && r.undoType && r.success)
-      .toSorted((a, b) => b.at.localeCompare(a.at))
-      .map((r) => r.id);
-    return this.undoEntries(ids);
+    return this.undoEntries(
+      this.undoableNewestFirst(runId)
+        .filter((r) => wanted.has(r.id))
+        .map((r) => r.id),
+    );
   }
 
   /** Usage per day and month, by chat and background (#302). */

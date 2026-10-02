@@ -36,7 +36,8 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
       const d = deps.docs.get(id);
       const { rules, conflict } = memory.matchingRules(subjectOf(id));
       const then: Rule['then'] = {};
-      for (const r of rules) Object.assign(then, Object.fromEntries(Object.entries(r.rule.then).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : Boolean(v)))));
+      for (const r of rules)
+        Object.assign(then, Object.fromEntries(Object.entries(r.rule.then).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : Boolean(v)))));
       return { doc: d, rules, conflict, then };
     });
 

@@ -15,7 +15,8 @@ afterEach(async () => {
 });
 
 const lastOutput = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ?? '';
+  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ??
+  '';
 const fileName = (id: string) => path.posix.basename(app.services.documents.getRow(id).archiveRelPath!);
 
 describe('File and folder tools (#304)', () => {
@@ -48,7 +49,17 @@ describe('File and folder tools (#304)', () => {
   });
 
   it('fills the naming scheme and trims separators of empty placeholders', () => {
-    const d = { documentDate: '2026-01-05', archivedAt: null, createdAt: '2026-01-06', docType: null, persons: [], title: 'T', topicName: null, projectName: null, originalName: 'o.pdf' };
+    const d = {
+      documentDate: '2026-01-05',
+      archivedAt: null,
+      createdAt: '2026-01-06',
+      docType: null,
+      persons: [],
+      title: 'T',
+      topicName: null,
+      projectName: null,
+      originalName: 'o.pdf',
+    };
     expect(fillPattern('{datum} - {typ} - {absender}', d)).toBe('2026-01-05');
     expect(fillPattern('{jahr}_{titel}', d)).toBe('2026_T');
   });
@@ -128,7 +139,11 @@ describe('Metadata tools (#305, #291)', () => {
 
   it('privacy exclusion per document is critical: always a proposal', async () => {
     const id = await archived(app, 'pw.txt', 'Passwort', 'private/misc');
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: { name: 'pw' } }] }, { calls: [{ name: 'exclude_from_llm', args: { documents: ['D1'] } }] }, { text: 'Bitte bestätigen.' });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'pw' } }] },
+      { calls: [{ name: 'exclude_from_llm', args: { documents: ['D1'] } }] },
+      { text: 'Bitte bestätigen.' },
+    );
     const res = await app.ok('chat:send', { text: 'Schließ pw.txt von der KI-Analyse aus' });
     expect((await app.ok('documents:get', { id })).llmStatus).not.toBe('excluded');
     expect(res.assistantMessage.actions.some((a) => a.actionType === 'agent_batch')).toBe(true);
@@ -156,7 +171,10 @@ describe('Links and cases (#306, #277, #286)', () => {
     const run = await app.ok('agent:run', { id: refs });
     expect(run.steps.filter((s) => s.tool === 'link')).toHaveLength(2);
     // D-refs follow the date order of find_documents; resolve which document got which status
-    const statuses = [rel(vertrag, nebenkosten), rel(vertrag, other), rel(nebenkosten, other)].filter(Boolean).map((r) => r!.status).sort();
+    const statuses = [rel(vertrag, nebenkosten), rel(vertrag, other), rel(nebenkosten, other)]
+      .filter(Boolean)
+      .map((r) => r!.status)
+      .sort();
     expect(statuses).toEqual(['confirmed', 'proposed']);
     const confirmed = [rel(vertrag, nebenkosten), rel(vertrag, other), rel(nebenkosten, other)].find((r) => r?.status === 'confirmed')!;
     expect(confirmed.origin).toBe('agent');
@@ -182,7 +200,12 @@ describe('Links and cases (#306, #277, #286)', () => {
     const c = app.services.graph.listEntities({ type: 'case' })[0]!;
     expect(c.name).toBe('Autokauf 2026');
     expect(c.status).toBe('closed');
-    expect(app.services.graph.neighbors(c.id).map((e) => e.id).sort()).toEqual([a, b].sort());
+    expect(
+      app.services.graph
+        .neighbors(c.id)
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual([a, b].sort());
     await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
     expect(app.services.graph.listEntities({ type: 'case' })).toHaveLength(0);
   });

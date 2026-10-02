@@ -17,7 +17,14 @@ const watcher = () =>
     appState: app.services.appState,
     notifications: app.services.notifications,
     runs: app.services.agentRuns,
-    tools: { openItems: app.services.openItems, reminders: app.services.reminders, decisions: app.services.decisions, docs: app.services.documents, actions: app.services.actions, insights: app.services.insights },
+    tools: {
+      openItems: app.services.openItems,
+      reminders: app.services.reminders,
+      decisions: app.services.decisions,
+      docs: app.services.documents,
+      actions: app.services.actions,
+      insights: app.services.insights,
+    },
     post: (title, content, existing) => app.services.chat.postAssistant(title, content, existing),
   });
 
@@ -49,7 +56,10 @@ describe('Background agent (#313)', () => {
   it('follows the same mode: „Fragen“ leaves the files in the inbox with a proposal', async () => {
     app.services.settings.update({ agent: { mode: 'ask' } });
     const a = await inInbox(app, 'rechnung.txt', 'Rechnung');
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: 'private/rechnungen' } }] }, { text: 'Vorschlag gemacht.' });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: 'private/rechnungen' } }] },
+      { text: 'Vorschlag gemacht.' },
+    );
     await app.services.agent.runBackground('inbox', { docIds: [a] });
     expect(app.services.documents.getRow(a).status).toBe('proposed');
     expect((await app.ok('actions:list', { status: 'proposed' })).some((x) => x.actionType === 'agent_batch')).toBe(true);

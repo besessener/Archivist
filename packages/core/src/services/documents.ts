@@ -57,6 +57,8 @@ interface DocumentMetadataUndo {
   /** Older undo data: relations created by the edit. */
   relationIds?: string[];
   afterUpdatedAt: string;
+  /** Timestamp before the edit (absent in undo data written by older versions). */
+  beforeUpdatedAt?: string;
 }
 
 /** Final states an analysis must never reopen (the file already lives in the archive or index). */
@@ -149,7 +151,8 @@ export class DocumentService {
     this.db.transaction(() => {
       this.db
         .update(documents)
-        .set({ ...d.before, updatedAt: nowIso() })
+        // the old timestamp comes back too: the document is as before, so earlier undo entries (e.g. moving it) stay valid
+        .set({ ...d.before, updatedAt: d.beforeUpdatedAt ?? nowIso() })
         .where(eq(documents.id, d.id))
         .run();
       if (this.graph.getEntity(d.id))
@@ -932,6 +935,7 @@ export class DocumentService {
       },
       relations,
       afterUpdatedAt: set.updatedAt!,
+      beforeUpdatedAt: row.updatedAt,
     };
   }
 
