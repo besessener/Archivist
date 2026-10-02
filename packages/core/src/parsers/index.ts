@@ -1,5 +1,6 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { visibleHtmlText } from './html-text';
 import { recognizeImages, type OcrOptions } from './ocr';
 
 export type ParseStatus = 'extracted' | 'partial' | 'unsupported' | 'failed';
@@ -317,10 +318,10 @@ async function parseXlsx(file: string): Promise<ParsedDocument> {
 
 async function parseEml(file: string): Promise<ParsedDocument> {
   const { simpleParser } = await import('mailparser');
-  const mail = await simpleParser(await fsp.readFile(file));
+  // HTML-only mails are converted here instead of by mailparser: its conversion keeps hidden text (#199)
+  const mail = await simpleParser(await fsp.readFile(file), { skipHtmlToText: true });
   const addr = (a: unknown) => (a && typeof a === 'object' && 'text' in a ? String((a as { text: string }).text) : '');
-  const body =
-    mail.text ?? (typeof mail.html === 'string' ? mail.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, '').replace(/<[^<>]+>/g, ' ') : '');
+  const body = mail.text?.trim() ? mail.text : typeof mail.html === 'string' ? visibleHtmlText(mail.html) : '';
   const header = [
     `Betreff: ${mail.subject ?? ''}`,
     `Von: ${addr(mail.from)}`,

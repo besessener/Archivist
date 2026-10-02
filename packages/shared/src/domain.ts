@@ -499,6 +499,8 @@ export const GraphEntity = z.object({
   duplicateOfId: z.string().nullable(),
   /** The user's own person (shown with the badge „Du“). */
   isSelf: z.boolean(),
+  /** Topic/project taken from a document and not yet confirmed: never listed in LLM prompts (#199). */
+  unconfirmed: z.boolean().optional(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });

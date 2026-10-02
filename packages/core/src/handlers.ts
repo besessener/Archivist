@@ -308,6 +308,11 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.audit.log({ action: `${i.type}.create`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
       return { entity, created: true };
     },
+    'knowledge:confirmEntity': (i) => {
+      const entity = s.graph.confirmEntity(i.id);
+      s.audit.log({ action: `${entity.type}.confirm`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
+      return entity;
+    },
     'knowledge:proposeMerge': (i) => {
       const a = s.graph.getEntity(i.sourceTopicId);
       const b = s.graph.getEntity(i.targetTopicId);

@@ -21,6 +21,8 @@ export const entities = sqliteTable(
     duplicateOfId: text('duplicate_of_id'),
     /** The user's own person („Du“); at most one entity carries the flag. */
     isSelf: integer('is_self', { mode: 'boolean' }).notNull().default(false),
+    /** Topic/project taken from a document and not yet confirmed by the user: kept out of LLM prompts (#199). */
+    unconfirmed: integer('unconfirmed', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

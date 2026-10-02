@@ -122,6 +122,11 @@ function KnowledgeInner() {
                       Du
                     </Badge>
                   )}
+                  {e.unconfirmed && (
+                    <span className="text-xs text-muted-foreground" data-testid="knowledge-item-unconfirmed">
+                      unbestätigt
+                    </span>
+                  )}
                   {e.duplicateOfId && (
                     <span className="text-xs text-muted-foreground" data-testid="knowledge-item-duplicate">
                       Duplikat
@@ -310,6 +315,15 @@ function EntityView({ id }: { id: string }) {
               Du
             </Badge>
           )}
+          {entity.unconfirmed && (
+            <Badge
+              variant="outline"
+              data-testid="entity-unconfirmed"
+              title="Aus einem Dokument übernommen. Bis du es bestätigst, nennt Archivist es der KI nicht als bekanntes Thema."
+            >
+              unbestätigt
+            </Badge>
+          )}
           {entity.duplicateOfId && (
             <Badge variant="outline" data-testid="entity-duplicate">
               verworfen (Duplikat)
@@ -320,6 +334,26 @@ function EntityView({ id }: { id: string }) {
         <h2 className="mt-1 text-2xl font-semibold tracking-tight">{entity.name}</h2>
         {entity.description && <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{entity.description}</p>}
         {entity.roles.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Rollen: {entity.roles.join(', ')}</p>}
+        {entity.unconfirmed && (
+          <div className="mt-3 rounded-md border border-dashed p-3 text-sm" data-testid="entity-unconfirmed-note">
+            <p className="text-muted-foreground">
+              Dieser Name wurde aus einem Dokument übernommen. Erst wenn du ihn bestätigst, nennt Archivist ihn der KI als bekanntes{' '}
+              {entity.type === 'project' ? 'Projekt' : 'Thema'}.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              data-testid="entity-confirm"
+              onClick={async () => {
+                const out = await run(() => call('knowledge:confirmEntity', { id: entity.id }), { success: 'Bestätigt.' });
+                if (out) void detail.refetch();
+              }}
+            >
+              <Check aria-hidden /> Bestätigen
+            </Button>
+          </div>
+        )}
         {entity.type === 'topic' && (
           <Button variant="outline" size="sm" className="mt-3" onClick={() => setMergeOpen(true)} data-testid="knowledge-merge">
             <GitMerge aria-hidden /> Mit anderem Thema zusammenführen vorschlagen
