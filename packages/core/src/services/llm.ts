@@ -52,11 +52,19 @@ const UNSUPPORTED_PARAM_PATTERNS = [
   /['"`]?\b(?:store|reasoning(?:\.effort)?|text(?:\.format)?|max_output_tokens)\b['"`]?\s+(?:is|are)\s+(?:not\s+supported|unsupported|not\s+recognized|unknown)\b/i,
   // "does not support the 'reasoning' parameter"
   /\bdoes\s+not\s+support\b[^.\n]{0,80}\b(?:parameters?|arguments?|store|reasoning|text\.format|max_output_tokens)\b/i,
+  // "Invalid parameter: 'text.format' of type 'json_object' is not supported with this model."
+  /['"`]?\b(?:text\.format|response_format)\b['"`]?\s+of\s+type\s+['"`]?\w+['"`]?\s+is\s+not\s+supported\b/i,
 ];
 
 function isUnsupportedParamError(text: string): boolean {
   return UNSUPPORTED_PARAM_PATTERNS.some((re) => re.test(text));
 }
+
+/**
+ * JSON mode (text.format = json_object) of the Responses API requires the word "json" in the input –
+ * the instructions do not count. Without it the endpoint rejects the request with HTTP 400.
+ */
+const JSON_INPUT_HINT = 'Antworte als JSON.\n\n';
 
 /**
  * OpenAI-compatible client for the Responses API (typed fetch client).
@@ -172,6 +180,7 @@ export class LlmService {
 
     let input = req.input;
     if (input.length > cfg.maxInputChars) input = `${input.slice(0, cfg.maxInputChars)}\n[… Eingabe auf ${cfg.maxInputChars} Zeichen gekürzt]`;
+    if (req.json && !/json/i.test(input)) input = `${JSON_INPUT_HINT}${input}`;
     const redacted = redactSecrets(input);
     const redactedInstr = redactSecrets(req.instructions);
     const sent = redacted.text;

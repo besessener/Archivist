@@ -61,7 +61,17 @@ export class FakeLlm {
     }
     if (u.endsWith('/responses')) {
       const instructions = typeof body.instructions === 'string' ? body.instructions : '';
-      const input = typeof body.input === 'string' ? body.input : JSON.stringify(body.input ?? '');
+      const rawInput = typeof body.input === 'string' ? body.input : JSON.stringify(body.input ?? '');
+      // like the OpenAI Responses API: JSON mode requires the word "json" in the input (instructions do not count)
+      if (body.text && !/json/i.test(rawInput))
+        return new Response(
+          JSON.stringify({
+            error: { message: "Response input messages must contain the word 'json' in some form to use 'text.format' of type 'json_object'." },
+          }),
+          { status: 400 },
+        );
+      // the technical JSON hint of the client is not part of what the tests check
+      const input = rawInput.replace(/^Antworte als JSON\.\n\n/, '');
       const schema = /JSON-Schema „(\w+)“/.exec(instructions)?.[1] ?? 'plain';
       this.calls.push({ schema, input, instructions });
       let text: string;
