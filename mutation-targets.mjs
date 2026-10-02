@@ -10,4 +10,7 @@ export const MUTATE_TARGETS = [
   'packages/core/src/services/rename-pattern.ts',
   'packages/core/src/services/decision-fields.ts',
   'packages/core/src/services/open-item-fields.ts',
+  'packages/core/src/agent/tools/research/deadlines.ts',
+  'packages/core/src/agent/tools/research/amounts.ts',
+  'packages/core/src/services/contradiction-rules.ts',
 ];
