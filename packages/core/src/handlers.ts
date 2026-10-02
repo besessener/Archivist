@@ -391,6 +391,10 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         if (created) s.audit.log({ action: 'note.create', actor: 'user', trigger, confirmed: true, entityIds: [note.id], after: { title: note.name } });
         return { entity: note, created };
       }
+      if (i.type === 'case') {
+        const r = s.cases.create(i.name, i.description, { trigger });
+        return { entity: r.case, created: r.created };
+      }
       if (i.type === 'person') {
         // persons go through the central resolution (roles, spellings, no pronouns or answer words)
         const person = s.persons.resolve(i.name, { context: 'manual', description: i.description?.trim() || null });
@@ -412,6 +416,11 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       s.audit.log({ action: `${entity.type}.confirm`, actor: 'user', trigger, confirmed: true, entityIds: [entity.id], after: { name: entity.name } });
       return entity;
     },
+    'cases:list': (i) => s.cases.list(i),
+    'cases:detail': (i) => s.cases.detail(i.id),
+    'cases:create': (i) => s.cases.create(i.name, i.description, { trigger }),
+    'cases:assign': (i) => ({ assigned: s.cases.assign(i.entryIds, i.caseId, { trigger }) }),
+    'cases:setStatus': (i) => s.graph.setCaseStatus(i.id, i.status, { trigger }),
     'knowledge:proposeMerge': (i) => {
       const a = s.graph.getEntity(i.sourceTopicId);
       const b = s.graph.getEntity(i.targetTopicId);

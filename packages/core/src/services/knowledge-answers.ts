@@ -164,8 +164,53 @@ export class KnowledgeAnswerService {
     const ids = new Set(out.map((o) => o.id));
     const support = supporting.filter((b, i) => !ids.has(b.id) && supporting.findIndex((x) => x.id === b.id) === i).slice(0, 3);
     for (const b of support) ids.add(b.id);
+    // a case the question names (#286): its entries count as sources, with the case as the path
+    const cases = this.caseSources(queries, ids, out[0]?.score ?? 0.02);
     // entries the user linked with the best hits (#289): confirmed relations only, weighted lower, with the path
-    return [...out, ...support, ...this.linkedSources(out.slice(0, 3), ids, queries[0] ?? '')];
+    return [...out, ...support, ...cases, ...this.linkedSources(out.slice(0, 3), ids, queries[0] ?? '')];
+  }
+
+  /**
+   * Entries of the cases („Vorgänge“) a question names by name or alias (#286): up to 6 per case, 2 cases, over current
+   * assignments (confirmed; open proposals are not facts yet).
+   */
+  private caseSources(queries: string[], taken: Set<string>, score: number): GatheredSource[] {
+    const text = ` ${normalizeName(queries.join(' '))} `;
+    const named = this.graph
+      .listEntities({ type: 'case', limit: 500 })
+      .filter((c) => [c.name, ...c.aliases].some((n) => normalizeName(n).length >= 3 && text.includes(` ${normalizeName(n)} `)))
+      .slice(0, 2);
+    const out: GatheredSource[] = [];
+    for (const c of named) {
+      let n = 0;
+      for (const r of this.graph.relationsOf(c.id, { statuses: ['confirmed'] })) {
+        if (n >= 6) break;
+        const otherId = r.sourceEntityId === c.id ? r.targetEntityId : r.sourceEntityId;
+        const other = this.graph.getEntity(otherId);
+        if (!other || taken.has(otherId) || other.duplicateOfId || !LINKED_SOURCE_TYPES.has(other.type)) continue;
+        const passage = this.search.bestPassage(otherId, queries[0] ?? '') ?? other.description ?? other.name;
+        const src = this.sourceOf(
+          {
+            id: other.id,
+            type: other.type,
+            title: other.name,
+            snippet: truncate(passage, 220),
+            passage,
+            score,
+            path: null,
+            date: other.updatedAt,
+            matchedBy: [],
+          },
+          [],
+        );
+        if (!src) continue;
+        const via = `Teil des Vorgangs „${c.name}“`;
+        out.push({ ...src, via, _text: `${src._text}\n(${via})` });
+        taken.add(otherId);
+        n += 1;
+      }
+    }
+    return out;
   }
 
   /**

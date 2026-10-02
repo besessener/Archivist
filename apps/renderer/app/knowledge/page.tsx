@@ -4,7 +4,7 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { EntityType, KnowledgeCreateResult, RelationStatus } from '@archivist/shared';
-import { Check, GitMerge, Link2, Pencil, Plus, Search, Unlink, X } from 'lucide-react';
+import { Check, FolderKanban, GitMerge, Link2, Pencil, Plus, Search, Unlink, X } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
@@ -12,6 +12,8 @@ import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
 import { LinkDialog, LinkSuggestions, RelatedEntries, RelationProvenance } from '@/components/knowledge/related';
 import { NoteEditDialog } from '@/components/knowledge/note-edit-dialog';
+import { CaseAssignDialog } from '@/components/knowledge/case-dialog';
+import { CaseView } from '@/components/knowledge/case-view';
 import { UnknownWikiLinks, WikiTextarea } from '@/components/knowledge/wiki-textarea';
 import { MARKDOWN_HINT, Markdown, type WikiResolver } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
@@ -34,7 +36,9 @@ import type { ActionRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const TYPES: EntityType[] = ['topic', 'project', 'person', 'event', 'note', 'category', 'tag', 'document', 'decision', 'task', 'question', 'case'];
-const CREATABLE = ['topic', 'project', 'person', 'event', 'note'] as const;
+const CREATABLE = ['topic', 'project', 'case', 'person', 'event', 'note'] as const;
+/** Entries that can belong to a case („Vorgang“, #286). */
+const CASE_ENTRY_TYPES = new Set<string>(['document', 'note', 'decision', 'task', 'question', 'event']);
 type Creatable = (typeof CREATABLE)[number];
 
 function statusVariant(s: RelationStatus) {
@@ -205,7 +209,7 @@ function CreateEntityDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Neu anlegen</DialogTitle>
-          <DialogDescription>Lege ein neues Thema, Projekt, eine Person, eine Notiz oder ein Ereignis (mit Datum) an.</DialogDescription>
+          <DialogDescription>Lege ein neues Thema, Projekt, einen Vorgang, eine Person, eine Notiz oder ein Ereignis (mit Datum) an.</DialogDescription>
         </DialogHeader>
         <Field label="Art" htmlFor="new-entity-type">
           <Select
@@ -284,6 +288,7 @@ function EntityView({ id }: { id: string }) {
   const [mergeAction, setMergeAction] = useState<ActionRecord | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [caseOpen, setCaseOpen] = useState(false);
   const [unlinking, setUnlinking] = useState<{ relationId: string; label: string } | null>(null);
 
   if (detail.error && !detail.data) return <ErrorNote error={detail.error} onRetry={() => void detail.refetch()} />;
@@ -404,6 +409,11 @@ function EntityView({ id }: { id: string }) {
           <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="knowledge-link">
             <Link2 aria-hidden /> Verknüpfen
           </Button>
+          {CASE_ENTRY_TYPES.has(entity.type) && !entity.duplicateOfId && (
+            <Button variant="outline" size="sm" onClick={() => setCaseOpen(true)} data-testid="knowledge-case">
+              <FolderKanban aria-hidden /> Zu Vorgang hinzufügen
+            </Button>
+          )}
           {entity.type === 'note' && !entity.duplicateOfId && (
             <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} data-testid="note-edit">
               <Pencil aria-hidden /> Bearbeiten
@@ -423,6 +433,9 @@ function EntityView({ id }: { id: string }) {
           <ActionCard action={mergeAction} onResolved={() => void detail.refetch()} />
         </div>
       )}
+
+      {entity.type === 'case' && <CaseView id={entity.id} />}
+      <CaseAssignDialog entryIds={[entity.id]} open={caseOpen} onOpenChange={setCaseOpen} onDone={() => void detail.refetch()} />
 
       <section>
         <h3 className="mb-2 text-sm font-semibold">Verknüpfungen von hier ({outgoing.length})</h3>

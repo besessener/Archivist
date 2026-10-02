@@ -154,6 +154,27 @@ export const LinkProposalPage = z.object({
 export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
 const LinkGroupBy = z.enum(['method', 'entry']);
 
+/** A case („Vorgang“) with its numbers (#286). */
+const CaseSummary = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  status: z.enum(['open', 'closed']),
+  entries: z.number().int(),
+  openItems: z.number().int(),
+  updatedAt: IsoDate,
+});
+/** An entry of a case, with its date for the timeline (#286). */
+const CaseEntry = z.object({
+  id: z.string(),
+  type: EntityType,
+  name: z.string(),
+  date: z.string().nullable(),
+  status: z.string().nullable(),
+  proposed: z.boolean(),
+  relationId: z.string(),
+});
+
 /** A threshold learned from the user's rejections (#275). */
 const LearnedThreshold = z.object({
   method: RelationMethod,
@@ -534,7 +555,7 @@ export const ipcContract = {
    */
   'knowledge:createEntity': ch(
     z.discriminatedUnion('type', [
-      z.object({ type: z.enum(['topic', 'project', 'person', 'note']), name: z.string().trim().min(1), description: z.string().optional() }),
+      z.object({ type: z.enum(['topic', 'project', 'case', 'person', 'note']), name: z.string().trim().min(1), description: z.string().optional() }),
       EventInput.extend({ type: z.literal('event') }),
     ]),
     KnowledgeCreateResult,
@@ -598,6 +619,16 @@ export const ipcContract = {
   'links:resetThresholds': ch(z.object({ confirmed: Confirmed }), z.object({ ok: z.literal(true) })),
   /** How well the archive is linked, with the history of the archive checks (#292). */
   'links:metrics': ch(Empty, LinkageMetrics),
+  // --- Cases („Vorgänge“, #286) ---
+  'cases:list': ch(z.object({ includeClosed: z.boolean().default(true) }), z.array(CaseSummary)),
+  'cases:detail': ch(z.object({ id: Id }), z.object({ case: GraphEntity, entries: z.array(CaseEntry), openItems: z.array(CaseEntry) })),
+  'cases:create': ch(
+    z.object({ name: z.string().trim().min(1).max(200), description: z.string().max(5000).nullish() }),
+    z.object({ case: GraphEntity, created: z.boolean() }),
+  ),
+  /** Puts entries into a case – ONE undo step (#286, #291). */
+  'cases:assign': ch(z.object({ entryIds: z.array(Id).min(1).max(500), caseId: Id }), z.object({ assigned: z.number().int() })),
+  'cases:setStatus': ch(z.object({ id: Id, status: z.enum(['open', 'closed']) }), GraphEntity),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
   /** Accepts a topic/project taken from a document; only confirmed ones are listed in LLM prompts. */
   'knowledge:confirmEntity': ch(z.object({ id: Id }), GraphEntity),

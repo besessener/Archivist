@@ -859,6 +859,37 @@ export class LinkMethodsService {
     return created;
   }
 
+  /**
+   * An entry similar to an entry of an open case („Vorgang“) is proposed for that case (#286): `belongs_to`, method
+   * `similarity`, the similar member as evidence. Only confirmed members count; a closed case gets nothing new; rejected
+   * and existing assignments are skipped.
+   */
+  async proposeCases(id: string): Promise<number> {
+    if (!this.isEntry(id)) return 0;
+    const best = new Map<string, { score: number; via: string }>();
+    for (const h of await this.similar(id, LINK_ENTRY_TYPES, 8)) {
+      for (const r of this.graph.relationsOf(h.id, { statuses: ['confirmed'], types: ['belongs_to'] })) {
+        const caseId = r.sourceEntityId === h.id ? r.targetEntityId : r.sourceEntityId;
+        const c = this.graph.getEntity(caseId);
+        if (c?.type !== 'case' || c.status === 'closed' || (best.get(caseId)?.score ?? 0) >= h.score) continue;
+        best.set(caseId, { score: h.score, via: this.graph.getEntity(h.id)?.name ?? '' });
+      }
+    }
+    let created = 0;
+    for (const [caseId, b] of best) {
+      if (this.connected(id, caseId)) continue;
+      const c = this.graph.getEntity(caseId)!;
+      const r = this.graph.link(id, caseId, 'belongs_to', {
+        status: 'proposed',
+        confidence: b.score,
+        method: 'similarity',
+        evidence: `ähnlich wie „${truncate(b.via, 80)}“ aus dem Vorgang „${truncate(c.name, 60)}“`,
+      });
+      if (r?.created) created += 1;
+    }
+    return created;
+  }
+
   /** Open similarity proposals of an entry (either direction). */
   private openSimilarityProposals(id: string): number {
     return (
@@ -924,6 +955,7 @@ export class LinkMethodsService {
         // the more specific reason first: same day and person (#278), then similar content (#271)
         proposed += this.proposeSameDayPerson(next);
         proposed += await this.proposeSimilar(next, { max: opts.max });
+        proposed += await this.proposeCases(next);
       } catch (err) {
         this.ctx.logger.warn('links', 'Similarity proposals skipped', { error: err, id: next });
       }
@@ -968,6 +1000,7 @@ export class LinkMethodsService {
       try {
         proposed += this.proposeSameDayPerson(id);
         proposed += this.linkSameDocument(id);
+        proposed += await this.proposeCases(id);
         if (this.noteAnalyzer && this.graph.getEntity(id)?.type === 'note') proposed += await this.noteAnalyzer(id, opts.signal);
       } catch (err) {
         this.ctx.logger.warn('links', 'Link methods skipped for an entry', { error: err, id });

@@ -285,6 +285,11 @@ const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 /** Undo of a link or unlink made through {@link KnowledgeGraphService.linkEntries} / `unlinkEntries` (#277). */
 const LINK_UNDO_TYPE = 'relation.link';
 const CASE_UNDO_TYPE = 'case.status';
+/** Undo of several links made at once – a bulk assignment (#286, #291). */
+const LINK_MANY_UNDO_TYPE = 'relation.linkMany';
+interface LinkManyUndoData {
+  items: LinkUndoData[];
+}
 /** Undo of several proposals decided at once (#280). */
 const DECIDE_MANY_UNDO_TYPE = 'relation.decideMany';
 interface DecideManyUndoData {
@@ -378,6 +383,19 @@ export class KnowledgeGraphService {
         });
         this.ctx.events.changed('knowledge');
         return `${d.before.length} Entscheidung${d.before.length === 1 ? '' : 'en'} über Verknüpfungen zurückgenommen.`;
+      },
+    });
+    undo.register(LINK_MANY_UNDO_TYPE, {
+      check: async (data) => {
+        const issues = (data as LinkManyUndoData).items.flatMap((i) => this.linkUndoConflicts(i));
+        return issues.length ? [`${issues.length} der Verknüpfungen wurde${issues.length === 1 ? '' : 'n'} seither verändert oder entfernt.`] : [];
+      },
+      run: async (data) => {
+        const items = (data as LinkManyUndoData).items;
+        this.ctx.database.transaction(() => {
+          for (const i of items) this.linkUndoRun(i);
+        });
+        return `${items.length} Zuordnung${items.length === 1 ? '' : 'en'} zurückgenommen.`;
       },
     });
     undo.register(LINK_UNDO_TYPE, {
@@ -803,6 +821,57 @@ export class KnowledgeGraphService {
     });
     this.ctx.events.changed('knowledge');
     return { relation: mapRelation(after), created: res?.created ?? false };
+  }
+
+  /**
+   * Links several entries with one target as the user's confirmed choice (bulk assignment to a case, topic or tag –
+   * #286, #291): ONE audit entry, ONE undo step. Entries already linked that way are left as they are. Returns the
+   * number of new or newly confirmed links.
+   */
+  linkMany(
+    sourceIds: string[],
+    targetId: string,
+    relationType: RelationType,
+    opts: { trigger?: string; action?: string; method?: RelationMethod } = {},
+  ): number {
+    const target = this.getEntity(targetId);
+    if (!target) throw new AppError('validation_error', 'Das Ziel existiert nicht.');
+    const items: LinkUndoData[] = [];
+    this.ctx.database.transaction(() => {
+      for (const sourceId of [...new Set(sourceIds)]) {
+        if (sourceId === targetId || !this.getEntity(sourceId)) continue;
+        const find = () =>
+          this.db
+            .select()
+            .from(relations)
+            .where(and(eq(relations.sourceEntityId, sourceId), eq(relations.targetEntityId, targetId), eq(relations.relationType, relationType)))
+            .get() ?? null;
+        const before = find();
+        if (before?.status === 'confirmed') continue;
+        if (before) this.db.update(relations).set({ status: 'confirmed', resolvedByUser: true, updatedAt: nowIso() }).where(eq(relations.id, before.id)).run();
+        else
+          this.link(sourceId, targetId, relationType, {
+            confidence: 1,
+            status: 'confirmed',
+            resolvedByUser: true,
+            origin: 'user',
+            method: opts.method ?? 'manual',
+          });
+        items.push({ before, after: find() });
+      }
+    });
+    if (!items.length) return 0;
+    this.audit.log({
+      action: opts.action ?? 'relation.linkMany',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [targetId, ...items.map((i) => i.after!.sourceEntityId)],
+      after: { target: target.name, relationType, count: items.length },
+      undo: { type: LINK_MANY_UNDO_TYPE, data: { items } satisfies LinkManyUndoData },
+    });
+    this.ctx.events.changed('knowledge');
+    return items.length;
   }
 
   /** Removes a relation the user (or the agent on the user's request) no longer wants; logged with undo. */
