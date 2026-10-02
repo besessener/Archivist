@@ -8,7 +8,7 @@ import { normalizeSubject } from '../../packages/core/src/agent/tools/research/m
 import { invoiceNumber, matchPayments, parseStatement } from '../../packages/core/src/agent/tools/research/payments';
 import { problemReasons } from '../../packages/core/src/agent/tools/research/problems';
 import { scanSecrets } from '../../packages/core/src/agent/tools/research/secrets';
-import { looksLikeVersions, versionKey } from '../../packages/core/src/agent/tools/duplicates';
+import { looksLikeVersions, versionKey } from '../../packages/core/src/agent/tools/duplicate-versions';
 
 const TODAY = new Date(2026, 9, 2);
 
