@@ -24,6 +24,7 @@ import { NotificationService } from './services/notifications';
 import { EventService } from './services/events';
 import { OpenItemDuplicateService } from './services/cleanup/open-item-duplicates';
 import { OpenItemService } from './services/open-items';
+import { PersonService } from './services/persons';
 import { PrivacyService } from './services/privacy';
 import { ReminderService } from './services/reminders';
 import { ScannerService } from './services/scanner';
@@ -84,6 +85,7 @@ function buildServices(opts: CreateServicesOptions) {
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
   const graph = new KnowledgeGraphService(ctx, audit, undo);
+  const persons = new PersonService(ctx, graph);
   // Search queries go to the embedding endpoint only in mode „automatisch“ – „vorher fragen“ uses local vectors only.
   const search = new SearchService(ctx, embedding, pool, () => privacy.mode() === 'auto' && llm.isConfigured());
   const categories = new CategoryService(ctx);
@@ -98,15 +100,15 @@ function buildServices(opts: CreateServicesOptions) {
   }
 
   // 4) Fachdienste
-  const documentsSvc = new DocumentService(ctx, settings, graph, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
-  const decisions = new DecisionService(ctx, graph, search, audit, undo);
-  const openItems = new OpenItemService(ctx, graph, search, audit, undo);
+  const documentsSvc = new DocumentService(ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
+  const decisions = new DecisionService(ctx, graph, persons, search, audit, undo);
+  const openItems = new OpenItemService(ctx, graph, persons, search, audit, undo);
   const eventsSvc = new EventService(ctx, graph, search, audit, undo);
   const notes = new NoteService(ctx, graph, search);
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
-  const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, audit, notifications, pool, undo);
+  const archive = new ArchiveService(ctx, settings, documentsSvc, categories, graph, persons, audit, notifications, pool, undo);
   const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
@@ -127,6 +129,7 @@ function buildServices(opts: CreateServicesOptions) {
     reminders,
     search,
     graph,
+    persons,
     documentsSvc,
     scanner,
     contradictions,
@@ -224,6 +227,7 @@ function buildServices(opts: CreateServicesOptions) {
     privacy,
     embedding,
     graph,
+    persons,
     search,
     categories,
     jobs,

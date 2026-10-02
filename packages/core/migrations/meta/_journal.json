@@ -71,6 +71,13 @@
       "when": 1790834036730,
       "tag": "0009_insight_choices",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790834037730,
+      "tag": "0010_entity_roles",
+      "breakpoints": true
     }
   ]
 }
