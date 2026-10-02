@@ -153,8 +153,9 @@ export class LlmService {
   }
 
   private endpoint(baseUrl: string, pathPart: string): string {
-    // eslint-disable-next-line sonarjs/super-linear-regex -- base URL or a single model answer, length is bounded
-    return `${baseUrl.replace(/\/+$/, '')}/${pathPart}`;
+    let end = baseUrl.length;
+    while (end > 0 && baseUrl[end - 1] === '/') end--;
+    return `${baseUrl.slice(0, end)}/${pathPart}`;
   }
 
   private mapHttpError(status: number, body: string): AppError {

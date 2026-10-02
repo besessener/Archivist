@@ -87,7 +87,7 @@ export function compare(current: TaskResult[], previous: TaskResult[]): Comparis
 const pct = (x: number) => `${Math.round(x * 100)} %`;
 const usd = (x: number) => `$${x.toFixed(4)}`;
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
-const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+const cell = (s: string) => s.replace(/[\\|]/g, '\\$&').replace(/\s+/g, ' ').trim();
 const signed = (x: number, fmt: (v: number) => string) => `${x > 0 ? '+' : x < 0 ? '−' : '±'}${fmt(Math.abs(x))}`;
 
 export function markdown(report: EvalReport, previous: { file: string; report: EvalReport } | null): string {
