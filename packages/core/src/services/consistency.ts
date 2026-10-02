@@ -8,6 +8,7 @@ import { newId } from '../util/ids';
 import { sha256Text } from '../util/hash';
 import { truncate } from '../util/text';
 import { chooseTargetFolder, folderLabel, splitSubjects } from './archive-structure';
+import { checkTopicProjectNames } from './cleanup/topic-project-names';
 import type { EntityDuplicateCheck } from './cleanup/entity-duplicates';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
@@ -33,6 +34,7 @@ const KIND_LABELS: Record<string, string> = {
   misplaced_file: 'Ablageort-Auffälligkeiten',
   scattered_documents: 'verstreut abgelegte Dokumente',
   similar_topics: 'ähnliche Themen',
+  topic_project_name: 'gleiche Namen bei Thema und Projekt',
   similar_entities: 'mögliche Dubletten',
   incomplete_decision: 'unvollständige Entscheidungen',
   possibly_superseded: 'möglicherweise überholte Entscheidungen',
@@ -335,6 +337,9 @@ export class ConsistencyService {
     // ---- Duplicate topics, projects and tags (always asks, never merges on its own) ----
     step(0.45, 'Prüfe Themen, Projekte und Tags');
     await this.entityDuplicates.run(count, signal);
+
+    // ---- Gleicher Name als Thema und als Projekt ----
+    checkTopicProjectNames({ graph: this.graph, insights: this.insights }, count);
 
     // ---- Entscheidungen ----
     step(0.6, 'Prüfe Entscheidungen');

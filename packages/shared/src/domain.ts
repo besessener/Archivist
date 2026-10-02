@@ -400,8 +400,24 @@ export const InsightKind = z.enum([
   'misplaced_file',
   'scattered_documents',
   'low_confidence_relation',
+  'topic_project_name',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
+/**
+ * One answer option of a question insight (e.g. „Projekt“ / „Thema“ / „Beides ist richtig“). Choosing an option with an
+ * `actionId` executes that agent action (with the user's confirmation) and accepts the insight; choosing an option
+ * without an action („verschieden“, „keine davon“) rejects the insight, which is remembered permanently via its dedupe key.
+ */
+export const InsightChoice = z.object({
+  /** Stable id within the insight (e.g. `project`, `topic`, `different`, an entity id). */
+  id: z.string().min(1).max(100),
+  label: z.string(),
+  /** What happens when this option is chosen (shown before confirming). */
+  description: z.string().nullable(),
+  /** Agent action executed on this choice; `null` = nothing changes, the insight is rejected and remembered. */
+  actionId: z.string().nullable(),
+});
+export type InsightChoice = z.infer<typeof InsightChoice>;
 export const Insight = z.object({
   id: Id,
   kind: InsightKind,
@@ -412,6 +428,10 @@ export const Insight = z.object({
   sourceIds: z.array(z.string()),
   recommendedActionId: z.string().nullable(),
   recommendedActionLabel: z.string().nullable(),
+  /** Answer options; non-empty turns the insight into a question that is answered via `insights:respond` `choose`. */
+  choices: z.array(InsightChoice),
+  /** The option the user picked (set once the question was answered). */
+  chosenChoiceId: z.string().nullable(),
   status: z.enum(['open', 'accepted', 'rejected', 'snoozed']),
   snoozedUntil: IsoDate.nullable(),
   createdAt: IsoDate,

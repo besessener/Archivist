@@ -3,6 +3,7 @@ import { initChat } from './chat';
 import { initDecisions } from './decisions';
 import { initDocuments } from './documents';
 import { initInbox } from './inbox';
+import { initInsights } from './insights';
 import { initKnowledge } from './knowledge';
 import { initNavigation } from './navigation';
 import { initOpenItems } from './open-items';
@@ -27,6 +28,9 @@ export function createPageTree(page: Page) {
     },
     get inbox() {
       return initInbox(page);
+    },
+    get insights() {
+      return initInsights(page);
     },
     get knowledge() {
       return initKnowledge(page);

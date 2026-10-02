@@ -64,6 +64,13 @@
       "when": 1790834035730,
       "tag": "0008_open_item_duplicate_of",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790834036730,
+      "tag": "0009_insight_choices",
+      "breakpoints": true
     }
   ]
 }

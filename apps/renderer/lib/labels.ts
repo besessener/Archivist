@@ -28,6 +28,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   misplaced_file: 'Falsch abgelegte Dateien',
   scattered_documents: 'Verstreut abgelegte Dokumente',
   low_confidence_relation: 'Unsichere Verknüpfungen',
+  topic_project_name: 'Thema oder Projekt?',
 };
 
 export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {

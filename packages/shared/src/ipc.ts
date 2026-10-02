@@ -288,6 +288,8 @@ export const ipcContract = {
     z.discriminatedUnion('response', [
       z.object({ response: z.literal('accept'), id: Id, confirmed: Confirmed, strongConfirmed: z.boolean().default(false) }),
       z.object({ response: z.literal('reject'), id: Id }),
+      // answers a question insight with one of its `choices`; options with an action need the explicit confirmation
+      z.object({ response: z.literal('choose'), id: Id, choiceId: z.string().min(1), confirmed: Confirmed, strongConfirmed: z.boolean().default(false) }),
       z.object({ response: z.literal('remind_later'), id: Id, remindAt: IsoDate }),
     ]),
     Insight,
