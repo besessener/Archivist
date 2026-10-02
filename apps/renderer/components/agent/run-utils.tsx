@@ -6,6 +6,7 @@ import { AgentRun, type AgentRunStatus, type AgentStep, type AgentStepOutcome, t
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/common/states';
+import { Progress } from '@/components/ui/progress';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
 import { cn } from '@/lib/utils';
@@ -133,6 +134,20 @@ export function StepRow({ step, action }: { step: AgentStep; action?: React.Reac
           {step.risk === 'critical' && <Badge variant="warning">fragt immer</Badge>}
           {duration && <span className="text-[11px] text-muted-foreground">{duration}</span>}
         </div>
+        {step.job && step.outcome === 'running' && (
+          // a longer step (e.g. a file job, #304): its progress belongs to the step, not to a second list
+          <div className="mt-1 flex items-center gap-2" data-testid="agent-step-progress">
+            <Progress
+              value={step.job.total ? Math.round((step.job.done / step.job.total) * 100) : 0}
+              aria-label={`Fortschritt: ${step.label}`}
+              className="max-w-60"
+            />
+            <span className="text-[11px] text-muted-foreground">
+              {step.job.done} von {step.job.total}
+              {step.job.id ? ' · als Auftrag' : ''}
+            </span>
+          </div>
+        )}
         <details className="group mt-0.5">
           <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
             Technische Details

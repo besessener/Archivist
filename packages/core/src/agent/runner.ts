@@ -435,7 +435,17 @@ export class AgentRunner {
       return done('proposed', text, 'als Vorschlag vorbereitet', false);
     }
     let out: ToolOutput;
-    const scope = { runId: ctx.runId, explicit: ctx.trigger === 'chat', auditIds: step.auditIds };
+    const scope = {
+      runId: ctx.runId,
+      explicit: ctx.trigger === 'chat',
+      auditIds: step.auditIds,
+      stepId: step.id,
+      // a longer step (file job) shows its progress in the live view (#304)
+      onProgress: (p: { jobId: string | null; done: number; total: number }) => {
+        step.job = { id: p.jobId, done: p.done, total: p.total };
+        this.o.onStep?.(step, this.steps);
+      },
+    };
     try {
       out = await agentRunScope.run(scope, () => tool.run(args, ctx));
     } catch (err) {

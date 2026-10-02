@@ -100,6 +100,8 @@ export interface ToolContext {
   changedCount: number;
   /** Set when a tool result contained text that looks like an instruction to the agent (#301). */
   tainted: string | null;
+  /** The background job the run is part of: longer steps report their progress to it instead of starting jobs of their own (#304). */
+  job?: { report: (progress: number, message: string) => void } | null;
 }
 
 export interface ToolOutput {

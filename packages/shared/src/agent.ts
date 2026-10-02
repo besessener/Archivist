@@ -125,6 +125,8 @@ export const AgentStep = z.object({
   actionId: z.string().nullable().default(null),
   startedAt: IsoDate,
   durationMs: z.number().nullable().default(null),
+  /** Progress of a longer step; `jobId` when it runs as a job of its own (large file operations, #304). */
+  job: z.object({ id: z.string().nullable(), done: z.number().int(), total: z.number().int() }).optional(),
 });
 export type AgentStep = z.infer<typeof AgentStep>;
 
