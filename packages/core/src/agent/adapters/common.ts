@@ -26,8 +26,8 @@ export function previewOf(messages: AgentMessage[]): string {
 }
 
 /** Is this assistant message replayed with its own provider blocks (same provider and model)? */
-export const replayRaw = (m: Extract<AgentMessage, { role: 'assistant' }>, provider: string, model: string): boolean =>
-  m.provider === provider && m.model === model && m.raw !== undefined && m.raw !== null;
+export const replayRaw = (message: Extract<AgentMessage, { role: 'assistant' }>, target: { provider: string; model: string }): boolean =>
+  message.provider === target.provider && message.model === target.model && message.raw !== undefined && message.raw !== null;
 
 /** Feature switches an endpoint has rejected; kept in memory per endpoint and model so later requests leave them out. */
 const rejected = new Map<string, Set<string>>();

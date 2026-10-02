@@ -130,7 +130,7 @@ function questionStep(round: number, question: string): AgentStep {
   };
 }
 
-export function webSearchStep(round: number, query: string, sources: WebSource[]): AgentStep {
+export function webSearchStep(round: number, { query, sources }: { query: string; sources: WebSource[] }): AgentStep {
   return {
     id: newId(),
     round,

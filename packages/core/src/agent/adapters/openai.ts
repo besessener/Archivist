@@ -45,7 +45,7 @@ export function toResponsesInput(messages: AgentMessage[], model: string): unkno
   return messages.flatMap((message): unknown[] => {
     if (message.role === 'user') return [{ role: 'user', content: message.content }];
     if (message.role === 'tool') return toolOutputs(message);
-    if (replayRaw(message, 'openai', model) && Array.isArray(message.raw)) return (message.raw as OutputItem[]).flatMap(replayedItem);
+    if (replayRaw(message, { provider: 'openai', model }) && Array.isArray(message.raw)) return (message.raw as OutputItem[]).flatMap(replayedItem);
     return assistantItems(message);
   });
 }

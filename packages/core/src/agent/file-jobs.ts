@@ -209,7 +209,7 @@ export class AgentFileJobs {
         const before = scope.auditIds.length;
         addResult(result, await agentRunScope.run(scope, () => this.apply({ op: payload.op, items: chunk, consent: payload.consent })));
         done += chunk.length;
-        if (!waiter && payload.stepId) this.runs.addStepAudit(payload.runId, payload.stepId, scope.auditIds.slice(before));
+        if (!waiter && payload.stepId) this.runs.addStepAudit(payload.runId, { stepId: payload.stepId, auditIds: scope.auditIds.slice(before) });
         job.saveCheckpoint({ done, result });
         job.report(done / payload.items.length, `${done} von ${payload.items.length} Dateien`);
         sync();

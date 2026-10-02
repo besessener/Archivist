@@ -80,7 +80,7 @@ function toolResultBlocks(message: Extract<AgentMessage, { role: 'tool' }>): Con
 
 function assistantBlocks(message: Extract<AgentMessage, { role: 'assistant' }>, model: string): ContentBlockParam[] {
   // thinking and compaction blocks go back unchanged and in place (append-only history)
-  if (replayRaw(message, 'anthropic', model) && Array.isArray(message.raw) && message.raw.length) return message.raw as ContentBlockParam[];
+  if (replayRaw(message, { provider: 'anthropic', model }) && Array.isArray(message.raw) && message.raw.length) return message.raw as ContentBlockParam[];
   const blocks: ContentBlockParam[] = [];
   if (message.text.trim()) blocks.push({ type: 'text', text: message.text });
   // tool_use ids of other providers may contain characters the Messages API rejects

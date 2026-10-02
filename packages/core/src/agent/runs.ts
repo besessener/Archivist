@@ -76,7 +76,7 @@ export class AgentRunService {
   }
 
   /** Intermediate state, so that a run interrupted by a restart is still visible with what it did. */
-  checkpoint(id: string, steps: AgentStep[], usage: AgentUsage): void {
+  checkpoint(id: string, { steps, usage }: { steps: AgentStep[]; usage: AgentUsage }): void {
     this.db
       .update(agentRuns)
       .set({ steps: steps.map(storedStep) as unknown as ArchivistJson, usage: usage })
@@ -119,7 +119,7 @@ export class AgentRunService {
   }
 
   /** Audit entries a file job wrote for a step after its run had ended (resumed after a restart, #304), so undo per step covers them. */
-  addStepAudit(id: string, stepId: string, auditIds: string[]): void {
+  addStepAudit(id: string, { stepId, auditIds }: { stepId: string; auditIds: string[] }): void {
     if (!auditIds.length) return;
     const row = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
     const steps = (row?.steps as unknown as AgentStep[] | undefined) ?? [];

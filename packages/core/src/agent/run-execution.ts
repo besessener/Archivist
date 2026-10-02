@@ -194,7 +194,7 @@ export class AgentRunExecutor {
         progress.usage = usage;
         progress.costUsd = costOf(usage, price);
         this.deps.progress.emitSoon(progress);
-        this.deps.runs.checkpoint(ctx.runId, progress.steps, usage);
+        this.deps.runs.checkpoint(ctx.runId, { steps: progress.steps, usage });
       },
     };
   }

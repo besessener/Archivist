@@ -321,6 +321,6 @@ export class AgentRunner {
   private recordWeb(web: NonNullable<TurnResult['web']>, round: number): void {
     this.options.ctx.webContent = true;
     for (const source of web.sources) if (!this.webSources.has(source.url)) this.webSources.set(source.url, source);
-    for (const query of web.queries) this.tools.addStep(webSearchStep(round, query, web.sources));
+    for (const query of web.queries) this.tools.addStep(webSearchStep(round, { query, sources: web.sources }));
   }
 }
