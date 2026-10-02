@@ -16,6 +16,7 @@ export function initSetupWizard(page: Page) {
       baseUrl: root.getByTestId('setup-baseurl'),
       apiKey: root.getByTestId('setup-apikey'),
       model: root.getByTestId('setup-model'),
+      profileName: root.getByTestId('setup-profile-name'),
       mode: (mode: PrivacyMode) => root.getByTestId(`setup-mode-${mode}`),
     },
     texts: {

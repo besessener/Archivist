@@ -27,4 +27,18 @@ test.describe('Wissen: Neu anlegen', () => {
     await app.navigation.do.open('timeline');
     await expect(app.timeline.entry('German Testing Day')).toHaveAttribute('data-kind', 'event');
   });
+
+  test('shows the own person with the badge „Du“ (name from the setup)', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.locators.inputs.profileName.fill('Monika Lor-Zade');
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+
+    const me = k.locators.items.filter({ hasText: 'Monika Lor-Zade' });
+    await expect(me.getByTestId('knowledge-item-self')).toHaveText('Du');
+    await me.click();
+    await expect(k.heading()).toHaveText('Monika Lor-Zade');
+    await expect(k.locators.detail.getByTestId('entity-self')).toHaveText('Du');
+  });
 });

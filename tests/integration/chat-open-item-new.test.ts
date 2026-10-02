@@ -51,10 +51,13 @@ describe('Neue offene Punkte vollständig anlegen (#41)', () => {
     expect(r.assistantMessage.content).not.toMatch(/Wer ist verantwortlich/);
   });
 
-  it('ohne hinterlegten Namen bleibt „ich“ leer und der Chat sagt, wie man das ändert', async () => {
+  it('ohne hinterlegten Namen wird „ich“ der Platzhalter „Ich“ (die eigene Person), und der Chat sagt, wie man den Namen einträgt', async () => {
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Zahnarzt anrufen', responsible: 'mir' } }));
     const r = await send('Zahnarzt anrufen bleibt an mir hängen');
-    expect((await app.ok('openItems:list', {}))[0]!.responsibleName).toBeNull();
+    const item = (await app.ok('openItems:list', {}))[0]!;
+    expect(item.responsibleName).toBe('Ich');
+    expect(app.services.graph.getEntity(item.responsiblePersonId!)!.isSelf).toBe(true);
+    expect(r.assistantMessage.content).toContain('Verantwortlich: du');
     expect(r.assistantMessage.content).toContain('Einstellungen → Über dich');
     expect(app.services.graph.findByName('person', 'mir')).toBeFalsy();
   });

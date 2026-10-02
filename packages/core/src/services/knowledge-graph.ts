@@ -207,6 +207,7 @@ const mapEntity = (r: EntityRow): GraphEntity => ({
   aliases: r.aliases,
   roles: r.roles,
   duplicateOfId: r.duplicateOfId,
+  isSelf: r.isSelf,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -299,6 +300,7 @@ export class KnowledgeGraphService {
       aliases: [],
       roles: [],
       duplicateOfId: null,
+      isSelf: false,
       createdAt: now,
       updatedAt: now,
     };
@@ -706,6 +708,42 @@ export class KnowledgeGraphService {
     return { auditId, results };
   }
 
+  /**
+   * Renames an entity and updates the name lists that mention its former name (participants, document persons, tags).
+   * `keepOldName` stores the former name as an alias. Recorded like a merge without sources, so the undo is exact.
+   */
+  async rename(id: string, name: string, opts: MergeOptions & { keepOldName?: boolean } = {}): Promise<{ auditId: string } | null> {
+    const target = this.entityRow(id);
+    if (!target) throw new AppError('validation_error', 'Umbenennen: Eintrag nicht gefunden.');
+    const clean = name.trim().replace(/\s+/g, ' ');
+    if (!clean) throw new AppError('validation_error', 'Der Name darf nicht leer sein.');
+    if (clean === target.name) return null;
+    const touched = new Set<string>([`entity:${id}`]);
+    const reindex = emptyRefSets();
+    const auditId = this.ctx.database.transaction(() => {
+      const now = nowIso();
+      const step: MergeStep = { target: { ...target }, sources: [], relationsDeleted: [], relationsUpdated: [], refs: [] };
+      this.rehangReferences(step, now, touched, reindex, clean);
+      const normalizedName = normalizeName(clean);
+      const aliases = opts.keepOldName === false ? target.aliases : mergeAliases({ normalizedName, aliases: target.aliases }, [target.name]);
+      this.db.update(entities).set({ name: clean, normalizedName, aliases, updatedAt: now }).where(eq(entities.id, id)).run();
+      const data: MergeUndoData = { steps: [step], after: this.fingerprints([...touched]) };
+      return this.audit.log({
+        action: opts.action ?? 'entity.rename',
+        actor: opts.actor ?? 'user',
+        trigger: opts.trigger ?? 'manual',
+        confirmed: true,
+        entityIds: [id],
+        before: { name: target.name },
+        after: { name: clean },
+        undo: { type: MERGE_UNDO_TYPE, data },
+      });
+    });
+    this.ctx.events.changed('knowledge', 'documents', 'decisions', 'openItems', 'events');
+    await this.runReindex(reindex);
+    return { auditId };
+  }
+
   private entityRow(id: string): EntityRow | undefined {
     return this.db.select().from(entities).where(eq(entities.id, id)).get();
   }
@@ -839,7 +877,7 @@ export class KnowledgeGraphService {
       const spec = REF_TABLES[name];
       const tbl = spec.table as RefTableShape;
       const listCol = spec.lists[target.type as EntityType];
-      const responsible = spec.responsible === true && target.type === 'person';
+      const responsible = spec.responsible === true && target.type === 'person' && sourceIds.length > 0;
       const conds = [];
       if (touchesTopics) conds.push(inArray(tbl.topicId, sourceIds), inArray(tbl.projectId, sourceIds));
       if (responsible) conds.push(inArray(col(tbl, 'responsiblePersonId'), sourceIds));
@@ -940,7 +978,7 @@ export class KnowledgeGraphService {
     const reindex = emptyRefSets();
     this.ctx.database.transaction(() => {
       for (const step of [...data.steps].reverse()) {
-        this.db.insert(entities).values(step.sources).run();
+        if (step.sources.length) this.db.insert(entities).values(step.sources).run();
         const { id: targetId, ...target } = step.target;
         this.db.update(entities).set(target).where(eq(entities.id, targetId)).run();
         for (const r of step.relationsUpdated) {
@@ -958,6 +996,7 @@ export class KnowledgeGraphService {
     this.ctx.events.changed('knowledge', 'documents', 'decisions', 'openItems', 'events');
     await this.runReindex(reindex);
     const names = data.steps.flatMap((s) => s.sources.map((x) => `„${x.name}“`));
+    if (names.length === 0) return `Umbenennung rückgängig gemacht: „${data.steps[0]?.target.name ?? ''}“ wiederhergestellt.`;
     return `Zusammenführung rückgängig gemacht: ${names.join(', ')} wiederhergestellt.`;
   }
 

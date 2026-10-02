@@ -19,6 +19,8 @@ export const entities = sqliteTable(
     roles: jsonArr('roles'),
     /** Set when the node was discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
     duplicateOfId: text('duplicate_of_id'),
+    /** The user's own person („Du“); at most one entity carries the flag. */
+    isSelf: integer('is_self', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
