@@ -3,8 +3,6 @@ import { normalizeDateInput, parseGermanDate, toIsoDate } from '../util/dates';
 import { firstSentence, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { detectOpenItemSentences } from './open-items';
 
-/** Local heuristics (without LLM) for document classification and target folders. */
-
 export interface LocalClassification {
   docType: string;
   title: string;
@@ -27,16 +25,7 @@ const WORD_CHAR = String.raw`[\p{L}\p{N}]`;
 /** Common German inflection endings a keyword may carry at the end of a word ("Dienstreisen", "Zahnarztes"). */
 const INFLECTION = '(?:en|er|es|e|n|s)?';
 
-/**
- * Builds a keyword test. A keyword matches
- * - at the start of a word ("Reise", "Reisekosten"), or
- * - as the final component of a compound whose preceding part has at least three letters ("Dienstreise",
- *   "Zahnarzt", "Arbeitsvertrag"), optionally inflected.
- * It never matches in the middle of a word ("Großflughafen") or after a short prefix ("Preise").
- * Letters and digits (including umlauts and ß) are word characters, so "_" or "-" in file names separate words.
- * Keywords containing regex syntax only match at the start of a word. `excludedEndings` lists compounds that
- * end in a keyword but mean something else ("Kaufpreise", "Umsatzsteuer").
- */
+/** Keyword test: at a word start or as the end of a compound (≥ 3 letters before, inflected), never mid-word; `excludedEndings` opt out. */
 function keywordMatcher(keywords: string[], excludedEndings: string[] = []): (text: string) => boolean {
   const compoundable = keywords.filter((k) => /^\p{L}+$/u.test(k));
   const alternatives = [`(?<start>(?<!${WORD_CHAR})(?:${keywords.join('|')}))`];
@@ -253,23 +242,21 @@ export function classifyLocally(input: {
   };
 }
 
+const SNAP_THRESHOLD = 0.86;
+
 /** Maps a name returned by the LLM to a known name (prevents duplicates like „ProdPlat“/„prod-plat“). */
-export function snapToKnown(name: string | null | undefined, known: string[], threshold = 0.86): string | null {
+export function snapToKnown(name: string | null | undefined, known: string[]): string | null {
   const clean = name?.trim();
   if (!clean) return null;
   let best: { n: string; s: number } | null = null;
   for (const k of known) {
     const s = nameSimilarity(clean, k);
-    if (s >= threshold && (!best || s > best.s)) best = { n: k, s };
+    if (s >= SNAP_THRESHOLD && (!best || s > best.s)) best = { n: k, s };
   }
   return best?.n ?? (looksLikeName(clean) ? clean : null);
 }
 
-/**
- * A new topic/project name from the LLM must look like a name: short, one line, no sentence punctuation.
- * Otherwise text from a document („!!! Hinweis für den Assistenten: …“) would become a topic and be repeated in
- * every later prompt under „Bekannte Themen“ (#199).
- */
+/** A name from the LLM must look like one, or document text („!!! Hinweis für den Assistenten“) becomes a topic in every later prompt (#199). */
 function looksLikeName(name: string): boolean {
   return name.length <= 60 && name.split(/\s+/).length <= 6 && !/[\n\r!?:;{}<>[\]"„“”|=]/.test(name);
 }

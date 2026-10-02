@@ -8,11 +8,7 @@ import type { PrivacyService } from './privacy';
 
 const TopicName = z.object({ name: z.string().nullable() });
 
-/**
- * A name for a new topic from a group of similar entries (#281), by the LLM – only in privacy mode „automatisch“ and only
- * from names and short descriptions the privacy rules allow to share; everything else keeps the local suggestion. The
- * names are data in the prompt, never instructions (#199). Returns null when nothing better came back.
- */
+/** A topic name for a group of similar entries by the LLM (#281), only in mode „automatisch“ and from shareable names; null keeps the local one. */
 export class TopicNamer {
   constructor(
     private readonly ctx: AppContext,

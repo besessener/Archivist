@@ -14,10 +14,7 @@ function fnv1a(str: string, seed = 0x811c9dc5): number {
   return h >>> 0;
 }
 
-/**
- * Local, deterministic vectors (feature hashing over words and character trigrams).
- * No network request, no model file – robust offline and for confidential documents.
- */
+/** Local, deterministic vectors (feature hashing over words and character trigrams): no network, no model file. */
 export function localEmbed(text: string): Float32Array {
   const vec = new Float32Array(LOCAL_DIM);
   const tokens = tokenize(text);
@@ -56,8 +53,8 @@ export class EmbeddingService {
 
   /** Model that requests would currently use. */
   currentModel(allowRemote: boolean): string {
-    const cfg = this.settings.get().llm;
-    return allowRemote && cfg.embeddingModel && this.llm.isConfigured() ? cfg.embeddingModel : LOCAL_MODEL;
+    const llmSettings = this.settings.get().llm;
+    return allowRemote && llmSettings.embeddingModel && this.llm.isConfigured() ? llmSettings.embeddingModel : LOCAL_MODEL;
   }
 
   /** `allowRemote=false` forces local vectors (e.g. for documents excluded from external analysis). */

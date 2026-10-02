@@ -51,13 +51,7 @@ function namesIn(text: string, entries: Array<Pick<GraphEntity, 'name' | 'aliase
     .map((e) => e.name);
 }
 
-/**
- * Analyses notes like documents (#273): topic, project, persons and tags – with the language model in privacy mode
- * „automatisch“, otherwise locally (known names and hashtags in the text). The findings become PROPOSED relations with
- * method `analysis` and their evidence; persons go through the central person resolution (aliases, „ich“ = the user).
- * Run again after an edit: relations the analysis no longer finds become `outdated`; relations the user confirmed or
- * rejected stay as they are.
- */
+/** Analyses notes like documents (#273) into PROPOSED relations; a rerun marks what it no longer finds `outdated`, the user's decisions stay. */
 export class NoteAnalysisService {
   constructor(
     private readonly ctx: AppContext,
@@ -146,8 +140,7 @@ export class NoteAnalysisService {
         type: 'project',
         evidence: evidence('Projekt', f.project),
       });
-    // the central person resolution: aliases, own identity – a note is the user's own words, so „ich“ is the user (like in
-    // the chat); unknown names only from the language model
+    // a note is the user's own words, so „ich“ is the user; unknown names are created only from the language model's findings
     const resolved = this.persons.resolveNames(f.persons, { context: 'chat', create: f.via === 'llm' });
     for (const p of resolved.entities) targets.push({ id: p.id, type: 'person', evidence: evidence('Person', p.name) });
     for (const t of f.tags) targets.push({ id: this.graph.ensureEntity('tag', t).id, type: 'tag', evidence: evidence('Tag', t) });
