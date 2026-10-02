@@ -162,7 +162,12 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
         proposedParameters: { oldDecisionId: o.id, newDecisionId: n.id },
       });
     },
-    'decisions:supersede': (i) => s.decisions.supersede(i.oldDecisionId, i.newDecisionId, { confirmed: i.confirmed, trigger }),
+    'decisions:supersede': (i) => {
+      const out = s.decisions.supersede(i.oldDecisionId, i.newDecisionId, { confirmed: i.confirmed, trigger });
+      // replacing by hand settles the pair's contradiction just like the confirmed proposal (#168)
+      s.contradictions.settlePair(i.oldDecisionId, i.newDecisionId);
+      return out;
+    },
     'decisions:revoke': (i) => s.decisions.revoke(i.id, { confirmed: i.confirmed, trigger }),
 
     'documents:import': async (i) => s.documents.importPaths(i.paths),

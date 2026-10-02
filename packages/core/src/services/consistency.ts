@@ -13,6 +13,7 @@ import type { EntityDuplicateCheck } from './cleanup/entity-duplicates';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
+import { decisionDates } from './decision-dating';
 import type { InsightService } from './insights';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
@@ -208,19 +209,22 @@ export class ConsistencyService {
       byTopic.set(d.topicId!, [...(byTopic.get(d.topicId!) ?? []), d]);
     for (const list of byTopic.values()) {
       if (list.length < 2) continue;
-      // only dated decisions: the capture date says nothing about which decision is newer (#168)
-      const sorted = list.filter((d) => d.decidedAt).sort((a, b) => a.decidedAt!.localeCompare(b.decidedAt!));
+      // only dated decisions (own date or that of a source document): the capture date says nothing about which
+      // decision is newer (#168)
+      const dating = decisionDates(this.db, list);
+      const dateOf = (d: Decision) => dating.get(d.id)?.date ?? '';
+      const sorted = list.filter((d) => dateOf(d)).sort((a, b) => dateOf(a).localeCompare(dateOf(b)));
       for (let i = 0; i < sorted.length - 1; i += 1) {
         const older = sorted[i]!;
         const newer = sorted[i + 1]!;
-        if (older.decidedAt === newer.decidedAt) continue;
+        if (dateOf(older).slice(0, 10) === dateOf(newer).slice(0, 10)) continue;
         if (this.contradictions.forPair(older.id, newer.id)) continue;
         const key = `superseded:${older.id}:${newer.id}`;
         current.add(key);
         const shown = this.insights.upsert({
           kind: 'possibly_superseded',
           title: `Möglicherweise überholt: ${older.title}`,
-          explanation: `Zum Thema „${older.topicName}“ existiert eine neuere aktive Entscheidung vom ${newer.decidedAt?.slice(0, 10) ?? 'unbekanntem Datum'}: ${truncate(newer.decisionText, 160)}`,
+          explanation: `Zum Thema „${older.topicName}“ existiert eine neuere aktive Entscheidung vom ${dateOf(newer).slice(0, 10)}${newer.decidedAt ? '' : ' (laut Quelldokument)'}: ${truncate(newer.decisionText, 160)}`,
           confidence: 0.5,
           affected: [
             { type: 'decision', id: older.id, label: older.title },

@@ -11,6 +11,7 @@ import { normalizeName, truncate } from '../util/text';
 import type { ActionService } from './actions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
+import { decisionDates } from './decision-dating';
 import type { InsightService } from './insights';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
@@ -268,23 +269,37 @@ export class ContradictionService {
   }
 
   private async record(a: Decision, b: Decision, reason: string, confidence: number): Promise<Contradiction> {
-    const [older, newer] = [a, b].sort((x, y) => (x.decidedAt ?? x.createdAt).localeCompare(y.decidedAt ?? y.createdAt)) as [Decision, Decision];
     const dedupeKey = ContradictionService.pairKey(a.id, b.id);
     const existing = this.db.select().from(contradictions).where(eq(contradictions.dedupeKey, dedupeKey)).get();
     if (existing) return map(existing);
+    // the order comes from decision dates or the dates of the source documents, never from the capture date (#168)
+    const dating = decisionDates(this.db, [a, b]);
+    const dateOf = (d: Decision) => dating.get(d.id)?.date ?? null;
+    const label = (d: Decision) => {
+      const dd = dating.get(d.id);
+      if (!dd?.date) return 'ohne Datum';
+      return dd.basis === 'source' ? `${dd.date.slice(0, 10)} laut Quelldokument` : dd.date.slice(0, 10);
+    };
+    const da = dateOf(a);
+    const db = dateOf(b);
+    const ordered = da !== null && db !== null && da.slice(0, 10) !== db.slice(0, 10);
+    const [older, newer] = ordered && da > db ? [b, a] : [a, b];
     const topic = a.topicName ?? b.topicName ?? a.projectName ?? 'diesem Thema';
     const now = nowIso();
+    const orderNote = ordered
+      ? ''
+      : '\n\nWelche Entscheidung die neuere ist, ist unbekannt – ergänze ein Entscheidungsdatum oder markiere die überholte Entscheidung auf ihrer Seite als „ersetzt“.';
     const row: Row = {
       id: newId(),
       title: `Mögliche widersprüchliche Entscheidungen zu „${topic}“`,
-      description: `${reason}\n\n1. ${older.decidedAt?.slice(0, 10) ?? 'ohne Datum'}: ${truncate(older.decisionText, 240)}\n2. ${newer.decidedAt?.slice(0, 10) ?? 'ohne Datum'}: ${truncate(newer.decisionText, 240)}`,
+      description: `${reason}\n\n1. ${label(older)}: ${truncate(older.decisionText, 240)}\n2. ${label(newer)}: ${truncate(newer.decisionText, 240)}${orderNote}`,
       affectedEntityIds: [older.id, newer.id],
       excerpts: [
         { entityId: older.id, text: truncate(older.decisionText, 300) },
         { entityId: newer.id, text: truncate(newer.decisionText, 300) },
       ] as ArchivistJson,
       sourceIds: [...new Set([...older.sourceIds, ...newer.sourceIds, older.id, newer.id])],
-      timestamps: [older.decidedAt ?? older.createdAt, newer.decidedAt ?? newer.createdAt],
+      timestamps: [older, newer].flatMap((d) => dateOf(d) ?? []),
       confidence,
       status: 'detected',
       dedupeKey,
@@ -297,19 +312,22 @@ export class ContradictionService {
       this.insights.retire(key, 'Für diese Entscheidungen wurde ein Widerspruch erkannt; er ersetzt den Hinweis.');
     this.graph.link(newer.id, older.id, 'contradicts', { confidence, status: 'proposed' });
 
-    // proposal: the newer decision supersedes the older one – requires confirmation
-    const action = this.actions.propose({
-      actionType: 'supersede_decision',
-      rationale: `Die neuere Entscheidung (${newer.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) könnte die ältere (${older.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) überholt haben.`,
-      confidence,
-      affectedEntities: [
-        { type: 'decision', id: older.id, label: older.title },
-        { type: 'decision', id: newer.id, label: newer.title },
-      ],
-      requiredConfirmation: 'confirm',
-      proposedParameters: { oldDecisionId: older.id, newDecisionId: newer.id },
-      label: 'Neuere Entscheidung ersetzt die ältere (ältere als überholt markieren)',
-    });
+    // proposal: the newer decision supersedes the older one – requires confirmation; without a known order there is
+    // no direction to propose, the user decides on the decision page
+    const action = ordered
+      ? this.actions.propose({
+          actionType: 'supersede_decision',
+          rationale: `Die neuere Entscheidung (${label(newer)}) könnte die ältere (${label(older)}) überholt haben.`,
+          confidence,
+          affectedEntities: [
+            { type: 'decision', id: older.id, label: older.title },
+            { type: 'decision', id: newer.id, label: newer.title },
+          ],
+          requiredConfirmation: 'confirm',
+          proposedParameters: { oldDecisionId: older.id, newDecisionId: newer.id },
+          label: 'Neuere Entscheidung ersetzt die ältere (ältere als überholt markieren)',
+        })
+      : null;
     this.insights.upsert({
       kind: 'contradiction',
       title: row.title,
@@ -320,8 +338,7 @@ export class ContradictionService {
         { type: 'decision', id: newer.id, label: newer.title },
       ],
       sourceIds: row.sourceIds,
-      recommendedActionId: action.id,
-      recommendedActionLabel: 'Neuere Entscheidung ersetzt die ältere',
+      ...(action ? { recommendedActionId: action.id, recommendedActionLabel: 'Neuere Entscheidung ersetzt die ältere' } : {}),
       dedupeKey: `contradiction:${row.id}`,
     });
     this.notifications.create({
@@ -332,7 +349,7 @@ export class ContradictionService {
       affectedEntityIds: [older.id, newer.id],
       proposedActions: [
         { label: 'Insights öffnen', kind: 'navigate', target: '/insights/' },
-        { label: 'Ersetzen bestätigen', kind: 'confirm_action', target: action.id },
+        ...(action ? [{ label: 'Ersetzen bestätigen', kind: 'confirm_action' as const, target: action.id }] : []),
       ],
       dedupeKey: `contradiction:${row.id}`,
     });

@@ -3,6 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { contradictions, decisions, documents, events, openItems } from '../db/schema';
 import { truncate } from '../util/text';
+import { decisionDates } from './decision-dating';
 import type { KnowledgeGraphService } from './knowledge-graph';
 
 export interface TimelineQuery {
@@ -42,6 +43,8 @@ export class TimelineService {
     // Timestamps (createdAt, …) belong to the local day, not the UTC day (#77).
     const push = (e: Omit<TimelineEntry, 'year'>) => {
       const date = localDate(e.date);
+      // an undated entry has no date to filter by: it is only shown without a date range
+      if (e.undated && (q.from || q.to)) return;
       if (q.from && date < localDate(q.from)) return;
       if (q.to && date > localDate(q.to)) return;
       out.push({ ...e, date, year: Number(date.slice(0, 4)) || 0 });
@@ -79,16 +82,26 @@ export class TimelineService {
         refs: [{ type: 'document', id: d.id, label: d.title }, ...ref('topic', d.topicId), ...ref('project', d.projectId)],
       });
     }
-    for (const d of db.select().from(decisions).all()) {
-      if (!match(d.topicId, d.projectId)) continue;
+    const decisionRows = db
+      .select()
+      .from(decisions)
+      .all()
+      .filter((d) => match(d.topicId, d.projectId));
+    const dating = decisionDates(db, decisionRows);
+    for (const d of decisionRows) {
+      const dd = dating.get(d.id);
+      const status = d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : '';
+      const dateNote = dd?.basis === 'source' ? ' (Datum laut Quelldokument)' : '';
+      // without a decision date the date of a source document is used; without one either the entry is undated –
+      // the capture day only keeps it in order and is not shown as the decision's date (#168)
       push({
         id: `dec:${d.id}`,
-        date: d.decidedAt ?? d.createdAt,
+        date: dd?.date ?? d.createdAt,
         kind: 'decision',
-        // without a decision date it is placed at the day it was captured – and says so (#168)
-        title: `Entscheidung${d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : ''}${d.decidedAt ? '' : ' (ohne Datum, erfasst an diesem Tag)'}: ${d.title}`,
+        title: `Entscheidung${status}${dateNote}: ${d.title}`,
         description: truncate(d.decisionText, 240),
         refs: [{ type: 'decision', id: d.id, label: d.title }, ...ref('topic', d.topicId), ...ref('project', d.projectId)],
+        ...(dd?.date ? {} : { undated: true }),
       });
     }
     for (const e of db.select().from(events).all()) {

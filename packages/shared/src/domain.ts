@@ -547,6 +547,8 @@ export const TimelineEntry = z.object({
   title: z.string(),
   description: z.string().nullable(),
   refs: z.array(EntityRef),
+  /** no known date (an undated decision without dated source document): `date` is only the capture day (#168) */
+  undated: z.boolean().optional(),
 });
 export type TimelineEntry = z.infer<typeof TimelineEntry>;
 
