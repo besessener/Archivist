@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { RELATION_METHOD_LABELS, type EntityType, type GraphRelation, type RelationMethod } from '@archivist/shared';
+import { localDate, RELATION_METHOD_LABELS, type EntityType, type GraphRelation, type RelationMethod } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { currentRun } from '../agent/scope';
 import { newId } from '../util/ids';
@@ -107,6 +107,15 @@ const SIMILAR_PENDING = 'links.similar.pending';
 const MAX_PAIRWISE = 6;
 /** Tables of the entries that name their source documents in `source_ids`. */
 const SOURCE_TABLES = ['decisions', 'open_items', 'events'] as const;
+
+/** The business date of an entry (#278): event date, decision date, document date – never when it was captured or archived. */
+const BUSINESS_DATE: Array<{ table: string; column: string; type: EntityType; extra?: string }> = [
+  { table: 'events', column: 'occurred_at', type: 'event', extra: 'AND x.duplicate_of_id IS NULL' },
+  { table: 'decisions', column: 'decided_at', type: 'decision' },
+  { table: 'documents', column: 'document_date', type: 'document', extra: "AND x.status IN ('archived','indexed_only')" },
+];
+const dayShift = (day: string, days: number) => new Date(Date.parse(`${day}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+const germanDay = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
 
 /** Default of the most open similarity proposals per entry (setting `links.maxProposalsPerEntry`). */
 export const MAX_SIMILAR_PROPOSALS = 3;
@@ -515,6 +524,59 @@ export class LinkMethodsService {
     return created;
   }
 
+  /** Local day of the entry's business date, or null (#278). */
+  private businessDay(id: string): string | null {
+    for (const b of BUSINESS_DATE) {
+      const row = this.sqlite.prepare(`SELECT x.${b.column} AS d FROM ${b.table} x WHERE x.id = ? ${b.extra ?? ''}`).get(id) as
+        { d: string | null } | undefined;
+      if (row) return row.d ? localDate(row.d) : null;
+    }
+    return null;
+  }
+
+  /** Persons connected to the entry by a current relation – without the user's own person. */
+  private personsOf(id: string): Map<string, string> {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT p.id, p.name FROM relations r JOIN entities p ON p.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
+         WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status IN ('proposed','confirmed') AND p.type = 'person' AND p.is_self = 0`,
+      )
+      .all(id, id, id) as Array<{ id: string; name: string }>;
+    return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
+  /**
+   * Events, decisions and documents of the same day with at least one shared person belong together (#278): proposed as
+   * `related_to` with method `date_person`, the evidence names the day and the persons. The day is the business date in
+   * local time; the user's own person alone is no reason. Rejected and already linked pairs are skipped.
+   */
+  proposeSameDayPerson(id: string): number {
+    const day = this.businessDay(id);
+    if (!day) return 0;
+    const persons = this.personsOf(id);
+    if (!persons.size) return 0;
+    let created = 0;
+    for (const b of BUSINESS_DATE) {
+      // stored instants can fall on a neighbouring UTC day: take one day around and compare the local day
+      const rows = this.sqlite
+        .prepare(`SELECT x.id, x.${b.column} AS d FROM ${b.table} x WHERE x.id <> ? AND substr(x.${b.column}, 1, 10) BETWEEN ? AND ? ${b.extra ?? ''}`)
+        .all(id, dayShift(day, -1), dayShift(day, 1)) as Array<{ id: string; d: string }>;
+      for (const row of rows) {
+        if (localDate(row.d) !== day || this.linked(id, row.id) || !this.graph.getEntity(row.id)) continue;
+        const shared = [...this.personsOf(row.id).entries()].filter(([pid]) => persons.has(pid)).map(([, name]) => `„${name}“`);
+        if (!shared.length) continue;
+        const r = this.graph.link(id, row.id, 'related_to', {
+          status: 'proposed',
+          confidence: 0.6,
+          method: 'date_person',
+          evidence: `Am ${germanDay(day)} mit ${shared.join(', ')}`,
+        });
+        if (r?.created) created += 1;
+      }
+    }
+    return created;
+  }
+
   /** Open similarity proposals of an entry (either direction). */
   private openSimilarityProposals(id: string): number {
     return (
@@ -577,6 +639,8 @@ export class LinkMethodsService {
     for (let next = this.pendingSimilar()[0]; next !== undefined; next = this.pendingSimilar()[0]) {
       if (opts.signal?.aborted) break;
       try {
+        // the more specific reason first: same day and person (#278), then similar content (#271)
+        proposed += this.proposeSameDayPerson(next);
         proposed += await this.proposeSimilar(next, { max: opts.max });
       } catch (err) {
         this.ctx.logger.warn('links', 'Similarity proposals skipped', { error: err, id: next });

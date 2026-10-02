@@ -225,7 +225,7 @@ function buildServices(opts: CreateServicesOptions) {
   search.onIndexed(({ id }) => {
     if (!settings.get().links.autoPropose || !links.queueSimilar([id])) return;
     // a job that has not started yet takes the entry along; a running one picks it up before it ends
-    jobs.enqueue(LINK_SIMILAR_JOB, 'Ähnliche Einträge suchen', {}, { maxAttempts: 2, sameAs: (_p, status) => status === 'pending' });
+    jobs.enqueue(LINK_SIMILAR_JOB, 'Verknüpfungen für neue Einträge suchen', {}, { maxAttempts: 2, sameAs: (_p, status) => status === 'pending' });
   });
 
   // large file operations of the agent run as jobs of their own, under the run id (#304)
