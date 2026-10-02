@@ -218,6 +218,12 @@ const mapRelation = (r: RelationRow): GraphRelation => ({
   updatedAt: r.updatedAt,
 });
 
+/** A node with its relations, captured before {@link KnowledgeGraphService.removeNode} so an undo can restore both. */
+export interface NodeSnapshot {
+  node: EntityRow;
+  relations: RelationRow[];
+}
+
 /** Result of `link`: the relation and whether this call created it (`false`: it existed and was at most updated). */
 export type LinkResult = GraphRelation & { created: boolean };
 
@@ -324,6 +330,31 @@ export class KnowledgeGraphService {
       .run();
     this.db.delete(entities).where(eq(entities.id, id)).run();
     this.ctx.events.changed('knowledge');
+  }
+
+  /** Captures a node and its relations (for the undo of a later `removeNode`); `null` if the node does not exist. */
+  snapshotNode(id: string): NodeSnapshot | null {
+    const node = this.entityRow(id);
+    return node ? { node, relations: this.relationRowsOf(id) } : null;
+  }
+
+  /**
+   * Restores a node captured by `snapshotNode` with its original ids. Relations whose other end no longer
+   * exists are skipped. Returns the number of skipped relations.
+   */
+  restoreNode(snapshot: NodeSnapshot): number {
+    this.db.insert(entities).values(snapshot.node).onConflictDoNothing().run();
+    let skipped = 0;
+    for (const r of snapshot.relations) {
+      const other = r.sourceEntityId === snapshot.node.id ? r.targetEntityId : r.sourceEntityId;
+      if (!this.entityRow(other)) {
+        skipped++;
+        continue;
+      }
+      this.db.insert(relations).values(r).onConflictDoNothing().run();
+    }
+    this.ctx.events.changed('knowledge');
+    return skipped;
   }
 
   /**
