@@ -414,6 +414,11 @@ export const ipcContract = {
       ids: z.array(Id).min(1).max(5000),
       topic: NullableText,
       project: NullableText,
+      /** Adds a topic/project (#287, #291): the main one where none is set, otherwise a further one. */
+      addTopic: z.string().max(200).optional(),
+      addProject: z.string().max(200).optional(),
+      /** Puts the documents into this case (#286). */
+      caseId: z.string().optional(),
       addTags: z.array(z.string()).optional(),
       removeTags: z.array(z.string()).optional(),
       addPersons: z.array(z.string()).optional(),

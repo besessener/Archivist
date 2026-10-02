@@ -1,5 +1,7 @@
 'use client';
 
+import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useMemo, useState } from 'react';
 import { CalendarDays, FileText, Gavel, ListChecks, Pencil, Plus, ShieldAlert, StickyNote, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
@@ -49,6 +51,7 @@ export default function TimelinePage() {
   const { toast } = useToast();
   const topics = useQuery('knowledge:listEntities', { type: 'topic', limit: 1000 }, { scopes: ['knowledge'] });
   const projects = useQuery('knowledge:listEntities', { type: 'project', limit: 1000 }, { scopes: ['knowledge'] });
+  const selection = useSelection();
   const tl = useQuery(
     'timeline:get',
     {
@@ -90,6 +93,8 @@ export default function TimelinePage() {
     else toast({ variant: 'info', title: 'Dieses Ereignis gibt es nicht mehr.' });
   }
 
+  const eventIdOf = (entryId: string) => entryId.replace(/^event:/, '');
+
   function renderEntry(e: Entry) {
     const k = KIND[e.kind];
     return (
@@ -101,6 +106,14 @@ export default function TimelinePage() {
           {e.undated ? `ohne Datum, erfasst am ${formatLongDate(e.date)}` : formatLongDate(e.date)} · {k.label}
         </p>
         <p className="flex items-center gap-2 font-medium">
+          {e.kind === 'event' && (
+            <Checkbox
+              checked={selection.has(eventIdOf(e.id))}
+              onCheckedChange={(v) => selection.toggle(eventIdOf(e.id), v === true)}
+              aria-label={`${e.title} auswählen`}
+              data-testid="event-select"
+            />
+          )}
           {e.title}
           {e.kind === 'event' && (
             <Button
@@ -183,6 +196,7 @@ export default function TimelinePage() {
       {tl.data && groups.length === 0 && undated.length === 0 && (
         <EmptyState icon={<CalendarDays />} title="Keine Einträge" description="Für diesen Filter gibt es keine Einträge in der Timeline." />
       )}
+      <BulkAssignBar ids={selection.ids} noun={['Ereignis', 'Ereignisse']} onClear={selection.clear} onDone={() => void tl.refetch()} />
       <div className="flex flex-col gap-8" data-testid="timeline">
         {groups.map(([year, entries]) => (
           <section key={year} aria-labelledby={`year-${year}`}>

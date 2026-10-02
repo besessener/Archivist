@@ -1,5 +1,7 @@
 'use client';
 
+import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -56,6 +58,7 @@ function KnowledgeInner() {
   const [search, setSearch] = useState('');
   const q = useDebounced(search.trim(), 300);
   const list = useQuery('knowledge:listEntities', { ...(type ? { type } : {}), ...(q ? { query: q } : {}), limit: ENTITY_LIMIT }, { scopes: ['knowledge'] });
+  const selection = useSelection();
   const [createOpen, setCreateOpen] = useState(false);
   const [createKey, setCreateKey] = useState(0);
   /** Initial title of the open event dialog; null = closed. */
@@ -119,15 +122,27 @@ function KnowledgeInner() {
           {list.data && list.data.length === 0 && (
             <EmptyState title="Nichts gefunden" description="Lege ein Thema, Projekt oder eine Person an oder ändere den Filter." />
           )}
+          <BulkAssignBar ids={selection.ids} noun={['Eintrag', 'Einträge']} onClear={selection.clear} onDone={() => void list.refetch()} />
           <ul className="flex max-h-[65vh] flex-col gap-1 overflow-y-auto" data-testid="knowledge-list">
             {(list.data ?? []).map((e) => (
-              <li key={e.id}>
+              <li key={e.id} className="flex items-center gap-1">
+                {CASE_ENTRY_TYPES.has(e.type) && !e.duplicateOfId ? (
+                  <Checkbox
+                    className="ml-1"
+                    checked={selection.has(e.id)}
+                    onCheckedChange={(v) => selection.toggle(e.id, v === true)}
+                    aria-label={`${e.name} auswählen`}
+                    data-testid="knowledge-select"
+                  />
+                ) : (
+                  <span className="w-5 shrink-0" aria-hidden />
+                )}
                 <Link
                   href={`/knowledge/?id=${encodeURIComponent(e.id)}`}
                   data-testid="knowledge-item"
                   aria-current={e.id === id ? 'true' : undefined}
                   className={cn(
-                    'flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring',
+                    'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring',
                     e.id === id && 'bg-accent',
                   )}
                 >

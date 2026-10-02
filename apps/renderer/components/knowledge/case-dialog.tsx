@@ -97,3 +97,18 @@ export function CaseAssignDialog({
     </Dialog>
   );
 }
+
+/** Choice of an open case for a bulk assignment (#291); empty = no case. */
+export function CaseSelect({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  const cases = useQuery('cases:list', { includeClosed: false }, { scopes: ['knowledge'] });
+  return (
+    <Select id={id} value={value} onChange={(e) => onChange(e.target.value)} data-testid={id}>
+      <option value="">– kein Vorgang –</option>
+      {(cases.data ?? []).map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </Select>
+  );
+}

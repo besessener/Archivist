@@ -2,7 +2,8 @@ import { localDate, type EntityRef, type TimelineEntry } from '@archivist/shared
 import { and, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import type { Db } from '../db/database';
-import { contradictions, decisions, documents, entities, events, openItems } from '../db/schema';
+import { contradictions, decisions, documents, entities, events, openItems, relations } from '../db/schema';
+import { withSubject } from '../db/subject-filter';
 import { truncate } from '../util/text';
 import { decisionDates } from './decision-dating';
 
@@ -33,9 +34,23 @@ export class TimelineService {
  */
 export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
   const out: TimelineEntry[] = [];
-  const match = (topicId: string | null, projectId: string | null) => {
-    if (q.topicId && topicId !== q.topicId) return false;
-    if (q.projectId && projectId !== q.projectId) return false;
+  // a further topic/project of an entry counts as well (#287)
+  const further = (subjectId: string | undefined) =>
+    new Set(
+      subjectId
+        ? db
+            .select({ id: relations.sourceEntityId })
+            .from(relations)
+            .where(and(eq(relations.targetEntityId, subjectId), eq(relations.status, 'confirmed')))
+            .all()
+            .map((r) => r.id)
+        : [],
+    );
+  const furtherTopic = further(q.topicId);
+  const furtherProject = further(q.projectId);
+  const match = (topicId: string | null, projectId: string | null, id?: string) => {
+    if (q.topicId && topicId !== q.topicId && !(id && furtherTopic.has(id))) return false;
+    if (q.projectId && projectId !== q.projectId && !(id && furtherProject.has(id))) return false;
     return true;
   };
   const names = new Map<string, string | null>();
@@ -77,8 +92,8 @@ export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
     .where(
       and(
         inArray(documents.status, ['archived', 'indexed_only']),
-        q.topicId ? eq(documents.topicId, q.topicId) : undefined,
-        q.projectId ? eq(documents.projectId, q.projectId) : undefined,
+        q.topicId ? withSubject(documents.id, documents.topicId, q.topicId) : undefined,
+        q.projectId ? withSubject(documents.id, documents.projectId, q.projectId) : undefined,
       ),
     )
     .all();
@@ -96,7 +111,7 @@ export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
     .select()
     .from(decisions)
     .all()
-    .filter((d) => match(d.topicId, d.projectId));
+    .filter((d) => match(d.topicId, d.projectId, d.id));
   const dating = decisionDates(db, decisionRows);
   for (const d of decisionRows) {
     const dd = dating.get(d.id);
@@ -116,7 +131,7 @@ export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
   }
   for (const e of db.select().from(events).all()) {
     // a discarded duplicate is represented by the event it was merged into
-    if (e.duplicateOfId || !match(e.topicId, e.projectId)) continue;
+    if (e.duplicateOfId || !match(e.topicId, e.projectId, e.id)) continue;
     push({
       id: `event:${e.id}`,
       date: e.occurredAt,
@@ -127,7 +142,7 @@ export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
     });
   }
   for (const o of db.select().from(openItems).all()) {
-    if (!match(o.topicId, o.projectId)) continue;
+    if (!match(o.topicId, o.projectId, o.id)) continue;
     const refs: EntityRef[] = [{ type: 'task', id: o.id, label: o.title }, ...ref('topic', o.topicId), ...ref('project', o.projectId)];
     push({
       id: `task:${o.id}:created`,
@@ -166,7 +181,7 @@ export function buildTimeline(db: Db, q: TimelineQuery = {}): TimelineEntry[] {
         .select()
         .from(decisions)
         .all()
-        .filter((d) => match(d.topicId, d.projectId))
+        .filter((d) => match(d.topicId, d.projectId, d.id))
         .map((d) => d.id),
     );
     for (const c of db.select().from(contradictions).all()) {
