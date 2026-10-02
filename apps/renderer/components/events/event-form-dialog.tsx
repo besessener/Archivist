@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { nonEmpty } from '@/lib/utils';
+import { nonEmpty, parseList } from '@/lib/utils';
 
 export type EventFormInput = IpcInput<'events:create'>;
 type EventRecord = IpcOutput<'events:create'>;
@@ -22,11 +22,12 @@ export function eventPatch(event: EventRecord, input: EventFormInput): EventPatc
   if (input.occurredAt !== event.occurredAt.slice(0, 10)) patch.occurredAt = input.occurredAt;
   if ((input.topic ?? null) !== (event.topicName ?? null)) patch.topic = input.topic ?? null;
   if ((input.project ?? null) !== (event.projectName ?? null)) patch.project = input.project ?? null;
+  if (input.participants && input.participants.join('\n') !== event.participants.join('\n')) patch.participants = input.participants;
   return patch;
 }
 
 /**
- * Dialog "Ereignis hinzufügen" / "Ereignis bearbeiten" (title, date, description, topic, project), shared by the
+ * Dialog "Ereignis hinzufügen" / "Ereignis bearbeiten" (title, date, description, topic, project, participants), shared by the
  * timeline and the knowledge page. Pass `event` to edit an existing event (fields are prefilled). `onSubmit` performs
  * the IPC call and returns whether the dialog may close. Mount it with a changing `key` to reset the fields.
  */
@@ -49,6 +50,7 @@ export function EventFormDialog({
   const [occurredAt, setOccurredAt] = useState(event?.occurredAt.slice(0, 10) ?? '');
   const [topic, setTopic] = useState(event?.topicName ?? '');
   const [project, setProject] = useState(event?.projectName ?? '');
+  const [participants, setParticipants] = useState(event?.participants.join(', ') ?? '');
   async function save() {
     setBusy(true);
     try {
@@ -58,6 +60,7 @@ export function EventFormDialog({
         occurredAt,
         topic: nonEmpty(topic) ?? null,
         project: nonEmpty(project) ?? null,
+        participants: parseList(participants),
         sourceIds: [],
       });
       if (ok) onOpenChange(false);
@@ -88,6 +91,9 @@ export function EventFormDialog({
           </Field>
           <Field label="Projekt" htmlFor="ev-project">
             <Input id="ev-project" value={project} onChange={(e) => setProject(e.target.value)} data-testid="event-project" />
+          </Field>
+          <Field label="Beteiligte (kommagetrennt)" htmlFor="ev-participants" className="sm:col-span-2">
+            <Input id="ev-participants" value={participants} onChange={(e) => setParticipants(e.target.value)} data-testid="event-participants" />
           </Field>
         </div>
         <DialogFooter>

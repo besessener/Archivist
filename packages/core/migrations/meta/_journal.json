@@ -141,6 +141,13 @@
       "when": 1790834046730,
       "tag": "0019_entity_unconfirmed",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1790834047730,
+      "tag": "0020_event_participants",
+      "breakpoints": true
     }
   ]
 }

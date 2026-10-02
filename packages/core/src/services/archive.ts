@@ -132,6 +132,8 @@ export class ArchiveService {
   private inFlight = 0;
   /** True while the archive root is being changed; file operations are refused meanwhile. */
   private rootChangeActive = false;
+  /** True while a full backup copies the archive; file operations and root changes are refused meanwhile. */
+  private backupActive = false;
 
   constructor(
     private readonly ctx: AppContext,
@@ -171,6 +173,8 @@ export class ArchiveService {
    */
   beginRootChange(): () => void {
     if (this.rootChangeActive) throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
+    if (this.backupActive)
+      throw new AppError('archive_conflict', 'Gerade läuft ein vollständiges Backup. Bitte versuche es gleich noch einmal.', { retryable: true });
     if (this.inFlight > 0)
       throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.', {
         retryable: true,
@@ -184,6 +188,27 @@ export class ArchiveService {
     };
   }
 
+  /**
+   * Blocks archive file operations while a full backup copies the archive, so the database snapshot and the
+   * copied files match. Refuses while operations run or the root is being changed; returns the release function.
+   */
+  beginBackup(): () => void {
+    if (this.rootChangeActive)
+      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.', { retryable: true });
+    if (this.backupActive) throw new AppError('archive_conflict', 'Es läuft bereits ein vollständiges Backup.', { retryable: true });
+    if (this.inFlight > 0)
+      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.', {
+        retryable: true,
+      });
+    this.backupActive = true;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.backupActive = false;
+    };
+  }
+
   /** True while the archive root is being changed. */
   isRootChangeActive(): boolean {
     return this.rootChangeActive;
@@ -193,6 +218,8 @@ export class ArchiveService {
   private async guarded<T>(fn: () => Promise<T>): Promise<T> {
     if (this.rootChangeActive)
       throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.', { retryable: true });
+    if (this.backupActive)
+      throw new AppError('archive_conflict', 'Gerade läuft ein vollständiges Backup. Bitte versuche es gleich noch einmal.', { retryable: true });
     this.inFlight += 1;
     try {
       return await fn();
@@ -521,16 +548,13 @@ export class ArchiveService {
           const fromDoc = (name: string, proposed: string | null | undefined) => normalizeName(name) === normalizeName(proposed ?? '');
           const topic = topicName ? this.graph.ensureEntity('topic', topicName, null, { fromDocument: fromDoc(topicName, proposal?.topic) }) : null;
           const project = projectName ? this.graph.ensureEntity('project', projectName, null, { fromDocument: fromDoc(projectName, proposal?.project) }) : null;
-          // persons: the first 12 mentions become persons, the stored list uses canonical names
-          const mentioned = proposal?.persons ?? row.persons;
-          const people = this.persons.resolveNames(mentioned.slice(0, 12), { context: 'document' });
-          const others = this.persons.resolveNames(mentioned.slice(12), { context: 'document', create: false }).names;
-          const known = new Set(people.names.map(normalizeName));
+          // persons: every mention becomes a person (no longer only the first 12, #274), the stored list uses canonical names
+          const people = this.persons.resolveNames(proposal?.persons ?? row.persons, { context: 'document' });
           this.db
             .update(documents)
             .set({
               status: req.mode === 'index_only' ? 'indexed_only' : 'archived',
-              persons: [...people.names, ...others.filter((n) => !known.has(normalizeName(n)))],
+              persons: people.names,
               archiveRelPath: archiveRel,
               categoryPath: cat ?? row.categoryPath,
               archiveMode: req.mode,
@@ -547,7 +571,7 @@ export class ArchiveService {
           if (cat)
             this.graph.link(row.id, this.graph.ensureEntity('category', cat).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] });
           for (const person of people.entities) this.graph.link(person.id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
-          for (const tag of row.tags.slice(0, 8))
+          for (const tag of row.tags)
             this.graph.link(row.id, this.graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] });
           if (proposal?.duplicateOfDocumentId)
             this.graph.link(row.id, proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] });

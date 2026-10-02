@@ -22,7 +22,7 @@ import { normalizeName, truncate } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
-import { documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
+import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
 import { classifyLocally, humanizeCategoryPath, normalizeIsoDates, pastOrToday, snapToKnown } from './classifier';
 import { isJobCancelled, isJobInterrupted, type JobQueueService } from './jobs';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
@@ -216,6 +216,11 @@ export class DocumentService {
   /** Number of documents per status (inbox badge) – a COUNT instead of loading the list (#214). */
   counts(): Partial<Record<DocumentStatus, number>> {
     return documentCounts(this.db);
+  }
+
+  /** Number of documents matching a list filter, regardless of the list's limit. */
+  count(opts: Omit<DocumentListQuery, 'limit'> = {}): number {
+    return countDocumentList(this.db, opts);
   }
 
   findDuplicates(sha256: string, excludeId?: string): DocRow[] {
@@ -772,6 +777,65 @@ export class DocumentService {
     return { usedLlm, warning };
   }
 
+  /**
+   * An index-only document points to its original, so a changed original must not stay searchable with its old
+   * content (#229): re-reads the original in place (locally, no LLM), keeps title, assignments and links, and
+   * re-indexes it. A stale inbox copy is removed, so opening the document shows the current file.
+   * Returns false if nothing changed or the document is not index-only.
+   */
+  async refreshIndexedOnly(id: string, opts: { signal?: AbortSignal } = {}): Promise<boolean> {
+    const row = this.findRow(id);
+    if (!row || row.status !== 'indexed_only' || !row.sourcePath) return false;
+    const source = row.sourcePath;
+    const sha = await this.pool.run('hashFile', { path: source });
+    if (sha === row.sha256) return false;
+    opts.signal?.throwIfAborted();
+    const [st, parsed] = await Promise.all([
+      fsp.stat(source),
+      this.pool.run('extractDocument', {
+        path: source,
+        options: {
+          ocrEnabled: this.settings.get().ocr.enabled,
+          ocrLanguages: this.settings.get().ocr.languages,
+          tessdataDir: path.join(this.ctx.paths.index, 'tessdata'),
+        },
+      }),
+    ]);
+    opts.signal?.throwIfAborted();
+    const text = parsed.text;
+    const textHash = text.length > 200 ? sha256Text(normalizeName(text).slice(0, 20_000)) : null;
+    const updated = this.db
+      .update(documents)
+      .set({
+        sha256: sha,
+        size: st.size,
+        extractedText: text,
+        textHash,
+        processingStatus: parsed.status,
+        processingError: parsed.error,
+        technicalMeta: { ...parsed.meta, truncated: parsed.truncated, textHash },
+        stagedPath: null,
+        updatedAt: nowIso(),
+      })
+      .where(and(eq(documents.id, id), eq(documents.status, 'indexed_only'), eq(documents.sha256, row.sha256)))
+      .run();
+    if (!updated.changes) return false;
+    if (row.stagedPath) await fsp.rm(row.stagedPath, { force: true }).catch(() => undefined);
+    this.audit.log({
+      action: 'document.refresh',
+      actor: 'agent',
+      trigger: 'source_changed',
+      confirmed: true,
+      entityIds: [id],
+      paths: [source],
+      before: { sha256: row.sha256, size: row.size },
+      after: { sha256: sha, size: st.size },
+    });
+    await this.indexDocument(id);
+    this.ctx.events.changed('documents', 'knowledge');
+    return true;
+  }
+
   /** Triggers (re)processing. `allowLlm=true` corresponds to the user's explicit permission. */
   enqueueAnalysis(id: string, allowLlm: boolean): string {
     const doc = this.getRow(id);
@@ -816,10 +880,12 @@ export class DocumentService {
   ): DocumentRecord {
     if (!confirmed) throw new AppError('permission_error', 'Das Überschreiben von Metadaten erfordert eine Bestätigung.');
     const row = this.getRow(id);
+    // archived documents are part of the graph: their persons and tags are linked like on archiving (#274)
+    const inGraph = ARCHIVED_STATUSES.includes(row.status as DocumentStatus);
     const set: Partial<DocRow> = { updatedAt: nowIso() };
     if (patch.title !== undefined && patch.title.trim()) set.title = patch.title.trim().slice(0, 200);
-    if (patch.tags) set.tags = patch.tags;
-    if (patch.persons) set.persons = this.persons.resolveNames(patch.persons, { context: 'document', create: false }).names;
+    if (patch.tags) set.tags = [...new Set(patch.tags.map((t) => t.trim()).filter(Boolean))];
+    if (patch.persons) set.persons = this.persons.resolveNames(patch.persons, { context: 'document', create: inGraph }).names;
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
     const { changes } = this.graph.trackRelationChanges(id, () =>
@@ -827,6 +893,7 @@ export class DocumentService {
         this.db.update(documents).set(set).where(eq(documents.id, id)).run();
         if (set.title) this.graph.registerNode('document', id, set.title, row.summary);
         this.syncAssignment(id, set);
+        if (inGraph) this.syncPersonsAndTags(id, set);
       }),
     );
     this.audit.log({
@@ -853,6 +920,28 @@ export class DocumentService {
     if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
     if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
     if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+  }
+
+  /**
+   * Links an archived document to its (changed) persons and tags like archiving does; automatic relations to
+   * persons or tags no longer listed become outdated, relations the user confirmed or rejected stay unchanged.
+   */
+  private syncPersonsAndTags(id: string, set: Partial<DocRow>): void {
+    if (set.persons) {
+      const people = this.persons.resolveNames(set.persons, { context: 'document', create: false }).entities;
+      for (const p of people) this.graph.link(p.id, id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [id] });
+      this.graph.unlinkSystemRelations(
+        id,
+        'produced',
+        people.map((p) => p.id),
+        { direction: 'in', otherType: 'person' },
+      );
+    }
+    if (set.tags) {
+      const tagIds = set.tags.map((t) => this.graph.ensureEntity('tag', t).id);
+      for (const tagId of tagIds) this.graph.link(id, tagId, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [id] });
+      this.graph.unlinkSystemRelations(id, 'relates_to', tagIds, { otherType: 'tag' });
+    }
   }
 
   private metadataUndo(row: DocRow, set: Partial<DocRow>, relations: RelationChangeSet): DocumentMetadataUndo {

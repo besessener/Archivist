@@ -1,10 +1,12 @@
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { BackupInfo } from '@archivist/shared';
+import { and, count, eq, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { fsError } from '../util/errors';
+import { documents } from '../db/schema';
+import { AppError, fsError } from '../util/errors';
 import { isInside } from '../util/paths';
+import type { ArchiveService } from './archive';
 import type { AuditService } from './audit';
 import type { SettingsService } from './settings';
 
@@ -36,6 +38,13 @@ async function copyTreeExcluding(src: string, dest: string, excluded: string[]):
   }
 }
 
+/** Number of regular files below `dir` (recursive). */
+async function fileCount(dir: string): Promise<number> {
+  let n = 0;
+  for (const e of await fsp.readdir(dir, { withFileTypes: true })) n += e.isDirectory() ? await fileCount(path.join(dir, e.name)) : 1;
+  return n;
+}
+
 /** Descending order by plain code-unit comparison (ISO timestamps and backup names sort correctly this way). */
 function cmpDesc(a: string, b: string): number {
   if (a === b) return 0;
@@ -49,46 +58,101 @@ async function realpathOrSelf(p: string): Promise<string> {
 /**
  * Backups: consistent SQLite snapshot via the online backup API (not by file copy) plus configuration.
  * The encrypted API key is never backed up. „Metadaten-Backup“ (metadata) and „vollständiges Archiv-Backup“ (full archive) are separate.
- * After each backup, only the newest `backups.keep` backups of the same kind are kept.
+ * After each successful backup, only the newest `backups.keep` backups of the same kind are kept.
  */
 export class BackupService {
   constructor(
     private readonly ctx: AppContext,
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
+    private readonly archive: ArchiveService,
   ) {}
 
+  /**
+   * Creates a backup. A full backup fails (and prunes nothing) when the archive folder is unreachable, or empty
+   * while the database lists archived files. Archive file operations are blocked while the archive is copied, so
+   * the database snapshot matches the copied files. The manifest is written last: a backup interrupted by a crash
+   * has none, so it never counts as a valid backup and never pushes a complete one out of retention.
+   */
   async create(includeArchive: boolean, trigger: 'manual' | 'startup' = 'manual'): Promise<BackupInfo> {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
-    const base = `${includeArchive ? 'vollstaendig' : 'metadaten'}-${stamp}`;
-    await fsp.mkdir(this.ctx.paths.backups, { recursive: true });
-    const { name, dir } = await this.reserveDir(base);
+    const cfg = this.settings.get();
+    if (includeArchive) await this.assertArchiveReachable(cfg.archiveRoot);
+    const release = includeArchive ? this.archive.beginBackup() : () => undefined;
+    let name: string;
+    let dir: string;
+    let archiveFiles: number | null = null;
     try {
-      await this.ctx.database.backupTo(path.join(dir, 'archivist.db'));
-      const cfg = this.settings.get();
-      await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(cfg, null, 2), 'utf8'); // contains no API key
-      await fsp.writeFile(
-        path.join(dir, 'manifest.json'),
-        JSON.stringify(
-          {
-            kind: includeArchive ? 'full' : 'metadata',
-            createdAt: new Date().toISOString(),
-            archiveRoot: cfg.archiveRoot,
-            note: 'Enthält Datenbank (inkl. Wissensgraph, Kategorien, Beziehungen, Audit Log) und Einstellungen ohne API-Key.',
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      );
-      if (includeArchive && fs.existsSync(cfg.archiveRoot)) await this.copyArchive(cfg.archiveRoot, path.join(dir, 'archive'));
-    } catch (err) {
-      await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
-      throw fsError('Das Backup ist fehlgeschlagen.', err);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
+      await fsp.mkdir(this.ctx.paths.backups, { recursive: true });
+      ({ name, dir } = await this.reserveDir(`${includeArchive ? 'vollstaendig' : 'metadaten'}-${stamp}`));
+      try {
+        await this.ctx.database.backupTo(path.join(dir, 'archivist.db'));
+        await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(cfg, null, 2), 'utf8'); // contains no API key
+        if (includeArchive) {
+          const dest = path.join(dir, 'archive');
+          await this.copyArchive(cfg.archiveRoot, dest);
+          archiveFiles = await fileCount(dest);
+        }
+        await fsp.writeFile(
+          path.join(dir, 'manifest.json'),
+          JSON.stringify(
+            {
+              kind: includeArchive ? 'full' : 'metadata',
+              createdAt: new Date().toISOString(),
+              archiveRoot: cfg.archiveRoot,
+              ...(archiveFiles === null ? {} : { archiveFiles }),
+              note: 'Enthält Datenbank (inkl. Wissensgraph, Kategorien, Beziehungen, Audit Log) und Einstellungen ohne API-Key.',
+            },
+            null,
+            2,
+          ),
+          'utf8',
+        );
+      } catch (err) {
+        await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+        throw fsError('Das Backup ist fehlgeschlagen.', err);
+      }
+    } finally {
+      release();
     }
-    this.audit.log({ action: 'backup.create', actor: 'user', trigger, confirmed: true, paths: [dir], after: { includeArchive } });
+    this.audit.log({
+      action: 'backup.create',
+      actor: 'user',
+      trigger,
+      confirmed: true,
+      paths: [dir],
+      after: { includeArchive, ...(archiveFiles === null ? {} : { archiveFiles }) },
+    });
     await this.applyRetention(includeArchive ? 'full' : 'metadata', name);
     return this.info(name);
+  }
+
+  /**
+   * A full backup needs the archive: a missing folder (e.g. an unplugged drive) or an empty one while the database
+   * lists archived files would produce a „full“ backup without documents that then pushes good ones out of retention.
+   */
+  private async assertArchiveReachable(archiveRoot: string): Promise<void> {
+    const stat = await fsp.stat(archiveRoot).catch(() => null);
+    if (!stat?.isDirectory())
+      throw new AppError(
+        'filesystem_error',
+        `Das vollständige Backup ist fehlgeschlagen: Der Archivordner ${archiveRoot} ist nicht erreichbar. Ältere Backups bleiben erhalten.`,
+        {
+          retryable: true,
+        },
+      );
+    const archived =
+      this.ctx.database.db
+        .select({ n: count() })
+        .from(documents)
+        .where(and(eq(documents.status, 'archived'), isNotNull(documents.archiveRelPath)))
+        .get()?.n ?? 0;
+    if (archived > 0 && (await fsp.readdir(archiveRoot)).length === 0)
+      throw new AppError(
+        'filesystem_error',
+        `Das vollständige Backup ist fehlgeschlagen: Der Archivordner ${archiveRoot} ist leer, obwohl ${archived} Dokument(e) archiviert sind. Ältere Backups bleiben erhalten.`,
+        { retryable: true },
+      );
   }
 
   /** Creates a fresh, not yet existing backup directory (never reuses one, so a failure cannot remove an older backup). */

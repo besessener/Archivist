@@ -1,5 +1,5 @@
 import type { Job } from '@archivist/shared';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { jobs } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
@@ -38,6 +38,12 @@ export const isJobInterrupted = (err: unknown): boolean => err instanceof JobInt
 /** Message of a job that was interrupted on quit and waits for the next start. */
 export const INTERRUPTED_JOB_MESSAGE = 'Beim Beenden unterbrochen – wird beim nächsten Start fortgesetzt';
 
+/** Error of a job that was running when the app ended unexpectedly and has no attempt left. */
+export const CRASHED_JOB_ERROR = 'Die App wurde während dieses Jobs unerwartet beendet; es ist kein weiterer Versuch übrig.';
+
+/** Finished jobs (succeeded, failed, cancelled) are removed after this many days. */
+export const JOB_RETENTION_DAYS = 30;
+
 export interface JobContext<P = unknown> {
   id: string;
   type: string;
@@ -52,6 +58,13 @@ export interface JobContext<P = unknown> {
    * cancellable work (e.g. LLM requests).
    */
   signal: AbortSignal;
+  /**
+   * Progress stored by an earlier, unfinished run of this job (`saveCheckpoint`), e.g. before a crash or a quit;
+   * null on the first run. Lets a long batch skip work it has already done instead of paying for it again.
+   */
+  checkpoint: unknown;
+  /** Stores the job's progress so a re-run after a crash or a quit can continue from there. */
+  saveCheckpoint(data: unknown): void;
 }
 
 export type JobHandler<P = never> = (job: JobContext<P>) => Promise<unknown>;
@@ -85,6 +98,10 @@ type Registration = { handler: JobHandler<never>; hooks: JobHooks<never> };
 const resultSummary = (result: Row['result']): string | null =>
   result && typeof result === 'object' && !Array.isArray(result) && typeof result.summary === 'string' ? result.summary : null;
 
+/** While a job is unfinished, its `result` column holds `{ checkpoint }` (see `JobContext.saveCheckpoint`). */
+const storedCheckpoint = (result: Row['result']): unknown =>
+  result && typeof result === 'object' && !Array.isArray(result) && 'checkpoint' in result ? result.checkpoint : null;
+
 const mapJob = (r: Row): Job => ({
   id: r.id,
   type: r.type,
@@ -102,8 +119,9 @@ const mapJob = (r: Row): Job => ({
 });
 
 /**
- * Persistent job queue in SQLite. Jobs survive restarts: on start, interrupted jobs
- * (status `running`) are set back to `pending`. CPU-intensive parts run in the WorkerPool.
+ * Persistent job queue in SQLite. Jobs survive restarts: on start, jobs left `running` by a crash are set back to
+ * `pending` while they have attempts left (otherwise they fail). Long batches store their progress with
+ * `saveCheckpoint`, so a re-run continues instead of starting over. CPU-intensive parts run in the WorkerPool.
  *
  * Retryable failures are queued again with exponential backoff. The wait is kept in memory only: after a
  * restart a waiting job runs right away. Cancelling aborts the running job's `signal`; handlers check it at
@@ -146,7 +164,21 @@ export class JobQueueService {
     this.handlers.set(type, { handler, hooks });
   }
 
-  enqueue(type: string, label: string, payload: unknown = {}, opts: { maxAttempts?: number } = {}): Job {
+  /**
+   * Queues a job. With `sameAs`, an existing pending or running job of the same type whose payload matches is
+   * returned instead of queueing a second one (e.g. two scans of the same folder would collide).
+   */
+  enqueue<P = unknown>(type: string, label: string, payload: P = {} as P, opts: { maxAttempts?: number; sameAs?: (active: P) => boolean } = {}): Job {
+    if (opts.sameAs) {
+      const existing = this.db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.type, type), inArray(jobs.status, ['pending', 'running']), eq(jobs.cancelRequested, false)))
+        .orderBy(jobs.createdAt)
+        .all()
+        .find((r) => opts.sameAs!(r.payload as P));
+      if (existing) return mapJob(existing);
+    }
     const row: Row = {
       id: newId(),
       type,
@@ -255,12 +287,42 @@ export class JobQueueService {
     return ids.length;
   }
 
-  /** Starts processing; interrupted jobs from an earlier session are queued again. */
+  /**
+   * Starts processing. Jobs still `running` from an earlier session ended with a crash: they are queued again if
+   * they have an attempt left, otherwise they fail, so a job that crashes the app does not run on every start.
+   * Every job may continue once after a crash (even with `maxAttempts` 1); a second crash ends it.
+   * Finished jobs older than `JOB_RETENTION_DAYS` are removed. Returns the number of jobs queued again.
+   */
   start(): number {
-    const res = this.db.update(jobs).set({ status: 'pending', progressMessage: 'Nach Neustart fortgesetzt' }).where(eq(jobs.status, 'running')).run();
+    let requeued = 0;
+    for (const row of this.db.select().from(jobs).where(eq(jobs.status, 'running')).all()) {
+      if (row.attempts < Math.max(row.maxAttempts, 2)) {
+        this.db.update(jobs).set({ status: 'pending', progressMessage: 'Nach Neustart fortgesetzt' }).where(eq(jobs.id, row.id)).run();
+        requeued += 1;
+        continue;
+      }
+      this.ctx.logger.error('jobs', `Job crashed without attempts left: ${row.type}`, { jobId: row.id, attempts: row.attempts });
+      this.db.update(jobs).set({ status: 'failed', error: CRASHED_JOB_ERROR, progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, row.id)).run();
+      const hooks = this.handlers.get(row.type)?.hooks;
+      this.runHook(row.type, 'onFailed', () =>
+        hooks?.onFailed?.({ id: row.id, payload: row.payload as never, attempts: row.attempts }, new Error(CRASHED_JOB_ERROR)),
+      );
+    }
+    this.prune();
     this.started = true;
     this.stopping = false;
     this.kick();
+    return requeued;
+  }
+
+  /** Removes finished jobs older than `JOB_RETENTION_DAYS`. Returns the number of removed jobs. */
+  prune(now = Date.now()): number {
+    const cutoff = new Date(now - JOB_RETENTION_DAYS * 86_400_000).toISOString();
+    const res = this.db
+      .delete(jobs)
+      .where(and(inArray(jobs.status, ['succeeded', 'failed', 'cancelled']), lt(jobs.finishedAt, cutoff)))
+      .run();
+    if (res.changes) this.ctx.logger.info('jobs', 'Old jobs removed', { removed: res.changes });
     return res.changes;
   }
 
@@ -407,6 +469,15 @@ export class JobQueueService {
         this.notify({ ...job, status: 'running', progress, progressMessage: message ?? null });
       },
       isCancelled,
+      checkpoint: storedCheckpoint(job.result),
+      saveCheckpoint: (data: unknown) => {
+        if (this.abandoned.has(job.id)) return;
+        this.db
+          .update(jobs)
+          .set({ result: { checkpoint: (data ?? null) as ArchivistJson } })
+          .where(eq(jobs.id, job.id))
+          .run();
+      },
       throwIfCancelled: () => {
         if (!isCancelled()) return;
         // the signal's reason tells a cancellation from an interruption on quit

@@ -90,3 +90,83 @@ describe('backups: retention, size and archive above the data directory (issue #
     await app.cleanup();
   });
 });
+
+describe('backups: a full backup needs the archive (issue #236)', () => {
+  it('fails without pruning when the archive folder is unreachable, and keeps the good full backups', async () => {
+    const app = await createTestApp({ configured: false });
+    await app.ok('settings:update', { backups: { keep: 2 } });
+    const archive = app.services.settings.get().archiveRoot;
+    fs.mkdirSync(path.join(archive, 'work'), { recursive: true });
+    fs.writeFileSync(path.join(archive, 'work', 'vertrag.txt'), 'Vertrag');
+    const good = [await app.ok('backup:create', { includeArchive: true }), await app.ok('backup:create', { includeArchive: true })];
+
+    // the archive drive is gone
+    fs.rmSync(archive, { recursive: true, force: true });
+    for (let i = 0; i < 2; i++) {
+      const r = await app.call('backup:create', { includeArchive: true });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.message).toMatch(/Archivordner .* nicht erreichbar/);
+    }
+    const list = await app.ok('backup:list', {});
+    expect(list.map((b) => b.name)).toEqual([good[1]!.name, good[0]!.name]);
+    for (const b of good) expect(fs.readFileSync(path.join(b.path, 'archive', 'work', 'vertrag.txt'), 'utf8')).toBe('Vertrag');
+    const audit = await app.ok('audit:list', {});
+    expect(audit.filter((a) => a.action === 'backup.create')).toHaveLength(2);
+    expect(audit.some((a) => a.action === 'backup.prune')).toBe(false);
+
+    // a metadata backup still works without the archive
+    expect((await app.ok('backup:create', { includeArchive: false })).kind).toBe('metadata');
+    await app.cleanup();
+  });
+
+  it('fails when the archive folder is empty although documents are archived', async () => {
+    const app = await createTestApp({ configured: false });
+    const archive = app.services.settings.get().archiveRoot;
+    fs.mkdirSync(archive, { recursive: true });
+    // an empty archive on a fresh installation is fine
+    expect((await app.ok('backup:create', { includeArchive: true })).kind).toBe('full');
+
+    const imp = await app.ok('documents:import', { paths: [app.file('in/a.txt', 'Inhalt')] });
+    await app.services.jobs.whenIdle();
+    app.services.database.sqlite.prepare("UPDATE documents SET status = 'archived', archive_rel_path = 'work/a.txt' WHERE id = ?").run(imp.imported[0]!.id);
+    const r = await app.call('backup:create', { includeArchive: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/leer, obwohl 1 Dokument\(e\) archiviert sind/);
+    expect(await app.ok('backup:list', {})).toHaveLength(1);
+    await app.cleanup();
+  });
+
+  it('writes the manifest last with the number of copied files; a backup without manifest never counts', async () => {
+    const app = await createTestApp({ configured: false });
+    await app.ok('settings:update', { backups: { keep: 1 } });
+    const archive = app.services.settings.get().archiveRoot;
+    fs.mkdirSync(path.join(archive, 'work', 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(archive, 'work', 'a.txt'), 'A');
+    fs.writeFileSync(path.join(archive, 'work', 'sub', 'b.txt'), 'B');
+    const full = await app.ok('backup:create', { includeArchive: true });
+    const manifest = JSON.parse(fs.readFileSync(path.join(full.path, 'manifest.json'), 'utf8')) as { archiveFiles: number };
+    expect(manifest.archiveFiles).toBe(2);
+
+    // a backup interrupted by a crash during the archive copy: database and archive folder, but no manifest
+    const interrupted = path.join(app.services.paths.backups, 'vollstaendig-2999-01-01T00-00-00-000');
+    fs.mkdirSync(path.join(interrupted, 'archive'), { recursive: true });
+    fs.copyFileSync(path.join(full.path, 'archivist.db'), path.join(interrupted, 'archivist.db'));
+    expect((await app.ok('backup:list', {})).map((b) => b.name)).toEqual([full.name]);
+    await app.cleanup();
+  });
+
+  it('blocks archive file operations while the archive is copied', async () => {
+    const app = await createTestApp({ configured: false });
+    const release = app.services.archive.beginBackup();
+    expect(() => app.services.archive.beginBackup()).toThrow(/bereits ein vollständiges Backup/);
+    expect(() => app.services.archive.beginRootChange()).toThrow(/vollständiges Backup/);
+    const r = await app.call('backup:create', { includeArchive: true });
+    expect(r.ok).toBe(false);
+    release();
+    fs.mkdirSync(app.services.settings.get().archiveRoot, { recursive: true });
+    expect((await app.ok('backup:create', { includeArchive: true })).kind).toBe('full');
+    // released again after the backup
+    app.services.archive.beginRootChange()();
+    await app.cleanup();
+  });
+});

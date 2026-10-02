@@ -108,6 +108,7 @@ export const ChatIntent = z.object({
       title: opt(z.string()),
       description: opt(z.string()),
       occurredAt: opt(z.string()).describe('ISO-Datum YYYY-MM-DD, an dem das Ereignis stattfand'),
+      participants: opt(z.array(z.string())).describe('Beteiligte Personen, nur wenn im Text genannt (Namen wie geschrieben); sonst leer'),
     }),
   ),
   reminder: opt(

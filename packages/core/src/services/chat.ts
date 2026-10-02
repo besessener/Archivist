@@ -9,6 +9,7 @@ import {
   type ChatMessage,
   type Decision,
   type DocumentRecord,
+  type DocumentStatus,
   type DecisionField,
   type EntityRef,
   type OpenItem,
@@ -100,7 +101,16 @@ type Pending =
   | { kind: 'supersede_choice'; newDecisionId: string; candidateIds: string[] }
   | { kind: 'open_item_choice'; text: string; intent: ChatIntent; candidateIds: string[] }
   | { kind: 'subject_choice'; text: string; intent: ChatIntent; names: string[] }
-  | { kind: 'event'; title: string; description: string | null; topic: string | null; project: string | null; source: string };
+  | {
+      kind: 'event';
+      title: string;
+      description: string | null;
+      topic: string | null;
+      project: string | null;
+      /** absent in states stored before #274 */
+      participants?: string[];
+      source: string;
+    };
 
 /** Short ids in the intent prompt (P1, E1, V1) → real ids. Unknown ids returned by the LLM are discarded. */
 interface PromptRefs {
@@ -244,6 +254,12 @@ const SAVE_ANSWER_INTENTS = new Set<ChatIntent['intent']>([
 ]);
 /** Timeline queries in chat show at most this many (newest) entries. */
 const CHAT_TIMELINE_LIMIT = 300;
+/** Documents a chat reply lists for a topic or project (the newest), and hits of a document search. */
+const TOPIC_DOCUMENT_LIMIT = 50;
+const SEARCH_DOCUMENT_LIMIT = 15;
+/** A search returns the best hits, not every document that mentions the words: say so instead of „N gefunden“. */
+const searchHeading = (n: number, capped: boolean) =>
+  capped ? `Hier sind die ${n} besten Treffer (es kann weitere passende Dokumente geben):` : `Ich habe ${n} passende(s) Dokument(e) gefunden:`;
 const SAVE_QUICK_REPLIES = ['Entscheidung', 'Ereignis', 'Notiz', 'Nichts speichern'];
 const SAVE_OPTIONS: Array<[Exclude<SaveChoice, 'nothing'>, string]> = [
   ['decision', 'entscheidung'],
@@ -440,7 +456,7 @@ Absichten (intent):
 - knowledge_question: Frage zum Archivwissen (Wann/Warum/Wer/Wie/„Haben wir jemals …“/Haltungsänderung/Widersprüche).
 - document_search: Dokumente suchen oder anzeigen (nicht, um ihre Verzeichnisse zu bewerten).
 - timeline_query: Chronologische Übersicht zu Thema/Projekt/Zeitraum.
-- event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description. Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
+- event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description sowie event.participants (nur ausdrücklich genannte beteiligte Personen; „ich“ bleibt „ich“). Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
 - open_item_new / open_item_update / open_item_close: offene Punkte erfassen/ändern/schließen. Beim Schließen gehört eine genannte Lösung bzw. ein Grund in openItem.resolutionNote.
 - reminder_create / reminder_snooze: Erinnerung anlegen bzw. verschieben.
 - proposal_confirm / proposal_reject: Zustimmung bzw. Ablehnung eines offenen Agentenvorschlags („ja, mach das“, „nein“).
@@ -2082,25 +2098,34 @@ export class ChatService {
     const query = intent.query?.trim() || text;
     const topicName = intent.topic?.trim();
     let docs: SourceReference[] = [];
+    // how the list came about, so the reply never passes a capped list off as everything there is (#222)
+    let heading: string | null = null;
+    let searchCapped = false;
     if (topicName) {
       const ent = this.graph.findByName('topic', topicName) ?? this.graph.findByName('project', topicName);
       if (ent) {
-        const rows = this.docs.list({ [ent.type === 'topic' ? 'topicId' : 'projectId']: ent.id, limit: 50 });
-        docs = rows
-          .filter((d) => d.status === 'archived' || d.status === 'indexed_only')
-          .map((d) => ({
-            id: d.id,
-            type: 'document' as const,
-            title: d.title,
-            snippet: truncate(d.summary ?? d.textPreview, 200),
-            path: d.archivePath ?? d.sourcePath,
-            ...documentDateRef(d),
-            score: 1,
-          }));
+        // filtered in the database: a cap applied before the filter hid archived documents behind newer inbox ones
+        const filter = { [ent.type === 'topic' ? 'topicId' : 'projectId']: ent.id, statuses: ['archived', 'indexed_only'] as DocumentStatus[] };
+        const rows = this.docs.list({ ...filter, limit: TOPIC_DOCUMENT_LIMIT });
+        const total = rows.length < TOPIC_DOCUMENT_LIMIT ? rows.length : this.docs.count(filter);
+        heading =
+          total > rows.length
+            ? `Zu „${ent.name}“ gibt es ${total} archivierte Dokumente; hier die ${rows.length} neuesten:`
+            : `Zu „${ent.name}“ gibt es ${total} archivierte(s) Dokument(e):`;
+        docs = rows.map((d) => ({
+          id: d.id,
+          type: 'document' as const,
+          title: d.title,
+          snippet: truncate(d.summary ?? d.textPreview, 200),
+          path: d.archivePath ?? d.sourcePath,
+          ...documentDateRef(d),
+          score: 1,
+        }));
       }
     }
     if (docs.length === 0) {
-      const hits = await this.search.search(query, { types: ['document'], limit: 15 });
+      const hits = await this.search.search(query, { types: ['document'], limit: SEARCH_DOCUMENT_LIMIT });
+      searchCapped = hits.length >= SEARCH_DOCUMENT_LIMIT;
       docs = hits.flatMap((h) => {
         const d = this.docs.get(h.id);
         return d.status === 'archived' || d.status === 'indexed_only'
@@ -2129,7 +2154,7 @@ export class ChatService {
     const numbered = docs.map((d, i) => ({ ...d, title: `${i + 1}. ${d.title}` }));
     return {
       intent: 'document_search',
-      content: `Ich habe ${docs.length} Dokument(e) gefunden:\n\n${docs.map((d, i) => `${i + 1}. **${d.title}** – ${d.snippet}`).join('\n')}`,
+      content: `${heading ?? searchHeading(docs.length, searchCapped)}\n\n${docs.map((d, i) => `${i + 1}. **${d.title}** – ${d.snippet}`).join('\n')}`,
       sources: numbered,
       context: { documents: docs.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })), ...this.contextFromSources(docs) },
       confidence: 0.7,
@@ -2202,6 +2227,7 @@ export class ChatService {
       pending?.description ??
       ev.description?.trim() ??
       ((intent.segment ?? text).trim().length > title.length + 10 ? (intent.segment ?? text).trim().slice(0, 2000) : null);
+    const participants = pending?.participants ?? (ev.participants ?? []).map((p) => p.trim()).filter(Boolean);
     const clear: ConvState = { ...state, pending: null };
     if (!occurredAt) {
       return {
@@ -2216,13 +2242,14 @@ export class ChatService {
             description,
             topic: pending?.topic ?? intent.topic ?? null,
             project: pending?.project ?? intent.project ?? null,
+            participants,
             source: pending?.source ?? text.slice(0, 4000),
           },
         },
       };
     }
     const event = this.events.create(
-      { title, description, occurredAt, topic: pending?.topic ?? intent.topic, project: pending?.project ?? intent.project, sourceIds: [] },
+      { title, description, occurredAt, topic: pending?.topic ?? intent.topic, project: pending?.project ?? intent.project, participants, sourceIds: [] },
       { actor: 'user', trigger: 'chat' },
     );
     const sources: SourceReference[] = [
@@ -2230,7 +2257,7 @@ export class ChatService {
     ];
     return {
       intent: 'event_record',
-      content: `Ereignis in der Timeline eingetragen: **${event.title}** (${event.occurredAt.slice(0, 10)})${event.topicName ? `, Thema: ${event.topicName}` : ''}${event.projectName ? `, Projekt: ${event.projectName}` : ''}.`,
+      content: `Ereignis in der Timeline eingetragen: **${event.title}** (${event.occurredAt.slice(0, 10)})${event.topicName ? `, Thema: ${event.topicName}` : ''}${event.projectName ? `, Projekt: ${event.projectName}` : ''}${event.participants.length ? `, Beteiligte: ${event.participants.join(', ')}` : ''}.`,
       sources,
       context: {
         topics: event.topicName ? [{ type: 'topic', id: event.topicId!, label: event.topicName }] : [],
@@ -2936,8 +2963,9 @@ export class ChatService {
   }
 
   private async archiveStatus(state: ConvState): Promise<Reply> {
-    const docs = this.docs.list({ limit: 1000 });
-    const by = (s: string) => docs.filter((d) => d.status === s).length;
+    // COUNT per status instead of counting a list capped at 1000 (#222)
+    const counts = this.docs.counts();
+    const by = (s: DocumentStatus) => counts[s] ?? 0;
     const jobs = this.jobs.counts();
     const open = this.openItems.list({ onlyActive: true });
     const content = `**Archivstatus**\n• Archiviert: ${by('archived')} · nur indexiert: ${by('indexed_only')}\n• Wartet auf Zuordnung (Inbox): ${by('proposed') + by('staged')} · in Analyse: ${by('analyzing')}\n• Fehlgeschlagen: ${by('failed')}\n• Entscheidungen: ${this.decisions.list().length} (davon Entwürfe: ${this.decisions.list({ status: 'draft' }).length})\n• Offene Punkte: ${open.length}, überfällig: ${this.openItems.overdue().length}\n• Offene Hinweise (Insights): ${this.insights.openCount()}\n• Jobs: ${jobs.pending} wartend, ${jobs.running} laufend, ${jobs.failed} fehlgeschlagen`;

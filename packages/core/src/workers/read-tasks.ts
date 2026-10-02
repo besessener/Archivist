@@ -1,5 +1,5 @@
 import type { Db } from '../db/database';
-import { documentCounts, queryDocumentList, type DocumentListQuery } from '../services/document-queries';
+import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery } from '../services/document-queries';
 import { buildTimeline, type TimelineQuery } from '../services/timeline';
 
 /**
@@ -10,6 +10,7 @@ export const readTasks = {
   timeline: (db: Db, q: TimelineQuery) => buildTimeline(db, q),
   documentList: (db: Db, q: DocumentListQuery) => queryDocumentList(db, q),
   documentCounts: (db: Db, _q: Record<string, never>) => documentCounts(db),
+  documentCount: (db: Db, q: Omit<DocumentListQuery, 'limit'>) => countDocumentList(db, q),
 };
 
 export type ReadTaskName = keyof typeof readTasks;
