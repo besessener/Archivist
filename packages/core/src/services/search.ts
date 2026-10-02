@@ -34,6 +34,9 @@ interface Hit {
   vectorScore?: number;
 }
 
+/** Minimum number of entities the keyword pass returns (more when the caller asks for more results). */
+const FTS_ENTITY_LIMIT = 60;
+
 /** How long a search waits for the remote query embedding before it answers with local results only. */
 const REMOTE_QUERY_EMBEDDING_TIMEOUT_MS = 2500;
 
@@ -124,30 +127,49 @@ export class SearchService {
     return toks.map((t) => `"${t.replace(/"/g, '')}"*`).join(' OR ');
   }
 
+  /** Entities matching the FTS query, best (BM25) chunk each, ordered by that chunk's score. */
+  private keywordHits(fts: string, types: readonly EntityType[] | null, limit: number): Array<Omit<Hit, 'keywordRank'>> {
+    const typeClause = types ? ` AND entity_type IN (${types.map(() => '?').join(', ')})` : '';
+    // bare columns next to min() come from the row with the minimum (SQLite) – i.e. the best chunk of the entity
+    const best = this.sqlite
+      .prepare(
+        // MATERIALIZED: a flattened subquery would call bm25() outside the full-text query, which FTS5 rejects
+        `WITH m AS MATERIALIZED (
+           SELECT entity_id, entity_type, chunk_id, bm25(search_fts, 0, 0, 0, 3.0, 1.0) AS r
+           FROM search_fts WHERE search_fts MATCH ?${typeClause})
+         SELECT entity_id AS entityId, entity_type AS entityType, chunk_id AS chunkId, min(r) AS r
+         FROM m GROUP BY entity_id ORDER BY r LIMIT ?`,
+      )
+      .all(fts, ...(types ?? []), limit) as Array<{ entityId: string; entityType: string; chunkId: string }>;
+    if (best.length === 0) return [];
+    const details = new Map(
+      (
+        this.sqlite
+          .prepare(
+            `SELECT chunk_id AS chunkId, content AS chunkText, snippet(search_fts, 4, '[', ']', '…', 14) AS snippet
+             FROM search_fts WHERE search_fts MATCH ? AND chunk_id IN (${best.map(() => '?').join(', ')})`,
+          )
+          .all(fts, ...best.map((b) => b.chunkId)) as Array<{ chunkId: string; chunkText: string; snippet: string }>
+      ).map((d) => [d.chunkId, d]),
+    );
+    return best.map((b) => ({
+      entityId: b.entityId,
+      entityType: b.entityType,
+      chunkText: details.get(b.chunkId)?.chunkText ?? '',
+      snippet: details.get(b.chunkId)?.snippet ?? '',
+    }));
+  }
+
   async search(query: string, opts: { types?: EntityType[]; limit?: number; allowRemoteEmbedding?: boolean } = {}): Promise<SearchHit[]> {
     const limit = opts.limit ?? 30;
     const hits = new Map<string, Hit>();
-    const typeSet = opts.types ? new Set<string>(opts.types) : null;
 
-    // 1) keyword search
+    // 1) keyword search: best chunk per entity, type filter inside the query – the LIMIT counts entities, not chunks (#159)
     const fts = this.ftsQuery(query);
     if (fts) {
       try {
-        const rows = this.sqlite
-          .prepare(
-            `SELECT entity_id AS entityId, entity_type AS entityType, content AS chunkText,
-                    snippet(search_fts, 4, '[', ']', '…', 14) AS snippet
-             FROM search_fts WHERE search_fts MATCH ? ORDER BY bm25(search_fts, 0, 0, 0, 3.0, 1.0) LIMIT 60`,
-          )
-          .all(fts) as Array<{ entityId: string; entityType: string; chunkText: string; snippet: string }>;
-        let rank = 0;
-        for (const r of rows) {
-          if (typeSet && !typeSet.has(r.entityType)) continue;
-          const existing = hits.get(r.entityId);
-          if (existing) continue;
+        for (const [rank, r] of this.keywordHits(fts, opts.types ?? null, Math.max(FTS_ENTITY_LIMIT, limit * 2)).entries())
           hits.set(r.entityId, { ...r, keywordRank: rank });
-          rank += 1;
-        }
       } catch (err) {
         this.ctx.logger.warn('search', 'FTS query failed', { error: err });
       }
