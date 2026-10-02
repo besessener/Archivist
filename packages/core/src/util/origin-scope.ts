@@ -9,10 +9,7 @@ export interface CreatedEntry {
 
 const storage = new AsyncLocalStorage<CreatedEntry[]>();
 
-/**
- * Collects the entries created while `fn` runs – e.g. everything one chat message created, so these entries can be linked
- * with each other (#272). The list is filled even when `fn` fails: what was created before the error still belongs together.
- */
+/** Collects the entries created while `fn` runs, to link them with each other (#272); filled even when `fn` fails. */
 export async function collectCreated<T>(fn: () => Promise<T>, into: CreatedEntry[]): Promise<T> {
   return storage.run(into, fn);
 }

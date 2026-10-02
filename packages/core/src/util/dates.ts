@@ -62,37 +62,35 @@ const NUMBER_WORDS: Record<string, number> = {
   vierzehn: 14,
 };
 
-const pad = (n: number) => String(n).padStart(2, '0');
+const pad = (value: number) => String(value).padStart(2, '0');
 
-export function toIsoDate(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export function toIsoDate(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function validDate(y: number, m: number, d: number): string | null {
-  const dt = new Date(y, m - 1, d);
-  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
-  return toIsoDate(dt);
+function validDate(year: number, month: number, day: number): string | null {
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return toIsoDate(date);
 }
 
 /** Converts two-digit years (26 → 2026). */
-const fullYear = (y: number) => (y < 100 ? 2000 + y : y);
+const fullYear = (year: number) => (year < 100 ? 2000 + year : year);
 
-function nextWeekday(from: Date, weekday: number, strictlyAfter = true): Date {
-  const diff = (weekday - from.getDay() + 7) % 7;
-  const add = diff === 0 && strictlyAfter ? 7 : diff;
-  return new Date(from.getFullYear(), from.getMonth(), from.getDate() + add);
+/** Next weekday strictly after `from`. */
+function nextWeekday(from: Date, weekday: number): Date {
+  const ahead = (weekday - from.getDay() + 7) % 7;
+  const days = ahead === 0 ? 7 : ahead;
+  return new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
 }
 
 /** Last weekday strictly before `from` (on a Friday, „letzten Freitag“ yields the one a week ago). */
 function previousWeekday(from: Date, weekday: number): Date {
-  const diff = (from.getDay() - weekday + 7) % 7 || 7;
-  return new Date(from.getFullYear(), from.getMonth(), from.getDate() - diff);
+  const back = (from.getDay() - weekday + 7) % 7 || 7;
+  return new Date(from.getFullYear(), from.getMonth(), from.getDate() - back);
 }
 
-/**
- * Date, weekday, time and time zone in local time for LLM prompts,
- * e.g. „2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)“.
- */
+/** Local date, weekday, time and zone for LLM prompts, e.g. „2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)“. */
 export function promptNow(now: Date = new Date(), timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
   // via Intl instead of the local getters: independent of the time zone the process currently has
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -106,103 +104,140 @@ export function promptNow(now: Date = new Date(), timeZone: string = Intl.DateTi
     weekday: 'short',
     timeZoneName: 'longOffset',
   }).formatToParts(now);
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
   const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'));
   const offset = get('timeZoneName').replace(/^GMT$/, 'GMT+00:00').replace('GMT', 'UTC');
   return `${get('year')}-${get('month')}-${get('day')} (${WEEKDAY_NAMES[weekday]}), ${get('hour')}:${get('minute')} Uhr, Zeitzone ${timeZone} (${offset})`;
 }
 
-/**
- * Recognizes the first date in a German text and returns ISO (YYYY-MM-DD) or null.
- * Supports: ISO, 12.06.2026, 12.6.26, 12. Juni (2026), heute/morgen/übermorgen/gestern,
- * "in sieben Tagen/Wochen/Monaten", "nächsten Montag", "letzten Freitag", "nächste Woche", "nächsten Monat".
- * Relative expressions refer to the local day of `now`. A bare weekday is the next one,
- * in a past context („war am Montag“, „Freitag eingereicht“) the last one.
- */
+interface DateContext {
+  /** The input in lower case. */
+  text: string;
+  input: string;
+  today: Date;
+}
+/** A recognised date expression; `date` is null when it names no valid calendar day („31.02.“). */
+type DateMatch = { date: string | null };
+type DateMatcher = (context: DateContext) => DateMatch | undefined;
+
+const daysFrom = (today: Date, days: number) => toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + days));
+
+function isoDate({ text }: DateContext): DateMatch | undefined {
+  const match = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(text);
+  return match ? { date: validDate(Number(match[1]), Number(match[2]), Number(match[3])) } : undefined;
+}
+
+function numericDateWithYear({ text }: DateContext): DateMatch | undefined {
+  const match = /\b(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4}|\d{2})\b/.exec(text);
+  return match ? { date: validDate(fullYear(Number(match[3])), Number(match[2]), Number(match[1])) } : undefined;
+}
+
+function dayWithMonthName({ text, today }: DateContext): DateMatch | undefined {
+  const match = /\b(\d{1,2})\.\s?([a-zäöü]+)\.?(?:\s+(\d{4}))?/.exec(text);
+  if (!match || !match[2] || MONTHS[match[2]] === undefined) return undefined;
+  return { date: validDate(match[3] ? Number(match[3]) : today.getFullYear(), MONTHS[match[2]]!, Number(match[1])) };
+}
+
+function numericDateWithoutYear({ text, today }: DateContext): DateMatch | undefined {
+  const match = /\b(\d{1,2})\.\s?(\d{1,2})\.(?!\d)/.exec(text);
+  return match ? { date: validDate(today.getFullYear(), Number(match[2]), Number(match[1])) } : undefined;
+}
+
+function namedDay({ text, today }: DateContext): DateMatch | undefined {
+  if (/\bübermorgen\b|\buebermorgen\b/.test(text)) return { date: daysFrom(today, 2) };
+  if (/\bmorgen\b/.test(text)) return { date: daysFrom(today, 1) };
+  if (/\bgestern\b/.test(text)) return { date: daysFrom(today, -1) };
+  if (/\bheute\b/.test(text)) return { date: toIsoDate(today) };
+  return undefined;
+}
+
+/** „in sieben Tagen“, „in 2 Wochen“, „in einem Monat“. */
+function countedOffset({ text, today }: DateContext): DateMatch | undefined {
+  const match = /\bin\s+(\d+|[a-zäöü]+)\s+(tag|tagen|woche|wochen|monat|monaten)\b/.exec(text);
+  if (!match) return undefined;
+  const count = /^\d+$/.test(match[1]!) ? Number(match[1]) : NUMBER_WORDS[match[1]!];
+  if (count === undefined) return undefined;
+  const unit = match[2]!;
+  if (unit.startsWith('tag')) return { date: daysFrom(today, count) };
+  if (unit.startsWith('woche')) return { date: daysFrom(today, 7 * count) };
+  return { date: toIsoDate(new Date(today.getFullYear(), today.getMonth() + count, today.getDate())) };
+}
+
+/** A bare weekday is the next one, in a past context („war am Montag“, „Freitag eingereicht“) the last one. */
+function weekdayDate({ text, input, today }: DateContext): DateMatch | undefined {
+  const last = LAST_WEEKDAY_RE.exec(text);
+  if (last) return { date: toIsoDate(previousWeekday(today, WEEKDAYS[last[1]!]!)) };
+  const next = NEXT_WEEKDAY_RE.exec(text);
+  if (next) return { date: toIsoDate(nextWeekday(today, WEEKDAYS[next[1]!]!)) };
+  const bare = AM_WEEKDAY_RE.exec(text) ?? BARE_WEEKDAY_RE.exec(text);
+  if (!bare) return undefined;
+  const past = (PAST_AUX_RE.test(text) || PAST_PARTICIPLE_RE.test(input)) && !TARGET_WEEKDAY_RE.test(text);
+  return { date: toIsoDate(past ? previousWeekday(today, WEEKDAYS[bare[1]!]!) : nextWeekday(today, WEEKDAYS[bare[1]!]!)) };
+}
+
+function nextWeekOrMonth({ text, today }: DateContext): DateMatch | undefined {
+  if (/\bnächste[nrm]?\s+woche\b|\bnaechste[nrm]?\s+woche\b/.test(text)) return { date: toIsoDate(nextWeekday(today, 1)) };
+  if (/\bnächste[nrm]?\s+monat\b|\bnaechste[nrm]?\s+monat\b/.test(text))
+    return { date: toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, today.getDate())) };
+  return undefined;
+}
+
+function monthWithYear({ text }: DateContext): DateMatch | undefined {
+  const match = /\b(?:im\s+)?(januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember)\s+(\d{4})\b/.exec(text);
+  return match ? { date: validDate(Number(match[2]), MONTHS[match[1]!]!, 1) } : undefined;
+}
+
+/** In order of precedence: the first expression found in the text wins. */
+const DATE_MATCHERS: DateMatcher[] = [
+  isoDate,
+  numericDateWithYear,
+  dayWithMonthName,
+  numericDateWithoutYear,
+  namedDay,
+  countedOffset,
+  weekdayDate,
+  nextWeekOrMonth,
+  monthWithYear,
+];
+
+/** First date in a German text as ISO (YYYY-MM-DD) or null; relative expressions refer to the local day of `now`. */
 export function parseGermanDate(input: string, now: Date = new Date()): string | null {
-  const text = input.toLowerCase();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  let m = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(text);
-  if (m) return validDate(Number(m[1]), Number(m[2]), Number(m[3]));
-
-  m = /\b(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4}|\d{2})\b/.exec(text);
-  if (m) return validDate(fullYear(Number(m[3])), Number(m[2]), Number(m[1]));
-
-  m = /\b(\d{1,2})\.\s?([a-zäöü]+)\.?(?:\s+(\d{4}))?/.exec(text);
-  if (m && m[2] && MONTHS[m[2]] !== undefined) {
-    return validDate(m[3] ? Number(m[3]) : today.getFullYear(), MONTHS[m[2]]!, Number(m[1]));
+  const context = { text: input.toLowerCase(), input, today: new Date(now.getFullYear(), now.getMonth(), now.getDate()) };
+  for (const matcher of DATE_MATCHERS) {
+    const match = matcher(context);
+    if (match) return match.date;
   }
-
-  m = /\b(\d{1,2})\.\s?(\d{1,2})\.(?!\d)/.exec(text);
-  if (m) return validDate(today.getFullYear(), Number(m[2]), Number(m[1]));
-
-  if (/\bübermorgen\b|\buebermorgen\b/.test(text)) return toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2));
-  if (/\bmorgen\b/.test(text)) return toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1));
-  if (/\bgestern\b/.test(text)) return toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
-  if (/\bheute\b/.test(text)) return toIsoDate(today);
-
-  m = /\bin\s+(\d+|[a-zäöü]+)\s+(tag|tagen|woche|wochen|monat|monaten)\b/.exec(text);
-  if (m) {
-    const n = /^\d+$/.test(m[1]!) ? Number(m[1]) : NUMBER_WORDS[m[1]!];
-    if (n !== undefined) {
-      const unit = m[2]!;
-      if (unit.startsWith('tag')) return toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + n));
-      if (unit.startsWith('woche')) return toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7 * n));
-      return toIsoDate(new Date(today.getFullYear(), today.getMonth() + n, today.getDate()));
-    }
-  }
-
-  m = LAST_WEEKDAY_RE.exec(text);
-  if (m) return toIsoDate(previousWeekday(today, WEEKDAYS[m[1]!]!));
-  m = NEXT_WEEKDAY_RE.exec(text);
-  if (m) return toIsoDate(nextWeekday(today, WEEKDAYS[m[1]!]!));
-  m = AM_WEEKDAY_RE.exec(text) ?? BARE_WEEKDAY_RE.exec(text);
-  if (m) {
-    const past = (PAST_AUX_RE.test(text) || PAST_PARTICIPLE_RE.test(input)) && !TARGET_WEEKDAY_RE.test(text);
-    return toIsoDate(past ? previousWeekday(today, WEEKDAYS[m[1]!]!) : nextWeekday(today, WEEKDAYS[m[1]!]!));
-  }
-
-  if (/\bnächste[nrm]?\s+woche\b|\bnaechste[nrm]?\s+woche\b/.test(text)) return toIsoDate(nextWeekday(today, 1));
-  if (/\bnächste[nrm]?\s+monat\b|\bnaechste[nrm]?\s+monat\b/.test(text)) return toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, today.getDate()));
-
-  m = /\b(?:im\s+)?(januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember)\s+(\d{4})\b/.exec(text);
-  if (m) return validDate(Number(m[2]), MONTHS[m[1]!]!, 1);
-
   return null;
 }
 
 /** Normalizes a date returned by the LLM (ISO or German) to ISO or null. */
 export function normalizeDateInput(value: string | null | undefined, now: Date = new Date()): string | null {
   if (!value) return null;
-  const v = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v)) {
-    const iso = validDate(Number(v.slice(0, 4)), Number(v.slice(5, 7)), Number(v.slice(8, 10)));
-    return iso ? (v.length > 10 ? v : iso) : null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(trimmed)) {
+    const iso = validDate(Number(trimmed.slice(0, 4)), Number(trimmed.slice(5, 7)), Number(trimmed.slice(8, 10)));
+    return iso ? (trimmed.length > 10 ? trimmed : iso) : null;
   }
-  return parseGermanDate(v, now);
+  return parseGermanDate(trimmed, now);
 }
 
-/**
- * Date of a decision from German text: a decision lies in the past, so a bare weekday („am Montag“) is the last one
- * and „12. Juni“ without a year the last 12 June. A date after today is no decision date and yields null (#168).
- */
+/** Decision date from German text: a decision lies in the past, so weekdays and yearless dates point back; a future date is null (#168). */
 export function parseDecisionDate(input: string, now: Date = new Date()): string | null {
   const text = input.toLowerCase();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekday = !LAST_WEEKDAY_RE.test(text) && !NEXT_WEEKDAY_RE.test(text) ? (AM_WEEKDAY_RE.exec(text) ?? BARE_WEEKDAY_RE.exec(text)) : null;
   const parsed = weekday && !/\d/.test(text) ? toIsoDate(previousWeekday(today, WEEKDAYS[weekday[1]!]!)) : parseGermanDate(input, now);
   // only „12. Juni“ / „12.6.“ (no year) can mean last year; „morgen“ or „2027“ in the future is no decision date
-  const yearless = isYearless(text);
-  return pastOrNull(parsed, today, !yearless);
+  return pastOrNull(parsed, { today, yearGiven: !isYearless(text) });
 }
 
 /** Like normalizeDateInput, for a decision date: never in the future (see parseDecisionDate). */
 export function normalizeDecisionDate(value: string | null | undefined, now: Date = new Date()): string | null {
   if (!value) return null;
-  const v = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v)) return pastOrNull(normalizeDateInput(v, now), new Date(now.getFullYear(), now.getMonth(), now.getDate()), true);
-  return parseDecisionDate(v, now);
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(trimmed))
+    return pastOrNull(normalizeDateInput(trimmed, now), { today: new Date(now.getFullYear(), now.getMonth(), now.getDate()), yearGiven: true });
+  return parseDecisionDate(trimmed, now);
 }
 
 /** „12. Juni“ / „3.10.“ – a day and month without a year („3.10.26“ and „2026“ have one). */
@@ -219,8 +254,8 @@ export function normalizeDueDate(value: string | null | undefined, now: Date = n
 }
 
 /** A date after today: the same day one year earlier if the year was not given, otherwise null. */
-function pastOrNull(iso: string | null, today: Date, fixedYear: boolean): string | null {
-  if (!iso || iso.slice(0, 10) <= toIsoDate(today)) return iso;
-  if (fixedYear) return null;
+function pastOrNull(iso: string | null, reference: { today: Date; yearGiven: boolean }): string | null {
+  if (!iso || iso.slice(0, 10) <= toIsoDate(reference.today)) return iso;
+  if (reference.yearGiven) return null;
   return validDate(Number(iso.slice(0, 4)) - 1, Number(iso.slice(5, 7)), Number(iso.slice(8, 10)));
 }

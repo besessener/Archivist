@@ -30,7 +30,7 @@ export function toErrorInfo(err: unknown): AppErrorInfo {
       category: 'validation_error',
       message: 'Ungültige Eingabe.',
       retryable: false,
-      details: err.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; '),
+      details: err.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; '),
     };
   }
   const message = err instanceof Error ? err.message : String(err);
