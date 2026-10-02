@@ -62,3 +62,74 @@ describe('Knowledge answers get the matched passage (#157)', () => {
     expect(input).toContain('Zusammenfassung: Protokoll des Jour Fixe');
   });
 });
+
+describe('Knowledge questions search more than one wording (#164)', () => {
+  beforeEach(async () => {
+    app = await createTestApp({ privacy: 'auto' });
+    app.llm.on('KnowledgeAnswer', () => answer);
+  });
+
+  it('an alternative wording from the intent finds what the first query misses', async () => {
+    const note = await app.services.notes.create({
+      title: 'Rechenzentrum',
+      content: 'Der Cloud-Umzug des Rechenzentrums ist beschlossen und startet im April.',
+    });
+    app.llm.on('ChatIntent', () => ({
+      intent: 'knowledge_question',
+      confidence: 0.9,
+      rationale: 'test',
+      query: 'AWS Migration',
+      alternativeQueries: ['Cloud-Umzug Rechenzentrum', 'cloud move data center'],
+    }));
+
+    const r = await app.ok('chat:send', { text: 'Was gilt für die AWS Migration?' });
+
+    expect(knowledgeInput()).toContain('Der Cloud-Umzug des Rechenzentrums ist beschlossen');
+    expect(r.assistantMessage.sources.map((s) => s.id)).toContain(note.id);
+  });
+
+  it('asks the LLM for alternative wordings in both languages', async () => {
+    app.llm.on('ChatIntent', () => ({ intent: 'smalltalk', confidence: 0.9, rationale: 'test' }));
+    await app.ok('chat:send', { text: 'Hallo' });
+    const call = app.llm.calls.find((c) => c.schema === 'ChatIntent')!;
+    expect(call.instructions).toMatch(/alternativeQueries/);
+    expect(call.instructions).toMatch(/Englisch/);
+  });
+
+  it('applies a time range as a filter when something remains in it', async () => {
+    const old = app.services.eventRecords.create({ title: 'Zaun gestrichen', occurredAt: '2019-05-01', sourceIds: [] });
+    const recent = app.services.eventRecords.create({ title: 'Zaun repariert', occurredAt: '2026-05-01', sourceIds: [] });
+    await app.services.eventRecords.reindex(old.id);
+    await app.services.eventRecords.reindex(recent.id);
+    app.llm.on('ChatIntent', () => ({
+      intent: 'knowledge_question',
+      confidence: 0.9,
+      rationale: 'test',
+      query: 'Zaun',
+      timeRange: { from: '2026-01-01', to: '2026-12-31' },
+    }));
+
+    const r = await app.ok('chat:send', { text: 'Was war 2026 mit dem Zaun?' });
+
+    expect(knowledgeInput()).toContain('Zaun repariert');
+    expect(knowledgeInput()).not.toContain('Zaun gestrichen');
+    expect(r.assistantMessage.uncertainties.join(' ')).not.toMatch(/Zeitraum/);
+  });
+
+  it('keeps the hits outside the time range with a hint when nothing lies in it', async () => {
+    const old = app.services.eventRecords.create({ title: 'Zaun gestrichen', occurredAt: '2019-05-01', sourceIds: [] });
+    await app.services.eventRecords.reindex(old.id);
+    app.llm.on('ChatIntent', () => ({
+      intent: 'knowledge_question',
+      confidence: 0.9,
+      rationale: 'test',
+      query: 'Zaun',
+      timeRange: { from: '2026-01-01', to: null },
+    }));
+
+    const r = await app.ok('chat:send', { text: 'Was war 2026 mit dem Zaun?' });
+
+    expect(knowledgeInput()).toContain('Zaun gestrichen');
+    expect(r.assistantMessage.uncertainties.join(' ')).toMatch(/Im genannten Zeitraum .* nichts gefunden/);
+  });
+});

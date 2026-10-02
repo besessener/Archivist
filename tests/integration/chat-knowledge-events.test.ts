@@ -64,7 +64,9 @@ describe('Knowledge questions also find events (#48)', () => {
   it('names events when nothing was found', async () => {
     app.llm.down = true;
     const r = await app.ok('chat:send', { text: 'Haben wir jemals über Vault gesprochen?' });
-    expect(r.assistantMessage.content).toMatch(/Dazu finde ich im Archiv nichts.*Ereignisse/);
+    expect(r.assistantMessage.content).toMatch(/Dazu habe ich unter den archivierten .*Ereignissen.* nichts gefunden/);
+    // no absolute „there is nothing“: the reply names what was searched and that other wordings may exist (#164)
+    expect(r.assistantMessage.content).toMatch(/gesucht nach „Haben wir jemals über Vault gesprochen\?“\)\. Das heißt nicht sicher/);
     expect(r.assistantMessage.sources).toHaveLength(0);
   });
 });
