@@ -11,11 +11,9 @@ export interface SecretCipher {
   decrypt(data: Buffer): string;
 }
 
-/**
- * Stores the LLM API key in encrypted form only (operating system credential store via
- * Electron safeStorage). The key never appears in plain text in configuration files or logs.
- */
+/** Stores the LLM API key only encrypted (OS credential store via safeStorage); never in plain text in config or logs. */
 export class SecretService {
+  /** undefined until the key file was read once */
   private cache: string | null | undefined;
 
   constructor(
@@ -36,8 +34,8 @@ export class SecretService {
   }
 
   getApiKey(): string | null {
-    const fromEnv = process.env.ARCHIVIST_LLM_API_KEY;
-    if (fromEnv) return fromEnv;
+    const fromEnvironment = process.env.ARCHIVIST_LLM_API_KEY;
+    if (fromEnvironment) return fromEnvironment;
     if (this.cache !== undefined) return this.cache;
     try {
       const data = fs.readFileSync(this.file);
@@ -56,9 +54,9 @@ export class SecretService {
       throw permissionError('Der sichere Speicher des Betriebssystems ist nicht verfügbar. Der API-Key wird nicht im Klartext gespeichert.');
     }
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, this.cipher.encrypt(key), { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
+    const temporaryFile = `${this.file}.tmp`;
+    fs.writeFileSync(temporaryFile, this.cipher.encrypt(key), { mode: 0o600 });
+    fs.renameSync(temporaryFile, this.file);
     this.cache = key;
     this.logger.registerSecret(key);
     this.logger.info('secret', 'API key saved');

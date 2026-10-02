@@ -1,17 +1,20 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 import type { AgentAdapterId, AppErrorInfo, LlmTestResult, LlmTransmission } from '@archivist/shared';
-import { desc } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { llmTransmissions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
-import { newId, nowIso } from '../util/ids';
 import { redactSecrets } from '../util/redact';
 import { abortedError, mapHttpError } from '../util/llm-errors';
 import type { SecretService } from './secret';
 import type { SettingsService } from './settings';
 import { AnthropicAdapter, detectAdapter, type AdapterConfig } from '../agent/adapters';
 import type { FetchLike } from '../agent/adapters/common';
+import { EndpointHealth } from './llm/endpoint-health';
+import { endpointUrl, postJson, type PostRequest } from './llm/http';
+import { isUnsupportedParamError, paramsToDrop, presentParams, withoutParams, type OptionalParam } from './llm/optional-params';
+import { correctionInput, issuesText, parseJsonAnswer, preparedInput, structuredInstructions } from './llm/prompt-text';
+import { responsesRequestBody, responsesText } from './llm/responses';
+import { TransmissionLog, type Transmission } from './llm/transmission-log';
 
 export type { FetchLike } from '../agent/adapters/common';
 
@@ -30,14 +33,8 @@ export interface LlmRequest {
 
 export { abortedError } from '../util/llm-errors';
 
-/**
- * Cancellation scope: every LLM request started inside `llmCancelScope.run(signal, …)` uses this signal
- * unless it brings its own – also requests of other services called along the way (e.g. contradiction checks).
- */
+/** Every LLM request inside `llmCancelScope.run(signal, …)` uses this signal unless it brings its own (also nested services). */
 export const llmCancelScope = new AsyncLocalStorage<AbortSignal>();
-
-/** After a timeout or an unreachable endpoint, requests fail fast for this long instead of waiting again. */
-const CIRCUIT_OPEN_MS = 60_000;
 
 export interface LlmOverrides {
   baseUrl?: string;
@@ -45,77 +42,39 @@ export interface LlmOverrides {
   apiKey?: string;
 }
 
-interface ResponsesBody {
-  output_text?: string;
-  status?: string;
-  error?: { message?: string } | null;
-  incomplete_details?: { reason?: string } | null;
-  output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+interface Connection {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
 }
 
-/**
- * Unambiguous messages about unknown or unsupported parameters: the message must name a parameter
- * AND call it unsupported/unknown. General format errors (e.g. "invalid input format")
- * do not trigger a fallback request but surface as errors.
- */
-const UNSUPPORTED_PARAM_PATTERNS = [
-  // "Unsupported parameter: 'store'", "Unknown parameter", "Unrecognized request argument supplied: reasoning"
-  /\b(?:unsupported|unknown|unrecognized)\s+(?:request\s+)?(?:parameter|argument|field)s?\b/i,
-  // "'text.format' is not supported", "reasoning.effort is unsupported"
-  /['"`]?\b(?:store|reasoning(?:\.effort)?|text(?:\.format)?|max_output_tokens)\b['"`]?\s+(?:is|are)\s+(?:not\s+supported|unsupported|not\s+recognized|unknown)\b/i,
-  // "does not support the 'reasoning' parameter"
-  /\bdoes\s+not\s+support\b[^.\n]{0,80}\b(?:parameters?|arguments?|store|reasoning|text\.format|max_output_tokens)\b/i,
-  // "Invalid parameter: 'text.format' of type 'json_object' is not supported with this model."
-  /['"`]?\b(?:text\.format|response_format)\b['"`]?\s+of\s+type\s+['"`]?\w+['"`]?\s+is\s+not\s+supported\b/i,
-];
-
-function isUnsupportedParamError(text: string): boolean {
-  return UNSUPPORTED_PARAM_PATTERNS.some((re) => re.test(text));
+/** A request after the privacy gate: input and instructions are cut and masked, ready to send. */
+interface PreparedRequest {
+  connection: Connection;
+  request: LlmRequest;
+  sent: string;
+  instructions: string;
+  redactions: number;
+  signal?: AbortSignal;
 }
 
-/** Optional request parameters that a compatible endpoint may reject. */
-type OptionalParam = 'store' | 'reasoning' | 'text' | 'max_output_tokens';
-const OPTIONAL_PARAMS: OptionalParam[] = ['store', 'reasoning', 'text', 'max_output_tokens'];
-
-const PARAM_MENTIONS: Record<OptionalParam, RegExp> = {
-  store: /\bstore\b/i,
-  reasoning: /\breasoning\b/i,
-  text: /\btext\.format\b|\bresponse_format\b|\bjson_object\b|['"`]text['"`]/i,
-  max_output_tokens: /\bmax_output_tokens\b/i,
-};
-
-/** The optional parameters an "unsupported parameter" error names explicitly. */
-function namedParams(text: string): OptionalParam[] {
-  return OPTIONAL_PARAMS.filter((p) => PARAM_MENTIONS[p].test(text));
+/** One logged transmission: its attempts (retried while `maxAttempts` allows) share one log entry. */
+interface Transfer {
+  transmission: Omit<Transmission, 'success'>;
+  signal?: AbortSignal;
+  attempt: () => Promise<string>;
+  maxAttempts: (err: unknown) => number;
 }
 
-/**
- * JSON mode (text.format = json_object) of the Responses API requires the word "json" in the input –
- * the instructions do not count. Without it the endpoint rejects the request with HTTP 400.
- */
-const JSON_INPUT_HINT = 'Antworte als JSON.\n\n';
+const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
-/**
- * OpenAI-compatible client for the Responses API (typed fetch client).
- * - Model, base URL, timeout and reasoning effort are configurable.
- * - Every transmission is logged (masked, truncated) → transparency for the user.
- * - Structured outputs are validated with Zod; invalid outputs never trigger actions.
- */
+/** OpenAI-compatible Responses API client: every transmission is logged masked, structured answers are validated with Zod. */
 export class LlmService {
-  /**
-   * Optional parameters an endpoint (base URL + model) has rejected; later requests leave them out
-   * right away instead of re-learning it on every call. Kept in memory only.
-   */
+  /** Optional parameters an endpoint (base URL + model) has rejected; kept in memory so they are not re-learned every call. */
   private readonly rejectedParams = new Map<string, Set<OptionalParam>>();
 
-  /** Until when requests fail fast after a network failure (circuit breaker, #151). */
-  private circuitOpenUntil = 0;
-
-  private lastStatus: { state: 'unknown' | 'ok' | 'error'; lastError: string | null; lastCheckedAt: string | null } = {
-    state: 'unknown',
-    lastError: null,
-    lastCheckedAt: null,
-  };
+  private readonly health: EndpointHealth;
+  private readonly transmissions: TransmissionLog;
 
   constructor(
     private readonly ctx: AppContext,
@@ -123,15 +82,18 @@ export class LlmService {
     private readonly secrets: SecretService,
     private readonly fetchImpl: FetchLike = (...args) => fetch(...args),
     private readonly retryDelayMs = 400,
-  ) {}
+  ) {
+    this.health = new EndpointHealth(ctx);
+    this.transmissions = new TransmissionLog(ctx);
+  }
 
   status() {
-    return { ...this.lastStatus };
+    return this.health.status();
   }
 
   isConfigured(): boolean {
-    const s = this.settings.get().llm;
-    return Boolean(s.baseUrl && s.model && this.secrets.getApiKey());
+    const llm = this.settings.get().llm;
+    return Boolean(llm.baseUrl && llm.model && this.secrets.getApiKey());
   }
 
   /** Configured AND allowed by the privacy mode (mode „nur lokal“ blocks every external transmission). */
@@ -139,194 +101,123 @@ export class LlmService {
     return this.isConfigured() && this.settings.get().privacy.llmMode !== 'local_only';
   }
 
-  /**
-   * Background use that nobody asked for in the moment (e.g. contradiction checks of decision texts): only in mode
-   * „automatisch“. In „vorher fragen“ nothing leaves the machine without a request of the user (#201).
-   */
+  /** Background use nobody asked for (e.g. contradiction checks): only in „automatisch“, never in „vorher fragen“ (#201). */
   canUseInBackground(): boolean {
     return this.isConfigured() && this.settings.get().privacy.llmMode === 'auto';
   }
 
-  private markStatus(ok: boolean, error: string | null): void {
-    this.lastStatus = { state: ok ? 'ok' : 'error', lastError: error, lastCheckedAt: nowIso() };
-    this.ctx.events.emit('status:changed');
+  private connection(overrides: LlmOverrides): Connection {
+    const llm = this.settings.get().llm;
+    const baseUrl = (overrides.baseUrl ?? llm.baseUrl).trim();
+    const model = (overrides.model ?? llm.model).trim();
+    const apiKey = overrides.apiKey ?? this.secrets.getApiKey();
+    if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
+    return { baseUrl, model, apiKey };
   }
 
-  private endpoint(baseUrl: string, pathPart: string): string {
-    let end = baseUrl.length;
-    while (end > 0 && baseUrl[end - 1] === '/') end--;
-    return `${baseUrl.slice(0, end)}/${pathPart}`;
-  }
-
-  private mapHttpError(status: number, body: string): AppError {
-    return mapHttpError(status, body);
-  }
-
-  private async post(url: string, apiKey: string, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number; text: string }> {
-    if (signal?.aborted) throw abortedError();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const onAbort = () => controller.abort();
-    signal?.addEventListener('abort', onAbort, { once: true });
-    try {
-      const res = await this.fetchImpl(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, 'api-key': apiKey },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      return { status: res.status, text: await res.text() };
-    } catch (err) {
-      if (signal?.aborted) throw abortedError();
-      if (controller.signal.aborted)
-        throw new AppError('network_error', `Zeitüberschreitung nach ${Math.round(timeoutMs / 1000)} s – der LLM-Endpunkt antwortet nicht.`, {
-          retryable: true,
-        });
-      const cause = (err as { cause?: { code?: string; message?: string } }).cause;
-      throw new AppError('network_error', 'Der LLM-Endpunkt ist nicht erreichbar (Netzwerk oder Base URL prüfen).', {
-        retryable: true,
-        details: `${(err as Error).message}${cause?.code ? ` (${cause.code})` : ''}`,
-      });
-    } finally {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-    }
-  }
-
-  private extractText(body: ResponsesBody): string {
-    if (typeof body.output_text === 'string') return body.output_text;
-    const parts: string[] = [];
-    for (const item of body.output ?? []) {
-      if (item.type && item.type !== 'message') continue;
-      for (const c of item.content ?? []) if (typeof c.text === 'string' && (!c.type || c.type === 'output_text' || c.type === 'text')) parts.push(c.text);
-    }
-    return parts.join('');
+  private post(request: PostRequest): Promise<{ status: number; text: string }> {
+    return postJson(this.fetchImpl, request);
   }
 
   /** Plain text answer via /responses. */
-  async complete(req: LlmRequest, overrides: LlmOverrides = {}): Promise<string> {
-    const cfg = this.settings.get().llm;
-    const baseUrl = (overrides.baseUrl ?? cfg.baseUrl).trim();
-    const model = (overrides.model ?? cfg.model).trim();
-    const apiKey = overrides.apiKey ?? this.secrets.getApiKey();
-    if (!baseUrl || !model || !apiKey) {
-      throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
-    }
-    if (!req.bypassPrivacy && this.settings.get().privacy.llmMode === 'local_only') {
+  async complete(request: LlmRequest, overrides: LlmOverrides = {}): Promise<string> {
+    const llm = this.settings.get().llm;
+    const connection = this.connection(overrides);
+    if (!request.bypassPrivacy && this.settings.get().privacy.llmMode === 'local_only') {
       throw new AppError('permission_error', 'Der Datenschutzmodus „nur lokal“ verhindert externe LLM-Aufrufe.');
     }
-    const signal = req.signal ?? llmCancelScope.getStore();
+    const signal = request.signal ?? llmCancelScope.getStore();
     if (signal?.aborted) throw abortedError();
     // the explicit connection test always goes through – it is how the user checks whether the endpoint is back
-    if (!req.bypassPrivacy && Date.now() < this.circuitOpenUntil) {
-      throw new AppError('network_error', 'Der LLM-Endpunkt war eben nicht erreichbar – ich versuche es in Kürze wieder.', {
-        retryable: true,
-        details: `Neuer Versuch ab ${new Date(this.circuitOpenUntil).toISOString()}`,
-      });
-    }
-
-    let input = req.input;
-    if (input.length > cfg.maxInputChars) input = `${input.slice(0, cfg.maxInputChars)}\n[… Eingabe auf ${cfg.maxInputChars} Zeichen gekürzt]`;
-    if (req.json && !/json/i.test(input)) input = `${JSON_INPUT_HINT}${input}`;
-    const redacted = redactSecrets(input);
-    const redactedInstr = redactSecrets(req.instructions);
-    const sent = redacted.text;
-    if (this.adapterId(baseUrl) === 'anthropic')
-      return this.completeViaClaude({
-        baseUrl,
-        model,
-        apiKey,
-        req,
-        sent,
-        instructions: redactedInstr.text,
-        redactions: redacted.count + redactedInstr.count,
-        signal,
-      });
-
-    const full: Record<string, unknown> = {
-      model,
-      instructions: redactedInstr.text,
-      input: sent,
-      store: false,
-      ...(req.maxOutputTokens ? { max_output_tokens: req.maxOutputTokens } : {}),
-      ...(cfg.reasoningEffort && cfg.reasoningEffort !== 'none' ? { reasoning: { effort: cfg.reasoningEffort } } : {}),
-      ...(req.json ? { text: { format: { type: 'json_object' } } } : {}),
+    if (!request.bypassPrivacy) this.health.assertCircuitClosed();
+    const input = redactSecrets(preparedInput(request, llm.maxInputChars));
+    const instructions = redactSecrets(request.instructions);
+    const prepared: PreparedRequest = {
+      connection,
+      request,
+      sent: input.text,
+      instructions: instructions.text,
+      redactions: input.count + instructions.count,
+      signal,
     };
-    const url = this.endpoint(baseUrl, 'responses');
-    const endpointKey = `${url}\n${model}`;
-    const rejected = this.rejectedParams.get(endpointKey) ?? new Set<OptionalParam>();
-    const without = (params: Set<OptionalParam>) => Object.fromEntries(Object.entries(full).filter(([k]) => !params.has(k as OptionalParam)));
-    const bytes = Buffer.byteLength(sent, 'utf8') + Buffer.byteLength(redactedInstr.text, 'utf8');
+    if (this.adapterId(connection.baseUrl) === 'anthropic') return this.completeViaClaude(prepared);
+    return this.completeViaResponses(prepared);
+  }
+
+  private transmissionOf(prepared: PreparedRequest, endpoint: string): Omit<Transmission, 'success'> {
+    return {
+      purpose: prepared.request.purpose,
+      model: prepared.connection.model,
+      endpoint,
+      bytes: Buffer.byteLength(prepared.sent, 'utf8') + Buffer.byteLength(prepared.instructions, 'utf8'),
+      redactions: prepared.redactions,
+      documentIds: prepared.request.documentIds ?? [],
+      preview: prepared.sent.slice(0, 280),
+    };
+  }
+
+  /** Runs the attempts of one transfer, keeps the endpoint status and the circuit breaker, and logs the transmission. */
+  private async transfer(transfer: Transfer): Promise<string> {
     let success = false;
     try {
-      let attempt = 0;
-      for (;;) {
-        attempt += 1;
-        try {
-          let res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, signal);
-          // Some compatible endpoints do not know optional parameters → retry without exactly the one the error names.
-          // store:false is only dropped when the endpoint rejects `store` itself (#150).
-          while (res.status === 400 && isUnsupportedParamError(res.text)) {
-            const present = OPTIONAL_PARAMS.filter((p) => p in full && !rejected.has(p));
-            const named = namedParams(res.text).filter((p) => present.includes(p));
-            const drop = named.length > 0 ? named : present.filter((p) => p !== 'store');
-            if (drop.length === 0) break;
-            for (const p of drop) rejected.add(p);
-            this.rejectedParams.set(endpointKey, rejected);
-            this.ctx.logger.warn('llm', 'Endpoint rejected optional parameters – retrying without them', { params: drop });
-            res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, signal);
-          }
-          if (res.status >= 400) throw this.mapHttpError(res.status, res.text);
-          let parsed: ResponsesBody;
-          try {
-            parsed = JSON.parse(res.text) as ResponsesBody;
-          } catch {
-            throw new AppError('llm_error', 'Der LLM-Endpunkt lieferte keine gültige JSON-Antwort.', { details: res.text.slice(0, 200) });
-          }
-          if (parsed.error?.message) throw new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Fehler.', { details: parsed.error.message });
-          const text = this.extractText(parsed);
-          if (!text.trim()) {
-            throw new AppError(
-              'llm_error',
-              parsed.status === 'incomplete'
-                ? `Die LLM-Antwort ist unvollständig (${parsed.incomplete_details?.reason ?? 'unbekannt'}).`
-                : 'Das LLM lieferte eine leere Antwort.',
-              { retryable: true },
-            );
-          }
-          success = true;
-          this.circuitOpenUntil = 0;
-          this.markStatus(true, null);
-          return text;
-        } catch (err) {
-          // a hanging endpoint is asked at most twice (each attempt waits the full timeout), other transient errors three times
-          const maxAttempts = err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message) ? 2 : 3;
-          if (err instanceof AppError && err.retryable && attempt < maxAttempts && !signal?.aborted) {
-            await new Promise((r) => setTimeout(r, this.retryDelayMs * attempt));
-            continue;
-          }
-          throw err;
-        }
-      }
+      const text = await this.withRetries(transfer);
+      success = true;
+      this.health.markReachable();
+      return text;
     } catch (err) {
-      // a cancellation by the user says nothing about the state of the endpoint
-      if (!signal?.aborted) {
-        this.markStatus(false, toErrorInfo(err).message);
-        if (err instanceof AppError && err.category === 'network_error') this.circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
-      }
+      this.health.markFailed(err, transfer.signal);
       throw err;
     } finally {
-      this.recordTransmission({
-        purpose: req.purpose,
-        model,
-        endpoint: url,
-        bytes,
-        redactions: redacted.count + redactedInstr.count,
-        documentIds: req.documentIds ?? [],
-        preview: sent.slice(0, 280),
-        success,
-      });
+      this.transmissions.record({ ...transfer.transmission, success });
     }
+  }
+
+  private async withRetries(transfer: Transfer): Promise<string> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await transfer.attempt();
+      } catch (err) {
+        const retry = err instanceof AppError && err.retryable && attempt < transfer.maxAttempts(err) && !transfer.signal?.aborted;
+        if (!retry) throw err;
+        await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs * attempt));
+      }
+    }
+  }
+
+  private completeViaResponses(prepared: PreparedRequest): Promise<string> {
+    const llm = this.settings.get().llm;
+    const { connection, request, signal } = prepared;
+    const body = responsesRequestBody({
+      model: connection.model,
+      instructions: prepared.instructions,
+      input: prepared.sent,
+      maxOutputTokens: request.maxOutputTokens,
+      reasoningEffort: llm.reasoningEffort,
+      json: request.json,
+    });
+    const url = endpointUrl(connection.baseUrl, 'responses');
+    const endpointKey = `${url}\n${connection.model}`;
+    const rejected = this.rejectedParams.get(endpointKey) ?? new Set<OptionalParam>();
+    const post = () => this.post({ url, apiKey: connection.apiKey, body: withoutParams(body, rejected), timeoutMs: llm.timeoutMs, signal });
+    return this.transfer({
+      transmission: this.transmissionOf(prepared, url),
+      signal,
+      // a hanging endpoint is asked at most twice (each attempt waits the full timeout), other transient errors three times
+      maxAttempts: (err) => (isTimeout(err) ? 2 : 3),
+      attempt: async () => {
+        let response = await post();
+        // some compatible endpoints do not know optional parameters → retry without exactly the ones the error names
+        while (response.status === 400 && isUnsupportedParamError(response.text)) {
+          const drop = paramsToDrop(response.text, presentParams(body, rejected));
+          if (drop.length === 0) break;
+          for (const param of drop) rejected.add(param);
+          this.rejectedParams.set(endpointKey, rejected);
+          this.ctx.logger.warn('llm', 'Endpoint rejected optional parameters – retrying without them', { params: drop });
+          response = await post();
+        }
+        return responsesText(response);
+      },
+    });
   }
 
   /** Adapter for the configured endpoint: base URL (or the choice under „Erweitert“) decides (#296). */
@@ -336,23 +227,16 @@ export class LlmService {
 
   /** Connection data for the agent adapters; every transmission goes into the transmission log. */
   adapterConfig(overrides: LlmOverrides = {}): AdapterConfig {
-    const cfg = this.settings.get().llm;
-    const baseUrl = (overrides.baseUrl ?? cfg.baseUrl).trim();
-    const model = (overrides.model ?? cfg.model).trim();
-    const apiKey = overrides.apiKey ?? this.secrets.getApiKey();
-    if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
+    const { baseUrl, model, apiKey } = this.connection(overrides);
     return {
       baseUrl,
       model,
       apiKey,
-      timeoutMs: Math.max(cfg.timeoutMs, 120_000),
+      timeoutMs: Math.max(this.settings.get().llm.timeoutMs, 120_000),
       fetchImpl: this.fetchImpl,
-      log: (t) => {
-        this.recordTransmission(t);
-        if (t.success) {
-          this.circuitOpenUntil = 0;
-          this.markStatus(true, null);
-        }
+      log: (transmission) => {
+        this.transmissions.record(transmission);
+        if (transmission.success) this.health.markReachable();
       },
       warn: (message, data) => this.ctx.logger.warn('llm', message, data),
     };
@@ -364,129 +248,79 @@ export class LlmService {
   }
 
   /** Plain text via the Claude Messages API, with the same privacy gate, retries and transmission log as /responses. */
-  private async completeViaClaude(o: {
-    baseUrl: string;
-    model: string;
-    apiKey: string;
-    req: LlmRequest;
-    sent: string;
-    instructions: string;
-    redactions: number;
-    signal?: AbortSignal;
-  }): Promise<string> {
-    const cfg = this.adapterConfig({ baseUrl: o.baseUrl, model: o.model, apiKey: o.apiKey });
-    const adapter = new AnthropicAdapter({ ...cfg, timeoutMs: this.settings.get().llm.timeoutMs, log: () => undefined });
-    let success = false;
-    try {
-      for (let attempt = 1; ; attempt += 1) {
-        try {
-          const text = await adapter.completeText({ system: o.instructions, text: o.sent, maxOutputTokens: o.req.maxOutputTokens ?? 16_000, signal: o.signal });
-          if (!text.trim()) throw new AppError('llm_error', 'Das LLM lieferte eine leere Antwort.', { retryable: true });
-          success = true;
-          this.circuitOpenUntil = 0;
-          this.markStatus(true, null);
-          return text;
-        } catch (err) {
-          if (err instanceof AppError && err.retryable && attempt < 3 && !o.signal?.aborted) {
-            await new Promise((r) => setTimeout(r, this.retryDelayMs * attempt));
-            continue;
-          }
-          throw err;
-        }
-      }
-    } catch (err) {
-      if (!o.signal?.aborted) {
-        this.markStatus(false, toErrorInfo(err).message);
-        if (err instanceof AppError && err.category === 'network_error') this.circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
-      }
-      throw err;
-    } finally {
-      this.recordTransmission({
-        purpose: o.req.purpose,
-        model: o.model,
-        endpoint: `${o.baseUrl} (Messages API)`,
-        bytes: Buffer.byteLength(o.sent, 'utf8') + Buffer.byteLength(o.instructions, 'utf8'),
-        redactions: o.redactions,
-        documentIds: o.req.documentIds ?? [],
-        preview: o.sent.slice(0, 280),
-        success,
-      });
-    }
-  }
-
-  /**
-   * Structured answer: the prompt contains the JSON schema, the answer is validated with Zod.
-   * On invalid output exactly one correction request; after that an error (nothing is executed).
-   */
-  async completeJson<T extends z.ZodType>(
-    schema: T,
-    req: Omit<LlmRequest, 'json'> & { schemaName: string },
-    overrides: LlmOverrides = {},
-  ): Promise<z.output<T>> {
-    const jsonSchema = JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }));
-    const instructions = `${req.instructions}\n\nAntworte AUSSCHLIESSLICH mit einem einzigen gültigen JSON-Objekt (kein Markdown, kein Fließtext), das dem folgenden JSON-Schema „${req.schemaName}“ entspricht. Unbekannte Werte als null angeben; keine Informationen erfinden.\nJSON-Schema: ${jsonSchema}`;
-    let lastIssues = '';
-    let lastRaw = '';
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const input =
-        attempt === 0
-          ? req.input
-          : `${req.input}\n\n---\nDeine vorige Antwort war ungültig (${lastIssues}). Antworte erneut ausschließlich mit gültigem JSON gemäß Schema.`;
-      const raw = await this.complete({ ...req, instructions, input, json: true }, overrides);
-      lastRaw = raw;
-      const parsed = this.parseJson(raw);
-      const result = parsed.ok ? schema.safeParse(parsed.value) : null;
-      if (result?.success) return result.data;
-      lastIssues = parsed.ok
-        ? (result as z.ZodSafeParseError<unknown>).error.issues
-            .slice(0, 6)
-            .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
-            .join('; ')
-        : 'kein gültiges JSON';
-      this.ctx.logger.warn('llm', 'Invalid structured LLM output', { schema: req.schemaName, issues: lastIssues, attempt });
-    }
-    throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
-      details: `${req.schemaName}: ${lastIssues}; Auszug: ${lastRaw.slice(0, 160)}`,
+  private completeViaClaude(prepared: PreparedRequest): Promise<string> {
+    const { connection, request, signal } = prepared;
+    const config = this.adapterConfig(connection);
+    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.settings.get().llm.timeoutMs, log: () => undefined });
+    return this.transfer({
+      transmission: this.transmissionOf(prepared, `${connection.baseUrl} (Messages API)`),
+      signal,
+      maxAttempts: () => 3,
+      attempt: async () => {
+        const maxOutputTokens = request.maxOutputTokens ?? 16_000;
+        const text = await adapter.completeText({ system: prepared.instructions, text: prepared.sent, maxOutputTokens, signal });
+        if (!text.trim()) throw new AppError('llm_error', 'Das LLM lieferte eine leere Antwort.', { retryable: true });
+        return text;
+      },
     });
   }
 
-  private parseJson(raw: string): { ok: true; value: unknown } | { ok: false } {
-    let text = raw.trim();
-    // eslint-disable-next-line sonarjs/super-linear-regex -- base URL or a single model answer, length is bounded
-    const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
-    if (fence?.[1]) text = fence[1].trim();
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start === -1 || end <= start) return { ok: false };
-    try {
-      return { ok: true, value: JSON.parse(text.slice(start, end + 1)) };
-    } catch {
-      return { ok: false };
+  /** Structured answer validated with Zod: on invalid output exactly one correction request, then an error (nothing runs). */
+  async completeJson<T extends z.ZodType>(
+    schema: T,
+    request: Omit<LlmRequest, 'json'> & { schemaName: string },
+    overrides: LlmOverrides = {},
+  ): Promise<z.output<T>> {
+    const jsonSchema = JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }));
+    const instructions = structuredInstructions(request, jsonSchema);
+    let lastIssues = '';
+    let lastRaw = '';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const input = attempt === 0 ? request.input : correctionInput(request.input, lastIssues);
+      const raw = await this.complete({ ...request, instructions, input, json: true }, overrides);
+      lastRaw = raw;
+      const parsed = parseJsonAnswer(raw);
+      if (!parsed.ok) lastIssues = 'kein gültiges JSON';
+      else {
+        const result = schema.safeParse(parsed.value);
+        if (result.success) return result.data;
+        lastIssues = issuesText(result.error);
+      }
+      this.ctx.logger.warn('llm', 'Invalid structured LLM output', { schema: request.schemaName, issues: lastIssues, attempt });
     }
+    throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
+      details: `${request.schemaName}: ${lastIssues}; Auszug: ${lastRaw.slice(0, 160)}`,
+    });
   }
 
   /** Embeddings via /embeddings (only if an embedding model is configured). */
   async embeddings(texts: string[], purpose: string, documentIds: string[] = []): Promise<number[][]> {
-    const cfg = this.settings.get().llm;
+    const llm = this.settings.get().llm;
     const apiKey = this.secrets.getApiKey();
-    if (!cfg.baseUrl || !cfg.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
-    const redacted = texts.map((t) => redactSecrets(t.slice(0, 8000)));
-    const url = this.endpoint(cfg.baseUrl, 'embeddings');
+    if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
+    const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000)));
+    const url = endpointUrl(llm.baseUrl, 'embeddings');
     let success = false;
     try {
-      const res = await this.post(url, apiKey, { model: cfg.embeddingModel, input: redacted.map((r) => r.text) }, cfg.timeoutMs);
-      if (res.status >= 400) throw this.mapHttpError(res.status, res.text);
-      const parsed = z.object({ data: z.array(z.object({ embedding: z.array(z.number()), index: z.number().optional() })) }).safeParse(JSON.parse(res.text));
+      const response = await this.post({
+        url,
+        apiKey,
+        body: { model: llm.embeddingModel, input: redacted.map((entry) => entry.text) },
+        timeoutMs: llm.timeoutMs,
+      });
+      if (response.status >= 400) throw mapHttpError(response.status, response.text);
+      const embeddingsSchema = z.object({ data: z.array(z.object({ embedding: z.array(z.number()), index: z.number().optional() })) });
+      const parsed = embeddingsSchema.safeParse(JSON.parse(response.text));
       if (!parsed.success || parsed.data.data.length !== texts.length) throw new AppError('llm_error', 'Unerwartete Embedding-Antwort.');
       success = true;
-      return parsed.data.data.map((d) => d.embedding);
+      return parsed.data.data.map((entry) => entry.embedding);
     } finally {
-      this.recordTransmission({
+      this.transmissions.record({
         purpose,
-        model: cfg.embeddingModel,
+        model: llm.embeddingModel,
         endpoint: url,
-        bytes: redacted.reduce((a, r) => a + Buffer.byteLength(r.text), 0),
-        redactions: redacted.reduce((a, r) => a + r.count, 0),
+        bytes: redacted.reduce((sum, entry) => sum + Buffer.byteLength(entry.text), 0),
+        redactions: redacted.reduce((sum, entry) => sum + entry.count, 0),
         documentIds,
         preview: redacted[0]?.text.slice(0, 200) ?? '',
         success,
@@ -514,19 +348,7 @@ export class LlmService {
     }
   }
 
-  recordTransmission(t: Omit<LlmTransmission, 'id' | 'at'>): void {
-    try {
-      this.ctx.database.db
-        .insert(llmTransmissions)
-        .values({ id: newId(), at: nowIso(), ...t })
-        .run();
-      this.ctx.logger.info('llm', 'LLM transmission', { purpose: t.purpose, model: t.model, bytes: t.bytes, redactions: t.redactions, success: t.success });
-    } catch {
-      /* logging must not make calls fail */
-    }
-  }
-
   listTransmissions(limit = 100): LlmTransmission[] {
-    return this.ctx.database.db.select().from(llmTransmissions).orderBy(desc(llmTransmissions.at)).limit(limit).all();
+    return this.transmissions.list(limit);
   }
 }
