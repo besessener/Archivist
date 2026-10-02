@@ -50,7 +50,7 @@ export class TimelineService {
       if (!['archived', 'indexed_only'].includes(d.status) || !match(d.topicId, d.projectId)) continue;
       push({
         id: `doc:${d.id}`,
-        date: d.dates[0] ?? d.archivedAt ?? d.createdAt,
+        date: d.documentDate ?? d.dates[0] ?? d.archivedAt ?? d.createdAt,
         kind: 'document',
         title: `Dokument: ${d.title}`,
         description: d.summary ? truncate(d.summary, 220) : null,
@@ -63,7 +63,8 @@ export class TimelineService {
         id: `dec:${d.id}`,
         date: d.decidedAt ?? d.createdAt,
         kind: 'decision',
-        title: `Entscheidung${d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : ''}: ${d.title}`,
+        // without a decision date it is placed at the day it was captured – and says so (#168)
+        title: `Entscheidung${d.status === 'superseded' ? ' (überholt)' : d.status === 'draft' ? ' (Entwurf)' : ''}${d.decidedAt ? '' : ' (ohne Datum, erfasst an diesem Tag)'}: ${d.title}`,
         description: truncate(d.decisionText, 240),
         refs: [{ type: 'decision', id: d.id, label: d.title }, ...ref('topic', d.topicId), ...ref('project', d.projectId)],
       });

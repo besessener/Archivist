@@ -94,6 +94,8 @@ export const SourceReference = z.object({
   snippet: z.string().default(''),
   path: z.string().nullish(),
   date: z.string().nullish(),
+  /** What `date` is: the document's own date, its archive date, the decision date, … – shown as a label (#168). */
+  dateKind: z.enum(['document', 'archived', 'decided', 'occurred', 'created']).nullish(),
   score: z.number().default(0),
 });
 export type SourceReference = z.infer<typeof SourceReference>;

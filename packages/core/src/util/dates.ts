@@ -182,3 +182,32 @@ export function normalizeDateInput(value: string | null | undefined, now: Date =
   }
   return parseGermanDate(v, now);
 }
+
+/**
+ * Date of a decision from German text: a decision lies in the past, so a bare weekday („am Montag“) is the last one
+ * and „12. Juni“ without a year the last 12 June. A date after today is no decision date and yields null (#168).
+ */
+export function parseDecisionDate(input: string, now: Date = new Date()): string | null {
+  const text = input.toLowerCase();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekday = !LAST_WEEKDAY_RE.test(text) && !NEXT_WEEKDAY_RE.test(text) ? (AM_WEEKDAY_RE.exec(text) ?? BARE_WEEKDAY_RE.exec(text)) : null;
+  const parsed = weekday && !/\d/.test(text) ? toIsoDate(previousWeekday(today, WEEKDAYS[weekday[1]!]!)) : parseGermanDate(input, now);
+  // only „12. Juni“ / „12.6.“ (no year) can mean last year; „morgen“ or „2027“ in the future is no decision date
+  const yearless = !/\b\d{4}\b|\.\s?\d{2}\b/.test(text) && /\b\d{1,2}\.\s?(?:\d{1,2}\.|[a-zäöü]{3,})/.test(text);
+  return pastOrNull(parsed, today, !yearless);
+}
+
+/** Like normalizeDateInput, for a decision date: never in the future (see parseDecisionDate). */
+export function normalizeDecisionDate(value: string | null | undefined, now: Date = new Date()): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v)) return pastOrNull(normalizeDateInput(v, now), new Date(now.getFullYear(), now.getMonth(), now.getDate()), true);
+  return parseDecisionDate(v, now);
+}
+
+/** A date after today: the same day one year earlier if the year was not given, otherwise null. */
+function pastOrNull(iso: string | null, today: Date, fixedYear: boolean): string | null {
+  if (!iso || iso.slice(0, 10) <= toIsoDate(today)) return iso;
+  if (fixedYear) return null;
+  return validDate(Number(iso.slice(0, 4)) - 1, Number(iso.slice(5, 7)), Number(iso.slice(8, 10)));
+}

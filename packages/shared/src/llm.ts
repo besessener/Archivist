@@ -144,6 +144,9 @@ export const DocumentClassification = z.object({
   project: opt(z.string()),
   persons: z.array(z.string()).default([]),
   dates: z.array(z.object({ date: z.string(), label: opt(z.string()) })).default([]),
+  documentDate: opt(z.string()).describe(
+    'Datum des Dokuments selbst (Brief-, Sitzungs-, Rechnungs- oder Erstellungsdatum laut Text), YYYY-MM-DD; nicht das heutige Datum, leer wenn nicht erkennbar',
+  ),
   tags: z.array(z.string()).default([]),
   location: ArchiveLocationProposal,
   decisions: z

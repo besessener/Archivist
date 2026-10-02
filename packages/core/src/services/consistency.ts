@@ -173,11 +173,12 @@ export class ConsistencyService {
       byTopic.set(d.topicId!, [...(byTopic.get(d.topicId!) ?? []), d]);
     for (const list of byTopic.values()) {
       if (list.length < 2) continue;
-      const sorted = [...list].sort((a, b) => (a.decidedAt ?? a.createdAt).localeCompare(b.decidedAt ?? b.createdAt));
+      // only dated decisions: the capture date says nothing about which decision is newer (#168)
+      const sorted = list.filter((d) => d.decidedAt).sort((a, b) => a.decidedAt!.localeCompare(b.decidedAt!));
       for (let i = 0; i < sorted.length - 1; i += 1) {
         const older = sorted[i]!;
         const newer = sorted[i + 1]!;
-        if ((older.decidedAt ?? '') === (newer.decidedAt ?? '')) continue;
+        if (older.decidedAt === newer.decidedAt) continue;
         if (this.contradictions.forPair(older.id, newer.id)) continue;
         const key = `superseded:${older.id}:${newer.id}`;
         current.add(key);

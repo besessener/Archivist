@@ -60,6 +60,7 @@ export const DocumentRecord = z.object({
   persons: z.array(z.string()),
   tags: z.array(z.string()),
   dates: z.array(z.string()),
+  documentDate: IsoDate.nullable().describe('Datum des Dokuments selbst (Brief-, Sitzungs-, Rechnungsdatum), nicht das Archivierungsdatum'),
   confidence: z.number().nullable(),
   llmStatus: LlmStatus,
   folderLlmAllowed: z.boolean().describe('false: liegt in einem Scan-Verzeichnis ohne KI-Freigabe'),

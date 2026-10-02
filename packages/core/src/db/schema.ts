@@ -69,6 +69,8 @@ export const documents = sqliteTable(
     persons: jsonArr('persons'),
     tags: jsonArr('tags'),
     dates: jsonArr('dates'),
+    /** Date of the document itself (letter, meeting, invoice date) – not the archive date (#168). */
+    documentDate: text('document_date'),
     confidence: real('confidence'),
     llmStatus: text('llm_status').notNull().default('pending'),
     /** false: the document lies in a scan folder without LLM permission – nothing of it may reach the LLM. */
