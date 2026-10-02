@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, BellOff, Check, Clock } from 'lucide-react';
+import { Bell, BellOff, Check, CheckCheck, Clock } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
@@ -71,6 +71,15 @@ export function NotificationBell() {
     }
   }
 
+  async function clearAll() {
+    const res = await run(() => call('notifications:resolveAll', {}), { success: 'Benachrichtigungen geleert.' });
+    if (res) {
+      setSnoozeFor(null);
+      void refetch();
+      void refreshStatus();
+    }
+  }
+
   async function snooze(id: string, day: string) {
     await run(() => call('notifications:snooze', { id, remindAt: day }), { success: 'Erinnerung gesetzt.' });
     setSnoozeFor(null);
@@ -100,7 +109,15 @@ export function NotificationBell() {
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[26rem] p-0" data-testid="bell-panel">
-          <div className="border-b px-4 py-3 text-sm font-semibold">Benachrichtigungen</div>
+          <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+            <span className="py-1 text-sm font-semibold">Benachrichtigungen</span>
+            {data && data.length > 0 && (
+              <Button size="sm" variant="ghost" disabled={busy} data-testid="bell-clear-all" onClick={() => void clearAll()}>
+                <CheckCheck aria-hidden />
+                Alle leeren
+              </Button>
+            )}
+          </div>
           <div className="max-h-[28rem] overflow-y-auto p-2">
             {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
             {!data && loading && <Loading />}
