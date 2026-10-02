@@ -42,6 +42,15 @@ export const RelationType = z.enum([
 ]);
 export type RelationType = z.infer<typeof RelationType>;
 
+/**
+ * How a relation came about (#270): `field` mirrors a field of the entry (topic, project, persons, tags, folder),
+ * `analysis` comes from analysing a document or note, `similarity` from similar content, `mention` from a named topic or
+ * project, `co_origin` from the same chat message or document, `date_person` from the same day with the same person,
+ * `wikilink` from a `[[Name]]` link, `manual` from the user, `agent` from the agent's own proposal.
+ */
+export const RelationMethod = z.enum(['field', 'analysis', 'similarity', 'mention', 'co_origin', 'date_person', 'wikilink', 'manual', 'agent']);
+export type RelationMethod = z.infer<typeof RelationMethod>;
+
 export const RelationStatus = z.enum(['proposed', 'confirmed', 'rejected', 'outdated']);
 export type RelationStatus = z.infer<typeof RelationStatus>;
 

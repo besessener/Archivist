@@ -337,7 +337,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'knowledge:link': (i) => {
       const type = RelationType.safeParse(i.relationType);
       if (!type.success) throw new AppError('validation_error', 'Unbekannte Art der Beziehung.');
-      return s.graph.linkEntries(i.sourceId, i.targetId, type.data, { status: 'confirmed', trigger }).relation;
+      return s.graph.linkEntries(i.sourceId, i.targetId, type.data, { status: 'confirmed', trigger, method: i.method, evidence: i.evidence }).relation;
     },
     'knowledge:unlink': (i) => {
       s.graph.unlinkEntries(i.relationId, { trigger });

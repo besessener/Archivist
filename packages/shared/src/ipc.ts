@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppErrorInfo, EntityType, Id, IsoDate, RelationStatus, SourceReference, type Result } from './common';
+import { AppErrorInfo, EntityType, Id, IsoDate, RelationMethod, RelationStatus, SourceReference, type Result } from './common';
 import {
   AgentActionProposal,
   AgentActionStatus,
@@ -493,7 +493,18 @@ export const ipcContract = {
     KnowledgeCreateResult,
   ),
   /** Links two entries (same service function as the agent's link tool, #277); `confirmed` = the user's own link. */
-  'knowledge:link': ch(z.object({ sourceId: Id, targetId: Id, relationType: z.string().min(1), confirmed: Confirmed }), GraphRelation),
+  'knowledge:link': ch(
+    z.object({
+      sourceId: Id,
+      targetId: Id,
+      relationType: z.string().min(1),
+      /** Set when the user takes over a proposal of a link method (#270): its method and evidence are kept. */
+      method: RelationMethod.optional(),
+      evidence: z.string().max(500).optional(),
+      confirmed: Confirmed,
+    }),
+    GraphRelation,
+  ),
   'knowledge:unlink': ch(z.object({ relationId: Id, confirmed: Confirmed }), Ok),
   /** Related entries with the reason (#276, #289). */
   'knowledge:related': ch(z.object({ id: Id, depth: z.number().int().min(1).max(2).default(1) }), z.array(RelatedEntry)),

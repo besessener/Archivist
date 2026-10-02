@@ -61,7 +61,7 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
   /** The user said these two are different (rejected duplicate_of in either direction). */
   const markedDifferent = (a: string, b: string) =>
     graph.relationsOf(a, { statuses: ['rejected'], types: ['duplicate_of'] }).some((r) => r.sourceEntityId === b || r.targetEntityId === b) ||
-    graph.rejectedBetween(a, b)?.relationType === 'duplicate_of';
+    graph.rejectedBetween(a, b, { includeDuplicateOf: true })?.relationType === 'duplicate_of';
 
   /** Greedy clusters of a bucket that never put two documents together the user marked as different. */
   const cluster = (bucket: DocumentRecord[], fits: (a: DocumentRecord, b: DocumentRecord) => boolean = () => true): DocumentRecord[][] => {

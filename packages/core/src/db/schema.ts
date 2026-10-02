@@ -47,6 +47,10 @@ export const relations = sqliteTable(
     origin: text('origin'),
     /** Agent run that created the relation (#299). */
     runId: text('run_id'),
+    /** How the relation came about: field, analysis, similarity, mention, co_origin, date_person, manual, agent … (#270); null if unknown. */
+    method: text('method'),
+    /** Short, readable evidence: the passage, the message or the reason it was proposed for (#270). */
+    evidence: text('evidence'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

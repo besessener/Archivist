@@ -10,7 +10,7 @@ import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
-import { LinkDialog, LinkSuggestions, RelatedEntries } from '@/components/knowledge/related';
+import { LinkDialog, LinkSuggestions, RelatedEntries, RelationProvenance } from '@/components/knowledge/related';
 import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
@@ -285,6 +285,7 @@ function EntityView({ id }: { id: string }) {
       <span className="text-xs text-muted-foreground">{RELATION_TYPE_LABELS[r.relationType]}</span>
       <EntityChip type={r.other.type} id={r.other.id} label={r.other.name} detail={r.other.description} />
       <Badge variant={statusVariant(r.status)}>{RELATION_STATUS_LABELS[r.status]}</Badge>
+      <RelationProvenance relation={r} />
       <ConfidenceBadge value={r.confidence} />
       {r.status === 'proposed' && (
         <span className="ml-auto flex gap-1.5">

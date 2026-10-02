@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { Link2 } from 'lucide-react';
-import { RelationType } from '@archivist/shared';
+import { RELATION_METHOD_LABELS, RELATION_PROVENANCE_LABELS, RelationType, relationProvenance, type GraphRelation } from '@archivist/shared';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { ErrorNote, Field, Loading } from '@/components/common/states';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,32 @@ import { useDebounced } from '@/lib/use-debounced';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { cn } from '@/lib/utils';
+
+/**
+ * Who stands behind a relation and why (#270): „automatisch“, „von dir bestätigt“ or „manuell“, how it came about and its
+ * evidence (the passage, the message …). A field mirror is never shown as confirmed by the user unless the user did so (#189).
+ */
+export function RelationProvenance({ relation }: { relation: Pick<GraphRelation, 'origin' | 'method' | 'resolvedByUser' | 'status' | 'evidence'> }) {
+  const kind = relationProvenance(relation);
+  const label = kind === 'auto' && relation.origin === 'agent' ? 'vom Agenten' : RELATION_PROVENANCE_LABELS[kind];
+  return (
+    <>
+      <Badge variant="outline" data-testid="relation-provenance" data-provenance={kind}>
+        {label}
+      </Badge>
+      {relation.method && relation.method !== 'manual' && (
+        <span className="text-xs text-muted-foreground" data-testid="relation-method">
+          {RELATION_METHOD_LABELS[relation.method]}
+        </span>
+      )}
+      {relation.evidence && (
+        <p className="basis-full text-xs text-muted-foreground" data-testid="relation-evidence">
+          Beleg: „{relation.evidence}“
+        </p>
+      )}
+    </>
+  );
+}
 
 /** Related entries with the reason why (#276), depth 1. */
 export function RelatedEntries({ id }: { id: string }) {
@@ -72,6 +99,8 @@ export function LinkSuggestions({ id }: { id: string }) {
                       sourceId: id,
                       targetId: c.id,
                       relationType: c.method === 'mention' ? 'relates_to' : 'related_to',
+                      method: c.method,
+                      evidence: c.reason,
                       confirmed: true,
                     }),
                   { success: 'Verknüpft.', errorTitle: 'Verknüpfen fehlgeschlagen' },

@@ -283,7 +283,14 @@ export class LinkMethodsService {
       for (const c of await this.candidates(id, { limit: 3, types: LINK_ENTRY_TYPES })) {
         if (c.method !== 'similarity' || this.graph.rejectedBetween(id, c.id)) continue;
         try {
-          const r = this.graph.linkEntries(id, c.id, 'related_to', { status: 'proposed', trigger: 'link_backfill', confidence: c.score, origin: 'system' });
+          const r = this.graph.linkEntries(id, c.id, 'related_to', {
+            status: 'proposed',
+            trigger: 'link_backfill',
+            confidence: c.score,
+            origin: 'system',
+            method: 'similarity',
+            evidence: c.reason,
+          });
           if (r.created) proposed += 1;
         } catch (err) {
           // e.g. an entry removed meanwhile: this pair is skipped, the run goes on
