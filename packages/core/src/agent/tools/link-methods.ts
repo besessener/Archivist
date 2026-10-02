@@ -10,27 +10,41 @@ import { TYPE_LABEL, unknownNote, type ToolDeps } from './common';
  * service functions as the user interface and only ever propose – confirming stays with the user; rejected pairs are never
  * proposed again. Names and passages of documents pass the privacy filter (#301); the runner masks secrets in every result.
  */
+/** An entry as the model sees it: ref, kind and name – documents only with permission (#301). */
+function entryLine(deps: ToolDeps, ctx: ToolContext, id: string, name: string, type: string): string {
+  if (type === 'document') {
+    const row = deps.docs.findRow(id);
+    if (!row || !deps.privacy.mayShareDocument(row)) return `${ctx.refs.doc(id)} Dokument [nicht freigegeben]`;
+    ctx.shared.add(id);
+    return `${ctx.refs.doc(id)} Dokument „${truncate(name, 70)}“`;
+  }
+  return `${ctx.refs.entry(id)} ${TYPE_LABEL[type as keyof typeof TYPE_LABEL] ?? type} „${truncate(name, 70)}“`;
+}
+
+/** A candidate with its reason; the reason of a similarity is text of the entry – of a document only with permission. */
+function candidateLine(deps: ToolDeps, ctx: ToolContext, c: LinkCandidate): string {
+  const row = c.method === 'similarity' && c.type === 'document' ? deps.docs.findRow(c.id) : null;
+  const reason = c.method === 'mention' ? c.reason : row && !deps.privacy.mayShareDocument(row) ? 'ähnlicher Inhalt' : `ähnlich: „${c.reason}“`;
+  return `  → ${entryLine(deps, ctx, c.id, c.name, c.type)} (${Math.round(c.score * 100)} %, ${reason})`;
+}
+
+/**
+ * Link proposals right after capturing an entry (#283): up to 3 candidates, for the agent to offer („Das klingt nach Projekt
+ * X – verknüpfen?“). Empty when there are none; a failing search never fails the capture.
+ */
+export async function linkHint(deps: ToolDeps, ctx: ToolContext, id: string | null): Promise<string> {
+  if (!id) return '';
+  try {
+    const found = await deps.links.candidates(id, { limit: 3 });
+    if (!found.length) return '';
+    return `\nMögliche Verknüpfungen (anbieten; verknüpfen nur auf Wunsch des Benutzers, sonst bleibt es ein Vorschlag):\n${found.map((c) => candidateLine(deps, ctx, c)).join('\n')}`;
+  } catch {
+    return '';
+  }
+}
+
 export function linkMethodTools(deps: ToolDeps): AgentTool[] {
   const { graph, links } = deps;
-
-  /** An entry as the model sees it: ref, kind and name – documents only with permission. */
-  const entryLine = (ctx: ToolContext, id: string, name: string, type: string): string => {
-    if (type === 'document') {
-      const row = deps.docs.findRow(id);
-      if (!row || !deps.privacy.mayShareDocument(row)) return `${ctx.refs.doc(id)} Dokument [nicht freigegeben]`;
-      ctx.shared.add(id);
-      return `${ctx.refs.doc(id)} Dokument „${truncate(name, 70)}“`;
-    }
-    return `${ctx.refs.entry(id)} ${TYPE_LABEL[type as keyof typeof TYPE_LABEL] ?? type} „${truncate(name, 70)}“`;
-  };
-  /** The reason of a similarity candidate is text of the entry – of a document only with permission. */
-  const reasonOf = (c: LinkCandidate): string => {
-    if (c.method === 'mention') return c.reason;
-    const row = c.type === 'document' ? deps.docs.findRow(c.id) : null;
-    if (row && !deps.privacy.mayShareDocument(row)) return 'ähnlicher Inhalt';
-    return `ähnlich: „${c.reason}“`;
-  };
-  const candidateLine = (ctx: ToolContext, c: LinkCandidate) => `  → ${entryLine(ctx, c.id, c.name, c.type)} (${Math.round(c.score * 100)} %, ${reasonOf(c)})`;
 
   return [
     defineTool({
@@ -51,8 +65,8 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
           const found = await links.candidates(id, { limit: a.limit });
           n += found.length;
           lines.push(
-            `${entryLine(ctx, id, e.name, e.type)}:`,
-            ...(found.length ? found.map((c) => candidateLine(ctx, c)) : ['  (keine passenden Vorschläge)']),
+            `${entryLine(deps, ctx, id, e.name, e.type)}:`,
+            ...(found.length ? found.map((c) => candidateLine(deps, ctx, c)) : ['  (keine passenden Vorschläge)']),
           );
         }
         return { content: `${lines.join('\n')}${unknownNote(unknown)}`, summary: `${n} Vorschläge` };
@@ -74,8 +88,8 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
         if (!page.total) return { content: 'Es gibt keine verwaisten Einträge.', summary: 'keine' };
         const lines: string[] = [];
         for (const o of page.items) {
-          lines.push(entryLine(ctx, o.id, o.name, o.type));
-          if (a.withSuggestions) for (const c of await links.candidates(o.id, { limit: 2 })) lines.push(candidateLine(ctx, c));
+          lines.push(entryLine(deps, ctx, o.id, o.name, o.type));
+          if (a.withSuggestions) for (const c of await links.candidates(o.id, { limit: 2 })) lines.push(candidateLine(deps, ctx, c));
         }
         const set = ctx.refs.set(page.items.map((o) => o.id));
         const more = page.total > a.offset + page.items.length ? `\nWeitere mit offset=${a.offset + page.items.length}.` : '';
@@ -99,7 +113,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
           const set = ctx.refs.set(c.members.map((m) => m.id));
           return `Gruppe ${i + 1} (${set}, ${c.members.length} Einträge), Namensvorschlag „${c.name}“:\n${c.members
             .slice(0, 12)
-            .map((m) => `  ${entryLine(ctx, m.id, m.name, m.type)}`)
+            .map((m) => `  ${entryLine(deps, ctx, m.id, m.name, m.type)}`)
             .join('\n')}`;
         });
         return { content: blocks.join('\n\n'), summary: `${clusters.length} Gruppe(n)` };

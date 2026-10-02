@@ -186,15 +186,15 @@ describe('Large file operations as a job of their own (#304)', () => {
   it('quitting interrupts the job instead of cancelling it: it continues after the next start and its changes join the step', async () => {
     const ids = await slides(6);
     app.llm.agent = moveScript();
-    let quitting: Promise<unknown> | null = null;
+    const quit: { done: Promise<unknown> | null } = { done: null };
     app.services.events.on('job:updated', (j: Job) => {
-      if (quitting || j.type !== FILE_JOB_TYPE || j.status !== 'running' || !((j.progress ?? 0) > 0)) return;
+      if (quit.done || j.type !== FILE_JOB_TYPE || j.status !== 'running' || !((j.progress ?? 0) > 0)) return;
       // the order of `shutdown()`: the agent first, then the queue
       app.services.agent.stop();
-      quitting = app.services.jobs.interrupt(5_000);
+      quit.done = app.services.jobs.interrupt(5_000);
     });
     const res = await app.ok('chat:send', { text: 'Verschiebe alle Folien nach work/presentations' });
-    await quitting;
+    await quit.done;
     const runId = res.assistantMessage.runId!;
     expect(fileJobs()[0]).toMatchObject({ status: 'pending', runId });
     let step = (await app.ok('agent:run', { id: runId })).steps.find((s) => s.tool === 'move_documents')!;

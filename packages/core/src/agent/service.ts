@@ -22,7 +22,7 @@ import type { MemoryService } from './memory';
 import { CORRECTIONS_FOR_RULE } from './memory';
 import { costOf, emptyUsage } from './pricing';
 import { systemPrompt } from './prompt';
-import { RefStore, ToolRegistry, defineTool, type AgentTool, type RefState, type ToolContext } from './registry';
+import { RefStore, ToolRegistry, defineTool, type AgentChatState, type AgentTool, type ToolContext } from './registry';
 import { ASK_USER, AgentRunner, AskUserArgs, type RunOutcome } from './runner';
 import type { AgentRunService, UndoRunResult } from './runs';
 import { agentRunScope } from './scope';
@@ -45,15 +45,6 @@ import { AgentShutdownError } from './file-jobs';
 import { agentMessages } from '../db/schema';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { ArchivistJson } from '../util/json';
-
-/** Agent state of a conversation, stored with the conversation (refs survive follow-ups, the mode override too). */
-export interface AgentChatState {
-  refs?: RefState;
-  /** Mode for this conversation only („frag mich diesmal vorher“); null = setting. */
-  mode?: AgentMode | null;
-  /** The request the agent asked a question about; it continues with the answer. */
-  task?: string | null;
-}
 
 export interface AgentChatReply {
   content: string;
@@ -500,7 +491,7 @@ export class AgentService {
     lastAnswer: string | null;
     background: boolean;
     signal?: AbortSignal;
-    job?: ToolContext['job'];
+    job?: NonNullable<ToolContext['job']>;
   }): Promise<{ outcome: RunOutcome; ctx: ToolContext; run: AgentRun; proposals: number }> {
     const s = this.settings.agent;
     const cfg = this.llm.adapterConfig();

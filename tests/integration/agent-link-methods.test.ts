@@ -58,6 +58,8 @@ describe('Link methods as tools of their own (#313)', () => {
     expect(ui.map((c) => c.id)).toEqual([d.costs]);
     expect(ui[0]).toMatchObject({ method: 'similarity', name: 'nebenkosten' });
     expect(ui[0]!.reason).toContain('Nebenkostenabrechnung');
+    // a topic or project never proposes itself
+    expect((await app.ok('links:suggestions', { id: project.id, limit: 3 })).map((c) => c.id)).not.toContain(project.id);
     expect((await app.ok('links:suggestions', { id: note.id, limit: 3 })).find((c) => c.id === project.id)).toMatchObject({
       method: 'mention',
       reason: 'nennt das Projekt „Hauptstraße“',
@@ -79,6 +81,31 @@ describe('Link methods as tools of their own (#313)', () => {
     expect(run.steps.find((s) => s.tool === 'suggest_links')).toMatchObject({ outcome: 'ok', risk: 'read', summary: '1 Vorschläge' });
     // read only: nothing was linked
     expect(relationsBetween(d.lease, d.costs)).toEqual([]);
+  });
+
+  it("after capturing, the tool result offers up to 3 links (#283); on the user's „ja“ the link is confirmed", async () => {
+    const project = (await app.ok('knowledge:createEntity', { type: 'project', name: 'Hauptstraße' })).entity;
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'record_note', args: { content: 'Der Vermieter will die Fenster im Projekt Hauptstraße tauschen.' } }] },
+      () => {
+        const out = lastOutput();
+        expect(out).toContain('Mögliche Verknüpfungen');
+        expect(out).toMatch(/→ K\d+ Projekt „Hauptstraße“ \(90 %, nennt das Projekt „Hauptstraße“\)/);
+        return { calls: [{ name: 'ask_user', args: { question: 'Das klingt nach Projekt Hauptstraße – verknüpfen?', options: ['Ja', 'Nein'] } }] };
+      },
+      ({ body }) => {
+        const out = JSON.stringify(body.input);
+        const note = /(K\d+) Notiz gespeichert/.exec(out)?.[1] ?? 'K1';
+        const proj = /(K\d+) Projekt „Hauptstraße“/.exec(out)![1]!;
+        return { calls: [{ name: 'link', args: { a: note, b: proj, onUserRequest: true } }] };
+      },
+      { text: 'Verknüpft.' },
+    );
+    const first = await app.ok('chat:send', { text: 'Notiz: Der Vermieter will die Fenster im Projekt Hauptstraße tauschen.' });
+    expect(first.assistantMessage.quickReplies).toEqual(['Ja', 'Nein']);
+    await app.ok('chat:send', { conversationId: first.conversationId, text: 'Ja' });
+    const note = app.services.graph.listEntities({ type: 'note', limit: 10 })[0]!;
+    expect(relationsBetween(note.id, project.id).map((r) => r.status)).toEqual(['confirmed']);
   });
 
   it('suggest_links passes the privacy filter: a document not released is named neither with title nor passage', async () => {

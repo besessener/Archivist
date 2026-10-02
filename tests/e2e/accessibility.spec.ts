@@ -22,5 +22,15 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
         await expectNoSeriousA11yViolations(page, testInfo);
       });
     }
+
+    test('the agent settings (runs, link run) have no serious or critical violations', async ({ on, page }, testInfo) => {
+      await on(page).navigation.do.open('settings');
+      await page.getByTestId('tab-agent').click();
+      await page.getByTestId('agent-tab-runs').click();
+      await expect(page.getByTestId('links-start-run')).toBeVisible();
+      await expect(page.getByTestId('links-unlinked-count')).toHaveText('Alle Einträge sind verknüpft.');
+
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
   });
 });

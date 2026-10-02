@@ -120,7 +120,7 @@ export class LinkMethodsService {
     for (const type of ['project', 'topic'] as const)
       for (const s of this.graph.listEntities({ type, limit: 500, confirmedOnly: true })) {
         const n = normalizeName(s.name);
-        if (n.length < 3 || !words.includes(` ${n} `) || this.connected(entityId, s.id)) continue;
+        if (s.id === entityId || n.length < 3 || !words.includes(` ${n} `) || this.connected(entityId, s.id)) continue;
         out.set(s.id, {
           id: s.id,
           type,
@@ -282,8 +282,13 @@ export class LinkMethodsService {
       if (opts.signal?.aborted) break;
       for (const c of await this.candidates(id, { limit: 3, types: LINK_ENTRY_TYPES })) {
         if (c.method !== 'similarity' || this.graph.rejectedBetween(id, c.id)) continue;
-        const r = this.graph.linkEntries(id, c.id, 'related_to', { status: 'proposed', trigger: 'link_backfill', confidence: c.score, origin: 'system' });
-        if (r.created) proposed += 1;
+        try {
+          const r = this.graph.linkEntries(id, c.id, 'related_to', { status: 'proposed', trigger: 'link_backfill', confidence: c.score, origin: 'system' });
+          if (r.created) proposed += 1;
+        } catch (err) {
+          // e.g. an entry removed meanwhile: this pair is skipped, the run goes on
+          this.ctx.logger.warn('links', 'Link proposal skipped', { error: err, from: id, to: c.id });
+        }
       }
       processed += 1;
       this.appState.set(BACKFILL_CURSOR, id);

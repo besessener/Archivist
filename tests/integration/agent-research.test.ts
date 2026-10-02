@@ -58,7 +58,8 @@ function depsOf(t: TestApp): ToolDeps {
     memory: {} as never,
     fileJobs: s.agentFileJobs,
     links: s.links,
-    capture: { capture: async () => Promise.reject(new Error('unused')) },
+    capture: s.capture,
+    answers: s.answers,
     enqueueConsistency: () => undefined,
   };
 }

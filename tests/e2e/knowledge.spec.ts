@@ -1,3 +1,4 @@
+import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
 
 test.describe('knowledge: create new', () => {
@@ -40,5 +41,24 @@ test.describe('knowledge: create new', () => {
     await me.click();
     await expect(k.heading()).toHaveText('Monika Lor-Zade');
     await expect(k.locators.detail.getByTestId('entity-self')).toHaveText('Du');
+  });
+
+  test('offers similar entries as link proposals; „Verknüpfen“ confirms the link (#283, #313)', async ({ llm, on, page }, testInfo) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.do.create('note', 'Heizung Wartung', 'Die Heizung im Keller wurde von der Firma Kalt gewartet, der Brenner der Heizung wurde gereinigt.');
+    await k.do.create('note', 'Heizung Brenner', 'Die Firma Kalt hat am Brenner der Heizung im Keller einen Defekt gefunden.');
+    await expect(k.heading()).toHaveText('Heizung Brenner');
+
+    const suggestion = page.getByTestId('link-suggestion').filter({ hasText: 'Heizung Wartung' });
+    await expect(suggestion).toBeVisible();
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await suggestion.getByRole('button', { name: 'Mit „Heizung Wartung“ verknüpfen' }).click();
+    await expect(k.locators.toasts.filter({ hasText: 'Verknüpft.' })).toBeVisible();
+    // linked now: no longer a proposal, but a related entry
+    await expect(suggestion).toHaveCount(0);
+    await expect(page.getByTestId('related-entry').filter({ hasText: 'Heizung Wartung' })).toBeVisible();
   });
 });

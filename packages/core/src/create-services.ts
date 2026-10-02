@@ -9,6 +9,8 @@ import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
 import { ChatService } from './services/chat';
+import { CaptureService } from './services/capture';
+import { KnowledgeAnswerService } from './services/knowledge-answers';
 import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
 import { AppStateService } from './services/app-state';
 import { ConsistencyService } from './services/consistency';
@@ -167,25 +169,25 @@ function buildServices(opts: CreateServicesOptions) {
     noteEventDuplicates.check(count);
   });
   const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit, notes);
+  // capturing knowledge and verified answers: one module each for the agent tools and the rule-based chat (#307)
+  const capture = new CaptureService(ctx, settings, decisions, openItems, reminders, graph, persons, contradictions, insights, notes, eventsSvc);
+  const answers = new KnowledgeAnswerService(settings, llm, decisions, openItems, search, graph, documentsSvc, privacy, eventsSvc);
   const chat = new ChatService(
     ctx,
     settings,
     llm,
     decisions,
     openItems,
-    reminders,
     search,
     graph,
-    persons,
     documentsSvc,
     scanner,
     contradictions,
     insights,
     timeline,
     jobs,
-    privacy,
-    eventsSvc,
-    notes,
+    capture,
+    answers,
   );
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
@@ -228,7 +230,8 @@ function buildServices(opts: CreateServicesOptions) {
       memory,
       fileJobs: agentFileJobs,
       links,
-      capture: { capture: (conv, text, intent, opts) => chat.captureForAgent(conv, text, intent, opts) },
+      capture,
+      answers,
       enqueueConsistency,
     },
     llm,
@@ -256,6 +259,7 @@ function buildServices(opts: CreateServicesOptions) {
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
   chat.wire({ actions, archive, agent });
+  capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));
   graph.setReindexer(async (refs) => {
     await Promise.all([
@@ -310,7 +314,7 @@ function buildServices(opts: CreateServicesOptions) {
   });
   // background runs of the agent (#313): one job per trigger, cancellable, resumed after a restart
   jobs.register<{ kind: BackgroundKind; docIds?: string[] }>('agent.background', async (job) => {
-    const run = await agent.runBackground(job.payload.kind, { docIds: job.payload.docIds, signal: job.signal, report: job.report });
+    const run = await agent.runBackground(job.payload.kind, { docIds: job.payload.docIds, signal: job.signal, report: (p, m) => job.report(p, m) });
     return { summary: run ? `${run.status}: ${run.steps.length} Schritt(e)` : 'nichts zu tun', runId: run?.id ?? null };
   });
   // the retroactive link run (#279) and topic proposals from groups (#281): local, resumable, ONE notification at the end
@@ -415,6 +419,8 @@ function buildServices(opts: CreateServicesOptions) {
     appState,
     backup,
     chat,
+    capture,
+    answers,
     agent,
     agentRuns,
     agentFileJobs,
