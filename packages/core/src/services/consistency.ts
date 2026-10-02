@@ -51,6 +51,7 @@ const KIND_LABELS: Record<string, string> = {
   external_file: 'externe Dateien mit Archivbezug',
   duplicate_open_item: 'doppelte offene Punkte',
   persons_merged: 'automatisch zusammengeführte Personen-Einträge',
+  unclear_person: 'unklare Personen-Zuordnungen',
 };
 
 /** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */

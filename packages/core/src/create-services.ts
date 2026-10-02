@@ -13,6 +13,7 @@ import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
 import { AppStateService } from './services/app-state';
 import { ConsistencyService } from './services/consistency';
 import { PersonDuplicateService } from './services/cleanup/person-duplicates';
+import { PersonQuestionService } from './services/cleanup/person-questions';
 import { ContradictionService } from './services/contradictions';
 import { DecisionService } from './services/decisions';
 import { DocumentService } from './services/documents';
@@ -136,6 +137,8 @@ function buildServices(opts: CreateServicesOptions) {
   });
   const personDuplicates = new PersonDuplicateService(ctx, settings, graph, insights);
   consistency.addCheck((count) => personDuplicates.check(count));
+  const personQuestions = new PersonQuestionService(ctx, graph, insights, llm, privacy);
+  consistency.addCheck((count) => personQuestions.check(count));
   const noteEventDuplicates = new NoteEventDuplicateService(ctx, graph, notes, eventsSvc, audit, undo, insights);
   consistency.addCheck((count) => {
     noteEventDuplicates.check(count);
@@ -276,6 +279,7 @@ function buildServices(opts: CreateServicesOptions) {
     notes,
     noteEventDuplicates,
     personDuplicates,
+    personQuestions,
     insights,
     actions,
     contradictions,
