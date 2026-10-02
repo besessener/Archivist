@@ -41,6 +41,53 @@ export function RelatedEntries({ id }: { id: string }) {
   );
 }
 
+/**
+ * Link proposals for the entry (#283, #313): similar entries and mentioned topics/projects, with the reason – the same
+ * function as the agent's `suggest_links`. „Verknüpfen“ confirms the link (undoable); ignoring has no consequences.
+ */
+export function LinkSuggestions({ id }: { id: string }) {
+  const q = useQuery('links:suggestions', { id, limit: 3 }, { scopes: ['knowledge'] });
+  const { run, busy } = useRun();
+  if (!q.data?.length) return null;
+  return (
+    <section data-testid="link-suggestions">
+      <h3 className="mb-2 text-sm font-semibold">Vorschläge zum Verknüpfen</h3>
+      <ul className="flex flex-col gap-2">
+        {q.data.map((c) => (
+          <li key={c.id} className="flex items-start gap-2 rounded-lg border border-dashed p-2.5" data-testid="link-suggestion">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <EntityChip type={c.type} id={c.id} label={c.name} />
+              <p className="text-xs text-muted-foreground">{c.reason}</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              aria-label={`Mit „${c.name}“ verknüpfen`}
+              data-testid="link-suggestion-accept"
+              onClick={async () => {
+                const out = await run(
+                  () =>
+                    call('knowledge:link', {
+                      sourceId: id,
+                      targetId: c.id,
+                      relationType: c.method === 'mention' ? 'relates_to' : 'related_to',
+                      confirmed: true,
+                    }),
+                  { success: 'Verknüpft.', errorTitle: 'Verknüpfen fehlgeschlagen' },
+                );
+                if (out) void q.refetch();
+              }}
+            >
+              <Link2 aria-hidden /> Verknüpfen
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Links the entry with another one the user picks (#277). */
 export function LinkDialog({
   open,

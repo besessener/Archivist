@@ -344,6 +344,9 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
       return { ok: true as const };
     },
     'knowledge:related': (i) => s.graph.related(i.id, { depth: i.depth }),
+    'links:suggestions': (i) => s.links.candidates(i.id, { limit: i.limit }),
+    'links:unlinked': (i) => s.links.orphans(i),
+    'links:startRun': () => ({ jobId: s.enqueueLinkRun('manual').id }),
     'knowledge:resolveRelation': (i) => {
       s.graph.setRelationStatus(i.relationId, i.status);
       s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });

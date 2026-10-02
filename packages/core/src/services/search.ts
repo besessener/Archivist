@@ -363,6 +363,38 @@ export class SearchService {
     return best;
   }
 
+  /**
+   * Entries similar to an indexed entry (#271): raw cosine similarity of their chunk vectors – of the endpoint's embedding
+   * model when the entry has such vectors, otherwise of the local (lexical) hash vectors; `local` tells which, so callers
+   * can apply a higher bar to the latter. With the best matching passage of the other entry as evidence.
+   */
+  async similarTo(
+    entityId: string,
+    opts: { types: readonly EntityType[]; limit: number; minScore: { local: number; embeddings: number } },
+  ): Promise<Array<{ id: string; type: EntityType; score: number; passage: string; local: boolean }>> {
+    const models = (
+      this.sqlite.prepare('SELECT DISTINCT embedding_model AS m FROM chunks WHERE entity_id = ? AND embedding IS NOT NULL').all(entityId) as Array<{
+        m: string;
+      }>
+    ).map((r) => r.m);
+    const model = models.find((m) => m !== LOCAL_MODEL) ?? models.find((m) => m === LOCAL_MODEL);
+    if (!model) return [];
+    const local = model === LOCAL_MODEL;
+    const hits = await this.vectors.similarTo(model, entityId, {
+      k: opts.limit,
+      minScore: local ? opts.minScore.local : opts.minScore.embeddings,
+      types: opts.types,
+    });
+    const passage = this.sqlite.prepare('SELECT text FROM chunks WHERE id = ?');
+    return hits.map((h) => ({
+      id: h.entityId,
+      type: h.entityType as EntityType,
+      score: Math.round(h.score * 1000) / 1000,
+      passage: (passage.get(h.chunkId) as { text: string } | undefined)?.text ?? '',
+      local,
+    }));
+  }
+
   /** Documents whose content is close to a name/topic (for assignment proposals). */
   async similarEntities(text: string, types: EntityType[], limit = 10): Promise<SearchHit[]> {
     const q = normalizeName(text).split(' ').slice(0, 60).join(' ');

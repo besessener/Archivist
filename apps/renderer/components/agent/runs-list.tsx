@@ -133,6 +133,50 @@ function RunCard({ run, initiallyOpen }: { run: AgentRun; initiallyOpen: boolean
   );
 }
 
+/**
+ * The fixed link methods (#279, #290, #313): how many entries have no link yet, and the retroactive run – local, without
+ * LLM, only proposals. The agent uses the same functions as tools.
+ */
+function LinkMethodsSection() {
+  const unlinked = useQuery('links:unlinked', { limit: 1, offset: 0 }, { scopes: ['knowledge'] });
+  const { run, busy } = useRun();
+  const [message, setMessage] = useState<string | null>(null);
+  const total = unlinked.data?.total;
+  return (
+    <Section
+      title="Verknüpfungen vorschlagen"
+      description="Geht das ganze Archiv durch und schlägt ähnliche Einträge als Verknüpfung sowie neue Themen für ähnliche Einträge ohne Thema vor. Läuft lokal; bestätigt wird nur, was du übernimmst."
+    >
+      <p className="text-sm" data-testid="links-unlinked-count">
+        {total === undefined
+          ? 'Zähle Einträge ohne Verknüpfung …'
+          : total === 0
+            ? 'Alle Einträge sind verknüpft.'
+            : `${plural(total, 'Eintrag', 'Einträge')} ohne Verknüpfung.`}
+      </p>
+      <div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          data-testid="links-start-run"
+          onClick={async () => {
+            const out = await run(() => call('links:startRun', {}), { errorTitle: 'Start fehlgeschlagen' });
+            if (out) setMessage('Gestartet. Der Fortschritt erscheint unter „Verarbeitung“, das Ergebnis als ein Hinweis in der Glocke.');
+          }}
+        >
+          <Play aria-hidden /> Verknüpfungslauf starten
+        </Button>
+      </div>
+      {message && (
+        <p className="text-xs text-muted-foreground" role="status">
+          {message}
+        </p>
+      )}
+    </Section>
+  );
+}
+
 /** Agent runs with filter, steps, undo and manual start of background runs (#299). */
 export function AgentRunsList({ focusRunId }: { focusRunId?: string | null }) {
   const [trigger, setTrigger] = useState<'' | 'chat' | 'background'>('');
@@ -169,6 +213,8 @@ export function AgentRunsList({ focusRunId }: { focusRunId?: string | null }) {
           {bgMessage ?? 'Der Fortschritt erscheint unter „Verarbeitung“, das Ergebnis in der Liste unten.'}
         </p>
       </Section>
+
+      <LinkMethodsSection />
 
       <Section title="Agentenläufe" description="Was Archivist als Agent getan hat – im Chat und im Hintergrund. Jede Änderung ist protokolliert.">
         <div className="grid gap-3 sm:grid-cols-2">

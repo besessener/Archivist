@@ -58,6 +58,8 @@ function depsOf(t: TestApp): ToolDeps {
     openItemDuplicates: s.openItemDuplicates,
     noteEventDuplicates: s.noteEventDuplicates,
     memory: {} as never,
+    fileJobs: s.agentFileJobs,
+    links: s.links,
     capture: { capture: async () => Promise.reject(new Error('unused')) },
     enqueueConsistency: () => undefined,
   };

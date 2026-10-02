@@ -10,7 +10,7 @@ import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
-import { LinkDialog, RelatedEntries } from '@/components/knowledge/related';
+import { LinkDialog, LinkSuggestions, RelatedEntries } from '@/components/knowledge/related';
 import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
@@ -413,6 +413,7 @@ function EntityView({ id }: { id: string }) {
       </section>
 
       <RelatedEntries id={entity.id} />
+      <LinkSuggestions id={entity.id} />
 
       {isTopic && (
         <section>

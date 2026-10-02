@@ -32,6 +32,7 @@ import { knowledgeTools } from './tools/knowledge';
 import { fileTools } from './tools/files';
 import { metadataTools } from './tools/metadata';
 import { linkTools } from './tools/links';
+import { linkMethodTools } from './tools/link-methods';
 import { learningTools } from './tools/learning';
 import { registerSettingUndo, systemTools } from './tools/system';
 import { researchTools } from './tools/research';
@@ -40,6 +41,7 @@ import { exportTools } from './tools/exports';
 import { TYPE_LABEL, type ToolDeps } from './tools/common';
 import type { AgentMessage, AgentToolCall, ProviderAdapter } from './types';
 import { DeadlineWatcher, type PostToConversation } from './watcher';
+import { AgentShutdownError } from './file-jobs';
 import { agentMessages } from '../db/schema';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { ArchivistJson } from '../util/json';
@@ -148,6 +150,7 @@ export class AgentService {
       ...fileTools(deps),
       ...metadataTools(deps),
       ...linkTools(deps),
+      ...linkMethodTools(deps),
       ...learningTools(deps),
       ...systemTools(deps),
       ...researchTools(deps),
@@ -192,7 +195,8 @@ export class AgentService {
     if (this.inboxTimer) clearTimeout(this.inboxTimer);
     this.timer = null;
     this.inboxTimer = null;
-    for (const c of this.controllers.values()) c.abort();
+    // a file job of a running run is not cancelled by quitting: it continues after the next start (#304)
+    for (const c of this.controllers.values()) c.abort(new AgentShutdownError());
   }
 
   /** Periodic check: deadline watcher, weekly review, nightly background runs. */
@@ -478,7 +482,9 @@ export class AgentService {
     return { text, ids: used.map((e) => ({ id: e.id, kind: e.kind, label: e.name })) };
   }
 
-  private toolContext(o: Pick<ToolContext, 'runId' | 'conversationId' | 'trigger' | 'mode' | 'refs' | 'signal' | 'userText' | 'lastAnswer'>): ToolContext {
+  private toolContext(
+    o: Pick<ToolContext, 'runId' | 'conversationId' | 'trigger' | 'mode' | 'refs' | 'signal' | 'userText' | 'lastAnswer' | 'job'>,
+  ): ToolContext {
     return { ...o, shared: new Set(), files: [], applied: [], changes: [], actionIds: [], changedCount: 0, tainted: null };
   }
 
@@ -494,6 +500,7 @@ export class AgentService {
     lastAnswer: string | null;
     background: boolean;
     signal?: AbortSignal;
+    job?: ToolContext['job'];
   }): Promise<{ outcome: RunOutcome; ctx: ToolContext; run: AgentRun; proposals: number }> {
     const s = this.settings.agent;
     const cfg = this.llm.adapterConfig();
@@ -507,7 +514,7 @@ export class AgentService {
       mode: o.mode,
     });
     const controller = new AbortController();
-    if (o.signal) o.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    if (o.signal) o.signal.addEventListener('abort', () => controller.abort(o.signal?.reason), { once: true });
     this.controllers.set(runId, controller);
     const ctx = this.toolContext({
       runId,
@@ -518,6 +525,7 @@ export class AgentService {
       signal: controller.signal,
       userText: o.userText,
       lastAnswer: o.lastAnswer,
+      job: o.job ?? null,
     });
     const learned = this.learned();
     const progressKey = o.conversationId ?? runId;
@@ -557,9 +565,10 @@ export class AgentService {
         proposals.push({ tool: tool.name, args, label, risk: typeof tool.risk === 'function' ? tool.risk(args) : tool.risk, reason });
         return `NICHT AUSGEFÜHRT – als Vorschlag vorbereitet (${reason}). Der Benutzer bestätigt ihn in der Karte unter deiner Antwort; sag ihm das und arbeite mit dem Rest weiter.`;
       },
-      onStep: (_step, all) => {
+      onStep: (step, all) => {
         progress.steps = all.map((x) => ({ ...x }));
-        this.emit(progress);
+        // the progress of a file job comes once per chunk – shown right away, not merged away by the throttle (#304)
+        this.emit(progress, Boolean(step.job) && step.outcome === 'running');
       },
       onText: (delta, round) => {
         if (round !== progress.round) {
@@ -770,7 +779,7 @@ export class AgentService {
     if (kind === 'links')
       return {
         trigger: 'background:links',
-        task: 'Verknüpfungen pflegen: Suche archivierte Dokumente ohne Thema und Projekt (find_documents, dann related) und Einträge, die erkennbar zusammengehören (search, similar_filings). Schlage Verknüpfungen nur VOR (link mit onUserRequest=false) – bestätige nichts selbst. Vom Benutzer abgelehnte Paare schlägst du nie wieder vor. Kurze Zusammenfassung am Ende.',
+        task: 'Verknüpfungen pflegen mit den festen Verknüpfungsmethoden: 1. backfill_links (rückwirkender Lauf, setzt an der gemerkten Stelle fort). 2. find_unlinked_entries: Für verwaiste Einträge mit einem eindeutig passenden Ziel link mit onUserRequest=false. 3. find_topic_clusters: Für eine eindeutige Gruppe propose_topic mit einem treffenden Namen. Alles bleibt ein VORSCHLAG – bestätige nichts selbst; vom Benutzer abgelehnte Paare schlägst du nie wieder vor. Kurze Zusammenfassung am Ende.',
       };
     const id = kind.slice('workflow:'.length);
     const wf = this.memory.list('workflow').find((e) => e.id === id && e.enabled);
@@ -783,7 +792,10 @@ export class AgentService {
   }
 
   /** Starts a background run; every trigger gets its own task, budget and emergency brake. Returns null if nothing to do. */
-  async runBackground(kind: BackgroundKind, opts: { docIds?: string[]; signal?: AbortSignal } = {}): Promise<AgentRun | null> {
+  async runBackground(
+    kind: BackgroundKind,
+    opts: { docIds?: string[]; signal?: AbortSignal; report?: (progress: number, message: string) => void } = {},
+  ): Promise<AgentRun | null> {
     if (!this.isActive() || !this.llm.canUseInBackground()) return null;
     if (!(await this.ensureCapable())) return null;
     const refs = new RefStore();
@@ -805,21 +817,25 @@ export class AgentService {
       lastAnswer: null,
       background: true,
       signal: opts.signal,
+      // the run is a job itself: longer steps report to it instead of starting jobs of their own (#304)
+      job: { report: opts.report ?? (() => undefined) },
     });
-    // ONE bundled notification per run with summary and undo (#313)
-    if (ctx.changes.length || proposals || outcome.status === 'error')
+    // ONE bundled notification per run with summary and undo (#313); proposals of tools (e.g. a new topic) count as well
+    // (the first card id is the run's own proposal card when there are proposals)
+    const waiting = proposals + ctx.actionIds.length - (proposals ? 1 : 0);
+    if (ctx.changes.length || waiting || outcome.status === 'error')
       this.deps.notifications.create({
         title: outcome.status === 'error' ? 'Hintergrund-Agent: Fehler' : 'Archivist hat im Hintergrund gearbeitet',
         description: [
           ctx.changes.length ? `${ctx.changes.length} Änderung(en): ${ctx.changes.slice(0, 5).join('; ')}${ctx.changes.length > 5 ? ' …' : ''}` : null,
-          proposals ? `${proposals} Vorschlag/Vorschläge warten auf deine Bestätigung.` : null,
+          waiting ? `${waiting} Vorschlag/Vorschläge warten auf deine Bestätigung.` : null,
           outcome.status === 'error' ? outcome.error : null,
           truncate(this.humanize(outcome.text, refs).text.replace(/\s+/g, ' '), 300),
         ]
           .filter(Boolean)
           .join(' '),
         type: 'agent_run',
-        priority: proposals ? 'normal' : 'low',
+        priority: waiting ? 'normal' : 'low',
         proposedActions: [{ label: 'Lauf ansehen', kind: 'navigate', target: `/settings/?tab=agent&run=${run.id}` }],
         dedupeKey: `agent-run:${run.id}`,
       });
@@ -877,7 +893,9 @@ export class AgentService {
       }
       const t0 = Date.now();
       try {
-        const out = await agentRunScope.run({ runId: params.runId, explicit: true, auditIds: step.auditIds }, () => tool.run(parsed.data, ctx));
+        const out = await agentRunScope.run({ runId: params.runId, explicit: true, auditIds: step.auditIds, stepId: step.id }, () =>
+          tool.run(parsed.data, ctx),
+        );
         step.outcome = out.isError ? 'error' : 'ok';
         step.summary = out.summary ?? '';
         step.result = truncate(out.content, 600);
