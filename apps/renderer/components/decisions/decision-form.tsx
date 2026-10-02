@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DECISION_FIELD_LABELS, EditableDecisionStatus, isEditableDecisionStatus, type DecisionField, type DecisionStatus } from '@archivist/shared';
+import { DECISION_FIELD_LABELS, EditableDecisionStatus, isEditableDecisionStatus, localDate, type DecisionField, type DecisionStatus } from '@archivist/shared';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
@@ -23,7 +23,7 @@ type CriticalStatus = 'superseded' | 'revoked';
 const isCritical = (s: DecisionStatus): s is CriticalStatus => s === 'superseded' || s === 'revoked';
 
 function dayOf(v: string | null | undefined): string {
-  return v ? v.slice(0, 10) : '';
+  return v ? localDate(v) : '';
 }
 
 export function DecisionFormDialog({

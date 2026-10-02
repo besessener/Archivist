@@ -29,8 +29,8 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
     b: { llmMode: 'local_only', neverAnalyzeDirs: ['/privat', '/hr'], neverAnalyzeExtensions: ['xlsx'], neverAnalyzeFiles: ['/c/d.docx'] },
   },
   notifications: {
-    a: { desktop: true },
-    b: { desktop: false },
+    a: { desktop: true, reminderTime: '07:30' },
+    b: { desktop: false, reminderTime: '18:00' },
   },
   logs: {
     a: { level: 'debug', retentionDays: 7 },
