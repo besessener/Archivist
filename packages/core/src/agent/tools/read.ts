@@ -250,11 +250,18 @@ export function readTools(deps: ToolDeps): AgentTool[] {
         // names taken from documents and not confirmed yet are never given to the LLM as known subjects (#199)
         const rows = types.flatMap((type) => graph.listEntities({ type, query: a.contains ?? undefined, limit: 150 })).filter((e) => !e.unconfirmed);
         if (!rows.length) return { content: 'Keine gefunden.' };
+        // the topic hierarchy (#282): „unter …“ for a subtopic
+        const parentOf = new Map(graph.hierarchy().map((h) => [h.childId, h.parentId]));
+        const under = (id: string) => {
+          const p = parentOf.get(id);
+          const parent = p ? graph.getEntity(p) : undefined;
+          return parent ? ` (Unterthema von „${parent.name}“)` : '';
+        };
         return {
           content: rows
             .map(
               (e) =>
-                `- ${ctx.refs.entry(e.id)} ${TYPE_LABEL[e.type] ?? e.type}: ${e.name}${e.isSelf ? ' (der Benutzer selbst)' : ''}${e.aliases.length ? ` (auch: ${e.aliases.slice(0, 3).join(', ')})` : ''}${e.type === 'case' ? ` [${e.status ?? 'open'}]` : ''} – ${e.relationCount} Verknüpfungen`,
+                `- ${ctx.refs.entry(e.id)} ${TYPE_LABEL[e.type] ?? e.type}: ${e.name}${under(e.id)}${e.isSelf ? ' (der Benutzer selbst)' : ''}${e.aliases.length ? ` (auch: ${e.aliases.slice(0, 3).join(', ')})` : ''}${e.type === 'case' ? ` [${e.status ?? 'open'}]` : ''} – ${e.relationCount} Verknüpfungen`,
             )
             .join('\n'),
           summary: `${rows.length} gefunden`,

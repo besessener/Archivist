@@ -1,4 +1,7 @@
 import type { DocumentRecord, DocumentStatus, EntityType } from '@archivist/shared';
+import type { CaseService } from '../../services/cases';
+import type { LinkThresholds } from '../../services/link-thresholds';
+import type { SubjectService } from '../../services/subjects';
 import type { DataPaths } from '../../context';
 import type { ActionService } from '../../services/actions';
 import type { ArchiveService } from '../../services/archive';
@@ -61,6 +64,12 @@ export interface ToolDeps {
   memory: MemoryService;
   fileJobs: AgentFileJobs;
   links: LinkMethodsService;
+  /** Main and further topics/projects, bulk assignment (#287, #291). */
+  subjects: SubjectService;
+  /** Cases („Vorgänge“, #286). */
+  cases: CaseService;
+  /** What the link methods learned from rejections (#275). */
+  linkThresholds: LinkThresholds;
   /** Capturing knowledge: the same module as the rule-based chat (#307). */
   capture: CaptureService;
   answers: KnowledgeAnswerService;

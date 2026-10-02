@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { relations } from '../db/schema';
 import { AppError } from '../util/errors';
+import { normalizeName } from '../util/text';
 import { nowIso } from '../util/ids';
 import type { AuditService } from './audit';
 import { LINK_MANY_UNDO_TYPE, type KnowledgeGraphService, type LinkManyUndoData } from './knowledge-graph';
@@ -21,7 +22,8 @@ const TAGS_UNDO = 'subjects.docTags';
 interface TagUndo {
   id: string;
   before: string[];
-  tag: string;
+  /** The tags this assignment added. */
+  added: string[];
 }
 /** Entries the lists can select for a bulk assignment (#291). */
 const BULK_TYPES: EntityType[] = ['document', 'note', 'decision', 'task', 'question', 'event'];
@@ -90,7 +92,7 @@ export class SubjectService {
           const now = JSON.parse(
             (this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(t.id) as { tags: string } | undefined)?.tags ?? '[]',
           ) as string[];
-          return !now.includes(t.tag);
+          return t.added.some((x) => !now.includes(x));
         }).length;
         return changed ? [`Bei ${changed} Dokumenten wurden die Tags seither geändert.`] : [];
       },
@@ -98,11 +100,13 @@ export class SubjectService {
         const items = data as TagUndo[];
         for (const t of items) {
           const now = JSON.parse((this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(t.id) as { tags: string }).tags) as string[];
-          this.sqlite.prepare('UPDATE documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(now.filter((x) => x !== t.tag)), nowIso(), t.id);
+          this.sqlite
+            .prepare('UPDATE documents SET tags = ?, updated_at = ? WHERE id = ?')
+            .run(JSON.stringify(now.filter((x) => !t.added.includes(x))), nowIso(), t.id);
         }
         await this.reindexEntries(items.map((t) => t.id));
         this.ctx.events.changed('documents');
-        return `Tag bei ${items.length} Dokumenten entfernt.`;
+        return `Tags bei ${items.length} Dokumenten entfernt.`;
       },
     });
   }
@@ -209,12 +213,36 @@ export class SubjectService {
   }
 
   /**
+   * Removes further topics/projects (#287) by name from several entries – ONE undo step; the main ones stay (they are
+   * changed with the entry itself). Returns the number of removed assignments.
+   */
+  removeFurther(ids: string[], patch: { topics?: string[]; projects?: string[] }, opts: { trigger?: string } = {}): number {
+    const subjects = this.ofMany(ids);
+    const remove: string[] = [];
+    for (const [id, s] of Object.entries(subjects))
+      for (const kind of ['topic', 'project'] as const) {
+        const names = new Set((kind === 'topic' ? patch.topics : patch.projects)?.map((n) => normalizeName(n)) ?? []);
+        const further = kind === 'topic' ? s.extraTopics : s.extraProjects;
+        for (const f of further.filter((x) => names.has(normalizeName(x.name))))
+          remove.push(
+            ...this.graph
+              .relationsOf(id, { statuses: ['confirmed'] })
+              .filter((r) => r.sourceEntityId === id && r.targetEntityId === f.id)
+              .map((r) => r.id),
+          );
+      }
+    const n = this.graph.changeLinks({ remove }, { trigger: opts.trigger, action: 'subjects.removeFurther', summary: { ...patch } });
+    if (n) this.ctx.events.changed('documents', 'decisions', 'openItems', 'events');
+    return n;
+  }
+
+  /**
    * Bulk assignment of a list's selection (#291) – ONE undo step for all of it: a topic or project becomes the main
    * value of an entry that has none and a further one of the others (#287); a tag is added; a case collects the entries.
    */
   async bulkAssign(
     ids: string[],
-    patch: { topic?: string | null; project?: string | null; tag?: string | null; caseId?: string | null },
+    patch: { topics?: string[]; projects?: string[]; tags?: string[]; caseId?: string | null },
     opts: { trigger?: string } = {},
   ): Promise<{ updated: number; auditId: string | null }> {
     const entries = [...new Set(ids)].flatMap((id) => {
@@ -229,30 +257,40 @@ export class SubjectService {
     const mirrors: Array<{ sourceId: string; targetId: string; relationType: RelationType }> = [];
     const add: Array<{ sourceId: string; targetId: string; relationType: RelationType }> = [];
     const touched = new Set<string>();
-    for (const kind of ['topic', 'project'] as const) {
-      const name = patch[kind]?.trim();
-      if (!name) continue;
-      const targetId = this.resolve(kind, name);
-      for (const e of entries) {
-        const table = TABLE[e.type];
-        const col = kind === 'topic' ? 'topic_id' : 'project_id';
-        const cur = table ? this.main(e.id, e.type)[kind === 'topic' ? 'topicId' : 'projectId'] : null;
-        if (cur === targetId) continue;
-        if (table && !cur) {
-          main.push({ table, col, id: e.id, value: targetId });
-          mirrors.push({ sourceId: e.id, targetId, relationType: subjectRelation(e.type, kind) });
-        } else add.push({ sourceId: e.id, targetId, relationType: subjectRelation(e.type, kind) });
-        touched.add(e.id);
+    const clean = (xs: string[] | undefined) => [...new Set((xs ?? []).map((x) => x.trim()).filter(Boolean))];
+    // a main value set earlier in this call counts: the second topic of an entry without one becomes a further one
+    const newMain = new Map<string, string>();
+    for (const kind of ['topic', 'project'] as const)
+      for (const name of clean(kind === 'topic' ? patch.topics : patch.projects)) {
+        const targetId = this.resolve(kind, name);
+        for (const e of entries) {
+          const table = TABLE[e.type];
+          const col = kind === 'topic' ? 'topic_id' : 'project_id';
+          const cur = table ? (newMain.get(`${e.id}:${kind}`) ?? this.main(e.id, e.type)[kind === 'topic' ? 'topicId' : 'projectId']) : null;
+          if (cur === targetId) continue;
+          if (table && !cur) {
+            newMain.set(`${e.id}:${kind}`, targetId);
+            main.push({ table, col, id: e.id, value: targetId });
+            mirrors.push({ sourceId: e.id, targetId, relationType: subjectRelation(e.type, kind) });
+          } else add.push({ sourceId: e.id, targetId, relationType: subjectRelation(e.type, kind) });
+          touched.add(e.id);
+        }
       }
-    }
-    const tagName = patch.tag?.trim();
-    if (tagName) {
+    for (const tagName of clean(patch.tags)) {
       const tagId = (this.graph.findByNameOrAlias('tag', tagName) ?? this.graph.ensureEntity('tag', tagName)).id;
       for (const e of entries) {
         if (e.type === 'document') {
-          const before = JSON.parse((this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(e.id) as { tags: string }).tags) as string[];
-          if (before.some((t) => t.toLowerCase() === tagName.toLowerCase())) continue;
-          tags.push({ id: e.id, before, tag: tagName });
+          let t = tags.find((x) => x.id === e.id);
+          if (!t) {
+            t = {
+              id: e.id,
+              before: JSON.parse((this.sqlite.prepare('SELECT tags FROM documents WHERE id = ?').get(e.id) as { tags: string }).tags) as string[],
+              added: [],
+            };
+            tags.push(t);
+          }
+          if ([...t.before, ...t.added].some((x) => x.toLowerCase() === tagName.toLowerCase())) continue;
+          t.added.push(tagName);
           mirrors.push({ sourceId: e.id, targetId: tagId, relationType: 'relates_to' });
         } else add.push({ sourceId: e.id, targetId: tagId, relationType: 'relates_to' });
         touched.add(e.id);
@@ -268,7 +306,8 @@ export class SubjectService {
       const now = nowIso();
       for (const m of main) this.sqlite.prepare(`UPDATE ${m.table} SET ${m.col} = ?, updated_at = ? WHERE id = ?`).run(m.value, now, m.id);
       for (const t of tags)
-        this.sqlite.prepare('UPDATE documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify([...t.before, t.tag]), now, t.id);
+        if (t.added.length)
+          this.sqlite.prepare('UPDATE documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify([...t.before, ...t.added]), now, t.id);
       // the mirror of a main value is a field relation (it follows later changes of the field), added ones are the user's
       const mirrored = mirrors.flatMap((m) => {
         const before = this.relationRow(m.sourceId, m.targetId, m.relationType);
@@ -278,7 +317,8 @@ export class SubjectService {
       });
       const { items } = this.graph.applyLinkChanges({ add });
       if (main.length) steps.push({ type: MAIN_UNDO, data: main });
-      if (tags.length) steps.push({ type: TAGS_UNDO, data: tags });
+      const tagged = tags.filter((t) => t.added.length);
+      if (tagged.length) steps.push({ type: TAGS_UNDO, data: tagged });
       if (mirrored.length || items.length) steps.push({ type: LINK_MANY_UNDO_TYPE, data: { items: [...mirrored, ...items] } satisfies LinkManyUndoData });
     });
     if (!steps.length) return { updated: 0, auditId: null };

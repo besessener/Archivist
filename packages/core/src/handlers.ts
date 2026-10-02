@@ -420,7 +420,12 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     },
     'subjects:of': (i) => s.subjects.ofMany(i.ids),
     'subjects:setExtras': (i) => s.subjects.setExtras(i.id, { topics: i.topics, projects: i.projects }, { trigger }),
-    'entries:bulkAssign': (i) => s.subjects.bulkAssign(i.ids, { topic: i.topic, project: i.project, tag: i.tag, caseId: i.caseId }, { trigger }),
+    'entries:bulkAssign': (i) =>
+      s.subjects.bulkAssign(
+        i.ids,
+        { topics: i.topic ? [i.topic] : [], projects: i.project ? [i.project] : [], tags: i.tag ? [i.tag] : [], caseId: i.caseId },
+        { trigger },
+      ),
     'cases:list': (i) => s.cases.list(i),
     'cases:detail': (i) => s.cases.detail(i.id),
     'cases:create': (i) => s.cases.create(i.name, i.description, { trigger }),

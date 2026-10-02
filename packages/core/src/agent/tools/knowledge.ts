@@ -6,6 +6,20 @@ import { defineTool, list, optText, type AgentTool, type ToolContext } from '../
 import type { CaptureResult } from '../../services/capture';
 import type { ToolDeps } from './common';
 import { linkHint } from './link-methods';
+import { wikiNames } from '../../services/wiki-links';
+
+/** What became of the [[Name]] links of a saved note (#285): linked names, and unknown ones to offer creating. */
+function wikiNote(deps: ToolDeps, text: string, noteId: string | undefined): string {
+  const names = wikiNames(text);
+  if (!names.length || !noteId) return '';
+  const resolved = deps.notes.wiki.resolveAll(names, noteId);
+  const known = resolved.filter((r) => r.entity).map((r) => `„${r.name}“`);
+  const unknown = resolved.filter((r) => !r.entity).map((r) => `„${r.name}“`);
+  return [
+    known.length ? `\nVerlinkt: ${known.join(', ')}.` : '',
+    unknown.length ? `\nNoch ohne Eintrag (anbieten, ihn anzulegen): ${unknown.join(', ')}.` : '',
+  ].join('');
+}
 
 /**
  * Capturing knowledge as agent tools (#307): the tools call the capture module the rule-based chat uses as well (required
@@ -167,7 +181,8 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
     }),
     defineTool({
       name: 'record_note',
-      description: 'Eine Notiz festhalten (identische Notizen werden nicht doppelt angelegt). links: K/D-IDs, mit denen die Notiz verknüpft wird.',
+      description:
+        'Eine Notiz festhalten (identische Notizen werden nicht doppelt angelegt). links: K/D-IDs, mit denen die Notiz verknüpft wird. Im Text verweist [[Name]] auf einen anderen Eintrag (Name oder Alias) und verknüpft ihn beim Speichern.',
       schema: z.object({ content: z.string().min(1), title: optText, topic: optText, links: list.nullish() }),
       risk: 'write',
       label: (a) => `Halte eine Notiz fest: „${truncate(a.title ?? a.content, 50)}“`,
@@ -179,9 +194,29 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
           for (const l of ctx.refs.resolveMany(a.links ?? []).ids) deps.graph.link(created.id, l, 'relates_to', { confidence: 0.9, status: 'confirmed' });
         }
         return {
-          content: `${created ? ctx.refs.entry(created.id) : ''} ${r.content}${await linkHint(deps, ctx, created?.id ?? null)}`,
+          content: `${created ? ctx.refs.entry(created.id) : ''} ${r.content}${wikiNote(deps, a.content, created?.id)}${await linkHint(deps, ctx, created?.id ?? null)}`,
           summary: 'gespeichert',
           change: `Notiz „${truncate(a.title ?? a.content, 50)}“ gespeichert`,
+        };
+      },
+    }),
+    defineTool({
+      name: 'update_note',
+      description:
+        'Titel und/oder Text einer vorhandenen Notiz (K…) ändern – nur auf Wunsch des Benutzers. Der Text ersetzt den bisherigen; [[Name]] verlinkt andere Einträge, entfernte Links entfernen die Verknüpfung. Danach wird die Notiz neu eingeordnet. Rückgängig im Änderungsprotokoll.',
+      schema: z.object({ note: z.string().min(1), title: optText, content: optText }),
+      risk: 'write',
+      label: () => 'Bearbeite eine Notiz',
+      run: async (a, ctx) => {
+        const id = ctx.refs.resolve(a.note);
+        const note = id ? deps.graph.getEntity(id) : undefined;
+        if (!id || note?.type !== 'note') return { content: `„${a.note}“ ist keine Notiz.`, isError: true };
+        if (!a.title && !a.content) return { content: 'Gib title oder content an.', isError: true };
+        const after = await deps.notes.update(id, { title: a.title ?? null, content: a.content ?? null }, { trigger: 'agent', actor: 'agent' });
+        return {
+          content: `${ctx.refs.entry(id)} Notiz „${truncate(after.name, 60)}“ gespeichert.${wikiNote(deps, after.description ?? '', id)}`,
+          summary: 'gespeichert',
+          change: `Notiz „${truncate(after.name, 50)}“ bearbeitet`,
         };
       },
     }),

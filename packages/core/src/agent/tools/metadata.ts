@@ -10,6 +10,43 @@ const removable = z
   .nullish()
   .transform((v) => (v === undefined || v === null ? undefined : ['', '-', 'keins', 'keines', 'ohne'].includes(v.trim().toLowerCase()) ? null : v.trim()));
 
+/** The change of a `set_metadata` call in words (for the run log). */
+function describeChange(
+  a: {
+    addTopics?: string[] | null;
+    addProjects?: string[] | null;
+    removeTopics?: string[] | null;
+    removeProjects?: string[] | null;
+    case?: string | null;
+    topic?: string | null;
+    project?: string | null;
+    addTags?: string[] | null;
+    removeTags?: string[] | null;
+    addPersons?: string[] | null;
+    docType?: string | null;
+    title?: string | null;
+  },
+  date: string | null | undefined,
+): string {
+  return [
+    a.addTopics?.length && `Themen +${a.addTopics.join(', ')}`,
+    a.addProjects?.length && `Projekte +${a.addProjects.join(', ')}`,
+    a.removeTopics?.length && `Themen −${a.removeTopics.join(', ')}`,
+    a.removeProjects?.length && `Projekte −${a.removeProjects.join(', ')}`,
+    a.case && `Vorgang ${a.case}`,
+    a.topic !== undefined && `Thema ${a.topic ?? 'entfernt'}`,
+    a.project !== undefined && `Projekt ${a.project ?? 'entfernt'}`,
+    a.addTags?.length && `Tags +${a.addTags.join(', ')}`,
+    a.removeTags?.length && `Tags −${a.removeTags.join(', ')}`,
+    a.addPersons?.length && `Personen +${a.addPersons.join(', ')}`,
+    a.docType !== undefined && `Typ ${a.docType ?? 'entfernt'}`,
+    date !== undefined && `Datum ${date ?? 'entfernt'}`,
+    a.title && `Titel „${a.title}“`,
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
 export function metadataTools(deps: ToolDeps): AgentTool[] {
   const { graph } = deps;
   const resolveOne = (ctx: ToolContext, ref: string) => ctx.refs.resolve(ref);
@@ -18,11 +55,16 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'set_metadata',
       description:
-        'Thema, Projekt, Personen, Tags, Dokumenttyp, Titel und fachliches Datum setzen oder entfernen – für Dokumente (D…/S…, einzeln und in Serie; eine Sammelaktion ist EIN Rückgängig-Schritt). Für Entscheidungen, offene Punkte und Ereignisse (K…) Thema und Projekt. Leerer Wert ("") entfernt. Personen werden mit dem Graph abgeglichen (Aliasse, „ich“ = Benutzer). Bis mehrere Themen je Eintrag möglich sind, ersetzt eine Zuordnung den bisherigen Wert.',
+        'Thema, Projekt, Personen, Tags, Dokumenttyp, Titel und fachliches Datum setzen oder entfernen – für Dokumente (D…/S…, einzeln und in Serie; eine Sammelaktion ist EIN Rückgängig-Schritt). Für Entscheidungen, offene Punkte und Ereignisse (K…) Thema und Projekt. topic/project ERSETZEN das Hauptthema bzw. -projekt (danach richtet sich die Ablage); leerer Wert ("") entfernt es. Ein Eintrag kann weitere Themen und Projekte haben: addTopics/addProjects ERGÄNZEN (wer noch keins hat, bekommt es als Hauptthema), removeTopics/removeProjects entfernen weitere. „Ordne das auch X zu“ heißt ergänzen, nicht ersetzen. case: Vorgang (ID oder Name eines vorhandenen Vorgangs), dem die Einträge zugeordnet werden. addTags gilt für alle Arten von Einträgen, auch Notizen. Personen werden mit dem Graph abgeglichen (Aliasse, „ich“ = Benutzer).',
       schema: z.object({
         targets: list,
         topic: removable,
         project: removable,
+        addTopics: list.nullish(),
+        addProjects: list.nullish(),
+        removeTopics: list.nullish(),
+        removeProjects: list.nullish(),
+        case: optText,
         addPersons: list.nullish(),
         removePersons: list.nullish(),
         addTags: list.nullish(),
@@ -34,7 +76,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
       risk: 'write',
       count: (a, ctx) => ctx.refs.resolveMany(a.targets).ids.length || a.targets.length,
       label: (a) =>
-        `Ordne ${a.targets.length === 1 && !a.targets[0]!.toUpperCase().startsWith('S') ? 'einen Eintrag' : 'Einträge'} zu${a.topic ? ` (Thema ${a.topic})` : ''}${a.project ? ` (Projekt ${a.project})` : ''}`,
+        `Ordne ${a.targets.length === 1 && !a.targets[0]!.toUpperCase().startsWith('S') ? 'einen Eintrag' : 'Einträge'} zu${a.topic ? ` (Thema ${a.topic})` : ''}${a.project ? ` (Projekt ${a.project})` : ''}${a.addTopics?.length ? ` (+ Thema ${a.addTopics.join(', ')})` : ''}${a.addProjects?.length ? ` (+ Projekt ${a.addProjects.join(', ')})` : ''}${a.case ? ` (Vorgang ${a.case})` : ''}`,
       run: async (a, ctx) => {
         const { ids, unknown } = ctx.refs.resolveMany(a.targets);
         if (!ids.length) return { content: `Keine Einträge angegeben.${unknownNote(unknown)}`, isError: true };
@@ -63,6 +105,14 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
           const r = deps.persons.resolve(p, { create: false });
           return r.selfReference || r.matchedBy === 'self' ? (r.entity?.name ?? (deps.settings.get().profile.name || p)) : p;
         });
+        // a case by its id or the name of an existing one (#286)
+        let caseId: string | undefined;
+        if (a.case) {
+          const byRef = ctx.refs.resolve(a.case);
+          const c = (byRef && graph.getEntity(byRef)?.type === 'case' ? graph.getEntity(byRef) : undefined) ?? graph.findByNameOrAlias('case', a.case);
+          if (!c) return { content: `Vorgang „${a.case}“ ist unbekannt – mit create_case anlegen oder list_subjects type=case ansehen.`, isError: true };
+          caseId = c.id;
+        }
         const changed: string[] = [];
         if (docIds.length) {
           const res = deps.docs.bulkUpdate(
@@ -92,18 +142,25 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
           else continue;
           changed.push(`${TYPE_LABEL[e.type] ?? e.type} „${truncate(e.name, 40)}“`);
         }
-        const what = [
-          a.topic !== undefined && `Thema ${a.topic ?? 'entfernt'}`,
-          a.project !== undefined && `Projekt ${a.project ?? 'entfernt'}`,
-          a.addTags?.length && `Tags +${a.addTags.join(', ')}`,
-          a.removeTags?.length && `Tags −${a.removeTags.join(', ')}`,
-          a.addPersons?.length && `Personen +${a.addPersons.join(', ')}`,
-          a.docType !== undefined && `Typ ${a.docType ?? 'entfernt'}`,
-          date !== undefined && `Datum ${date ?? 'entfernt'}`,
-          a.title && `Titel „${a.title}“`,
-        ]
-          .filter(Boolean)
-          .join(', ');
+        // further topics/projects, a case and tags of entries without a tag column: added, ONE undo step each (#287, #291)
+        const noteIds = others.filter((id) => graph.getEntity(id)?.type === 'note');
+        const nonDocs = others.filter((id) => !noteIds.includes(id));
+        const assign = async (targets: string[], patch: Parameters<typeof deps.subjects.bulkAssign>[1]) => {
+          if (!targets.length || (!patch.topics?.length && !patch.projects?.length && !patch.tags?.length && !patch.caseId)) return 0;
+          return (await deps.subjects.bulkAssign(targets, patch, { trigger: 'agent' })).updated;
+        };
+        const added =
+          (await assign(ids, { topics: a.addTopics ?? [], projects: a.addProjects ?? [], caseId })) +
+          // notes have no main topic: a topic or project for a note is a further one
+          (await assign(noteIds, { topics: a.topic ? [a.topic] : [], projects: a.project ? [a.project] : [], tags: a.addTags ?? [] })) +
+          (await assign(nonDocs, { tags: a.addTags ?? [] }));
+        if (added) changed.push(`${added} Zuordnung(en) ergänzt`);
+        const removed =
+          a.removeTopics?.length || a.removeProjects?.length
+            ? deps.subjects.removeFurther(ids, { topics: a.removeTopics ?? [], projects: a.removeProjects ?? [] }, { trigger: 'agent' })
+            : 0;
+        if (removed) changed.push(`${removed} weitere(s) Thema/Projekt entfernt`);
+        const what = describeChange(a, date);
         if (!changed.length) return { content: `Nichts geändert.${unknownNote(unknown)}`, isError: true };
         return {
           content: `Geändert: ${changed.join(', ')} – ${what}.${unknownNote(unknown)}`,
