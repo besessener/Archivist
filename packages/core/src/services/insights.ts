@@ -14,7 +14,7 @@ type Row = typeof insights.$inferSelect;
 /** An accepted insight whose cause still exists after this long is shown again (accepting must not hide a problem forever). */
 const REOPEN_ACCEPTED_AFTER_MS = 7 * 86_400_000;
 
-export type { InsightActionSpec, InsightChoiceSpec };
+export type { InsightChoiceSpec };
 
 export interface InsightInput extends ProposalInput {
   kind: InsightKind;
