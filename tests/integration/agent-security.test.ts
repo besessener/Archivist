@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, folderOf, scriptedTurns, sentText } from '../helpers/agent';
+import { agentApp, archived, folderOf, inInbox, scriptedTurns, sentText } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -380,5 +380,78 @@ describe('Agent security: paths stay inside the archive (#301)', () => {
     expect(cats.some((c) => c.includes('ausbruch') || c.includes('etc') || c.includes('..'))).toBe(false);
     const root = app.services.settings.get().archiveRoot;
     expect(fs.existsSync(path.join(root, '..', 'ausbruch'))).toBe(false);
+  });
+});
+
+describe('Agent security: paths of the other file tools (#301)', () => {
+  it('rename_documents and rename_folder refuse names and folders that leave the archive', async () => {
+    const a = await archived(app, 'a.md', 'A', 'work/misc');
+    const root = app.services.settings.get().archiveRoot;
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-outside-'));
+    try {
+      fs.symlinkSync(outside, path.join(root, 'work', 'ausgang'), 'dir');
+      app.llm.agent = scriptedTurns(
+        { calls: [{ name: 'find_documents', args: { ext: 'md' } }] },
+        {
+          calls: [
+            { name: 'rename_documents', args: { documents: ['D1'], name: '../../ausbruch', preview: false } },
+            { name: 'rename_documents', args: { documents: ['D1'], name: '..\\..\\ausbruch', preview: false } },
+            { name: 'rename_folder', args: { from: 'work/misc', to: '../ausbruch' } },
+            { name: 'rename_folder', args: { from: 'work/misc', to: '/etc' } },
+            { name: 'rename_folder', args: { from: 'work/misc', to: 'work/ausgang' } },
+          ],
+        },
+        { text: 'Ging nicht.' },
+      );
+      await app.ok('chat:send', { text: 'Benenne um und lege um' });
+      // the file stays inside the archive: a name never becomes a path, folders outside are refused
+      const rel = app.services.documents.getRow(a).archiveRelPath!;
+      expect(fs.existsSync(path.join(root, ...rel.split('/')))).toBe(true);
+      expect(rel.startsWith('work/')).toBe(true);
+      expect(fs.readdirSync(outside)).toEqual([]);
+      expect(fs.existsSync(path.join(root, '..', 'ausbruch'))).toBe(false);
+      expect(fs.existsSync(path.join(root, '..', 'ausbruch.md'))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('archive_inbox and propose_structure refuse target folders outside the archive', async () => {
+    const inbox = await inInbox(app, 'brief.txt', 'Ein Brief');
+    const root = app.services.settings.get().archiveRoot;
+    await archived(app, 'a.md', 'A', 'work/misc');
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { status: 'inbox' } }] },
+      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: '../../ausbruch' } }] },
+      { text: 'Ging nicht.' },
+    );
+    await app.ok('chat:send', { text: 'Leg den Brief ab' });
+    expect(app.services.documents.getRow(inbox).status).not.toBe('archived');
+    expect(fs.existsSync(path.join(root, '..', 'ausbruch'))).toBe(false);
+
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { ext: 'md' } }] },
+      { calls: [{ name: 'propose_structure', args: { groups: [{ documents: ['S1'], folder: '../ausbruch' }] } }] },
+      { text: 'Vorschlag.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Schlag eine Struktur vor' });
+    const card = res.assistantMessage.actions.find((x) => x.actionType === 'agent_batch')!;
+    const done = await app.ok('actions:resolve', { decision: 'approve', actionId: card.id, confirmed: true });
+    expect(done.status).not.toBe('executed');
+    expect(fs.existsSync(path.join(root, '..', 'ausbruch'))).toBe(false);
+  });
+
+  it('exports never leave the data folder, not even through a symlinked export folder', async () => {
+    await archived(app, 'a.md', 'A', 'work/misc');
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-outside-'));
+    try {
+      fs.symlinkSync(outside, path.join(app.services.paths.root, 'exports'), 'dir');
+      app.llm.agent = scriptedTurns({ calls: [{ name: 'write_report', args: { title: '../../ausbruch', markdown: '# Bericht' } }] }, { text: 'Ging nicht.' });
+      await app.ok('chat:send', { text: 'Schreib einen Bericht' });
+      expect(fs.readdirSync(outside)).toEqual([]);
+      expect(sentText(app)).toMatch(/symbolischen Link|außerhalb/);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

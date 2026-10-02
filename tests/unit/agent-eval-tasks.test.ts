@@ -43,8 +43,11 @@ describe('agent evaluation: task set', () => {
     };
     const { providers, problems } = providersFromEnv(env);
     expect(providers).toEqual([
-      { name: 'claude', baseUrl: env.ARCHIVIST_EVAL_CLAUDE_BASE_URL, model: 'claude-opus-5-5', apiKey: 'k', effort: 'high', adapter: 'auto' },
+      { name: 'claude', baseUrl: env.ARCHIVIST_EVAL_CLAUDE_BASE_URL, model: 'claude-opus-5-5', apiKey: 'k', effort: 'high', adapter: 'auto', limits: {} },
     ]);
+    const budgets = providersFromEnv({ ...env, ARCHIVIST_EVAL_CLAUDE_MAX_ROUNDS: '30', ARCHIVIST_EVAL_CLAUDE_TIMEOUT_S: '120' });
+    expect(budgets.providers[0]!.limits).toEqual({ maxRounds: 30, timeoutMs: 120_000 });
+    expect(providersFromEnv({ ...env, ARCHIVIST_EVAL_CLAUDE_MAX_TOKENS: 'viel' }).problems[0]).toContain('ARCHIVIST_EVAL_CLAUDE_MAX_TOKENS');
     expect(problems[0]).toContain('ARCHIVIST_EVAL_GPT_5_MODEL');
     expect(selectTasks(TASKS, 'move-slides,#309').map((t) => t.id)).toEqual(TASKS.filter((t) => t.id === 'move-slides' || t.story === '#309').map((t) => t.id));
   });
@@ -73,7 +76,8 @@ describe('agent evaluation: archive builder', () => {
 
     const s = snapshot(app.services);
     const doc = (key: string) => s.docs[ids[key]!]!;
-    expect(doc('folien-q1').archiveRelPath).toMatch(/^arbeit\/allgemein\//);
+    expect(doc('folien-q1').archiveRelPath).toMatch(/^arbeit\/allgemein\/.*\.pptx$/);
+    expect(app.services.documents.getRow(ids['folien-q1']!).extractedText).toContain('Umsatz +4 %');
     expect(doc('rechnung-maler-2025')).toMatchObject({ status: 'archived', docType: 'Rechnung', topic: 'Handwerker' });
     expect(doc('rechnung-maler-2025').documentDate?.slice(0, 10)).toBe('2025-03-14');
     expect(doc('rechnung-stadtwerke-2026-09').status).toBe('proposed');
