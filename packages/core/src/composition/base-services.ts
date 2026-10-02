@@ -25,26 +25,26 @@ import type { CreateServicesOptions } from '../create-services';
 export type BaseServices = ReturnType<typeof createBaseServices>;
 
 /** Directory structure, settings, logging, database and the services every domain service builds on. */
-export function createBaseServices(opts: CreateServicesOptions) {
-  const baseline = resolveDataPaths(opts.dataRoot);
+export function createBaseServices(options: CreateServicesOptions) {
+  const baseline = resolveDataPaths(options.dataRoot);
   ensureDataDirs(baseline);
   const events = new EventBus();
   const settings = new SettingsService(path.join(baseline.config, 'settings.json'), baseline.archive, events);
-  const paths = resolveDataPaths(opts.dataRoot, settings.get().archiveRoot);
+  const paths = resolveDataPaths(options.dataRoot, settings.get().archiveRoot);
   fs.mkdirSync(paths.archive, { recursive: true });
 
   const logger = new Logger(paths.logs, settings.get().logs.level);
   const database = new DatabaseService(path.join(paths.database, 'archivist.db'), logger);
-  const migration: MigrationStatus = database.migrate(opts.migrationsFolder);
+  const migration: MigrationStatus = database.migrate(options.migrationsFolder);
   logger.info('app', 'Database ready', { migrations: migration });
   const ctx: AppContext = { paths, database, logger, events };
 
-  const secrets = new SecretService(path.join(paths.config, 'llm-api-key.enc'), opts.cipher, logger);
+  const secrets = new SecretService(path.join(paths.config, 'llm-api-key.enc'), options.cipher, logger);
   const audit = new AuditService(ctx);
   const undo = new UndoService(ctx, audit);
-  const pool = new WorkerPool(opts.workerFile ?? null);
-  const reader = new DbReader(database.db, { workerFile: opts.readerFile ?? null, databaseFile: database.file, logger });
-  const llm = new LlmService(ctx, settings, secrets, opts.fetchImpl, opts.llmRetryDelayMs);
+  const pool = new WorkerPool(options.workerFile ?? null);
+  const reader = new DbReader(database.db, { workerFile: options.readerFile ?? null, databaseFile: database.file, logger });
+  const llm = new LlmService(ctx, settings, secrets, options.fetchImpl, options.llmRetryDelayMs);
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
   const graph = new KnowledgeGraphService(ctx, audit, undo);
@@ -54,7 +54,7 @@ export function createBaseServices(opts: CreateServicesOptions) {
   // Search queries go to the embedding endpoint only in mode „automatisch“ – „vorher fragen“ uses local vectors only.
   const search = new SearchService(ctx, embedding, pool, () => privacy.mode() === 'auto' && llm.isConfigured());
   const categories = new CategoryService(ctx);
-  const jobs = new JobQueueService(ctx, { concurrency: opts.jobConcurrency ?? 2, retryBaseDelayMs: opts.jobRetryDelayMs });
+  const jobs = new JobQueueService(ctx, { concurrency: options.jobConcurrency ?? 2, retryBaseDelayMs: options.jobRetryDelayMs });
   const notifications = new NotificationService(ctx);
   const reminders = new ReminderService(ctx, notifications, settings);
   // Settings are loaded before the database exists; report a repaired or unreadable settings.json now.

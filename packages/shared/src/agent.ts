@@ -191,7 +191,7 @@ export const RuleDefinition = z.object({
       topic: z.string().nullish(),
       textContains: z.string().nullish(),
     })
-    .refine((w) => Object.values(w).some((v) => typeof v === 'string' && v.trim()), 'Eine Regel braucht mindestens eine Bedingung.'),
+    .refine((when) => Object.values(when).some((value) => typeof value === 'string' && value.trim()), 'Eine Regel braucht mindestens eine Bedingung.'),
   then: z
     .object({
       folder: z.string().nullish(),
@@ -200,7 +200,10 @@ export const RuleDefinition = z.object({
       tags: z.array(z.string()).nullish(),
       renamePattern: z.string().nullish(),
     })
-    .refine((t) => Object.values(t).some((v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim())), 'Eine Regel braucht eine Aktion.'),
+    .refine(
+      (then) => Object.values(then).some((value) => (Array.isArray(value) ? value.length > 0 : typeof value === 'string' && value.trim())),
+      'Eine Regel braucht eine Aktion.',
+    ),
 });
 export type RuleDefinition = z.infer<typeof RuleDefinition>;
 

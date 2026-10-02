@@ -145,8 +145,8 @@ export function createLinkingServices(services: BaseServices & DomainServices) {
   const links = new LinkMethodsService(ctx, graph, search, insights, appState, linkThresholds);
   const topicNamer = new TopicNamer(ctx, llm, privacy, documents);
   const refiner = new RelationRefiner(ctx, graph, llm, privacy, documents, insights, contradictions, appState);
-  links.setTopicNamer((c, signal) =>
-    topicNamer.name(c, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((t) => t.name), signal }),
+  links.setTopicNamer((cluster, signal) =>
+    topicNamer.name(cluster, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((topic) => topic.name), signal }),
   );
   links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
   return { cases, subjects, linkThresholds, links, refiner };

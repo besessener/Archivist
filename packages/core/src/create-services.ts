@@ -26,15 +26,11 @@ export interface CreateServicesOptions {
   llmRetryDelayMs?: number;
 }
 
-export type Services = ReturnType<typeof buildServices>;
+export type Services = ReturnType<typeof createServices>;
 
 /** Composition root: creates and wires all services. */
-export function createServices(opts: CreateServicesOptions) {
-  return buildServices(opts);
-}
-
-function buildServices(opts: CreateServicesOptions) {
-  const base = createBaseServices(opts);
+export function createServices(options: CreateServicesOptions) {
+  const base = createBaseServices(options);
   const domain = createDomainServices(base);
   const wired = { ...base, ...domain, ...createLinkingServices({ ...base, ...domain }) };
   const notifyLinkProposals = createLinkProposalNotifier(wired);

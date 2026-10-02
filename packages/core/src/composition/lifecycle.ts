@@ -88,12 +88,12 @@ export function createLifecycle(services: LifecycleServices) {
     },
 
     /** Stops background work and closes the database; waits at most `jobTimeoutMs` (default 5 s) for interrupted jobs. */
-    async shutdown(opts: { jobTimeoutMs?: number } = {}): Promise<void> {
+    async shutdown(options: { jobTimeoutMs?: number } = {}): Promise<void> {
       reminders.stop();
       agent.stop();
       scanner.stop();
       consistency.stopTimer();
-      await jobs.interrupt(opts.jobTimeoutMs);
+      await jobs.interrupt(options.jobTimeoutMs);
       await pool.close();
       await reader.close();
       database.close();

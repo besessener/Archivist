@@ -43,7 +43,7 @@ function formatter(timeZone: string): Intl.DateTimeFormat {
 /** Wall-clock fields of an instant in the given zone. */
 function wallClock(ms: number, timeZone: string): { y: number; mo: number; d: number; h: number; mi: number; s: number } {
   const parts = formatter(timeZone).formatToParts(new Date(ms));
-  const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
   return { y: get('year'), mo: get('month'), d: get('day'), h: get('hour'), mi: get('minute'), s: get('second') };
 }
 
