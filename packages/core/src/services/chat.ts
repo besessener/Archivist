@@ -37,7 +37,7 @@ import type { InsightService } from './insights';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { PersonService } from './persons';
-import type { LlmService } from './llm';
+import { abortedError, llmCancelScope, type LlmService } from './llm';
 import type { NoteService } from './notes';
 import type { EventService } from './events';
 import { findOpenItemDuplicate } from './cleanup/open-item-duplicates';
@@ -390,6 +390,8 @@ export class ChatService {
   private archive!: ArchiveService;
   /** Requests of the current message that are already done, per conversation – for the last-resort error handling in send(). */
   private readonly progress = new Map<string, { replies: Reply[]; state: ConvState }>();
+  /** Running requests per conversation; `cancel` aborts their LLM calls and the requests not started yet (#151). */
+  private readonly running = new Map<string, AbortController>();
 
   constructor(
     private readonly ctx: AppContext,
@@ -523,24 +525,35 @@ export class ChatService {
     let reply: Reply;
     const state = this.state(conv);
     this.progress.set(conv, { replies: [], state });
+    this.running.get(conv)?.abort();
+    const controller = new AbortController();
+    this.running.set(conv, controller);
     try {
-      reply = await this.handle(conv, text, state);
+      reply = await llmCancelScope.run(controller.signal, () => this.handle(conv, text, state));
     } catch (err) {
-      // last safeguard for errors outside the individual requests (e.g. classification): what is already done stays
-      // in the reply and state; only if nothing is done yet does the old state still apply
-      const info = toErrorInfo(err);
-      this.ctx.logger.error('chat', 'Chat processing failed', { error: err });
-      const done = this.progress.get(conv) ?? { replies: [], state };
-      const failed: Reply = {
-        intent: 'error',
-        content: `Das konnte ich nicht verarbeiten: ${info.message}${info.retryable && !done.replies.length ? ' Bitte versuche es gleich noch einmal.' : ''}`,
-        errorMessage: info.message + (info.details ? ` (${info.details})` : ''),
-        confidence: 0,
-        state: done.state,
-      };
-      reply = done.replies.length ? this.mergeReplies([...done.replies, failed], done.state) : failed;
+      if (controller.signal.aborted) {
+        // cancelled by the user: what is already done stays, nothing else runs
+        const done = this.progress.get(conv) ?? { replies: [], state };
+        const cancelled: Reply = { intent: 'cancelled', content: done.replies.length ? 'Den Rest habe ich abgebrochen.' : 'Abgebrochen.', state: done.state };
+        reply = done.replies.length ? this.mergeReplies([...done.replies, cancelled], done.state) : cancelled;
+      } else {
+        // last safeguard for errors outside the individual requests (e.g. classification): what is already done stays
+        // in the reply and state; only if nothing is done yet does the old state still apply
+        const info = toErrorInfo(err);
+        this.ctx.logger.error('chat', 'Chat processing failed', { error: err });
+        const done = this.progress.get(conv) ?? { replies: [], state };
+        const failed: Reply = {
+          intent: 'error',
+          content: `Das konnte ich nicht verarbeiten: ${info.message}${info.retryable && !done.replies.length ? ' Bitte versuche es gleich noch einmal.' : ''}`,
+          errorMessage: info.message + (info.details ? ` (${info.details})` : ''),
+          confidence: 0,
+          state: done.state,
+        };
+        reply = done.replies.length ? this.mergeReplies([...done.replies, failed], done.state) : failed;
+      }
     } finally {
       this.progress.delete(conv);
+      if (this.running.get(conv) === controller) this.running.delete(conv);
     }
     const assistantMessage = this.saveMessage(conv, 'assistant', reply.content, reply);
     this.db
@@ -550,6 +563,24 @@ export class ChatService {
       .run();
     this.ctx.events.changed('chat', 'status');
     return { conversationId: conv, userMessage, assistantMessage };
+  }
+
+  /** Cancels the running request of a conversation (without id: all running requests). Returns how many were cancelled. */
+  cancel(conversationId?: string): number {
+    const targets = conversationId ? [conversationId] : [...this.running.keys()];
+    let n = 0;
+    for (const id of targets) {
+      const c = this.running.get(id);
+      if (!c) continue;
+      c.abort();
+      n += 1;
+    }
+    return n;
+  }
+
+  /** Throws when the current request was cancelled – before anything else is changed. */
+  private throwIfCancelled(): void {
+    if (llmCancelScope.getStore()?.aborted) throw abortedError();
   }
 
   // ---------- Intent ----------
@@ -612,6 +643,7 @@ export class ChatService {
         this.resolveRefs(analysis, refs);
         return { analysis, viaLlm: true, llmError: null };
       } catch (err) {
+        this.throwIfCancelled();
         const info = toErrorInfo(err);
         return { analysis: { intents: [this.ruleBased(text, state)] }, viaLlm: false, llmError: info.message };
       }
@@ -1034,6 +1066,7 @@ export class ChatService {
     // optional follow-up questions (owner/due date, „Thema oder Projekt?“) do not hold up further requests
     let optional: Pending | null = null;
     for (let i = 0; i < work.length; i += 1) {
+      this.throwIfCancelled();
       const item = work[i]!;
       if (this.needsDecisionConfirmation(item.intent)) {
         const question =
@@ -1060,6 +1093,7 @@ export class ChatService {
       try {
         reply = await this.dispatch(conv, item.text, item.intent, { ...current, pending: answers ? old : null }, viaLlm);
       } catch (err) {
+        this.throwIfCancelled();
         const info = toErrorInfo(err);
         this.ctx.logger.error('chat', 'Request failed', { error: err, intent: item.intent.intent });
         // so the old follow-up question is not answered

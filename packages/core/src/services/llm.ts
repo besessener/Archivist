@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 import type { AppErrorInfo, LlmTestResult, LlmTransmission } from '@archivist/shared';
 import { desc } from 'drizzle-orm';
@@ -24,7 +25,16 @@ export interface LlmRequest {
   signal?: AbortSignal;
 }
 
-const abortedError = () => new AppError('llm_error', 'Die LLM-Anfrage wurde abgebrochen.');
+export const abortedError = () => new AppError('llm_error', 'Die LLM-Anfrage wurde abgebrochen.');
+
+/**
+ * Cancellation scope: every LLM request started inside `llmCancelScope.run(signal, …)` uses this signal
+ * unless it brings its own – also requests of other services called along the way (e.g. contradiction checks).
+ */
+export const llmCancelScope = new AsyncLocalStorage<AbortSignal>();
+
+/** After a timeout or an unreachable endpoint, requests fail fast for this long instead of waiting again. */
+const CIRCUIT_OPEN_MS = 60_000;
 
 export interface LlmOverrides {
   baseUrl?: string;
@@ -94,6 +104,9 @@ export class LlmService {
    * right away instead of re-learning it on every call. Kept in memory only.
    */
   private readonly rejectedParams = new Map<string, Set<OptionalParam>>();
+
+  /** Until when requests fail fast after a network failure (circuit breaker, #151). */
+  private circuitOpenUntil = 0;
 
   private lastStatus: { state: 'unknown' | 'ok' | 'error'; lastError: string | null; lastCheckedAt: string | null } = {
     state: 'unknown',
@@ -198,7 +211,15 @@ export class LlmService {
     if (!req.bypassPrivacy && this.settings.get().privacy.llmMode === 'local_only') {
       throw new AppError('permission_error', 'Der Datenschutzmodus „nur lokal“ verhindert externe LLM-Aufrufe.');
     }
-    if (req.signal?.aborted) throw abortedError();
+    const signal = req.signal ?? llmCancelScope.getStore();
+    if (signal?.aborted) throw abortedError();
+    // the explicit connection test always goes through – it is how the user checks whether the endpoint is back
+    if (!req.bypassPrivacy && Date.now() < this.circuitOpenUntil) {
+      throw new AppError('network_error', 'Der LLM-Endpunkt war eben nicht erreichbar – ich versuche es in Kürze wieder.', {
+        retryable: true,
+        details: `Neuer Versuch ab ${new Date(this.circuitOpenUntil).toISOString()}`,
+      });
+    }
 
     let input = req.input;
     if (input.length > cfg.maxInputChars) input = `${input.slice(0, cfg.maxInputChars)}\n[… Eingabe auf ${cfg.maxInputChars} Zeichen gekürzt]`;
@@ -227,7 +248,7 @@ export class LlmService {
       for (;;) {
         attempt += 1;
         try {
-          let res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, req.signal);
+          let res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, signal);
           // Some compatible endpoints do not know optional parameters → retry without exactly the one the error names.
           // store:false is only dropped when the endpoint rejects `store` itself (#150).
           while (res.status === 400 && isUnsupportedParamError(res.text)) {
@@ -238,7 +259,7 @@ export class LlmService {
             for (const p of drop) rejected.add(p);
             this.rejectedParams.set(endpointKey, rejected);
             this.ctx.logger.warn('llm', 'Endpoint rejected optional parameters – retrying without them', { params: drop });
-            res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, req.signal);
+            res = await this.post(url, apiKey, without(rejected), cfg.timeoutMs, signal);
           }
           if (res.status >= 400) throw this.mapHttpError(res.status, res.text);
           let parsed: ResponsesBody;
@@ -259,10 +280,13 @@ export class LlmService {
             );
           }
           success = true;
+          this.circuitOpenUntil = 0;
           this.markStatus(true, null);
           return text;
         } catch (err) {
-          if (err instanceof AppError && err.retryable && attempt < 3 && !req.signal?.aborted) {
+          // a hanging endpoint is asked at most twice (each attempt waits the full timeout), other transient errors three times
+          const maxAttempts = err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message) ? 2 : 3;
+          if (err instanceof AppError && err.retryable && attempt < maxAttempts && !signal?.aborted) {
             await new Promise((r) => setTimeout(r, this.retryDelayMs * attempt));
             continue;
           }
@@ -271,7 +295,10 @@ export class LlmService {
       }
     } catch (err) {
       // a cancellation by the user says nothing about the state of the endpoint
-      if (!req.signal?.aborted) this.markStatus(false, toErrorInfo(err).message);
+      if (!signal?.aborted) {
+        this.markStatus(false, toErrorInfo(err).message);
+        if (err instanceof AppError && err.category === 'network_error') this.circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
+      }
       throw err;
     } finally {
       this.recordTransmission({

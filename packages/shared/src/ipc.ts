@@ -150,6 +150,7 @@ export const ipcContract = {
 
   // --- Chat ---
   'chat:send': ch(z.object({ conversationId: Id.optional(), text: z.string().min(1).max(20000) }), ChatSendResult),
+  'chat:cancel': ch(z.object({ conversationId: Id.optional() }), z.object({ cancelled: z.number().int() })),
   'chat:history': ch(z.object({ conversationId: Id }), z.array(ChatMessage)),
   'chat:conversations': ch(Empty, z.array(Conversation)),
   'chat:newConversation': ch(Empty, Conversation),

@@ -131,3 +131,53 @@ describe('LLM client: JSON mode', () => {
     expect(bodies.map((b) => b.input)).toEqual(['Hallo', 'Gib JSON aus']);
   });
 });
+
+describe('LLM client: circuit breaker (#151)', () => {
+  const failingClient = () => {
+    let down = true;
+    let requests = 0;
+    const fetchImpl = async (): Promise<Response> => {
+      requests += 1;
+      if (down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+      return new Response(JSON.stringify({ output_text: 'OK' }), { status: 200 });
+    };
+    const ctx = { events: { emit: () => true }, logger: { info: () => {}, warn: () => {} }, database: {} };
+    const settings = {
+      get: () => ({
+        llm: { baseUrl: 'https://llm.example.test/v1', model: 'test-model', maxInputChars: 10000, reasoningEffort: null, timeoutMs: 5000 },
+        privacy: { llmMode: 'auto' },
+      }),
+    };
+    const secrets = { getApiKey: () => 'sk-test' };
+    const llm = new LlmService(ctx as unknown as AppContext, settings as unknown as SettingsService, secrets as unknown as SecretService, fetchImpl, 0);
+    return {
+      llm,
+      requests: () => requests,
+      up: () => {
+        down = false;
+      },
+    };
+  };
+  const plain = { instructions: 'Test', input: 'Hallo', purpose: 'Test' };
+
+  it('fails fast after an unreachable endpoint instead of waiting again; the connection test still goes through', async () => {
+    const c = failingClient();
+    await expect(c.llm.complete(plain)).rejects.toMatchObject({ category: 'network_error' });
+    expect(c.requests()).toBe(3);
+
+    await expect(c.llm.complete(plain)).rejects.toMatchObject({ message: expect.stringMatching(/eben nicht erreichbar/) });
+    expect(c.requests()).toBe(3);
+
+    c.up();
+    await expect(c.llm.complete({ ...plain, bypassPrivacy: true })).resolves.toBe('OK');
+    // a success closes the breaker again
+    await expect(c.llm.complete(plain)).resolves.toBe('OK');
+  });
+
+  it('an endpoint that answers with an HTTP error does not open the breaker', async () => {
+    const { llm, bodies } = client('invalid input format');
+    await expect(llm.complete(request)).rejects.toThrow();
+    await expect(llm.complete(request)).rejects.toThrow(/abgelehnt/);
+    expect(bodies).toHaveLength(2);
+  });
+});

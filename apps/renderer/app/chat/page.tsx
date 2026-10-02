@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Archive, Loader2, MessageSquarePlus, Paperclip, Pencil, SendHorizontal } from 'lucide-react';
+import { Archive, Loader2, MessageSquarePlus, Paperclip, Pencil, SendHorizontal, Square } from 'lucide-react';
 import { ChatBubble } from '@/components/chat/message';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -249,6 +249,14 @@ export default function ChatPage() {
           {sending && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status" data-testid="chat-loading">
               <Loader2 className="size-4 animate-spin" aria-hidden /> Archivist denkt nach …
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void run(() => call('chat:cancel', conversationId ? { conversationId } : {}), { errorTitle: 'Abbrechen fehlgeschlagen' })}
+                data-testid="chat-cancel"
+              >
+                <Square aria-hidden /> Abbrechen
+              </Button>
             </div>
           )}
           <div ref={bottomRef} />
