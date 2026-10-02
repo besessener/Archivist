@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   assertRealInside,
+  ensureDirSync,
   isForbiddenScanRoot,
   isInside,
   normalizeFsPath,
@@ -182,6 +183,8 @@ describe('sanitising file names (edge cases)', () => {
     expect(sanitizeFileName(`${'x'.repeat(150)}.txt`)).toBe(`${'x'.repeat(150)}.txt`);
     expect(sanitizeFileName(`${'x'.repeat(151)}.txt`)).toBe(`${'x'.repeat(150)}.txt`);
     expect(sanitizeFileName(`${'x'.repeat(300)}.txt`).length).toBe(154);
+    expect(sanitizeFileName(`${'x'.repeat(149)} ${'y'.repeat(10)}.txt`)).toBe(`${'x'.repeat(149)}.txt`);
+    expect(sanitizeFolderName(`${'x'.repeat(149)} ${'y'.repeat(10)}`)).toBe('x'.repeat(149));
     expect(sanitizeFileName('a.abcdefgh')).toBe('a.abcdefgh');
     expect(sanitizeFileName('a.abcdefghijk')).toBe('a.abcdefghijk');
   });
@@ -235,11 +238,20 @@ describe('resolving paths and sanitising categories (edge cases)', () => {
     expect(normalizeFsPath('/a/../a/b')).toBe(path.resolve('/a/b'));
     expect(normalizeFsPath('/')).toBe(path.resolve('/'));
   });
+
+  it('creates missing parent folders and accepts an existing folder', () => {
+    const nested = path.join(tmp, 'ensure', 'tief', 'unten');
+
+    ensureDirSync(nested);
+    ensureDirSync(nested);
+
+    expect(fs.statSync(nested).isDirectory()).toBe(true);
+  });
 });
 
-describe.skipIf(process.platform === 'win32')('system directories as scan target (POSIX)', () => {
+describe('system directories as scan target (POSIX)', () => {
   const home = '/home/anna';
-  const forbidden = (dir: string) => isForbiddenScanRoot(dir, { home });
+  const forbidden = (dir: string) => isForbiddenScanRoot(dir, { home, platform: 'linux' });
 
   it('forbids the root', () => {
     expect(forbidden('/')).toMatch(/Systemwurzeln/);
@@ -302,6 +314,45 @@ describe.skipIf(process.platform === 'win32')('system directories as scan target
     // without a further folder they are no targets themselves: /mnt is not on the list, the others are
     for (const dir of ['/tmp', '/var/tmp', '/var/folders']) expect(forbidden(dir), dir).toMatch(/Systemverzeichnisse/);
     expect(forbidden('/mnt')).toBeNull();
+  });
+});
+
+describe('system directories as scan target (Windows)', () => {
+  const home = 'C:\\Users\\Anna';
+  const forbidden = (dir: string) => isForbiddenScanRoot(dir, { home, platform: 'win32' });
+
+  it('forbids drive roots, also of other drives', () => {
+    for (const dir of ['C:\\', 'c:/', 'D:\\']) expect(forbidden(dir), dir).toMatch(/Systemwurzeln/);
+  });
+
+  it('forbids every system directory and everything below it, regardless of case and separator', () => {
+    for (const dir of [
+      'C:\\Windows',
+      'c:\\windows\\System32',
+      'C:/Windows/Temp',
+      'C:\\Program Files',
+      'C:\\Program Files\\App',
+      'C:\\Program Files (x86)',
+      'C:\\PROGRAM FILES (X86)\\App',
+      'C:\\ProgramData',
+      'C:\\ProgramData\\Hersteller',
+      'C:\\Users',
+    ])
+      expect(forbidden(dir), dir).toMatch(/Systemverzeichnisse/);
+  });
+
+  it('allows directories that merely start like a system directory and the same names on another drive', () => {
+    for (const dir of ['C:\\WindowsFoo', 'C:\\Program Filesx', 'C:\\ProgramDataAlt', 'C:\\Users2', 'C:\\Daten', 'D:\\Windows', 'D:\\Users\\Bert'])
+      expect(forbidden(dir), dir).toBeNull();
+  });
+
+  it("allows the own home directory including subfolders in any case, but not the parent or other users' homes", () => {
+    expect(forbidden('C:\\Users\\Anna')).toBeNull();
+    expect(forbidden('c:\\users\\anna\\Dokumente')).toBeNull();
+    expect(forbidden('C:/Users/Anna/Downloads/')).toBeNull();
+    expect(forbidden('C:\\Users')).toMatch(/Systemverzeichnisse/);
+    expect(forbidden('C:\\Users\\Bert')).toMatch(/Systemverzeichnisse/);
+    expect(forbidden('C:\\Users\\Annabel')).toMatch(/Systemverzeichnisse/);
   });
 });
 
