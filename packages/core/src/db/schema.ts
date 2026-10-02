@@ -17,6 +17,8 @@ export const entities = sqliteTable(
     aliases: jsonArr('aliases'),
     /** Roles of a person found in mentions ("Chefin", "Führungskraft"); stored as info, never part of the name. */
     roles: jsonArr('roles'),
+    /** Set when the node was discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
+    duplicateOfId: text('duplicate_of_id'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -147,6 +149,8 @@ export const events = sqliteTable(
     sourceIds: jsonArr('source_ids'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
+    /** Set when the event was discarded as a duplicate („verworfen (Duplikat)“): the event it was merged into. */
+    duplicateOfId: text('duplicate_of_id'),
   },
   (t) => [index('events_occurred_idx').on(t.occurredAt)],
 );

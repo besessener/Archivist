@@ -75,6 +75,7 @@ export class EventService {
       sourceIds: r.sourceIds,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
+      duplicateOfId: r.duplicateOfId,
     };
   }
 
@@ -121,6 +122,7 @@ export class EventService {
       sourceIds: input.sourceIds ?? [],
       createdAt: now,
       updatedAt: now,
+      duplicateOfId: null,
     };
     this.db.transaction(() => {
       this.db.insert(events).values(row).run();
@@ -141,7 +143,7 @@ export class EventService {
     return this.get(row.id);
   }
 
-  /** Finds an event with the same (normalised) title on the same day. */
+  /** Finds an event with the same (normalised) title on the same day (events discarded as duplicates do not count). */
   findIdentical(title: string, occurredAt: string): EventRecord | undefined {
     const day = normalizeDateInput(occurredAt)?.slice(0, 10);
     const norm = normalizeName(title);
@@ -151,7 +153,7 @@ export class EventService {
       .from(events)
       .where(like(events.occurredAt, `${day}%`))
       .all()
-      .find((r) => normalizeName(r.title) === norm);
+      .find((r) => !r.duplicateOfId && normalizeName(r.title) === norm);
     return hit ? this.map(hit) : undefined;
   }
 
@@ -222,10 +224,14 @@ export class EventService {
     this.ctx.events.changed('events', 'knowledge', 'status');
   }
 
-  /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
+  /** Rebuilds the search index entry (e.g. after a merge changed names or references); a discarded duplicate is not searchable. */
   async reindex(id: string): Promise<void> {
     try {
       const e = this.get(id);
+      if (e.duplicateOfId) {
+        this.search.remove(id);
+        return;
+      }
       await this.search.index({
         type: 'event',
         id,

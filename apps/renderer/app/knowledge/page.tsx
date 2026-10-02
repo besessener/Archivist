@@ -116,7 +116,12 @@ function KnowledgeInner() {
                   )}
                 >
                   <EntityIcon type={e.type} className="size-4 shrink-0 text-primary" />
-                  <span className="min-w-0 flex-1 truncate">{e.name}</span>
+                  <span className={cn('min-w-0 flex-1 truncate', e.duplicateOfId && 'text-muted-foreground line-through')}>{e.name}</span>
+                  {e.duplicateOfId && (
+                    <span className="text-xs text-muted-foreground" data-testid="knowledge-item-duplicate">
+                      Duplikat
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground">{e.relationCount}</span>
                 </Link>
               </li>
@@ -298,6 +303,11 @@ function EntityView({ id }: { id: string }) {
           <Badge variant="info">
             <EntityIcon type={entity.type} className="size-3" /> {ENTITY_TYPE_LABELS[entity.type]}
           </Badge>
+          {entity.duplicateOfId && (
+            <Badge variant="outline" data-testid="entity-duplicate">
+              verworfen (Duplikat)
+            </Badge>
+          )}
           <span className="text-xs text-muted-foreground">Aktualisiert {formatDate(entity.updatedAt)}</span>
         </div>
         <h2 className="mt-1 text-2xl font-semibold tracking-tight">{entity.name}</h2>

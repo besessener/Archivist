@@ -202,6 +202,7 @@ const mapEntity = (r: EntityRow): GraphEntity => ({
   description: r.description,
   aliases: r.aliases,
   roles: r.roles,
+  duplicateOfId: r.duplicateOfId,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -287,6 +288,7 @@ export class KnowledgeGraphService {
       description: description ?? null,
       aliases: [],
       roles: [],
+      duplicateOfId: null,
       createdAt: now,
       updatedAt: now,
     };

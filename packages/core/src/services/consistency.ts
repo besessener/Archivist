@@ -31,6 +31,8 @@ const KIND_LABELS: Record<string, string> = {
   orphan_document: 'Dokumente ohne Zuordnung',
   missing_metadata: 'fehlende Metadaten',
   duplicate: 'mögliche Duplikate',
+  duplicate_note: 'doppelte Notizen',
+  duplicate_event: 'doppelte Ereignisse',
   misplaced_file: 'Ablageort-Auffälligkeiten',
   scattered_documents: 'verstreut abgelegte Dokumente',
   similar_topics: 'ähnliche Themen',

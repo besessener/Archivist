@@ -99,6 +99,7 @@ const toEntity = (r: EntityRow): GraphEntity => ({
   description: r.description,
   aliases: r.aliases,
   roles: r.roles,
+  duplicateOfId: r.duplicateOfId,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
