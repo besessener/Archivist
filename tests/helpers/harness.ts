@@ -315,6 +315,11 @@ export interface TestAppOptions {
   scanEnabled?: boolean;
   /** Agent mode (#294); off by default so that the rule-based chat tests keep their intent scripts. */
   agent?: boolean;
+  /**
+   * Automatic similarity proposals after indexing (#271); off by default so tests of other features see exactly the
+   * relations they create. The tests of the link methods switch them on.
+   */
+  autoLinks?: boolean;
   workerFile?: string | null;
   /** bundled read worker (db-reader-entry); null = queries run inline */
   readerFile?: string | null;
@@ -347,6 +352,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     });
     services.secrets.setApiKey('sk-test-SECRET-0123456789abcdef');
   }
+  services.settings.update({ links: { autoPropose: opts.autoLinks ?? false } });
   if (opts.scanEnabled) services.settings.update({ scan: { enabled: true } });
   const opened: string[] = [];
   const host = {

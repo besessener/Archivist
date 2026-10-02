@@ -15,11 +15,11 @@ export const LINK_ENTRY_TYPES: EntityType[] = ['document', 'note', 'decision', '
 const TOPIC_ENTRY_TYPES: EntityType[] = ['document', 'decision', 'task', 'question', 'event'];
 
 /**
- * Minimum cosine similarity of two entries' chunk vectors for a proposal (#271). The local hash vectors are lexical: texts
- * of the archive share words and headers, so unrelated entries still reach about 0.4 – their bar is higher than that of
- * real embeddings.
+ * Minimum cosine similarity of two entries' chunk vectors for a proposal (#271). The local hash vectors are lexical and
+ * noisy: texts of the archive share words and headers, so unrelated entries still reach about 0.4 – their bar is higher
+ * than that of real embeddings, whose unrelated texts stay well below 0.4.
  */
-export const MIN_SIMILARITY = { local: 0.5, embeddings: 0.6 };
+export const MIN_SIMILARITY = { local: 0.5, embeddings: 0.45 };
 
 export interface LinkCandidate {
   id: string;
@@ -53,6 +53,10 @@ export interface BackfillResult {
 }
 
 const BACKFILL_CURSOR = 'links.backfill.cursor';
+/** Entries indexed since the last similarity pass (#271); kept across restarts. */
+const SIMILAR_PENDING = 'links.similar.pending';
+/** Default of the most open similarity proposals per entry (setting `links.maxProposalsPerEntry`). */
+export const MAX_SIMILAR_PROPOSALS = 3;
 
 /** SQL for an entry that counts: not discarded as a duplicate, documents only when archived or indexed. */
 const ENTRY_SQL = (alias: string, types: EntityType[]) =>
@@ -88,6 +92,11 @@ export class LinkMethodsService {
     );
   }
 
+  /** Counts as a knowledge entry for the link methods: not a discarded duplicate, a document only when archived or indexed. */
+  isEntry(id: string): boolean {
+    return Boolean(this.sqlite.prepare(`SELECT 1 FROM entities e WHERE e.id = ? AND ${ENTRY_SQL('e', LINK_ENTRY_TYPES)}`).get(id));
+  }
+
   private entryText(id: string): string {
     const e = this.graph.getEntity(id);
     return e ? `${e.name} ${e.description ?? ''}`.trim() : '';
@@ -110,9 +119,9 @@ export class LinkMethodsService {
     const text = this.entryText(entityId);
     const out = new Map<string, LinkCandidate>();
     for (const h of await this.similar(entityId, opts.types ?? LINK_ENTRY_TYPES, limit * 4)) {
-      if (out.has(h.id) || this.connected(entityId, h.id)) continue;
+      if (out.has(h.id) || this.connected(entityId, h.id) || !this.isEntry(h.id)) continue;
       const e = this.graph.getEntity(h.id);
-      if (!e || e.duplicateOfId) continue;
+      if (!e) continue;
       out.set(h.id, { id: h.id, type: e.type, name: e.name, score: h.score, method: 'similarity', reason: truncate(h.passage.replace(/\s+/g, ' '), 200) });
     }
     // „Das klingt nach Projekt X“: a known topic or project named in the entry
@@ -264,6 +273,78 @@ export class LinkMethodsService {
     });
     // the user already answered this group („Nein“ or done): no new proposal
     return { insightId: insight.id, actionId: insight.status === 'open' ? (insight.recommendedActionId ?? null) : null };
+  }
+
+  /** Open similarity proposals of an entry (either direction). */
+  private openSimilarityProposals(id: string): number {
+    return (
+      this.sqlite
+        .prepare(`SELECT count(*) AS c FROM relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND status = 'proposed' AND method = 'similarity'`)
+        .get(id, id) as { c: number }
+    ).c;
+  }
+
+  /**
+   * Proposes similar entries of one entry as `related_to` (#271): status proposed, method `similarity`, the most similar
+   * passage as evidence. At most `max` open proposals per entry – on both ends; skipped are pairs that are already linked
+   * (also as duplicate or version) or were rejected, and anything that is not an entry (inbox documents, duplicates).
+   * Quiet: proposals change nothing, so they are not logged one by one. Returns the number of new proposals.
+   */
+  async proposeSimilar(id: string, opts: { max?: number } = {}): Promise<number> {
+    const max = opts.max ?? MAX_SIMILAR_PROPOSALS;
+    if (!this.isEntry(id)) return 0;
+    let room = max - this.openSimilarityProposals(id);
+    if (room <= 0) return 0;
+    let created = 0;
+    for (const c of await this.candidates(id, { limit: max * 2 })) {
+      if (room <= 0) break;
+      if (c.method !== 'similarity' || this.openSimilarityProposals(c.id) >= max) continue;
+      const r = this.graph.link(id, c.id, 'related_to', { status: 'proposed', confidence: c.score, method: 'similarity', evidence: c.reason });
+      if (r?.created) {
+        created += 1;
+        room -= 1;
+      }
+    }
+    return created;
+  }
+
+  /** Remembers entries to look for similar ones (after indexing, #271); returns true if one of them counts. */
+  queueSimilar(ids: string[]): boolean {
+    const wanted = ids.filter((id) => this.isEntry(id));
+    if (!wanted.length) return false;
+    const pending = new Set(this.pendingSimilar());
+    for (const id of wanted) pending.add(id);
+    this.appState.set(SIMILAR_PENDING, JSON.stringify([...pending]));
+    return true;
+  }
+
+  private pendingSimilar(): string[] {
+    try {
+      const v = JSON.parse(this.appState.get(SIMILAR_PENDING) ?? '[]') as unknown;
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Works through the remembered entries (job `links.similar`): each one is removed from the list only once done, so a
+   * stopped or interrupted pass continues with the rest. Entries queued meanwhile are taken in the same pass.
+   */
+  async runPendingSimilar(opts: { max?: number; signal?: AbortSignal } = {}): Promise<{ processed: number; proposed: number }> {
+    let processed = 0;
+    let proposed = 0;
+    for (let next = this.pendingSimilar()[0]; next !== undefined; next = this.pendingSimilar()[0]) {
+      if (opts.signal?.aborted) break;
+      try {
+        proposed += await this.proposeSimilar(next, { max: opts.max });
+      } catch (err) {
+        this.ctx.logger.warn('links', 'Similarity proposals skipped', { error: err, id: next });
+      }
+      this.appState.set(SIMILAR_PENDING, JSON.stringify(this.pendingSimilar().filter((x) => x !== next)));
+      processed += 1;
+    }
+    return { processed, proposed };
   }
 
   /**

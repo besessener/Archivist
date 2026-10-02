@@ -173,9 +173,15 @@ export class JobQueueService {
 
   /**
    * Queues a job. With `sameAs`, an existing pending or running job of the same type whose payload matches is
-   * returned instead of queueing a second one (e.g. two scans of the same folder would collide).
+   * returned instead of queueing a second one (e.g. two scans of the same folder would collide). `sameAs` also gets the
+   * status of the job (e.g. to only join a job that has not started yet).
    */
-  enqueue<P = unknown>(type: string, label: string, payload: P = {} as P, opts: { maxAttempts?: number; sameAs?: (active: P) => boolean } = {}): Job {
+  enqueue<P = unknown>(
+    type: string,
+    label: string,
+    payload: P = {} as P,
+    opts: { maxAttempts?: number; sameAs?: (active: P, status: 'pending' | 'running') => boolean } = {},
+  ): Job {
     if (opts.sameAs) {
       const existing = this.db
         .select()
@@ -183,7 +189,7 @@ export class JobQueueService {
         .where(and(eq(jobs.type, type), inArray(jobs.status, ['pending', 'running']), eq(jobs.cancelRequested, false)))
         .orderBy(jobs.createdAt)
         .all()
-        .find((r) => opts.sameAs!(r.payload as P));
+        .find((r) => opts.sameAs!(r.payload as P, r.status as 'pending' | 'running'));
       if (existing) return mapJob(existing);
     }
     const row: Row = {

@@ -73,6 +73,8 @@ export type Services = ReturnType<typeof buildServices>;
 
 /** Job of the retroactive link run (#279). */
 const LINK_RUN_JOB = 'links.run';
+/** Job that proposes similar entries for newly indexed ones (#271). */
+const LINK_SIMILAR_JOB = 'links.similar';
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -192,6 +194,12 @@ function buildServices(opts: CreateServicesOptions) {
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
   const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+  // after every new or changed entry: look for similar ones in a job of its own, never on the caller's path (#271)
+  search.onIndexed(({ id }) => {
+    if (!settings.get().links.autoPropose || !links.queueSimilar([id])) return;
+    // a job that has not started yet takes the entry along; a running one picks it up before it ends
+    jobs.enqueue(LINK_SIMILAR_JOB, 'Ähnliche Einträge suchen', {}, { maxAttempts: 2, sameAs: (_p, status) => status === 'pending' });
+  });
 
   // large file operations of the agent run as jobs of their own, under the run id (#304)
   const agentFileJobs = new AgentFileJobs(jobs, archive, agentRuns);
@@ -356,6 +364,11 @@ function buildServices(opts: CreateServicesOptions) {
         dedupeKey: `link-run:${job.id}`,
       });
     return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${clusters.length} Themen vorgeschlagen` };
+  });
+  jobs.register(LINK_SIMILAR_JOB, async (job) => {
+    const r = await links.runPendingSimilar({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
+    job.throwIfCancelled();
+    return { summary: `${r.processed} Einträge geprüft, ${r.proposed} Verknüpfungen vorgeschlagen` };
   });
   jobs.register<{ trigger?: string }>('consistency.check', async (job) => {
     await archive.cleanupInbox(); // retries inbox copies that were locked right after archiving

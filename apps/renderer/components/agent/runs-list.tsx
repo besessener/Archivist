@@ -5,10 +5,11 @@ import { ChevronDown, ChevronRight, Play, Square, Undo2 } from 'lucide-react';
 import type { AgentRun, AgentRunStatus } from '@archivist/shared';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
-import { Section } from '@/components/settings/shared';
+import { Section, SwitchRow } from '@/components/settings/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { call } from '@/lib/ipc';
 import { formatDateTime, plural } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
@@ -139,14 +140,52 @@ function RunCard({ run, initiallyOpen }: { run: AgentRun; initiallyOpen: boolean
  */
 function LinkMethodsSection() {
   const unlinked = useQuery('links:unlinked', { limit: 1, offset: 0 }, { scopes: ['knowledge'] });
+  const settings = useQuery('settings:get', {}, { scopes: ['settings'] });
   const { run, busy } = useRun();
   const [message, setMessage] = useState<string | null>(null);
   const total = unlinked.data?.total;
+  const links = settings.data?.settings.links;
+  const saveLinks = async (patch: { autoPropose?: boolean; maxProposalsPerEntry?: number }) => {
+    const out = await run(() => call('settings:update', { links: patch }), { errorTitle: 'Speichern fehlgeschlagen' });
+    if (out) void settings.refetch();
+  };
   return (
     <Section
       title="Verknüpfungen vorschlagen"
       description="Geht das ganze Archiv durch und schlägt ähnliche Einträge als Verknüpfung sowie neue Themen für ähnliche Einträge ohne Thema vor. Läuft lokal; bestätigt wird nur, was du übernimmst."
     >
+      {links && (
+        <>
+          <SwitchRow
+            label="Ähnliche Einträge automatisch vorschlagen"
+            hint="Nach jedem neuen oder geänderten Eintrag sucht Archivist lokal nach ähnlichen Einträgen und schlägt sie als „verwandt“ vor."
+          >
+            <Switch
+              checked={links.autoPropose}
+              disabled={busy}
+              onCheckedChange={(v) => void saveLinks({ autoPropose: v })}
+              aria-label="Ähnliche Einträge automatisch vorschlagen"
+              data-testid="links-auto-propose"
+            />
+          </SwitchRow>
+          <Field label="Höchstens offene Vorschläge je Eintrag" htmlFor="links-max-proposals">
+            <Select
+              id="links-max-proposals"
+              className="w-24"
+              value={String(links.maxProposalsPerEntry)}
+              disabled={busy}
+              onChange={(e) => void saveLinks({ maxProposalsPerEntry: Number(e.target.value) })}
+              data-testid="links-max-proposals"
+            >
+              {[1, 2, 3, 5, 10].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </>
+      )}
       <p className="text-sm" data-testid="links-unlinked-count">
         {total === undefined
           ? 'Zähle Einträge ohne Verknüpfung …'

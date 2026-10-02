@@ -102,6 +102,13 @@ export class SearchService {
     this.ctx.database.db.delete(chunks).where(eq(chunks.entityId, entityId)).run();
   }
 
+  private readonly indexedListeners: Array<(entry: { id: string; type: EntityType }) => void> = [];
+
+  /** Called after every (re)indexed entry – e.g. to look for similar entries (#271). Errors of a listener are only logged. */
+  onIndexed(listener: (entry: { id: string; type: EntityType }) => void): void {
+    this.indexedListeners.push(listener);
+  }
+
   async index(input: IndexInput): Promise<number> {
     const parts = chunkText(input.content);
     if (parts.length === 0) parts.push(input.title);
@@ -135,6 +142,13 @@ export class SearchService {
     });
     // only after the commit: a rolled-back transaction must not leave vectors in the index
     this.vectors.replace(input.id, input.type, emb.model, written);
+    for (const l of this.indexedListeners) {
+      try {
+        l({ id: input.id, type: input.type });
+      } catch (err) {
+        this.ctx.logger.warn('search', 'Listener after indexing failed', { error: err, id: input.id });
+      }
+    }
     return parts.length;
   }
 
