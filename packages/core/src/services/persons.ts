@@ -208,8 +208,8 @@ export class PersonService {
     const exact = this.graph.findByName('person', parsed.raw);
     if (exact) return result(exact, { matchedBy: 'exact' });
     const all = opts.index();
-    const norm = normalizeName(parsed.raw);
-    const aliasHits = all.filter((p) => p.aliases.has(norm));
+    const normalized = normalizeName(parsed.raw);
+    const aliasHits = all.filter((p) => p.aliases.has(normalized));
     if (aliasHits.length === 1) return result(toEntity(aliasHits[0]!.row), { matchedBy: 'alias' });
     const byKey = keyMatch(parsed, { all, aliasHits });
     if (byKey) return result(toEntity(byKey.row), { matchedBy: 'normalized' });

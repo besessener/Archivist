@@ -89,16 +89,16 @@ function isPrefix(a: NameForms, b: NameForms): boolean {
 
 /** Classifies two names of one type as possible duplicates, or null; differing numbers only ever make a prefix case. */
 export function classifyNames(a: { name: string; aliases?: string[] }, b: { name: string; aliases?: string[] }): DuplicateMatch | null {
-  const fa = forms(a.name);
-  const fb = forms(b.name);
-  const [na, nb] = [fa.plain, fb.plain];
-  if (!na || !nb) return null;
-  if ((b.aliases ?? []).some((x) => normalizeName(x) === na) || (a.aliases ?? []).some((x) => normalizeName(x) === nb)) return 'alias';
-  if (fa.digits === fb.digits) {
-    if (na === nb || pairs(fa.compacts, fb.compacts).some(([x, y]) => x === y)) return 'spelling';
-    if (fa.tokens.length > 1 && [...fa.tokens].sort().join(' ') === [...fb.tokens].sort().join(' ')) return 'spelling';
-    if (pairs(fa.compacts, fb.compacts).some(([x, y]) => isPlural(x, y))) return 'plural';
-    if (isTypo(fa, fb)) return 'typo';
+  const formsA = forms(a.name);
+  const formsB = forms(b.name);
+  const [plainA, plainB] = [formsA.plain, formsB.plain];
+  if (!plainA || !plainB) return null;
+  if ((b.aliases ?? []).some((x) => normalizeName(x) === plainA) || (a.aliases ?? []).some((x) => normalizeName(x) === plainB)) return 'alias';
+  if (formsA.digits === formsB.digits) {
+    if (plainA === plainB || pairs(formsA.compacts, formsB.compacts).some(([x, y]) => x === y)) return 'spelling';
+    if (formsA.tokens.length > 1 && [...formsA.tokens].sort().join(' ') === [...formsB.tokens].sort().join(' ')) return 'spelling';
+    if (pairs(formsA.compacts, formsB.compacts).some(([x, y]) => isPlural(x, y))) return 'plural';
+    if (isTypo(formsA, formsB)) return 'typo';
   }
-  return isPrefix(fa, fb) ? 'prefix' : null;
+  return isPrefix(formsA, formsB) ? 'prefix' : null;
 }

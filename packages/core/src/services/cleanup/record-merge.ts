@@ -80,9 +80,9 @@ export function titleSimilarity(a: { title: string; description?: string | null 
 
 /** Numbers in both titles („Budget 2026“ / „Budget 2027“, „Rechnung 4711“) that differ mean different records. */
 export function numbersDiffer(a: string, b: string): boolean {
-  const nums = (s: string) => new Set(s.match(/\d+/g) ?? []);
-  const na = nums(a);
-  const nb = nums(b);
-  if (!na.size || !nb.size) return false;
-  return na.size !== nb.size || [...na].some((n) => !nb.has(n));
+  const numbersIn = (s: string) => new Set(s.match(/\d+/g) ?? []);
+  const numbersA = numbersIn(a);
+  const numbersB = numbersIn(b);
+  if (!numbersA.size || !numbersB.size) return false;
+  return numbersA.size !== numbersB.size || [...numbersA].some((n) => !numbersB.has(n));
 }

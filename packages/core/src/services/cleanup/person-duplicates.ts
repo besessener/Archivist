@@ -174,9 +174,9 @@ export class PersonDuplicateService {
     const sets: Array<Set<string>> = [];
     for (const r of rows) {
       const results = Array.isArray(r.after) ? (r.after as Array<{ targetId?: unknown; mergedIds?: unknown }>) : [];
-      for (const res of results) {
-        const merged: unknown[] = Array.isArray(res.mergedIds) ? res.mergedIds : [];
-        const ids = [res.targetId, ...merged].filter((x): x is string => typeof x === 'string');
+      for (const result of results) {
+        const merged: unknown[] = Array.isArray(result.mergedIds) ? result.mergedIds : [];
+        const ids = [result.targetId, ...merged].filter((x): x is string => typeof x === 'string');
         sets.push(new Set(ids));
       }
     }
