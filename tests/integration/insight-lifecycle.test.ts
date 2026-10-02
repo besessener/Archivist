@@ -73,8 +73,8 @@ const decision = (decisionText: string, decidedAt: string | null, extra: Record<
     ...extra,
   });
 
-describe('Archivprüfung: zurückgezogene Hinweise ziehen ihre Aktion mit zurück', () => {
-  it('entfällt die Ursache, verschwindet der Hinweis und seine Aktion wird „withdrawn“ (nicht „proposed“)', async () => {
+describe('Archive check: withdrawn hints withdraw their action too', () => {
+  it('when the cause goes away, the hint disappears and its action becomes "withdrawn" (not "proposed")', async () => {
     const { odd } = await scattered();
     await app.services.consistency.run('test');
     const [insight] = openInsights('scattered_documents');
@@ -89,7 +89,7 @@ describe('Archivprüfung: zurückgezogene Hinweise ziehen ihre Aktion mit zurüc
     expect(app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents')).toHaveLength(0);
   });
 
-  it('ändert sich die Verteilung, ersetzt der Hinweis seinen Vorschlag statt einen zweiten anzulegen', async () => {
+  it('when the distribution changes, the hint replaces its proposal instead of creating a second one', async () => {
     await scattered();
     await app.services.consistency.run('test');
     const first = openInsights('scattered_documents')[0]!;
@@ -108,8 +108,8 @@ describe('Archivprüfung: zurückgezogene Hinweise ziehen ihre Aktion mit zurüc
   });
 });
 
-describe('Stabile Schlüssel: ein Lauf schließt Hinweise, deren Ursache nicht mehr besteht', () => {
-  it('fehlende Archivdatei: Hinweis verschwindet, sobald die Datei wieder da ist', async () => {
+describe('Stable keys: a run closes hints whose cause no longer exists', () => {
+  it('missing archive file: the hint disappears as soon as the file is back', async () => {
     const id = await archived('Vertrag', 'work/vertraege');
     const abs = path.join(archiveRoot(), row(id).archiveRelPath!);
     const backup = fs.readFileSync(abs);
@@ -124,7 +124,7 @@ describe('Stabile Schlüssel: ein Lauf schließt Hinweise, deren Ursache nicht m
     expect(openInsights('misplaced_file')).toHaveLength(0);
   });
 
-  it('unvollständige Entscheidung: ein Hinweis je Entscheidung, auch wenn sich die fehlenden Felder ändern; vollständig → geschlossen', async () => {
+  it('incomplete decision: one hint per decision, even when the missing fields change; complete → closed', async () => {
     const d = await app.ok('decisions:create', {
       title: 'Neues Ticketsystem',
       decisionText: 'Wir nutzen künftig ein neues Ticketsystem.',
@@ -152,7 +152,7 @@ describe('Stabile Schlüssel: ein Lauf schließt Hinweise, deren Ursache nicht m
     expect((await app.ok('notifications:list', {})).filter((n) => n.type === 'incomplete_decision')).toHaveLength(0);
   });
 
-  it('Dokumente ohne Thema: ein einziger Hinweis, der mitwächst, statt eines neuen je Änderung', async () => {
+  it('documents without a topic: a single hint that grows instead of a new one per change', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
     await app.services.consistency.run('test');
     await archived('Zweite lose Notiz', 'work/notizen', null);
@@ -163,7 +163,7 @@ describe('Stabile Schlüssel: ein Lauf schließt Hinweise, deren Ursache nicht m
     expect(orphan[0]!.sourceIds).toHaveLength(2);
   });
 
-  it('überfällige Punkte: die Benachrichtigung schließt sich, wenn der Punkt erledigt ist', async () => {
+  it('overdue items: the notification closes when the item is done', async () => {
     const item = await app.ok('openItems:create', {
       title: 'Steuerbescheid prüfen',
       dueAt: '2020-01-01',
@@ -181,8 +181,8 @@ describe('Stabile Schlüssel: ein Lauf schließt Hinweise, deren Ursache nicht m
   });
 });
 
-describe('Annehmen ohne Aktion verbirgt ein Problem nicht für immer', () => {
-  it('kehrt die Ursache zurück, nachdem sie behoben war, wird sie erneut gemeldet', async () => {
+describe('Accepting without an action does not hide a problem forever', () => {
+  it('if the cause comes back after it was fixed, it is reported again', async () => {
     const id = await archived('Vertrag', 'work/vertraege');
     const abs = path.join(archiveRoot(), row(id).archiveRelPath!);
     const backup = fs.readFileSync(abs);
@@ -191,7 +191,7 @@ describe('Annehmen ohne Aktion verbirgt ein Problem nicht für immer', () => {
     const missing = openInsights('misplaced_file')[0]!;
     await app.ok('insights:respond', { response: 'accept', id: missing.id, confirmed: true, strongConfirmed: false });
     await app.services.consistency.run('test');
-    expect(openInsights('misplaced_file'), 'eben bestätigt: nicht sofort erneut').toHaveLength(0);
+    expect(openInsights('misplaced_file'), 'just confirmed: not again right away').toHaveLength(0);
 
     fs.writeFileSync(abs, backup);
     await app.services.consistency.run('test');
@@ -201,7 +201,7 @@ describe('Annehmen ohne Aktion verbirgt ein Problem nicht für immer', () => {
     expect(openInsights('misplaced_file')).toHaveLength(1);
   });
 
-  it('kommen neue betroffene Objekte hinzu, öffnet sich der bestätigte Hinweis wieder', async () => {
+  it('if new affected objects are added, the confirmed hint reopens', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
     await app.services.consistency.run('test');
     await app.ok('insights:respond', { response: 'accept', id: openInsights('orphan_document')[0]!.id, confirmed: true, strongConfirmed: false });
@@ -212,7 +212,7 @@ describe('Annehmen ohne Aktion verbirgt ein Problem nicht für immer', () => {
     expect(openInsights('orphan_document')).toHaveLength(1);
   });
 
-  it('besteht die Ursache Tage nach dem Bestätigen noch, wird der Hinweis wieder geöffnet', async () => {
+  it('if the cause still exists days after confirming, the hint is reopened', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
     await app.services.consistency.run('test');
     const ins = openInsights('orphan_document')[0]!;
@@ -231,7 +231,7 @@ describe('Annehmen ohne Aktion verbirgt ein Problem nicht für immer', () => {
     expect(openInsights('orphan_document').map((i) => i.id)).toEqual([ins.id]);
   });
 
-  it('abgelehnte Hinweise bleiben abgelehnt, solange die Ursache besteht', async () => {
+  it('rejected hints stay rejected as long as the cause exists', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
     await app.services.consistency.run('test');
     await app.ok('insights:respond', { response: 'reject', id: openInsights('orphan_document')[0]!.id });
@@ -240,11 +240,11 @@ describe('Annehmen ohne Aktion verbirgt ein Problem nicht für immer', () => {
   });
 });
 
-describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => {
+describe('Contradiction, insight and action: one shared lifecycle', () => {
   const contradictionInsight = () => openInsights('contradiction')[0];
   const contradictionNotes = async () => (await app.ok('notifications:list', {})).filter((n) => n.type === 'contradiction');
 
-  it('„Auflösen“ am Widerspruch schließt auch Insight, Ersetzen-Aktion und Benachrichtigung', async () => {
+  it('„Auflösen“ on the contradiction also closes the insight, replace action and notification', async () => {
     app.llm.down = true;
     await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
@@ -259,7 +259,7 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
     expect(await contradictionNotes()).toHaveLength(0);
   });
 
-  it('Ersetzen über das Insight löst den Widerspruch auf', async () => {
+  it('replacing via the insight resolves the contradiction', async () => {
     app.llm.down = true;
     const a = await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
@@ -271,7 +271,7 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
     expect(await contradictionNotes()).toHaveLength(0);
   });
 
-  it('Ablehnen des Insights nimmt den Widerspruch zur Kenntnis und schließt die Benachrichtigung', async () => {
+  it('rejecting the insight acknowledges the contradiction and closes the notification', async () => {
     app.llm.down = true;
     await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
@@ -282,7 +282,7 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
     expect(await contradictionNotes()).toHaveLength(0);
   });
 
-  it('kein zusätzlicher „möglicherweise überholt“-Vorschlag für ein Paar mit Widerspruch', async () => {
+  it('no additional „möglicherweise überholt“ proposal for a pair with a contradiction', async () => {
     app.llm.down = true;
     await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
@@ -294,7 +294,7 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
     expect(app.services.actions.list('proposed').filter((x) => x.actionType === 'supersede_decision')).toHaveLength(1);
   });
 
-  it('ein später erkannter Widerspruch ersetzt den „möglicherweise überholt“-Hinweis des Paares', async () => {
+  it('a contradiction detected later replaces the „möglicherweise überholt“ hint of the pair', async () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
     const b = await decision('Das Protokoll schreibt Anna.', '2026-03-01');
@@ -312,7 +312,7 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
     expect(app.services.actions.list('proposed').filter((x) => x.actionType === 'supersede_decision')).toHaveLength(1);
   });
 
-  it('supersede() ist idempotent: ein zweites Ersetzen ändert und protokolliert nichts', async () => {
+  it('supersede() is idempotent: a second replace changes and records nothing', async () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
     const b = await decision('Das Protokoll schreibt Anna.', '2026-03-01');
@@ -327,7 +327,7 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
     expect(audits()).toBe(before);
   });
 
-  it('die Archivprüfung respektiert das Veto des LLM (und fragt nicht bei jedem Lauf erneut)', async () => {
+  it("the archive check respects the LLM's veto (and does not ask again on every run)", async () => {
     app.llm.on('ContradictionProposal', () => ({ isContradiction: false, confidence: 0.9, description: 'Präzisierung, kein Widerspruch.' }));
     await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
@@ -342,7 +342,7 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
     expect(app.llm.calls.filter((c) => c.schema === 'ContradictionProposal').length).toBe(asked);
   });
 
-  it('wird eine der Entscheidungen anderweitig widerrufen, schließt die Prüfung den Widerspruch samt Vorschlag', async () => {
+  it('if one of the decisions is revoked otherwise, the check closes the contradiction along with the proposal', async () => {
     app.llm.down = true;
     const a = await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
@@ -357,8 +357,8 @@ describe('Widerspruch, Insight und Aktion: ein gemeinsamer Lebenszyklus', () => 
   });
 });
 
-describe('Nach einem Fehlschlag ist erneutes Annehmen möglich', () => {
-  it('schlägt die Aktion einmal fehl, bleibt der Hinweis offen und der zweite Versuch führt sie aus', async () => {
+describe('Accepting again is possible after a failure', () => {
+  it('if the action fails once, the hint stays open and the second attempt executes it', async () => {
     app.llm.down = true;
     const a = await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
@@ -382,8 +382,8 @@ describe('Nach einem Fehlschlag ist erneutes Annehmen möglich', () => {
   });
 });
 
-describe('Veraltete Vorschläge werden vor dem Ausführen erneut geprüft', () => {
-  it('hat der Benutzer das Dokument inzwischen woanders hingelegt, schiebt das ältere Insight es nicht zurück', async () => {
+describe('Outdated proposals are re-checked before execution', () => {
+  it('if the user has since put the document elsewhere, the older insight does not move it back', async () => {
     const { odd } = await scattered();
     await app.services.consistency.run('test');
     const ins = openInsights('scattered_documents')[0]!;
@@ -403,7 +403,7 @@ describe('Veraltete Vorschläge werden vor dem Ausführen erneut geprüft', () =
     expect(app.services.actions.get(fresh.recommendedActionId!).status).toBe('proposed');
   });
 
-  it('ein Umlager-Vorschlag im Chat zieht offene Vorschläge anderer Quellen für dieselben Dokumente zurück', async () => {
+  it('a relocation proposal in the chat withdraws open proposals from other sources for the same documents', async () => {
     await scattered();
     await app.services.consistency.run('test');
     const ins = openInsights('scattered_documents')[0]!;
@@ -417,7 +417,7 @@ describe('Veraltete Vorschläge werden vor dem Ausführen erneut geprüft', () =
     expect(app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents')).toHaveLength(1);
   });
 
-  it('ist die ältere Entscheidung inzwischen widerrufen, wird nicht mehr ersetzt', async () => {
+  it('if the older decision has since been revoked, it is no longer replaced', async () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
     await decision('Das Protokoll schreibt Anna.', '2026-03-01');
@@ -432,7 +432,7 @@ describe('Veraltete Vorschläge werden vor dem Ausführen erneut geprüft', () =
     expect(actionStatus(ins.recommendedActionId!)).toBe('withdrawn');
   });
 
-  it('eine bereits entschiedene Aktion lässt sich nicht zurückziehen', async () => {
+  it('an action that was already decided cannot be withdrawn', async () => {
     const { odd } = await scattered();
     await app.services.consistency.run('test');
     const actionId = openInsights('scattered_documents')[0]!.recommendedActionId!;

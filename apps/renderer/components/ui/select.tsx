@@ -2,7 +2,7 @@ import * as React from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/** Natives <select>, im Stil der übrigen Eingabefelder. */
+/** Native <select>, styled like the other input fields. */
 export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(function Select(
   { className, children, ...props },
   ref,

@@ -3,12 +3,12 @@ import { pageObject } from './page-object';
 
 const COLUMNS = ['Titel', 'Typ', 'Kategorie', 'Thema', 'Projekt', 'Datum', 'Pfad'] as const;
 
-/** Die Dokumentenliste mit Thema- und Projektspalte. */
+/** The document list with topic and project columns. */
 export function initDocuments(page: Page) {
   const table = page.getByTestId('documents-table');
   const locators = {
     rows: page.getByTestId('document-row'),
-    /** Zelle einer Zeile nach Spaltenüberschrift. */
+    /** Cell of a row by column heading. */
     cell: (row: number, column: (typeof COLUMNS)[number]) => page.getByTestId('document-row').nth(row).getByRole('cell').nth(COLUMNS.indexOf(column)),
   };
   return pageObject(table, locators, {});

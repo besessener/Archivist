@@ -27,7 +27,7 @@ interface EventDeleteUndo {
   node: NodeSnapshot | null;
 }
 
-/** Datierte Ereignisse („habe am 01.10.2026 beim German Testing Day eingereicht“): eigener Typ, erscheinen in Timeline, Suche und Wissensgraph. */
+/** Dated events („habe am 01.10.2026 beim German Testing Day eingereicht“): a type of their own, shown in the timeline, search and knowledge graph. */
 export class EventService {
   constructor(
     private readonly ctx: AppContext,
@@ -288,7 +288,7 @@ export class EventService {
           .join('\n'),
       });
     } catch (err) {
-      this.ctx.logger.warn('events', 'Indexierung fehlgeschlagen', { error: err });
+      this.ctx.logger.warn('events', 'Indexing failed', { error: err });
     }
   }
 }

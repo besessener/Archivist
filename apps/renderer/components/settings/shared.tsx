@@ -10,7 +10,7 @@ export interface TabProps {
   reload: () => void;
 }
 
-/** Speichert ein Settings-Patch mit Toast-Rückmeldung. */
+/** Saves a settings patch with toast feedback. */
 export function useSaveSettings(reload: () => void) {
   const { run, busy } = useRun();
   async function save(patch: SettingsPatch, success = 'Einstellungen gespeichert.'): Promise<boolean> {

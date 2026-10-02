@@ -12,7 +12,7 @@ type PrivacySettings = {
   neverAnalyzeDirs: string[];
 };
 
-/** Datenschutz-Gate mit festen Einstellungen (ohne Datenbank). */
+/** Privacy gate with fixed settings (without a database). */
 const gate = (privacy: Partial<PrivacySettings> = {}, platform?: string) => {
   const settings = { get: () => ({ privacy: { llmMode: 'auto', neverAnalyzeExtensions: [], neverAnalyzeFiles: [], neverAnalyzeDirs: [], ...privacy } }) };
   return new PrivacyService(settings as unknown as SettingsService, platform);
@@ -20,29 +20,29 @@ const gate = (privacy: Partial<PrivacySettings> = {}, platform?: string) => {
 
 const allowed = { allowed: true, status: null, reason: null };
 
-describe('Datenschutz-Gate: was darf an das externe LLM gehen?', () => {
-  it('liefert den eingestellten Modus', () => {
+describe('privacy gate: what may be sent to the external LLM?', () => {
+  it('returns the configured mode', () => {
     for (const llmMode of ['auto', 'confirm', 'local_only'] as const) expect(gate({ llmMode }).mode()).toBe(llmMode);
   });
 
-  it('erlaubt eine gewöhnliche Datei', () => {
+  it('allows an ordinary file', () => {
     expect(gate().evaluate({ path: '/daten/notiz.txt', ext: 'txt' })).toEqual(allowed);
     expect(gate().evaluate({ ext: '.pdf' })).toEqual(allowed);
   });
 
-  it('sperrt im Modus „nur lokal“ alles, auch wenn sonst nichts dagegen spricht', () => {
+  it('blocks everything in mode „nur lokal“, even if nothing else speaks against it', () => {
     const decision = gate({ llmMode: 'local_only' }).evaluate({ path: '/daten/notiz.txt', ext: 'txt' });
 
     expect(decision).toEqual({ allowed: false, status: 'local_only', reason: 'Datenschutzmodus „nur lokal“ ist aktiv.' });
   });
 
-  it('der Modus „nur lokal“ hat Vorrang vor allen anderen Gründen', () => {
+  it('mode „nur lokal“ takes precedence over all other reasons', () => {
     const decision = gate({ llmMode: 'local_only', neverAnalyzeExtensions: ['txt'] }).evaluate({ ext: 'txt', docExcluded: true, rootLlmAllowed: false });
 
     expect(decision.status).toBe('local_only');
   });
 
-  it('sperrt Dokumente, die von der externen Analyse ausgeschlossen sind', () => {
+  it('blocks documents that are excluded from external analysis', () => {
     expect(gate().evaluate({ ext: 'txt', docExcluded: true })).toEqual({
       allowed: false,
       status: 'excluded',
@@ -51,7 +51,7 @@ describe('Datenschutz-Gate: was darf an das externe LLM gehen?', () => {
     expect(gate().evaluate({ ext: 'txt', docExcluded: false })).toEqual(allowed);
   });
 
-  it('sperrt Dateien aus Scan-Verzeichnissen ohne LLM-Freigabe (nur bei ausdrücklichem false)', () => {
+  it('blocks files from scan directories without LLM permission (only on an explicit false)', () => {
     expect(gate().evaluate({ ext: 'txt', rootLlmAllowed: false })).toEqual({
       allowed: false,
       status: 'excluded',
@@ -61,7 +61,7 @@ describe('Datenschutz-Gate: was darf an das externe LLM gehen?', () => {
     expect(gate().evaluate({ ext: 'txt' })).toEqual(allowed);
   });
 
-  it('sperrt Dateitypen aus der Liste, unabhängig von Groß-/Kleinschreibung und führendem Punkt', () => {
+  it('blocks file types from the list regardless of case and leading dot', () => {
     const privacy = gate({ neverAnalyzeExtensions: ['.KEY', 'pem'] });
 
     for (const ext of ['key', '.key', 'KEY', 'pem', '.PEM']) {
@@ -72,7 +72,7 @@ describe('Datenschutz-Gate: was darf an das externe LLM gehen?', () => {
     expect(privacy.evaluate({ ext: 'txt' })).toEqual(allowed);
   });
 
-  it('sperrt einzelne Dateien, auch bei unterschiedlich geschriebenem Pfad', () => {
+  it('blocks individual files, even when the path is written differently', () => {
     const privacy = gate({ neverAnalyzeFiles: ['/daten/geheim/../privat.txt'] });
 
     const decision = privacy.evaluate({ path: '/daten/privat.txt', ext: 'txt' });
@@ -81,7 +81,7 @@ describe('Datenschutz-Gate: was darf an das externe LLM gehen?', () => {
     expect(privacy.evaluate({ path: '/daten/anderes/privat.txt', ext: 'txt' })).toEqual(allowed);
   });
 
-  it('sperrt alles unterhalb gesperrter Verzeichnisse, aber nicht Nachbarn mit gleichem Namensanfang', () => {
+  it('blocks everything below blocked directories, but not siblings with the same name prefix', () => {
     const privacy = gate({ neverAnalyzeDirs: ['/daten/steuer'] });
 
     const decision = privacy.evaluate({ path: '/daten/steuer/2025/bescheid.pdf', ext: 'pdf' });
@@ -91,7 +91,7 @@ describe('Datenschutz-Gate: was darf an das externe LLM gehen?', () => {
     expect(privacy.evaluate({ path: '/daten/x.pdf', ext: 'pdf' })).toEqual(allowed);
   });
 
-  it('prüft Pfade nur, wenn einer angegeben ist', () => {
+  it('checks paths only if one is given', () => {
     const privacy = gate({ neverAnalyzeFiles: [path.resolve('.')], neverAnalyzeDirs: [path.resolve('.')] });
 
     expect(privacy.evaluate({ ext: 'txt' })).toEqual(allowed);

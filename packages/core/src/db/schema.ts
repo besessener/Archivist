@@ -4,7 +4,7 @@ import type { ArchivistJson } from '../util/json';
 type Json<T> = T;
 const jsonArr = (name: string) => text(name, { mode: 'json' }).$type<string[]>().notNull().default([]);
 
-/** Generische Knotentabelle des Wissensgraphen. Dokumente, Entscheidungen und offene Punkte teilen sich ihre id mit ihrem Knoten. */
+/** Generic node table of the knowledge graph. Documents, decisions and open items share their id with their node. */
 export const entities = sqliteTable(
   'entities',
   {
@@ -130,7 +130,7 @@ export const openItems = sqliteTable(
     confidence: real('confidence').notNull().default(0.8),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
-    /** Zuletzt erzeugter Lösungsvorschlag (OpenItemSolution als JSON) */
+    /** Most recently generated solution proposal (OpenItemSolution as JSON) */
     solution: text('solution', { mode: 'json' }).$type<ArchivistJson | null>(),
     /** Set when the item was discarded as a duplicate: the open item it was merged into (status `dismissed`). */
     duplicateOfId: text('duplicate_of_id'),
@@ -138,7 +138,7 @@ export const openItems = sqliteTable(
   (t) => [index('open_items_status_idx').on(t.status)],
 );
 
-/** Datierte Ereignisse („am 01.10.2026 beim German Testing Day eingereicht“) – erscheinen in der Timeline. */
+/** Dated events („am 01.10.2026 beim German Testing Day eingereicht“) – appear in the timeline. */
 export const events = sqliteTable(
   'events',
   {
@@ -252,7 +252,7 @@ export const agentActions = sqliteTable('agent_actions', {
 export const conversations = sqliteTable('conversations', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
-  /** Zustandsautomat für Rückfragen (z. B. offene Entscheidungsangaben). */
+  /** State machine for follow-up questions (e.g. missing decision details). */
   pending: text('pending', { mode: 'json' }).$type<ArchivistJson | null>(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

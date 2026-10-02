@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Confidence, EntityRef, EntityType, Id, IsoDate, patchSchema, RelationStatus, RelationType, SourceReference } from './common';
 
-// ---------- Dokumente ----------
+// ---------- Documents ----------
 export const DocumentStatus = z.enum(['staged', 'analyzing', 'proposed', 'archived', 'indexed_only', 'ignored', 'failed', 'quarantined']);
 export type DocumentStatus = z.infer<typeof DocumentStatus>;
 export const ProcessingStatus = z.enum(['pending', 'extracted', 'partial', 'unsupported', 'failed']);
@@ -130,7 +130,7 @@ export const ArchiveResult = z.object({
 });
 export type ArchiveResult = z.infer<typeof ArchiveResult>;
 
-// ---------- Entscheidungen ----------
+// ---------- Decisions ----------
 export const DecisionStatus = z.enum(['draft', 'confirmed', 'active', 'superseded', 'revoked', 'unclear']);
 export type DecisionStatus = z.infer<typeof DecisionStatus>;
 export const DecisionField = z.enum(['decidedAt', 'topic', 'participants', 'decisionText']);
@@ -199,32 +199,32 @@ export const isEditableDecisionStatus = (s: DecisionStatus): s is EditableDecisi
 export const DecisionPatch = patchSchema(DecisionInput).extend({ status: EditableDecisionStatus.optional() });
 export type DecisionPatch = z.infer<typeof DecisionPatch>;
 
-// ---------- Offene Punkte ----------
+// ---------- Open items ----------
 export const OpenItemStatus = z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed']);
 export type OpenItemStatus = z.infer<typeof OpenItemStatus>;
 export const Priority = z.enum(['low', 'normal', 'high']);
 
-/** Aussage eines Lösungsvorschlags; `uncertain`, wenn kein gültiger Quellenbeleg vorliegt. */
+/** A claim of a solution proposal; `uncertain` if there is no valid source citation. */
 const SolutionClaim = z.object({
   text: z.string(),
   detail: z.string().nullable().default(null),
-  /** Quellenkürzel wie „S1“ (siehe `sources`) */
+  /** Source label like "S1" (see `sources`) */
   sourceRefs: z.array(z.string()).default([]),
   uncertain: z.boolean(),
 });
-/** Quelle, die für einen Lösungsvorschlag an das LLM gesendet wurde (bzw. würde). */
+/** Source that was (or would be) sent to the LLM for a solution proposal. */
 export const SolutionSource = z.object({
   ref: z.string(),
   id: Id,
   type: EntityType,
   title: z.string(),
-  /** false: nur der Titel wird gesendet (Dokument von der externen Analyse ausgeschlossen) */
+  /** false: only the title is sent (document excluded from the external analysis) */
   contentIncluded: z.boolean(),
-  /** im Vorschlag tatsächlich als Beleg genutzt */
+  /** actually cited as evidence in the proposal */
   used: z.boolean().default(false),
 });
 export type SolutionSource = z.infer<typeof SolutionSource>;
-/** Gespeicherter Lösungsvorschlag zu einem offenen Punkt (erneutes Generieren ersetzt ihn). */
+/** Stored solution proposal for an open item (generating again replaces it). */
 export const OpenItemSolution = z.object({
   generatedAt: IsoDate,
   model: z.string(),
@@ -257,25 +257,25 @@ export const OpenItem = z.object({
   status: OpenItemStatus,
   priority: Priority,
   sourceIds: z.array(z.string()),
-  /** Unterhaltung, aus der der Punkt stammt (wenn eine Quelle eine Chat-Nachricht ist). */
+  /** Conversation the item comes from (if a source is a chat message). */
   sourceConversationId: z.string().nullable().default(null),
   reminderAt: IsoDate.nullable(),
   confidence: z.number(),
   updatedAt: IsoDate,
-  /** Zuletzt erzeugter Lösungsvorschlag (mit Datum und Modell) */
+  /** Most recently generated solution proposal (with date and model) */
   solution: OpenItemSolution.nullable().default(null),
   /** Discarded as a duplicate („verworfen (Duplikat)“, status `dismissed`): the open item it was merged into. */
   duplicateOfId: z.string().nullable().default(null),
 });
 export type OpenItem = z.infer<typeof OpenItem>;
 
-/** Was für einen Lösungsvorschlag an das LLM gesendet würde – ohne LLM-Aufruf ermittelt. */
+/** What would be sent to the LLM for a solution proposal – determined without an LLM call. */
 export const SolutionPreview = z.object({
   mode: z.enum(['auto', 'confirm', 'local_only']),
-  /** false: Erzeugung derzeit nicht möglich (siehe blockedReason) */
+  /** false: generation currently not possible (see blockedReason) */
   available: z.boolean(),
   blockedReason: z.string().nullable(),
-  /** Angaben des Punkts, die gesendet werden */
+  /** Details of the item that are sent */
   itemFields: z.array(z.object({ label: z.string(), value: z.string() })),
   sources: z.array(SolutionSource),
 });
@@ -306,7 +306,7 @@ export const OpenItemPatch = patchSchema(OpenItemInput).extend({
 });
 export type OpenItemPatch = z.infer<typeof OpenItemPatch>;
 
-// ---------- Ereignisse ----------
+// ---------- Events ----------
 export const EventRecord = z.object({
   id: Id,
   title: z.string(),
@@ -333,7 +333,7 @@ export const EventInput = z.object({
 });
 export type EventInput = z.infer<typeof EventInput>;
 
-// ---------- Erinnerungen, Benachrichtigungen, Insights ----------
+// ---------- Reminders, notifications, insights ----------
 export const Reminder = z.object({
   id: Id,
   targetType: z.enum(['open_item', 'insight', 'notification', 'decision', 'document', 'custom']),
@@ -458,7 +458,7 @@ export const Contradiction = z.object({
 });
 export type Contradiction = z.infer<typeof Contradiction>;
 
-// ---------- Wissensgraph ----------
+// ---------- Knowledge graph ----------
 export const GraphEntity = z.object({
   id: Id,
   type: EntityType,
@@ -499,7 +499,7 @@ export const EntityDetail = z.object({
 });
 export type EntityDetail = z.infer<typeof EntityDetail>;
 
-// ---------- Suche & Timeline ----------
+// ---------- Search & timeline ----------
 export const SearchResult = z.object({
   type: EntityType,
   id: Id,
@@ -523,7 +523,7 @@ export const TimelineEntry = z.object({
 });
 export type TimelineEntry = z.infer<typeof TimelineEntry>;
 
-// ---------- Aktionen (Agentenvorschläge) ----------
+// ---------- Actions (agent proposals) ----------
 export const AgentActionType = z.enum([
   'archive_documents',
   'relocate_documents',
@@ -575,13 +575,13 @@ export const StoredAgentAction = AgentActionProposal.extend({
 });
 export type StoredAgentAction = z.infer<typeof StoredAgentAction>;
 
-/** Parameter-Schemas je Aktionstyp (Laufzeitvalidierung vor der Ausführung). */
+/** Parameter schemas per action type (runtime validation before execution). */
 export const ActionParamSchemas = {
   archive_documents: z.object({
     items: z.array(ArchiveItemRequest).min(1),
     approveNewCategories: z.array(z.string()).default([]),
   }),
-  /** Bereits archivierte Dokumente innerhalb des Archivs in einen anderen Ordner verschieben. */
+  /** Moves already archived documents to another folder inside the archive. */
   relocate_documents: z.object({
     items: z
       .array(
@@ -629,7 +629,7 @@ export const ActionParamSchemas = {
     topic: z.string().nullish(),
     project: z.string().nullish(),
   }),
-  /** Bestehenden offenen Punkt um ein weiteres Dokument als Quelle ergänzen (statt ihn doppelt anzulegen). */
+  /** Adds another document as a source to an existing open item (instead of creating it twice). */
   add_open_item_source: z.object({
     openItemId: Id,
     documentId: Id,
@@ -677,7 +677,7 @@ export const ChatMessage = z.object({
   uncertainties: z.array(z.string()),
   intent: z.string().nullable(),
   errorMessage: z.string().nullable(),
-  /** Antwortknöpfe für eine Rückfrage (z. B. „Entscheidung“, „Notiz“); ein Klick sendet den Text. */
+  /** Answer buttons for a follow-up question (e.g. „Entscheidung“, „Notiz“); a click sends the text. */
   quickReplies: z.array(z.string()).default([]),
 });
 export type ChatMessage = z.infer<typeof ChatMessage>;

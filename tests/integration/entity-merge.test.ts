@@ -77,44 +77,44 @@ const decision = (title: string, extra: { topic?: string; project?: string; part
     asDraft: false,
   });
 
-describe('Zusammenführen von Themen (#33)', () => {
-  it('hängt Dokumente, Entscheidungen, offene Punkte, Ereignisse und Beziehungen um und indexiert neu', async () => {
+describe('Merging topics (#33)', () => {
+  it('re-links documents, decisions, open items, events and relations and reindexes', async () => {
     const doc = await archivedDoc('Altbericht', { topic: 'Altthema' });
     const otherDoc = await archivedDoc('Neubericht', { topic: 'Neuthema' });
     const dec = await decision('Wir starten Altthema', { topic: 'Altthema' });
     const item = await app.ok('openItems:create', { title: 'Altthema planen', topic: 'Altthema', priority: 'normal', sourceIds: [], confidence: 0.9 });
     const ev = await app.ok('events:create', { title: 'Auftakt', occurredAt: '2026-09-02', topic: 'Altthema', sourceIds: [] });
-    const alt = graph().findByName('topic', 'Altthema')!;
-    const neu = graph().findByName('topic', 'Neuthema')!;
+    const oldTopic = graph().findByName('topic', 'Altthema')!;
+    const newTopic = graph().findByName('topic', 'Neuthema')!;
     // a duplicate relation (doc relates to both topics) is combined: confirmed beats rejected, sources are unioned, max confidence
-    const dup = graph().link(otherDoc, alt.id, 'relates_to', { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] })!;
+    const dup = graph().link(otherDoc, oldTopic.id, 'relates_to', { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] })!;
     const kept = graph()
       .relationsOf(otherDoc)
-      .find((r) => r.targetEntityId === neu.id && r.relationType === 'relates_to')!;
+      .find((r) => r.targetEntityId === newTopic.id && r.relationType === 'relates_to')!;
     await waitFor(
       () => indexed(dec.id).includes('Thema: Altthema') && indexed(item.id).includes('Thema: Altthema') && indexed(ev.id).includes('Thema: Altthema'),
     );
     expect(indexed(doc)).toContain('Thema: Altthema');
 
-    const r = await graph().merge({ sourceIds: [alt.id], targetId: neu.id });
+    const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
 
-    expect(r).toMatchObject({ targetId: neu.id, mergedIds: [alt.id], mergedNames: ['Altthema'], referencesUpdated: 4 });
-    expect(graph().getEntity(alt.id)).toBeUndefined();
-    expect(graph().getEntity(neu.id)!.aliases).toEqual(['Altthema']);
-    expect(graph().findByNameOrAlias('topic', 'altthema')?.id).toBe(neu.id);
-    expect(app.services.documents.get(doc).topicId).toBe(neu.id);
-    expect(app.services.decisions.get(dec.id).topicId).toBe(neu.id);
-    expect(app.services.openItems.get(item.id).topicId).toBe(neu.id);
-    expect(app.services.eventRecords.get(ev.id).topicId).toBe(neu.id);
+    expect(r).toMatchObject({ targetId: newTopic.id, mergedIds: [oldTopic.id], mergedNames: ['Altthema'], referencesUpdated: 4 });
+    expect(graph().getEntity(oldTopic.id)).toBeUndefined();
+    expect(graph().getEntity(newTopic.id)!.aliases).toEqual(['Altthema']);
+    expect(graph().findByNameOrAlias('topic', 'altthema')?.id).toBe(newTopic.id);
+    expect(app.services.documents.get(doc).topicId).toBe(newTopic.id);
+    expect(app.services.decisions.get(dec.id).topicId).toBe(newTopic.id);
+    expect(app.services.openItems.get(item.id).topicId).toBe(newTopic.id);
+    expect(app.services.eventRecords.get(ev.id).topicId).toBe(newTopic.id);
     expect(
       graph()
         .relationsOf(doc)
-        .some((x) => x.targetEntityId === neu.id),
+        .some((x) => x.targetEntityId === newTopic.id),
     ).toBe(true);
     expect(
       graph()
         .relationsOf(ev.id)
-        .some((x) => x.targetEntityId === neu.id),
+        .some((x) => x.targetEntityId === newTopic.id),
     ).toBe(true);
     expect(graph().getRelation(dup.id)).toBeUndefined();
     expect(graph().getRelation(kept.id)).toMatchObject({ status: 'confirmed', sourceIds: [otherDoc, 'q1'], confidence: kept.confidence });
@@ -124,20 +124,20 @@ describe('Zusammenführen von Themen (#33)', () => {
     }
   });
 
-  it('macht die Zusammenführung exakt rückgängig (Einträge, Beziehungen, Verweise, Aliasse, Suchindex)', async () => {
+  it('undoes the merge exactly (entries, relations, references, aliases, search index)', async () => {
     await archivedDoc('Altbericht', { topic: 'Altthema' });
     const otherDoc = await archivedDoc('Neubericht', { topic: 'Neuthema' });
     const dec = await decision('Wir starten Altthema', { topic: 'Altthema' });
     const ev = await app.ok('events:create', { title: 'Auftakt', occurredAt: '2026-09-02', topic: 'Altthema', sourceIds: [] });
-    const alt = graph().findByName('topic', 'Altthema')!;
-    const neu = graph().findByName('topic', 'Neuthema')!;
-    graph().addAlias(alt.id, 'Altes Thema');
-    graph().link(otherDoc, alt.id, 'relates_to', { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] });
+    const oldTopic = graph().findByName('topic', 'Altthema')!;
+    const newTopic = graph().findByName('topic', 'Neuthema')!;
+    graph().addAlias(oldTopic.id, 'Altes Thema');
+    graph().link(otherDoc, oldTopic.id, 'relates_to', { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] });
     await waitFor(() => indexed(dec.id).includes('Thema: Altthema') && indexed(ev.id).includes('Thema: Altthema'));
     const before = state();
 
-    const r = await graph().merge({ sourceIds: [alt.id], targetId: neu.id });
-    expect(graph().getEntity(neu.id)!.aliases).toEqual(['Altthema', 'Altes Thema']);
+    const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
+    expect(graph().getEntity(newTopic.id)!.aliases).toEqual(['Altthema', 'Altes Thema']);
     expect(state()).not.toEqual(before);
 
     const entry = (await app.ok('audit:list', { limit: 10, onlyUndoable: true })).find((a) => a.id === r.auditId);
@@ -150,24 +150,24 @@ describe('Zusammenführen von Themen (#33)', () => {
     expect(indexed(ev.id)).toContain('Thema: Altthema');
   });
 
-  it('verweigert das Rückgängigmachen mit verständlicher Meldung, wenn seither etwas geändert wurde', async () => {
+  it('refuses to undo with an understandable message when something was changed since', async () => {
     const dec = await decision('Wir starten Altthema', { topic: 'Altthema' });
-    const neu = graph().ensureEntity('topic', 'Neuthema');
-    const alt = graph().findByName('topic', 'Altthema')!;
-    const r = await graph().merge({ sourceIds: [alt.id], targetId: neu.id });
+    const newTopic = graph().ensureEntity('topic', 'Neuthema');
+    const oldTopic = graph().findByName('topic', 'Altthema')!;
+    const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
 
     await app.ok('decisions:update', { id: dec.id, patch: { rationale: 'Später ergänzt' } });
     const u = await app.ok('audit:undo', { auditId: r.auditId });
     expect(u.undone).toBe(false);
     expect(u.conflicts).toContain('Die Entscheidung „Wir starten Altthema“ wurde seit der Zusammenführung verändert.');
-    expect(graph().getEntity(alt.id)).toBeUndefined();
-    expect(app.services.decisions.get(dec.id).topicId).toBe(neu.id);
+    expect(graph().getEntity(oldTopic.id)).toBeUndefined();
+    expect(app.services.decisions.get(dec.id).topicId).toBe(newTopic.id);
   });
 
-  it('verweigert das Rückgängigmachen, wenn der alte Name inzwischen neu angelegt wurde', async () => {
-    const neu = graph().ensureEntity('topic', 'Neuthema');
-    const alt = graph().ensureEntity('topic', 'Altthema');
-    const r = await graph().merge({ sourceIds: [alt.id], targetId: neu.id });
+  it('refuses to undo when the old name has since been created again', async () => {
+    const newTopic = graph().ensureEntity('topic', 'Neuthema');
+    const oldTopic = graph().ensureEntity('topic', 'Altthema');
+    const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
     graph().ensureEntity('topic', 'Altthema');
 
     const u = await app.ok('audit:undo', { auditId: r.auditId });
@@ -175,7 +175,7 @@ describe('Zusammenführen von Themen (#33)', () => {
     expect(u.conflicts).toContain('„Altthema“ wurde seit der Zusammenführung neu angelegt. Bitte zuerst diesen Eintrag bereinigen.');
   });
 
-  it('lehnt ungleiche Typen ohne Freigabe und nicht zusammenführbare Einträge ab', async () => {
+  it('rejects unequal types without approval and entries that cannot be merged', async () => {
     const topic = graph().ensureEntity('topic', 'prod-plat');
     const project = graph().ensureEntity('project', 'Prod Plat');
     const person = graph().ensureEntity('person', 'Anna');
@@ -188,8 +188,8 @@ describe('Zusammenführen von Themen (#33)', () => {
   });
 });
 
-describe('Zusammenführen von Personen (#33)', () => {
-  it('ersetzt Namen in Beteiligten- und Personenlisten, übernimmt Verantwortliche und fasst Beziehungen zusammen', async () => {
+describe('Merging persons (#33)', () => {
+  it('replaces names in participant and person lists, takes over responsible persons and combines relations', async () => {
     const doc = await archivedDoc('Protokoll', { persons: ['Monika', 'Bob'] });
     const dec = await decision('Budget freigegeben', { participants: ['Monika', 'Monika Lor-Zade', 'Bob'] });
     const item = await app.ok('openItems:create', { title: 'Angebot einholen', responsible: 'Monika', priority: 'normal', sourceIds: [], confidence: 0.9 });
@@ -224,8 +224,8 @@ describe('Zusammenführen von Personen (#33)', () => {
   });
 });
 
-describe('Thema ↔ Projekt (#33)', () => {
-  it('führt ein Thema in ein Projekt zusammen (Zieltyp gewinnt) und macht es exakt rückgängig', async () => {
+describe('Topic ↔ project (#33)', () => {
+  it('merges a topic into a project (target type wins) and undoes it exactly', async () => {
     const ev = await app.ok('events:create', { title: 'Kickoff', occurredAt: '2026-09-03', topic: 'prod-plat', sourceIds: [] });
     const dec = await decision('prod-plat geht live', { topic: 'prod-plat', project: 'Prod Plat' });
     const item = await app.ok('openItems:create', {
@@ -264,8 +264,8 @@ describe('Thema ↔ Projekt (#33)', () => {
   });
 });
 
-describe('Mehrere Zusammenführungen eines Laufs (#33)', () => {
-  it('protokolliert einen Audit-Eintrag und nimmt alle mit einem Rückgängig zurück – auch verkettete', async () => {
+describe('Multiple merges in one run (#33)', () => {
+  it('records one audit entry and reverts all with a single undo – including chained ones', async () => {
     const ev = await app.ok('events:create', { title: 'Treffen', occurredAt: '2026-09-04', topic: 'A-Thema', sourceIds: [] });
     await decision('B entschieden', { topic: 'B-Thema', participants: ['Bob B.'] });
     await decision('C entschieden', { topic: 'C-Thema', participants: ['Bob'] });
@@ -291,7 +291,7 @@ describe('Mehrere Zusammenführungen eines Laufs (#33)', () => {
     expect(state()).toEqual(before);
   });
 
-  it('nimmt bei einem Fehler im Lauf nichts davon vor', async () => {
+  it('performs none of them when an error occurs in the run', async () => {
     const a = graph().ensureEntity('topic', 'A-Thema');
     const b = graph().ensureEntity('topic', 'B-Thema');
     const before = state();
@@ -305,16 +305,16 @@ describe('Mehrere Zusammenführungen eines Laufs (#33)', () => {
   });
 });
 
-describe('Agentenaktionen zum Zusammenführen (#33)', () => {
-  it('merge_topics ist rückgängig machbar', async () => {
+describe('Agent actions for merging (#33)', () => {
+  it('merge_topics can be undone', async () => {
     const ev = await app.ok('events:create', { title: 'Treffen', occurredAt: '2026-09-04', topic: 'Altthema', sourceIds: [] });
-    const alt = graph().findByName('topic', 'Altthema')!;
-    const neu = graph().ensureEntity('topic', 'Neuthema');
+    const oldTopic = graph().findByName('topic', 'Altthema')!;
+    const newTopic = graph().ensureEntity('topic', 'Neuthema');
     const before = state();
-    const action = await app.ok('knowledge:proposeMerge', { sourceTopicId: alt.id, targetTopicId: neu.id });
+    const action = await app.ok('knowledge:proposeMerge', { sourceTopicId: oldTopic.id, targetTopicId: newTopic.id });
     const done = await app.ok('actions:resolve', { decision: 'approve', actionId: action.id, confirmed: true } as never);
     expect(done).toMatchObject({ status: 'executed', result: expect.stringContaining('Themen zusammengeführt') });
-    expect(app.services.eventRecords.get(ev.id).topicId).toBe(neu.id);
+    expect(app.services.eventRecords.get(ev.id).topicId).toBe(newTopic.id);
 
     const entry = (await app.ok('audit:list', { limit: 20, onlyUndoable: true })).find((a) => a.action === 'topics.merge')!;
     expect(entry.undoable).toBe(true);
@@ -322,7 +322,7 @@ describe('Agentenaktionen zum Zusammenführen (#33)', () => {
     expect(state()).toEqual(before);
   });
 
-  it('merge_entities führt mehrere Einträge auch über Thema/Projekt hinweg zusammen', async () => {
+  it('merge_entities merges several entries, also across topic/project', async () => {
     const topic = graph().ensureEntity('topic', 'prod-plat');
     const project = graph().ensureEntity('project', 'Prod Plat');
     const other = graph().ensureEntity('project', 'Produktplattform');

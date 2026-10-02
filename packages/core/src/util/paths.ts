@@ -6,18 +6,18 @@ import { permissionError, validationError } from './errors';
 
 const SEP_RE = /[\\/]/;
 
-/** Zulassungsliste: temporäre Ordner sind absichtlich als Scan-Ziel erlaubt (Tests, Wegwerf-Ordner). */
-// eslint-disable-next-line sonarjs/publicly-writable-directories -- keine Nutzung als Ablageort, nur Vergleich von Pfadpräfixen
+/** Allowlist: temporary folders are intentionally allowed as scan targets (tests, throwaway folders). */
+// eslint-disable-next-line sonarjs/publicly-writable-directories -- not used as a storage location, only to compare path prefixes
 const TEMP_PREFIXES = ['/tmp/', '/var/tmp/', '/var/folders/', '/private/var/folders/', '/private/tmp/'];
 
-/** true, wenn `candidate` gleich `root` ist oder darunter liegt (rein lexikalisch, nach Normalisierung). */
+/** true if `candidate` equals `root` or lies below it (purely lexical, after normalization). */
 export function isInside(root: string, candidate: string): boolean {
   const rel = path.relative(path.resolve(root), path.resolve(candidate));
   if (rel === '') return true;
   return !(rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel));
 }
 
-/** Löst einen relativen Pfad strikt innerhalb von `root` auf (kein Path Traversal, keine absoluten Pfade). */
+/** Resolves a relative path strictly inside `root` (no path traversal, no absolute paths). */
 export function resolveInside(root: string, rel: string): string {
   if (rel.includes('\0')) throw validationError('Ungültiger Pfad (Nullbyte).');
   if (path.isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) throw permissionError('Absolute Pfade sind hier nicht erlaubt.', rel);
@@ -28,7 +28,7 @@ export function resolveInside(root: string, rel: string): string {
   return abs;
 }
 
-/** realpath des tiefsten existierenden Vorfahren + nicht existierender Rest. */
+/** realpath of the deepest existing ancestor + the non-existing rest. */
 export async function realpathDeepest(target: string): Promise<string> {
   let current = path.resolve(target);
   const rest: string[] = [];
@@ -48,8 +48,8 @@ export async function realpathDeepest(target: string): Promise<string> {
 }
 
 /**
- * Prüft zusätzlich zur lexikalischen Prüfung, dass kein Symlink aus `root` herausführt.
- * Gibt den aufgelösten realen Pfad zurück.
+ * In addition to the lexical check, verifies that no symlink leads out of `root`.
+ * Returns the resolved real path.
  */
 export async function assertRealInside(root: string, target: string): Promise<string> {
   const realRoot = await fsp.realpath(root);
@@ -86,7 +86,7 @@ const cleanNamePart = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^\.+/, '')
-    // eslint-disable-next-line sonarjs/super-linear-regex -- Dateiname, höchstens 255 Zeichen
+    // eslint-disable-next-line sonarjs/super-linear-regex -- file name, at most 255 characters
     .replace(/[. ]+$/g, '')
     .trim();
 
@@ -97,7 +97,7 @@ function finishBase(base: string, fallback: string): string {
   return out;
 }
 
-/** Macht einen einzelnen Dateinamen plattformübergreifend gültig und menschenlesbar. */
+/** Makes a single file name valid across platforms and human-readable. */
 export function sanitizeFileName(name: string, fallback = 'Dokument'): string {
   const { base, ext } = splitExtension(path.basename(name).trimEnd());
   const cleanExt = ext.toLowerCase();
@@ -110,7 +110,7 @@ export function sanitizeFolderName(name: string, fallback = 'Ordner'): string {
   return finishBase(cleanNamePart(name), fallback);
 }
 
-/** Bereinigt einen relativen Kategoriepfad (z. B. "work/projects/prod-plat"); wirft bei Traversal. */
+/** Cleans a relative category path (e.g. "work/projects/prod-plat"); throws on traversal. */
 export function sanitizeCategoryPath(input: string): string {
   if (input.includes('\0')) throw validationError('Ungültiger Ordnerpfad.');
   if (path.isAbsolute(input) || /^[A-Za-z]:/.test(input)) throw permissionError('Der Zielordner muss relativ zum Archiv sein.', input);
@@ -124,7 +124,7 @@ export function sanitizeCategoryPath(input: string): string {
   return clean.join('/');
 }
 
-/** Systemverzeichnisse und Wurzeln, die nie als Scan-Verzeichnis freigegeben werden dürfen. */
+/** System directories and roots that may never be approved as a scan directory. */
 export function isForbiddenScanRoot(dir: string, opts: { home?: string; username?: string } = {}): string | null {
   const resolved = path.resolve(dir);
   const home = path.resolve(opts.home ?? os.homedir());
@@ -162,9 +162,9 @@ export function isForbiddenScanRoot(dir: string, opts: { home?: string; username
     const lower = r.toLowerCase();
     for (const sys of posixSystem) {
       if (lower === sys || lower.startsWith(`${sys}/`)) {
-        // Unterhalb des eigenen Home-Verzeichnisses ist alles erlaubt (z. B. /home/me/Downloads)
+        // everything below the user's own home directory is allowed (e.g. /home/me/Downloads)
         if (isInside(home, resolved) && resolved !== path.dirname(home)) return null;
-        // /tmp und /var/tmp sind für Tests/temporäre Ordner zulässig, sofern nicht Wurzel
+        // /tmp and /var/tmp are allowed for tests/temporary folders, unless they are the root itself
         if (TEMP_PREFIXES.some((prefix) => lower.startsWith(prefix))) return null;
         if (lower.startsWith('/volumes/') || lower.startsWith('/mnt/')) return null;
         return 'Systemverzeichnisse oder Verzeichnisse anderer Benutzer dürfen nicht gescannt werden.';
@@ -182,7 +182,7 @@ export function isForbiddenScanRoot(dir: string, opts: { home?: string; username
   return null;
 }
 
-/** Normalisiert einen Pfad für Vergleiche und Speicherung (absolut, ohne trailing separator). */
+/** Normalizes a path for comparison and storage (absolute, without trailing separator). */
 export function normalizeFsPath(p: string): string {
   const resolved = path.resolve(p);
   return resolved.length > 1 && resolved.endsWith(path.sep) ? resolved.slice(0, -1) : resolved;
@@ -192,7 +192,7 @@ export function ensureDirSync(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-/** Ermittelt einen freien Dateinamen "Name.ext" → "Name (2).ext" … ohne etwas zu überschreiben. */
+/** Finds a free file name "Name.ext" → "Name (2).ext" … without overwriting anything. */
 export async function uniquePath(dir: string, fileName: string): Promise<string> {
   const ext = path.extname(fileName);
   const base = path.basename(fileName, ext);

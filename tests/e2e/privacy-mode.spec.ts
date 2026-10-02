@@ -7,8 +7,8 @@ function savedMode(dataDir: string): string {
   return settings.privacy.llmMode;
 }
 
-test.describe('Datenschutzmodus', () => {
-  test('wird beim Auswählen sofort gespeichert und als aktiv angezeigt', async ({ llm, on, page, workspace }) => {
+test.describe('privacy mode', () => {
+  test('is saved immediately on selection and shown as active', async ({ llm, on, page, workspace }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('settings');
@@ -28,7 +28,7 @@ test.describe('Datenschutzmodus', () => {
     await expect(app.settings.locators.privacy.activeMode).toContainText('Nur lokal');
   });
 
-  test('verwirft beim Wechseln des Modus keine ungespeicherten Eingaben unter „Nie analysieren“', async ({ llm, on, page }) => {
+  test('does not discard unsaved input under „Nie analysieren“ when switching the mode', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('settings');

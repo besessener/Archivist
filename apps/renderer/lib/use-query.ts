@@ -6,9 +6,9 @@ import { call, IpcError } from './ipc';
 import { scopesOf, subscribe } from './events';
 
 export interface UseQueryOptions {
-  /** Scopes aus `data:changed`, bei denen neu geladen wird. */
+  /** Scopes from `data:changed` that trigger a reload. */
   scopes?: string[];
-  /** Neu laden bei `job:updated`. */
+  /** Reload on `job:updated`. */
   jobs?: boolean;
   enabled?: boolean;
 }

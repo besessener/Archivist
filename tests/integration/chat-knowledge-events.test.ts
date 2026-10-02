@@ -10,7 +10,7 @@ beforeEach(async () => {
     topic: 'Konferenzbeitrag',
     sourceIds: [],
   });
-  // Die Indexierung des Ereignisses läuft im Hintergrund; warten, bis es in der Suche auftaucht
+  // indexing the event runs in the background; wait until it shows up in search
   for (let i = 0; i < 50; i++) {
     if ((await app.ok('search:global', { query: 'German Testing Day', limit: 5 })).some((h) => h.type === 'event')) break;
     await new Promise((r) => setTimeout(r, 20));
@@ -20,10 +20,10 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-const frage = 'Wann habe ich den Beitrag beim German Testing Day eingereicht?';
+const question = 'Wann habe ich den Beitrag beim German Testing Day eingereicht?';
 
-describe('Wissensfragen finden auch Ereignisse (#48)', () => {
-  it('liefert das Ereignis mit Datum als Quelle an das LLM und in der Antwort', async () => {
+describe('Knowledge questions also find events (#48)', () => {
+  it('passes the event with its date as a source to the LLM and in the answer', async () => {
     app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: 'German Testing Day eingereicht' }));
     app.llm.on('KnowledgeAnswer', (_s, input) => {
       expect(input).toContain('Beitrag beim German Testing Day eingereicht');
@@ -39,7 +39,7 @@ describe('Wissensfragen finden auch Ereignisse (#48)', () => {
         confidence: 0.9,
       };
     });
-    const r = await app.ok('chat:send', { text: frage });
+    const r = await app.ok('chat:send', { text: question });
     const m = r.assistantMessage;
     expect(m.content).not.toMatch(/finde ich im Archiv nichts/);
     expect(m.content).toContain('1. Oktober 2026');
@@ -51,9 +51,9 @@ describe('Wissensfragen finden auch Ereignisse (#48)', () => {
     expect(app.llm.calls.some((c) => c.schema === 'KnowledgeAnswer')).toBe(true);
   });
 
-  it('zeigt das Ereignis ohne LLM mit Datum in der lokalen Trefferliste', async () => {
+  it('shows the event with its date in the local hit list without an LLM', async () => {
     app.llm.down = true;
-    const r = await app.ok('chat:send', { text: frage });
+    const r = await app.ok('chat:send', { text: question });
     const m = r.assistantMessage;
     expect(m.content).toMatch(/lokale Trefferliste/);
     expect(m.content).toMatch(/Beitrag beim German Testing Day eingereicht\*\* \(event, 2026-10-01\)/);
@@ -61,7 +61,7 @@ describe('Wissensfragen finden auch Ereignisse (#48)', () => {
     expect(src).toMatchObject({ title: expect.stringContaining('German Testing Day'), date: expect.stringMatching(/^2026-10-01/) });
   });
 
-  it('nennt Ereignisse, wenn nichts gefunden wurde', async () => {
+  it('names events when nothing was found', async () => {
     app.llm.down = true;
     const r = await app.ok('chat:send', { text: 'Haben wir jemals über Vault gesprochen?' });
     expect(r.assistantMessage.content).toMatch(/Dazu finde ich im Archiv nichts.*Ereignisse/);

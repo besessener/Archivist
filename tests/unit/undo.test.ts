@@ -27,7 +27,7 @@ const row = (overrides: Partial<Row> = {}): Row => ({
   ...overrides,
 });
 
-/** UndoService mit gefälschtem Audit-Protokoll und Logger. */
+/** UndoService with a fake audit log and logger. */
 function setup(auditRow: Row) {
   const audit = { getRow: vi.fn(() => auditRow), markUndone: vi.fn(), log: vi.fn() };
   const logger = { warn: vi.fn() };
@@ -41,8 +41,8 @@ const handler = (overrides: Partial<UndoHandler> = {}): UndoHandler => ({
   ...overrides,
 });
 
-describe('Rückgängig machen', () => {
-  it('führt den Handler aus, markiert die Aktion und protokolliert die Umkehrung mit vertauschtem Vorher/Nachher', async () => {
+describe('undo', () => {
+  it('runs the handler, marks the action and logs the reversal with before/after swapped', async () => {
     const { service, audit } = setup(row());
     const run = vi.fn(async () => 'fertig');
     service.register('archive.move', handler({ run }));
@@ -65,14 +65,14 @@ describe('Rückgängig machen', () => {
     });
   });
 
-  it('lehnt Aktionen ohne Undo-Typ ab', async () => {
+  it('rejects actions without an undo type', async () => {
     const { service, audit } = setup(row({ undoType: null }));
 
     await expect(service.undo('x')).rejects.toMatchObject({ category: 'validation_error', message: 'Diese Aktion kann nicht rückgängig gemacht werden.' });
     expect(audit.markUndone).not.toHaveBeenCalled();
   });
 
-  it('macht eine bereits rückgängig gemachte Aktion nicht ein zweites Mal rückgängig', async () => {
+  it('does not undo an already undone action a second time', async () => {
     const { service, audit } = setup(row({ undoneAt: '2026-10-01T10:00:00.000Z' }));
     const run = vi.fn(async () => 'x');
     service.register('archive.move', handler({ run }));
@@ -82,13 +82,13 @@ describe('Rückgängig machen', () => {
     expect(audit.log).not.toHaveBeenCalled();
   });
 
-  it('meldet einen fehlenden Handler mit dem Typ im Text', async () => {
+  it('reports a missing handler with the type in the message', async () => {
     const { service } = setup(row({ undoType: 'unbekannt' }));
 
     await expect(service.undo('x')).rejects.toMatchObject({ category: 'validation_error', message: 'Kein Undo-Handler für „unbekannt“.' });
   });
 
-  it('wählt den Handler passend zum Typ der Aktion', async () => {
+  it('picks the handler matching the action type', async () => {
     const { service } = setup(row({ undoType: 'b' }));
     const a = vi.fn(async () => 'a');
     const b = vi.fn(async () => 'b');
@@ -99,7 +99,7 @@ describe('Rückgängig machen', () => {
     expect(a).not.toHaveBeenCalled();
   });
 
-  it('überschreibt bei Konflikten nichts: Handler läuft nicht, nichts wird markiert oder protokolliert, die Konflikte werden zurückgegeben', async () => {
+  it('overwrites nothing on conflicts: the handler does not run, nothing is marked or logged, the conflicts are returned', async () => {
     const { service, audit, logger } = setup(row());
     const run = vi.fn(async () => 'x');
     service.register('archive.move', handler({ check: async () => ['Ziel wurde verändert'], run }));
@@ -114,10 +114,10 @@ describe('Rückgängig machen', () => {
     expect(run).not.toHaveBeenCalled();
     expect(audit.markUndone).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith('undo', 'Undo wegen Konflikten abgelehnt', { auditId: 'audit-7', conflicts: ['Ziel wurde verändert'] });
+    expect(logger.warn).toHaveBeenCalledWith('undo', 'Undo rejected because of conflicts', { auditId: 'audit-7', conflicts: ['Ziel wurde verändert'] });
   });
 
-  it('prüft die Konflikte mit den Undo-Daten der Aktion', async () => {
+  it('checks the conflicts with the undo data of the action', async () => {
     const { service } = setup(row({ undoData: { id: 42 } }));
     const check = vi.fn(async () => []);
     service.register('archive.move', handler({ check }));
@@ -127,7 +127,7 @@ describe('Rückgängig machen', () => {
     expect(check).toHaveBeenCalledWith({ id: 42 });
   });
 
-  it('protokolliert einen fehlgeschlagenen Handler als Fehler, markiert nichts und reicht den Fehler weiter', async () => {
+  it('logs a failed handler as an error, marks nothing and passes the error on', async () => {
     const { service, audit } = setup(row());
     const failure = new AppError('filesystem_error', 'Datei gesperrt');
     service.register('archive.move', handler({ run: async () => Promise.reject(failure) }));
@@ -147,9 +147,9 @@ describe('Rückgängig machen', () => {
     });
   });
 
-  it('protokolliert auch Fehler, die keine Error-Objekte sind', async () => {
+  it('also logs errors that are not Error objects', async () => {
     const { service, audit } = setup(row());
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- geprüft wird gerade ein Fehler, der kein Error-Objekt ist
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the point of this test is an error that is not an Error object
     service.register('archive.move', handler({ run: async () => Promise.reject('kaputt') }));
 
     await expect(service.undo('x')).rejects.toBe('kaputt');

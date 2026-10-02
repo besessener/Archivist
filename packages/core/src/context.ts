@@ -31,7 +31,7 @@ export function resolveDataPaths(root: string, archiveOverride?: string): DataPa
   };
 }
 
-/** Legt die Standard-Verzeichnisstruktur an (idempotent). */
+/** Creates the default directory structure (idempotent). */
 export function ensureDataDirs(paths: DataPaths): void {
   for (const dir of Object.values(paths) as string[]) fs.mkdirSync(dir, { recursive: true });
 }
@@ -53,7 +53,7 @@ export type ChangeScope =
   | 'audit'
   | 'status';
 
-/** Ereignisbus: Services melden Datenänderungen, die Host-Schicht leitet sie an den Renderer weiter. */
+/** Event bus: services report data changes, the host layer forwards them to the renderer. */
 export class EventBus extends EventEmitter {
   changed(...scopes: ChangeScope[]): void {
     this.emit('data:changed', { scopes });

@@ -40,7 +40,7 @@ export function EntityIcon({ type, className }: { type: RefType; className?: str
   return <Icon className={className} />;
 }
 
-/** Obsidian-artiger, klickbarer Verweis auf ein Wissensobjekt. */
+/** Obsidian-style clickable link to a knowledge object. */
 export function EntityChip({
   type,
   id,

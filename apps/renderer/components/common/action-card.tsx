@@ -20,7 +20,7 @@ const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondar
   withdrawn: { label: 'Nicht mehr aktuell', variant: 'secondary' },
 };
 
-/** Karte für einen Aktionsvorschlag des Agenten mit Bestätigen/Ablehnen. */
+/** Card for an action proposal from the agent, with confirm/reject. */
 export function ActionCard({ action, onResolved }: { action: ActionRecord; onResolved?: (a: ActionRecord) => void }) {
   const [current, setCurrent] = useState<ActionRecord>(action);
   const [strongOpen, setStrongOpen] = useState(false);

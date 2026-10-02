@@ -38,8 +38,8 @@ afterEach(async () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('Archivprüfung: Rhythmus über Neustarts', () => {
-  it('merkt sich den letzten Lauf und plant nach einem Neustart vom letzten Lauf aus', async () => {
+describe('Archive check: schedule across restarts', () => {
+  it('remembers the last run and schedules from the last run after a restart', async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
     const first = await startApp((app) => app.services.settings.update({ consistency: { onStartup: false, intervalHours: 24 } }));
     expect(first.services.appState.get(LAST_RUN_KEY)).toBeNull();
@@ -53,7 +53,7 @@ describe('Archivprüfung: Rhythmus über Neustarts', () => {
     expect(consistencyJobs(second)).toHaveLength(0);
   });
 
-  it('holt einen überfälligen Lauf nach dem Start genau einmal nach', async () => {
+  it('catches up on an overdue run exactly once after start', async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
     const app = await startApp((a) => {
       a.services.settings.update({ consistency: { onStartup: false, intervalHours: 24 } });
@@ -66,7 +66,7 @@ describe('Archivprüfung: Rhythmus über Neustarts', () => {
     expect(app.services.consistency.nextRunAt()).toBeGreaterThan(Date.now() + 23 * HOUR);
   });
 
-  it('startet bei „beim Start prüfen“ und überfälligem Intervall keine zweite Prüfung', async () => {
+  it('does not start a second check with „beim Start prüfen“ and an overdue interval', async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
     const app = await startApp((a) => {
       a.services.settings.update({ consistency: { onStartup: true, intervalHours: 24 } });
@@ -79,8 +79,8 @@ describe('Archivprüfung: Rhythmus über Neustarts', () => {
   });
 });
 
-describe('Archivprüfung: Benachrichtigung nur bei neuen Befunden', () => {
-  it('meldet nichts ohne Befund; der Abschluss steht im Job-Verlauf', async () => {
+describe('Archive check: notification only for new findings', () => {
+  it('reports nothing without findings; completion is listed in the job history', async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
     const app = await startApp((a) => a.services.settings.update({ consistency: { onStartup: false } }));
     const job = app.services.enqueueConsistency('manual');
@@ -91,7 +91,7 @@ describe('Archivprüfung: Benachrichtigung nur bei neuen Befunden', () => {
     expect(entry).toMatchObject({ status: 'succeeded', summary: 'Nichts Neues – keine Auffälligkeiten.' });
   });
 
-  it('meldet neue Befunde einmal und schweigt beim nächsten Lauf, wenn nichts dazukommt', async () => {
+  it('reports new findings once and stays silent on the next run when nothing is added', async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
     const app = await startApp((a) => a.services.settings.update({ consistency: { onStartup: false } }));
     await app.ok('openItems:create', { title: 'Angebot prüfen', dueAt: '2026-01-05' });

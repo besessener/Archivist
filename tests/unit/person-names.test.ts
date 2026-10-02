@@ -32,7 +32,7 @@ describe('parsePersonName (#28)', () => {
     expect(parsed('Monika Lor-Zade (chefin) – Chefin')).toMatchObject({ roles: ['Chefin'] });
   });
 
-  it('distinguishes "Nachname, Vorname" from "Name, Rolle"', () => {
+  it('distinguishes "last name, first name" from "name, role"', () => {
     expect(parsed('Schmidt, Anna Maria')).toMatchObject({ cleanName: 'Anna Maria Schmidt' });
     expect(parsed('Müller, Dr. Hans')).toMatchObject({ cleanName: 'Hans Müller', titles: ['Dr.'] });
     expect(parsed('Schmidt, CEO')).toMatchObject({ cleanName: 'Schmidt', roles: ['CEO'] });

@@ -1,7 +1,7 @@
 import type { AppErrorInfo, ErrorCategory } from '@archivist/shared';
 import { ZodError } from 'zod';
 
-/** Einheitlicher Fehlertyp der Services; wird an der IPC-Grenze in AppErrorInfo übersetzt. */
+/** Uniform error type of the services; translated into AppErrorInfo at the IPC boundary. */
 export class AppError extends Error {
   constructor(
     public readonly category: ErrorCategory,

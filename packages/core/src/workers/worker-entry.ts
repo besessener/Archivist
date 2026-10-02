@@ -1,11 +1,11 @@
 import { parentPort } from 'node:worker_threads';
 import { tasks, type TaskName } from './tasks';
 
-/** Einstiegspunkt der Worker-Threads (wird per esbuild zu worker.cjs gebündelt). */
-if (!parentPort) throw new Error('worker-entry muss in einem Worker-Thread laufen');
+/** Entry point of the worker threads (bundled into worker.cjs by esbuild). */
+if (!parentPort) throw new Error('worker-entry must run in a worker thread');
 const port = parentPort;
 
-// eslint-disable-next-line @typescript-eslint/no-misused-promises -- der Handler fängt alle Fehler selbst ab und antwortet per postMessage
+// eslint-disable-next-line @typescript-eslint/no-misused-promises -- the handler catches all errors itself and answers via postMessage
 port.on('message', async (msg: { id: number; task: TaskName; payload: never }) => {
   try {
     const fn = tasks[msg.task] as ((p: never) => Promise<unknown>) | undefined;

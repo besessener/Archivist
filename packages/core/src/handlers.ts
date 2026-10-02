@@ -4,12 +4,12 @@ import type { Services } from './create-services';
 import { AppError, permissionError, toErrorInfo } from './util/errors';
 import { isInside } from './util/paths';
 
-/** Betriebssystem-nahe Funktionen, die nur der Electron-Main-Prozess bereitstellen kann. */
+/** Operating-system-level functions that only the Electron main process can provide. */
 export interface HostApi {
   version: string;
   platform: string;
   selectDirectory(title?: string): Promise<string | null>;
-  /** Öffnet eine Datei mit dem Standardprogramm; liefert einen Fehlertext oder ''. */
+  /** Opens a file with the default application; returns an error text or ''. */
   openPath(absPath: string): Promise<string>;
   revealPath(absPath: string): void;
   secretBackend?: () => { available: boolean; backend: string };
@@ -17,7 +17,7 @@ export interface HostApi {
 
 type HandlerMap = { [C in IpcChannel]: (input: IpcParsedInput<C>) => Promise<IpcOutput<C>> | IpcOutput<C> };
 
-/** Implementiert jeden IPC-Kanal ausschließlich über den Service-Layer. */
+/** Implements every IPC channel exclusively via the service layer. */
 export function createHandlers(s: Services, host: HostApi): HandlerMap {
   const trigger = 'ui';
   const settingsPayload = () => ({ settings: s.settings.get(), hasApiKey: s.secrets.hasApiKey() });
@@ -67,7 +67,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     );
     const found = candidates.find((c) => s.scanner.fileExists(c));
     if (!found) throw new AppError('filesystem_error', 'Die Datei wurde nicht gefunden (verschoben oder gelöscht?).');
-    // nur Orte öffnen, die Archivist selbst kennt: Archiv, Eingang oder das ursprüngliche Dokument
+    // only open locations Archivist itself knows: archive, inbox or the original document
     const roots = [s.settings.get().archiveRoot, s.paths.inbox, ...(opts.allowQuarantine ? [s.paths.quarantine] : [])];
     const allowed = roots.some((root) => isInside(root, found)) || found === d.sourcePath;
     if (!allowed) throw permissionError('Dieser Pfad darf nicht geöffnet werden.');
@@ -134,7 +134,7 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
 
     'decisions:create': async (i) => {
       const d = s.decisions.create(i, { actor: 'user', trigger });
-      if (d.status === 'active') await s.contradictions.checkDecision(d.id); // Widersprüche nur als Hinweis
+      if (d.status === 'active') await s.contradictions.checkDecision(d.id); // contradictions only as a hint
       return d;
     },
     'decisions:update': async (i) => {
@@ -346,8 +346,8 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
 export type IpcDispatcher = (channel: string, rawInput: unknown) => Promise<Result<unknown>>;
 
 /**
- * Zentrale Eintrittsstelle für IPC: Kanal-Allowlist, Zod-Validierung von Ein- und Ausgabe,
- * einheitliche Fehlerantworten. Wird vom Electron-Main-Prozess (und in Tests) verwendet.
+ * Central entry point for IPC: channel allowlist, Zod validation of input and output,
+ * uniform error responses. Used by the Electron main process (and in tests).
  */
 export function createIpcDispatcher(handlers: HandlerMap, onError?: (channel: string, err: unknown) => void): IpcDispatcher {
   return async (channel, rawInput) => {

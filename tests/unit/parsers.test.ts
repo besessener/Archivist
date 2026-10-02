@@ -11,15 +11,15 @@ beforeAll(() => {
 });
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-describe('Dokumentparser', () => {
-  it('liest TXT und Markdown inkl. Umlaute', async () => {
+describe('document parsers', () => {
+  it('reads TXT and Markdown including umlauts', async () => {
     const f = writeFile(dir, 'notiz.md', '# Überschrift\n\nWir entscheiden uns für Variante A.');
     const r = await parseDocument(f);
     expect(r.status).toBe('extracted');
     expect(r.text).toContain('Überschrift');
   });
 
-  it('bereinigt Leerraum am Zeilenende, auch bei sehr langen Leerzeichenfolgen, in linearer Zeit', async () => {
+  it('trims trailing whitespace in linear time, even with very long runs of spaces', async () => {
     const f = writeFile(dir, 'blanks.txt', `Zeile eins  \t \r\nZeile zwei\n\n\n\n\n\nEnde${' '.repeat(300_000)}x`);
     const started = Date.now();
     const r = await parseDocument(f);
@@ -27,7 +27,7 @@ describe('Dokumentparser', () => {
     expect(r.text.startsWith('Zeile eins\nZeile zwei\n\n\nEnde')).toBe(true);
   });
 
-  it('liest PDF-Text', async () => {
+  it('reads PDF text', async () => {
     const f = path.join(dir, 'a.pdf');
     makePdf(f, ['Vertrag Hauskauf Musterstrasse', 'Kaufpreis 450000 Euro']);
     const r = await parseDocument(f);
@@ -36,7 +36,7 @@ describe('Dokumentparser', () => {
     expect(r.meta.pages).toBe(1);
   });
 
-  it('liest DOCX, PPTX, XLSX und EML', async () => {
+  it('reads DOCX, PPTX, XLSX and EML', async () => {
     const docx = path.join(dir, 'a.docx');
     await makeDocx(docx, ['Protokoll Jour Fixe', 'Beschluss: Budget freigegeben']);
     expect((await parseDocument(docx)).text).toContain('Budget freigegeben');
@@ -64,7 +64,7 @@ describe('Dokumentparser', () => {
     expect(e.text).toContain('Bitte genehmigen');
   });
 
-  it('archiviert Bilder mit technischen Metadaten und markiert sie als partiell', async () => {
+  it('archives images with technical metadata and marks them as partial', async () => {
     const png = path.join(dir, 'a.png');
     await makePng(png);
     const r = await parseDocument(png);
@@ -72,7 +72,7 @@ describe('Dokumentparser', () => {
     expect(r.meta.width).toBe(32);
   });
 
-  it('wirft nicht bei defekten Dateien, sondern meldet den Status', async () => {
+  it('does not throw on broken files but reports the status', async () => {
     const f = writeFile(dir, 'kaputt.pdf', 'kein pdf');
     const r = await parseDocument(f);
     expect(['failed', 'partial']).toContain(r.status);

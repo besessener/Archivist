@@ -43,8 +43,8 @@ async function askedQuestion(): Promise<Insight> {
   return open[0]!;
 }
 
-describe('Gleicher Name als Thema und als Projekt (#31)', () => {
-  it('fragt „Projekt oder Thema?“ mit drei Antworten', async () => {
+describe('Same name as topic and as project (#31)', () => {
+  it('asks „Projekt oder Thema?“ with three answers', async () => {
     const { topic, project } = await seed();
     await app.ok('knowledge:createEntity', { type: 'topic', name: 'Nur Thema' });
 
@@ -66,7 +66,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(app.services.actions.list()).toHaveLength(actionsBefore);
   });
 
-  it('„Projekt“ führt beide zum Projekt zusammen, hängt alle Verweise um und lässt sich rückgängig machen', async () => {
+  it('„Projekt“ merges both into the project, re-links all references and can be undone', async () => {
     const { ev, dec, item, topic, project } = await seed();
     const q = await askedQuestion();
     const topicChoice = q.choices.find((c) => c.id === 'topic')!;
@@ -89,7 +89,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(app.services.decisions.get(dec.id)).toMatchObject({ topicId: topic.id, projectId: null });
   });
 
-  it('nach dem Rückgängigmachen wird erneut gefragt, sobald eine Prüfung die Zusammenführung gesehen hat', async () => {
+  it('after the undo it asks again as soon as a check has seen the merge', async () => {
     await seed();
     const q = await askedQuestion();
     await app.ok('insights:respond', { response: 'choose', id: q.id, choiceId: 'project', confirmed: true, strongConfirmed: false });
@@ -103,7 +103,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(again.choices.every((c) => c.actionId === null || app.services.actions.get(c.actionId).status === 'proposed')).toBe(true);
   });
 
-  it('eine beantwortete Frage, deren Ursache nach 7 Tagen noch besteht, wird unbeantwortet mit frischen Vorschlägen erneut gestellt', async () => {
+  it('an answered question whose cause still exists after 7 days is asked again unanswered with fresh proposals', async () => {
     await seed();
     const q = await askedQuestion();
     await app.ok('insights:respond', { response: 'choose', id: q.id, choiceId: 'project', confirmed: true, strongConfirmed: false });
@@ -117,7 +117,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     for (const c of reopened.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('proposed');
   });
 
-  it('„Thema“ führt beide zum Thema zusammen', async () => {
+  it('„Thema“ merges both into the topic', async () => {
     const { ev, item, topic, project } = await seed();
     const q = await askedQuestion();
 
@@ -131,7 +131,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(await questions('open')).toHaveLength(0);
   });
 
-  it('„Beides ist richtig“ ändert nichts und wird dauerhaft gemerkt', async () => {
+  it('„Beides ist richtig“ changes nothing and is remembered permanently', async () => {
     const { topic, project } = await seed();
     const q = await askedQuestion();
 
@@ -147,7 +147,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(await questions()).toHaveLength(1);
   });
 
-  it('lehnt ungültige Antworten ab und verlangt die Bestätigung', async () => {
+  it('rejects invalid answers and requires confirmation', async () => {
     await seed();
     const q = await askedQuestion();
 
@@ -171,7 +171,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     expect(again.ok).toBe(false);
   });
 
-  it('eine Frage, deren Paar es nicht mehr gibt, verschwindet samt ihren Vorschlägen', async () => {
+  it('a question whose pair no longer exists disappears along with its proposals', async () => {
     const { topic, project } = await seed();
     const q = await askedQuestion();
 
@@ -182,7 +182,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     for (const c of q.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('withdrawn');
   });
 
-  it('eine veraltete Antwort wird nicht ausgeführt: die Frage verschwindet, die nächste Prüfung bewertet neu', async () => {
+  it('an outdated answer is not executed: the question disappears, the next check evaluates afresh', async () => {
     const { topic, project } = await seed();
     const q = await askedQuestion();
     // merged elsewhere before the user answers
@@ -196,7 +196,7 @@ describe('Gleicher Name als Thema und als Projekt (#31)', () => {
     for (const c of q.choices.filter((x) => x.actionId)) expect(app.services.actions.get(c.actionId!).status).toBe('withdrawn');
   });
 
-  it('eine fehlgeschlagene Antwort lässt sich erneut wählen', async () => {
+  it('a failed answer can be chosen again', async () => {
     await seed();
     const q = await askedQuestion();
     const graphService = graph();

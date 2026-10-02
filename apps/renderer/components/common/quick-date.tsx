@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { addDays, nextMonday, toIsoDay } from '@/lib/utils';
 
-/** Schnellauswahl: morgen / in 7 Tagen / nächsten Montag / Datum. */
+/** Quick selection: tomorrow / in 7 days / next Monday / date. */
 export function QuickDate({ onPick, disabled }: { onPick: (isoDay: string) => void; disabled?: boolean }) {
   const [custom, setCustom] = useState('');
   return (

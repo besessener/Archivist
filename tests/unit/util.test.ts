@@ -11,8 +11,8 @@ import { computeMissingFields, questionFor } from '../../packages/core/src/servi
 import { detectOpenItemSentences } from '../../packages/core/src/services/open-items';
 import { localEmbed } from '../../packages/core/src/services/embedding';
 
-describe('Maskierung von Geheimnissen', () => {
-  it('maskiert typische Zugangsdaten', () => {
+describe('masking secrets', () => {
+  it('masks typical credentials', () => {
     const r = redactSecrets(
       'password: hunter2xx\nkey sk-abcdefghijklmnop1234 AKIAABCDEFGHIJKLMNOP Bearer abcdefghijklmnopqrstuvwxyz1234 postgres://user:geheim123@host/db',
     );
@@ -22,8 +22,8 @@ describe('Maskierung von Geheimnissen', () => {
   });
 });
 
-describe('Logging ohne Geheimnisse', () => {
-  it('schreibt weder API-Key noch Dokumentinhalte ins Log', async () => {
+describe('logging without secrets', () => {
+  it('writes neither the API key nor document contents to the log', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-log-'));
     const log = new Logger(dir, 'debug');
     log.registerSecret('sk-live-TOPSECRET-123456');
@@ -44,9 +44,9 @@ describe('Logging ohne Geheimnisse', () => {
   });
 });
 
-describe('Datumserkennung', () => {
-  const now = new Date(2026, 9, 1); // Do, 01.10.2026
-  it('erkennt absolute und relative Angaben', () => {
+describe('date recognition', () => {
+  const now = new Date(2026, 9, 1); // Thu, 01.10.2026
+  it('recognises absolute and relative expressions', () => {
     expect(parseGermanDate('am 12.06.2026', now)).toBe('2026-06-12');
     expect(parseGermanDate('am 3.7.26', now)).toBe('2026-07-03');
     expect(parseGermanDate('12. Juni 2026', now)).toBe('2026-06-12');
@@ -59,7 +59,7 @@ describe('Datumserkennung', () => {
     expect(normalizeDateInput('2026-03-04', now)).toBe('2026-03-04');
   });
 
-  it('legt „letzten Freitag“ und Wochentage im Vergangenheitskontext in die Vergangenheit', () => {
+  it('places „letzten Freitag“ and weekdays in a past-tense context in the past', () => {
     expect(parseGermanDate('letzten Freitag eingereicht', now)).toBe('2026-09-25');
     expect(parseGermanDate('am vergangenen Montag', now)).toBe('2026-09-28');
     expect(parseGermanDate('vorigen Donnerstag', now)).toBe('2026-09-24');
@@ -69,7 +69,7 @@ describe('Datumserkennung', () => {
     expect(parseGermanDate('Donnerstag abgesprochen', now)).toBe('2026-09-24');
   });
 
-  it('lässt Wochentage ohne Vergangenheitskontext in der Zukunft', () => {
+  it('keeps weekdays without a past-tense context in the future', () => {
     expect(parseGermanDate('am Freitag', now)).toBe('2026-10-02');
     expect(parseGermanDate('Montag', now)).toBe('2026-10-05');
     expect(parseGermanDate('Donnerstag', now)).toBe('2026-10-08');
@@ -79,23 +79,23 @@ describe('Datumserkennung', () => {
     expect(parseGermanDate('war für nächsten Montag angesetzt', now)).toBe('2026-10-05');
   });
 
-  describe('Ortszeit statt UTC (Europe/Berlin)', () => {
-    it('nennt um 00:30 Ortszeit das lokale Datum mit passendem Wochentag', () => {
-      const at = new Date('2026-09-30T22:30:00Z'); // 01.10.2026, 00:30 MESZ
+  describe('local time instead of UTC (Europe/Berlin)', () => {
+    it('states the local date with the matching weekday at 00:30 local time', () => {
+      const at = new Date('2026-09-30T22:30:00Z'); // 01.10.2026, 00:30 CEST
       expect(promptNow(at, 'Europe/Berlin')).toBe('2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
     });
 
-    it('bleibt um 23:30 Ortszeit beim selben lokalen Tag', () => {
-      const at = new Date('2026-10-01T21:30:00Z'); // 01.10.2026, 23:30 MESZ
+    it('stays on the same local day at 23:30 local time', () => {
+      const at = new Date('2026-10-01T21:30:00Z'); // 01.10.2026, 23:30 CEST
       expect(promptNow(at, 'Europe/Berlin')).toBe('2026-10-01 (Donnerstag), 23:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)');
     });
 
-    it('nennt im Winter den Versatz UTC+01:00 und für UTC selbst UTC+00:00', () => {
+    it('states the offset UTC+01:00 in winter and UTC+00:00 for UTC itself', () => {
       expect(promptNow(new Date('2026-12-24T23:15:00Z'), 'Europe/Berlin')).toBe('2026-12-25 (Freitag), 00:15 Uhr, Zeitzone Europe/Berlin (UTC+01:00)');
       expect(promptNow(new Date('2026-12-24T23:15:00Z'), 'UTC')).toBe('2026-12-24 (Donnerstag), 23:15 Uhr, Zeitzone UTC (UTC+00:00)');
     });
 
-    it('„heute“ und „morgen“ beziehen sich auf den lokalen Tag (00:30 und 23:30 Ortszeit)', () => {
+    it('„heute“ and „morgen“ refer to the local day (00:30 and 23:30 local time)', () => {
       const early = new Date(2026, 9, 1, 0, 30);
       const late = new Date(2026, 9, 1, 23, 30);
       for (const at of [early, late]) {
@@ -107,46 +107,46 @@ describe('Datumserkennung', () => {
   });
 });
 
-describe('Entscheidungen: Pflichtfelder und Rückfragen', () => {
-  it('bestimmt fehlende Pflichtfelder', () => {
+describe('decisions: required fields and follow-up questions', () => {
+  it('determines missing required fields', () => {
     expect(computeMissingFields({ decisionText: 'x' })).toEqual(['decidedAt', 'topic', 'participants']);
     expect(computeMissingFields({ decisionText: 'x', decidedAt: '2026-01-01', topic: 'T', participants: ['A'] })).toEqual([]);
   });
-  it('akzeptiert ausdrücklich als unbekannt bestätigte Felder', () => {
+  it('accepts fields explicitly confirmed as unknown', () => {
     expect(computeMissingFields({ decisionText: 'x', topic: 'T', unknownFields: ['decidedAt', 'participants'] })).toEqual([]);
   });
-  it('formuliert gezielte Rückfragen', () => {
+  it('phrases targeted follow-up questions', () => {
     expect(questionFor('decidedAt')).toBe('Wann wurde das entschieden?');
     expect(questionFor('participants')).toBe('Wer war an der Entscheidung beteiligt?');
     expect(questionFor('decisionText', { topic: 'prod-plat' })).toContain('prod-plat');
   });
 });
 
-describe('Widerspruchs-Heuristiken', () => {
-  it('erkennt gegensätzliche Polarität', () => {
+describe('contradiction heuristics', () => {
+  it('detects opposite polarity', () => {
     expect(polarity('Wir machen mit prod-plat vorerst nicht weiter.')).toBe('stop');
     expect(polarity('prod-plat wird pausiert')).toBe('stop');
     expect(polarity('Wir führen prod-plat weiter und setzen es um.')).toBe('go');
     expect(polarity('Das Budget beträgt 5000 Euro.')).toBeNull();
   });
-  it('erkennt Auswahlentscheidungen', () => {
+  it('detects choice decisions', () => {
     expect(chosenOption('Wir entscheiden uns für Postgres als Datenbank')?.toLowerCase()).toContain('postgres');
   });
 });
 
-describe('Weitere Hilfsfunktionen', () => {
-  it('erkennt offene Punkte in Text', () => {
+describe('other helper functions', () => {
+  it('detects open items in text', () => {
     const s = detectOpenItemSentences('Das Budget muss noch geklärt werden. Alles andere ist fertig. Rückmeldung steht noch aus. Termin TBD.');
     expect(s).toHaveLength(3);
   });
-  it('lokale Vektoren sind ähnlich für verwandte Texte', () => {
+  it('local vectors are similar for related texts', () => {
     const dot = (a: Float32Array, b: Float32Array) => a.reduce((s, v, i) => s + v * (b[i] ?? 0), 0);
     const a = localEmbed('Entscheidung zum Hauskauf in Hamburg');
     const b = localEmbed('Wir haben den Hauskauf in Hamburg entschieden');
     const c = localEmbed('Rezept für Apfelkuchen mit Zimt');
     expect(dot(a, b)).toBeGreaterThan(dot(a, c) + 0.2);
   });
-  it('Namensähnlichkeit und Chunking', () => {
+  it('name similarity and chunking', () => {
     expect(nameSimilarity('prod-plat', 'ProdPlat')).toBeGreaterThan(0.9);
     expect(nameSimilarity('Hauskauf', 'Urlaub')).toBeLessThan(0.5);
     const chunks = chunkText('Satz eins. '.repeat(400), 500, 50);

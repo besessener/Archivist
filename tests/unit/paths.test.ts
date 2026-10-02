@@ -23,8 +23,8 @@ beforeAll(() => {
 });
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-describe('Pfadnormalisierung und Path-Traversal-Schutz', () => {
-  it('erkennt Pfade innerhalb eines Wurzelverzeichnisses', () => {
+describe('path normalisation and path traversal protection', () => {
+  it('detects paths inside a root directory', () => {
     expect(isInside('/a/b', '/a/b/c/d.txt')).toBe(true);
     expect(isInside('/a/b', '/a/b')).toBe(true);
     expect(isInside('/a/b', '/a/bc')).toBe(false);
@@ -32,7 +32,7 @@ describe('Pfadnormalisierung und Path-Traversal-Schutz', () => {
     expect(isInside('/a/b', '/a/b/..foo/x')).toBe(true);
   });
 
-  it('lehnt Traversal, absolute Pfade und Nullbytes ab', () => {
+  it('rejects traversal, absolute paths and null bytes', () => {
     expect(() => resolveInside('/arch', '../etc/passwd')).toThrow();
     expect(() => resolveInside('/arch', 'work/../../x')).toThrow();
     expect(() => resolveInside('/arch', '/etc/passwd')).toThrow();
@@ -41,14 +41,14 @@ describe('Pfadnormalisierung und Path-Traversal-Schutz', () => {
     expect(resolveInside('/arch', 'work/projects/x')).toBe(path.resolve('/arch/work/projects/x'));
   });
 
-  it('bereinigt Kategoriepfade und verbietet relative Segmente', () => {
+  it('sanitises category paths and forbids relative segments', () => {
     expect(sanitizeCategoryPath('work\\projects//prod-plat/')).toBe('work/projects/prod-plat');
     expect(() => sanitizeCategoryPath('work/../../etc')).toThrow();
     expect(() => sanitizeCategoryPath('/abs')).toThrow();
     expect(() => sanitizeCategoryPath('   ')).toThrow();
   });
 
-  it('macht Dateinamen plattformübergreifend gültig', () => {
+  it('makes file names valid across platforms', () => {
     expect(sanitizeFileName('a:b*c?.txt')).toBe('a_b_c_.txt');
     expect(sanitizeFileName('CON.txt')).toBe('_CON.txt');
     expect(sanitizeFileName('  ..hidden. ')).toBe('hidden');
@@ -56,14 +56,14 @@ describe('Pfadnormalisierung und Path-Traversal-Schutz', () => {
     expect(sanitizeFileName('x'.repeat(300) + '.pdf').length).toBeLessThanOrEqual(160);
   });
 
-  it('vergibt freie Dateinamen statt zu überschreiben', async () => {
+  it('assigns free file names instead of overwriting', async () => {
     const dir = fs.mkdtempSync(path.join(tmp, 'u-'));
     fs.writeFileSync(path.join(dir, 'a.txt'), '1');
     fs.writeFileSync(path.join(dir, 'a (2).txt'), '2');
     expect(path.basename(await uniquePath(dir, 'a.txt'))).toBe('a (3).txt');
   });
 
-  it('verbietet Systemverzeichnisse und Wurzeln als Scan-Verzeichnis', () => {
+  it('forbids system directories and roots as scan directory', () => {
     expect(isForbiddenScanRoot('/')).toBeTruthy();
     expect(isForbiddenScanRoot('/etc')).toBeTruthy();
     expect(isForbiddenScanRoot('/usr/share')).toBeTruthy();
@@ -72,8 +72,8 @@ describe('Pfadnormalisierung und Path-Traversal-Schutz', () => {
   });
 });
 
-describe('Symlink-Ausbruch und Scan-Bereichsbegrenzung', () => {
-  it('erkennt Symlinks, die aus dem Bereich herausführen', async () => {
+describe('symlink escape and scan scope limits', () => {
+  it('detects symlinks that lead out of the scope', async () => {
     const root = fs.mkdtempSync(path.join(tmp, 'root-'));
     const outside = fs.mkdtempSync(path.join(tmp, 'outside-'));
     fs.symlinkSync(outside, path.join(root, 'link'));
@@ -81,7 +81,7 @@ describe('Symlink-Ausbruch und Scan-Bereichsbegrenzung', () => {
     await expect(assertRealInside(root, path.join(root, 'neu', 'x.txt'))).resolves.toBeTruthy();
   });
 
-  it('scannt nur innerhalb des freigegebenen Bereichs und folgt keinen ausbrechenden Links', async () => {
+  it('scans only inside the permitted scope and follows no escaping links', async () => {
     const root = fs.mkdtempSync(path.join(tmp, 'scan-'));
     const outside = fs.mkdtempSync(path.join(tmp, 'secret-'));
     fs.writeFileSync(path.join(outside, 'geheim.txt'), 'geheim');
@@ -110,7 +110,7 @@ describe('Symlink-Ausbruch und Scan-Bereichsbegrenzung', () => {
     expect(res.skipped.some((s) => s.reason.includes('maximale Größe'))).toBe(true);
   });
 
-  it('beachtet "nicht rekursiv" und Datei-Ausschlüsse', async () => {
+  it('honours "not recursive" and file exclusions', async () => {
     const root = fs.mkdtempSync(path.join(tmp, 'flat-'));
     fs.writeFileSync(path.join(root, 'a.txt'), 'a');
     fs.writeFileSync(path.join(root, 'b.txt'), 'b');
@@ -153,27 +153,27 @@ describe('Symlink-Ausbruch und Scan-Bereichsbegrenzung', () => {
   });
 });
 
-describe('Dateinamen bereinigen (Grenzfälle)', () => {
-  it('ersetzt jedes unzulässige Zeichen einzeln und fasst Leerraum zusammen', () => {
+describe('sanitising file names (edge cases)', () => {
+  it('replaces every invalid character individually and collapses whitespace', () => {
     expect(sanitizeFileName('a<b>c:d"e|f?g*h.txt')).toBe('a_b_c_d_e_f_g_h.txt');
-    expect(sanitizeFileName('a/b\\c.txt')).toBe('b_c.txt'); // nur "/" trennt den Pfad, der Backslash wird ersetzt
-    expect(sanitizeFileName('viele   Leerzeichen\t\tund Tabs.txt')).toBe('viele Leerzeichen__und Tabs.txt'); // Tabs sind Steuerzeichen und werden ersetzt
+    expect(sanitizeFileName('a/b\\c.txt')).toBe('b_c.txt'); // only "/" separates the path, the backslash is replaced
+    expect(sanitizeFileName('viele   Leerzeichen\t\tund Tabs.txt')).toBe('viele Leerzeichen__und Tabs.txt'); // tabs are control characters and are replaced
     expect(sanitizeFileName('steuer\u0001zeichen.txt')).toBe('steuer_zeichen.txt');
   });
 
-  it('entfernt führende Punkte sowie Punkte und Leerzeichen am Ende', () => {
+  it('removes leading dots as well as trailing dots and spaces', () => {
     expect(sanitizeFileName('..versteckt.txt')).toBe('versteckt.txt');
     expect(sanitizeFileName('name. . .txt')).toBe('name.txt');
     expect(sanitizeFileName('  Rand  .txt')).toBe('Rand.txt');
   });
 
-  it('vergibt den Ersatznamen, wenn nichts übrig bleibt', () => {
+  it('assigns the fallback name if nothing is left', () => {
     expect(sanitizeFileName('...')).toBe('Dokument');
     expect(sanitizeFileName('', 'Ordner')).toBe('Ordner');
     expect(sanitizeFileName('???.pdf')).toBe('___.pdf');
   });
 
-  it('stellt reservierten Windows-Namen einen Unterstrich voran, aber nur bei genauem Treffer', () => {
+  it('prefixes reserved Windows names with an underscore, but only on an exact match', () => {
     for (const reserved of ['con', 'PRN', 'aux', 'nul', 'com1', 'COM9', 'lpt1', 'LPT9']) expect(sanitizeFileName(`${reserved}.txt`)).toBe(`_${reserved}.txt`);
     for (const fine of ['console', 'xcon', 'conx', 'com0', 'lpt0', 'com10', 'nullable']) expect(sanitizeFileName(`${fine}.txt`)).toBe(`${fine}.txt`);
   });
@@ -186,7 +186,7 @@ describe('Dateinamen bereinigen (Grenzfälle)', () => {
     expect(sanitizeFileName('a.abcdefghijk')).toBe('a.abcdefghijk');
   });
 
-  it('schreibt die Endung klein, bereinigt sie und normalisiert Unicode (NFC)', () => {
+  it('lowercases and sanitises the extension and normalises Unicode (NFC)', () => {
     expect(sanitizeFileName('Bericht.PDF')).toBe('Bericht.pdf');
     expect(sanitizeFileName('Bericht.p?f')).toBe('Bericht.p_f');
     expect(sanitizeFileName('Cafe\u0301.txt')).toBe('Caf\u00e9.txt');
@@ -194,8 +194,8 @@ describe('Dateinamen bereinigen (Grenzfälle)', () => {
   });
 });
 
-describe('Pfade auflösen und Kategorien bereinigen (Grenzfälle)', () => {
-  it('lehnt Laufwerksangaben auch ohne Backslash ab und erklärt warum', () => {
+describe('resolving paths and sanitising categories (edge cases)', () => {
+  it('rejects drive letters even without a backslash and explains why', () => {
     expect(() => resolveInside('/arch', 'C:foo')).toThrow(/Absolute Pfade/);
     expect(() => resolveInside('/arch', 'a\0b')).toThrow(/Nullbyte/);
     expect(() => resolveInside('/arch', 'a/../b')).toThrow(/verlässt/);
@@ -203,26 +203,26 @@ describe('Pfade auflösen und Kategorien bereinigen (Grenzfälle)', () => {
     expect(() => sanitizeCategoryPath('a\0b')).toThrow(/Ungültiger Ordnerpfad/);
   });
 
-  it('akzeptiert verschachtelte, doppelte und umgekehrte Trennzeichen', () => {
+  it('accepts nested, doubled and reversed separators', () => {
     expect(resolveInside('/arch', 'a//b\\c')).toBe(path.resolve('/arch/a/b/c'));
     expect(resolveInside('/arch', '')).toBe(path.resolve('/arch'));
   });
 
-  it('verbietet "." und ".." als Kategoriesegment und verlangt mindestens ein Segment', () => {
+  it('forbids "." and ".." as category segments and requires at least one segment', () => {
     expect(() => sanitizeCategoryPath('a/./b')).toThrow(/relative Pfadsegmente/);
     expect(() => sanitizeCategoryPath('a/../b')).toThrow(/relative Pfadsegmente/);
     expect(() => sanitizeCategoryPath('')).toThrow(/nicht leer/);
     expect(() => sanitizeCategoryPath(' / // ')).toThrow(/nicht leer/);
   });
 
-  it('kürzt Kategorien auf sechs Ebenen, trimmt Segmente und bereinigt jedes einzeln', () => {
+  it('truncates categories to six levels, trims segments and sanitises each one individually', () => {
     expect(sanitizeCategoryPath('1/2/3/4/5/6/7/8')).toBe('1/2/3/4/5/6');
     expect(sanitizeCategoryPath('  work  /  projects\\Nordlicht ')).toBe('work/projects/Nordlicht');
     expect(sanitizeCategoryPath('ab:c/c*d')).toBe('ab_c/c_d');
     expect(sanitizeCategoryPath('con/v1.2')).toBe('_con/v1.2');
   });
 
-  it('löst auch über nicht existierende Ordner und Dateien als Elternteil auf (ENOTDIR)', async () => {
+  it('also resolves through non-existent folders and files as parent (ENOTDIR)', async () => {
     const file = path.join(tmp, 'datei.txt');
     fs.writeFileSync(file, 'x');
 
@@ -230,22 +230,22 @@ describe('Pfade auflösen und Kategorien bereinigen (Grenzfälle)', () => {
     expect(await realpathDeepest(path.join(tmp, 'gibt', 'es', 'nicht'))).toBe(path.join(fs.realpathSync(tmp), 'gibt', 'es', 'nicht'));
   });
 
-  it('normalisiert Pfade ohne abschließenden Trenner und lässt die Wurzel unverändert', () => {
+  it('normalises paths without a trailing separator and leaves the root unchanged', () => {
     expect(normalizeFsPath('/a/b/')).toBe(path.resolve('/a/b'));
     expect(normalizeFsPath('/a/../a/b')).toBe(path.resolve('/a/b'));
     expect(normalizeFsPath('/')).toBe(path.resolve('/'));
   });
 });
 
-describe.skipIf(process.platform === 'win32')('Systemverzeichnisse als Scan-Ziel (POSIX)', () => {
+describe.skipIf(process.platform === 'win32')('system directories as scan target (POSIX)', () => {
   const home = '/home/anna';
   const forbidden = (dir: string) => isForbiddenScanRoot(dir, { home });
 
-  it('verbietet die Wurzel', () => {
+  it('forbids the root', () => {
     expect(forbidden('/')).toMatch(/Systemwurzeln/);
   });
 
-  it('verbietet jedes Systemverzeichnis und alles darunter', () => {
+  it('forbids every system directory and everything below it', () => {
     const system = [
       '/etc',
       '/usr',
@@ -279,16 +279,16 @@ describe.skipIf(process.platform === 'win32')('Systemverzeichnisse als Scan-Ziel
     }
   });
 
-  it('ignoriert die Groß-/Kleinschreibung bei Systemverzeichnissen', () => {
+  it('ignores case for system directories', () => {
     expect(forbidden('/Etc')).toMatch(/Systemverzeichnisse/);
     expect(forbidden('/Library/Preferences')).toMatch(/Systemverzeichnisse/);
   });
 
-  it('erlaubt Verzeichnisse, die nur so beginnen wie ein Systemverzeichnis', () => {
+  it('allows directories that merely start like a system directory', () => {
     for (const dir of ['/etcetera', '/binary', '/usr2', '/variable', '/daten/projekt']) expect(forbidden(dir), dir).toBeNull();
   });
 
-  it('erlaubt das eigene Home-Verzeichnis samt Unterordnern, nicht aber das Elternverzeichnis oder fremde Homes', () => {
+  it("allows the own home directory including subfolders, but not the parent directory or other users' homes", () => {
     expect(forbidden('/home/anna')).toBeNull();
     expect(forbidden('/home/anna/Downloads')).toBeNull();
     expect(forbidden('/home')).toMatch(/Systemverzeichnisse/);
@@ -296,28 +296,28 @@ describe.skipIf(process.platform === 'win32')('Systemverzeichnisse als Scan-Ziel
     expect(forbidden('/home/annabel')).toMatch(/Systemverzeichnisse/);
   });
 
-  it('erlaubt temporäre Ordner und eingehängte Datenträger, aber nicht deren Wurzel', () => {
+  it('allows temporary folders and mounted volumes, but not their root', () => {
     for (const dir of ['/tmp/x', '/var/tmp/x', '/var/folders/ab/cd', '/private/var/folders/ab', '/private/tmp/x', '/mnt/daten', '/Volumes/Extern'])
       expect(forbidden(dir), dir).toBeNull();
-    // ohne weiteren Ordner sind sie selbst keine Ziele: /mnt steht nicht auf der Liste, die anderen schon
+    // without a further folder they are no targets themselves: /mnt is not on the list, the others are
     for (const dir of ['/tmp', '/var/tmp', '/var/folders']) expect(forbidden(dir), dir).toMatch(/Systemverzeichnisse/);
     expect(forbidden('/mnt')).toBeNull();
   });
 });
 
-describe('Pfadfunktionen: Fehlerpfade und Randfälle', () => {
-  it('lehnt nur Laufwerksangaben am Anfang ab, nicht Doppelpunkte mitten im Pfad', () => {
+describe('path functions: error paths and edge cases', () => {
+  it('rejects drive letters only at the start, not colons in the middle of the path', () => {
     expect(resolveInside('/arch', 'ordner/c:datei')).toBe(path.resolve('/arch/ordner/c:datei'));
     expect(sanitizeCategoryPath('ordner/c:datei')).toBe('ordner/c_datei');
   });
 
-  it('behält Punkte innerhalb eines Namens und entfernt nur führende', () => {
+  it('keeps dots inside a name and removes only leading ones', () => {
     expect(sanitizeFileName('v1.2.3.txt')).toBe('v1.2.3.txt');
     expect(sanitizeFileName('a.b.c')).toBe('a.b.c');
     expect(sanitizeFileName('...v1.2.txt')).toBe('v1.2.txt');
   });
 
-  it('reicht unerwartete Dateisystemfehler weiter (ELOOP) statt sie zu verschlucken', async () => {
+  it('passes on unexpected file system errors (ELOOP) instead of swallowing them', async () => {
     const a = path.join(tmp, 'schleife-a');
     const b = path.join(tmp, 'schleife-b');
     fs.symlinkSync(b, a);
@@ -326,7 +326,7 @@ describe('Pfadfunktionen: Fehlerpfade und Randfälle', () => {
     await expect(realpathDeepest(path.join(a, 'x'))).rejects.toMatchObject({ code: 'ELOOP' });
   });
 
-  it('uniquePath: unerwartete Fehler (ENOTDIR) werden weitergereicht, nur "nicht vorhanden" gilt als frei', async () => {
+  it('uniquePath: unexpected errors (ENOTDIR) are passed on, only "does not exist" counts as free', async () => {
     const file = path.join(tmp, 'ist-eine-datei.txt');
     fs.writeFileSync(file, 'x');
 
@@ -334,7 +334,7 @@ describe('Pfadfunktionen: Fehlerpfade und Randfälle', () => {
     expect(await uniquePath(tmp, 'gibt-es-nicht.txt')).toBe(path.join(tmp, 'gibt-es-nicht.txt'));
   });
 
-  it('uniquePath zählt hoch, solange der Name belegt ist', async () => {
+  it('uniquePath counts up while the name is taken', async () => {
     fs.writeFileSync(path.join(tmp, 'doppelt.txt'), 'x');
     fs.writeFileSync(path.join(tmp, 'doppelt (2).txt'), 'x');
 

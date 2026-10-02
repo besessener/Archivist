@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from './fixture';
 
-test.describe('Einrichtung beim ersten Start', () => {
-  test('zeigt den Einrichtungsdialog und legt Verzeichnisse und Datenbank lokal an', async ({ on, page, workspace }) => {
+test.describe('setup on first launch', () => {
+  test('shows the setup wizard and creates directories and database locally', async ({ on, page, workspace }) => {
     await expect(on(page).setup()).toBeVisible();
 
     for (const directory of ['archive', 'database', 'index', 'config', 'logs', 'backups', 'inbox', 'quarantine']) {
@@ -12,7 +12,7 @@ test.describe('Einrichtung beim ersten Start', () => {
     expect(fs.existsSync(path.join(workspace.dataDir, 'database', 'archivist.db'))).toBe(true);
   });
 
-  test('prüft die Verbindung zum LLM-Endpunkt, bevor es weitergeht', async ({ llm, on, page }) => {
+  test('tests the connection to the LLM endpoint before continuing', async ({ llm, on, page }) => {
     const setup = on(page).setup;
 
     await setup.do.connectLlm(llm.url);
@@ -20,7 +20,7 @@ test.describe('Einrichtung beim ersten Start', () => {
     await expect(setup.locators.texts.testResult).toContainText('erfolgreich');
   });
 
-  test('speichert den API-Schlüssel verschlüsselt und nie im Klartext', async ({ llm, on, page, workspace }) => {
+  test('stores the API key encrypted and never in plain text', async ({ llm, on, page, workspace }) => {
     await on(page).setup.do.complete(llm.url);
 
     const settings = fs.readFileSync(path.join(workspace.dataDir, 'config', 'settings.json'), 'utf8');

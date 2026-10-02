@@ -4,7 +4,7 @@ import { parseDocument, MIME_BY_EXT, type ParseOptions, type ParsedDocument } fr
 import { sha256File } from '../util/hash';
 import { isInside } from '../util/paths';
 
-/** CPU-/IO-lastige Aufgaben, die im Worker-Thread laufen (oder im Test inline). Kein Datenbankzugriff! */
+/** CPU/IO-heavy tasks that run in the worker thread (or inline in tests). No database access! */
 
 export interface ScanEntry {
   path: string;
@@ -18,9 +18,9 @@ export interface ScanEntry {
 export interface ScanDirectoryInput {
   root: string;
   recursive: boolean;
-  /** Absolute Pfade von Unterordnern, die übersprungen werden */
+  /** Absolute paths of subfolders that are skipped */
   excludedDirs: string[];
-  /** Absolute Pfade einzelner ausgeschlossener Dateien */
+  /** Absolute paths of individual excluded files */
   excludedFiles: string[];
   extensions: string[];
   maxSizeBytes: number;
@@ -43,8 +43,8 @@ export const SCAN_MAX_FILES = 20_000;
 const ALWAYS_SKIP_DIRS = new Set(['node_modules', '$recycle.bin', 'appdata', '.git', '.svn', '.cache']);
 
 /**
- * Durchsucht ein freigegebenes Verzeichnis. Symbolische Links werden nur verfolgt, wenn ihr Ziel
- * innerhalb des freigegebenen Wurzelverzeichnisses liegt; Schleifen werden über realpath erkannt.
+ * Walks an approved directory. Symbolic links are only followed if their target lies
+ * inside the approved root directory; loops are detected via realpath.
  */
 export async function scanDirectory(input: ScanDirectoryInput): Promise<ScanDirectoryResult> {
   const realRoot = await fsp.realpath(input.root);

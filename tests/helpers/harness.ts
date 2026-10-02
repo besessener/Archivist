@@ -6,7 +6,7 @@ import type { IpcChannel, IpcInput, IpcOutput, Result } from '@archivist/shared'
 
 export const MIGRATIONS = path.resolve(__dirname, '../../packages/core/migrations');
 
-/** Unsichere Test-Chiffre (nur für Tests) – ersetzt Electron safeStorage. */
+/** Insecure test cipher (tests only), replaces Electron safeStorage. */
 export class TestCipher implements SecretCipher {
   constructor(private readonly available = true) {}
   isAvailable() {
@@ -27,7 +27,7 @@ export class TestCipher implements SecretCipher {
 
 type Responder = (schema: string, input: string, body: Record<string, unknown>) => unknown;
 
-/** Skriptbarer Fake-Endpunkt für die Responses API. */
+/** Scriptable fake endpoint for the Responses API. */
 export class FakeLlm {
   calls: Array<{ schema: string; input: string; instructions: string }> = [];
   responders = new Map<string, Responder>();
@@ -72,8 +72,8 @@ export class FakeLlm {
           ? await fn(schema, input.replace(/Bisheriger Verlauf[\s\S]*?\n\n(?=Nachricht des Benutzers:)/, ''), body)
           : schema === 'plain'
             ? 'OK'
-            : { error: `kein Responder für ${schema}` };
-        // Tests liefern der Einfachheit halber eine einzelne Absicht; die Analyse erwartet {intents: [...]}
+            : { error: `no responder for ${schema}` };
+        // For simplicity tests return a single intent; the analysis expects {intents: [...]}
         if (schema === 'ChatIntent' && out && typeof out === 'object' && 'intent' in out) out = { intents: [out] };
         text = typeof out === 'string' ? out : JSON.stringify(out);
       }
@@ -107,7 +107,7 @@ export interface TestAppOptions {
   dataRoot?: string;
 }
 
-/** Vollständige Anwendung (Services + Dispatcher) in einem temporären Verzeichnis. */
+/** Complete application (services + dispatcher) in a temporary directory. */
 export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp> {
   const root = opts.dataRoot ?? fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-test-'));
   const home = path.join(root, 'home');

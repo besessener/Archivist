@@ -255,7 +255,7 @@ const sameState = (a: RelationState, b: RelationState) =>
 /** Statuses that count as a current, visible assignment. */
 const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 
-/** Wissensgraph über Entitäts- und Beziehungstabellen in SQLite. */
+/** Knowledge graph over entity and relation tables in SQLite. */
 export class KnowledgeGraphService {
   private reindexer: MergeReindexer | null = null;
 
@@ -279,7 +279,7 @@ export class KnowledgeGraphService {
     return r ? mapEntity(r) : undefined;
   }
 
-  /** Findet oder erzeugt eine benannte Entität (Thema, Projekt, Person …) anhand des normalisierten Namens. */
+  /** Finds or creates a named entity (topic, project, person …) by its normalized name. */
   ensureEntity(type: EntityType, name: string, description?: string | null): GraphEntity {
     const clean = name.trim().replace(/\s+/g, ' ');
     if (!clean) throw new AppError('validation_error', 'Der Name darf nicht leer sein.');
@@ -318,7 +318,7 @@ export class KnowledgeGraphService {
     return r ? mapEntity(r) : undefined;
   }
 
-  /** Registriert Dokumente/Entscheidungen/offene Punkte als Knoten mit eigener (vorgegebener) id. */
+  /** Registers documents/decisions/open items as nodes with their own (given) id. */
   registerNode(type: EntityType, id: string, name: string, description?: string | null): void {
     const now = nowIso();
     const norm = normalizeName(name);
@@ -364,8 +364,8 @@ export class KnowledgeGraphService {
   }
 
   /**
-   * Legt eine Beziehung an. Bereits abgelehnte Beziehungen werden nicht wiederbelebt,
-   * bestätigte nie zurückgestuft.
+   * Creates a relation. Already rejected relations are not revived,
+   * confirmed ones are never downgraded.
    * `created` tells whether the relation was newly created (`true`) or already existed and was at most updated
    * (`false`). Undo must only delete created relations; use `trackRelationChanges` to also restore updated ones.
    */
@@ -447,7 +447,7 @@ export class KnowledgeGraphService {
     return rows.filter((r) => (!opts.statuses || opts.statuses.includes(r.status)) && (!opts.types || opts.types.includes(r.relationType)));
   }
 
-  /** Entitäten, die über aktive (nicht abgelehnte) Beziehungen mit `entityId` verbunden sind. */
+  /** Entities connected to `entityId` via active (not rejected) relations. */
   neighbors(entityId: string, opts: { types?: EntityType[]; relationTypes?: RelationType[] } = {}): GraphEntity[] {
     const rels = this.relationsOf(entityId, { statuses: ACTIVE_STATUSES, types: opts.relationTypes });
     const ids = [...new Set(rels.map((r) => (r.sourceEntityId === entityId ? r.targetEntityId : r.sourceEntityId)))];
@@ -1010,7 +1010,7 @@ export class KnowledgeGraphService {
         events: [...refs.events],
       });
     } catch (err) {
-      this.ctx.logger.warn('knowledge', 'Neuindexierung nach Zusammenführung fehlgeschlagen', { error: err });
+      this.ctx.logger.warn('knowledge', 'Reindexing after merge failed', { error: err });
     }
   }
 }

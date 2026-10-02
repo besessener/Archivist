@@ -15,7 +15,7 @@ export interface MigrationStatus {
   upToDate: boolean;
 }
 
-/** Besitzt die SQLite-Verbindung (better-sqlite3) und das Drizzle-Handle. */
+/** Owns the SQLite connection (better-sqlite3) and the Drizzle handle. */
 export class DatabaseService {
   readonly sqlite: Database.Database;
   readonly db: Db;
@@ -39,12 +39,12 @@ export class DatabaseService {
     this.db = drizzle(this.sqlite, { schema });
   }
 
-  /** MigrationService-Aufgabe: Drizzle-Migrationen aus dem Ordner anwenden. */
+  /** MigrationService task: applies the Drizzle migrations from the folder. */
   migrate(migrationsFolder: string): MigrationStatus {
     try {
       migrate(this.db, { migrationsFolder });
     } catch (err) {
-      this.logger.error('migration', 'Migration fehlgeschlagen', { error: err });
+      this.logger.error('migration', 'Migration failed', { error: err });
       throw new AppError('database_error', 'Die Datenbankmigration ist fehlgeschlagen.', {
         cause: err,
         details: err instanceof Error ? err.message : String(err),
@@ -70,7 +70,7 @@ export class DatabaseService {
     return { applied, total, upToDate: applied >= total };
   }
 
-  /** Konsistentes Online-Backup über die SQLite-Backup-API (nicht per Dateikopie). */
+  /** Consistent online backup via the SQLite backup API (not via file copy). */
   async backupTo(dest: string): Promise<void> {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     await this.sqlite.backup(dest);

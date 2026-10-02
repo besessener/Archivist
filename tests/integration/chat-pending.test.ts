@@ -15,8 +15,8 @@ afterEach(async () => {
 
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
-describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten (#42)', () => {
-  it('eine alte Rückfrage zum offenen Punkt hält Notiz und Erinnerung der nächsten Nachricht nicht auf', async () => {
+describe('Open follow-up questions do not block or hijack later messages (#42)', () => {
+  it('an old follow-up question about the open item does not hold up the note and reminder of the next message', async () => {
     app.llm.on('ChatIntent', (_s, input) => {
       if (/^Offen: PoC/.test(userText(input))) return intent({ intent: 'open_item_new', openItem: { title: 'PoC vorstellen' } });
       return {
@@ -35,13 +35,13 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(r2.assistantMessage.content).toContain('Erinnerung für den 2026-11-15 angelegt');
     expect(await app.ok('reminders:list', {})).toHaveLength(1);
     const poc = (await app.ok('openItems:list', {})).find((i) => i.title === 'PoC vorstellen')!;
-    // die Rückfrage gilt nur für die nächste Nachricht
+    // the follow-up question only applies to the next message
     const r3 = await send('Anna', r1.conversationId);
     expect((await app.ok('openItems:list', {})).find((i) => i.id === poc.id)!.responsibleName).toBeNull();
     expect(r3.assistantMessage.intent).not.toBe('open_item_update');
   });
 
-  it('ein neues Ereignis übernimmt nie Titel oder Ziel einer alten Rückfrage', async () => {
+  it('a new event never takes over the title or target of an old follow-up question', async () => {
     app.llm.on('ChatIntent', (_s, input) =>
       /Kickoff/.test(userText(input))
         ? intent({ intent: 'event_record', event: { title: 'Kickoff mit Kunde', occurredAt: null } })
@@ -57,7 +57,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(r2.assistantMessage.content).toMatch(/Hinweis: Das Ereignis „Kickoff mit Kunde“ habe ich ohne Datum nicht eingetragen/);
   });
 
-  it('eine neue Erinnerung mit eigenem Titel beantwortet nicht die Frage nach dem Datum einer anderen', async () => {
+  it('a new reminder with its own title does not answer the date question of another one', async () => {
     app.llm.on('ChatIntent', (_s, input) =>
       /Treffen/.test(userText(input))
         ? intent({ intent: 'reminder_create', reminder: { title: 'Treffen mit dem Team' } })
@@ -70,7 +70,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(reminders.map((r) => r.title)).toEqual(['Zahnarzt anrufen']);
   });
 
-  it('ohne LLM wird „ja“ nicht zur verantwortlichen Person', async () => {
+  it('without an LLM „ja“ does not become the responsible person', async () => {
     app.llm.down = true;
     const r1 = await send('Offener Punkt: Angebot prüfen');
     expect(r1.assistantMessage.content).toMatch(/Wer ist verantwortlich/);
@@ -82,7 +82,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(app.services.graph.findByName('person', 'ja')).toBeFalsy();
   });
 
-  it('ohne LLM gilt nur eine kurze, passende Antwort; „Anna, bis 20.10.“ setzt beides', async () => {
+  it('without an LLM only a short, matching answer counts; „Anna, bis 20.10.“ sets both', async () => {
     app.llm.down = true;
     const r1 = await send('Offener Punkt: Angebot prüfen');
     await send('Anna, bis 20.10.2026', r1.conversationId);
@@ -91,7 +91,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(item.dueAt?.slice(0, 10)).toBe('2026-10-20');
   });
 
-  it('ohne LLM kapert eine Entscheidungs-Rückfrage keine fremde Nachricht', async () => {
+  it('without an LLM a decision follow-up question does not hijack an unrelated message', async () => {
     app.llm.down = true;
     const r1 = await send('Wir haben entschieden, dass wir mit prod-plat erstmal nicht weitermachen.');
     expect(r1.assistantMessage.content).toContain('Wann wurde das entschieden?');
@@ -105,7 +105,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(d.decidedAt).toBeNull();
   });
 
-  it('zurückgestellte Absichten behalten nach „Entscheidung oder Notiz?“ ihren Originaltext', async () => {
+  it('deferred intents keep their original text after „Entscheidung oder Notiz?“', async () => {
     const text = 'Vielleicht wechseln wir den Anbieter. Merk dir: der Vertrag läuft bis März.';
     app.llm.on('ChatIntent', () => ({
       intents: [
@@ -115,7 +115,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
           decisionCertainty: 'unsure',
           decision: decisionEx({ decisionText: 'Anbieter wechseln', title: 'Anbieter wechseln' }),
         }),
-        // ohne note-Feld: die Notiz entsteht aus dem Text
+        // without a note field: the note is created from the text
         intent({ intent: 'note_capture', segment: 'der Vertrag läuft bis März' }),
       ],
     }));
@@ -131,7 +131,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(hits.some((h) => h.type === 'note')).toBe(true);
   });
 
-  it('eine Nachricht, die die Rückfrage nicht beantwortet, verwirft die zurückgestellten Anliegen nicht', async () => {
+  it('a message that does not answer the follow-up question does not discard the deferred requests', async () => {
     app.llm.on('ChatIntent', () => ({
       intents: [
         intent({
@@ -155,7 +155,7 @@ describe('Offene Rückfragen blockieren oder kapern keine späteren Nachrichten 
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
   });
 
-  it('der LLM erfährt, dass eine Rückfrage nur bei passender Nachricht beantwortet wird', async () => {
+  it('the LLM is told that a follow-up question is only answered by a matching message', async () => {
     app.llm.on('ChatIntent', () => intent({ intent: 'reminder_create', reminder: { title: 'Treffen' } }));
     const r1 = await send('Erinnere mich an das Treffen');
     await send('Wie spät ist es?', r1.conversationId);

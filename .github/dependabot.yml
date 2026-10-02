@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Actions sind auf Commit-SHAs gepinnt; Dependabot löst den nächsten Tag auf und schreibt den Kommentar um.
+  # Actions are pinned to commit SHAs; Dependabot resolves the next tag and rewrites the comment.
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
@@ -11,7 +11,7 @@ updates:
       actions:
         patterns: ['*']
 
-  # Hook-Revisionen in .pre-commit-config.yaml
+  # Hook revisions in .pre-commit-config.yaml
   - package-ecosystem: 'pre-commit'
     directory: '/'
     schedule:
@@ -30,7 +30,7 @@ updates:
       default-days: 7
     open-pull-requests-limit: 5
     groups:
-      # Electron und die nativen Module (better-sqlite3 & Co.) müssen zusammenpassen und werden nie automatisch gemergt.
+      # Electron and the native modules (better-sqlite3 & co.) must match each other and are never merged automatically.
       electron:
         patterns: ['electron', 'electron-builder', 'better-sqlite3', '@electron/*']
       next-react:

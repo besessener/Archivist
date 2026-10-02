@@ -22,7 +22,7 @@ interface Waiting {
 }
 
 /**
- * Worker-Thread-Pool für CPU-intensive Aufgaben. Ohne `workerFile` läuft alles inline (Tests/Fallback).
+ * Worker thread pool for CPU-intensive tasks. Without `workerFile` everything runs inline (tests/fallback).
  */
 export class WorkerPool {
   private slots: Slot[] = [];

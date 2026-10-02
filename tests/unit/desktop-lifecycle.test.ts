@@ -21,8 +21,8 @@ function setup(shutdown: () => Promise<void>) {
   return { quitter, calls, log };
 }
 
-describe('Beenden der Anwendung', () => {
-  it('beendet den Prozess nach dem Herunterfahren genau einmal', async () => {
+describe('quitting the application', () => {
+  it('exits the process exactly once after shutdown', async () => {
     const shutdown = vi.fn(() => Promise.resolve());
     const { quitter, calls } = setup(shutdown);
     expect(quitter.quitting).toBe(false);
@@ -35,7 +35,7 @@ describe('Beenden der Anwendung', () => {
     expect(calls).toEqual(['exit:0']);
   });
 
-  it('beendet den Prozess spätestens nach der Frist, auch wenn das Herunterfahren hängt', async () => {
+  it('exits the process after the deadline at the latest, even if shutdown hangs', async () => {
     const { quitter, calls, log } = setup(() => new Promise<void>(() => undefined));
     const done = quitter.quit();
     await vi.advanceTimersByTimeAsync(999);
@@ -43,17 +43,17 @@ describe('Beenden der Anwendung', () => {
     await vi.advanceTimersByTimeAsync(1);
     await done;
     expect(calls).toEqual(['exit:0']);
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('länger als 1 s'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('longer than 1 s'));
   });
 
-  it('beendet den Prozess auch, wenn das Herunterfahren fehlschlägt', async () => {
+  it('exits the process even if shutdown fails', async () => {
     const { quitter, calls, log } = setup(() => Promise.reject(new Error('kaputt')));
     await quitter.quit();
     expect(calls).toEqual(['exit:0']);
-    expect(log).toHaveBeenCalledWith('Fehler beim Beenden', expect.any(Error));
+    expect(log).toHaveBeenCalledWith('Error while quitting', expect.any(Error));
   });
 
-  it('startet neu, wenn die Anwendung während des Beendens erneut gestartet wurde', async () => {
+  it('relaunches if the application was started again while quitting', async () => {
     let finish!: () => void;
     const { quitter, calls } = setup(() => new Promise<void>((r) => (finish = r)));
     const done = quitter.quit();
@@ -63,7 +63,7 @@ describe('Beenden der Anwendung', () => {
     expect(calls).toEqual(['relaunch', 'exit:0']);
   });
 
-  it('hat eine Standardfrist von höchstens zehn Sekunden', () => {
+  it('has a default deadline of at most ten seconds', () => {
     expect(QUIT_DEADLINE_MS).toBeLessThanOrEqual(10_000);
   });
 });

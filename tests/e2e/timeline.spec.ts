@@ -1,7 +1,7 @@
 import { expect, test } from './fixture';
 
 test.describe('Timeline', () => {
-  test('ein erfasstes Ereignis mit Datum erscheint als Ereignis in der Timeline', async ({ llm, on, page }) => {
+  test('a recorded event with a date appears as an event in the timeline', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('timeline');
@@ -41,7 +41,7 @@ test.describe('Timeline', () => {
     await expect(tl.locators.inputs.eventProject).toHaveValue('Testing Day');
   });
 
-  test('zeigt zuerst die neuesten Einträge und lädt ältere auf Wunsch nach', async ({ llm, on, page }) => {
+  test('shows the newest entries first and loads older ones on request', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('timeline');

@@ -1,4 +1,4 @@
-/** Lokale deutsche Datumserkennung (relativ und absolut) – funktioniert ohne LLM. */
+/** Local German date recognition (relative and absolute) – works without an LLM. */
 
 const MONTHS: Record<string, number> = {
   januar: 1,
@@ -34,11 +34,11 @@ const LAST_WEEKDAY_RE = new RegExp(`\\b(?:letzte[nrms]?|vergangene[nrms]?|vorige
 const NEXT_WEEKDAY_RE = new RegExp(`\\b(?:nächste[nrms]?|naechste[nrms]?|kommende[nrms]?)\\s+${WEEKDAY}\\b`);
 const AM_WEEKDAY_RE = new RegExp(`\\bam\\s+${WEEKDAY}\\b`);
 const BARE_WEEKDAY_RE = new RegExp(`\\b${WEEKDAY}\\b`);
-/** Vergangenheitsformen von sein/werden/haben – ein bloßer Wochentag meint dann den letzten. */
+/** Past tense forms of sein/werden/haben – a bare weekday then means the last one. */
 const PAST_AUX_RE = /\b(?:war|waren|warst|wurde|wurden|hatte|hatten|hattest|gewesen)\b/;
-/** Partizip II (eingereicht, gemacht, abgesprochen); nur kleingeschrieben, damit Substantive wie „Angebot“ nicht zählen. */
+/** Past participle (eingereicht, gemacht, abgesprochen); lower case only, so nouns like „Angebot“ do not count. */
 const PAST_PARTICIPLE_RE = /\b(?:ab|an|auf|aus|bei|ein|fest|mit|nach|vor|weg|zu|zurück)?ge(?!plant\b)[a-zäöüß]{2,}(?:t|en)\b/;
-/** „für/auf/bis Freitag“ nennt ein Ziel und bleibt auch in der Vergangenheit der nächste Wochentag. */
+/** „für/auf/bis Freitag“ names a target and stays the next weekday even in a past context. */
 const TARGET_WEEKDAY_RE = new RegExp(`\\b(?:für|auf|bis)\\s+(?:den\\s+)?${WEEKDAY}\\b`);
 const NUMBER_WORDS: Record<string, number> = {
   ein: 1,
@@ -74,7 +74,7 @@ function validDate(y: number, m: number, d: number): string | null {
   return toIsoDate(dt);
 }
 
-/** Wandelt zweistellige Jahre um (26 → 2026). */
+/** Converts two-digit years (26 → 2026). */
 const fullYear = (y: number) => (y < 100 ? 2000 + y : y);
 
 function nextWeekday(from: Date, weekday: number, strictlyAfter = true): Date {
@@ -83,18 +83,18 @@ function nextWeekday(from: Date, weekday: number, strictlyAfter = true): Date {
   return new Date(from.getFullYear(), from.getMonth(), from.getDate() + add);
 }
 
-/** Letzter Wochentag strikt vor `from` (am Freitag ergibt „letzten Freitag“ den vor einer Woche). */
+/** Last weekday strictly before `from` (on a Friday, „letzten Freitag“ yields the one a week ago). */
 function previousWeekday(from: Date, weekday: number): Date {
   const diff = (from.getDay() - weekday + 7) % 7 || 7;
   return new Date(from.getFullYear(), from.getMonth(), from.getDate() - diff);
 }
 
 /**
- * Datum, Wochentag, Uhrzeit und Zeitzone in Ortszeit für LLM-Prompts,
- * z. B. „2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)“.
+ * Date, weekday, time and time zone in local time for LLM prompts,
+ * e.g. „2026-10-01 (Donnerstag), 00:30 Uhr, Zeitzone Europe/Berlin (UTC+02:00)“.
  */
 export function promptNow(now: Date = new Date(), timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
-  // über Intl statt der lokalen Getter: unabhängig davon, welche Zeitzone der Prozess gerade hat
+  // via Intl instead of the local getters: independent of the time zone the process currently has
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
@@ -113,11 +113,11 @@ export function promptNow(now: Date = new Date(), timeZone: string = Intl.DateTi
 }
 
 /**
- * Erkennt das erste Datum in einem deutschen Text und liefert ISO (YYYY-MM-DD) oder null.
- * Unterstützt: ISO, 12.06.2026, 12.6.26, 12. Juni (2026), heute/morgen/übermorgen/gestern,
+ * Recognizes the first date in a German text and returns ISO (YYYY-MM-DD) or null.
+ * Supports: ISO, 12.06.2026, 12.6.26, 12. Juni (2026), heute/morgen/übermorgen/gestern,
  * "in sieben Tagen/Wochen/Monaten", "nächsten Montag", "letzten Freitag", "nächste Woche", "nächsten Monat".
- * Relative Angaben beziehen sich auf den lokalen Tag von `now`. Ein bloßer Wochentag ist der nächste,
- * im Kontext der Vergangenheit („war am Montag“, „Freitag eingereicht“) der letzte.
+ * Relative expressions refer to the local day of `now`. A bare weekday is the next one,
+ * in a past context („war am Montag“, „Freitag eingereicht“) the last one.
  */
 export function parseGermanDate(input: string, now: Date = new Date()): string | null {
   const text = input.toLowerCase();
@@ -172,7 +172,7 @@ export function parseGermanDate(input: string, now: Date = new Date()): string |
   return null;
 }
 
-/** Normalisiert ein vom LLM geliefertes Datum (ISO oder deutsch) zu ISO oder null. */
+/** Normalizes a date returned by the LLM (ISO or German) to ISO or null. */
 export function normalizeDateInput(value: string | null | undefined, now: Date = new Date()): string | null {
   if (!value) return null;
   const v = value.trim();

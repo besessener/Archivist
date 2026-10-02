@@ -1,7 +1,7 @@
 import { expect, test } from './fixture';
 import type { PageTree } from './pages';
 
-/** Erfasst die Entscheidung „Nordlicht pausieren“ samt Rückfrage nach Datum und Beteiligten. */
+/** Records the decision „Nordlicht pausieren“ including the follow-up question about date and participants. */
 async function recordDecision(app: PageTree) {
   await app.chat.do.send('Wir haben entschieden, dass wir das Projekt Nordlicht pausieren.');
   await expect(app.chat.do.lastReply()).toContainText('Wann wurde das entschieden?');
@@ -9,12 +9,12 @@ async function recordDecision(app: PageTree) {
   await expect(app.chat.do.lastReply()).toContainText('Die Entscheidung ist gespeichert');
 }
 
-test.describe('Entscheidungen im Chat', () => {
+test.describe('decisions in the chat', () => {
   test.beforeEach(async ({ llm, on, page }) => {
     await on(page).setup.do.complete(llm.url);
   });
 
-  test('fragt nach Datum und Beteiligten, wenn die Nachricht sie nicht nennt', async ({ on, page }) => {
+  test('asks for date and participants if the message does not mention them', async ({ on, page }) => {
     const app = on(page);
 
     await app.chat.do.send('Wir haben entschieden, dass wir das Projekt Nordlicht pausieren.');
@@ -23,11 +23,11 @@ test.describe('Entscheidungen im Chat', () => {
     await expect(app.chat.do.lastReply()).toContainText('Wer war an der Entscheidung beteiligt?');
   });
 
-  test('speichert die Entscheidung nach der Antwort auf die Rückfrage', async ({ on, page }) => {
+  test('saves the decision after the answer to the follow-up question', async ({ on, page }) => {
     await recordDecision(on(page));
   });
 
-  test('findet eine gespeicherte Entscheidung im Chat wieder, mit Quellen', async ({ on, page }) => {
+  test('finds a saved decision again in the chat, with sources', async ({ on, page }) => {
     const app = on(page);
     await recordDecision(app);
 

@@ -30,7 +30,7 @@ async function decision(title: string, text: string): Promise<string> {
   return d.id;
 }
 
-/** Dokument importieren, (Fake-)LLM klassifizieren lassen und archivieren. */
+/** Import a document, let the (fake) LLM classify it and archive it. */
 async function archivedDoc(name: string, content: string): Promise<string> {
   app.llm.on('DocumentClassification', () => ({
     docType: 'Angebot',
@@ -72,8 +72,8 @@ const PROPOSAL = {
   confidence: 0.8,
 };
 
-describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
-  it('der Prompt enthält den Punkt und passende Quellen; die Ausgabe wird validiert und mit Datum und Modell gespeichert', async () => {
+describe('Solution proposal for open items (#46)', () => {
+  it('the prompt contains the item and matching sources; the output is validated and stored with date and model', async () => {
     const dec = await decision('Dämmung mit Holzfaser', 'Das Dach wird mit Holzfaser gedämmt.');
     const target = await item('Angebot für Dachdämmung einholen', {
       description: 'Mindestens zwei Angebote vergleichen. Zugang: password=hunter2geheim',
@@ -83,7 +83,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
       project: 'Dach',
       sourceIds: [dec],
     });
-    // Notiz, die nur über die Hybrid-Suche gefunden wird
+    // note that is only found via the hybrid search
     const note = app.services.graph.ensureEntity('note', 'Dachdecker Meier', 'Dachdecker Meier bietet Holzfaser-Dämmung an.');
     await app.services.search.index({ type: 'note', id: note.id, title: note.name, content: 'Dachdecker Meier bietet Holzfaser Dämmung und Angebot an.' });
     app.llm.on('SolutionProposal', () => PROPOSAL);
@@ -100,7 +100,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect(call!.input).toMatch(/\[S1\] \(decision, 2026-09-01\) Dämmung mit Holzfaser/);
     expect(call!.input).toContain('Das Dach wird mit Holzfaser gedämmt.');
     expect(call!.input).toContain('Dachdecker Meier');
-    // Geheimnisse werden vor der Übertragung maskiert
+    // secrets are masked before transmission
     expect(call!.input).not.toContain('hunter2geheim');
     expect(call!.input).toContain('[REDACTED:secret]');
 
@@ -109,34 +109,34 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect(s.generatedAt.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
     expect(s.assessmentUncertain).toBe(false);
     expect(s.nextSteps[0]).toMatchObject({ text: 'Zwei Angebote für Holzfaser einholen', sourceRefs: ['S1'], uncertain: false });
-    // unbekannte Quelle „S99“ ist kein gültiger Beleg → als unsicher markiert
+    // unknown source „S99“ is not valid evidence → marked as uncertain
     expect(s.nextSteps[1]).toMatchObject({ text: 'Förderung prüfen', sourceRefs: [], uncertain: true });
     expect(s.risks[0]).toMatchObject({ uncertain: true });
     expect(s.uncertainties.join(' ')).toContain('2 Aussage(n) ohne gültigen Quellenbeleg');
     expect(s.sources.find((x) => x.ref === 'S1')).toMatchObject({ id: dec, type: 'decision', used: true });
     expect(s.sources.some((x) => x.id === note.id)).toBe(true);
 
-    // gespeichert und in der Liste sichtbar
+    // stored and visible in the list
     const listed = (await app.ok('openItems:list', {})).find((i) => i.id === target.id)!;
     expect(listed.solution?.assessment).toBe(PROPOSAL.assessment);
-    // Übertragungsprotokoll
+    // transmission log
     const log = await app.ok('llm:transmissions', {});
     expect(log.some((t) => t.purpose === 'Lösungsvorschlag' && t.success)).toBe(true);
   });
 
-  it('erneutes Generieren ersetzt den Vorschlag', async () => {
+  it('regenerating replaces the proposal', async () => {
     const target = await item('Steuererklärung vorbereiten');
     app.llm.on('SolutionProposal', () => ({ ...PROPOSAL, assessment: 'Erster Vorschlag' }));
     await app.ok('openItems:generateSolution', { id: target.id });
     app.llm.on('SolutionProposal', () => ({ ...PROPOSAL, assessment: 'Zweiter Vorschlag' }));
     const out = await app.ok('openItems:generateSolution', { id: target.id });
     expect(out.solution?.assessment).toBe('Zweiter Vorschlag');
-    // ohne Quellen gibt es keinen gültigen Beleg
+    // without sources there is no valid evidence
     expect(out.solution?.assessmentUncertain).toBe(true);
     expect(out.solution?.uncertainties.join(' ')).toContain('keine passenden Quellen');
   });
 
-  it('ausgeschlossene Dokumente tragen nur ihren Titel bei – nie ihren Inhalt', async () => {
+  it('excluded documents contribute only their title – never their content', async () => {
     const doc = await archivedDoc('Angebot Dach', 'Vertraulich Zitronenfalter Kalkulation 48.000 Euro');
     await app.ok('documents:setLlmExcluded', { id: doc, excluded: true });
     const target = await item('Dachangebot prüfen', { sourceIds: [doc] });
@@ -154,7 +154,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect(out.solution?.sources.find((s) => s.id === doc)?.contentIncluded).toBe(false);
   });
 
-  it('nicht ausgeschlossene Dokumente werden mit Inhalt gesendet', async () => {
+  it('documents that are not excluded are sent with their content', async () => {
     const doc = await archivedDoc('Angebot Fenster', 'Fensterbauer Kranich liefert in sechs Wochen');
     const target = await item('Fensterangebot prüfen', { sourceIds: [doc] });
     app.llm.on('SolutionProposal', () => PROPOSAL);
@@ -164,7 +164,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect(log.find((t) => t.purpose === 'Lösungsvorschlag')?.documentIds).toContain(doc);
   });
 
-  it('local_only sperrt die Aktion – nichts wird gesendet', async () => {
+  it('local_only blocks the action – nothing is sent', async () => {
     const target = await item('Vertrag kündigen');
     app.services.settings.update({ privacy: { llmMode: 'local_only' } });
     app.llm.on('SolutionProposal', () => PROPOSAL);
@@ -180,7 +180,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect((await app.ok('openItems:list', {}))[0]!.solution).toBeNull();
   });
 
-  it('confirm: ohne Bestätigung wird nichts gesendet, mit Bestätigung schon', async () => {
+  it('confirm: nothing is sent without confirmation, but it is with confirmation', async () => {
     const target = await item('Urlaub planen');
     app.services.settings.update({ privacy: { llmMode: 'confirm' } });
     app.llm.on('SolutionProposal', () => PROPOSAL);
@@ -198,7 +198,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect(solutionCalls()).toHaveLength(1);
   });
 
-  it('nicht konfiguriertes oder nicht erreichbares LLM: verständliche Meldung, nichts geändert', async () => {
+  it('LLM not configured or unreachable: understandable message, nothing changed', async () => {
     const target = await item('Heizung warten lassen');
     app.llm.down = true;
     const down = await app.call('openItems:generateSolution', { id: target.id });
@@ -215,7 +215,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     if (!r.ok) expect(r.error.message).toContain('nicht konfiguriert');
   });
 
-  it('ungültige LLM-Ausgabe wird verworfen – nichts gespeichert', async () => {
+  it('invalid LLM output is discarded – nothing stored', async () => {
     const target = await item('Garage aufräumen');
     app.llm.on('SolutionProposal', () => ({ nextSteps: 'kein Array' }));
     const r = await app.call('openItems:generateSolution', { id: target.id });
@@ -224,7 +224,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect((await app.ok('openItems:list', {}))[0]!.solution).toBeNull();
   });
 
-  it('die Erzeugung lässt sich abbrechen – das Ergebnis wird verworfen', async () => {
+  it('the generation can be cancelled – the result is discarded', async () => {
     const target = await item('Keller entrümpeln');
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
@@ -245,7 +245,7 @@ describe('Lösungsvorschlag zu offenen Punkten (#46)', () => {
     expect(await app.ok('openItems:cancelSolution', { id: target.id })).toEqual({ cancelled: false });
   });
 
-  it('übernehmen: als Ergänzung der Beschreibung, als neue offene Punkte (mit Bestätigung) und als Notiz', async () => {
+  it('apply: as an addition to the description, as new open items (with confirmation) and as a note', async () => {
     const target = await item('Dachdämmung beauftragen', { description: 'Bis Winter erledigen.', topic: 'Hausrenovierung' });
     app.llm.on('SolutionProposal', () => PROPOSAL);
     await app.ok('openItems:generateSolution', { id: target.id });

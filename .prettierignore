@@ -1,4 +1,4 @@
-# Generiert oder von Werkzeugen verwaltet
+# Generated or managed by tools
 node_modules/
 dist/
 out/
@@ -9,5 +9,5 @@ playwright-report/
 test-results/
 package-lock.json
 packages/core/migrations/
-# Markdown wird von Hand gepflegt (Tabellen, Umbrüche)
+# Markdown is maintained by hand (tables, line breaks)
 *.md

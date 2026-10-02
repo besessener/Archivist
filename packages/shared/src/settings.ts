@@ -11,12 +11,12 @@ export const LlmSettings = z.object({
   reasoningEffort: ReasoningEffort.nullable().default(null),
   timeoutMs: z.number().int().min(1000).max(600000).default(60000),
   maxInputChars: z.number().int().min(500).max(2000000).default(24000),
-  /** optionales Embedding-Modell (/embeddings). Leer = lokale Vektoren. */
+  /** optional embedding model (/embeddings). Empty = local vectors. */
   embeddingModel: z.string().default(''),
 });
 
 export const ScanSettings = z.object({
-  /** Lokale Dokumentensuche ist standardmäßig deaktiviert. */
+  /** The local document search is disabled by default. */
   enabled: z.boolean().default(false),
   onStartup: z.boolean().default(false),
   periodic: z.boolean().default(false),
@@ -27,7 +27,7 @@ export const ScanSettings = z.object({
 });
 
 export const PrivacySettings = z.object({
-  /** auto: Inhalte automatisch analysieren, confirm: vor jeder externen Analyse bestätigen, local_only: nie extern */
+  /** auto: analyze content automatically, confirm: confirm before every external analysis, local_only: never external */
   llmMode: z.enum(['auto', 'confirm', 'local_only']).default('confirm'),
   neverAnalyzeDirs: z.array(z.string()).default([]),
   neverAnalyzeExtensions: z.array(z.string()).default([]),
@@ -51,7 +51,7 @@ const ConsistencySettings = z.object({
   autoMergePersons: z.boolean().default(true),
 });
 
-/** Wer benutzt Archivist? Name und Spitznamen helfen, „ich/mir/mich“ und Erwähnungen der eigenen Person zuzuordnen. */
+/** Who uses Archivist? Name and nicknames help to assign „ich/mir/mich“ and mentions of the user's own person. */
 export const ProfileSettings = z.object({
   name: z.string().max(200).default(''),
   nicknames: z.array(z.string().max(100)).max(20).default([]),
@@ -92,7 +92,7 @@ export const Settings = z.object({
 });
 export type Settings = z.infer<typeof Settings>;
 
-/** Teilweise Aktualisierung (pro Bereich flach zusammengeführt). Enthält bewusst keine Defaults. */
+/** Partial update (merged shallowly per section). Deliberately contains no defaults. */
 export const SettingsPatch = z.object({
   setupCompleted: z.boolean().optional(),
   profile: patchSchema(ProfileSettings).optional(),

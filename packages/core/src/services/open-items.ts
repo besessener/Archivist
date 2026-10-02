@@ -33,7 +33,7 @@ interface OpenItemUpdateUndo {
 }
 export const ACTIVE_STATUSES: OpenItemStatus[] = ['open', 'waiting', 'blocked'];
 
-/** Erkennt typische „offener Punkt“-Formulierungen lokal (ohne LLM). */
+/** Detects typical "open item" phrasings locally (without LLM). */
 const OPEN_PATTERNS = [
   /muss\s+noch\s+(?:geklärt|geprüft|entschieden|abgestimmt)\s+werden/i,
   /noch\s+(?:zu\s+)?(?:klären|prüfen|entscheiden|abstimmen)/i,
@@ -55,21 +55,21 @@ export function detectOpenItemSentences(text: string, max = 8): string[] {
   return sentences.filter((s) => OPEN_PATTERNS.some((p) => p.test(s))).slice(0, max);
 }
 
-/** Füllwörter in Hinweisen auf offene Punkte („erledigt“, „schließ den Punkt“), die nichts über den Punkt sagen. */
+/** Filler words in hints at open items („erledigt“, „schließ den Punkt“) that say nothing about the item. */
 const HINT_FILLERS = new Set(
   'erledigt erledige erledigen erledigung schliess schliesse schliessen geschlossen punkt punkte offen offene offenen offener aufgabe aufgaben todo todos bitte mach mache machen kann koennen konnen soll sollte done fertig abgeschlossen abhaken hak hake erinnere erinner erinnern erinnerung mich mir daran dran verschieb verschiebe verschieben aendern andern andere setze setz wieder nochmal mal ok okay ja jetzt heute morgen gerade schon endlich raus damit thema zum zur'.split(
     ' ',
   ),
 );
 
-/** Zeitangaben sagen nichts darüber, welcher Punkt gemeint ist („erinnere mich in sieben Tagen daran“). */
+/** Time expressions say nothing about which item is meant („erinnere mich in sieben Tagen daran“). */
 const TIME_WORDS = new Set(
   'tag tage tagen woche wochen monat monaten monate jahr jahren stunde stunden minute minuten montag dienstag mittwoch donnerstag freitag samstag sonntag januar februar marz april mai juni juli august september oktober november dezember naechsten nachsten nachste nachster kommenden kommende uebermorgen ubermorgen am um vom abend abends frueh fruh mittag vormittag nachmittag eins zwei drei vier fuenf funf sechs sieben acht neun zehn elf zwoelf zwolf einer einem einen ein eine bis ab'.split(
     ' ',
   ),
 );
 
-/** Wörter eines Hinweises, die tatsächlich etwas über den gemeinten Punkt sagen (ohne Füll-, Stopp- und Zeitwörter). */
+/** Words of a hint that actually say something about the item meant (without filler, stop and time words). */
 export function hintTokens(hint: string): string[] {
   return [...new Set(tokenize(hint).filter((t) => !HINT_FILLERS.has(t) && !TIME_WORDS.has(t) && !/^\d+$/.test(t)))];
 }
@@ -83,7 +83,7 @@ function tokenScore(h: string, tokens: string[]): number {
   let best = 0;
   for (const t of tokens) {
     if (t === h) return 1;
-    // Abkürzungen und Wortanfänge: „Präsi“ → „Präsentation“, „Steuer“ in „Steuererklärung“
+    // abbreviations and word beginnings: „Präsi“ → „Präsentation“, „Steuer“ in „Steuererklärung“
     if ((h.length >= 3 && t.startsWith(h)) || (t.length >= 4 && h.startsWith(t))) best = Math.max(best, 0.8);
     else if (h.length >= 5 && t.length >= 5) {
       const sim = 1 - levenshtein(h, t) / Math.max(h.length, t.length);
@@ -105,9 +105,9 @@ export function scoreHintTokens(wanted: string[], item: { title: string; descrip
 }
 
 /**
- * Bewertet offene Punkte gegen einen Hinweis: Wort für Wort über Titel und Beschreibung (Füll- und Stoppwörter
- * zählen nicht, kurze Kürzel wie „TÜV“ nur als ganzes Wort), unscharf nur als letzte Stufe. Liegen die besten
- * Treffer nah beieinander, ist das Ergebnis mehrdeutig; unter der Schwelle gibt es keinen Treffer.
+ * Ranks open items against a hint: word by word over title and description (filler and stop words do not
+ * count, short abbreviations like „TÜV“ only as a whole word), fuzzy only as the last stage. If the best
+ * hits are close together, the result is ambiguous; below the threshold there is no hit.
  */
 export function matchOpenItems<T extends { title: string; description?: string | null }>(
   hint: string,
@@ -125,7 +125,7 @@ export function matchOpenItems<T extends { title: string; description?: string |
   return close.length === 1 ? { status: 'match', item: close[0]!.item } : { status: 'ambiguous', items: close.slice(0, 4).map((x) => x.item) };
 }
 
-/** Offene Punkte (Aufgaben/Fragen) inkl. Verantwortlichen, Fälligkeit und Status. */
+/** Open items (tasks/questions) including responsible person, due date and status. */
 export class OpenItemService {
   constructor(
     private readonly ctx: AppContext,
@@ -146,7 +146,7 @@ export class OpenItemService {
         const d = data as { id: string; previousStatus: OpenItemStatus; reminders?: Array<{ id: string; status: string }> };
         this.db.transaction(() => {
           this.db.update(openItems).set({ status: d.previousStatus, updatedAt: nowIso() }).where(eq(openItems.id, d.id)).run();
-          // beim Schließen beendete Erinnerungen kommen wieder
+          // reminders ended on closing come back
           for (const r of d.reminders ?? []) this.db.update(reminders).set({ status: r.status }).where(eq(reminders.id, r.id)).run();
           syncReminderAt(this.db, d.id);
         });
@@ -185,7 +185,7 @@ export class OpenItemService {
     return this.ctx.database.db;
   }
 
-  /** Chat-Nachrichten unter den Quellen → Unterhaltung (für den Rücksprung aus dem offenen Punkt in den Chat). */
+  /** Chat messages among the sources → conversation (to jump back from the open item into the chat). */
   private conversationsOf(rows: Row[]): Map<string, string> {
     const ids = [...new Set(rows.flatMap((r) => r.sourceIds))];
     if (!ids.length) return new Map();
@@ -264,13 +264,13 @@ export class OpenItemService {
     return this.mapMany(rows);
   }
 
-  /** Findet einen aktiven offenen Punkt anhand eines Hinweises – nur bei eindeutigem Treffer. */
+  /** Finds an active open item by a hint – only on an unambiguous hit. */
   findByHint(hint: string): OpenItem | null {
     const m = this.matchByHint(hint);
     return m.status === 'match' ? m.item : null;
   }
 
-  /** Treffer, mehrdeutig (mehrere nah beieinander) oder keiner – siehe rankOpenItems. */
+  /** Hit, ambiguous (several close together) or none – see rankOpenItems. */
   matchByHint(hint: string): HintMatch {
     return matchOpenItems(hint, this.list({ onlyActive: true }));
   }
@@ -385,15 +385,15 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  /** Quelle (Entscheidung oder Dokument) im Graph mit dem Punkt verknüpfen: Punkt → results_from → Quelle. */
+  /** Links a source (decision or document) with the item in the graph: item → results_from → source. */
   private linkSource(id: string, src: string, confidence: number): void {
     const type = this.graph.getEntity(src)?.type;
     if (type === 'decision' || type === 'document') this.graph.link(id, src, 'results_from', { confidence, status: 'confirmed', sourceIds: [src] });
   }
 
   /**
-   * Weitere Quelle zu einem bestehenden Punkt hinzufügen (derselbe Punkt in einem weiteren Dokument erkannt).
-   * Fehlende Angaben (Beschreibung, Fälligkeit, Verantwortlicher) werden aus der neuen Quelle ergänzt, vorhandene bleiben.
+   * Adds another source to an existing item (the same item was detected in another document).
+   * Missing details (description, due date, responsible person) are filled in from the new source; existing ones stay.
    */
   addSource(
     id: string,
@@ -434,7 +434,7 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  /** Speichert den (neuesten) Lösungsvorschlag am Punkt; ein vorhandener wird ersetzt. */
+  /** Stores the (latest) solution proposal on the item; an existing one is replaced. */
   setSolution(id: string, solution: OpenItemSolution): OpenItem {
     const cur = this.db.select({ id: openItems.id }).from(openItems).where(eq(openItems.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
@@ -447,13 +447,13 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  /** Stufe 2: Schließen nur mit ausdrücklicher Bestätigung; mit Undo-Eintrag. */
+  /** Stage 2: closing only with explicit confirmation; with an undo entry. */
   close(id: string, status: 'resolved' | 'dismissed', opts: { confirmed: boolean; trigger?: string }): OpenItem {
     if (!opts.confirmed) throw new AppError('permission_error', 'Das Schließen eines offenen Punkts erfordert eine ausdrückliche Bestätigung.');
     const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
     const updatedAt = nowIso();
-    // offene Erinnerungen des Punkts enden mit ihm (Undo stellt sie wieder her)
+    // open reminders of the item end with it (undo restores them)
     const ended = this.db
       .select({ id: reminders.id, status: reminders.status })
       .from(reminders)
@@ -505,7 +505,7 @@ export class OpenItemService {
           .join('\n'),
       });
     } catch (err) {
-      this.ctx.logger.warn('open-items', 'Indexierung fehlgeschlagen', { error: err });
+      this.ctx.logger.warn('open-items', 'Indexing failed', { error: err });
     }
   }
 }

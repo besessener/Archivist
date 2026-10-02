@@ -36,7 +36,7 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
     rules: { 'no-console': 'off' },
   },
-  // Typbasierte Regeln (u. a. no-floating-promises für IPC/Worker/Services); nur für Dateien, die ein tsconfig abdeckt.
+  // Type-aware rules (including no-floating-promises for IPC/workers/services); only for files covered by a tsconfig.
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({
     ...config,
     files: ['packages/*/src/**/*.ts', 'apps/desktop/src/**/*.ts', 'apps/renderer/**/*.{ts,tsx}', 'tests/**/*.ts'],
@@ -45,17 +45,17 @@ export default tseslint.config(
     files: ['packages/*/src/**/*.ts', 'apps/desktop/src/**/*.ts', 'apps/renderer/**/*.{ts,tsx}', 'tests/**/*.ts'],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: {
-      // Services und Handler implementieren gemeinsame async-Schnittstellen, auch ohne eigenes await.
+      // Services and handlers implement shared async interfaces, even without an await of their own.
       '@typescript-eslint/require-await': 'off',
-      // `onClick={async () => …}` ist in React üblich; floating promises prüft no-floating-promises weiterhin.
+      // `onClick={async () => …}` is common in React; floating promises are still checked by no-floating-promises.
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
     },
   },
-  // Barrierefreiheit im Renderer (strict). label-has-associated-control wird von axe im E2E geprüft.
+  // Accessibility in the renderer (strict). label-has-associated-control is checked by axe in the E2E tests.
   {
     files: ['tests/**/*.ts'],
     rules: {
-      // expect.stringContaining() & Co. liefern `any`
+      // expect.stringContaining() & co. return `any`
       '@typescript-eslint/no-unsafe-assignment': 'off',
     },
   },
@@ -64,26 +64,26 @@ export default tseslint.config(
     plugins: { 'jsx-a11y': jsxA11y },
     rules: { ...jsxA11y.flatConfigs.strict.rules, 'jsx-a11y/label-has-associated-control': 'off' },
   },
-  // Code-Smells für Produktivcode; Tests dürfen wiederholen.
+  // Code smells for production code; tests may repeat themselves.
   {
     files: ['packages/*/src/**/*.ts', 'apps/**/*.{ts,tsx}'],
     ignores: ['**/*.test.*'],
     ...sonarjs.configs.recommended,
     rules: {
       ...sonarjs.configs.recommended.rules,
-      // Reiner Stil: würde jeden Props-Typ in Readonly<...> wickeln bzw. `void promise` verbieten, das no-floating-promises verlangt.
+      // Pure style: would wrap every props type in Readonly<...> or forbid `void promise`, which no-floating-promises requires.
       'sonarjs/prefer-read-only-props': 'off',
       'sonarjs/void-use': 'off',
-      // Verschachtelte Ternaries/Templates sind in JSX und Pfadbau üblich und hier gut lesbar.
+      // Nested ternaries/templates are common in JSX and path building and are readable here.
       'sonarjs/no-nested-conditional': 'off',
       'sonarjs/no-nested-template-literals': 'off',
-      // Absichtlich NaN-sicher: `!(Number(x) >= 5)` ist nicht dasselbe wie `Number(x) < 5` (leere/ungültige Eingabe).
+      // Intentionally NaN-safe: `!(Number(x) >= 5)` is not the same as `Number(x) < 5` (empty/invalid input).
       'sonarjs/no-inverted-boolean-check': 'off',
-      // Pfade und Namen werden bewusst nach Codepunkt sortiert (deterministisch, unabhängig von der Systemsprache).
+      // Paths and names are deliberately sorted by code point (deterministic, independent of the system locale).
       'sonarjs/no-alphabetical-sort': 'off',
-      // Datums-, Schlüssel- und Absichtserkennung sind bewusst komplexe Muster und durch Tests abgedeckt.
+      // Date, key and intent detection are deliberately complex patterns and are covered by tests.
       'sonarjs/regex-complexity': 'off',
-      // Ratchet: höchster gemessener Wert ist 59; der Grenzwert wird gesenkt, wenn Funktionen aufgeteilt werden.
+      // Ratchet: the highest measured value is 59; the limit is lowered when functions are split up.
       'sonarjs/cognitive-complexity': ['error', 60],
     },
   },

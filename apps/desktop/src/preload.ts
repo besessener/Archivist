@@ -2,8 +2,8 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { EVENT_CHANNELS, IPC_CHANNELS, type ArchivistBridge, type EventChannel, type IpcChannel } from '@archivist/shared';
 
 /**
- * Sichere Preload-Bridge: stellt dem Renderer ausschließlich die explizite IPC-Allowlist bereit.
- * Kein Zugriff auf Node.js, Dateisystem, Shell oder Datenbank.
+ * Secure preload bridge: exposes only the explicit IPC allowlist to the renderer.
+ * No access to Node.js, the file system, the shell or the database.
  */
 const channels = new Set<string>(IPC_CHANNELS);
 const events = new Set<string>(EVENT_CHANNELS);

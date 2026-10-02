@@ -36,8 +36,8 @@ function state(ids: string[]) {
   };
 }
 
-describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
-  it('erkennt ähnliche aktive Punkte und schlägt Behalten + Übernehmen + Verwerfen vor', async () => {
+describe('Duplicate open items in the archive check (#35)', () => {
+  it('detects similar active items and proposes keep + take over + discard', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen', topic: 'Vertrieb' }, '2026-01-01T00:00:00.000Z');
     const b = await item(
       { title: 'Angebot Müller prüfen', description: 'er wollte Rabatt', dueAt: '2026-11-15', responsible: 'Anna' },
@@ -62,7 +62,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect(app.services.actions.list('proposed').filter((x) => x.actionType === 'merge_open_items')).toHaveLength(1);
   });
 
-  it('verschiedene Verantwortliche, Projekte oder Zahlen sind keine Dubletten; erledigte Punkte zählen nicht', async () => {
+  it('different responsible persons, projects or numbers are not duplicates; done items do not count', async () => {
     await item({ title: 'Präsentation vorbereiten', responsible: 'Anna' }, '2026-01-01T00:00:00.000Z');
     await item({ title: 'Präsentation vorbereiten', responsible: 'Bernd' }, '2026-01-02T00:00:00.000Z');
     await item({ title: 'Budget 2026 planen' }, '2026-01-03T00:00:00.000Z');
@@ -77,7 +77,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect(await dupInsights()).toHaveLength(0);
   });
 
-  it('Zusammenführen übernimmt fehlende Angaben, Quellen und Erinnerungen; der Duplikat-Punkt bleibt als „verworfen (Duplikat)“', async () => {
+  it('merging takes over missing details, sources and reminders; the duplicate item stays as „verworfen (Duplikat)“', async () => {
     const decision = await app.ok('decisions:create', {
       title: 'Rabatt gewähren',
       decisionText: 'Müller bekommt 5 % Rabatt',
@@ -139,7 +139,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect(app.services.actions.list('proposed').filter((x) => x.actionType === 'merge_open_items')).toHaveLength(0);
   });
 
-  it('Undo stellt beide Punkte, Erinnerungen und Beziehungen exakt wieder her', async () => {
+  it('undo restores both items, reminders and relations exactly', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     const b = await item(
       { title: 'Angebot Müller prüfen', description: 'er wollte Rabatt', topic: 'Vertrieb', responsible: 'Anna' },
@@ -159,7 +159,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect((await app.ok('openItems:list', { onlyActive: true })).map((i) => i.id).sort()).toEqual([a.id, b.id].sort());
   });
 
-  it('Undo verweigert mit Hinweis, wenn ein Punkt seit der Zusammenführung verändert wurde', async () => {
+  it('undo refuses with a hint when an item was changed since the merge', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     const b = await item({ title: 'Angebot Müller prüfen', description: 'er wollte Rabatt' }, '2026-02-01T00:00:00.000Z');
     const r = app.services.openItemDuplicates.merge(a.id, b.id);
@@ -172,7 +172,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect((await app.ok('openItems:list', {})).find((i) => i.id === b.id)!.status).toBe('dismissed');
   });
 
-  it('nur aktive, verschiedene Punkte lassen sich zusammenführen', async () => {
+  it('only active, distinct items can be merged', async () => {
     const a = await item({ title: 'Angebot prüfen' }, '2026-01-01T00:00:00.000Z');
     const b = await item({ title: 'Angebot prüfen' }, '2026-01-02T00:00:00.000Z');
     expect(() => app.services.openItemDuplicates.merge(a.id, a.id)).toThrow(/mit sich selbst/);
@@ -180,7 +180,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect(() => app.services.openItemDuplicates.merge(a.id, b.id)).toThrow(/Nur aktive/);
   });
 
-  it('„Verschieden“ (Ablehnen) wird dauerhaft gemerkt – auch nach Umbenennen', async () => {
+  it('„Verschieden“ (reject) is remembered permanently – also after a rename', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     await item({ title: 'Angebot Müller prüfen' }, '2026-02-01T00:00:00.000Z');
     await app.services.consistency.run('test');
@@ -202,7 +202,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect((await dupInsights()).map((i) => i.status)).toEqual(['rejected']);
   });
 
-  it('ein offener Hinweis verschwindet, wenn die Ursache weg ist', async () => {
+  it('an open hint disappears when the cause is gone', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     await item({ title: 'Angebot Müller prüfen' }, '2026-02-01T00:00:00.000Z');
     await app.services.consistency.run('test');
@@ -214,7 +214,7 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
     expect(app.services.actions.get(insight!.recommendedActionId!).status).toBe('withdrawn');
   });
 
-  it('ein veralteter Vorschlag wird nicht ausgeführt, sondern zurückgezogen', async () => {
+  it('an outdated proposal is not executed but withdrawn', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     const b = await item({ title: 'Angebot Müller prüfen', description: 'er wollte Rabatt' }, '2026-02-01T00:00:00.000Z');
     await app.services.consistency.run('test');
@@ -230,10 +230,10 @@ describe('Doppelte offene Punkte in der Archivprüfung (#35)', () => {
   });
 });
 
-describe('Dublettenprüfung beim Anlegen im Chat (#35)', () => {
+describe('Duplicate check when creating in the chat (#35)', () => {
   const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
-  it('fragt bei gleichem Punkt nach, auch wenn der neue Titel kürzer ist', async () => {
+  it('asks back for the same item, even when the new title is shorter', async () => {
     await item({ title: 'Angebot für Müller prüfen', description: 'Rabatt klären', responsible: 'Anna' }, '2026-01-01T00:00:00.000Z');
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Angebot Müller', responsible: 'Anna' } }));
     const r = await send('Neuer Punkt: Angebot Müller, Anna kümmert sich');
@@ -241,7 +241,7 @@ describe('Dublettenprüfung beim Anlegen im Chat (#35)', () => {
     expect(await app.ok('openItems:list', {})).toHaveLength(1);
   });
 
-  it('legt ohne Rückfrage an, wenn Verantwortlicher oder Projekt abweichen', async () => {
+  it('creates without asking when the responsible person or project differs', async () => {
     await item({ title: 'Präsentation vorbereiten', responsible: 'Anna' }, '2026-01-01T00:00:00.000Z');
     await item({ title: 'Release testen', project: 'Alpha' }, '2026-01-02T00:00:00.000Z');
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Präsentation vorbereiten', responsible: 'Bernd' } }));
@@ -253,7 +253,7 @@ describe('Dublettenprüfung beim Anlegen im Chat (#35)', () => {
     expect(await app.ok('openItems:list', {})).toHaveLength(4);
   });
 
-  it('erkennt den Verantwortlichen auch über einen Alias', async () => {
+  it('recognizes the responsible person via an alias too', async () => {
     const anna = app.services.graph.ensureEntity('person', 'Anna Schmidt');
     app.services.graph.addAlias(anna.id, 'Anna');
     await item({ title: 'Präsentation vorbereiten', responsible: 'Anna Schmidt' }, '2026-01-01T00:00:00.000Z');

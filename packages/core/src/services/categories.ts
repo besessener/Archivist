@@ -9,8 +9,8 @@ import { sanitizeCategoryPath } from '../util/paths';
 const SEED = ['work', 'private'];
 
 /**
- * Kategorien (relative Ordnerpfade im Archiv). Unterkategorien darf der Agent vorschlagen;
- * neue Hauptkategorien (erstes Segment) benötigen eine ausdrückliche Bestätigung.
+ * Categories (relative folder paths in the archive). The agent may propose subcategories;
+ * new main categories (first segment) require explicit confirmation.
  */
 export class CategoryService {
   constructor(private readonly ctx: AppContext) {
@@ -42,13 +42,13 @@ export class CategoryService {
       .map((c) => c.path);
   }
 
-  /** Gibt die Hauptkategorie zurück, falls sie noch nicht bestätigt wurde, sonst null. */
+  /** Returns the main category if it has not been confirmed yet, otherwise null. */
   needsApproval(categoryPath: string): string | null {
     const main = categoryPath.split('/')[0]!;
     return this.mainCategories().some((m) => m.toLowerCase() === main.toLowerCase()) ? null : main;
   }
 
-  /** Legt den Pfad samt Zwischenebenen an. Neue Hauptkategorien nur mit `confirmed`. */
+  /** Creates the path including intermediate levels. New main categories only with `confirmed`. */
   create(rawPath: string, confirmed: boolean): Category {
     const p = sanitizeCategoryPath(rawPath);
     const main = this.needsApproval(p);

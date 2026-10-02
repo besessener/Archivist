@@ -25,7 +25,7 @@ function reached(remindAt: string, now: Date, defaultTime: string, timeZone?: st
   return !at || at.getTime() <= now.getTime();
 }
 
-/** openItems.reminderAt spiegelt die nächste noch ausstehende Erinnerung des Punkts (oder null). */
+/** openItems.reminderAt mirrors the item's next pending reminder (or null). */
 export function syncReminderAt(db: Db, openItemId: string): void {
   const next = db
     .select({ remindAt: reminders.remindAt })
@@ -41,8 +41,8 @@ export function syncReminderAt(db: Db, openItemId: string): void {
 }
 
 /**
- * Erinnerungen werden lokal gespeichert, beim Start geprüft und – solange die Anwendung läuft – zeitgesteuert ausgelöst.
- * (Ohne Tray-/Betriebssystemdienst gibt es keine Benachrichtigung bei beendeter Anwendung.)
+ * Reminders are stored locally, checked on startup and – while the application runs – fired on schedule.
+ * (Without a tray/operating system service there is no notification while the application is closed.)
  */
 export class ReminderService {
   private timer: NodeJS.Timeout | null = null;
@@ -79,7 +79,7 @@ export class ReminderService {
     return map(r);
   }
 
-  /** Die zuletzt geplante, nicht verworfene Erinnerung eines Ziels (auch bereits ausgelöst) – zum Verschieben. */
+  /** The most recently scheduled, not dismissed reminder of a target (also if already fired) – for snoozing. */
   latestFor(targetId: string): Reminder | null {
     return this.list().find((r) => r.targetId === targetId && r.status !== 'dismissed') ?? null;
   }
@@ -118,7 +118,7 @@ export class ReminderService {
     return reached(remindAt, now, this.settings.get().notifications.reminderTime, timeZone);
   }
 
-  /** Löst fällige Erinnerungen aus (Start der Anwendung und periodisch). Gibt die Anzahl zurück. */
+  /** Fires due reminders (on application start and periodically). Returns the count. */
   checkDue(now: Date = new Date(), timeZone?: string): number {
     const pending = this.db.select().from(reminders).where(eq(reminders.status, 'pending')).orderBy(asc(reminders.remindAt)).all();
     const time = this.settings.get().notifications.reminderTime;

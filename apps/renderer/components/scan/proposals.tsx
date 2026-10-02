@@ -99,7 +99,7 @@ export function ScanProposals() {
   async function openArchive(ids: string[], mode: ArchiveMode, group: ScanProposalGroup) {
     const list: ArchiveItemRequest[] = [];
     for (const id of ids) {
-      // frisch laden: die Dokumentliste kann direkt nach der Analyse noch veraltet sein
+      // load fresh: the document list may still be outdated right after the analysis
       const d = docs.data?.find((x) => x.id === id) ?? (await call('documents:get', { id }).catch(() => null));
       if (!d) continue;
       const edit = defaultEdit(d);

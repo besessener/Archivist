@@ -1,4 +1,4 @@
-// Schreibt den Mutationstest-Bericht (reports/mutation/mutation.json) als Markdown-Tabelle, z. B. in $GITHUB_STEP_SUMMARY.
+// Writes the mutation test report (reports/mutation/mutation.json) as a Markdown table, e.g. into $GITHUB_STEP_SUMMARY.
 import fs from 'node:fs';
 
 const report = JSON.parse(fs.readFileSync(process.argv[2] ?? 'reports/mutation/mutation.json', 'utf8'));
@@ -19,13 +19,13 @@ for (const [file, data] of Object.entries(report.files)) {
 }
 const valid = totals.killed + totals.survived + totals.noCoverage;
 const lines = [
-  '## Mutationstest',
+  '## Mutation test',
   '',
-  '| Datei | Score | getötet | überlebt | ohne Abdeckung |',
+  '| File | Score | killed | survived | no coverage |',
   '|---|---|---|---|---|',
   ...rows,
-  `| **gesamt** | **${valid ? ((totals.killed / valid) * 100).toFixed(1) : '–'} %** | ${totals.killed} | ${totals.survived} | ${totals.noCoverage} |`,
+  `| **total** | **${valid ? ((totals.killed / valid) * 100).toFixed(1) : '–'} %** | ${totals.killed} | ${totals.survived} | ${totals.noCoverage} |`,
   '',
-  `Schwellen: ${JSON.stringify(report.thresholds ?? {})}. Überlebende Mutanten im HTML-Bericht (Artefakt \`mutation-report\`).`,
+  `Thresholds: ${JSON.stringify(report.thresholds ?? {})}. Surviving mutants in the HTML report (artifact \`mutation-report\`).`,
 ];
 console.log(lines.join('\n'));

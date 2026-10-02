@@ -81,7 +81,7 @@ export class NoteService {
     try {
       await this.search.index({ type: 'note', id, title: note.name, content: note.description ?? note.name });
     } catch (err) {
-      this.ctx.logger.warn('notes', 'Indexierung fehlgeschlagen', { error: err });
+      this.ctx.logger.warn('notes', 'Indexing failed', { error: err });
     }
   }
 

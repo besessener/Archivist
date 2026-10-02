@@ -4,7 +4,7 @@
   "profile": { "name": "", "nicknames": [] },
   "llm": {
     "baseUrl": "https://example.openai.azure.com/openai/v1",
-    "model": "mein-modell-name",
+    "model": "my-model-name",
     "reasoningEffort": "low",
     "timeoutMs": 60000,
     "maxInputChars": 24000,

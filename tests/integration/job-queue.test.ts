@@ -60,14 +60,14 @@ function failExtraction(times: number, error: () => Error, before?: () => void) 
   });
 }
 
-describe('Wiederholung mit Wartezeit', () => {
-  it('berechnet die Wartezeit exponentiell und begrenzt sie', () => {
+describe('Retry with backoff', () => {
+  it('computes the backoff exponentially and caps it', () => {
     expect([1, 2, 3, 4].map((n) => retryDelayMs(n, 1000, 60_000))).toEqual([1000, 2000, 4000, 8000]);
     expect(retryDelayMs(10, 1000, 60_000)).toBe(60_000);
     expect(retryDelayMs(0, 1000, 60_000)).toBe(1000);
   });
 
-  it('wartet vor jedem weiteren Versuch zunehmend länger und meldet den Fehlschlag erst nach dem letzten Versuch', async () => {
+  it('waits increasingly longer before each further attempt and reports the failure only after the last attempt', async () => {
     const q = await makeQueue(40);
     const startedAt: number[] = [];
     const onFailed = vi.fn();
@@ -100,7 +100,7 @@ describe('Wiederholung mit Wartezeit', () => {
     expect(onFailed.mock.calls[0]![0]).toMatchObject({ id: job.id, attempts: 3 });
   });
 
-  it('verliert keine Wiederholung, die fällig wird, während die Queue nach Arbeit sucht', async () => {
+  it('loses no retry that becomes due while the queue is looking for work', async () => {
     // A clock that moves on by 1 ms with every reading: the retry becomes due between the queue's check for
     // due work and its decision about the retry timer. Depending on the wait, this happens at a different
     // point, so several waits are tried; none of the jobs may get stuck waiting for its retry.
@@ -121,7 +121,7 @@ describe('Wiederholung mit Wartezeit', () => {
     }
   });
 
-  it('wiederholt dauerhafte Fehler nicht und meldet sie sofort', async () => {
+  it('does not retry permanent errors and reports them immediately', async () => {
     const q = await makeQueue(40);
     const onFailed = vi.fn();
     let calls = 0;
@@ -141,7 +141,7 @@ describe('Wiederholung mit Wartezeit', () => {
     expect(onFailed).toHaveBeenCalledTimes(1);
   });
 
-  it('bricht einen auf die Wiederholung wartenden Job ab, ohne ihn erneut zu starten', async () => {
+  it('cancels a job waiting for its retry without starting it again', async () => {
     const q = await makeQueue(60_000);
     const onCancelled = vi.fn();
     const onFailed = vi.fn();
@@ -173,8 +173,8 @@ describe('Wiederholung mit Wartezeit', () => {
   });
 });
 
-describe('Abbrechen', () => {
-  it('bricht das Signal eines laufenden Jobs ab; der Job endet als „cancelled“', async () => {
+describe('Cancelling', () => {
+  it('aborts the signal of a running job; the job ends as "cancelled"', async () => {
     const q = await makeQueue(0);
     const onCancelled = vi.fn();
     q.register(
@@ -196,7 +196,7 @@ describe('Abbrechen', () => {
     expect(onCancelled).toHaveBeenCalledTimes(1);
   });
 
-  it('cancelAll bricht wartende und laufende Jobs ab', async () => {
+  it('cancelAll cancels queued and running jobs', async () => {
     const q = await makeQueue(0);
     q.register('test.wait', (job) => new Promise((_r, reject) => job.signal.addEventListener('abort', () => reject(new Error('abgebrochen')))));
     q.start();
@@ -210,7 +210,7 @@ describe('Abbrechen', () => {
     expect(q.cancelAll()).toBe(0);
   });
 
-  it('bricht die Archivprüfung zwischen ihren Schritten ab', async () => {
+  it('cancels the archive check between its steps', async () => {
     let jobId = '';
     vi.spyOn(app.services.contradictions, 'scanAll').mockImplementation(async () => {
       app.services.jobs.cancel(jobId);
@@ -222,7 +222,7 @@ describe('Abbrechen', () => {
     expect(app.services.notifications.list().some((n) => n.type === 'consistency_done')).toBe(false);
   });
 
-  it('bricht eine laufende Dokumentanalyse ab: Job „cancelled“, Dokument erneut verarbeitbar, keine Fehlermeldung', async () => {
+  it('cancels a running document analysis: job "cancelled", document can be reprocessed, no error message', async () => {
     // the cancel arrives while the text is being extracted
     failExtraction(
       0,
@@ -247,8 +247,8 @@ describe('Abbrechen', () => {
   });
 });
 
-describe('Dokumentanalyse mit Wiederholung', () => {
-  it('setzt nach einem vorübergehenden Fehler weder „failed“ noch eine Benachrichtigung, wenn der nächste Versuch gelingt', async () => {
+describe('Document analysis with retry', () => {
+  it('sets neither "failed" nor a notification after a transient error when the next attempt succeeds', async () => {
     // state of the document (and its notifications) at the start of every attempt
     const seen: { status: string; notified: number }[] = [];
     failExtraction(1, transient, () => {
@@ -268,7 +268,7 @@ describe('Dokumentanalyse mit Wiederholung', () => {
     expect(importFailures(id)).toHaveLength(0);
   });
 
-  it('setzt „failed“ und benachrichtigt genau einmal, wenn auch der letzte Versuch scheitert', async () => {
+  it('sets "failed" and notifies exactly once when the last attempt fails too', async () => {
     failExtraction(99, transient);
     const src = app.file('in/dauerhaft-gesperrt.txt', 'Ein Dokument, das dauerhaft gesperrt bleibt.');
     const id = (await app.ok('documents:import', { paths: [src] })).imported[0]!.id;

@@ -4,14 +4,14 @@ import type { AddressInfo } from 'node:net';
 export interface FakeLlmServer {
   url: string;
   calls: Array<{ schema: string; input: string }>;
-  /** Verzögerung jeder Antwort in Millisekunden (für eine „langsame KI“); 0 = sofort. */
+  /** Delay of every response in milliseconds (for a "slow AI"); 0 = immediately. */
   delayMs: number;
   close(): Promise<void>;
 }
 
 const userMessage = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? input;
 
-/** Minimaler OpenAI-kompatibler Endpunkt (Responses API) für den E2E-Test. */
+/** Minimal OpenAI-compatible endpoint (Responses API) for the E2E test. */
 export async function startFakeLlm(): Promise<FakeLlmServer> {
   const calls: FakeLlmServer['calls'] = [];
   const control = { delayMs: 0 };
@@ -19,21 +19,21 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
     if (schema === 'plain') return 'OK';
     if (schema === 'DocumentClassification') {
       const name = /Dateiname: (.+)/.exec(input)?.[1] ?? '';
-      const urlaub = /urlaub/i.test(name);
+      const vacation = /urlaub/i.test(name);
       return {
-        docType: urlaub ? 'Urlaubsantrag' : 'Protokoll',
-        title: urlaub ? 'Urlaubsantrag Juni 2026' : 'Jour Fixe Nordlicht',
-        summary: urlaub ? 'Urlaubsantrag für den 12.06.2026.' : 'Protokoll des Jour Fixe zum Projekt Nordlicht.',
-        mainTopic: urlaub ? null : 'Nordlicht',
-        project: urlaub ? null : 'Nordlicht',
-        persons: urlaub ? [] : ['Anna', 'Ben'],
-        dates: [{ date: urlaub ? '2026-06-12' : '2026-05-04', label: null }],
-        tags: urlaub ? ['urlaub'] : ['jour-fixe'],
+        docType: vacation ? 'Urlaubsantrag' : 'Protokoll',
+        title: vacation ? 'Urlaubsantrag Juni 2026' : 'Jour Fixe Nordlicht',
+        summary: vacation ? 'Urlaubsantrag für den 12.06.2026.' : 'Protokoll des Jour Fixe zum Projekt Nordlicht.',
+        mainTopic: vacation ? null : 'Nordlicht',
+        project: vacation ? null : 'Nordlicht',
+        persons: vacation ? [] : ['Anna', 'Ben'],
+        dates: [{ date: vacation ? '2026-06-12' : '2026-05-04', label: null }],
+        tags: vacation ? ['urlaub'] : ['jour-fixe'],
         location: {
-          categoryPath: urlaub ? 'private/vacation/2026' : 'work/projects/Nordlicht',
+          categoryPath: vacation ? 'private/vacation/2026' : 'work/projects/Nordlicht',
           fileName: null,
           newMainCategory: false,
-          rationale: urlaub ? 'Urlaubsantrag vom 12.06.2026' : 'Das Dokument nennt das Projekt Nordlicht.',
+          rationale: vacation ? 'Urlaubsantrag vom 12.06.2026' : 'Das Dokument nennt das Projekt Nordlicht.',
           confidence: 0.88,
         },
         decisions: [],

@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from './fixture';
 
-test.describe('Import und Archivierung', () => {
+test.describe('import and archiving', () => {
   test.beforeEach(async ({ llm, on, page }) => {
     await on(page).setup.do.complete(llm.url);
   });
 
-  test('schlägt für eine importierte Datei ein Ziel vor und verändert nichts vor der Bestätigung', async ({ on, page, workspace }) => {
+  test('proposes a target for an imported file and changes nothing before confirmation', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
     const target = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
@@ -20,10 +20,10 @@ test.describe('Import und Archivierung', () => {
     await app.inbox.do.openArchivePlan();
     await expect(app.inbox.locators.archivePlan.source.first()).toContainText('inbox');
     await expect(app.inbox.locators.archivePlan.target.first()).toContainText(path.join('work', 'projects', 'Nordlicht', 'jour-fixe.txt'));
-    expect(fs.existsSync(target), 'vor der Bestätigung darf nichts im Archiv liegen').toBe(false);
+    expect(fs.existsSync(target), 'nothing may be in the archive before confirmation').toBe(false);
   });
 
-  test('archiviert nach der Bestätigung und lässt das Original unverändert', async ({ on, page, workspace }) => {
+  test('archives after confirmation and leaves the original unchanged', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
     const target = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
@@ -35,10 +35,10 @@ test.describe('Import und Archivierung', () => {
     await app.inbox.do.confirmArchive();
 
     expect(fs.readFileSync(target, 'utf8')).toContain('Jour Fixe');
-    expect(fs.existsSync(note), 'das Original bleibt erhalten').toBe(true);
+    expect(fs.existsSync(note), 'the original is kept').toBe(true);
   });
 
-  test('zeigt Dateien in Quarantäne mit Grund und importiert sie erst nach Bestätigung', async ({ on, page, workspace }) => {
+  test('shows quarantined files with a reason and imports them only after confirmation', async ({ on, page, workspace }) => {
     const app = on(page);
     const fake = workspace.addDownload('rechnung.pdf', 'MZ das ist keine PDF-Datei');
 
@@ -54,7 +54,7 @@ test.describe('Import und Archivierung', () => {
 
     await app.inbox.do.releaseFromQuarantine();
     await expect(app.inbox.locators.quarantine.filter).toContainText('(0)');
-    expect(fs.readdirSync(quarantineDir), 'die Datei hat die Quarantäne verlassen').toEqual([]);
+    expect(fs.readdirSync(quarantineDir), 'the file has left quarantine').toEqual([]);
     expect(fs.readdirSync(path.join(workspace.dataDir, 'inbox'))).toEqual(['rechnung.pdf']);
   });
 
@@ -73,7 +73,7 @@ test.describe('Import und Archivierung', () => {
     await expect(app.inbox.locators.archivePlan.removesSource).toHaveCount(0);
     await app.inbox.do.confirmArchive();
     await app.inbox.locators.archivePlan.close.click();
-    expect(fs.existsSync(note), 'das Original bleibt erhalten').toBe(true);
+    expect(fs.existsSync(note), 'the original is kept').toBe(true);
 
     await app.navigation.do.open('documents');
     await expect(app.documents.locators.rows).toHaveCount(1);

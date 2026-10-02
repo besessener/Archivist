@@ -21,8 +21,8 @@ beforeAll(() => {
 });
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-describe('Auslieferung des Frontends (app://)', () => {
-  it('löst Routen auf und setzt eine restriktive CSP mit Skript-Hashes', async () => {
+describe('serving the frontend (app://)', () => {
+  it('resolves routes and sets a restrictive CSP with script hashes', async () => {
     const res = await serveRenderer(root, 'app://archivist/chat/');
     expect(res.status).toBe(200);
     const csp = res.headers['Content-Security-Policy']!;
@@ -36,12 +36,12 @@ describe('Auslieferung des Frontends (app://)', () => {
     expect((await serveRenderer(root, 'app://archivist/chat')).status).toBe(200);
   });
 
-  it('liefert Next-Nutzdaten als text/plain und Skripte mit korrektem Typ', async () => {
+  it('serves Next payload data as text/plain and scripts with the correct type', async () => {
     expect((await serveRenderer(root, 'app://archivist/chat/index.txt')).headers['Content-Type']).toContain('text/plain');
     expect((await serveRenderer(root, 'app://archivist/_next/a.js')).headers['Content-Type']).toContain('javascript');
   });
 
-  it('blockiert Path Traversal, fremde Ursprünge und Symlink-Ausbrüche', async () => {
+  it('blocks path traversal, foreign origins and symlink escapes', async () => {
     for (const u of [
       'app://archivist/../secret.txt',
       'app://archivist/%2e%2e/secret.txt',
@@ -59,7 +59,7 @@ describe('Auslieferung des Frontends (app://)', () => {
     expect((await serveRenderer(root, 'app://archivist/gibt-es-nicht.js')).status).toBe(404);
   });
 
-  it('hasht nur Inline-Skripte', () => {
+  it('hashes inline scripts only', () => {
     expect(inlineScriptHashes('<script src="a.js"></script><script>1+1</script><script> </script>')).toHaveLength(1);
     expect(buildCsp([], true)).toContain("'unsafe-eval'");
   });

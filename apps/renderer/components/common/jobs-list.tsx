@@ -97,7 +97,7 @@ export function JobRow({ job, onChanged }: { job: JobRecord; onChanged?: () => v
   );
 }
 
-/** Wiederverwendbare Jobliste (Einstellungen und Kopfzeilen-Popover). */
+/** Reusable job list (settings and header popover). */
 export function JobsList({ limit = 50, className, compact = false }: { limit?: number; className?: string; compact?: boolean }) {
   const { data, loading, error, refetch } = useQuery('jobs:list', { limit }, { scopes: ['jobs'], jobs: true });
   if (error && !data) return <ErrorNote error={error} onRetry={() => void refetch()} />;

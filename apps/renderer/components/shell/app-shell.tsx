@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
 
-  // Dateien, die neben dem Hauptbereich fallen gelassen werden, sollen nicht vom Browser geöffnet werden.
+  // Files dropped outside the main area should not be opened by the browser.
   useEffect(() => {
     const block = (e: DragEvent) => e.preventDefault();
     window.addEventListener('dragover', block);
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <div className="flex min-h-0 flex-1">
-          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Dropzone für Dateien: Drag-Ereignisse sind die Funktion des Bereichs, Tastaturzugang bietet der Import-Dialog */}
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- drop zone for files: drag events are the purpose of this area, the import dialog provides keyboard access */}
           <main
             id="main"
             data-testid="dropzone"

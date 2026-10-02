@@ -38,14 +38,14 @@ const GO = [
 
 export type Polarity = 'go' | 'stop' | null;
 
-/** Grobe lexikalische Polarität einer Entscheidung/Aussage (Fortführen vs. Stoppen). */
+/** Rough lexical polarity of a decision/statement (continue vs. stop). */
 export function polarity(text: string): Polarity {
   if (STOP.some((p) => p.test(text))) return 'stop';
   if (GO.some((p) => p.test(text))) return 'go';
   return null;
 }
 
-/** Auswahlentscheidung „… für X“ / „… auf X“ → X */
+/** Choice decision „… für X“ / „… auf X“ → X */
 export function chosenOption(text: string): string | null {
   const m =
     /(?:entscheiden\s+uns|entschieden|wählen|wählten|setzen|nutzen|verwenden|bleiben)[^.]*?\b(?:für|auf|bei|mit)\s+(?:das\s+|die\s+|den\s+|dem\s+)?([\p{L}0-9][\p{L}0-9._+-]*(?:\s+[A-Z0-9][\p{L}0-9._+-]*)?)/iu.exec(
@@ -69,8 +69,8 @@ const map = (r: Row): Contradiction => ({
 });
 
 /**
- * Widersprüche sind zunächst nur Hinweise. Entscheidungen werden nie autonom widerrufen oder ersetzt –
- * die empfohlene Auflösung ist eine Aktion, die der Benutzer bestätigen muss.
+ * Contradictions are only hints at first. Decisions are never revoked or superseded autonomously –
+ * the recommended resolution is an action the user has to confirm.
  */
 export class ContradictionService {
   private actions!: ActionService;
@@ -128,7 +128,7 @@ export class ContradictionService {
     return `decision:${[a, b].sort().join('|')}`;
   }
 
-  /** Der (letzte) Widerspruch zu diesem Entscheidungspaar, gleich welchen Status. */
+  /** The (latest) contradiction for this decision pair, whatever its status. */
   forPair(a: string, b: string): Contradiction | undefined {
     const r = this.db
       .select()
@@ -138,7 +138,7 @@ export class ContradictionService {
     return r ? map(r) : undefined;
   }
 
-  /** Lexikalische Prüfung zweier Entscheidungen. */
+  /** Lexical check of two decisions. */
   private compareLexically(a: Decision, b: Decision): { conflict: boolean; reason: string; confidence: number } | null {
     const pa = polarity(a.decisionText);
     const pb = polarity(b.decisionText);
@@ -178,7 +178,7 @@ export class ContradictionService {
       });
       return { isContradiction: res.isContradiction, confidence: res.confidence, description: res.description };
     } catch (err) {
-      this.ctx.logger.warn('contradictions', 'LLM-Prüfung nicht möglich, lexikalisches Ergebnis wird verwendet', { error: err });
+      this.ctx.logger.warn('contradictions', 'LLM check not possible, using the lexical result', { error: err });
       return null;
     }
   }
@@ -198,7 +198,7 @@ export class ContradictionService {
     return { reason: llm.description || lex.reason, confidence: Math.max(lex.confidence, llm.confidence) };
   }
 
-  /** Prüft eine (neue) Entscheidung gegen aktive Entscheidungen zum gleichen Thema/Projekt. */
+  /** Checks a (new) decision against the active decisions on the same topic/project. */
   async checkDecision(decisionId: string): Promise<Contradiction[]> {
     const d = this.decisions.get(decisionId);
     if (!ACTIVE_DECISION_STATUSES.includes(d.status)) return [];
@@ -212,9 +212,9 @@ export class ContradictionService {
   }
 
   /**
-   * Prüft alle aktiven Entscheidungen paarweise je Thema (Archivprüfung). Bereits erfasste Paare werden nicht erneut
-   * bewertet; das Urteil des LLM gilt wie bei `checkDecision`. Offene Widersprüche, deren Entscheidungen nicht mehr
-   * beide aktiv sind, gelten als aufgelöst.
+   * Checks all active decisions pairwise per topic (archive check). Pairs already recorded are not evaluated
+   * again; the LLM's verdict applies as in `checkDecision`. Open contradictions whose decisions are no longer
+   * both active count as resolved.
    */
   async scanAll(): Promise<Contradiction[]> {
     this.reconcile();
@@ -253,7 +253,7 @@ export class ContradictionService {
     }
   }
 
-  /** Nach dem Ersetzen der älteren durch die neuere Entscheidung: der Widerspruch des Paares ist aufgelöst. */
+  /** After the older decision was superseded by the newer one: the pair's contradiction is resolved. */
   settlePair(oldId: string, newId: string): void {
     const c = this.forPair(oldId, newId);
     if (c && (c.status === 'detected' || c.status === 'acknowledged')) this.close(c.id, 'resolved', 'Die ältere Entscheidung wurde ersetzt.');
@@ -297,7 +297,7 @@ export class ContradictionService {
       this.insights.retire(key, 'Für diese Entscheidungen wurde ein Widerspruch erkannt; er ersetzt den Hinweis.');
     this.graph.link(newer.id, older.id, 'contradicts', { confidence, status: 'proposed' });
 
-    // Vorschlag: neuere Entscheidung ersetzt die ältere – erfordert Bestätigung
+    // proposal: the newer decision supersedes the older one – requires confirmation
     const action = this.actions.propose({
       actionType: 'supersede_decision',
       rationale: `Die neuere Entscheidung (${newer.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) könnte die ältere (${older.decidedAt?.slice(0, 10) ?? 'ohne Datum'}) überholt haben.`,

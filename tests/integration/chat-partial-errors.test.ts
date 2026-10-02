@@ -21,7 +21,7 @@ interface Internals {
 
 const notes = () => app.services.graph.listEntities({ type: 'note' });
 
-describe('Fehler mitten in einer Nachricht: Teilergebnisse bleiben erhalten (#50)', () => {
+describe('Error in the middle of a message: partial results are preserved (#50)', () => {
   beforeEach(() => {
     app.llm.on('ChatIntent', (_s, input) => {
       const t = userText(input);
@@ -37,7 +37,7 @@ describe('Fehler mitten in einer Nachricht: Teilergebnisse bleiben erhalten (#50
     });
   });
 
-  it('zwei Anliegen, das zweite scheitert: Notiz bleibt, Antwort nennt beides, alter Zustand ist weg', async () => {
+  it('two requests, the second fails: the note stays, the answer names both, the old state is gone', async () => {
     const r1 = await send('Der Kickoff mit dem Kunden hat stattgefunden.');
     expect(r1.assistantMessage.content).toMatch(/An welchem Datum war das Ereignis „Kickoff mit Kunde“/);
     vi.spyOn(app.services.openItems, 'create').mockImplementation(() => {
@@ -49,21 +49,21 @@ describe('Fehler mitten in einer Nachricht: Teilergebnisse bleiben erhalten (#50
     expect(notes().map((n) => n.name)).toEqual(['Server läuft wieder']);
     expect(await app.ok('openItems:list', {})).toHaveLength(0);
     const reply = r2.assistantMessage;
-    // Erledigtes und Fehlgeschlagenes stehen beide in der Antwort – ein erneutes Senden ist für die Notiz nicht nötig
+    // completed and failed parts both appear in the answer – resending is not needed for the note
     expect(reply.content).toContain('Notiz gespeichert');
     expect(reply.content).toContain('Das hat nicht geklappt: offener Punkt: „Offen: Backup prüfen“ – Unerwarteter Fehler.');
     expect(reply.content).not.toContain('Das konnte ich nicht verarbeiten');
     expect(reply.errorMessage).toContain('kaputt');
     expect(reply.intent).toBe('note_capture');
     expect(reply.sources.some((s) => s.type === 'note')).toBe(true);
-    // die alte Rückfrage nach dem Datum ist nicht wiederhergestellt
+    // the old follow-up question about the date is not restored
     expect(reply.content).toMatch(/Hinweis: Das Ereignis „Kickoff mit Kunde“ habe ich ohne Datum nicht eingetragen/);
     await send('Hallo', r1.conversationId);
     const last = app.llm.calls.filter((c) => c.schema === 'ChatIntent').at(-1)!;
     expect(last.input).toContain('Offene Rückfrage: keine');
   });
 
-  it('scheitert das einzige Anliegen, bleibt keine halb gesetzte Rückfrage zurück', async () => {
+  it('if the only request fails, no half-set follow-up question is left behind', async () => {
     vi.spyOn(app.services.openItems, 'create').mockImplementation(() => {
       throw new Error('kaputt');
     });
@@ -80,9 +80,9 @@ describe('Fehler mitten in einer Nachricht: Teilergebnisse bleiben erhalten (#50
     expect(last.input).toContain('Offene Rückfrage: keine');
   });
 
-  it('ein Fehler außerhalb der einzelnen Anliegen behält bereits Erledigtes in Antwort und Zustand', async () => {
+  it('an error outside the individual requests keeps what was already completed in the answer and state', async () => {
     const r1 = await send('Der Kickoff mit dem Kunden hat stattgefunden.');
-    // der Hinweis auf die verworfene Rückfrage entsteht erst nach den Anliegen – scheitert er, ist die Notiz schon gespeichert
+    // the hint about the discarded follow-up question is produced only after the requests – if it fails, the note is already saved
     vi.spyOn(app.services.chat as unknown as Internals, 'droppedHint').mockImplementation(() => {
       throw new Error('Hinweis kaputt');
     });
@@ -97,12 +97,12 @@ describe('Fehler mitten in einer Nachricht: Teilergebnisse bleiben erhalten (#50
     vi.restoreAllMocks();
     await send('Hallo', r1.conversationId);
     const last = app.llm.calls.filter((c) => c.schema === 'ChatIntent').at(-1)!;
-    // der Zustand entspricht dem Erledigten: die Rückfrage zum offenen Punkt, nicht die alte zum Kickoff
+    // the state matches what was completed: the follow-up question about the open item, not the old one about the kickoff
     expect(last.input).toContain('Offene Rückfrage: Der Agent hat zum offenen Punkt „Backup prüfen“');
     expect(last.input).not.toContain('AN WELCHEM DATUM');
   });
 
-  it('scheitert schon die Einordnung, bleibt die alte Rückfrage bestehen', async () => {
+  it('if the classification itself fails, the old follow-up question remains', async () => {
     const r1 = await send('Der Kickoff mit dem Kunden hat stattgefunden.');
     vi.spyOn(app.services.chat as unknown as Internals, 'classify').mockRejectedValue(new Error('Einordnung kaputt'));
 

@@ -6,14 +6,14 @@ import path from 'node:path';
 import { OCR_LANGUAGE_CODE } from '@archivist/shared';
 
 /**
- * Lokale Texterkennung (OCR) mit tesseract.js. Alles läuft offline:
- * Worker und WASM-Kern liegen in den npm-Paketen, die Sprachdaten (@tesseract.js-data/*) werden beim ersten Einsatz
- * in das Index-Verzeichnis kopiert. Es wird nichts aus dem Netz nachgeladen.
+ * Local text recognition (OCR) with tesseract.js. Everything runs offline:
+ * the worker and the WASM core ship in the npm packages, the language data (@tesseract.js-data/*) is copied into the
+ * index directory on first use. Nothing is downloaded from the network.
  */
 export interface OcrOptions {
-  /** Zielordner für die Sprachdaten (z. B. <Datenverzeichnis>/index/tessdata) */
+  /** Target folder for the language data (e.g. <data directory>/index/tessdata) */
   tessdataDir: string;
-  /** Tesseract-Sprachcodes, z. B. "deu+eng" */
+  /** Tesseract language codes, e.g. "deu+eng" */
   languages: string;
 }
 
@@ -39,7 +39,7 @@ async function installAtomically(source: string, target: string): Promise<void> 
   }
 }
 
-/** Kopiert die gepackten Sprachdaten (4.0.0_best_int) in den lokalen Ordner – nur wenn sie fehlen. */
+/** Copies the packaged language data (4.0.0_best_int) into the local folder – only if it is missing. */
 export async function ensureTessdata(dir: string, languages: string): Promise<string[]> {
   await fsp.mkdir(dir, { recursive: true });
   const langs = languages
@@ -65,7 +65,7 @@ export async function ensureTessdata(dir: string, languages: string): Promise<st
   return langs;
 }
 
-/** Bereitet ein Bild für die Erkennung auf: drehen nach EXIF, Graustufen, Kontrast, sinnvolle Größe. */
+/** Prepares an image for recognition: rotate per EXIF, grayscale, contrast, sensible size. */
 export async function prepareForOcr(input: string | Buffer): Promise<Buffer> {
   const sharp = (await import('sharp')).default;
   const base = sharp(input, { failOn: 'none', limitInputPixels: 268_000_000 }).rotate();
@@ -84,11 +84,11 @@ export async function prepareForOcr(input: string | Buffer): Promise<Buffer> {
 
 export interface OcrResult {
   text: string;
-  /** mittlere Erkennungssicherheit 0..100 */
+  /** mean recognition confidence 0..100 */
   confidence: number;
 }
 
-/** Erkennt Text in mehreren Bildern mit einem gemeinsamen Worker. */
+/** Recognizes text in several images with one shared worker. */
 export async function recognizeImages(
   images: Array<string | Buffer>,
   opts: OcrOptions,

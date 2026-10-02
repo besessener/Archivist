@@ -15,7 +15,7 @@ afterEach(async () => {
 
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
-/** Vorschlag, der nicht aus dem Chat stammt (z. B. Archivprüfung): conversationId null. */
+/** Proposal that does not come from the chat (e.g. archive check): conversationId null. */
 const foreignProposal = (conversationId: string | null = null) =>
   app.services.actions.propose({
     actionType: 'exclude_path',
@@ -33,8 +33,8 @@ function proposedRelation(a: string, b: string) {
   return g.link(g.ensureEntity('topic', a).id, g.ensureEntity('project', b).id, 'relates_to', { confidence: 0.6, status: 'proposed' })!;
 }
 
-describe('„ja/ok/bitte“ bestätigt nur Vorschläge dieser Unterhaltung (#37)', () => {
-  it('neuer Chat + „ja“: nichts passiert, auch wenn die Archivprüfung einen Vorschlag hat (mit LLM)', async () => {
+describe('„ja/ok/bitte“ confirms only proposals of this conversation (#37)', () => {
+  it('new chat + „ja“: nothing happens, even when the archive check has a proposal (with LLM)', async () => {
     const foreign = foreignProposal();
     app.llm.on('ChatIntent', () => intent({ intent: 'proposal_confirm' }));
 
@@ -44,7 +44,7 @@ describe('„ja/ok/bitte“ bestätigt nur Vorschläge dieser Unterhaltung (#37)
     expect(app.services.actions.get(foreign.id).status).toBe('proposed');
   });
 
-  it('neuer Chat + „ja“ ohne LLM: nichts passiert', async () => {
+  it('new chat + „ja“ without an LLM: nothing happens', async () => {
     app.llm.down = true;
     const foreign = foreignProposal();
 
@@ -55,7 +55,7 @@ describe('„ja/ok/bitte“ bestätigt nur Vorschläge dieser Unterhaltung (#37)
     expect(app.services.actions.get(foreign.id).status).toBe('proposed');
   });
 
-  it('ein Vorschlag aus einer anderen Unterhaltung wird nicht bestätigt', async () => {
+  it('a proposal from another conversation is not confirmed', async () => {
     app.llm.down = true;
     const other = await send('Hallo');
     const foreign = foreignProposal(other.conversationId);
@@ -66,7 +66,7 @@ describe('„ja/ok/bitte“ bestätigt nur Vorschläge dieser Unterhaltung (#37)
     expect(app.services.actions.get(foreign.id).status).toBe('proposed');
   });
 
-  it('Relationskarte + „ja“ bestätigt die Beziehung; pro Beziehung gibt es genau eine Karte', async () => {
+  it('relation card + „ja“ confirms the relation; there is exactly one card per relation', async () => {
     const rel = proposedRelation('Hauskauf', 'Nordlicht');
     app.llm.on('ChatIntent', (_s, input) => (/^ja/.test(userText(input)) ? intent({ intent: 'proposal_confirm' }) : intent({ intent: 'relation_decide' })));
 
@@ -80,7 +80,7 @@ describe('„ja/ok/bitte“ bestätigt nur Vorschläge dieser Unterhaltung (#37)
     expect(app.services.graph.getRelation(rel.id)?.status).toBe('confirmed');
   });
 
-  it('„Ablehnen“ an der Beziehungskarte verwirft die Beziehung', async () => {
+  it('„Ablehnen“ on the relation card discards the relation', async () => {
     const rel = proposedRelation('Hauskauf', 'Nordlicht');
     app.llm.on('ChatIntent', () => intent({ intent: 'relation_decide' }));
     const r1 = await send('Welche Beziehungen sind noch offen?');
@@ -90,7 +90,7 @@ describe('„ja/ok/bitte“ bestätigt nur Vorschläge dieser Unterhaltung (#37)
     expect(app.services.graph.getRelation(rel.id)?.status).toBe('rejected');
   });
 
-  it('„Bitte zeig mir …“ ohne LLM ist keine Bestätigung; „Nicht vergessen: …“ keine Ablehnung', async () => {
+  it('„Bitte zeig mir …“ without an LLM is not a confirmation; „Nicht vergessen: …“ is not a rejection', async () => {
     proposedRelation('Hauskauf', 'Nordlicht');
     app.llm.on('ChatIntent', () => intent({ intent: 'relation_decide' }));
     const r1 = await send('Welche Beziehungen sind noch offen?');
@@ -105,7 +105,7 @@ describe('„ja/ok/bitte“ bestätigt nur Vorschläge dieser Unterhaltung (#37)
     expect(app.services.actions.get(card.id).status).toBe('proposed');
   });
 
-  it('mehrere offene Karten: fragt „Welchen Vorschlag meinst du?“ und führt die gewählte aus', async () => {
+  it('several open cards: asks „Welchen Vorschlag meinst du?“ and executes the chosen one', async () => {
     const relA = proposedRelation('Hauskauf', 'Nordlicht');
     const relB = proposedRelation('Steuer', 'Südwind');
     app.llm.on('ChatIntent', (_s, input) => (/^ja/.test(userText(input)) ? intent({ intent: 'proposal_confirm' }) : intent({ intent: 'relation_decide' })));

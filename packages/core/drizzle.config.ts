@@ -1,5 +1,5 @@
-// Wird von `npm run db:generate` genutzt (drizzle-kit wird bewusst nur bei Bedarf per npx in fester Version geladen,
-// damit seine veralteten Abhängigkeiten nicht im Lockfile landen).
+// Used by `npm run db:generate` (drizzle-kit is deliberately loaded only on demand via npx in a pinned version,
+// so that its outdated dependencies do not end up in the lockfile).
 export default {
   dialect: 'sqlite',
   schema: './src/db/schema.ts',

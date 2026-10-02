@@ -15,8 +15,8 @@ function fnv1a(str: string, seed = 0x811c9dc5): number {
 }
 
 /**
- * Lokale, deterministische Vektoren (Feature Hashing über Wörter und Zeichen-Trigramme).
- * Keine Netzwerkanfrage, keine Modelldatei – robust offline und für vertrauliche Dokumente.
+ * Local, deterministic vectors (feature hashing over words and character trigrams).
+ * No network request, no model file – robust offline and for confidential documents.
  */
 export function localEmbed(text: string): Float32Array {
   const vec = new Float32Array(LOCAL_DIM);
@@ -54,13 +54,13 @@ export class EmbeddingService {
     private readonly llm: LlmService,
   ) {}
 
-  /** Modell, das Anfragen aktuell nutzen würden. */
+  /** Model that requests would currently use. */
   currentModel(allowRemote: boolean): string {
     const cfg = this.settings.get().llm;
     return allowRemote && cfg.embeddingModel && this.llm.isConfigured() ? cfg.embeddingModel : LOCAL_MODEL;
   }
 
-  /** `allowRemote=false` erzwingt lokale Vektoren (z. B. für von externer Analyse ausgeschlossene Dokumente). */
+  /** `allowRemote=false` forces local vectors (e.g. for documents excluded from external analysis). */
   async embed(texts: string[], opts: { allowRemote: boolean; purpose: string; documentIds?: string[] }): Promise<EmbedResult> {
     const model = this.currentModel(opts.allowRemote);
     if (model !== LOCAL_MODEL) {
@@ -77,7 +77,7 @@ export class EmbeddingService {
         });
         return { vectors, model, dim: vectors[0]?.length ?? 0 };
       } catch {
-        /* Fallback auf lokale Vektoren – Indexierung darf nicht an der Cloud hängen */
+        /* fall back to local vectors – indexing must not depend on the cloud */
       }
     }
     return { vectors: texts.map(localEmbed), model: LOCAL_MODEL, dim: LOCAL_DIM };

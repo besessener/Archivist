@@ -1,11 +1,11 @@
 import { expect, test } from './fixture';
 import { writeTextImage } from './helpers';
 
-test.describe('Texterkennung (OCR)', () => {
-  test('erkennt Text in einem Bild lokal und gibt ihn an die Analyse weiter', async ({ llm, on, page, workspace }) => {
+test.describe('text recognition (OCR)', () => {
+  test('recognises text in an image locally and passes it on to the analysis', async ({ llm, on, page, workspace }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
-    // bewusst außerhalb des Scan-Ordners
+    // deliberately outside the scan folder
     const scan = await writeTextImage(workspace.dataDir, 'scan.png', ['Rechnung 4711', 'Zahlungsziel 30 Tage']);
 
     await app.inbox.do.importFile(scan);

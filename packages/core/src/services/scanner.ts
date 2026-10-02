@@ -62,8 +62,8 @@ const mapFile = (r: FileRow): ScanFile => ({
 });
 
 /**
- * Kontrollierter Verzeichnisscan. Es werden ausschließlich ausdrücklich freigegebene Verzeichnisse untersucht;
- * ein reiner Dateiscan sendet nie Inhalte an das LLM. Originale werden nie verändert.
+ * Controlled directory scan. Only explicitly approved directories are examined;
+ * a plain file scan never sends content to the LLM. Originals are never modified.
  */
 export class ScannerService {
   /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
@@ -124,7 +124,7 @@ export class ScannerService {
     return this.ctx.database.db;
   }
 
-  // ---------- Verzeichnisse ----------
+  // ---------- Directories ----------
   async addDirectory(dir: string, recursive = true): Promise<ScanRoot> {
     if (!path.isAbsolute(dir) || dir.includes('\0')) throw validationError('Bitte einen absoluten Verzeichnispfad angeben.');
     let real: string;
@@ -192,7 +192,7 @@ export class ScannerService {
     return this.db.select().from(scanRoots).orderBy(scanRoots.path).all().map(mapRoot);
   }
 
-  // ---------- Ausschlüsse ----------
+  // ---------- Exclusions ----------
   exclude(kind: 'file' | 'dir', p: string): ScanExclusion {
     if (!path.isAbsolute(p)) throw validationError('Bitte einen absoluten Pfad angeben.');
     const abs = normalizeFsPath(p);
@@ -209,7 +209,7 @@ export class ScannerService {
       .where(kind === 'file' ? eq(scanFiles.path, abs) : like(scanFiles.path, `${abs}${path.sep}%`))
       .all();
     for (const f of files) this.db.update(scanFiles).set({ status: 'excluded' }).where(eq(scanFiles.id, f.id)).run();
-    // noch nicht archivierte Dokumente aus diesem Ort aus dem Eingang nehmen
+    // remove not yet archived documents from this location from the inbox
     const docs = this.db
       .select()
       .from(documents)
@@ -239,7 +239,7 @@ export class ScannerService {
     const row = this.db.select().from(scanExclusions).where(eq(scanExclusions.id, id)).get();
     if (!row) return;
     this.db.delete(scanExclusions).where(eq(scanExclusions.id, id)).run();
-    // Dateien werden beim nächsten Scan wieder erfasst
+    // the files are picked up again on the next scan
     this.db
       .delete(scanFiles)
       .where(and(eq(scanFiles.status, 'excluded'), or(eq(scanFiles.path, row.path), like(scanFiles.path, `${row.path}${path.sep}%`))))
@@ -249,7 +249,7 @@ export class ScannerService {
   }
 
   // ---------- Scan ----------
-  /** Master-Schalter „Lokale Dokumentensuche“ (standardmäßig aus). */
+  /** Master switch „Lokale Dokumentensuche“ (off by default). */
   startScan(rootId?: string, trigger = 'manual'): Job {
     if (!this.settings.get().scan.enabled)
       throw permissionError('Die lokale Dokumentensuche ist deaktiviert. Bitte zuerst in den Scan-Einstellungen aktivieren.');
@@ -304,7 +304,7 @@ export class ScannerService {
         errors: [],
       };
       try {
-        const real = await fsp.realpath(root.path); // Verzeichnis könnte inzwischen entfernt/ersetzt worden sein
+        const real = await fsp.realpath(root.path); // the directory may have been removed/replaced in the meantime
         if (isForbiddenScanRoot(real)) throw permissionError('Verzeichnis ist nicht (mehr) für Scans zulässig.', real);
         job?.report((idx - 1) / roots.length, `Durchsuche ${root.path}`);
         const walked = await this.pool.run('scanDirectory', {
@@ -340,8 +340,8 @@ export class ScannerService {
           summary.scanned += 1;
           await this.scanEntry(root, e, known.get(e.path), summary, now);
         }
-        // Verschwundene, noch nicht verarbeitete Dateien aus der Liste nehmen. Was hinter dem Dateilimit oder in einem
-        // nicht lesbaren Bereich liegt, wurde nur nicht gesehen und gilt nicht als verschwunden.
+        // Remove vanished, not yet processed files from the list. Whatever lies beyond the file limit or in an
+        // unreadable area was merely not seen and does not count as vanished.
         if (!walked.limitReached)
           for (const [p, f] of known)
             if (!seen.has(p) && PENDING_FILE_STATUSES.includes(f.status as ScanFileStatus) && !walked.unreadable.some((u) => isInside(u, p)))
@@ -351,7 +351,7 @@ export class ScannerService {
       } catch (err) {
         if (isJobCancelled(err)) throw err; // cancelled or interrupted on quit – no scan error
         summary.errors.push(err instanceof Error ? err.message : String(err));
-        this.ctx.logger.error('scanner', 'Scan fehlgeschlagen', { root: root.path, error: err });
+        this.ctx.logger.error('scanner', 'Scan failed', { root: root.path, error: err });
         this.notifications.create({
           title: 'Scan teilweise fehlgeschlagen',
           description: `${root.path}: ${summary.errors[summary.errors.length - 1]}`,
@@ -384,7 +384,7 @@ export class ScannerService {
       summary.excluded += 1;
       return;
     }
-    // bekannt und unverändert → nicht erneut hashen/analysieren
+    // known and unchanged → do not hash/analyze again
     if (prev && prev.size === e.size && prev.mtimeMs === e.mtimeMs) {
       this.markUnchanged(prev, { lastSeenAt: now }, summary);
       return;
@@ -519,15 +519,15 @@ export class ScannerService {
     return mapFile(r);
   }
 
-  /** Pfad nur öffnen, wenn er zu einer freigegebenen Wurzel gehört (kein beliebiges Öffnen). */
+  /** Opens a path only if it belongs to an approved root (no arbitrary opening). */
   assertOpenable(file: ScanFile): string {
     const root = this.db.select().from(scanRoots).where(eq(scanRoots.id, file.rootId)).get();
     if (!root || !isInside(root.path, file.path)) throw permissionError('Die Datei liegt nicht in einem freigegebenen Verzeichnis.');
     return file.path;
   }
 
-  // ---------- Inhaltliche Analyse ----------
-  /** Analysiert ausgewählte Dateien. Nur hier (und nur mit confirmLlm / Modus „auto“) können Inhalte an das LLM gehen. */
+  // ---------- Content analysis ----------
+  /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
   async analyzeFiles(fileIds: string[], confirmLlm: boolean, job?: JobContext): Promise<{ analyzed: string[]; skipped: string[] }> {
     const analyzed: string[] = [];
     const skipped: string[] = [];
@@ -610,7 +610,7 @@ export class ScannerService {
       } catch (err) {
         if (isJobCancelled(err)) throw err; // the whole job was cancelled – no per-file failure
         // analyze() has already set the document to `failed` (reprocessable from the inbox), so it is not stuck in `analyzing`
-        this.ctx.logger.warn('scanner', 'Analyse fehlgeschlagen', { fileId: id, error: err });
+        this.ctx.logger.warn('scanner', 'Analysis failed', { fileId: id, error: err });
         this.notifications.create({
           title: 'Dateianalyse fehlgeschlagen',
           description: `${f.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -633,7 +633,7 @@ export class ScannerService {
     return { key: `${project ? 'project' : topic ? 'topic' : 'category'}:${name}`.toLowerCase(), label: name, topic, project };
   }
 
-  /** Zuordnungsvorschläge: gruppiert analysierte Dokumente nach Thema/Projekt und legt Insight, Aktion und Hinweis an. */
+  /** Assignment proposals: groups analyzed documents by topic/project and creates an insight, an action and a notification. */
   buildProposals(docIds: string[]): void {
     const rows = docIds.length
       ? this.db
@@ -703,7 +703,7 @@ export class ScannerService {
     }
   }
 
-  /** Vorschlagsgruppen für die Scan-Ansicht (noch nicht archivierte, analysierte Scan-Dokumente). */
+  /** Proposal groups for the scan view (analyzed scan documents that are not archived yet). */
   proposals(): ScanProposalGroup[] {
     const files = this.db
       .select()
@@ -728,7 +728,7 @@ export class ScannerService {
     return [...groups.values()].sort((a, b) => b.documentIds.length - a.documentIds.length);
   }
 
-  // ---------- Zeitsteuerung (nur bei laufender Anwendung) ----------
+  // ---------- Scheduling (only while the application runs) ----------
   /** Starts the periodic scan according to the current settings and folders. */
   startSchedule(): void {
     this.applySettings();
@@ -754,7 +754,7 @@ export class ScannerService {
     try {
       this.startScan(undefined, 'interval');
     } catch (err) {
-      this.ctx.logger.warn('scanner', 'Periodischer Scan nicht gestartet', { error: err });
+      this.ctx.logger.warn('scanner', 'Periodic scan not started', { error: err });
     }
   }
 
@@ -764,7 +764,7 @@ export class ScannerService {
       try {
         this.startScan(undefined, 'startup');
       } catch (err) {
-        this.ctx.logger.warn('scanner', 'Startscan nicht gestartet', { error: err });
+        this.ctx.logger.warn('scanner', 'Startup scan not started', { error: err });
       }
     }
   }

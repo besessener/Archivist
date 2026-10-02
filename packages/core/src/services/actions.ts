@@ -71,8 +71,8 @@ export interface ActionDeps {
 }
 
 /**
- * Agentenaktionen: Der Agent erzeugt nur Vorschläge (`propose`). Ausführung erfolgt ausschließlich über `resolve`
- * nach Entscheidung des Benutzers. Parameter werden pro Aktionstyp mit Zod validiert.
+ * Agent actions: the agent only creates proposals (`propose`). Execution happens exclusively through `resolve`
+ * after the user's decision. Parameters are validated with Zod per action type.
  */
 export class ActionService {
   private deps!: ActionDeps;
@@ -151,8 +151,8 @@ export class ActionService {
   }
 
   /**
-   * Offene Vorschläge, die in dieser Unterhaltung als Karte angezeigt wurden und dort entstanden sind – in der
-   * Reihenfolge der Anzeige. Vorschläge anderer Quellen (Archivprüfung, Insights, andere Unterhaltungen) sind nie enthalten.
+   * Open proposals that were shown as a card in this conversation and originated there – in the order
+   * they were shown. Proposals from other sources (archive check, insights, other conversations) are never included.
    */
   openInConversation(conversationId: string, shownActionIds: string[]): StoredAgentAction[] {
     return this.getMany([...new Set(shownActionIds)]).filter((a) => a.status === 'proposed' && a.conversationId === conversationId);
@@ -206,7 +206,7 @@ export class ActionService {
     const now = nowIso();
     if (decision === 'reject') {
       this.db.update(agentActions).set({ status: 'rejected', resolvedAt: now }).where(eq(agentActions.id, id)).run();
-      // eine Beziehungskarte hat Bestätigen und Ablehnen: Ablehnen verwirft die vorgeschlagene Beziehung
+      // a relation card has confirm and reject: rejecting discards the proposed relation
       if (action.actionType === 'confirm_relation') {
         const params = ActionParamSchemas.confirm_relation.parse(action.proposedParameters);
         this.deps.graph.setRelationStatus(params.relationId, 'rejected');
@@ -252,7 +252,7 @@ export class ActionService {
       executed = run;
     } catch (err) {
       const info = toErrorInfo(err);
-      this.ctx.logger.error('actions', `Aktion fehlgeschlagen: ${action.actionType}`, { error: err });
+      this.ctx.logger.error('actions', `Action failed: ${action.actionType}`, { error: err });
       this.db
         .update(agentActions)
         .set({ status: 'failed', result: info.message + (info.details ? ` (${info.details})` : ''), resolvedAt: nowIso() })
@@ -263,7 +263,7 @@ export class ActionService {
       try {
         this.afterExecuted(id, action.actionType, executed);
       } catch (err) {
-        this.ctx.logger.warn('actions', 'Überholte Vorschläge konnten nicht zurückgezogen werden', { error: err });
+        this.ctx.logger.warn('actions', 'Could not withdraw outdated proposals', { error: err });
       }
     }
     this.ctx.events.changed('status', 'insights', 'notifications');

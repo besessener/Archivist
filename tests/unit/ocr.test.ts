@@ -11,7 +11,7 @@ let png: string;
 let pdf: string;
 const opts = () => ({ ocrEnabled: true, ocrLanguages: 'deu+eng', tessdataDir: path.join(dir, 'tessdata') });
 
-/** Minimales PDF mit genau einem JPEG-Bild (kein Textlayer) – simuliert einen Scan. */
+/** Minimal PDF with exactly one JPEG image (no text layer), simulating a scan. */
 function imageOnlyPdf(jpeg: Buffer, w: number, h: number): Buffer {
   const parts: Buffer[] = [];
   const offsets: number[] = [];
@@ -65,7 +65,7 @@ beforeAll(async () => {
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 describe('OCR (offline, tesseract.js)', () => {
-  it('erkennt Text in einem Bild', async () => {
+  it('recognises text in an image', async () => {
     const res = await parseDocument(png, opts());
     expect(res.error).toBeNull();
     expect(res.status).toBe('extracted');
@@ -75,14 +75,14 @@ describe('OCR (offline, tesseract.js)', () => {
     expect(fs.existsSync(path.join(dir, 'tessdata', 'deu.traineddata.gz'))).toBe(true);
   }, 120_000);
 
-  it('liest gescannte PDFs ohne Textebene per OCR', async () => {
+  it('reads scanned PDFs without a text layer via OCR', async () => {
     const res = await parseDocument(pdf, opts());
     expect(res.error).toBeNull();
     expect(res.text).toContain('Rechnung');
     expect(res.meta.ocr).toBe(true);
   }, 120_000);
 
-  it('meldet bei deaktivierter OCR verständlich, dass nichts erkannt wurde', async () => {
+  it('clearly reports that nothing was recognised when OCR is disabled', async () => {
     const res = await parseDocument(png, { ...opts(), ocrEnabled: false });
     expect(res.status).toBe('partial');
     expect(res.error).toMatch(/OCR/);

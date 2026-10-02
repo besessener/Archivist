@@ -23,15 +23,15 @@ async function waitFor(cond: () => boolean): Promise<void> {
 
 const setName = (name: string, nicknames: string[] = []) => app.services.settings.update({ profile: { name, nicknames } });
 
-describe('Eigene Identität (#29)', () => {
-  it('legt genau eine eigene Person an – ohne Namen als Platzhalter „Ich“', () => {
+describe('Own identity (#29)', () => {
+  it('creates exactly one own person – without a name as the placeholder „Ich“', () => {
     const me = self().ensure();
     expect(me).toMatchObject({ name: 'Ich', isSelf: true, type: 'person' });
     expect(self().ensure().id).toBe(me.id);
     expect(selves()).toHaveLength(1);
   });
 
-  it('benennt den Platzhalter um, sobald der Name eingetragen ist (rückgängig machbar)', async () => {
+  it('renames the placeholder as soon as the name is entered (undoable)', async () => {
     const me = self().ensure();
     setName('Monika Lor-Zade', ['Moni']);
     await waitFor(() => graph().getEntity(me.id)!.name === 'Monika Lor-Zade');
@@ -42,7 +42,7 @@ describe('Eigene Identität (#29)', () => {
     expect(graph().getEntity(me.id)!.name).toBe('Ich');
   });
 
-  it('führt eine vorhandene Person mit dem eingetragenen Namen mit der eigenen Person zusammen', async () => {
+  it('merges an existing person with the entered name into the own person', async () => {
     const me = self().ensure();
     const existing = graph().ensureEntity('person', 'Monika Lor-Zade');
     const topic = graph().ensureEntity('topic', 'Budget');
@@ -59,13 +59,13 @@ describe('Eigene Identität (#29)', () => {
     expect(selves()).toHaveLength(1);
   });
 
-  it('nimmt beim ersten Anlegen eine Person, die schon so heißt, statt eine zweite anzulegen', () => {
+  it('on first creation takes a person who already has that name instead of creating a second one', () => {
     const existing = graph().ensureEntity('person', 'Dr. Monika Lor-Zade');
     setName('Monika Lor-Zade');
     expect(self().ensure().id).toBe(existing.id);
   });
 
-  it('im Chat meinen „ich/mir/mich/mein …“ die eigene Person, in Dokumenten nicht', () => {
+  it('in the chat „ich/mir/mich/mein …“ means the own person, in documents not', () => {
     setName('Monika Lor-Zade');
     const me = self().ensure();
     for (const w of ['ich', 'mir', 'mich', 'mein']) expect(app.services.persons.resolve(w, { context: 'chat' }).entity?.id).toBe(me.id);
@@ -75,14 +75,14 @@ describe('Eigene Identität (#29)', () => {
     expect(app.services.persons.resolveNames(['ich', 'Monika Lor-Zade'], { context: 'document' }).entities.map((e) => e.id)).toEqual([me.id]);
   });
 
-  it('ordnet Spitznamen und andere Schreibweisen des eigenen Namens der eigenen Person zu', () => {
+  it('assigns nicknames and other spellings of the own name to the own person', () => {
     setName('Monika Lor-Zade', ['Moni']);
     const me = self().ensure();
     expect(app.services.persons.resolve('Moni', { context: 'document' }).entity?.id).toBe(me.id);
     expect(app.services.persons.resolve('Lor-Zade, Monika', { context: 'decision' }).entity?.id).toBe(me.id);
   });
 
-  it('Chat: „Verantwortlich: ich“ wird die eigene Person', async () => {
+  it('chat: „Verantwortlich: ich“ becomes the own person', async () => {
     setName('Monika Lor-Zade');
     app.llm.on('ChatIntent', () => ({ intent: 'open_item_new', confidence: 0.9, rationale: 't', openItem: { title: 'Angebot prüfen', responsible: 'ich' } }));
     const r = await app.ok('chat:send', { text: 'Ich muss das Angebot prüfen.' });
@@ -93,7 +93,7 @@ describe('Eigene Identität (#29)', () => {
     expect(app.llm.calls.find((c) => c.schema === 'ChatIntent')!.input).toContain('Der Benutzer heißt Monika Lor-Zade');
   });
 
-  it('die Archivprüfung führt Personen mit meinem Namen, Spitznamen oder „ich“ mit mir zusammen', async () => {
+  it('the archive check merges persons with my name, nickname or „ich“ into me', async () => {
     setName('Monika Lor-Zade', ['Moni']);
     const me = self().ensure();
     const ich = graph().ensureEntity('person', 'ich'); // former entry from before the own identity existed

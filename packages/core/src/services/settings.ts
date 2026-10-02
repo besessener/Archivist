@@ -82,7 +82,7 @@ export function settingsLoadNotification(problem: SettingsLoadProblem): Notifica
   };
 }
 
-/** Nicht geheime Anwendungskonfiguration (config/settings.json). API-Keys liegen NICHT hier. */
+/** Non-secret application configuration (config/settings.json). API keys are NOT stored here. */
 export class SettingsService {
   private current: Settings;
   private loadProblem: SettingsLoadProblem | null = null;
@@ -127,7 +127,7 @@ export class SettingsService {
     let settings: Settings;
     let persistRepaired = false;
     if (!isPlainObject(raw)) {
-      // defekte Datei sichern, statt sie stillschweigend zu überschreiben
+      // back up the broken file instead of silently overwriting it
       const backupFile = this.backup('corrupt', true);
       this.loadProblem = { kind: 'unreadable', fields: [], backupFile };
       settings = Settings.parse({});
@@ -161,10 +161,10 @@ export class SettingsService {
     const patch = SettingsPatch.parse(patchInput);
     const next: Record<string, unknown> = { ...this.current };
     for (const [key, value] of Object.entries(patch)) {
-      // eslint-disable-next-line sonarjs/different-types-comparison -- defensiv: Patch kommt als geparstes JSON über IPC
+      // eslint-disable-next-line sonarjs/different-types-comparison -- defensive: the patch arrives as parsed JSON via IPC
       if (value === undefined) continue;
       const prev = (this.current as Record<string, unknown>)[key];
-      // eslint-disable-next-line sonarjs/different-types-comparison -- defensiv: Patch kommt als geparstes JSON über IPC
+      // eslint-disable-next-line sonarjs/different-types-comparison -- defensive: the patch arrives as parsed JSON via IPC
       const isSection = value !== null && typeof value === 'object' && !Array.isArray(value) && typeof prev === 'object';
       next[key] = isSection ? { ...(prev as object), ...definedFields(value) } : value;
     }
@@ -181,7 +181,7 @@ export class SettingsService {
           throw validationError('Die Base URL muss mit http:// oder https:// beginnen.');
         }
       }
-      // eslint-disable-next-line sonarjs/super-linear-regex -- Base-URL, Länge begrenzt
+      // eslint-disable-next-line sonarjs/super-linear-regex -- base URL, length is bounded
       settings.llm.baseUrl = url.replace(/\/+$/, '');
     }
     if (patch.archiveRoot !== undefined) {

@@ -102,8 +102,8 @@ const mapJob = (r: Row): Job => ({
 });
 
 /**
- * Persistente Job-Queue in SQLite. Jobs überleben Neustarts: beim Start werden unterbrochene Jobs
- * (Status „running“) wieder auf „pending“ gesetzt. Rechenintensive Teile laufen im WorkerPool.
+ * Persistent job queue in SQLite. Jobs survive restarts: on start, interrupted jobs
+ * (status `running`) are set back to `pending`. CPU-intensive parts run in the WorkerPool.
  *
  * Retryable failures are queued again with exponential backoff. The wait is kept in memory only: after a
  * restart a waiting job runs right away. Cancelling aborts the running job's `signal`; handlers check it at
@@ -223,8 +223,8 @@ export class JobQueueService {
   }
 
   /**
-   * Sicherer Abbruch: wartende Jobs (auch solche, die auf eine Wiederholung warten) sofort, laufende
-   * kooperativ – ihr `signal` wird abgebrochen, und der Handler endet an der nächsten Prüfstelle.
+   * Safe cancellation: waiting jobs (including those waiting for a retry) immediately, running ones
+   * cooperatively – their `signal` is aborted and the handler ends at its next checkpoint.
    */
   cancel(id: string): Job {
     const r = this.db.select().from(jobs).where(eq(jobs.id, id)).get();
@@ -255,7 +255,7 @@ export class JobQueueService {
     return ids.length;
   }
 
-  /** Startet die Verarbeitung; unterbrochene Jobs aus einer früheren Sitzung werden wieder eingereiht. */
+  /** Starts processing; interrupted jobs from an earlier session are queued again. */
   start(): number {
     const res = this.db.update(jobs).set({ status: 'pending', progressMessage: 'Nach Neustart fortgesetzt' }).where(eq(jobs.status, 'running')).run();
     this.started = true;
@@ -300,11 +300,11 @@ export class JobQueueService {
       const row = this.db.select().from(jobs).where(eq(jobs.id, id)).get();
       if (row?.status === 'running') this.requeueInterrupted(row, row.attempts - 1);
     }
-    if (running.length) this.ctx.logger.info('jobs', 'Jobs beim Beenden unterbrochen', { interrupted: running.length, unfinished: unfinished.length });
+    if (running.length) this.ctx.logger.info('jobs', 'Jobs interrupted on quit', { interrupted: running.length, unfinished: unfinished.length });
     return { interrupted: running.length, unfinished: unfinished.length };
   }
 
-  /** Wartet, bis keine pending/running Jobs mehr existieren (v. a. für Tests und Shutdown). */
+  /** Waits until no pending/running jobs exist any more (mainly for tests and shutdown). */
   async whenIdle(timeoutMs = 30_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
@@ -378,7 +378,7 @@ export class JobQueueService {
     try {
       fn();
     } catch (err) {
-      this.ctx.logger.error('jobs', `Job-Hook ${hook} fehlgeschlagen: ${type}`, { error: err });
+      this.ctx.logger.error('jobs', `Job hook ${hook} failed: ${type}`, { error: err });
     }
   }
 
@@ -440,7 +440,7 @@ export class JobQueueService {
       .set({ status: 'pending', attempts: Math.max(0, attempts), progressMessage: INTERRUPTED_JOB_MESSAGE, startedAt: null })
       .where(eq(jobs.id, job.id))
       .run();
-    this.ctx.logger.info('jobs', `Job beim Beenden unterbrochen: ${job.type}`, { jobId: job.id });
+    this.ctx.logger.info('jobs', `Job interrupted on quit: ${job.type}`, { jobId: job.id });
     const row = this.db.select().from(jobs).where(eq(jobs.id, job.id)).get();
     if (row) this.notify(row);
   }
@@ -465,7 +465,7 @@ export class JobQueueService {
       if (isJobCancelled(err) || isCancelled()) {
         // whatever the handler threw after a cancel request (e.g. an aborted LLM request): the job was cancelled
         this.db.update(jobs).set({ status: 'cancelled', progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
-        this.ctx.logger.info('jobs', `Job abgebrochen: ${job.type}`, { jobId: job.id, attempts });
+        this.ctx.logger.info('jobs', `Job cancelled: ${job.type}`, { jobId: job.id, attempts });
         this.runHook(job.type, 'onCancelled', () => registered?.hooks.onCancelled?.({ id: job.id, payload: job.payload as never }));
       } else this.recordFailure(job, attempts, err, registered);
     }
@@ -480,7 +480,7 @@ export class JobQueueService {
     if (info.retryable && attempts < job.maxAttempts) {
       const delay = retryDelayMs(attempts, this.retryBaseDelayMs, this.retryMaxDelayMs);
       this.retryAt.set(job.id, Date.now() + delay);
-      this.ctx.logger.warn('jobs', `Job fehlgeschlagen, neuer Versuch folgt: ${job.type}`, { jobId: job.id, error: err, attempts, delayMs: delay });
+      this.ctx.logger.warn('jobs', `Job failed, retrying: ${job.type}`, { jobId: job.id, error: err, attempts, delayMs: delay });
       this.db
         .update(jobs)
         .set({
@@ -494,7 +494,7 @@ export class JobQueueService {
         .run();
       return;
     }
-    this.ctx.logger.error('jobs', `Job fehlgeschlagen: ${job.type}`, { jobId: job.id, error: err, attempts });
+    this.ctx.logger.error('jobs', `Job failed: ${job.type}`, { jobId: job.id, error: err, attempts });
     this.db.update(jobs).set({ status: 'failed', error, progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
     this.runHook(job.type, 'onFailed', () => registered?.hooks.onFailed?.({ id: job.id, payload: job.payload as never, attempts }, err));
   }

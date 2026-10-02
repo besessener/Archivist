@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-/** Das Mindeste, was die Ablage-Auswertung von einem Dokument braucht. */
+/** The minimum the filing analysis needs from a document. */
 export interface PlacedDoc {
   id: string;
   title: string;
@@ -10,7 +10,7 @@ export interface PlacedDoc {
 }
 
 export interface FolderGroup<T extends PlacedDoc = PlacedDoc> {
-  /** Ordner relativ zum Archiv (POSIX); leer = oberste Ebene */
+  /** Folder relative to the archive (POSIX); empty = top level */
   folder: string;
   docs: T[];
 }
@@ -23,7 +23,7 @@ export interface SplitSubject<T extends PlacedDoc = PlacedDoc> {
 
 const segments = (folder: string) => (folder === '' ? 0 : folder.split('/').length);
 
-/** Ordner, in dem die Archivdatei tatsächlich liegt. */
+/** Folder the archive file actually lies in. */
 export function folderOf(doc: Pick<PlacedDoc, 'archiveRelPath'>): string {
   const dir = path.posix.dirname((doc.archiveRelPath ?? '').replaceAll('\\', '/'));
   return dir === '.' ? '' : dir;
@@ -31,7 +31,7 @@ export function folderOf(doc: Pick<PlacedDoc, 'archiveRelPath'>): string {
 
 export const folderLabel = (folder: string): string => (folder === '' ? '(oberste Ebene des Archivs)' : folder);
 
-/** Gruppiert nach Ordner; die größte Gruppe zuerst, bei Gleichstand alphabetisch. */
+/** Grouped by folder; the largest group first, alphabetical on a tie. */
 export function groupByFolder<T extends PlacedDoc>(docs: T[]): FolderGroup<T>[] {
   const map = new Map<string, T[]>();
   for (const doc of docs) {
@@ -42,8 +42,8 @@ export function groupByFolder<T extends PlacedDoc>(docs: T[]): FolderGroup<T>[] 
 }
 
 /**
- * Schlägt den gemeinsamen Zielordner vor: dort, wo die meisten Dokumente schon liegen. Bei Gleichstand der
- * speziellere (tiefere) Ordner, danach alphabetisch. Die oberste Ebene kommt nie in Frage; `null`, wenn es nur sie gibt.
+ * Suggests the common target folder: where most of the documents already lie. On a tie the more specific
+ * (deeper) folder, then alphabetical. The top level never qualifies; `null` if it is the only one.
  */
 export function chooseTargetFolder(groups: FolderGroup[]): string | null {
   const candidates = groups.filter((g) => g.folder !== '');
@@ -52,7 +52,7 @@ export function chooseTargetFolder(groups: FolderGroup[]): string | null {
   return best.folder;
 }
 
-/** Themen und Projekte, deren Dokumente in mehr als einem Ordner liegen. */
+/** Topics and projects whose documents lie in more than one folder. */
 export function splitSubjects<T extends PlacedDoc>(docs: T[]): SplitSubject<T>[] {
   const out: SplitSubject<T>[] = [];
   const collect = (kind: SplitSubject['kind'], pick: (d: T) => string | null | undefined) => {

@@ -14,8 +14,8 @@ afterEach(async () => {
 
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
-describe('Kein stiller Rückfall auf den zuletzt genannten offenen Punkt (#40)', () => {
-  it('„Erinnere mich am 15.11. an den Zahnarzt“ hängt nicht an „PoC vorstellen“, sondern legt einen eigenen Punkt an', async () => {
+describe('No silent fallback to the most recently mentioned open item (#40)', () => {
+  it('„Erinnere mich am 15.11. an den Zahnarzt“ is not attached to „PoC vorstellen“ but creates its own item', async () => {
     app.llm.on('ChatIntent', (_s, input) =>
       /^Offen: PoC/.test(userText(input))
         ? intent({ intent: 'open_item_new', openItem: { title: 'PoC vorstellen', responsible: 'Anna', dueAt: '2026-10-31' } })
@@ -33,7 +33,7 @@ describe('Kein stiller Rückfall auf den zuletzt genannten offenen Punkt (#40)',
     expect(rem.targetId).toBe(items.find((i) => i.title === 'Zahnarzt anrufen')!.id);
   });
 
-  it('„Die Steuererklärung ist erledigt“ schlägt nicht vor, „PoC vorstellen“ zu schließen, sondern fragt nach', async () => {
+  it('„Die Steuererklärung ist erledigt“ does not propose closing „PoC vorstellen“ but asks back', async () => {
     app.llm.on('ChatIntent', (_s, input) =>
       /^Offen: PoC/.test(userText(input))
         ? intent({ intent: 'open_item_new', openItem: { title: 'PoC vorstellen', responsible: 'Anna', dueAt: '2026-10-31' } })
@@ -47,7 +47,7 @@ describe('Kein stiller Rückfall auf den zuletzt genannten offenen Punkt (#40)',
     expect(r2.assistantMessage.content).toContain('Zu „Steuererklärung“ finde ich keinen aktiven Punkt');
   });
 
-  it('ohne eigenen Hinweis („der ist erledigt“, „erinnere mich daran“) gilt der zuletzt genannte Punkt', async () => {
+  it('without its own reference („der ist erledigt“, „erinnere mich daran“) the most recently mentioned item applies', async () => {
     app.llm.down = true;
     const r1 = await send('Offener Punkt: Angebot Müller prüfen');
     await send('Anna', r1.conversationId);
@@ -61,7 +61,7 @@ describe('Kein stiller Rückfall auf den zuletzt genannten offenen Punkt (#40)',
     expect((r4.assistantMessage.actions[0]!.proposedParameters as { openItemId: string }).openItemId).toBe(item.id);
   });
 
-  it('ein ausdrücklich genannter Punkt hat Vorrang vor einer offenen Rückfrage', async () => {
+  it('an explicitly named item takes precedence over an open follow-up question', async () => {
     const budget = await app.ok('openItems:create', { title: 'Budget planen', priority: 'normal', sourceIds: [], confidence: 0.9 });
     app.llm.on('ChatIntent', (_s, input) =>
       /^Offen: PoC/.test(userText(input))

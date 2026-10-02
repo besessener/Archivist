@@ -48,8 +48,8 @@ const unsure = () => ({
   ],
 });
 
-describe('Antworten auf „Entscheidung, Ereignis, Notiz oder nichts?“ (#43)', () => {
-  it('die Rückfrage hat Knöpfe', async () => {
+describe('Answers to „Entscheidung, Ereignis, Notiz oder nichts?“ (#43)', () => {
+  it('the follow-up question has buttons', async () => {
     app.llm.on('ChatIntent', unsure);
     const r = await send('Kickoff mit dem Kunden am 03.03.2026');
     expect(r.assistantMessage.quickReplies).toEqual(['Entscheidung', 'Ereignis', 'Notiz', 'Nichts speichern']);
@@ -57,7 +57,7 @@ describe('Antworten auf „Entscheidung, Ereignis, Notiz oder nichts?“ (#43)',
     expect(history.at(-1)!.quickReplies).toEqual(['Entscheidung', 'Ereignis', 'Notiz', 'Nichts speichern']);
   });
 
-  it('„Nein, als Notiz“ legt eine Notiz an (statt nichts zu speichern)', async () => {
+  it('„Nein, als Notiz“ creates a note (instead of saving nothing)', async () => {
     app.llm.on('ChatIntent', unsure);
     const r1 = await send('Kickoff mit dem Kunden am 03.03.2026');
     app.llm.on('ChatIntent', () => intent({ intent: 'proposal_reject' }));
@@ -67,7 +67,7 @@ describe('Antworten auf „Entscheidung, Ereignis, Notiz oder nichts?“ (#43)',
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
   });
 
-  it('„Keine Entscheidung, sondern ein Ereignis“ trägt ein Ereignis ein', async () => {
+  it('„Keine Entscheidung, sondern ein Ereignis“ records an event', async () => {
     app.llm.on('ChatIntent', unsure);
     const r1 = await send('Kickoff mit dem Kunden am 03.03.2026');
     const r2 = await send('Keine Entscheidung, sondern ein Ereignis', r1.conversationId);
@@ -76,7 +76,7 @@ describe('Antworten auf „Entscheidung, Ereignis, Notiz oder nichts?“ (#43)',
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
   });
 
-  it('nicht erkannt, ohne LLM: fragt erneut mit Knöpfen und vergisst nichts', async () => {
+  it('not recognized, without an LLM: asks again with buttons and forgets nothing', async () => {
     app.llm.on('ChatIntent', unsure);
     const r1 = await send('Kickoff mit dem Kunden am 03.03.2026');
     app.llm.down = true;
@@ -87,7 +87,7 @@ describe('Antworten auf „Entscheidung, Ereignis, Notiz oder nichts?“ (#43)',
     expect(r3.assistantMessage.content).toMatch(/Ereignis in der Timeline eingetragen/);
   });
 
-  it('nicht erkannt, mit LLM: das LLM ordnet die Antwort mit dem Hinweis auf die Rückfrage ein', async () => {
+  it('not recognized, with LLM: the LLM classifies the answer with the hint about the follow-up question', async () => {
     app.llm.on('ChatIntent', unsure);
     const r1 = await send('Kickoff mit dem Kunden am 03.03.2026');
     app.llm.on('ChatIntent', (_s, input) => {

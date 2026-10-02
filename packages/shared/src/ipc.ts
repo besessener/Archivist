@@ -119,8 +119,8 @@ const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benu
 const ch = <I extends z.ZodType, O extends z.ZodType>(input: I, output: O) => ({ input, output });
 
 /**
- * Zentrale, explizite IPC-Allowlist. Jeder Kanal hat Input- und Output-Schema.
- * Dynamische Kanalnamen sind nicht erlaubt.
+ * Central, explicit IPC allowlist. Every channel has an input and an output schema.
+ * Dynamic channel names are not allowed.
  */
 export const ipcContract = {
   // --- App ---
@@ -131,7 +131,7 @@ export const ipcContract = {
   'app:revealPath': ch(z.object({ documentId: Id }), Ok),
   'app:openScanFile': ch(z.object({ scanFileId: Id }), Ok),
 
-  // --- Einstellungen ---
+  // --- Settings ---
   'settings:get': ch(Empty, z.object({ settings: Settings, hasApiKey: z.boolean() })),
   'settings:update': ch(SettingsPatch, z.object({ settings: Settings })),
   'settings:setApiKey': ch(z.object({ apiKey: z.string().min(1).max(4096) }), Ok),
@@ -155,7 +155,7 @@ export const ipcContract = {
   'chat:newConversation': ch(Empty, Conversation),
   'chat:renameConversation': ch(z.object({ id: Id, title: z.string().trim().min(1).max(120) }), Conversation),
 
-  // --- Agentenaktionen ---
+  // --- Agent actions ---
   'actions:list': ch(z.object({ status: AgentActionStatus.optional() }), z.array(StoredAgentAction)),
   'actions:resolve': ch(
     z.discriminatedUnion('decision', [
@@ -171,7 +171,7 @@ export const ipcContract = {
     StoredAgentAction,
   ),
 
-  // --- Entscheidungen ---
+  // --- Decisions ---
   'decisions:create': ch(DecisionInput, Decision),
   'decisions:update': ch(
     z.object({
@@ -184,12 +184,12 @@ export const ipcContract = {
   'decisions:list': ch(z.object({ status: DecisionStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional() }), z.array(Decision)),
   'decisions:search': ch(z.object({ query: z.string().min(1), limit: z.number().int().min(1).max(100).default(20) }), z.array(Decision)),
   'decisions:proposeSupersede': ch(z.object({ oldDecisionId: Id, newDecisionId: Id }), StoredAgentAction),
-  /** Ersetzen ist eine Stufe-2-Aktion: ausdrückliche Bestätigung nötig, mit Undo-Eintrag. */
+  /** Superseding is a stage-2 action: explicit confirmation required, with an undo entry. */
   'decisions:supersede': ch(z.object({ oldDecisionId: Id, newDecisionId: Id, confirmed: Confirmed }), z.object({ old: Decision, new: Decision })),
-  /** Widerrufen ist eine Stufe-2-Aktion: ausdrückliche Bestätigung nötig, mit Undo-Eintrag. */
+  /** Revoking is a stage-2 action: explicit confirmation required, with an undo entry. */
   'decisions:revoke': ch(z.object({ id: Id, confirmed: Confirmed }), Decision),
 
-  // --- Dokumente ---
+  // --- Documents ---
   'documents:import': ch(
     z.object({ paths: z.array(z.string().min(1)).min(1).max(200) }),
     z.object({
@@ -215,9 +215,9 @@ export const ipcContract = {
     z.object({
       items: z.array(ArchiveItemRequest).min(1),
       confirmed: Confirmed,
-      /** Hauptkategorien, deren Neuanlage der Benutzer ausdrücklich bestätigt */
+      /** Top-level categories whose creation the user explicitly confirms */
       approveNewCategories: z.array(z.string()).default([]),
-      /** Bestätigung für Verschieben (Original wird entfernt) */
+      /** Confirmation for moving (the original is removed) */
       confirmMove: z.boolean().default(false),
     }),
     ArchiveResult,
@@ -238,7 +238,7 @@ export const ipcContract = {
   'documents:ignore': ch(z.object({ id: Id }), DocumentRecord),
   'documents:forTopic': ch(z.object({ topicId: Id }), z.array(DocumentRecord)),
   'documents:setLlmExcluded': ch(z.object({ id: Id, excluded: z.boolean() }), DocumentRecord),
-  /** "Trotzdem importieren": holt eine Datei aus der Quarantäne in den Eingang und stößt die Analyse an */
+  /** "Trotzdem importieren": takes a file out of quarantine into the inbox and starts the analysis */
   'documents:releaseQuarantine': ch(z.object({ id: Id, confirmed: Confirmed }), DocumentRecord),
 
   // --- Scanner ---
@@ -273,7 +273,7 @@ export const ipcContract = {
   'jobs:retry': ch(z.object({ id: Id }), Job),
   'jobs:cancel': ch(z.object({ id: Id }), Job),
 
-  // --- Benachrichtigungen ---
+  // --- Notifications ---
   'notifications:list': ch(
     z.object({ includeResolved: z.boolean().default(false), limit: z.number().int().min(1).max(500).default(100) }),
     z.array(AppNotification),
@@ -282,7 +282,7 @@ export const ipcContract = {
   'notifications:resolve': ch(z.object({ id: Id }), AppNotification),
   'notifications:snooze': ch(z.object({ id: Id, remindAt: IsoDate }), Reminder),
 
-  // --- Insights / Konsistenz / Widersprüche ---
+  // --- Insights / consistency / contradictions ---
   'insights:list': ch(z.object({ status: z.enum(['open', 'accepted', 'rejected', 'snoozed']).optional() }), z.array(Insight)),
   'insights:respond': ch(
     z.discriminatedUnion('response', [
@@ -307,7 +307,7 @@ export const ipcContract = {
     Contradiction,
   ),
 
-  // --- Erinnerungen ---
+  // --- Reminders ---
   'reminders:create': ch(
     z.object({
       targetType: z.enum(['open_item', 'insight', 'notification', 'decision', 'document', 'custom']),
@@ -321,7 +321,7 @@ export const ipcContract = {
   'reminders:dismiss': ch(z.object({ id: Id }), Ok),
   'reminders:list': ch(z.object({ status: z.enum(['pending', 'fired', 'dismissed']).optional() }), z.array(Reminder)),
 
-  // --- Offene Punkte ---
+  // --- Open items ---
   'openItems:list': ch(
     z.object({ status: OpenItemStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional(), onlyActive: z.boolean().default(false) }),
     z.array(OpenItem),
@@ -334,15 +334,15 @@ export const ipcContract = {
     }),
     OpenItem,
   ),
-  /** Schließen ist eine Stufe-2-Aktion: ausdrückliche Bestätigung nötig. */
+  /** Closing is a stage-2 action: explicit confirmation required. */
   'openItems:close': ch(z.object({ id: Id, status: z.enum(['resolved', 'dismissed']).default('resolved'), confirmed: Confirmed }), OpenItem),
-  /** Was für einen Lösungsvorschlag gesendet würde (ohne LLM-Aufruf) – für den Bestätigungsdialog. */
+  /** What would be sent for a solution proposal (without an LLM call) – for the confirmation dialog. */
   'openItems:solutionPreview': ch(z.object({ id: Id }), SolutionPreview),
-  /** Erzeugt einen Lösungsvorschlag über das LLM; im Modus „vorher fragen“ nur mit Bestätigung. */
+  /** Generates a solution proposal via the LLM; in mode „vorher fragen“ only with confirmation. */
   'openItems:generateSolution': ch(z.object({ id: Id, confirmed: z.boolean().default(false) }), OpenItem),
-  /** Bricht eine laufende Erzeugung ab (nichts wird gespeichert). */
+  /** Cancels a running generation (nothing is stored). */
   'openItems:cancelSolution': ch(z.object({ id: Id }), z.object({ cancelled: z.boolean() })),
-  /** Übernimmt den Lösungsvorschlag: als Ergänzung der Beschreibung, als neue offene Punkte oder als Notiz. */
+  /** Applies the solution proposal: as an addition to the description, as new open items or as a note. */
   'openItems:applySolution': ch(
     z.discriminatedUnion('target', [
       z.object({ target: z.literal('description'), id: Id }),
@@ -352,7 +352,7 @@ export const ipcContract = {
     z.object({ item: OpenItem, created: z.array(OpenItem), noteId: z.string().nullable() }),
   ),
 
-  // --- Wissensgraph ---
+  // --- Knowledge graph ---
   'knowledge:listEntities': ch(
     z.object({ type: EntityType.optional(), query: z.string().optional(), limit: z.number().int().min(1).max(1000).default(300) }),
     z.array(GraphEntity.extend({ relationCount: z.number() })),
@@ -372,13 +372,13 @@ export const ipcContract = {
   ),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
 
-  // --- Ereignisse ---
+  // --- Events ---
   'events:list': ch(z.object({ topicId: z.string().optional(), projectId: z.string().optional() }), z.array(EventRecord)),
   'events:create': ch(EventInput, EventRecord),
   'events:update': ch(z.object({ id: Id, patch: EventInput.partial() }), EventRecord),
   'events:delete': ch(z.object({ id: Id, confirmed: Confirmed }), Ok),
 
-  // --- Timeline, Suche ---
+  // --- Timeline, search ---
   'timeline:get': ch(TimelineQuery, z.array(TimelineEntry)),
   'search:global': ch(
     z.object({ query: z.string().min(1).max(500), types: z.array(EntityType).optional(), limit: z.number().int().min(1).max(100).default(30) }),
@@ -389,7 +389,7 @@ export const ipcContract = {
   'audit:list': ch(z.object({ limit: z.number().int().min(1).max(1000).default(200), onlyUndoable: z.boolean().default(false) }), z.array(AuditEntry)),
   'audit:undo': ch(z.object({ auditId: Id }), z.object({ undone: z.boolean(), message: z.string(), conflicts: z.array(z.string()) })),
 
-  // --- Kategorien, Backup, Archivprüfung ---
+  // --- Categories, backup, archive check ---
   'categories:list': ch(Empty, z.array(Category)),
   'categories:create': ch(z.object({ path: z.string().min(1), confirmed: Confirmed }), Category),
   'backup:create': ch(z.object({ includeArchive: z.boolean().default(false) }), BackupInfo),
@@ -416,17 +416,17 @@ export type IpcInput<C extends IpcChannel> = z.input<IpcContract[C]['input']>;
 export type IpcParsedInput<C extends IpcChannel> = z.output<IpcContract[C]['input']>;
 export type IpcOutput<C extends IpcChannel> = z.input<IpcContract[C]['output']>;
 
-/** Ereignisse Main → Renderer (ebenfalls explizite Allowlist). */
+/** Events main → renderer (also an explicit allowlist). */
 export const EVENT_CHANNELS = ['data:changed', 'job:updated', 'notification:new', 'status:changed'] as const;
 export type EventChannel = (typeof EVENT_CHANNELS)[number];
 export const DataChangedPayload = z.object({ scopes: z.array(z.string()) });
 export type DataChangedPayload = z.infer<typeof DataChangedPayload>;
 
-/** API, die die Preload-Bridge dem Renderer als window.archivist zur Verfügung stellt. */
+/** API that the preload bridge provides to the renderer as window.archivist. */
 export interface ArchivistBridge {
   invoke<C extends IpcChannel>(channel: C, input?: IpcInput<C>): Promise<Result<IpcOutput<C>>>;
   on(channel: EventChannel, listener: (payload: unknown) => void): () => void;
-  /** Pfad einer per Drag-and-Drop abgelegten Datei (Electron webUtils). */
+  /** Path of a file dropped via drag and drop (Electron webUtils). */
   getPathForFile(file: File): string;
 }
 

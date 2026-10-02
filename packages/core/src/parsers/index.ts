@@ -43,7 +43,7 @@ export const MIME_BY_EXT: Record<string, string> = {
 const clip = (text: string): { text: string; truncated: boolean } =>
   text.length > MAX_TEXT_CHARS ? { text: text.slice(0, MAX_TEXT_CHARS), truncated: true } : { text, truncated: false };
 
-/** Entfernt Leerzeichen/Tabs am Zeilenende ohne Regex (ein Muster wie `[ \t]+\n` wäre bei langen Leerzeichenfolgen quadratisch). */
+/** Removes spaces/tabs at line ends without a regex (a pattern like `[ \t]+\n` would be quadratic on long runs of spaces). */
 const trimLineEnd = (line: string): string => {
   let end = line.length;
   while (end > 0 && (line[end - 1] === ' ' || line[end - 1] === '\t')) end -= 1;
@@ -63,7 +63,7 @@ function decodeText(buf: Buffer): string {
   if (buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
   if (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return buf.subarray(3).toString('utf8');
   const utf8 = buf.toString('utf8');
-  // viele Ersatzzeichen deuten auf Latin-1/Windows-1252 hin
+  // many replacement characters indicate Latin-1/Windows-1252
   const bad = (utf8.match(/�/g) ?? []).length;
   return bad > 3 && bad / Math.max(utf8.length, 1) > 0.002 ? buf.toString('latin1') : utf8;
 }
@@ -90,7 +90,7 @@ interface PdfPage {
   cleanup(): void;
 }
 
-/** Rendert PDF-Seiten zu Bildern (@napi-rs/canvas) und erkennt den Text lokal. */
+/** Renders PDF pages to images (@napi-rs/canvas) and recognizes the text locally. */
 async function ocrPdfPages(doc: { getPage(n: number): Promise<unknown> }, pages: number, opts: ParseOptions): Promise<string> {
   const { createCanvas } = await import('@napi-rs/canvas');
   const images: Buffer[] = [];
@@ -129,7 +129,7 @@ async function parsePdf(file: string, opts: ParseOptions): Promise<ParsedDocumen
         if (typeof info.CreationDate === 'string') meta.created = info.CreationDate;
       }
     } catch {
-      /* Metadaten optional */
+      /* metadata is optional */
     }
     const parts: string[] = [];
     const maxPages = Math.min(doc.numPages, 300);
@@ -230,7 +230,7 @@ async function parseDocx(file: string): Promise<ParsedDocument> {
 async function parsePptx(file: string): Promise<ParsedDocument> {
   const buf = await fsp.readFile(file);
   const files = await readZipXml(buf, /^ppt\/(slides|notesSlides)\/[^/]+\.xml$|^docProps\/core\.xml$/);
-  // eslint-disable-next-line sonarjs/super-linear-regex -- Dateiname bzw. HTML-Ausschnitt, Länge begrenzt
+  // eslint-disable-next-line sonarjs/super-linear-regex -- file name or HTML excerpt, length is bounded
   const num = (n: string) => Number(/(\d+)\.xml$/.exec(n)?.[1] ?? 0);
   const textOf = (xml: string) =>
     [...xml.matchAll(/<a:p[ >][\s\S]*?<\/a:p>/g)]
@@ -254,13 +254,13 @@ async function parsePptx(file: string): Promise<ParsedDocument> {
   };
 }
 
-/** Spaltenbuchstaben ("AB") → 0-basierter Index. */
+/** Column letters ("AB") → 0-based index. */
 const colIndex = (ref: string): number => [...ref.replace(/[^A-Z]/gi, '').toUpperCase()].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
 
 /**
- * Eigener, abhängigkeitsarmer XLSX-Leser (ZIP + XML): liest Tabellenblätter als Text.
- * Bewusst ohne SheetJS (die auf npm verfügbare Version hat bekannte, ungepatchte Schwachstellen).
- * Datumszellen erscheinen als Excel-Seriennummer.
+ * Own XLSX reader with few dependencies (ZIP + XML): reads worksheets as text.
+ * Deliberately without SheetJS (the version available on npm has known, unpatched vulnerabilities).
+ * Date cells appear as Excel serial numbers.
  */
 async function parseXlsx(file: string): Promise<ParsedDocument> {
   const buf = await fsp.readFile(file);
@@ -374,7 +374,7 @@ async function parseImage(file: string, opts: ParseOptions): Promise<ParsedDocum
   };
 }
 
-/** Extrahiert Text und technische Metadaten. Wirft nicht: Fehler werden als Status zurückgegeben (Datei wird nie verworfen). */
+/** Extracts text and technical metadata. Does not throw: errors are returned as a status (the file is never discarded). */
 export async function parseDocument(file: string, opts: ParseOptions = {}): Promise<ParsedDocument> {
   const ext = path.extname(file).slice(1).toLowerCase();
   try {

@@ -28,13 +28,13 @@ const PROMPTS = [
 const ACCEPT = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.markdown,.eml,.png,.jpg,.jpeg';
 
 const MIN_INPUT_HEIGHT = 36;
-/** Höchsthöhe des Eingabefelds: 60 % der Fensterhöhe (beim Vorab-Rendern ohne Fenster ein fester Wert). */
+/** Maximum height of the input field: 60% of the window height (a fixed value when prerendering without a window). */
 const maxInputHeight = () => (typeof window === 'undefined' ? 600 : Math.round(window.innerHeight * 0.6));
 
 export default function ChatPage() {
   const { importFiles, setContextMessage } = useApp();
   const { run } = useRun();
-  // Laufende Anfragen und die gewählte Unterhaltung liegen außerhalb der Seite, damit sie einen Reiterwechsel überdauern.
+  // Running requests and the selected conversation live outside the page so that they survive switching tabs.
   const { requests, activeConversationId } = useSyncExternalStore(chatRequests.subscribe, chatRequests.getSnapshot, chatRequests.getSnapshot);
   const conversationId = activeConversationId ?? null;
   const [text, setText] = useState('');
@@ -42,7 +42,7 @@ export default function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initialised = useRef(false);
-  // manuell eingestellte Höhe des Eingabefelds (null = automatisch mit dem Text wachsen)
+  // manually set height of the input field (null = grow automatically with the text)
   const [manualHeight, setManualHeight] = useState<number | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -56,21 +56,21 @@ export default function ChatPage() {
   useEffect(() => {
     if (!initialised.current && convs.data) {
       initialised.current = true;
-      // ?c=<id>: Rücksprung aus einem offenen Punkt in die Unterhaltung, aus der er stammt
+      // ?c=<id>: jump back from an open item into the conversation it came from
       const wanted = new URLSearchParams(window.location.search).get('c');
       const latest = [...convs.data].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
       const target = convs.data.find((c) => c.id === wanted);
-      // Ohne Rücksprung bleibt die zuvor gewählte Unterhaltung (z. B. nach einem Reiterwechsel), beim ersten Öffnen die zuletzt aktive.
+      // Without a jump back, the previously selected conversation stays (e.g. after switching tabs); on first open, the most recently active one.
       if (target) chatRequests.setActiveConversation(target.id);
       else if (chatRequests.getSnapshot().activeConversationId === undefined) chatRequests.setActiveConversation(latest?.id ?? null);
     }
   }, [convs.data]);
 
   const pendingHere = useMemo(() => requestsFor(requests, conversationId), [requests, conversationId]);
-  // Eine Anfrage läuft noch (auch wenn sie vor einem Reiterwechsel abgeschickt wurde)
+  // A request is still running (even if it was sent before switching tabs)
   const sending = pendingHere.some((r) => r.result === null);
   const messages = useMemo(() => {
-    // Bis die Historie der neu gewählten Unterhaltung geladen ist, keine Nachrichten der vorherigen zeigen
+    // Until the history of the newly selected conversation has loaded, do not show messages of the previous one
     const loaded = conversationId ? (history.data ?? []).filter((m) => m.conversationId === conversationId) : [];
     return mergeChatMessages(loaded, pendingHere);
   }, [history.data, conversationId, pendingHere]);
@@ -79,7 +79,7 @@ export default function ChatPage() {
     if (history.data) chatRequests.settle(history.data);
   }, [history.data]);
 
-  // Das Eingabefeld wächst mit dem Text (bis zur Höchsthöhe) und lässt sich zusätzlich am Griff unten rechts aufziehen.
+  // The input field grows with the text (up to the maximum height) and can additionally be resized via the handle at the bottom right.
   useEffect(() => {
     const el = inputRef.current;
     if (!el || manualHeight !== null) return;
@@ -87,7 +87,7 @@ export default function ChatPage() {
     else if (el.scrollHeight > el.clientHeight) el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.6)}px`;
   }, [text, manualHeight]);
 
-  /** Griff über dem Eingabefeld: nach oben ziehen vergrößert, nach unten verkleinert, Doppelklick setzt zurück. */
+  /** Handle above the input field: dragging up enlarges, dragging down shrinks, double-click resets. */
   function startResize(e: React.PointerEvent<HTMLDivElement>) {
     const el = inputRef.current;
     if (!el) return;
@@ -127,14 +127,14 @@ export default function ChatPage() {
       const content = raw.trim();
       if (!content || sending) return;
       setText('');
-      // Die Anfrage läuft im Hauptprozess weiter und bleibt im gemeinsamen Speicher, auch wenn die Seite zwischendurch verlassen wird.
+      // The request keeps running in the main process and stays in the shared store, even if the page is left in the meantime.
       const res = await chatRequests.send(conversationId, content, () =>
         run(() => call('chat:send', { text: content, ...(conversationId ? { conversationId } : {}) }), {
           errorTitle: 'Nachricht konnte nicht gesendet werden',
         }),
       );
       if (res) void convs.refetch();
-      // Fehler: den Text zurück ins Eingabefeld, sofern dort nicht schon etwas Neues steht
+      // Error: put the text back into the input field, unless something new is already there
       else setText((current) => current || content);
     },
     [conversationId, sending, run, convs],
@@ -256,16 +256,16 @@ export default function ChatPage() {
       </div>
 
       <div className="border-t bg-background px-4 pb-3 pt-1">
-        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- fokussierbarer Trenner (WAI-ARIA Window Splitter), bewusst interaktiv */}
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- focusable separator (WAI-ARIA window splitter), intentionally interactive */}
         <div
           role="separator"
           aria-orientation="horizontal"
-          // Ein fokussierbarer Trenner braucht aria-valuenow; ohne manuelle Einstellung wächst das Feld automatisch (Mindesthöhe).
+          // A focusable separator needs aria-valuenow; without a manual setting the field grows automatically (minimum height).
           aria-valuemin={MIN_INPUT_HEIGHT}
           aria-valuemax={maxInputHeight()}
           aria-valuenow={manualHeight ?? MIN_INPUT_HEIGHT}
           aria-label="Höhe des Eingabefelds ändern (Pfeiltasten hoch/runter, Doppelklick setzt zurück)"
-          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Window Splitter ist ein fokussierbares Widget
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the window splitter is a focusable widget
           tabIndex={0}
           title="Ziehen, um das Eingabefeld zu vergrößern oder zu verkleinern (Doppelklick: zurücksetzen)"
           className="group mx-auto flex h-3 w-full max-w-3xl cursor-row-resize touch-none items-center justify-center focus-visible:outline-2 focus-visible:outline-ring"
@@ -351,7 +351,7 @@ export default function ChatPage() {
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               maxLength={120}
-              // eslint-disable-next-line jsx-a11y/no-autofocus -- Dialog zum Umbenennen: Fokus gehört ins Feld
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- rename dialog: focus belongs in the field
               autoFocus
               aria-label="Neuer Titel"
               data-testid="rename-input"

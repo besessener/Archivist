@@ -1,5 +1,5 @@
-# Lokal: `prek install` (oder `pre-commit install`). CI führt dieselben Hooks mit `prek run --all-files` aus.
-# Hooks sind auf Commit-SHAs gepinnt; Dependabot (ecosystem pre-commit) aktualisiert sie samt `# frozen:`-Kommentar.
+# Locally: `prek install` (or `pre-commit install`). CI runs the same hooks with `prek run --all-files`.
+# Hooks are pinned to commit SHAs; Dependabot (ecosystem pre-commit) updates them including the `# frozen:` comment.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
@@ -11,7 +11,7 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=1024']
       - id: detect-private-key
-        # enthält absichtlich einen Beispiel-Schlüsselblock als Testeingabe für die Maskierung
+        # intentionally contains a sample key block as test input for the redaction
         exclude: '^tests/unit/redact\.test\.ts$'
       - id: mixed-line-ending
         args: ['--fix=no']

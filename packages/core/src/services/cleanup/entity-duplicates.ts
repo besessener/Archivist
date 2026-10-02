@@ -429,7 +429,7 @@ export class EntityDuplicateCheck {
         out.set(p.nr - 1, `${VERDICT_TEXT[p.verdict]}${p.reason?.trim() ? ` – ${truncate(p.reason.trim(), 200)}` : ''}`);
       }
     } catch (err) {
-      this.ctx.logger.warn('consistency', 'LLM-Hinweis zu möglichen Dubletten nicht verfügbar', { error: err });
+      this.ctx.logger.warn('consistency', 'LLM hint on possible duplicates unavailable', { error: err });
     }
     return out;
   }

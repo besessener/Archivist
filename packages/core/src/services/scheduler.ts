@@ -100,7 +100,7 @@ export class IntervalSchedule {
       try {
         this.opts.run();
       } catch (err) {
-        this.opts.logger?.warn('scheduler', 'Geplante Aufgabe nicht gestartet', { schedule: this.opts.name, error: err });
+        this.opts.logger?.warn('scheduler', 'Scheduled task not started', { schedule: this.opts.name, error: err });
       }
     }
     // the run may have changed the schedule (markRun, stop); arm() picks up the current state

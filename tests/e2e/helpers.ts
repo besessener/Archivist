@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-/** Rendert einen Text als PNG, damit die lokale Texterkennung (OCR) etwas zu lesen hat. */
+/** Renders text as a PNG so that local text recognition (OCR) has something to read. */
 export async function writeTextImage(dir: string, name: string, lines: string[]): Promise<string> {
   const sharp = (await import('sharp')).default;
   const file = path.join(dir, name);

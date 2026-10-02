@@ -452,7 +452,7 @@ export class ArchiveRootService {
       const leftovers = kept.length
         ? ` Folgende Kopien konnten nicht entfernt werden: ${exampleList(kept)}.`
         : ' Bereits angelegte Kopien wurden wieder entfernt.';
-      this.ctx.logger.warn('archive', 'Archivumzug nicht abgeschlossen', { from, to, error: err });
+      this.ctx.logger.warn('archive', 'Archive move not completed', { from, to, error: err });
       this.notifications.create({
         title: cancelled ? 'Archivumzug abgebrochen' : 'Archivumzug fehlgeschlagen',
         description: `${reason} Der bisherige Archivordner „${from}“ bleibt aktiv; dort wurde nichts verändert.${leftovers}`,

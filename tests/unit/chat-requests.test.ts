@@ -19,7 +19,7 @@ const msg = (overrides: Partial<ChatMsg>): ChatMsg => ({
   ...overrides,
 });
 
-/** Eine von außen auflösbare Antwort, um eine noch laufende Anfrage nachzubilden. */
+/** An externally resolvable response, used to simulate a request that is still running. */
 function deferred() {
   let resolve!: (v: ChatSendOutcome | undefined) => void;
   const promise = new Promise<ChatSendOutcome | undefined>((r) => (resolve = r));
@@ -32,14 +32,14 @@ const outcome = (conversationId: string, text = 'Hallo'): ChatSendOutcome => ({
   assistantMessage: msg({ id: 'a1', conversationId, role: 'assistant', content: 'Antwort', createdAt: new Date(Date.now() + 2000).toISOString() }),
 });
 
-describe('Chat-Anfragen außerhalb der Chat-Seite', () => {
-  it('eine laufende Anfrage bleibt sichtbar, bis die Antwort da ist, und wird nicht verworfen', async () => {
+describe('chat requests outside the chat page', () => {
+  it('a running request stays visible until the response arrives and is not discarded', async () => {
     const store = createChatRequestStore();
     store.setActiveConversation('c1');
     const d = deferred();
     const done = store.send('c1', 'Hallo', () => d.promise);
 
-    // Die Seite kann jederzeit (z. B. nach einem Reiterwechsel) neu aufgebaut werden und liest den Stand aus dem Speicher
+    // The page can be rebuilt at any time (e.g. after switching tabs) and reads the state from the store
     const running = requestsFor(store.getSnapshot().requests, 'c1');
     expect(running).toHaveLength(1);
     expect(running[0]!.result).toBeNull();
@@ -51,12 +51,12 @@ describe('Chat-Anfragen außerhalb der Chat-Seite', () => {
     expect(answered[0]!.result?.map((m) => m.id)).toEqual(['u1', 'a1']);
     expect(mergeChatMessages([], answered).map((m) => m.id)).toEqual(['u1', 'a1']);
 
-    // Sobald die Historie die Antwort enthält, ist die Anfrage erledigt
+    // As soon as the history contains the response, the request is settled
     store.settle([answered[0]!.result![0], answered[0]!.result![1]]);
     expect(store.getSnapshot().requests).toHaveLength(0);
   });
 
-  it('eine neue Unterhaltung wird nach der Antwort gewählt, außer der Benutzer hat inzwischen eine andere gewählt', async () => {
+  it('a new conversation is selected after the response, unless the user has selected another one in the meantime', async () => {
     const store = createChatRequestStore();
     store.setActiveConversation(null);
     const first = deferred();
@@ -77,14 +77,14 @@ describe('Chat-Anfragen außerhalb der Chat-Seite', () => {
     expect(other.getSnapshot().activeConversationId).toBe('alt');
   });
 
-  it('bei einem Fehler wird die Anfrage entfernt', async () => {
+  it('on an error the request is removed', async () => {
     const store = createChatRequestStore();
     await expect(store.send('c1', 'Hallo', () => Promise.resolve(undefined))).resolves.toBeUndefined();
     await expect(store.send('c1', 'Hallo', () => Promise.reject(new Error('weg')))).resolves.toBeUndefined();
     expect(store.getSnapshot().requests).toHaveLength(0);
   });
 
-  it('meldet Änderungen an Abonnenten und lässt sich abbestellen', () => {
+  it('notifies subscribers of changes and supports unsubscribing', () => {
     const store = createChatRequestStore();
     let calls = 0;
     const off = store.subscribe(() => (calls += 1));
@@ -95,13 +95,13 @@ describe('Chat-Anfragen außerhalb der Chat-Seite', () => {
     expect(calls).toBe(1);
   });
 
-  it('die vorläufige Nachricht verschwindet, sobald die Historie die gespeicherte Nachricht enthält', async () => {
+  it('the provisional message disappears as soon as the history contains the saved message', async () => {
     const store = createChatRequestStore();
     const d = deferred();
     void store.send('c1', 'Hallo', () => d.promise);
     const [request] = store.getSnapshot().requests;
     const later = new Date(Date.parse(request!.message.createdAt) + 5).toISOString();
-    // Eine ältere Nachricht mit gleichem Text zählt nicht als gespeicherte Anfrage
+    // An older message with the same text does not count as the saved request
     const older = msg({ id: 'alt', content: 'Hallo', createdAt: '2020-01-01T00:00:00.000Z' });
     expect(mergeChatMessages([older], [request!]).map((m) => m.id)).toEqual(['alt', request!.id]);
     const saved = msg({ id: 'u1', content: 'Hallo', createdAt: later });

@@ -3,8 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Settings } from '@archivist/shared';
 
-describe('Beispielkonfiguration', () => {
-  it('ist gültig, enthält keine Zugangsdaten und hält Datenschutz-Standards ein', () => {
+describe('example configuration', () => {
+  it('is valid, contains no credentials and keeps the privacy defaults', () => {
     const raw = fs.readFileSync(path.resolve(__dirname, '../../config.example.json'), 'utf8');
     const parsed = Settings.parse(JSON.parse(raw));
     expect(parsed.scan.enabled).toBe(false);

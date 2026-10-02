@@ -5,7 +5,7 @@ import { Confidence, RelationType } from './common';
 export { AgentActionProposal, ArchiveLocationProposal } from './domain';
 export { SourceReference } from './common';
 
-/** LLMs liefern gern null statt fehlender Felder. */
+/** LLMs tend to return null instead of omitting fields. */
 const opt = <T extends z.ZodType>(t: T) => t.nullish();
 
 export const INTENTS = [
@@ -123,7 +123,7 @@ export const ChatIntent = z.object({
 });
 export type ChatIntent = z.infer<typeof ChatIntent>;
 
-/** Ergebnis der Intent-Analyse: eine Nachricht kann mehrere Absichten enthalten. */
+/** Result of the intent analysis: a message can contain several intents. */
 export const ChatAnalysis = z.object({
   intents: z.array(ChatIntent).min(1).max(5),
   clarification: opt(z.string()).describe('Rückfrage an den Benutzer, wenn die Absicht unklar ist und nichts geraten werden soll'),
@@ -196,7 +196,7 @@ export const KnowledgeAnswer = z.object({
 });
 export type KnowledgeAnswer = z.infer<typeof KnowledgeAnswer>;
 
-/** LLM-Ausgabe für „Lösungsvorschlag generieren“ zu einem offenen Punkt. */
+/** LLM output for „Lösungsvorschlag generieren“ on an open item. */
 export const SolutionProposal = z.object({
   assessment: z.string().describe('Kurze Einschätzung der Lage in 2–4 Sätzen'),
   assessmentSourceIds: z.array(z.string()).default([]).describe('Belege der Einschätzung, z. B. ["S1"]'),

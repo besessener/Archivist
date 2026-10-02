@@ -6,7 +6,7 @@ type Listener = (payload: unknown) => void;
 const listeners = new Map<EventChannel, Set<Listener>>();
 const unsubscribers = new Map<EventChannel, () => void>();
 
-/** Teilt pro Kanal genau eine Bridge-Subscription unter allen Komponenten. */
+/** Shares exactly one bridge subscription per channel among all components. */
 export function subscribe(channel: EventChannel, listener: Listener): () => void {
   let set = listeners.get(channel);
   if (!set) {

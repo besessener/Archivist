@@ -9,8 +9,8 @@ export interface RunOptions {
 }
 
 /**
- * Führt eine Aktion aus, zeigt Fehler als Toast (mit „Erneut versuchen“, falls möglich)
- * und liefert `undefined` bei Fehlern.
+ * Runs an action, shows errors as a toast (with „Erneut versuchen“ (retry) if possible)
+ * and returns `undefined` on errors.
  */
 export function useRun() {
   const { toast, reportError } = useToast();

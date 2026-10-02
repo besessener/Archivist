@@ -324,7 +324,7 @@ export class PersonQuestionService {
         out.set(h.nr - 1, `${VERDICT_TEXT[h.verdict]}${candidate}${h.reason?.trim() ? ` – ${truncate(h.reason.trim(), 200)}` : ''}`);
       }
     } catch (err) {
-      this.ctx.logger.warn('consistency', 'LLM-Hinweis zu unklaren Personen nicht verfügbar', { error: err });
+      this.ctx.logger.warn('consistency', 'LLM hint on unclear persons unavailable', { error: err });
     }
     return out;
   }

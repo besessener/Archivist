@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** ISO-8601 Datum (YYYY-MM-DD) oder Zeitstempel. */
+/** ISO 8601 date (YYYY-MM-DD) or timestamp. */
 export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}([T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/, 'Erwartet ISO-Datum (YYYY-MM-DD)');
 export const Confidence = z.number().min(0).max(1);
 export const Id = z.string().min(1).max(100);
@@ -66,19 +66,19 @@ export const AppErrorInfo = z.object({
 });
 export type AppErrorInfo = z.infer<typeof AppErrorInfo>;
 
-/** Antwort-Envelope jedes IPC-Kanals. */
+/** Response envelope of every IPC channel. */
 export const resultSchema = <T extends z.ZodType>(data: T) =>
   z.discriminatedUnion('ok', [z.object({ ok: z.literal(true), data }), z.object({ ok: z.literal(false), error: AppErrorInfo })]);
 export type Result<T> = { ok: true; data: T } | { ok: false; error: AppErrorInfo };
 
 /**
- * Art eines Verweises (Kontextpanel, Quellen, Chips): alle Wissensobjekte plus Erinnerungen und Widersprüche,
- * die keine Graph-Entitäten sind, aber trotzdem auf ihre eigene Ansicht verlinken.
+ * Kind of a reference (context panel, sources, chips): all knowledge objects plus reminders and contradictions,
+ * which are no graph entities but still link to their own view.
  */
 export const RefType = z.enum([...EntityType.options, 'reminder', 'contradiction']);
 export type RefType = z.infer<typeof RefType>;
 
-/** Verweis auf ein Wissensobjekt für Kontextpanel, Quellen und Aktionen. */
+/** Reference to a knowledge object for the context panel, sources and actions. */
 export const EntityRef = z.object({
   type: RefType,
   id: Id,

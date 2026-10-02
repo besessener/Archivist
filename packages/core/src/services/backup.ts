@@ -47,8 +47,8 @@ async function realpathOrSelf(p: string): Promise<string> {
 }
 
 /**
- * Backups: konsistenter SQLite-Snapshot über die Online-Backup-API (nicht per Dateikopie) plus Konfiguration.
- * Der verschlüsselte API-Key wird nie gesichert. „Metadaten-Backup“ und „vollständiges Archiv-Backup“ sind getrennt.
+ * Backups: consistent SQLite snapshot via the online backup API (not by file copy) plus configuration.
+ * The encrypted API key is never backed up. „Metadaten-Backup“ (metadata) and „vollständiges Archiv-Backup“ (full archive) are separate.
  * After each backup, only the newest `backups.keep` backups of the same kind are kept.
  */
 export class BackupService {
@@ -66,7 +66,7 @@ export class BackupService {
     try {
       await this.ctx.database.backupTo(path.join(dir, 'archivist.db'));
       const cfg = this.settings.get();
-      await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(cfg, null, 2), 'utf8'); // enthält keinen API-Key
+      await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(cfg, null, 2), 'utf8'); // contains no API key
       await fsp.writeFile(
         path.join(dir, 'manifest.json'),
         JSON.stringify(
@@ -129,7 +129,7 @@ export class BackupService {
         await fsp.rm(b.path, { recursive: true, force: true });
         removed.push(b.path);
       } catch (err) {
-        this.ctx.logger.warn('backup', 'Altes Backup konnte nicht entfernt werden', { path: b.path, error: err });
+        this.ctx.logger.warn('backup', 'Could not remove old backup', { path: b.path, error: err });
       }
     }
     if (removed.length > 0)
@@ -155,7 +155,7 @@ export class BackupService {
       try {
         out.push(await this.readManifest(e.name));
       } catch {
-        /* kein gültiges Backup */
+        /* not a valid backup */
       }
     }
     return out.sort((a, b) => cmpDesc(a.createdAt, b.createdAt) || cmpDesc(a.name, b.name));

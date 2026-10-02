@@ -27,7 +27,7 @@ async function scan(rootId?: string) {
   return jobId;
 }
 
-describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
+describe('Folder scan (default mode: local only, confirm)', () => {
   beforeEach(async () => {
     app = await createTestApp({ privacy: 'confirm' });
   });
@@ -35,7 +35,7 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     await app.cleanup();
   });
 
-  it('ist standardmäßig deaktiviert und verlangt eine ausdrückliche Freigabe', async () => {
+  it('is disabled by default and requires an explicit approval', async () => {
     const dl = path.join(app.home, 'Downloads');
     fs.mkdirSync(dl);
     const root = await app.ok('scanner:addDirectory', { path: dl, recursive: true });
@@ -45,7 +45,7 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     expect(root.path).toBe(fs.realpathSync(dl));
   });
 
-  it('verweigert Systemverzeichnisse, Dateien und das Datenverzeichnis', async () => {
+  it('refuses system folders, files and the data directory', async () => {
     for (const p of ['/', '/etc', '/usr/share']) expect((await app.call('scanner:addDirectory', { path: p, recursive: true })).ok).toBe(false);
     expect((await app.call('scanner:addDirectory', { path: path.join(app.home, 'gibt-es-nicht'), recursive: true })).ok).toBe(false);
     const f = app.file('x.txt', 'x');
@@ -54,7 +54,7 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     expect((await app.call('scanner:addDirectory', { path: 'relativ/pfad', recursive: true })).ok).toBe(false);
   });
 
-  it('erkennt neue/geänderte Dateien, überspringt bekannte unveränderte und respektiert Ausschlüsse', async () => {
+  it('detects new/changed files, skips known unchanged ones and respects exclusions', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     const dl = path.join(app.home, 'Downloads');
     app.file('Downloads/a.txt', 'Dokument A über Hauskauf, lang genug für den Test.');
@@ -71,15 +71,15 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     expect(res.lastSummary).toMatchObject({ newFiles: 4, unchanged: 0 });
     const notes = await app.ok('notifications:list', {});
     expect(notes.some((n) => n.type === 'scan_new_files' && n.title.startsWith('4 '))).toBe(true);
-    // reiner Scan sendet nichts an das LLM
+    // a plain scan sends nothing to the LLM
     expect(app.llm.calls).toHaveLength(0);
 
-    // zweiter Scan: alles unverändert → nichts erneut verarbeitet
+    // second scan: everything unchanged → nothing reprocessed
     await scan();
     res = await app.ok('scanner:getResults', {});
     expect(res.lastSummary).toMatchObject({ newFiles: 0, changedFiles: 0, unchanged: 4 });
 
-    // Änderung wird erkannt
+    // a change is detected
     await new Promise((r) => setTimeout(r, 20));
     fs.appendFileSync(path.join(dl, 'a.txt'), '\nNeue Zeile.');
     await scan();
@@ -87,7 +87,7 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     expect(res.lastSummary).toMatchObject({ newFiles: 0, changedFiles: 1, unchanged: 3 });
     expect(res.files.find((f) => f.name === 'a.txt')!.status).toBe('changed');
 
-    // Ausschlüsse (Datei + Ordner) wirken beim nächsten Scan
+    // exclusions (file + folder) take effect on the next scan
     await app.ok('scanner:exclude', { kind: 'dir', path: path.join(dl, 'ignore') });
     await app.ok('scanner:exclude', { kind: 'file', path: path.join(dl, 'b.md') });
     expect(
@@ -100,16 +100,16 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     await scan();
     res = await app.ok('scanner:getResults', {});
     expect(res.files.find((f) => f.name === 'b.md')!.status).toBe('excluded');
-    expect(res.lastSummary!.scanned).toBe(2); // a.txt + c.txt (d.txt und b.md ausgeschlossen)
+    expect(res.lastSummary!.scanned).toBe(2); // a.txt + c.txt (d.txt and b.md excluded)
     expect((await app.ok('scanner:listExclusions', {})).length).toBe(2);
 
-    // Verzeichnis-Optionen: nicht rekursiv
+    // folder options: not recursive
     await app.ok('scanner:updateDirectory', { id: root.id, recursive: false });
     await scan();
     expect((await app.ok('scanner:getResults', {})).files.some((f) => f.name === 'c.txt')).toBe(false);
   });
 
-  it('analysiert im Bestätigungsmodus nur lokal, sendet Inhalte erst nach ausdrücklicher Freigabe und maskiert Geheimnisse', async () => {
+  it('in confirm mode analyses only locally, sends content only after explicit approval and masks secrets', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     app.llm.on('DocumentClassification', () => cls('Hauskauf'));
     const dl = path.join(app.home, 'Downloads');
@@ -123,11 +123,11 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     expect(app.llm.calls.filter((c) => c.schema === 'DocumentClassification')).toHaveLength(0);
     let doc = (await app.ok('documents:list', {})).find((d) => d.sourcePath?.endsWith('kauf.txt'))!;
     expect(doc.status).toBe('proposed');
-    expect(doc.llmStatus).toBe('pending'); // zur LLM-Analyse vorgesehen
+    expect(doc.llmStatus).toBe('pending'); // scheduled for LLM analysis
     expect(doc.proposal?.analyzedBy).toBe('local');
     expect(doc.proposal?.possibleOpenItems.length).toBeGreaterThan(0);
 
-    // erneut analysieren mit ausdrücklicher Freigabe
+    // analyse again with explicit approval
     await app.ok('scanner:analyze', { fileIds: [file.id], confirmLlm: true });
     await app.services.jobs.whenIdle();
     const calls = app.llm.calls.filter((c) => c.schema === 'DocumentClassification');
@@ -142,7 +142,7 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     expect(tx[0]!.documentIds).toContain(doc.id);
   });
 
-  it('schließt Dateien und Verzeichnisse von der LLM-Verarbeitung aus', async () => {
+  it('excludes files and folders from LLM processing', async () => {
     app.services.settings.update({ scan: { enabled: true }, privacy: { llmMode: 'auto' } });
     app.llm.on('DocumentClassification', () => cls('Geheim'));
     const dl = path.join(app.home, 'Downloads');
@@ -166,7 +166,7 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
     expect(docs.find((d) => d.originalName === 'normal.txt')!.llmStatus).toBe('analyzed');
   });
 
-  it('Datenschutzmodus „nur lokal“ sendet nie Inhalte', async () => {
+  it('privacy mode „nur lokal“ never sends content', async () => {
     app.services.settings.update({ scan: { enabled: true }, privacy: { llmMode: 'local_only' } });
     app.llm.on('DocumentClassification', () => cls('X'));
     app.file('Downloads/x.txt', 'Inhalt X');
@@ -183,7 +183,7 @@ describe('Verzeichnisscan (Standardmodus: nur lokal, bestätigen)', () => {
   });
 });
 
-describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', () => {
+describe('Assignment proposals and selective archiving of scanned files', () => {
   beforeEach(async () => {
     app = await createTestApp({ privacy: 'auto' });
   });
@@ -191,12 +191,12 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
     await app.cleanup();
   });
 
-  it('schlägt Dokumente zu einem bestehenden Thema vor und archiviert nur ausgewählte', async () => {
+  it('proposes documents for an existing topic and archives only the selected ones', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     app.llm.on('DocumentClassification', () =>
       cls('Hauskauf', { decisions: [{ title: 'Kaufentscheidung', decisionText: 'Wir kaufen das Haus.', decidedAt: '2026-05-01', participants: [] }] }),
     );
-    // bestehendes Thema
+    // existing topic
     await app.ok('knowledge:createEntity', { type: 'topic', name: 'Hauskauf' });
     const dl = path.join(app.home, 'Downloads');
     for (const n of ['kaufvertrag', 'grundbuch', 'finanzierung']) app.file(`Downloads/${n}.txt`, `Dokument ${n} zum Hauskauf Musterstraße 1.`);
@@ -215,7 +215,7 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
     const insight = (await app.ok('insights:list', {})).find((i) => i.kind === 'assignment')!;
     expect(insight.recommendedActionId).toBeTruthy();
 
-    // Nur 2 von 3 bestätigen
+    // confirm only 2 of 3
     const chosen = groups[0]!.documentIds.slice(0, 2);
     const plan = await app.ok('documents:previewArchive', { items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })) });
     expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('work', 'projects', 'Hauskauf')))).toBe(true);
@@ -229,20 +229,20 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
     const docs = await app.ok('documents:list', {});
     expect(docs.filter((d) => d.status === 'archived')).toHaveLength(2);
     expect(docs.filter((d) => d.status === 'proposed')).toHaveLength(1);
-    for (const n of ['kaufvertrag', 'grundbuch', 'finanzierung']) expect(fs.existsSync(path.join(dl, `${n}.txt`))).toBe(true); // Originale unverändert
-    // Scan-Ergebnisse spiegeln den Archivierungsstatus
+    for (const n of ['kaufvertrag', 'grundbuch', 'finanzierung']) expect(fs.existsSync(path.join(dl, `${n}.txt`))).toBe(true); // originals unchanged
+    // scan results reflect the archiving status
     const after = (await app.ok('scanner:getResults', {})).files;
     expect(after.filter((f) => f.status === 'archived')).toHaveLength(2);
-    // Dokumente zum Thema auffindbar
+    // documents for the topic can be found
     const topic = (await app.ok('knowledge:listEntities', { type: 'topic' })).find((t) => t.name === 'Hauskauf')!;
     expect(await app.ok('documents:forTopic', { topicId: topic.id })).toHaveLength(2);
-    // Erkannte Entscheidungen werden nur vorgeschlagen, nicht angelegt
+    // detected decisions are only proposed, not created
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
     const proposed = (await app.ok('actions:list', { status: 'proposed' })).filter((a) => a.actionType === 'record_decision');
     expect(proposed.length).toBeGreaterThan(0);
   });
 
-  it('Verschieben braucht zusätzliche Bestätigung, entfernt das Original und ist rückgängig machbar', async () => {
+  it('moving requires additional confirmation, removes the original and can be undone', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     app.llm.on('DocumentClassification', () => cls('Umzug'));
     const dl = path.join(app.home, 'Downloads');
@@ -279,7 +279,7 @@ describe('Zuordnungsvorschläge und gezielte Archivierung gescannter Dateien', (
     expect(fs.existsSync(moved.items[0]!.targetPath!)).toBe(false);
   });
 
-  it('Aktion „nur indexieren“ und „ignorieren“ verändern keine Dateien', async () => {
+  it('the actions „nur indexieren“ and „ignorieren“ change no files', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     app.llm.on('DocumentClassification', () => cls('Allgemein'));
     const a = app.file('Downloads/a.txt', 'Inhalt A zum Indexieren');

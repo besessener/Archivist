@@ -46,7 +46,7 @@ async function archived(name: string, loc: string, topic: string | null = TOPIC,
   return id;
 }
 
-/** Sechs Bildungsurlaub-Dokumente in vier Verzeichnissen, dazu ein fremdes Dokument. */
+/** Six Bildungsurlaub documents in four directories, plus one unrelated document. */
 async function scatteredArchive() {
   const ids = [
     await archived('Antrag', 'work/hr/abwesenheiten'),
@@ -62,8 +62,8 @@ async function scatteredArchive() {
 
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
-describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
-  it('antwortet auf „und die Verzeichnisse?“ mit der Verteilung auf die Verzeichnisse, nicht mit Statistik', async () => {
+describe('Chat: checking the filing and putting documents into one directory', () => {
+  it('answers „und die Verzeichnisse?“ with the distribution across the directories, not with statistics', async () => {
     const { ids } = await scatteredArchive();
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_structure', topic: TOPIC }));
 
@@ -80,7 +80,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(m.context?.documents).toHaveLength(ids.length);
   });
 
-  it('ohne Thema: nennt die Themen, deren Dokumente verstreut liegen', async () => {
+  it('without a topic: names the topics whose documents are scattered', async () => {
     await scatteredArchive();
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_structure' }));
 
@@ -90,7 +90,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(r.assistantMessage.content).not.toContain('„Steuer“');
   });
 
-  it('meldet ein sauber abgelegtes Archiv als in Ordnung', async () => {
+  it('reports a cleanly filed archive as fine', async () => {
     await archived('A', 'work/a');
     await archived('B', 'work/a');
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_structure' }));
@@ -100,7 +100,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(r.assistantMessage.content).toMatch(/Zu keinem Thema und keinem Projekt liegen Dokumente in verschiedenen Verzeichnissen/);
   });
 
-  it('die Widerspruchsprüfung weist nebenbei auf verstreute Dokumente hin', async () => {
+  it('the contradiction check also points out scattered documents', async () => {
     await scatteredArchive();
     app.llm.on('ChatIntent', () => intent({ intent: 'contradiction_check' }));
 
@@ -110,7 +110,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(r.assistantMessage.content).toContain(`Thema „${TOPIC}“ (3 Verzeichnisse)`);
   });
 
-  it('bereitet auf „können die nicht alle ins selbe Verzeichnis?“ einen Vorschlag vor und verschiebt erst nach „ja“', async () => {
+  it('prepares a proposal for „können die nicht alle ins selbe Verzeichnis?“ and moves only after „ja“', async () => {
     const { ids, other } = await scatteredArchive();
     const before = new Map(ids.map((id) => [id, folderOf(id)]));
     app.llm.on('ChatIntent', (_s, input) => {
@@ -129,17 +129,17 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(action).toMatchObject({ actionType: 'relocate_documents', status: 'proposed', requiredConfirmation: 'confirm' });
     expect(action.label).toBe('3 Dokument(e) nach „private/bildungsurlaub/2026“ verschieben');
     expect(proposal.assistantMessage.content).toContain('Vorher ändert sich nichts');
-    for (const id of ids) expect(folderOf(id), 'vor der Bestätigung bleibt alles liegen').toBe(before.get(id));
+    for (const id of ids) expect(folderOf(id), 'everything stays in place before the confirmation').toBe(before.get(id));
 
     const done = await send('ja', conv);
 
     expect(done.assistantMessage.content).toContain('Erledigt: 3 Dokument(e) nach „private/bildungsurlaub/2026“ verschieben');
     for (const id of ids) expect(folderOf(id)).toBe('private/bildungsurlaub/2026');
-    expect(folderOf(other), 'fremde Dokumente bleiben unberührt').toBe('private/steuer');
+    expect(folderOf(other), 'unrelated documents stay untouched').toBe('private/steuer');
     for (const id of ids) expect(fs.existsSync(path.join(archiveRoot(), app.services.documents.getRow(id).archiveRelPath!))).toBe(true);
   });
 
-  it('nimmt einen genannten Zielordner und ersetzt den früheren offenen Vorschlag', async () => {
+  it('takes a named target folder and replaces the earlier open proposal', async () => {
     const { ids } = await scatteredArchive();
     app.llm.on('ChatIntent', (_s, input) => {
       const text = input.split('Nachricht des Benutzers:\n')[1] ?? '';
@@ -157,7 +157,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(app.services.actions.list('withdrawn').some((a) => a.id === first.assistantMessage.actions[0]!.id)).toBe(true);
   });
 
-  it('der Benutzer kann den Vorschlag ablehnen: es wird nichts verschoben', async () => {
+  it('the user can reject the proposal: nothing is moved', async () => {
     const { ids } = await scatteredArchive();
     const before = ids.map(folderOf);
     app.llm.on('ChatIntent', (_s, input) =>
@@ -172,7 +172,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(ids.map(folderOf)).toEqual(before);
   });
 
-  it('fragt nach, wenn unklar ist, welche Dokumente gemeint sind, und lehnt ungültige Zielordner ab', async () => {
+  it('asks back when it is unclear which documents are meant, and rejects invalid target folders', async () => {
     await scatteredArchive();
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize' }));
     const unclear = await send('leg alles zusammen');
@@ -185,7 +185,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(app.services.actions.list('proposed')).toHaveLength(0);
   });
 
-  it('sagt, wenn schon alles im selben Verzeichnis liegt', async () => {
+  it('says so when everything is already in the same directory', async () => {
     await archived('A', 'work/a');
     await archived('B', 'work/a');
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: TOPIC }));
@@ -196,7 +196,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(app.services.actions.list('proposed')).toHaveLength(0);
   });
 
-  it('versteht die Anliegen auch ohne LLM (regelbasierter Fallback)', async () => {
+  it('understands the requests without an LLM too (rule-based fallback)', async () => {
     const rule = (text: string) => app.services.chat.ruleBased(text, {}).intent;
 
     expect(rule('können die nicht alle ins selbe verzeichnis?')).toBe('archive_reorganize');
@@ -208,10 +208,10 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
     expect(rule('wie viele dokumente habe ich?')).toBe('archive_status');
   });
 
-  describe('Archivprüfung („Archivprüfung jetzt starten“)', () => {
+  describe('Archive check („Archivprüfung jetzt starten“)', () => {
     const scattered = () => app.services.insights.list('open').filter((i) => i.kind === 'scattered_documents');
 
-    it('erkennt verstreut abgelegte Dokumente und schlägt einen Ordner vor, ohne etwas zu verschieben', async () => {
+    it('detects scattered documents and proposes a folder without moving anything', async () => {
       const { ids, other } = await scatteredArchive();
       const before = ids.map(folderOf);
 
@@ -227,10 +227,10 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
       const action = app.services.actions.get(insight!.recommendedActionId!);
       expect(action).toMatchObject({ actionType: 'relocate_documents', status: 'proposed', requiredConfirmation: 'confirm' });
       expect(action.label).toBe(`3 Dokument(e) zu „${TOPIC}“ nach „private/bildungsurlaub/2026“ verschieben`);
-      expect(ids.map(folderOf), 'die Prüfung ändert nichts').toEqual(before);
+      expect(ids.map(folderOf), 'the check changes nothing').toEqual(before);
     });
 
-    it('legt bei jedem weiteren Lauf keine Duplikate an', async () => {
+    it('creates no duplicates on further runs', async () => {
       await scatteredArchive();
 
       await app.services.consistency.run('test');
@@ -240,7 +240,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
       expect(app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents')).toHaveLength(1);
     });
 
-    it('nach Bestätigung des Vorschlags erledigt sich der Hinweis beim nächsten Lauf von selbst', async () => {
+    it('after the proposal is confirmed, the hint resolves itself on the next run', async () => {
       const { ids } = await scatteredArchive();
       await app.services.consistency.run('test');
       const action = app.services.actions.get(scattered()[0]!.recommendedActionId!);
@@ -253,7 +253,7 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
       expect(scattered()).toHaveLength(0);
     });
 
-    it('meldet nichts, wenn die Dokumente eines Themas beisammen liegen', async () => {
+    it('reports nothing when the documents of a topic are together', async () => {
       await archived('A', 'work/a');
       await archived('B', 'work/a');
       await archived('C', 'work/b', 'Anderes Thema');
@@ -266,11 +266,11 @@ describe('Chat: Ablage prüfen und Dokumente in ein Verzeichnis legen', () => {
   });
 });
 
-describe('„Leg alle Dokumente zu X zusammen“ verschiebt genau X (#45)', () => {
+describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
   const proposedIds = (r: Awaited<ReturnType<typeof send>>) =>
     ((r.assistantMessage.actions[0]?.proposedParameters as { items?: Array<{ documentId: string }> } | undefined)?.items ?? []).map((i) => i.documentId).sort();
 
-  it('ein genanntes Thema schlägt die zuletzt gezeigten Dokumente (LLM liefert nur query)', async () => {
+  it('a named topic beats the most recently shown documents (LLM only returns query)', async () => {
     const { ids, other } = await scatteredArchive();
     await archived('Steuer-Beleg', 'private/steuer-2', 'Steuer');
     app.llm.on('ChatIntent', (_s, input) => {
@@ -289,7 +289,7 @@ describe('„Leg alle Dokumente zu X zusammen“ verschiebt genau X (#45)', () =
     expect(moved).not.toContain(other);
   });
 
-  it('mehrere teilweise passende Themen: fragt nach statt still zu wählen; die Antwort führt das Umlagern aus', async () => {
+  it('several partially matching topics: asks back instead of silently choosing; the answer performs the relocation', async () => {
     await scatteredArchive();
     const old = await archived('Antrag 2025', 'private/bu-2025', 'Bildungsurlaub 2025');
     await archived('Bescheid 2025', 'work/hr/2025', 'Bildungsurlaub 2025');
@@ -307,15 +307,15 @@ describe('„Leg alle Dokumente zu X zusammen“ verschiebt genau X (#45)', () =
     expect(proposedIds(r2)).not.toContain(old);
   });
 
-  it('kein stiller Volltext-Rückfall beim Verschieben: ein fremdes Dokument, das das Wort enthält, bleibt außen vor', async () => {
+  it('no silent full-text fallback when moving: an unrelated document containing the word stays out', async () => {
     const { ids } = await scatteredArchive();
-    const gehalt = await archived('Gehaltsabrechnung', 'work/gehalt', 'Gehalt', 'Gehaltsabrechnung Oktober, Abzug Bildungsurlaub 2026');
+    const payslip = await archived('Gehaltsabrechnung', 'work/gehalt', 'Gehalt', 'Gehaltsabrechnung Oktober, Abzug Bildungsurlaub 2026');
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: 'Bildungsurlaub' }));
 
     const r = await send('leg alle Bildungsurlaub-Dokumente zusammen');
 
     const moved = proposedIds(r);
-    expect(moved).not.toContain(gehalt);
+    expect(moved).not.toContain(payslip);
     for (const id of moved) expect(ids).toContain(id);
 
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: 'Kreuzfahrt' }));
@@ -324,7 +324,7 @@ describe('„Leg alle Dokumente zu X zusammen“ verschiebt genau X (#45)', () =
     expect(none.assistantMessage.content).toContain('Zu „Kreuzfahrt“ kenne ich kein Thema');
   });
 
-  it('ohne LLM: „leg alle Bildungsurlaub-Dateien in einen Ordner“ findet das Thema', async () => {
+  it('without an LLM: „leg alle Bildungsurlaub-Dateien in einen Ordner“ finds the topic', async () => {
     const { ids, other } = await scatteredArchive();
     app.llm.down = true;
     const r = await send('leg alle Bildungsurlaub-Dateien in einen Ordner');
@@ -335,7 +335,7 @@ describe('„Leg alle Dokumente zu X zusammen“ verschiebt genau X (#45)', () =
     expect(moved).not.toContain(other);
   });
 
-  it('„archivieren“ nutzt Inbox-Dokumente, auch wenn zuletzt archivierte gezeigt wurden', async () => {
+  it('„archivieren“ uses inbox documents even when recently archived ones were shown', async () => {
     await scatteredArchive();
     app.llm.on('DocumentClassification', () => ({
       docType: 'Rechnung',

@@ -86,7 +86,7 @@ export class SelfService {
     } else {
       await this.graph.rename(self.id, name, { actor: 'user', trigger: 'profile', keepOldName: self.name !== SELF_PLACEHOLDER });
     }
-    this.ctx.logger.info('persons', 'Eigene Person an den Profilnamen angepasst', { from: self.name, to: name, merged: Boolean(other) });
+    this.ctx.logger.info('persons', 'Own person adjusted to the profile name', { from: self.name, to: name, merged: Boolean(other) });
   }
 
   private personWithKey(key: string, exceptId?: string): GraphEntity | undefined {

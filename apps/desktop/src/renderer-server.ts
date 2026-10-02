@@ -10,7 +10,7 @@ const MIME: Record<string, string> = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  // Next.js lädt RSC-Nutzdaten als .txt – wichtig, dass sie als text/plain ankommen
+  // Next.js loads RSC payloads as .txt – it is important that they arrive as text/plain
   '.txt': 'text/plain; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
@@ -20,7 +20,7 @@ const MIME: Record<string, string> = {
   '.map': 'application/json',
 };
 
-/** Restriktive Content Security Policy; Inline-Skripte von Next.js werden per Hash erlaubt (kein 'unsafe-inline' für Skripte, kein eval). */
+/** Restrictive Content Security Policy; inline scripts from Next.js are allowed by hash (no 'unsafe-inline' for scripts, no eval). */
 export function buildCsp(scriptHashes: string[], dev = false): string {
   const script = ["'self'", ...scriptHashes.map((h) => `'sha256-${h}'`), ...(dev ? ["'unsafe-eval'", "'unsafe-inline'"] : [])];
   return [
@@ -60,8 +60,8 @@ const SECURITY_HEADERS = {
 };
 
 /**
- * Liefert das statisch exportierte Next.js-Frontend aus – ausschließlich Dateien unterhalb von `root`
- * (kein Path Traversal, keine Symlink-Ausbrüche).
+ * Serves the statically exported Next.js frontend – only files below `root`
+ * (no path traversal, no symlink escapes).
  */
 export async function serveRenderer(root: string, requestUrl: string): Promise<ServedFile> {
   const notFound = (status = 404): ServedFile => ({
