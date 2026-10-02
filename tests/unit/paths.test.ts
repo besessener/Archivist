@@ -166,6 +166,8 @@ describe('sanitising file names (edge cases)', () => {
     expect(sanitizeFileName('..versteckt.txt')).toBe('versteckt.txt');
     expect(sanitizeFileName('name. . .txt')).toBe('name.txt');
     expect(sanitizeFileName('  Rand  .txt')).toBe('Rand.txt');
+    expect(sanitizeFileName('. Bericht.txt')).toBe('Bericht.txt');
+    expect(sanitizeFolderName('.. Ordner')).toBe('Ordner');
   });
 
   it('assigns the fallback name if nothing is left', () => {
@@ -385,6 +387,14 @@ describe('path functions: error paths and edge cases', () => {
     expect(await uniquePath(tmp, 'gibt-es-nicht.txt')).toBe(path.join(tmp, 'gibt-es-nicht.txt'));
   });
 
+  it('uniquePath gives up after 9999 taken names instead of looping on', async () => {
+    const dir = fs.mkdtempSync(path.join(tmp, 'voll-'));
+    fs.writeFileSync(path.join(dir, 'a.txt'), '');
+    for (let attempt = 2; attempt < 10_000; attempt += 1) fs.writeFileSync(path.join(dir, `a (${attempt}).txt`), '');
+
+    await expect(uniquePath(dir, 'a.txt')).rejects.toThrow('Kein freier Dateiname gefunden.');
+  });
+
   it('uniquePath counts up while the name is taken', async () => {
     fs.writeFileSync(path.join(tmp, 'doppelt.txt'), 'x');
     fs.writeFileSync(path.join(tmp, 'doppelt (2).txt'), 'x');
@@ -401,6 +411,9 @@ describe('names with ". " inside (issue #69)', () => {
     expect(splitExtension('Bericht.PDF')).toEqual({ base: 'Bericht', ext: 'PDF' });
     expect(splitExtension('archiv.tar.gz')).toEqual({ base: 'archiv.tar', ext: 'gz' });
     expect(splitExtension('.bashrc')).toEqual({ base: '.bashrc', ext: '' });
+    expect(splitExtension('README')).toEqual({ base: 'README', ext: '' });
+    expect(splitExtension('..pdf')).toEqual({ base: '..pdf', ext: '' });
+    expect(splitExtension('...pdf')).toEqual({ base: '...pdf', ext: '' });
     expect(splitExtension('Rechnung. pdf')).toEqual({ base: 'Rechnung. pdf', ext: '' });
   });
 
@@ -410,6 +423,7 @@ describe('names with ". " inside (issue #69)', () => {
     expect(sanitizeFileName('Kunde Dr. Müller GmbH.PDF')).toBe('Kunde Dr. Müller GmbH.pdf');
     expect(sanitizeFileName('Angebot St. Gallen.docx')).toBe('Angebot St. Gallen.docx');
     expect(sanitizeFileName('Bericht.pdf ')).toBe('Bericht.pdf');
+    expect(sanitizeFileName('Bericht.PDF ')).toBe('Bericht.pdf');
     expect(sanitizeFileName('Projekt X.Final')).toBe('Projekt X.Final');
   });
 

@@ -29,7 +29,7 @@ const isInsideWindows = insideFor(path.win32);
 export function resolveInside(root: string, relativePath: string): string {
   if (relativePath.includes('\0')) throw validationError('Ungültiger Pfad (Nullbyte).');
   if (path.isAbsolute(relativePath) || /^[A-Za-z]:/.test(relativePath)) throw permissionError('Absolute Pfade sind hier nicht erlaubt.', relativePath);
-  const parts = relativePath.split(SEPARATOR).filter((part) => part !== '');
+  const parts = relativePath.split(SEPARATOR);
   if (parts.some((part) => part === '..')) throw permissionError('Pfad verlässt den erlaubten Bereich (..).', relativePath);
   const absolute = path.resolve(root, ...parts);
   if (!isInside(root, absolute)) throw permissionError('Pfad liegt außerhalb des erlaubten Bereichs.', relativePath);
