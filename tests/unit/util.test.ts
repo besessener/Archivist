@@ -6,7 +6,7 @@ import { Logger } from '../../packages/core/src/util/logger';
 import { redactSecrets } from '../../packages/core/src/util/redact';
 import { normalizeDateInput, parseGermanDate, promptNow } from '../../packages/core/src/util/dates';
 import { chunkText, nameSimilarity, searchStem } from '../../packages/core/src/util/text';
-import { chosenOption, polarity } from '../../packages/core/src/services/contradictions';
+import { chosenOption, polarity } from '../../packages/core/src/services/contradiction-rules';
 import { computeMissingFields, questionFor } from '../../packages/core/src/services/decisions';
 import { detectOpenItemSentences } from '../../packages/core/src/services/open-items';
 import { localEmbed } from '../../packages/core/src/services/embedding';
