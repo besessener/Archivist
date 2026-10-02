@@ -1,6 +1,6 @@
 'use strict';
 
-// Verhalten wie boolean@3: Strings wie "true", "t", "yes", "y", "on", "1" sowie die Zahl 1 sind wahr.
+// Behaves like boolean@3: the strings "true", "t", "yes", "y", "on", "1" and the number 1 are true.
 const TRUE = /^(true|t|yes|y|on|1)$/i;
 const FALSE = /^(false|f|no|n|off|0)$/i;
 
