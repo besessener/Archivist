@@ -5,7 +5,7 @@ import type { ArchiveResult, DocumentRecord } from '@archivist/shared';
 import { sanitizeCategoryPath } from '../../util/paths';
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
-import type { FileOp, FileOpResult } from '../file-jobs';
+import type { ArchiveConsent, FileOp, FileOpResult } from '../file-jobs';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
 import { docLine, normFolder, resolveDocs, unknownNote, type ToolDeps } from './common';
 
@@ -37,14 +37,8 @@ export function fillPattern(
 }
 
 /** Moves and renames go through the file jobs: larger amounts as a job of their own, in chunks either way (#304). */
-function bulk(
-  deps: ToolDeps,
-  ctx: ToolContext,
-  op: FileOp,
-  items: Array<{ documentId: string; categoryPath: string } | { documentId: string; fileName: string }>,
-  label: string,
-) {
-  return deps.fileJobs.run(op, items, { signal: ctx.signal, label, inJob: Boolean(ctx.job), report: ctx.job?.report });
+function bulk(deps: ToolDeps, ctx: ToolContext, op: FileOp, items: Parameters<ToolDeps['fileJobs']['run']>[1], label: string, consent?: ArchiveConsent) {
+  return deps.fileJobs.run(op, items, { signal: ctx.signal, label, inJob: Boolean(ctx.job), report: ctx.job?.report, consent });
 }
 
 function summarize(res: ArchiveResult & Partial<Pick<FileOpResult, 'stopped' | 'jobId' | 'resumes'>>): string {
@@ -114,6 +108,49 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
           summary: `${res.success} verschoben`,
           isError: res.success === 0 && res.failed + res.conflicts > 0,
           change: res.success ? `${res.success} Datei(en) nach ${target} verschoben` : undefined,
+          changed: res.success,
+        };
+      },
+    }),
+    defineTool({
+      name: 'propose_structure',
+      description:
+        'Eine neue Ordnerstruktur als PLAN vorschlagen: je Gruppe Dokumente (D…/S…) und Zielordner. Der Plan erscheint als eine Vorschlagskarte und wird erst nach Bestätigung durch den Benutzer ausgeführt (ganz oder teilweise je Gruppe). Für „Wie würdest du das ordnen?“ oder größere Umbauten statt vieler einzelner move_documents.',
+      schema: z.object({
+        groups: z
+          .array(z.object({ documents: list, folder: z.string().min(1) }))
+          .min(1)
+          .max(50),
+      }),
+      // a plan is always a proposal: nothing moves before the user confirmed it
+      risk: 'critical',
+      count: (a, ctx) => a.groups.reduce((n, g) => n + count(g.documents, ctx), 0),
+      label: (a) => `Neue Ordnerstruktur: ${a.groups.map((g) => g.folder).join(', ')}`,
+      run: async (a, ctx) => {
+        const items: Array<{ documentId: string; categoryPath: string }> = [];
+        const unknownAll: string[] = [];
+        for (const g of a.groups) {
+          let target: string;
+          try {
+            target = canonical(sanitizeCategoryPath(g.folder));
+          } catch (err) {
+            return { content: `Ungültiger Zielordner „${g.folder}“: ${(err as Error).message}`, isError: true };
+          }
+          const main = categories.needsApproval(target);
+          if (main) categories.create(main, true);
+          const { docs, unknown } = resolveDocs(deps, ctx, g.documents);
+          unknownAll.push(...unknown);
+          for (const d of docs)
+            if (d.status === 'archived' && d.archiveRelPath && folderOf(d).toLowerCase() !== target.toLowerCase())
+              items.push({ documentId: d.id, categoryPath: target });
+        }
+        if (!items.length) return { content: `Nach diesem Plan ist nichts zu verschieben.${unknownNote(unknownAll)}`, summary: 'nichts zu tun' };
+        const res = await bulk(deps, ctx, 'relocate', items, `Agent: Ordnerstruktur nach Plan (${items.length} Dateien)`);
+        return {
+          content: `Plan umgesetzt: ${summarize(res)}.\n${details(res, ctx)}${unknownNote(unknownAll)}`,
+          summary: `${res.success} verschoben`,
+          isError: res.success === 0 && res.failed + res.conflicts > 0,
+          change: res.success ? `Ordnerstruktur nach Plan: ${res.success} Datei(en) verschoben` : undefined,
           changed: res.success,
         };
       },
@@ -260,7 +297,10 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         if (!open.length) return { content: `Keine Dokumente im Eingang darunter.${unknownNote(unknown)}`, isError: true };
         const folder = a.folder ? canonical(a.folder) : undefined;
         const main = folder ? categories.needsApproval(folder) : null;
-        const res = await archive.execute(
+        const res = await bulk(
+          deps,
+          ctx,
+          'archive',
           open.map((d) => ({
             documentId: d.id,
             mode: a.mode,
@@ -268,7 +308,8 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
             ...(a.topic !== null ? { topic: a.topic } : {}),
             ...(a.project !== null ? { project: a.project } : {}),
           })),
-          { confirmed: true, approveNewCategories: main ? [main] : [], confirmMove: a.mode === 'move', trigger: 'agent' },
+          `Agent: ${open.length} Dokument(e) aus dem Eingang archivieren`,
+          { approveNewCategories: main ? [main] : [], confirmMove: a.mode === 'move' },
         );
         return {
           content: `Archiviert: ${summarize(res)}.\n${details(res, ctx)}${unknownNote(unknown)}`,

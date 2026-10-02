@@ -69,6 +69,7 @@ const SERIAL = new Map<string, Promise<unknown>>();
 const MAX_HISTORY_CHARS = 600_000;
 
 const CAPABILITY_KEY = 'agent.capability';
+const STRUCTURE_PLAN_TOOL = 'propose_structure';
 
 const ASK_RE =
   /\b(?:frag(?:e)?\s+mich\s+(?:diesmal\s+|lieber\s+|bitte\s+)?(?:vorher|zuerst|erst)|vorher\s+fragen|erst\s+fragen|nur\s+vorschlagen|modus\s+„?fragen)/i;
@@ -581,7 +582,11 @@ export class AgentService {
       ctx,
       webSearch: this.webSearchFor(o.background),
       propose: (tool, args, label, reason) => {
-        proposals.push({ tool: tool.name, args, label, risk: typeof tool.risk === 'function' ? tool.risk(args) : tool.risk, reason });
+        // a structure plan becomes one item per group, so the user can confirm it in parts (#304)
+        if (tool.name === STRUCTURE_PLAN_TOOL)
+          for (const g of (args as { groups: Array<{ documents: string[]; folder: string }> }).groups)
+            proposals.push({ tool: 'move_documents', args: g, label: `Nach ${g.folder} verschieben (${g.documents.join(', ')})`, risk: 'write', reason });
+        else proposals.push({ tool: tool.name, args, label, risk: typeof tool.risk === 'function' ? tool.risk(args) : tool.risk, reason });
         return `NICHT AUSGEFÜHRT – als Vorschlag vorbereitet (${reason}). Der Benutzer bestätigt ihn in der Karte unter deiner Antwort; sag ihm das und arbeite mit dem Rest weiter.`;
       },
       onStep: (step, all) => {

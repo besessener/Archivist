@@ -127,6 +127,37 @@ describe('Metadata tools (#305, #291)', () => {
     for (const id of ids) expect((await app.ok('documents:get', { id })).projectName).toBeNull();
   });
 
+  it('entries other than documents get title, persons and date too', async () => {
+    await app.ok('decisions:create', {
+      decisionText: 'Wir kaufen ein Lastenrad',
+      title: 'Lastenrad',
+      topic: 'Mobilität',
+      decidedAt: '2026-01-15',
+      participants: ['Anna'],
+      alternatives: [],
+      unknownFields: [],
+      sourceIds: [],
+      confidence: 0.9,
+    });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'list_entries', args: { kind: 'decision' } }] },
+      {
+        calls: [
+          {
+            name: 'set_metadata',
+            args: { targets: ['K1'], title: 'Lastenrad kaufen', documentDate: '2026-01-10', addPersons: ['Ben'], removePersons: ['Anna'] },
+          },
+        ],
+      },
+      { text: 'Korrigiert.' },
+    );
+    await app.ok('chat:send', { text: 'Die Lastenrad-Entscheidung war am 10.1., mit Ben statt Anna, Titel „Lastenrad kaufen“' });
+    const d = (await app.ok('decisions:list', {}))[0]!;
+    expect(d.title).toBe('Lastenrad kaufen');
+    expect(d.decidedAt?.slice(0, 10)).toBe('2026-01-10');
+    expect(d.participants).toEqual(['Ben']);
+  });
+
   it('unclear persons are asked about, not guessed', async () => {
     await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Schmidt' });
     await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Meier' });

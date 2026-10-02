@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { ArchiveItemRequest, ArchivePlan, ArchivePlanItem, ArchiveResult, DocumentProposal, VerifyReport } from '@archivist/shared';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notInArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, relations } from '../db/schema';
 import { AppError, fsError, permissionError, toErrorInfo } from '../util/errors';
@@ -160,6 +160,8 @@ export class ArchiveService {
   private openItems!: OpenItemService;
   /** Archive file operations (archive, relocate) currently running. */
   private inFlight = 0;
+  /** Documents a file operation is working on right now: a second one for the same document waits for nothing and reports a conflict (#240). */
+  private readonly busy = new Set<string>();
   /** True while the archive root is being changed; file operations are refused meanwhile. */
   private rootChangeActive = false;
   /** True while a full backup copies the archive; file operations and root changes are refused meanwhile. */
@@ -425,7 +427,7 @@ export class ArchiveService {
     for (const req of items) {
       let outcome: ArchiveResult['items'][number];
       try {
-        outcome = await this.executeOne(req, opts);
+        outcome = await this.onePerDocument(req.documentId, () => this.executeOne(req, opts));
       } catch (err) {
         const info = toErrorInfo(err);
         this.ctx.logger.error('archive', 'Archiving failed', { documentId: req.documentId, error: err });
@@ -461,6 +463,18 @@ export class ArchiveService {
     }
     this.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
     return result;
+  }
+
+  /** Runs one file operation for a document unless another one is already working on it. */
+  private async onePerDocument(documentId: string, fn: () => Promise<ArchiveResult['items'][number]>): Promise<ArchiveResult['items'][number]> {
+    if (this.busy.has(documentId))
+      return { documentId, outcome: 'conflict', targetPath: null, message: 'Dieses Dokument wird gerade schon archiviert oder verschoben.', auditId: null };
+    this.busy.add(documentId);
+    try {
+      return await fn();
+    } finally {
+      this.busy.delete(documentId);
+    }
   }
 
   private async executeOne(req: ArchiveItemRequest, opts: ExecuteOptions): Promise<ArchiveResult['items'][number]> {
@@ -593,7 +607,7 @@ export class ArchiveService {
           const project = projectName ? this.graph.ensureEntity('project', projectName, null, { fromDocument: fromDoc(projectName, proposal?.project) }) : null;
           // persons: every mention becomes a person (no longer only the first 12, #274), the stored list uses canonical names
           const people = this.persons.resolveNames(proposal?.persons ?? row.persons, { context: 'document' });
-          this.db
+          const claimed = this.db
             .update(documents)
             .set({
               status: req.mode === 'index_only' ? 'indexed_only' : 'archived',
@@ -607,8 +621,10 @@ export class ArchiveService {
               archivedAt: updatedAt,
               updatedAt,
             })
-            .where(eq(documents.id, row.id))
+            // archived meanwhile by someone else: roll back, the copy made here is removed below (#240)
+            .where(and(eq(documents.id, row.id), notInArray(documents.status, ['archived', 'indexed_only'])))
             .run();
+          if (!claimed.changes) throw new AppError('archive_conflict', 'Das Dokument wurde inzwischen schon archiviert.');
           if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] });
           if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] });
           if (cat)
@@ -1006,7 +1022,7 @@ export class ArchiveService {
     for (const req of items) {
       let outcome: ArchiveResult['items'][number];
       try {
-        outcome = await this.relocateOne(req, opts);
+        outcome = await this.onePerDocument(req.documentId, () => this.relocateOne(req, opts));
       } catch (err) {
         const info = toErrorInfo(err);
         this.ctx.logger.error('archive', 'Relocating failed', { documentId: req.documentId, error: err });
@@ -1125,6 +1141,26 @@ export class ArchiveService {
   }
 
   /**
+   * Runs the database part of a file move in one transaction. If it fails, the file is moved back to `original`, so the
+   * database and the file system agree again and the action can simply be retried (#221, #238).
+   */
+  private async commitOrPutBack<T>(file: { moved: string; original: string; sha256: string; caseOnly: boolean }, commit: () => T): Promise<T> {
+    try {
+      return this.ctx.database.transaction(commit);
+    } catch (err) {
+      const note = file.caseOnly
+        ? await fsp.rename(file.moved, file.original).then(
+            () => null,
+            () => `Die Datei liegt noch unter ${file.moved}.`,
+          )
+        : await this.putBackAfterFailedRelocate(file.moved, file.original, file.sha256);
+      if (!note) throw err;
+      const info = toErrorInfo(err);
+      throw new AppError(info.category, `${info.message} ${note}`, { details: info.details, cause: err });
+    }
+  }
+
+  /**
    * Moves a relocated file back to `original` after the database update failed. The original is restored first and
    * the new entry removed afterwards, so the file the database points to always exists.
    * @returns null when the file is back in place without leftovers, else a user-facing note on the actual state
@@ -1197,9 +1233,15 @@ export class ArchiveService {
           fail('skipped', 'Der Name ist bereits so.');
           continue;
         }
+        const { from: fromRel, to: toRel } = p;
+        if (this.busy.has(p.documentId)) {
+          fail('conflict', 'Dieses Dokument wird gerade schon archiviert oder verschoben.');
+          continue;
+        }
+        this.busy.add(p.documentId);
         try {
           const row = this.docs.getRow(p.documentId);
-          const src = resolveInside(this.root, p.from);
+          const src = resolveInside(this.root, fromRel);
           await assertRealInside(this.root, src);
           if ((await sha256File(src)) !== row.sha256) {
             fail('conflict', 'Die Archivdatei wurde seit der Archivierung verändert und wird deshalb nicht umbenannt.');
@@ -1211,35 +1253,40 @@ export class ArchiveService {
           else await this.moveExclusive(src, path.dirname(dest), path.basename(dest), row.sha256, true);
           const updatedAt = nowIso();
           const title = row.title === path.basename(p.from, path.extname(p.from)) ? path.basename(p.to, path.extname(p.to)) : row.title;
-          this.db.update(documents).set({ archiveRelPath: p.to, title, updatedAt }).where(eq(documents.id, row.id)).run();
-          if (title !== row.title) this.graph.registerNode('document', row.id, title, row.summary);
-          const auditId = this.audit.log({
-            action: 'archive.rename',
-            actor: opts.trigger === 'agent' ? 'agent' : 'user',
-            trigger: opts.trigger ?? 'manual',
-            confirmed: true,
-            entityIds: [row.id],
-            paths: [src, dest],
-            before: { path: src },
-            after: { path: dest },
-            undo: {
-              type: 'archive_rename',
-              data: {
-                documentId: row.id,
-                fromRel: p.from,
-                toRel: p.to,
-                sha256: row.sha256,
-                beforeTitle: row.title,
-                beforeUpdatedAt: row.updatedAt,
-                afterUpdatedAt: updatedAt,
-              } satisfies RenameUndoData,
-            },
+          // database, graph and audit entry together – if they fail, the file goes back to its old name (#221)
+          const auditId = await this.commitOrPutBack({ moved: dest, original: src, sha256: row.sha256, caseOnly }, () => {
+            this.db.update(documents).set({ archiveRelPath: toRel, title, updatedAt }).where(eq(documents.id, row.id)).run();
+            if (title !== row.title) this.graph.registerNode('document', row.id, title, row.summary);
+            return this.audit.log({
+              action: 'archive.rename',
+              actor: opts.trigger === 'agent' ? 'agent' : 'user',
+              trigger: opts.trigger ?? 'manual',
+              confirmed: true,
+              entityIds: [row.id],
+              paths: [src, dest],
+              before: { path: src },
+              after: { path: dest },
+              undo: {
+                type: 'archive_rename',
+                data: {
+                  documentId: row.id,
+                  fromRel,
+                  toRel,
+                  sha256: row.sha256,
+                  beforeTitle: row.title,
+                  beforeUpdatedAt: row.updatedAt,
+                  afterUpdatedAt: updatedAt,
+                } satisfies RenameUndoData,
+              },
+            });
           });
           result.items.push({ documentId: row.id, outcome: 'success', targetPath: dest, message: `Umbenannt in ${path.basename(dest)}.`, auditId });
           result.success += 1;
         } catch (err) {
           const info = toErrorInfo(err);
           fail('failed', info.message + (info.details ? ` (${info.details})` : ''));
+        } finally {
+          this.busy.delete(p.documentId);
         }
       }
       this.ctx.events.changed('documents', 'audit', 'knowledge');
@@ -1264,14 +1311,18 @@ export class ArchiveService {
   private async renameUndoRun(d: RenameUndoData): Promise<string> {
     const now = resolveInside(this.root, d.toRel);
     const back = resolveInside(this.root, d.fromRel);
-    if (process.platform === 'win32' && d.toRel.toLowerCase() === d.fromRel.toLowerCase()) await fsp.rename(now, back);
+    const caseOnly = process.platform === 'win32' && d.toRel.toLowerCase() === d.fromRel.toLowerCase();
+    if (caseOnly) await fsp.rename(now, back);
     else await this.moveExclusive(now, path.dirname(back), path.basename(back), d.sha256, true);
-    this.db
-      .update(documents)
-      .set({ archiveRelPath: d.fromRel, title: d.beforeTitle, updatedAt: d.beforeUpdatedAt })
-      .where(eq(documents.id, d.documentId))
-      .run();
-    this.graph.registerNode('document', d.documentId, d.beforeTitle, null);
+    // the undo can be retried: if the database refuses, the file goes back to where the database still points (#238)
+    await this.commitOrPutBack({ moved: back, original: now, sha256: d.sha256, caseOnly }, () => {
+      this.db
+        .update(documents)
+        .set({ archiveRelPath: d.fromRel, title: d.beforeTitle, updatedAt: d.beforeUpdatedAt })
+        .where(eq(documents.id, d.documentId))
+        .run();
+      this.graph.registerNode('document', d.documentId, d.beforeTitle, null);
+    });
     this.ctx.events.changed('documents', 'knowledge');
     return 'Umbenennen rückgängig gemacht.';
   }
@@ -1373,7 +1424,7 @@ export class ArchiveService {
     const now = resolveInside(this.root, d.toRel);
     const back = resolveInside(this.root, d.fromRel);
     await this.moveExclusive(now, path.dirname(back), path.basename(back), d.sha256, true);
-    this.ctx.database.transaction(() => {
+    await this.commitOrPutBack({ moved: back, original: now, sha256: d.sha256, caseOnly: false }, () => {
       this.db
         .update(documents)
         // the old timestamp comes back too: the document is exactly as before, so earlier undo entries (archiving) stay valid

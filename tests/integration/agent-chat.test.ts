@@ -50,6 +50,43 @@ describe('Agent in the chat (#295, #303, #304)', () => {
     expect(folderOf(app, b)).toBe('work/misc');
   });
 
+  it('a folder structure plan is always a proposal, one item per group, and can be confirmed in parts (#304)', async () => {
+    const a = await archived(app, 'rechnung.md', 'Rechnung', 'work/misc');
+    const b = await archived(app, 'vertrag.md', 'Vertrag', 'work/misc');
+    app.llm.agent = scriptedTurns(
+      {
+        calls: [
+          { name: 'find_documents', args: { name: 'rechnung' } },
+          { name: 'find_documents', args: { name: 'vertrag' } },
+        ],
+      },
+      {
+        calls: [
+          {
+            name: 'propose_structure',
+            args: {
+              groups: [
+                { documents: ['S1'], folder: 'work/finanzen/rechnungen' },
+                { documents: ['S2'], folder: 'work/vertraege' },
+              ],
+            },
+          },
+        ],
+      },
+      { text: 'So würde ich es ordnen.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Wie würdest du work/misc ordnen? Schlag mir eine Struktur vor.' });
+    expect(folderOf(app, a)).toBe('work/misc');
+    const card = res.assistantMessage.actions.find((x) => x.actionType === 'agent_batch')!;
+    const items = (card.proposedParameters as { items: Array<{ tool: string }> }).items;
+    expect(items.map((i) => i.tool)).toEqual(['move_documents', 'move_documents']);
+    await app.ok('actions:resolve', { decision: 'approve', actionId: card.id, confirmed: true, parameterOverrides: { selected: [1] } });
+    expect(folderOf(app, a)).toBe('work/misc');
+    expect(folderOf(app, b)).toBe('work/vertraege');
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(folderOf(app, b)).toBe('work/misc');
+  });
+
   it('mode „Fragen“: prepares the change as one proposal card and executes it after confirmation', async () => {
     app.services.settings.update({ agent: { mode: 'ask' } });
     const a = await archived(app, 'a.md', 'A', 'work/misc');
