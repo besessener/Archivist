@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { FileUp } from 'lucide-react';
 import { useApp } from '@/lib/app-context';
+import { cn } from '@/lib/utils';
 import { ContextPanel } from './context-panel';
 import { ImportCard } from './import-card';
 import { NoBridge } from './no-bridge';
@@ -62,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   if (!status.setupCompleted) return <SetupWizard />;
 
-  const showContext = pathname.startsWith('/chat');
+  const isChat = pathname.startsWith('/chat');
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -83,7 +84,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main
             id="main"
             data-testid="dropzone"
-            className="relative min-w-0 flex-1 overflow-y-auto"
+            // the chat scrolls its message list itself: a second scroll bar on the main area would only move it by a few pixels
+            className={cn('relative min-w-0 flex-1', isChat ? 'overflow-hidden' : 'overflow-y-auto')}
             onDragEnter={(e) => {
               if (!hasFiles(e)) return;
               depth.current += 1;
@@ -114,7 +116,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
             <ImportCard />
           </main>
-          {showContext && <ContextPanel />}
+          {isChat && <ContextPanel />}
         </div>
       </div>
     </div>
