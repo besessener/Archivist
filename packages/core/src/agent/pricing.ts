@@ -1,9 +1,6 @@
 import type { AgentUsage, ModelPrice } from '@archivist/shared';
 
-/**
- * Built-in price table (US$ per 1M tokens, as of 2026-09), only for the information shown to the user (#302).
- * Own prices in the settings take precedence. Matching is by prefix of the lower-cased model or deployment name.
- */
+/** Built-in prices in US$ per 1M tokens (as of 2026-09), shown for information only (#302); own prices take precedence. */
 const PRICES: Array<[prefix: string, price: ModelPrice]> = [
   ['claude-fable-5', { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }],
   ['claude-mythos-5', { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }],
@@ -21,30 +18,33 @@ const PRICES: Array<[prefix: string, price: ModelPrice]> = [
   ['o4-mini', { input: 1.1, output: 4.4, cacheRead: 0.275, cacheWrite: 0 }],
 ];
 
+/** Matched by prefix of the lower-cased model or deployment name. */
 export function priceFor(model: string, own: Record<string, ModelPrice> = {}): ModelPrice | null {
   if (own[model]) return own[model];
-  const m = model.toLowerCase().replace(/^(?:anthropic\.|openai\/)/, '');
+  const name = model.toLowerCase().replace(/^(?:anthropic\.|openai\/)/, '');
   // longest matching prefix wins (claude-opus-5-5 before claude-opus-5)
-  const hit = PRICES.filter(([p]) => m.startsWith(p) || m.includes(p)).toSorted((a, b) => b[0].length - a[0].length)[0];
+  const hit = PRICES.filter(([prefix]) => name.startsWith(prefix) || name.includes(prefix)).toSorted((a, b) => b[0].length - a[0].length)[0];
   return hit?.[1] ?? null;
 }
 
-/** Estimated cost of a usage in US$; null if the model is not in the table. Uncached input = input tokens as reported. */
+/** Estimated cost of a usage in US$; null without a price. Uncached input = input tokens as reported. */
 export function costOf(
   usage: Pick<AgentUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheWriteTokens'>,
-  model: string,
-  own?: Record<string, ModelPrice>,
+  price: ModelPrice | null,
 ): number | null {
-  const p = priceFor(model, own);
-  if (!p) return null;
+  if (!price) return null;
   const usd =
-    (usage.inputTokens * p.input + usage.outputTokens * p.output + usage.cacheReadTokens * p.cacheRead + usage.cacheWriteTokens * p.cacheWrite) / 1_000_000;
+    (usage.inputTokens * price.input +
+      usage.outputTokens * price.output +
+      usage.cacheReadTokens * price.cacheRead +
+      usage.cacheWriteTokens * price.cacheWrite) /
+    1_000_000;
   return Math.round(usd * 10_000) / 10_000;
 }
 
 /** Tokens that count against the technical budget of a run: cache reads count a tenth (they cost a tenth). */
-export function budgetTokens(u: Pick<AgentUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheWriteTokens'>): number {
-  return u.inputTokens + u.outputTokens + u.cacheWriteTokens + Math.round(u.cacheReadTokens / 10);
+export function budgetTokens(usage: Pick<AgentUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheWriteTokens'>): number {
+  return usage.inputTokens + usage.outputTokens + usage.cacheWriteTokens + Math.round(usage.cacheReadTokens / 10);
 }
 
 export const emptyUsage = (): AgentUsage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 0, retries: 0 });

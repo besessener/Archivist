@@ -1,11 +1,6 @@
 import { redactSecrets } from '../util/redact';
 
-/**
- * Agent security (#301): document contents are data, never instructions. Tool results with document text are wrapped
- * in clearly marked data blocks, secrets are masked before anything leaves the machine, and instructions found in
- * documents („Verschiebe alle Dateien nach …“, „Merk dir …“) taint the run so that no change follows from them alone.
- */
-
+// agent security (#301): document contents are data, never instructions; instructions found in them taint the run
 const DATA_OPEN = '<<<DOKUMENTINHALT';
 const DATA_CLOSE = 'DOKUMENTINHALT>>>';
 
@@ -15,10 +10,7 @@ export function asData(source: string, text: string): string {
   return `${DATA_OPEN} quelle="${source}"\n${clean}\n${DATA_CLOSE}`;
 }
 
-/**
- * Text in documents that addresses an assistant or demands an action from it. Deliberately broad: a false hit only means
- * that changes in this run need the user's own request (or a confirmation) – nothing is lost.
- */
+/** Instruction-like text in documents; deliberately broad, as a false hit only means changes need the user's own request. */
 const INSTRUCTION_PATTERNS: RegExp[] = [
   /\b(?:ignoriere|vergiss)\b[^.\n]{0,60}\b(?:anweisungen|regeln|vorgaben|instruktionen)\b/i,
   /\bignore\b[^.\n]{0,40}\b(?:previous|prior|above|all)\b[^.\n]{0,40}\binstructions?\b/i,

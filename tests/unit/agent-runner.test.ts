@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { AgentLimits } from '@archivist/shared';
-import { AgentRunner, AskUserArgs, ASK_USER, type RunnerOptions } from '../../packages/core/src/agent/runner';
+import { AskUserArgs, ASK_USER } from '../../packages/core/src/agent/ask-user';
+import { modeOverrideIn } from '../../packages/core/src/agent/chat-reply';
+import { historyWindow, pendingCalls } from '../../packages/core/src/agent/history-window';
+import { AgentRunner, type RunnerOptions } from '../../packages/core/src/agent/runner';
 import { RefStore, ToolRegistry, defineTool, type ToolContext } from '../../packages/core/src/agent/registry';
-import { historyWindow, modeOverrideIn, pendingCalls } from '../../packages/core/src/agent/service';
 import type { AgentMessage, AgentToolCall, ProviderAdapter, StreamEvent, TurnRequest, TurnResult } from '../../packages/core/src/agent/types';
 import { AppError } from '../../packages/core/src/util/errors';
 
@@ -173,7 +175,7 @@ function setup(
     effort: 'high',
     massThreshold: 100,
     ctx,
-    propose: (tool, args, _label, reason) => {
+    propose: ({ tool, args, reason }) => {
       proposals.push({ tool: tool.name, args, reason });
       return `VORSCHLAG (${reason})`;
     },

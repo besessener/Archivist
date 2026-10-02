@@ -1,10 +1,5 @@
 import type { AgentAdapterId, AgentEffort, AgentUsage } from '@archivist/shared';
 
-/**
- * Provider-neutral message format of the agent core (#295, #297). Adapters translate it into the Anthropic Messages API or
- * the OpenAI Responses API. `raw` keeps the provider's own blocks (thinking, reasoning, compaction) so that they can be sent
- * back unchanged to the same provider and model; a different provider gets text and tool calls only.
- */
 export interface AgentToolCall {
   id: string;
   name: string;
@@ -18,6 +13,7 @@ export interface AgentToolResult {
   isError: boolean;
 }
 
+/** Provider-neutral history (#295, #297); `raw` keeps the provider's own blocks, replayed only to the same provider and model. */
 export type AgentMessage =
   | { role: 'user'; content: string }
   | {

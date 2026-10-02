@@ -46,6 +46,13 @@ export class AgentShutdownError extends Error {
   }
 }
 
+/** One file operation on a list of items. */
+interface FileWork {
+  op: FileOp;
+  items: FileItem[];
+  consent?: ArchiveConsent;
+}
+
 const emptyResult = (): ArchiveResult => ({ items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 });
 
 function addResult(into: ArchiveResult, r: ArchiveResult): void {
@@ -66,13 +73,7 @@ interface Waiting {
   fail: (err: unknown) => void;
 }
 
-/**
- * Large file operations of the agent as jobs (#304): the tool enqueues one job per call and waits for it, so the run's
- * live view shows the step with its progress and the job list links to the run. The job carries the run id and the step:
- * every change it makes is logged under the run, „Lauf rückgängig“ and undo per step cover it. „Stopp“ in the chat
- * cancels the job between two chunks – what is done stays and stays undoable. Quitting interrupts the job; it continues
- * after the next start from its checkpoint and adds its changes to the step of the (then finished) run.
- */
+/** Large file operations of the agent as jobs under the run id and step (#304): live progress, „Stopp“ between chunks, resume after restart. */
 export class AgentFileJobs {
   private readonly waiting = new Map<string, Waiting>();
   /** Number of files above which an operation runs as a job, and files per chunk (tests lower both). */
@@ -88,49 +89,45 @@ export class AgentFileJobs {
   register(): void {
     this.jobs.register<FileJobPayload>(FILE_JOB_TYPE, (job) => this.handle(job), {
       // cancelled before it ran (e.g. still waiting behind other jobs): the tool gets what is done – nothing
-      onCancelled: (job) => this.release(job.id, false),
+      onCancelled: (job) => this.release(job.id, { resumes: false }),
       onFailed: (job, err) => {
-        const w = this.waiting.get(job.id);
+        const waiter = this.waiting.get(job.id);
         this.waiting.delete(job.id);
-        w?.fail(err);
+        waiter?.fail(err);
       },
     });
   }
 
-  private release(jobId: string, resumes: boolean): void {
-    const w = this.waiting.get(jobId);
-    if (!w) return;
+  private release(jobId: string, { resumes }: { resumes: boolean }): void {
+    const waiter = this.waiting.get(jobId);
+    if (!waiter) return;
     this.waiting.delete(jobId);
-    w.settle({ ...w.result, stopped: w.total - w.done, jobId, resumes });
+    waiter.settle({ ...waiter.result, stopped: waiter.total - waiter.done, jobId, resumes });
   }
 
-  /**
-   * Moves, renames or archives the files in chunks. Above the threshold – and only inside a chat run or a confirmed proposal, never
-   * in a background run that is a job itself – as a job of its own; smaller amounts inline. Either way the step's live
-   * view gets the progress and a stop ends cleanly between two chunks.
-   */
+  /** In chunks; above the threshold as a job of its own, except in a background run that is a job itself. */
   async run(
     op: FileOp,
     items: FileItem[],
-    opts: { signal: AbortSignal; label: string; inJob: boolean; report?: (p: number, m: string) => void; consent?: ArchiveConsent },
+    options: { signal: AbortSignal; label: string; inJob: boolean; report?: (p: number, m: string) => void; consent?: ArchiveConsent },
   ): Promise<FileOpResult> {
     const scope = currentRun();
-    if (scope && !opts.inJob && items.length > this.threshold) return this.asJob(scope, op, items, opts);
+    if (scope && !options.inJob && items.length > this.threshold) return this.asJob(scope, { op, items, ...options });
     const result = emptyResult();
     let done = 0;
-    for (; done < items.length && !opts.signal.aborted; done += this.chunk) {
+    for (; done < items.length && !options.signal.aborted; done += this.chunk) {
       const chunk = items.slice(done, done + this.chunk);
-      addResult(result, await this.apply(op, chunk, opts.consent));
-      const n = Math.min(done + chunk.length, items.length);
+      addResult(result, await this.apply({ op, items: chunk, consent: options.consent }));
+      const handled = Math.min(done + chunk.length, items.length);
       if (items.length > this.chunk) {
-        scope?.onProgress?.({ jobId: null, done: n, total: items.length });
-        opts.report?.(n / items.length, `${n} von ${items.length} Dateien`);
+        scope?.onProgress?.({ jobId: null, done: handled, total: items.length });
+        options.report?.(handled / items.length, `${handled} von ${items.length} Dateien`);
       }
     }
     return { ...result, stopped: Math.max(0, items.length - done), jobId: null, resumes: false };
   }
 
-  private apply(op: FileOp, chunk: FileItem[], consent?: ArchiveConsent): Promise<ArchiveResult> {
+  private apply({ op, items: chunk, consent }: FileWork): Promise<ArchiveResult> {
     if (op === 'archive')
       return this.archive.execute(chunk as ArchiveItemRequest[], {
         confirmed: true,
@@ -143,12 +140,8 @@ export class AgentFileJobs {
       : this.archive.relocate(chunk as RelocateRequest[], { confirmed: true, trigger: 'agent' });
   }
 
-  private asJob(
-    scope: AgentRunScope,
-    op: FileOp,
-    items: FileItem[],
-    opts: { signal: AbortSignal; label: string; consent?: ArchiveConsent },
-  ): Promise<FileOpResult> {
+  private asJob(scope: AgentRunScope, work: FileWork & { signal: AbortSignal; label: string }): Promise<FileOpResult> {
+    const { op, items, signal, consent } = work;
     return new Promise<FileOpResult>((resolve, reject) => {
       const payload: FileJobPayload = {
         runId: scope.runId,
@@ -156,12 +149,12 @@ export class AgentFileJobs {
         explicit: scope.explicit,
         op,
         items,
-        ...(opts.consent ? { consent: opts.consent } : {}),
+        ...(consent ? { consent } : {}),
       };
-      const job = this.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, opts.label, payload, { maxAttempts: 1 });
+      const job = this.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, work.label, payload, { maxAttempts: 1 });
       const onAbort = () => {
         // quitting: the queue interrupts the job, it continues after the next start – the run reports what is done
-        if (opts.signal.reason instanceof AgentShutdownError) this.release(job.id, true);
+        if (signal.reason instanceof AgentShutdownError) this.release(job.id, { resumes: true });
         else this.jobs.cancel(job.id);
       };
       this.waiting.set(job.id, {
@@ -169,18 +162,18 @@ export class AgentFileJobs {
         total: items.length,
         done: 0,
         result: emptyResult(),
-        settle: (r) => {
-          opts.signal.removeEventListener('abort', onAbort);
-          resolve(r);
+        settle: (result) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(result);
         },
         fail: (err) => {
-          opts.signal.removeEventListener('abort', onAbort);
+          signal.removeEventListener('abort', onAbort);
           reject(err instanceof Error ? err : new Error(String(err)));
         },
       });
       scope.onProgress?.({ jobId: job.id, done: 0, total: items.length });
-      if (opts.signal.aborted) onAbort();
-      else opts.signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
     });
   }
 
@@ -191,37 +184,42 @@ export class AgentFileJobs {
   }
 
   private async handle(job: JobContext<FileJobPayload>): Promise<{ summary: string; runId: string }> {
-    const p = job.payload;
-    const w = await this.waiter(job.id);
+    const { payload } = job;
+    const waiter = await this.waiter(job.id);
     // without a waiting tool (continued after a restart) the job builds the run scope from its payload
-    const scope: AgentRunScope = w?.scope ?? { runId: p.runId, explicit: p.explicit, auditIds: [], ...(p.stepId ? { stepId: p.stepId } : {}) };
-    const cp = job.checkpoint as { done: number; result: ArchiveResult } | null;
-    const result = cp?.result ?? emptyResult();
-    let done = cp?.done ?? 0;
+    const scope: AgentRunScope = waiter?.scope ?? {
+      runId: payload.runId,
+      explicit: payload.explicit,
+      auditIds: [],
+      ...(payload.stepId ? { stepId: payload.stepId } : {}),
+    };
+    const checkpoint = job.checkpoint as { done: number; result: ArchiveResult } | null;
+    const result = checkpoint?.result ?? emptyResult();
+    let done = checkpoint?.done ?? 0;
     const sync = () => {
-      if (!w) return;
-      w.done = done;
-      w.result = result;
+      if (!waiter) return;
+      waiter.done = done;
+      waiter.result = result;
     };
     sync();
     try {
-      while (done < p.items.length) {
+      while (done < payload.items.length) {
         job.throwIfCancelled();
-        const chunk = p.items.slice(done, done + this.chunk);
+        const chunk = payload.items.slice(done, done + this.chunk);
         const before = scope.auditIds.length;
-        addResult(result, await agentRunScope.run(scope, () => this.apply(p.op, chunk, p.consent)));
+        addResult(result, await agentRunScope.run(scope, () => this.apply({ op: payload.op, items: chunk, consent: payload.consent })));
         done += chunk.length;
-        if (!w && p.stepId) this.runs.addStepAudit(p.runId, p.stepId, scope.auditIds.slice(before));
+        if (!waiter && payload.stepId) this.runs.addStepAudit(payload.runId, { stepId: payload.stepId, auditIds: scope.auditIds.slice(before) });
         job.saveCheckpoint({ done, result });
-        job.report(done / p.items.length, `${done} von ${p.items.length} Dateien`);
+        job.report(done / payload.items.length, `${done} von ${payload.items.length} Dateien`);
         sync();
-        scope.onProgress?.({ jobId: job.id, done, total: p.items.length });
+        scope.onProgress?.({ jobId: job.id, done, total: payload.items.length });
       }
     } catch (err) {
-      if (isJobCancelled(err)) this.release(job.id, isJobInterrupted(err));
+      if (isJobCancelled(err)) this.release(job.id, { resumes: isJobInterrupted(err) });
       throw err;
     }
-    this.release(job.id, false);
-    return { summary: `${result.success} von ${p.items.length} erledigt`, runId: p.runId };
+    this.release(job.id, { resumes: false });
+    return { summary: `${result.success} von ${payload.items.length} erledigt`, runId: payload.runId };
   }
 }
