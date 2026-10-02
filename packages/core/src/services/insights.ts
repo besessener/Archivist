@@ -75,6 +75,8 @@ export class InsightService {
   private actions!: ActionService;
   private reminders!: ReminderService;
   private readonly rejectedListeners: Array<(dedupeKey: string) => void> = [];
+  /** Questions whose chosen answer is being executed; executing it may withdraw the other answers' proposals. */
+  private readonly answering = new Set<string>();
 
   constructor(private readonly ctx: AppContext) {}
 
@@ -86,7 +88,7 @@ export class InsightService {
       const rows = this.db.select().from(insights).where(eq(insights.recommendedActionId, a.id)).all();
       for (const r of rows.filter((x) => x.status === 'open' || x.status === 'snoozed')) this.db.delete(insights).where(eq(insights.id, r.id)).run();
       // a question one of whose answers is outdated is removed together with the other answers' proposals
-      const questions = this.withChoiceAction(a.id).filter((x) => x.status === 'open' || x.status === 'snoozed');
+      const questions = this.withChoiceAction(a.id).filter((x) => (x.status === 'open' || x.status === 'snoozed') && !this.answering.has(x.id));
       for (const r of questions) this.remove(r, 'Eine andere Antwort ist nicht mehr aktuell.');
       if (rows.length) this.ctx.events.changed('insights', 'status');
     });
@@ -380,10 +382,16 @@ export class InsightService {
         this.db.update(insights).set({ choices }).where(eq(insights.id, id)).run();
         action = fresh;
       }
-      const res =
-        !action || action.status === 'withdrawn'
-          ? action
-          : await this.actions.resolve(action.id, 'approve', { confirmed: true, strongConfirmed: opts.strongConfirmed ?? false });
+      let res = action;
+      if (action && action.status !== 'withdrawn') {
+        // e.g. a merge withdraws the other answers' merge proposals of the same entries: that must not remove this question
+        this.answering.add(id);
+        try {
+          res = await this.actions.resolve(action.id, 'approve', { confirmed: true, strongConfirmed: opts.strongConfirmed ?? false });
+        } finally {
+          this.answering.delete(id);
+        }
+      }
       if (res?.status === 'failed') throw new AppError('validation_error', res.result ?? 'Die Aktion ist fehlgeschlagen.');
       if (res?.status !== 'executed') {
         const row = this.db.select().from(insights).where(eq(insights.id, id)).get();
