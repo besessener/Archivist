@@ -86,7 +86,7 @@ export class UserLinks {
     const target = this.graph.entities.get(key.targetId);
     if (!source || !target) throw new AppError('validation_error', 'Einer der Einträge existiert nicht.');
     if (key.relationType === 'subtopic_of') this.assertSubtopic(source, target);
-    if (status === 'proposed' && this.graph.relations.rejectedBetween(key.sourceId, key.targetId))
+    if (status === 'proposed' && this.graph.relations.rejectedBetween({ a: key.sourceId, b: key.targetId }))
       throw new AppError('validation_error', `Die Verknüpfung „${source.name}“ – „${target.name}“ wurde abgelehnt und wird nicht wieder vorgeschlagen.`);
   }
 

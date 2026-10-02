@@ -119,7 +119,7 @@ export class KnowledgeGraphService {
 
   /** A relation between the two that the user rejected (never proposed again, #270); a rejected duplicate only with `includeDuplicateOf`. */
   rejectedBetween(a: string, b: string, opts: { includeDuplicateOf?: boolean } = {}): GraphRelation | undefined {
-    return this.relations.rejectedBetween(a, b, opts);
+    return this.relations.rejectedBetween({ a, b, ...opts });
   }
 
   /** Marks the system's current relations of a changed field as outdated, except those to `keepIds`; returns their ids. */

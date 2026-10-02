@@ -98,7 +98,7 @@ export class GraphRelations {
   private blockingRejection(key: RelationKey, link: ResolvedLink): GraphRelation | undefined {
     const proposal = (link.options.status ?? 'proposed') === 'proposed' && !link.options.resolvedByUser;
     if (!proposal || key.relationType === 'duplicate_of' || link.method === 'field') return undefined;
-    return this.rejectedBetween(key.sourceId, key.targetId);
+    return this.rejectedBetween({ a: key.sourceId, b: key.targetId });
   }
 
   private relink(existing: RelationRow, link: ResolvedLink): LinkResult {
@@ -184,9 +184,9 @@ export class GraphRelations {
   }
 
   /** A rejected relation between the two (either direction, also via records discarded as their duplicates, #270). */
-  rejectedBetween(a: string, b: string, options: { includeDuplicateOf?: boolean } = {}): GraphRelation | undefined {
-    const as = this.withDuplicates(a);
-    const bs = this.withDuplicates(b);
+  rejectedBetween(pair: { a: string; b: string; includeDuplicateOf?: boolean }): GraphRelation | undefined {
+    const as = this.withDuplicates(pair.a);
+    const bs = this.withDuplicates(pair.b);
     const row = this.db
       .select()
       .from(relations)
@@ -197,7 +197,7 @@ export class GraphRelations {
             and(inArray(relations.sourceEntityId, bs), inArray(relations.targetEntityId, as)),
           ),
           eq(relations.status, 'rejected'),
-          options.includeDuplicateOf ? undefined : sql`${relations.relationType} <> 'duplicate_of'`,
+          pair.includeDuplicateOf ? undefined : sql`${relations.relationType} <> 'duplicate_of'`,
         ),
       )
       .get();
