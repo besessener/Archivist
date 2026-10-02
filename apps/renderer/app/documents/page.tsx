@@ -7,8 +7,10 @@ import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
+import { BulkBar } from '@/components/documents/bulk-bar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -38,6 +40,17 @@ function DocumentsInner() {
   const docs = (list.data ?? []).filter((d) => ARCHIVED.includes(d.status));
   const types = [...new Set(docs.map((d) => d.docType).filter((t): t is string => !!t))].sort();
   const shown = docs.filter((d) => !type || d.docType === type);
+  // Multi-selection (#291, #304): only documents that are currently shown count
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectedDocs = shown.filter((d) => selected.has(d.id));
+  const allChecked = shown.length > 0 && selectedDocs.length === shown.length;
+  const toggle = (id: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   return (
     <Page wide>
@@ -83,11 +96,20 @@ function DocumentsInner() {
       {list.data && shown.length === 0 && (
         <EmptyState title="Keine Dokumente gefunden" description="Archivierte Dokumente erscheinen hier, sobald du Inbox-Einträge archiviert hast." />
       )}
+      <BulkBar docs={selectedDocs} onClear={() => setSelected(new Set())} onDone={() => void list.refetch()} />
       {shown.length > 0 && (
         <div className="rounded-xl border bg-card">
           <Table data-testid="documents-table">
             <THead>
               <tr>
+                <TH className="w-8">
+                  <Checkbox
+                    checked={allChecked ? true : selectedDocs.length > 0 ? 'indeterminate' : false}
+                    onCheckedChange={(v) => setSelected(v === true ? new Set(shown.map((d) => d.id)) : new Set())}
+                    aria-label="Alle angezeigten Dokumente auswählen"
+                    data-testid="documents-select-all"
+                  />
+                </TH>
                 <TH>Titel</TH>
                 <TH>Typ</TH>
                 <TH>Kategorie</TH>
@@ -99,7 +121,15 @@ function DocumentsInner() {
             </THead>
             <TBody>
               {shown.map((d) => (
-                <TR key={d.id} data-testid="document-row">
+                <TR key={d.id} data-testid="document-row" data-selected={selected.has(d.id) ? 'true' : undefined}>
+                  <TD>
+                    <Checkbox
+                      checked={selected.has(d.id)}
+                      onCheckedChange={(v) => toggle(d.id, v === true)}
+                      aria-label={`${d.title} auswählen`}
+                      data-testid="document-select"
+                    />
+                  </TD>
                   <TD className="max-w-xs">
                     <button
                       type="button"

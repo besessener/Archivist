@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { KeyRound, Loader2, PlugZap, Save, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Field, Notice } from '@/components/common/states';
+import { AgentCapabilityNote } from '@/components/agent/capability-note';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -108,6 +109,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
             {test.latencyMs !== null && <p className="mt-1 text-xs">Antwortzeit: {test.latencyMs} ms</p>}
             {test.modelReply && <p className="mt-1 text-xs">Antwort des Modells: „{test.modelReply}“</p>}
             {!test.ok && test.error && <p className="mt-1 text-xs">{test.error.message}</p>}
+            {test.ok && test.agent && <AgentCapabilityNote capability={test.agent} onApplyBaseUrl={setBaseUrl} testId="settings-agent-capability" />}
           </Notice>
         )}
       </Section>

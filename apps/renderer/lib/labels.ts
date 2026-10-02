@@ -31,6 +31,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   topic_project_name: 'Thema oder Projekt?',
   persons_merged: 'Zusammengeführte Personen',
   unclear_person: 'Unklare Personen',
+  learned_rule: 'Gelernte Regel',
 };
 
 export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {
@@ -134,6 +135,9 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   reminder: 'Erinnerung',
   classification_ready: 'Analyse fertig',
   system: 'System',
+  agent_run: 'Hintergrund-Agent',
+  deadline_watch: 'Fristen-Wächter',
+  weekly_review: 'Wochenrückblick',
 };
 
 export const SUPPORTED_TYPES_TEXT = 'pdf, docx, pptx, xlsx, txt, md, eml, png, jpg, jpeg';
