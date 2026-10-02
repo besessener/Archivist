@@ -182,6 +182,29 @@ export class LinkMethodsService {
     this.noteAnalyzer = fn;
   }
 
+  private topicNamer: ((cluster: TopicCluster, signal?: AbortSignal) => Promise<string | null>) | null = null;
+
+  /** A better name for a new topic from a group (#281, the LLM where the privacy mode allows it). */
+  setTopicNamer(fn: (cluster: TopicCluster, signal?: AbortSignal) => Promise<string | null>): void {
+    this.topicNamer = fn;
+  }
+
+  /**
+   * Groups of similar entries without a topic as „Neues Thema ‚…‘ anlegen?“ (#281) – for the archive check and the
+   * retroactive run. A group already proposed and still open is left as it is (no second name, no LLM call); answered
+   * groups do not come back. Returns the number of new proposals.
+   */
+  async proposeClusterTopics(opts: { signal?: AbortSignal } = {}): Promise<number> {
+    let proposed = 0;
+    for (const c of await this.clusters({ signal: opts.signal })) {
+      if (opts.signal?.aborted) break;
+      if (this.insights.byDedupeKey(`topic-cluster:${c.key}`)?.status === 'open') continue;
+      const name = (await this.topicNamer?.(c, opts.signal)) ?? c.name;
+      if (this.proposeTopic(name, c.members.map((m) => m.id)).actionId) proposed += 1;
+    }
+    return proposed;
+  }
+
   /** The retroactive run starts again from the first entry (e.g. once after an update that brought new methods). */
   restartBackfill(): void {
     this.appState.set(BACKFILL_CURSOR, '');

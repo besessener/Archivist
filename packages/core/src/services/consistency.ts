@@ -54,6 +54,7 @@ const KIND_LABELS: Record<string, string> = {
   persons_merged: 'automatisch zusammengeführte Personen-Einträge',
   unclear_person: 'unklare Personen-Zuordnungen',
   orphan_entries: 'Einträge ohne Verknüpfung',
+  topic_cluster: 'Vorschläge für neue Themen',
 };
 
 /** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */

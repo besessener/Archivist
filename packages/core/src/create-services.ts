@@ -26,6 +26,7 @@ import { JobQueueService } from './services/jobs';
 import { KnowledgeGraphService } from './services/knowledge-graph';
 import { LinkMethodsService } from './services/link-methods';
 import { LinkThresholds } from './services/link-thresholds';
+import { TopicNamer } from './services/topic-namer';
 import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
 import { NoteAnalysisService } from './services/note-analysis';
@@ -205,9 +206,14 @@ function buildServices(opts: CreateServicesOptions) {
     const r = await links.checkOrphans({ propose: settings.get().links.autoPropose });
     if (r.pending) count('orphan_entries');
     notifyLinkProposals(r.proposed);
+    // groups of similar entries without a topic: „Neues Thema ‚…‘ anlegen?“ (#281)
+    const topics = settings.get().links.autoPropose ? await links.proposeClusterTopics() : 0;
+    if (topics) count('topic_cluster', topics);
     // one point of the linkage history per archive check (#292)
     links.recordMetrics();
   });
+  const topicNamer = new TopicNamer(ctx, llm, privacy, documentsSvc);
+  links.setTopicNamer((c, signal) => topicNamer.name(c, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((t) => t.name), signal }));
   links.setNoteAnalyzer(async (id, signal) => (await noteAnalysis.analyze(id, { signal }))?.proposed ?? 0);
   /**
    * ONE notification for open link proposals, only when new ones came up (#280): while the current one is unread it is
@@ -409,18 +415,13 @@ function buildServices(opts: CreateServicesOptions) {
     }
     job.throwIfCancelled();
     job.report(null, 'Suche Gruppen ähnlicher Einträge ohne Thema');
-    const clusters = await links.clusters({ signal: job.signal });
-    for (const c of clusters)
-      links.proposeTopic(
-        c.name,
-        c.members.map((m) => m.id),
-      );
-    if (proposed || clusters.length)
+    const topics = await links.proposeClusterTopics({ signal: job.signal });
+    if (proposed || topics)
       notifications.create({
         title: 'Verknüpfungsvorschläge',
         description: [
           proposed ? `${proposed} Verknüpfung${proposed === 1 ? '' : 'en'} vorgeschlagen.` : null,
-          clusters.length ? `${clusters.length} neue${clusters.length === 1 ? 's Thema' : ' Themen'} vorgeschlagen.` : null,
+          topics ? `${topics} neue${topics === 1 ? 's Thema' : ' Themen'} vorgeschlagen.` : null,
           'Du entscheidest, was übernommen wird.',
         ]
           .filter(Boolean)
@@ -430,7 +431,7 @@ function buildServices(opts: CreateServicesOptions) {
         proposedActions: [{ label: 'Hinweise ansehen', kind: 'navigate', target: '/insights/' }],
         dedupeKey: `link-run:${job.id}`,
       });
-    return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${clusters.length} Themen vorgeschlagen` };
+    return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${topics} Themen vorgeschlagen` };
   });
   jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, async (job) => {
     const r = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
