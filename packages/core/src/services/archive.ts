@@ -7,7 +7,7 @@ import type { AppContext } from '../context';
 import { documents, relations } from '../db/schema';
 import { AppError, fsError, permissionError, toErrorInfo } from '../util/errors';
 import { nowIso } from '../util/ids';
-import { truncate } from '../util/text';
+import { normalizeName, truncate } from '../util/text';
 import { sha256File } from '../util/hash';
 import { assertRealInside, isInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
@@ -16,6 +16,7 @@ import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
 import type { DocRow, DocumentService } from './documents';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import type { PersonService } from './persons';
 import type { NotificationService } from './notifications';
 import { matchOpenItems, type OpenItemService } from './open-items';
 import type { SettingsService } from './settings';
@@ -30,7 +31,7 @@ interface UndoData {
   stagedPath: string | null;
   removedStaged: boolean;
   removedSource: boolean;
-  before: Pick<DocRow, 'status' | 'archiveRelPath' | 'categoryPath' | 'topicId' | 'projectId' | 'archiveMode' | 'stagedPath' | 'archivedAt'>;
+  before: Pick<DocRow, 'status' | 'archiveRelPath' | 'categoryPath' | 'topicId' | 'projectId' | 'archiveMode' | 'stagedPath' | 'archivedAt' | 'persons'>;
   /** Relation changes of the archiving (absent in undo data written by older versions). */
   relations?: RelationChangeSet;
   /** Older undo data: ids of all relations the archiving linked, including ones that existed before. */
@@ -135,6 +136,7 @@ export class ArchiveService {
     private readonly docs: DocumentService,
     private readonly categories: CategoryService,
     private readonly graph: KnowledgeGraphService,
+    private readonly persons: PersonService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationService,
     private readonly pool: WorkerPool,
@@ -412,6 +414,7 @@ export class ArchiveService {
       archiveMode: row.archiveMode,
       stagedPath: row.stagedPath,
       archivedAt: row.archivedAt,
+      persons: row.persons,
     };
 
     // --- Ignorieren ---
@@ -513,10 +516,16 @@ export class ArchiveService {
           if (cat) this.categories.create(cat, true);
           const topic = topicName ? this.graph.ensureEntity('topic', topicName) : null;
           const project = projectName ? this.graph.ensureEntity('project', projectName) : null;
+          // persons: the first 12 mentions become persons, the stored list uses canonical names
+          const mentioned = proposal?.persons ?? row.persons;
+          const people = this.persons.resolveNames(mentioned.slice(0, 12), { context: 'document' });
+          const others = this.persons.resolveNames(mentioned.slice(12), { context: 'document', create: false }).names;
+          const known = new Set(people.names.map(normalizeName));
           this.db
             .update(documents)
             .set({
               status: req.mode === 'index_only' ? 'indexed_only' : 'archived',
+              persons: [...people.names, ...others.filter((n) => !known.has(normalizeName(n)))],
               archiveRelPath: archiveRel,
               categoryPath: cat ?? row.categoryPath,
               archiveMode: req.mode,
@@ -532,8 +541,7 @@ export class ArchiveService {
           if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] });
           if (cat)
             this.graph.link(row.id, this.graph.ensureEntity('category', cat).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] });
-          for (const person of (proposal?.persons ?? row.persons).slice(0, 12))
-            this.graph.link(this.graph.ensureEntity('person', person).id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
+          for (const person of people.entities) this.graph.link(person.id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
           for (const tag of row.tags.slice(0, 8))
             this.graph.link(row.id, this.graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] });
           if (proposal?.duplicateOfDocumentId)

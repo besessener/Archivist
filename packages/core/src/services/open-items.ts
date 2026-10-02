@@ -18,6 +18,7 @@ import { normalizeDateInput } from '../util/dates';
 import { levenshtein, tokenize } from '../util/text';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import { mentionContext, type PersonService } from './persons';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
 
@@ -129,6 +130,7 @@ export class OpenItemService {
   constructor(
     private readonly ctx: AppContext,
     private readonly graph: KnowledgeGraphService,
+    private readonly persons: PersonService,
     private readonly search: SearchService,
     private readonly audit: AuditService,
     undo: UndoService,
@@ -277,7 +279,7 @@ export class OpenItemService {
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
-    const person = input.responsible?.trim() ? this.graph.ensureEntity('person', input.responsible) : null;
+    const person = input.responsible?.trim() ? this.persons.resolve(input.responsible, { context: mentionContext(ctxInfo.trigger, 'open_item') }).entity : null;
     const dueAt = normalizeDateInput(input.dueAt ?? null);
     const row: Row = {
       id: newId(),
@@ -323,7 +325,7 @@ export class OpenItemService {
    * Partial update: only fields present in `patch` change. `status` may only move between open, waiting and
    * blocked – closing needs `close()` with confirmation, reopening goes through undo.
    */
-  update(id: string, patch: OpenItemPatch): OpenItem {
+  update(id: string, patch: OpenItemPatch, opts: { trigger?: string } = {}): OpenItem {
     const cur = this.db.select().from(openItems).where(eq(openItems.id, id)).get();
     if (!cur) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
     if (patch.status !== undefined && patch.status !== cur.status) {
@@ -344,7 +346,9 @@ export class OpenItemService {
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
     if (patch.responsible !== undefined) {
-      set.responsiblePersonId = patch.responsible?.trim() ? this.graph.ensureEntity('person', patch.responsible).id : null;
+      // a pronoun or answer word ("ja", "unbekannt") is not a person and leaves the responsible person unchanged
+      const resolved = patch.responsible?.trim() ? this.persons.resolve(patch.responsible, { context: mentionContext(opts.trigger, 'open_item') }) : null;
+      if (!resolved?.rejected) set.responsiblePersonId = resolved?.entity?.id ?? null;
       if (set.responsiblePersonId) set.responsibleUnknown = false;
     }
     if (patch.dueAt !== undefined) {
@@ -406,8 +410,9 @@ export class OpenItemService {
       set.dueAt = normalizeDateInput(extra.dueAt);
       if (set.dueAt) set.dueUnknown = false;
     }
-    if (!cur.responsiblePersonId && extra.responsible?.trim()) {
-      set.responsiblePersonId = this.graph.ensureEntity('person', extra.responsible).id;
+    const responsible = !cur.responsiblePersonId && extra.responsible?.trim() ? this.persons.resolve(extra.responsible, { context: 'open_item' }).entity : null;
+    if (responsible) {
+      set.responsiblePersonId = responsible.id;
       set.responsibleUnknown = false;
     }
     this.db.transaction(() => {

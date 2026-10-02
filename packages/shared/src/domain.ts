@@ -464,6 +464,8 @@ export const GraphEntity = z.object({
   description: z.string().nullable(),
   /** Former names of entities merged into this one (resolve later mentions of these names). */
   aliases: z.array(z.string()),
+  /** Roles of a person taken from mentions ("Chefin", "Führungskraft"); info only, not part of the name. */
+  roles: z.array(z.string()),
   /** Discarded as a duplicate („verworfen (Duplikat)“, notes and events): the entity it was merged into. */
   duplicateOfId: z.string().nullable(),
   createdAt: IsoDate,
