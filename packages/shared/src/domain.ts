@@ -391,6 +391,7 @@ export const InsightKind = z.enum([
   'incomplete_decision',
   'duplicate',
   'similar_topics',
+  'similar_entities',
   'orphan_document',
   'outdated_info',
   'missing_metadata',

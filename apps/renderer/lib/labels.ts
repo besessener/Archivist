@@ -19,6 +19,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   incomplete_decision: 'Unvollständige Entscheidungen',
   duplicate: 'Mögliche Duplikate',
   similar_topics: 'Ähnliche Themen',
+  similar_entities: 'Mögliche Dubletten',
   orphan_document: 'Dokumente ohne Zuordnung',
   outdated_info: 'Veraltete Informationen',
   missing_metadata: 'Fehlende Angaben',

@@ -9,6 +9,7 @@ import { sha256Text } from '../util/hash';
 import { truncate } from '../util/text';
 import { chooseTargetFolder, folderLabel, splitSubjects } from './archive-structure';
 import { checkTopicProjectNames } from './cleanup/topic-project-names';
+import type { EntityDuplicateCheck } from './cleanup/entity-duplicates';
 import type { ContradictionService } from './contradictions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
@@ -16,6 +17,7 @@ import type { InsightService } from './insights';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { OpenItemService } from './open-items';
+import { IntervalSchedule } from './scheduler';
 import type { SettingsService } from './settings';
 
 export interface ConsistencyReport {
@@ -33,6 +35,7 @@ const KIND_LABELS: Record<string, string> = {
   scattered_documents: 'verstreut abgelegte Dokumente',
   similar_topics: 'ähnliche Themen',
   topic_project_name: 'gleiche Namen bei Thema und Projekt',
+  similar_entities: 'mögliche Dubletten',
   incomplete_decision: 'unvollständige Entscheidungen',
   possibly_superseded: 'möglicherweise überholte Entscheidungen',
   contradiction: 'Widersprüche',
@@ -53,7 +56,6 @@ const RECONCILED_INSIGHTS = [
   'dup:',
   'missing-file:',
   'misplaced:',
-  'similar-topics:',
   'incomplete-decision:',
   'superseded:',
   'stale:',
@@ -70,8 +72,9 @@ const h = (ids: string[]) => sha256Text([...ids].sort().join('|')).slice(0, 12);
  * (Insights, Benachrichtigungen, Aktionsvorschläge) – ohne selbst etwas zu ändern.
  */
 export class ConsistencyService {
-  private timer: NodeJS.Timeout | null = null;
-  private lastRunAt = 0;
+  /** Periodic check; every completed run (also manual or on startup) restarts the interval */
+  private readonly schedule: IntervalSchedule;
+  private enqueueInterval: (() => void) | null = null;
   private readonly extraChecks: ConsistencyCheck[] = [];
 
   constructor(
@@ -83,7 +86,10 @@ export class ConsistencyService {
     private readonly contradictions: ContradictionService,
     private readonly insights: InsightService,
     private readonly notifications: NotificationService,
-  ) {}
+    private readonly entityDuplicates: EntityDuplicateCheck,
+  ) {
+    this.schedule = new IntervalSchedule({ name: 'consistency', run: () => this.enqueueInterval?.(), logger: ctx.logger });
+  }
 
   private get db() {
     return this.ctx.database.db;
@@ -327,40 +333,9 @@ export class ConsistencyService {
     step(0.4, 'Prüfe Verzeichnisse');
     this.checkScatteredDocuments(archived, count);
 
-    // ---- Themen ----
-    step(0.45, 'Prüfe Themen');
-    for (const { a, b, score } of this.graph.findSimilarTopics()) {
-      const key = `similar-topics:${[a.id, b.id].sort().join('|')}`;
-      current.add(key);
-      const shown = this.insights.upsert({
-        kind: 'similar_topics',
-        title: `Ähnliche Themen: „${a.name}“ und „${b.name}“`,
-        explanation:
-          'Beide Themen sind sehr ähnlich benannt. Zusammenführen würde alle Dokumente, Entscheidungen und Beziehungen bündeln (erfordert Bestätigung).',
-        confidence: score,
-        affected: [
-          { type: 'topic', id: a.id, label: a.name },
-          { type: 'topic', id: b.id, label: b.name },
-        ],
-        action: {
-          label: 'Themen zusammenführen',
-          proposal: {
-            actionType: 'merge_topics',
-            label: `Themen „${a.name}“ und „${b.name}“ zusammenführen`,
-            rationale: `Die Namen sind sehr ähnlich (${Math.round(score * 100)} %).`,
-            confidence: score,
-            affectedEntities: [
-              { type: 'topic', id: a.id, label: a.name },
-              { type: 'topic', id: b.id, label: b.name },
-            ],
-            requiredConfirmation: 'confirm',
-            proposedParameters: { sourceTopicId: b.id, targetTopicId: a.id },
-          },
-        },
-        dedupeKey: key,
-      });
-      if (shown.status === 'open') count('similar_topics');
-    }
+    // ---- Duplicate topics, projects and tags (always asks, never merges on its own) ----
+    step(0.45, 'Prüfe Themen, Projekte und Tags');
+    await this.entityDuplicates.run(count, signal);
 
     // ---- Gleicher Name als Thema und als Projekt ----
     checkTopicProjectNames({ graph: this.graph, insights: this.insights }, count);
@@ -569,27 +544,32 @@ export class ConsistencyService {
         proposedActions: [{ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' }],
         dedupeKey: `consistency:${newId()}`,
       });
-    this.lastRunAt = Date.now();
+    this.schedule.markRun();
     report?.(1, 'Fertig');
     this.ctx.logger.info('consistency', 'Archivprüfung abgeschlossen', { trigger, byKind });
     this.ctx.events.changed('insights', 'notifications', 'status');
     return { insights: total, notifications: notifs, contradictions: found.length, byKind };
   }
 
-  /** Periodische Prüfung, solange die Anwendung läuft. */
+  /** Periodic check while the application runs; `enqueue` starts one check. */
   startTimer(enqueue: () => void): void {
-    this.stopTimer();
+    this.enqueueInterval = enqueue;
+    this.applySettings();
+    this.schedule.start();
+  }
+
+  /** Re-plans the periodic check from the settings (an interval of 0 turns it off); call it after every settings change. */
+  applySettings(): void {
     const hours = this.settings.get().consistency.intervalHours;
-    if (hours > 0) {
-      this.timer = setInterval(() => {
-        if (Date.now() - this.lastRunAt > hours * 3_600_000 * 0.9) enqueue();
-      }, 10 * 60_000);
-      this.timer.unref?.();
-    }
+    this.schedule.setInterval(hours > 0 ? hours * 3_600_000 : null);
+  }
+
+  /** When the next periodic check is due (epoch ms), or null if none is planned. */
+  nextRunAt(): number | null {
+    return this.schedule.nextRunAt();
   }
 
   stopTimer(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    this.schedule.stop();
   }
 }

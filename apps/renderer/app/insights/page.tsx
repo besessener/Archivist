@@ -25,6 +25,8 @@ import { CheckboxField } from '@/components/ui/checkbox';
 type Contradiction = IpcOutput<'contradictions:list'>[number];
 type InsightStatus = 'open' | 'accepted' | 'rejected' | 'snoozed';
 const STATUS_LABELS: Record<InsightStatus, string> = { open: 'Offen', snoozed: 'Zurückgestellt', accepted: 'Bestätigt', rejected: 'Abgelehnt' };
+/** Duplicate questions: confirming merges, rejecting remembers permanently that the entries are different. */
+const DUPLICATE_KINDS = new Set<InsightKind>(['similar_entities']);
 
 export default function InsightsPage() {
   const [status, setStatus] = useState<InsightStatus>('open');
@@ -104,7 +106,7 @@ export default function InsightsPage() {
                     <h3 className="font-semibold">{i.title}</h3>
                     <ConfidenceBadge value={i.confidence} />
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{i.explanation}</p>
+                  <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{i.explanation}</p>
                   {i.affected.length > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-xs text-muted-foreground">Betrifft:</span>
@@ -147,7 +149,7 @@ export default function InsightsPage() {
                       ))}
                       {i.choices.length === 0 && (
                         <Button size="sm" onClick={() => setAccepting(i)} data-testid="insight-accept">
-                          <Check aria-hidden /> Bestätigen
+                          <Check aria-hidden /> {DUPLICATE_KINDS.has(i.kind) ? 'Zusammenführen' : 'Bestätigen'}
                         </Button>
                       )}
                       {!i.choices.some((c) => c.actionId === null) && (
@@ -157,11 +159,13 @@ export default function InsightsPage() {
                           disabled={busy}
                           data-testid="insight-reject"
                           onClick={async () => {
-                            await run(() => call('insights:respond', { response: 'reject', id: i.id }), { success: 'Hinweis abgelehnt.' });
+                            await run(() => call('insights:respond', { response: 'reject', id: i.id }), {
+                              success: DUPLICATE_KINDS.has(i.kind) ? 'Als verschieden gemerkt.' : 'Hinweis abgelehnt.',
+                            });
                             void insights.refetch();
                           }}
                         >
-                          <X aria-hidden /> Ablehnen
+                          <X aria-hidden /> {DUPLICATE_KINDS.has(i.kind) ? 'Verschieden' : 'Ablehnen'}
                         </Button>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => setSnoozing(i)} data-testid="insight-snooze">
@@ -234,7 +238,7 @@ export default function InsightsPage() {
       >
         {accepting && (
           <div className="flex flex-col gap-2 text-sm">
-            <p className="text-muted-foreground">{accepting.explanation}</p>
+            <p className="whitespace-pre-line text-muted-foreground">{accepting.explanation}</p>
             {accepting.affected.length > 0 && (
               <ul className="list-disc pl-5">
                 {accepting.affected.map((e) => (
