@@ -1,453 +1,153 @@
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import path from 'node:path';
-import type { ArchiveItemRequest, ArchivePlan, ArchivePlanItem, ArchiveResult, DocumentProposal, VerifyReport } from '@archivist/shared';
-import { and, eq, inArray, isNotNull, notInArray } from 'drizzle-orm';
+import type { ArchiveItemRequest, ArchivePlan, ArchiveResult, VerifyReport } from '@archivist/shared';
 import type { AppContext } from '../context';
-import { documents, relations } from '../db/schema';
-import { AppError, fsError, permissionError, toErrorInfo } from '../util/errors';
-import { nowIso } from '../util/ids';
-import { normalizeName, truncate } from '../util/text';
-import { sha256File } from '../util/hash';
-import { assertRealInside, isInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
+import { permissionError, toErrorInfo } from '../util/errors';
 import type { WorkerPool } from '../workers/pool';
 import type { ActionService } from './actions';
+import { ArchiveExecutor } from './archive-execute';
+import { ExtractedItemProposer } from './archive-extracted-items';
+import { ArchiveFileOps } from './archive-files';
+import { ArchiveLocks } from './archive-locks';
+import { ArchiveMaintenance, FOLDERS_RESTORE_UNDO } from './archive-maintenance';
+import {
+  addOutcome,
+  emptyArchiveResult,
+  failureMessage,
+  type ArchiveDeps,
+  type ArchiveOutcome,
+  type ArchiveUndoData,
+  type ExecuteOptions,
+  type RelocatePlanItem,
+  type RelocateRequest,
+  type RelocateUndoData,
+  type RenamePlanItem,
+  type RenameRequest,
+  type RenameUndoData,
+} from './archive-model';
+import { ArchivePlanner } from './archive-plan';
+import { ArchiveRelocator } from './archive-relocate';
+import { RelocateUndo } from './archive-relocate-undo';
+import { ArchiveRenamer } from './archive-rename';
+import { ArchiveUndo } from './archive-undo';
 import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
-import type { DocRow, DocumentService } from './documents';
-import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
-import type { PersonService } from './persons';
+import type { DocumentService } from './documents';
+import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
-import { matchOpenItems, type OpenItemService } from './open-items';
+import type { OpenItemService } from './open-items';
+import type { PersonService } from './persons';
 import type { SettingsService } from './settings';
-
-const FOLDERS_RESTORE_UNDO = 'category_restore';
 import type { UndoService } from './undo';
 
-/** Upper bound of decision proposals per document (protection against a runaway classification). */
-const MAX_DOCUMENT_DECISIONS = 10;
+export type { RelocateRequest, RenameRequest } from './archive-model';
 
-interface UndoData {
-  documentId: string;
-  mode: 'copy' | 'move' | 'index_only' | 'ignore';
-  archiveRel: string | null;
-  sha256: string;
-  sourcePath: string | null;
-  stagedPath: string | null;
-  removedStaged: boolean;
-  removedSource: boolean;
-  before: Pick<DocRow, 'status' | 'archiveRelPath' | 'categoryPath' | 'topicId' | 'projectId' | 'archiveMode' | 'stagedPath' | 'archivedAt' | 'persons'>;
-  /** Relation changes of the archiving (absent in undo data written by older versions). */
-  relations?: RelationChangeSet;
-  /** Older undo data: ids of all relations the archiving linked, including ones that existed before. */
-  relationIds?: string[];
-  afterUpdatedAt: string;
-}
-
-type RelationRow = typeof relations.$inferSelect;
-
-interface RelocateUndoData {
-  documentId: string;
-  fromRel: string;
-  toRel: string;
-  sha256: string;
-  beforeCategoryPath: string | null;
-  /** updatedAt before relocating; undo restores it so that the archiving itself stays undoable. Missing in old entries. */
-  beforeUpdatedAt?: string;
-  afterUpdatedAt: string;
-  /** Relation to the new category, if relocating created it (removed again on undo). */
-  addedRelationId: string | null;
-  /** Legacy entries only: category whose relation was deleted; undo re-links it as confirmed. */
-  removedCategory?: string | null;
-  /** Category relations deleted by relocating, exactly as they were (undo inserts them again with the same id). */
-  relationsRemoved?: RelationRow[];
-  /** Category relations whose status relocating changed to confirmed, exactly as they were before. */
-  relationsChanged?: RelationRow[];
-}
-
-interface RenameUndoData {
-  documentId: string;
-  fromRel: string;
-  toRel: string;
-  sha256: string;
-  beforeTitle: string;
-  beforeUpdatedAt: string;
-  afterUpdatedAt: string;
-}
-
-/** Request: rename the file of an archived document within its folder (#304). */
-export interface RenameRequest {
-  documentId: string;
-  /** New file name; the extension is kept (added when missing). */
-  fileName: string;
-}
-
-export interface RenamePlanItem {
-  documentId: string;
-  from: string | null;
-  to: string | null;
-  unchanged: boolean;
-  conflicts: string[];
-}
-
-/** Hash- or UUID-like names say nothing about the document and are refused (#304). */
-const MEANINGLESS_NAME = /^(?:[0-9a-f]{12,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-
-/** Request: move an already archived document into another archive folder. */
-export interface RelocateRequest {
-  documentId: string;
-  categoryPath: string;
-}
-
-export interface RelocatePlanItem {
-  documentId: string;
-  title: string;
-  fromRelPath: string | null;
-  toRelPath: string | null;
-  /** Target folder (relative to the archive) as it reads after sanitizing. */
-  categoryPath: string | null;
-  renamed: boolean;
-  /** already lies in the target folder */
-  unchanged: boolean;
-  blocked: boolean;
-  conflicts: string[];
-}
-
-const toPosix = (p: string) => p.split(path.sep).join('/');
+const UNCONFIRMED = 'Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.';
 
 /**
- * Topic/project the user chose: an omitted field falls back to the proposal,
- * an explicit `null` or empty string means "without topic/project".
- */
-function assignmentNames(req: ArchiveItemRequest, proposal: DocumentProposal | null): { topicName: string | null; projectName: string | null } {
-  return {
-    topicName: (req.topic !== undefined ? req.topic : proposal?.topic)?.trim() || null,
-    projectName: (req.project !== undefined ? req.project : proposal?.project)?.trim() || null,
-  };
-}
-
-/** True when `p` is a readable file whose content has the given checksum. */
-async function hasChecksum(p: string, sha256: string): Promise<boolean> {
-  try {
-    return (await fsp.stat(p)).isFile() && (await sha256File(p)) === sha256;
-  } catch {
-    return false;
-  }
-}
-
-const errCode = (err: unknown) => (err as NodeJS.ErrnoException | null)?.code;
-
-/** User-facing note for a file that could not be cleaned up and is still lying around. */
-const leftoverNote = (what: string, p: string) => `${what} liegt noch unter „${p}“ und muss von Hand entfernt werden.`;
-
-export interface ExecuteOptions {
-  confirmed: boolean;
-  approveNewCategories: string[];
-  confirmMove: boolean;
-  trigger?: string;
-}
-
-/**
- * Controlled file actions. Guarantees:
- *  - nothing is executed without `confirmed`,
- *  - target files are never overwritten (COPYFILE_EXCL, automatic renaming),
- *  - copies are verified by checksum before sources are removed,
- *  - paths stay inside the archive (no traversal, no symlink escape),
- *  - undo first checks whether anything has changed since.
+ * Controlled file actions: nothing runs without `confirmed`, target files are never overwritten, copies are verified
+ * by checksum before sources are removed, paths stay inside the archive, and undo first checks for later changes.
  */
 export class ArchiveService {
-  private actions!: ActionService;
-  private openItems!: OpenItemService;
-  /** Archive file operations (archive, relocate) currently running. */
-  private inFlight = 0;
-  /** Documents a file operation is working on right now: a second one for the same document waits for nothing and reports a conflict (#240). */
-  private readonly busy = new Set<string>();
-  /** True while the archive root is being changed; file operations are refused meanwhile. */
-  private rootChangeActive = false;
-  /** True while a full backup copies the archive; file operations and root changes are refused meanwhile. */
-  private backupActive = false;
+  private readonly deps: ArchiveDeps;
+  private readonly extractedItems: ExtractedItemProposer;
+  private readonly planner: ArchivePlanner;
+  private readonly executor: ArchiveExecutor;
+  private readonly relocator: ArchiveRelocator;
+  private readonly renamer: ArchiveRenamer;
+  private readonly maintenance: ArchiveMaintenance;
 
   constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly docs: DocumentService,
-    private readonly categories: CategoryService,
-    private readonly graph: KnowledgeGraphService,
-    private readonly persons: PersonService,
-    private readonly audit: AuditService,
-    private readonly notifications: NotificationService,
-    private readonly pool: WorkerPool,
+    ctx: AppContext,
+    settings: SettingsService,
+    docs: DocumentService,
+    categories: CategoryService,
+    graph: KnowledgeGraphService,
+    persons: PersonService,
+    audit: AuditService,
+    notifications: NotificationService,
+    pool: WorkerPool,
     undo: UndoService,
   ) {
-    undo.register('archive_file', { check: (d) => this.undoCheck(d as UndoData), run: (d) => this.guarded(() => this.undoRun(d as UndoData)) });
+    this.deps = { ctx, settings, docs, categories, graph, persons, audit, notifications, pool, locks: new ArchiveLocks(), files: new ArchiveFileOps(ctx) };
+    this.extractedItems = new ExtractedItemProposer(notifications);
+    this.planner = new ArchivePlanner(this.deps);
+    this.executor = new ArchiveExecutor(this.deps, { planner: this.planner, extractedItems: this.extractedItems });
+    this.relocator = new ArchiveRelocator(this.deps, (documentId, warnings) => this.executor.reindexAfterCommit(documentId, warnings));
+    this.renamer = new ArchiveRenamer(this.deps);
+    this.maintenance = new ArchiveMaintenance(this.deps);
+    this.registerUndo(undo);
+  }
+
+  private registerUndo(undo: UndoService): void {
+    const { locks } = this.deps;
+    const archiveUndo = new ArchiveUndo(this.deps);
+    const relocateUndo = new RelocateUndo(this.deps);
+    undo.register('archive_file', {
+      check: (d) => archiveUndo.check(d as ArchiveUndoData),
+      run: (d) => locks.guarded(() => archiveUndo.run(d as ArchiveUndoData)),
+    });
     undo.register('archive_rename', {
-      check: (d) => this.renameUndoCheck(d as RenameUndoData),
-      run: (d) => this.guarded(() => this.renameUndoRun(d as RenameUndoData)),
+      check: (d) => this.renamer.undoCheck(d as RenameUndoData),
+      run: (d) => locks.guarded(() => this.renamer.undoRun(d as RenameUndoData)),
     });
     undo.register('archive_relocate', {
-      check: (d) => this.relocateUndoCheck(d as RelocateUndoData),
-      run: (d) => this.guarded(() => this.relocateUndoRun(d as RelocateUndoData)),
+      check: (d) => relocateUndo.check(d as RelocateUndoData),
+      run: (d) => locks.guarded(() => relocateUndo.run(d as RelocateUndoData)),
     });
     // removed empty folders come back as (still empty) folders; main categories are never removed
     undo.register(FOLDERS_RESTORE_UNDO, {
       check: async () => [],
       run: async (d) => {
         const { paths } = d as { paths: string[] };
-        for (const p of paths) this.categories.create(p, true);
+        for (const p of paths) this.deps.categories.create(p, true);
         return `${paths.length} Ordner wiederhergestellt.`;
       },
     });
   }
 
   wire(deps: { actions: ActionService; openItems: OpenItemService }): void {
-    this.actions = deps.actions;
-    this.openItems = deps.openItems;
+    this.extractedItems.wire(deps);
   }
 
-  private get db() {
-    return this.ctx.database.db;
-  }
-
-  private get root() {
-    return this.settings.get().archiveRoot;
-  }
-
-  /**
-   * Blocks archive file operations while the archive root is changed (moved or switched).
-   * Refuses while operations are still running; returns the function that lifts the block again.
-   */
+  /** Blocks archive file operations while the archive root is changed; returns the function that lifts the block. */
   beginRootChange(): () => void {
-    if (this.rootChangeActive) throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
-    if (this.backupActive)
-      throw new AppError('archive_conflict', 'Gerade läuft ein vollständiges Backup. Bitte versuche es gleich noch einmal.', { retryable: true });
-    if (this.inFlight > 0)
-      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.', {
-        retryable: true,
-      });
-    this.rootChangeActive = true;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.rootChangeActive = false;
-    };
+    return this.deps.locks.beginRootChange();
   }
 
-  /**
-   * Blocks archive file operations while a full backup copies the archive, so the database snapshot and the
-   * copied files match. Refuses while operations run or the root is being changed; returns the release function.
-   */
+  /** Blocks archive file operations and root changes while a full backup copies the archive; returns the release function. */
   beginBackup(): () => void {
-    if (this.rootChangeActive)
-      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.', { retryable: true });
-    if (this.backupActive) throw new AppError('archive_conflict', 'Es läuft bereits ein vollständiges Backup.', { retryable: true });
-    if (this.inFlight > 0)
-      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.', {
-        retryable: true,
-      });
-    this.backupActive = true;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.backupActive = false;
-    };
+    return this.deps.locks.beginBackup();
   }
 
-  /** True while the archive root is being changed. */
   isRootChangeActive(): boolean {
-    return this.rootChangeActive;
-  }
-
-  /** Runs an archive file operation unless the archive root is being changed right now. */
-  private async guarded<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.rootChangeActive)
-      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.', { retryable: true });
-    if (this.backupActive)
-      throw new AppError('archive_conflict', 'Gerade läuft ein vollständiges Backup. Bitte versuche es gleich noch einmal.', { retryable: true });
-    this.inFlight += 1;
-    try {
-      return await fn();
-    } finally {
-      this.inFlight -= 1;
-    }
+    return this.deps.locks.isRootChangeActive();
   }
 
   createCategory(p: string, confirmed: boolean) {
-    const c = this.categories.create(p, confirmed);
-    this.audit.log({ action: 'category.create', actor: 'user', trigger: 'manual', confirmed, after: { path: c.path } });
-    return c;
+    const category = this.deps.categories.create(p, confirmed);
+    this.deps.audit.log({ action: 'category.create', actor: 'user', trigger: 'manual', confirmed, after: { path: category.path } });
+    return category;
   }
 
-  // ---------- Plan ----------
-  private async planItem(req: ArchiveItemRequest): Promise<ArchivePlanItem & { _cat?: string; _name?: string; _targetDir?: string }> {
-    const row = this.docs.getRow(req.documentId);
-    const proposal = row.proposal as DocumentProposal | null;
-    const base: ArchivePlanItem = {
-      documentId: row.id,
-      title: row.title,
-      action: req.mode,
-      sourcePath: row.stagedPath ?? row.sourcePath,
-      targetPath: null,
-      targetRelPath: null,
-      renamed: false,
-      willRemoveSource: false,
-      removesInboxCopy: false,
-      duplicates: [],
-      conflicts: [],
-      newCategories: [],
-      affected: [{ type: 'document', id: row.id, label: row.title }],
-      rationale: proposal?.location.rationale ?? '',
-      confidence: row.confidence,
-      blocked: false,
-    };
-    if (row.status === 'archived') return { ...base, blocked: true, conflicts: ['Das Dokument ist bereits archiviert.'] };
-    if (req.mode === 'ignore') return { ...base, sourcePath: row.sourcePath };
-    if (row.status === 'quarantined')
-      return { ...base, blocked: true, conflicts: ['Die Datei liegt in Quarantäne. Bitte zuerst in der Inbox „Trotzdem importieren“ wählen.'] };
-
-    const dupes = this.docs.findDuplicates(row.sha256, row.id).filter((d) => d.status === 'archived' || d.status === 'indexed_only');
-    base.duplicates = dupes.map((d) => ({
-      documentId: d.id,
-      title: d.title,
-      archivePath: d.archiveRelPath ? path.join(this.root, ...d.archiveRelPath.split('/')) : null,
-    }));
-    const assigned = assignmentNames(req, proposal);
-    for (const [type, name] of [
-      ['topic', assigned.topicName],
-      ['project', assigned.projectName],
-    ] as const) {
-      const e = name ? this.graph.findByName(type, name) : null;
-      if (e) base.affected.push({ type: e.type, id: e.id, label: e.name });
-    }
-
-    let source: string;
-    try {
-      source = this.docs.readablePath(row);
-    } catch {
-      return { ...base, blocked: true, conflicts: ['Die Quelldatei ist nicht mehr vorhanden.'] };
-    }
-    base.sourcePath = source;
-    if (req.mode === 'index_only') return base;
-
-    let cat: string;
-    try {
-      cat = sanitizeCategoryPath(req.categoryPath ?? proposal?.location.categoryPath ?? row.categoryPath ?? '');
-    } catch (err) {
-      return { ...base, blocked: true, conflicts: [err instanceof AppError ? err.message : 'Ungültiger Zielordner.'] };
-    }
-    const ext = row.ext;
-    let name = sanitizeFileName(req.fileName ?? proposal?.location.fileName ?? row.originalName);
-    if (path.extname(name).slice(1).toLowerCase() !== ext) name = `${name}.${ext}`;
-    const targetDir = resolveInside(this.root, cat);
-    try {
-      await assertRealInside(this.root, targetDir);
-    } catch (err) {
-      return { ...base, blocked: true, conflicts: [err instanceof AppError ? err.message : 'Zielpfad ungültig.'] };
-    }
-    const target = await uniquePath(targetDir, name);
-    const collided = path.basename(target) !== name;
-    const newMain = this.categories.needsApproval(cat);
-    return {
-      ...base,
-      targetPath: target,
-      targetRelPath: toPosix(path.relative(this.root, target)),
-      renamed: collided || name !== row.originalName,
-      // Only the user's original counts as "removed"; Archivist's own inbox copy is merely cleaned up.
-      willRemoveSource: req.mode === 'move' && Boolean(row.sourcePath && row.sourcePath !== row.stagedPath && fs.existsSync(row.sourcePath)),
-      removesInboxCopy: Boolean(row.stagedPath && fs.existsSync(row.stagedPath)),
-      conflicts: collided
-        ? [`Im Zielordner existiert bereits „${name}“ – die Datei wird als „${path.basename(target)}“ abgelegt (nichts wird überschrieben).`]
-        : [],
-      newCategories: newMain ? [newMain] : [],
-      _cat: cat,
-      _name: name,
-      _targetDir: targetDir,
-    };
-  }
-
-  async preview(items: ArchiveItemRequest[]): Promise<ArchivePlan> {
-    const planned = await Promise.all(items.map((i) => this.planItem(i)));
-    const plan = planned.map(({ _cat, _name, _targetDir, ...rest }) => (void _cat, void _name, void _targetDir, rest));
-    const newCategories = [...new Set(plan.flatMap((p) => p.newCategories))];
-    const moves = plan.filter((p) => p.action === 'move' && !p.blocked).length;
-    return {
-      items: plan,
-      newCategories,
-      requiresStrongConfirmation: moves > 0 || newCategories.length > 0,
-      summary: `${plan.filter((p) => !p.blocked).length} von ${plan.length} Dateien bereit${moves ? `, ${moves} werden verschoben (Original wird entfernt)` : ''}${newCategories.length ? `, neue Hauptkategorie(n): ${newCategories.join(', ')}` : ''}.`,
-    };
-  }
-
-  // ---------- Execution ----------
-  /**
-   * Removes a file this service has just created (partial copy, unverified copy, extra hardlink).
-   * Returns false when the file is still there afterwards; the caller must then report it to the user.
-   */
-  private async removeCreated(p: string): Promise<boolean> {
-    try {
-      await fsp.unlink(p);
-      return true;
-    } catch (err) {
-      if (errCode(err) === 'ENOENT') return true;
-      this.ctx.logger.error('archive', 'Could not remove the file just created', { path: p, error: err });
-      return false;
-    }
-  }
-
-  /**
-   * Copies `src` into `dir` without overwriting anything. A copy that fails halfway (e.g. disk full) leaves no partial
-   * file behind; if that cleanup fails as well, the error says where the partial copy is.
-   */
-  private async copyExclusive(src: string, dir: string, fileName: string): Promise<string> {
-    await fsp.mkdir(dir, { recursive: true });
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const dest = await uniquePath(dir, fileName);
-      try {
-        await fsp.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
-        return dest;
-      } catch (err) {
-        if (errCode(err) === 'EEXIST') continue; // someone else's file: never touch it, try the next free name
-        const what = `Die Datei konnte nicht kopiert werden${errCode(err) ? ` (${errCode(err)})` : ''}.`;
-        if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
-        throw fsError(`${what} ${leftoverNote('Eine unvollständige Kopie', dest)}`, err);
-      }
-    }
-    throw new AppError('archive_conflict', 'Es konnte kein freier Zieldateiname gefunden werden.', { retryable: true });
+  preview(items: ArchiveItemRequest[]): Promise<ArchivePlan> {
+    return this.planner.preview(items);
   }
 
   async execute(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
-    if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
-    return this.guarded(() => this.executeAll(items, opts));
+    if (!opts.confirmed) throw permissionError(UNCONFIRMED);
+    return this.deps.locks.guarded(() => this.executeAll(items, opts));
   }
 
   private async executeAll(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
-    await this.cleanupInbox();
-    const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
+    await this.maintenance.cleanupInbox();
+    const result = emptyArchiveResult();
     for (const req of items) {
-      let outcome: ArchiveResult['items'][number];
+      let outcome: ArchiveOutcome;
       try {
-        outcome = await this.onePerDocument(req.documentId, () => this.executeOne(req, opts));
+        outcome = await this.deps.locks.onePerDocument(req.documentId, () => this.executor.executeOne(req, opts));
       } catch (err) {
-        const info = toErrorInfo(err);
-        this.ctx.logger.error('archive', 'Archiving failed', { documentId: req.documentId, error: err });
-        this.audit.log({
-          action: `archive.${req.mode}`,
-          actor: 'user',
-          trigger: opts.trigger ?? 'manual',
-          confirmed: true,
-          entityIds: [req.documentId],
-          success: false,
-          error: `${info.message} ${info.details ?? ''}`.trim(),
-        });
-        outcome = {
-          documentId: req.documentId,
-          outcome: 'failed',
-          targetPath: null,
-          message: info.message + (info.details ? ` (${info.details})` : ''),
-          auditId: null,
-        };
-        this.notifications.create({
+        this.deps.ctx.logger.error('archive', 'Archiving failed', { documentId: req.documentId, error: err });
+        outcome = this.failed(err, { action: `archive.${req.mode}`, documentId: req.documentId, trigger: opts.trigger });
+        this.deps.notifications.create({
           title: 'Archivierung fehlgeschlagen',
           description: outcome.message,
           type: 'import_failed',
@@ -455,1134 +155,83 @@ export class ArchiveService {
           affectedEntityIds: [req.documentId],
         });
       }
-      result.items.push(outcome);
-      if (outcome.outcome === 'success') result.success += 1;
-      else if (outcome.outcome === 'skipped') result.skipped += 1;
-      else if (outcome.outcome === 'conflict') result.conflicts += 1;
-      else result.failed += 1;
+      addOutcome(result, outcome);
     }
-    this.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
+    this.deps.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
     return result;
   }
 
-  /** Runs one file operation for a document unless another one is already working on it. */
-  private async onePerDocument(documentId: string, fn: () => Promise<ArchiveResult['items'][number]>): Promise<ArchiveResult['items'][number]> {
-    if (this.busy.has(documentId))
-      return { documentId, outcome: 'conflict', targetPath: null, message: 'Dieses Dokument wird gerade schon archiviert oder verschoben.', auditId: null };
-    this.busy.add(documentId);
-    try {
-      return await fn();
-    } finally {
-      this.busy.delete(documentId);
-    }
-  }
-
-  private async executeOne(req: ArchiveItemRequest, opts: ExecuteOptions): Promise<ArchiveResult['items'][number]> {
-    const plan = await this.planItem(req);
-    const row = this.docs.getRow(req.documentId);
-    const trigger = opts.trigger ?? 'manual';
-    if (plan.blocked)
-      return {
-        documentId: row.id,
-        outcome: plan.conflicts.some((c) => c.includes('bereits archiviert')) ? 'skipped' : 'conflict',
-        targetPath: null,
-        message: plan.conflicts.join(' '),
-        auditId: null,
-      };
-
-    const proposal = row.proposal as DocumentProposal | null;
-    const { topicName, projectName } = assignmentNames(req, proposal);
-    const before: UndoData['before'] = {
-      status: row.status,
-      archiveRelPath: row.archiveRelPath,
-      categoryPath: row.categoryPath,
-      topicId: row.topicId,
-      projectId: row.projectId,
-      archiveMode: row.archiveMode,
-      stagedPath: row.stagedPath,
-      archivedAt: row.archivedAt,
-      persons: row.persons,
-    };
-
-    // --- Ignore ---
-    if (req.mode === 'ignore') {
-      const updatedAt = nowIso();
-      this.db.update(documents).set({ status: 'ignored', archiveMode: 'ignore', updatedAt }).where(eq(documents.id, row.id)).run();
-      const auditId = this.audit.log({
-        action: 'archive.ignore',
-        actor: 'user',
-        trigger,
-        confirmed: true,
-        entityIds: [row.id],
-        paths: [row.sourcePath ?? ''].filter(Boolean),
-        before: { status: row.status },
-        after: { status: 'ignored' },
-        undo: {
-          type: 'archive_file',
-          data: {
-            documentId: row.id,
-            mode: 'ignore',
-            archiveRel: null,
-            sha256: row.sha256,
-            sourcePath: row.sourcePath,
-            stagedPath: row.stagedPath,
-            removedStaged: false,
-            removedSource: false,
-            before,
-            relations: { created: [], changed: [] },
-            afterUpdatedAt: updatedAt,
-          } satisfies UndoData,
-        },
-      });
-      return { documentId: row.id, outcome: 'success', targetPath: null, message: 'Ignoriert (keine Dateiaktion).', auditId };
-    }
-
-    // --- a new main category needs explicit confirmation ---
-    if (plan.newCategories.length > 0 && !plan.newCategories.every((c) => opts.approveNewCategories.some((a) => a.toLowerCase() === c.toLowerCase()))) {
-      return {
-        documentId: row.id,
-        outcome: 'conflict',
-        targetPath: null,
-        message: `Neue Hauptkategorie „${plan.newCategories.join(', ')}“ wurde nicht bestätigt.`,
-        auditId: null,
-      };
-    }
-    if (req.mode === 'move' && !opts.confirmMove) {
-      return {
-        documentId: row.id,
-        outcome: 'skipped',
-        targetPath: null,
-        message: 'Verschieben erfordert eine zusätzliche Bestätigung („Original wird entfernt“).',
-        auditId: null,
-      };
-    }
-
-    const source = plan.sourcePath!;
-    const currentSha = await sha256File(source);
-    if (currentSha !== row.sha256) {
-      return {
-        documentId: row.id,
-        outcome: 'conflict',
-        targetPath: null,
-        message: 'Die Quelldatei hat sich seit der Analyse verändert. Bitte erneut analysieren.',
-        auditId: null,
-      };
-    }
-
-    let targetAbs: string | null = null;
-    let archiveRel: string | null = null;
-    let relationChanges: RelationChangeSet;
-    const cat = plan._cat ?? null;
-
-    if (req.mode === 'index_only') {
-      // no file action
-    } else {
-      targetAbs = await this.copyExclusive(source, plan._targetDir!, plan._name!);
-      let verified: boolean;
-      try {
-        verified = (await sha256File(targetAbs)) === row.sha256;
-      } catch {
-        verified = false;
-      }
-      if (!verified) {
-        // only the copy just created
-        const message = (await this.removeCreated(targetAbs))
-          ? 'Die Prüfsumme der Archivkopie stimmt nicht überein; der Vorgang wurde zurückgenommen.'
-          : `Die Prüfsumme der Archivkopie stimmt nicht überein. ${leftoverNote('Die fehlerhafte Kopie', targetAbs)}`;
-        throw new AppError('filesystem_error', message, { retryable: true });
-      }
-      archiveRel = toPosix(path.relative(this.root, targetAbs));
-    }
-
-    // --- database + knowledge graph in one transaction ---
-    const updatedAt = nowIso();
-    try {
-      // only relations the archiving created or changed go into the undo data, never pre-existing (e.g. rejected) ones
-      ({ changes: relationChanges } = this.graph.trackRelationChanges(row.id, () =>
-        this.ctx.database.transaction(() => {
-          if (cat) this.categories.create(cat, true);
-          // a name taken over unchanged from the document's analysis stays unconfirmed until the user uses it (#199)
-          const fromDoc = (name: string, proposed: string | null | undefined) => normalizeName(name) === normalizeName(proposed ?? '');
-          const topic = topicName ? this.graph.ensureEntity('topic', topicName, null, { fromDocument: fromDoc(topicName, proposal?.topic) }) : null;
-          const project = projectName ? this.graph.ensureEntity('project', projectName, null, { fromDocument: fromDoc(projectName, proposal?.project) }) : null;
-          // persons: every mention becomes a person (no longer only the first 12, #274), the stored list uses canonical names
-          const people = this.persons.resolveNames(proposal?.persons ?? row.persons, { context: 'document' });
-          const claimed = this.db
-            .update(documents)
-            .set({
-              status: req.mode === 'index_only' ? 'indexed_only' : 'archived',
-              persons: people.names,
-              archiveRelPath: archiveRel,
-              categoryPath: cat ?? row.categoryPath,
-              archiveMode: req.mode,
-              // An explicitly emptied field means "without topic/project" and clears an earlier assignment.
-              topicId: topic ? topic.id : req.topic !== undefined ? null : row.topicId,
-              projectId: project ? project.id : req.project !== undefined ? null : row.projectId,
-              archivedAt: updatedAt,
-              updatedAt,
-            })
-            // archived meanwhile by someone else: roll back, the copy made here is removed below (#240)
-            .where(and(eq(documents.id, row.id), notInArray(documents.status, ['archived', 'indexed_only'])))
-            .run();
-          if (!claimed.changes) throw new AppError('archive_conflict', 'Das Dokument wurde inzwischen schon archiviert.');
-          if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] });
-          if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: row.confidence ?? 0.8, status: 'confirmed', sourceIds: [row.id] });
-          if (cat)
-            this.graph.link(row.id, this.graph.ensureEntity('category', cat).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] });
-          for (const person of people.entities) this.graph.link(person.id, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
-          for (const tag of row.tags)
-            this.graph.link(row.id, this.graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] });
-          if (proposal?.duplicateOfDocumentId)
-            this.graph.link(row.id, proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] });
-        }),
-      ));
-    } catch (err) {
-      // never leave a half-finished file operation behind
-      if (targetAbs && !(await this.removeCreated(targetAbs))) {
-        const info = toErrorInfo(err);
-        throw new AppError(info.category, `${info.message} ${leftoverNote('Die bereits angelegte Archivkopie', targetAbs)}`, {
-          details: info.details,
-          cause: err,
-        });
-      }
-      throw err;
-    }
-
-    // --- remove sources (only after a successful commit; our own staging copy or a confirmed move) ---
-    let removedStaged = false;
-    let removedSource = false;
-    const warnings: string[] = [];
-    if (req.mode !== 'index_only') {
-      if (row.stagedPath && fs.existsSync(row.stagedPath)) {
-        try {
-          await fsp.unlink(row.stagedPath);
-          removedStaged = true;
-        } catch (err) {
-          if (errCode(err) === 'ENOENT')
-            removedStaged = true; // already gone (e.g. cleaned up concurrently)
-          else {
-            // The archive copy is verified and committed; a locked inbox copy (EBUSY/EPERM on Windows: open in a viewer,
-            // held by a virus scanner) must not turn that into a failure. The row keeps its stagedPath, which marks the
-            // copy for cleanupInbox().
-            this.ctx.logger.warn('archive', 'Could not remove the inbox copy after archiving', { documentId: row.id, error: err });
-            warnings.push('Die Kopie im Eingang konnte noch nicht entfernt werden (z. B. weil sie gerade geöffnet ist); sie wird später automatisch entfernt.');
-          }
-        }
-      }
-      if (req.mode === 'move' && row.sourcePath && fs.existsSync(row.sourcePath)) {
-        try {
-          if ((await sha256File(row.sourcePath)) === row.sha256) {
-            await fsp.unlink(row.sourcePath);
-            removedSource = true;
-          } else warnings.push('Das Original wurde verändert und deshalb nicht entfernt.');
-        } catch (err) {
-          warnings.push(`Das Original konnte nicht entfernt werden: ${(err as Error).message}`);
-        }
-      }
-    }
-    let finalUpdatedAt = updatedAt;
-    if (removedStaged) {
-      finalUpdatedAt = nowIso();
-      this.db.update(documents).set({ stagedPath: null, updatedAt: finalUpdatedAt }).where(eq(documents.id, row.id)).run();
-    }
-
-    const undoData: UndoData = {
-      documentId: row.id,
-      mode: req.mode,
-      archiveRel,
-      sha256: row.sha256,
-      sourcePath: row.sourcePath,
-      stagedPath: row.stagedPath,
-      removedStaged,
-      removedSource,
-      before,
-      relations: relationChanges,
-      afterUpdatedAt: finalUpdatedAt,
-    };
-    const auditId = this.audit.log({
-      action: `archive.${req.mode}`,
-      actor: trigger === 'agent_action' ? 'agent' : 'user',
-      trigger,
+  /** Logs a failed file operation and returns its outcome. */
+  private failed(err: unknown, attempt: { action: string; documentId: string; trigger: string | undefined }): ArchiveOutcome {
+    const info = toErrorInfo(err);
+    this.deps.audit.log({
+      action: attempt.action,
+      actor: 'user',
+      trigger: attempt.trigger ?? 'manual',
       confirmed: true,
-      entityIds: [row.id],
-      paths: [source, targetAbs ?? ''].filter(Boolean),
-      before: { status: row.status, path: source },
-      after: { status: req.mode === 'index_only' ? 'indexed_only' : 'archived', path: targetAbs, removedSource, removedStaged },
-      undo: { type: 'archive_file', data: undoData },
+      entityIds: [attempt.documentId],
+      success: false,
+      error: `${info.message} ${info.details ?? ''}`.trim(),
     });
-
-    // From here on the archiving is committed and undoable: follow-up steps may only add warnings.
-    await this.reindexAfterCommit(row.id, warnings);
-    this.ctx.events.emit('document:archived', { documentId: row.id, sourcePath: row.sourcePath });
-    this.notifications.resolveByDedupePrefix(`classified:${row.id}`);
-    try {
-      this.proposeExtractedItems(row, proposal);
-    } catch (err) {
-      this.ctx.logger.error('archive', 'Could not create proposals from the document', { documentId: row.id, error: err });
-    }
-    return {
-      documentId: row.id,
-      outcome: 'success',
-      targetPath: targetAbs,
-      message: [req.mode === 'index_only' ? 'Nur indexiert.' : req.mode === 'move' ? 'Ins Archiv verschoben.' : 'Ins Archiv kopiert.', ...warnings].join(' '),
-      auditId,
-    };
+    return { documentId: attempt.documentId, outcome: 'failed', targetPath: null, message: failureMessage(err), auditId: null };
   }
 
-  /** Updates the search index after a committed file operation; a failure only becomes a warning. */
-  private async reindexAfterCommit(documentId: string, warnings: string[]): Promise<void> {
-    try {
-      await this.docs.indexDocument(documentId);
-    } catch (err) {
-      this.ctx.logger.error('archive', 'Could not update the search index', { documentId, error: err });
-      warnings.push('Der Suchindex konnte nicht aktualisiert werden.');
-    }
-  }
-
-  /**
-   * Removes inbox copies whose removal failed right after archiving (e.g. the file was open in a viewer).
-   * Such documents are archived but still carry a stagedPath. A copy is only removed when it lies inside the inbox,
-   * is unchanged and the archived file is intact; otherwise it stays. Never throws.
-   * @returns number of documents whose pending inbox copy was cleaned up
-   */
-  async cleanupInbox(): Promise<number> {
-    let cleaned = 0;
-    try {
-      const pending = this.db
-        .select()
-        .from(documents)
-        .where(and(eq(documents.status, 'archived'), isNotNull(documents.stagedPath)))
-        .all();
-      for (const r of pending) {
-        const staged = r.stagedPath!;
-        if (!r.archiveRelPath || !isInside(this.ctx.paths.inbox, staged)) continue;
-        if (!(await hasChecksum(path.join(this.root, ...r.archiveRelPath.split('/')), r.sha256))) continue; // keep the only intact copy
-        if (fs.existsSync(staged)) {
-          if (!(await hasChecksum(staged, r.sha256))) continue;
-          if (!(await this.removeCreated(staged))) continue; // still locked: next attempt later
-        }
-        // updatedAt stays: this completes the archiving itself, so its undo must remain possible
-        this.db.update(documents).set({ stagedPath: null }).where(eq(documents.id, r.id)).run();
-        cleaned += 1;
-      }
-    } catch (err) {
-      this.ctx.logger.error('archive', 'Inbox cleanup failed', { error: err });
-    }
-    if (cleaned > 0) {
-      this.ctx.logger.info('archive', 'Removed pending inbox copies', { count: cleaned });
-      this.ctx.events.changed('documents');
-    }
-    return cleaned;
-  }
-
-  /**
-   * Proposals for decisions/open items recognized in documents (stage 1: proposal only, no change).
-   * Open items are first matched against the active ones: on a match the document is added as a source to the
-   * existing item instead of creating a duplicate.
-   */
-  private proposeExtractedItems(row: DocRow, proposal: DocumentProposal | null): void {
-    if (!proposal) return;
-    const topic = proposal.topic;
-    const project = proposal.project;
-    const docRef = { type: 'document' as const, id: row.id, label: row.title };
-    const rationale = `Im Dokument „${row.title}“ erkannt.`;
-    const active = proposal.possibleOpenItems.length ? this.openItems.list({ onlyActive: true }) : [];
-    const openActions = proposal.possibleOpenItems.slice(0, 3).flatMap((it) => {
-      const m = matchOpenItems(it.title, active, { threshold: 0.75 });
-      if (m.status === 'match') {
-        // the document is already a source (e.g. archived again) – nothing to propose
-        if (m.item.sourceIds.includes(row.id)) return [];
-        return [
-          this.actions.propose({
-            actionType: 'add_open_item_source',
-            label: `Punkt „${truncate(m.item.title, 60)}“ um Quelle ergänzen`,
-            rationale: `${rationale} Der Punkt ist bereits erfasst.`,
-            confidence: 0.6,
-            affectedEntities: [{ type: 'task', id: m.item.id, label: m.item.title }, docRef],
-            requiredConfirmation: 'confirm',
-            proposedParameters: {
-              openItemId: m.item.id,
-              documentId: row.id,
-              description: it.description ?? null,
-              dueAt: it.dueAt ?? null,
-              responsible: it.responsible ?? null,
-            },
-          }),
-        ];
-      }
-      return [
-        this.actions.propose({
-          actionType: 'create_open_item',
-          label: `Offenen Punkt anlegen: ${it.title}`,
-          rationale,
-          confidence: 0.6,
-          affectedEntities: [docRef],
-          requiredConfirmation: 'confirm',
-          proposedParameters: {
-            title: it.title,
-            description: it.description ?? null,
-            dueAt: it.dueAt ?? null,
-            responsible: it.responsible ?? null,
-            sourceIds: [row.id],
-            topic,
-            project,
-          },
-        }),
-      ];
-    });
-    // every decision found (the classification yields only a few per document), each with its own participants (#178)
-    const decisionActions = proposal.possibleDecisions.slice(0, MAX_DOCUMENT_DECISIONS).map((it) =>
-      this.actions.propose({
-        actionType: 'record_decision',
-        label: `Entscheidung erfassen: ${it.title}`,
-        rationale,
-        confidence: 0.55,
-        affectedEntities: [docRef],
-        requiredConfirmation: 'confirm',
-        proposedParameters: {
-          title: it.title,
-          decisionText: it.decisionText,
-          decidedAt: it.decidedAt ?? null,
-          // empty if the document does not say who decided: the decision then stays a draft and asks for them
-          participants: it.participants ?? [],
-          topic,
-          project,
-          sourceIds: [row.id],
-          kind: it.kind ?? null,
-          evidence: it.evidence ?? null,
-        },
-      }),
-    );
-    const notify = (kind: 'open' | 'decision', actions: Array<{ id: string; label: string }>) => {
-      if (actions.length === 0) return;
-      this.notifications.create({
-        title: kind === 'open' ? `Dokument enthält ${actions.length} mögliche offene Punkte` : `Dokument enthält ${actions.length} mögliche Entscheidung(en)`,
-        description: `„${row.title}“ – bitte prüfen und bei Bedarf übernehmen.`,
-        type: kind === 'open' ? 'file_has_open_item' : 'file_has_decision',
-        priority: 'normal',
-        affectedEntityIds: [row.id],
-        proposedActions: actions.map((a) => ({ label: a.label.slice(0, 60), kind: 'confirm_action' as const, target: a.id })),
-        dedupeKey: `extracted:${kind}:${row.id}`,
-      });
-    };
-    notify('open', openActions);
-    notify('decision', decisionActions);
-  }
-
-  // ---------- Relocating within the archive ----------
-  private sameDir(a: string, b: string): boolean {
-    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-  }
-
-  private async planRelocate(req: RelocateRequest): Promise<RelocatePlanItem & { _src?: string; _dir?: string; _name?: string; _cat?: string }> {
-    const row = this.docs.getRow(req.documentId);
-    const base: RelocatePlanItem = {
-      documentId: row.id,
-      title: row.title,
-      fromRelPath: row.archiveRelPath,
-      toRelPath: null,
-      categoryPath: null,
-      renamed: false,
-      unchanged: false,
-      blocked: false,
-      conflicts: [],
-    };
-    const block = (message: string) => ({ ...base, blocked: true, conflicts: [message] });
-    if (row.status !== 'archived' || !row.archiveRelPath || row.archiveMode === 'index_only')
-      return block('Nur archivierte Dokumente mit einer Datei im Archiv lassen sich umlagern.');
-    let cat: string;
-    try {
-      cat = sanitizeCategoryPath(req.categoryPath);
-    } catch (err) {
-      return block(err instanceof AppError ? err.message : 'Ungültiger Zielordner.');
-    }
-    const main = this.categories.needsApproval(cat);
-    if (main) return block(`Die Hauptkategorie „${main}“ gibt es noch nicht. Neue Hauptkategorien müssen vorher ausdrücklich angelegt werden.`);
-    let src: string;
-    let targetDir: string;
-    try {
-      src = resolveInside(this.root, row.archiveRelPath);
-      targetDir = resolveInside(this.root, cat);
-      await assertRealInside(this.root, src);
-      await assertRealInside(this.root, targetDir);
-    } catch (err) {
-      return block(err instanceof AppError ? err.message : 'Pfad ungültig.');
-    }
-    if (!fs.existsSync(src)) return block('Die Datei fehlt am erwarteten Ort im Archiv.');
-    const withCat = { ...base, categoryPath: cat };
-    if (this.sameDir(path.dirname(src), targetDir)) return { ...withCat, unchanged: true, toRelPath: row.archiveRelPath };
-    const name = path.basename(src);
-    const target = await uniquePath(targetDir, name);
-    const collided = path.basename(target) !== name;
-    return {
-      ...withCat,
-      toRelPath: toPosix(path.relative(this.root, target)),
-      renamed: collided,
-      conflicts: collided
-        ? [`Im Zielordner existiert bereits „${name}“ – die Datei wird als „${path.basename(target)}“ abgelegt (nichts wird überschrieben).`]
-        : [],
-      _src: src,
-      _dir: targetDir,
-      _name: name,
-      _cat: cat,
-    };
+  /** Removes inbox copies whose removal failed right after archiving; never throws, returns the number cleaned up. */
+  cleanupInbox(): Promise<number> {
+    return this.maintenance.cleanupInbox();
   }
 
   /** Preview (changes nothing): what would relocating do? */
-  async previewRelocate(items: RelocateRequest[]): Promise<RelocatePlanItem[]> {
-    const planned = await Promise.all(items.map((i) => this.planRelocate(i)));
-    return planned.map(({ _src, _dir, _name, _cat, ...rest }) => (void _src, void _dir, void _name, void _cat, rest));
-  }
-
-  /**
-   * Places a second, verified version of `src` in folder `dir` under `name` without overwriting anything.
-   * Prefers a hard link (atomic, fails if the target exists); where that is not possible, a copy with checksum.
-   * On failure nothing new is left behind, or the error names the leftover partial copy.
-   */
-  private async placeExclusive(src: string, dir: string, name: string, sha256: string, exactName: boolean): Promise<{ dest: string; linked: boolean }> {
-    await fsp.mkdir(dir, { recursive: true });
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const dest = exactName ? path.join(dir, name) : await uniquePath(dir, name);
-      const taken = () => {
-        if (exactName) throw new AppError('archive_conflict', `Am Zielort existiert bereits eine Datei: ${dest}`);
-      };
-      try {
-        await fsp.link(src, dest);
-        return { dest, linked: true };
-      } catch (err) {
-        if (errCode(err) === 'EEXIST') {
-          taken();
-          continue;
-        }
-      }
-      // file system without hard links (or another drive): copy with checksum
-      let verified: boolean;
-      try {
-        await fsp.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
-        verified = await hasChecksum(dest, sha256);
-      } catch (err) {
-        if (errCode(err) === 'EEXIST') {
-          taken();
-          continue;
-        }
-        const what = `Die Datei konnte nicht kopiert werden${errCode(err) ? ` (${errCode(err)})` : ''}.`;
-        if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
-        throw fsError(`${what} ${leftoverNote('Eine unvollständige Kopie', dest)}`, err);
-      }
-      if (!verified) {
-        if (await this.removeCreated(dest)) throw fsError('Die Prüfsumme der Kopie stimmt nicht überein; nichts wurde verändert.');
-        throw fsError(`Die Prüfsumme der Kopie stimmt nicht überein. ${leftoverNote('Die fehlerhafte Kopie', dest)}`);
-      }
-      return { dest, linked: false };
-    }
-    throw new AppError('archive_conflict', 'Es konnte kein freier Zieldateiname gefunden werden.', { retryable: true });
-  }
-
-  /**
-   * Places `src` in folder `dir` under `name` without overwriting anything, then removes `src`.
-   * If `src` cannot be removed (e.g. EBUSY), the new entry is taken back; if that fails too, the error says that the
-   * file now exists twice (extra hardlink or copy) instead of claiming nothing changed.
-   */
-  private async moveExclusive(src: string, dir: string, name: string, sha256: string, exactName = false): Promise<string> {
-    const { dest, linked } = await this.placeExclusive(src, dir, name, sha256, exactName);
-    try {
-      await fsp.unlink(src);
-    } catch (err) {
-      const what = `Die ursprüngliche Datei konnte nicht entfernt werden${errCode(err) ? ` (${errCode(err)})` : ''}.`;
-      // only take back the entry just created
-      if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
-      throw fsError(
-        `${what} Die Datei liegt weiterhin am bisherigen Ort; ${linked ? 'ein zusätzlicher Verweis (Hardlink) auf dieselbe Datei' : 'eine zusätzliche Kopie'} liegt noch unter „${dest}“ und muss von Hand entfernt werden.`,
-        err,
-      );
-    }
-    return dest;
-  }
-
-  /** Removes empty folders from `dir` upwards to the archive root folder (never non-empty ones, never the root). */
-  private async pruneEmptyDirs(dir: string): Promise<void> {
-    while (dir !== this.root && dir.startsWith(this.root)) {
-      try {
-        await fsp.rmdir(dir);
-      } catch {
-        return;
-      }
-      dir = path.dirname(dir);
-    }
+  previewRelocate(items: RelocateRequest[]): Promise<RelocatePlanItem[]> {
+    return this.relocator.preview(items);
   }
 
   /** Moves already archived documents into other archive folders. Requires explicit confirmation. */
   async relocate(items: RelocateRequest[], opts: { confirmed: boolean; trigger?: string }): Promise<ArchiveResult> {
-    if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
-    return this.guarded(() => this.relocateAll(items, opts));
+    if (!opts.confirmed) throw permissionError(UNCONFIRMED);
+    return this.deps.locks.guarded(() => this.relocateAll(items, opts.trigger));
   }
 
-  private async relocateAll(items: RelocateRequest[], opts: { trigger?: string }): Promise<ArchiveResult> {
-    const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
+  private async relocateAll(items: RelocateRequest[], trigger: string | undefined): Promise<ArchiveResult> {
+    const result = emptyArchiveResult();
     for (const req of items) {
-      let outcome: ArchiveResult['items'][number];
+      let outcome: ArchiveOutcome;
       try {
-        outcome = await this.onePerDocument(req.documentId, () => this.relocateOne(req, opts));
+        outcome = await this.deps.locks.onePerDocument(req.documentId, () => this.relocator.relocateOne(req, trigger ?? 'manual'));
       } catch (err) {
-        const info = toErrorInfo(err);
-        this.ctx.logger.error('archive', 'Relocating failed', { documentId: req.documentId, error: err });
-        this.audit.log({
-          action: 'archive.relocate',
-          actor: 'user',
-          trigger: opts.trigger ?? 'manual',
-          confirmed: true,
-          entityIds: [req.documentId],
-          success: false,
-          error: `${info.message} ${info.details ?? ''}`.trim(),
-        });
-        outcome = {
-          documentId: req.documentId,
-          outcome: 'failed',
-          targetPath: null,
-          message: info.message + (info.details ? ` (${info.details})` : ''),
-          auditId: null,
-        };
+        this.deps.ctx.logger.error('archive', 'Relocating failed', { documentId: req.documentId, error: err });
+        outcome = this.failed(err, { action: 'archive.relocate', documentId: req.documentId, trigger });
       }
-      result.items.push(outcome);
-      if (outcome.outcome === 'success') result.success += 1;
-      else if (outcome.outcome === 'skipped') result.skipped += 1;
-      else if (outcome.outcome === 'conflict') result.conflicts += 1;
-      else result.failed += 1;
+      addOutcome(result, outcome);
     }
-    this.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
+    this.deps.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
     return result;
-  }
-
-  private async relocateOne(req: RelocateRequest, opts: { trigger?: string }): Promise<ArchiveResult['items'][number]> {
-    const plan = await this.planRelocate(req);
-    const row = this.docs.getRow(req.documentId);
-    const fail = (outcome: 'conflict' | 'skipped', message: string) => ({ documentId: row.id, outcome, targetPath: null, message, auditId: null });
-    if (plan.blocked) return fail('conflict', plan.conflicts.join(' '));
-    if (plan.unchanged) return fail('skipped', 'Die Datei liegt bereits in diesem Ordner.');
-    const src = plan._src!;
-    const cat = plan._cat!;
-    if ((await sha256File(src)) !== row.sha256)
-      return fail('conflict', 'Die Archivdatei wurde seit der Archivierung verändert und wird deshalb nicht verschoben.');
-
-    const newAbs = await this.moveExclusive(src, plan._dir!, plan._name!, row.sha256);
-    const newRel = toPosix(path.relative(this.root, newAbs));
-    const updatedAt = nowIso();
-    let addedRelationId: string | null = null;
-    const relationsRemoved: RelationRow[] = [];
-    const relationsChanged: RelationRow[] = [];
-    try {
-      this.ctx.database.transaction(() => {
-        this.categories.create(cat, false);
-        this.db.update(documents).set({ archiveRelPath: newRel, categoryPath: cat, updatedAt }).where(eq(documents.id, row.id)).run();
-        const newEntity = this.graph.ensureEntity('category', cat);
-        const mine = this.db
-          .select()
-          .from(relations)
-          .where(and(eq(relations.sourceEntityId, row.id), eq(relations.relationType, 'belongs_to')))
-          .all();
-        const oldEntity = row.categoryPath ? this.graph.findByName('category', row.categoryPath) : undefined;
-        const old = oldEntity && oldEntity.id !== newEntity.id ? mine.find((r) => r.targetEntityId === oldEntity.id) : undefined;
-        // A rejected relation is the user's decision and stays untouched; only the active assignment is removed.
-        if (old && old.status !== 'rejected') {
-          relationsRemoved.push({ ...old });
-          this.graph.deleteRelation(old.id);
-        }
-        const target = mine.find((r) => r.targetEntityId === newEntity.id);
-        if (!target) {
-          addedRelationId = this.graph.link(row.id, newEntity.id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] })?.id ?? null;
-        } else if (target.status !== 'confirmed') {
-          // Relocating is an explicit user decision for the target category, even over an earlier rejection; undo restores the old state.
-          relationsChanged.push({ ...target });
-          this.graph.setRelationStatus(target.id, 'confirmed');
-        }
-      });
-    } catch (err) {
-      // database not updated: put the file back in its original place
-      const note = await this.putBackAfterFailedRelocate(newAbs, src, row.sha256);
-      if (!note) throw err;
-      const info = toErrorInfo(err);
-      throw new AppError(info.category, `${info.message} ${note}`, { details: info.details, cause: err });
-    }
-    await this.pruneEmptyDirs(path.dirname(src));
-
-    const undoData: RelocateUndoData = {
-      documentId: row.id,
-      fromRel: row.archiveRelPath!,
-      toRel: newRel,
-      sha256: row.sha256,
-      beforeCategoryPath: row.categoryPath,
-      beforeUpdatedAt: row.updatedAt,
-      afterUpdatedAt: updatedAt,
-      addedRelationId,
-      relationsRemoved,
-      relationsChanged,
-    };
-    const trigger = opts.trigger ?? 'manual';
-    const auditId = this.audit.log({
-      action: 'archive.relocate',
-      actor: trigger === 'agent_action' ? 'agent' : 'user',
-      trigger,
-      confirmed: true,
-      entityIds: [row.id],
-      paths: [src, newAbs],
-      before: { path: src, categoryPath: row.categoryPath },
-      after: { path: newAbs, categoryPath: cat },
-      undo: { type: 'archive_relocate', data: undoData },
-    });
-    const warnings: string[] = [];
-    await this.reindexAfterCommit(row.id, warnings);
-    return {
-      documentId: row.id,
-      outcome: 'success',
-      targetPath: newAbs,
-      message: [plan.renamed ? `Verschoben nach ${cat} (umbenannt, weil der Name belegt war).` : `Verschoben nach ${cat}.`, ...warnings].join(' '),
-      auditId,
-    };
-  }
-
-  /**
-   * Runs the database part of a file move in one transaction. If it fails, the file is moved back to `original`, so the
-   * database and the file system agree again and the action can simply be retried (#221, #238).
-   */
-  private async commitOrPutBack<T>(file: { moved: string; original: string; sha256: string; caseOnly: boolean }, commit: () => T): Promise<T> {
-    try {
-      return this.ctx.database.transaction(commit);
-    } catch (err) {
-      const note = file.caseOnly
-        ? await fsp.rename(file.moved, file.original).then(
-            () => null,
-            () => `Die Datei liegt noch unter ${file.moved}.`,
-          )
-        : await this.putBackAfterFailedRelocate(file.moved, file.original, file.sha256);
-      if (!note) throw err;
-      const info = toErrorInfo(err);
-      throw new AppError(info.category, `${info.message} ${note}`, { details: info.details, cause: err });
-    }
-  }
-
-  /**
-   * Moves a relocated file back to `original` after the database update failed. The original is restored first and
-   * the new entry removed afterwards, so the file the database points to always exists.
-   * @returns null when the file is back in place without leftovers, else a user-facing note on the actual state
-   */
-  private async putBackAfterFailedRelocate(moved: string, original: string, sha256: string): Promise<string | null> {
-    try {
-      await this.placeExclusive(moved, path.dirname(original), path.basename(original), sha256, true);
-    } catch (back) {
-      this.ctx.logger.error('archive', 'Could not put the file back after a failed relocation', { error: back });
-      return `Die Datei konnte nicht an den bisherigen Ort zurückgelegt werden und liegt jetzt unter „${moved}“; die Datenbank verweist noch auf „${original}“.`;
-    }
-    if (await this.removeCreated(moved)) return null;
-    return `Die Datei liegt wieder am bisherigen Ort; ${leftoverNote('ein zusätzlicher Eintrag', moved)}`;
   }
 
   /** Preview of renames: target names, conflicts with existing files and among each other – changes nothing. */
   async previewRename(items: RenameRequest[]): Promise<RenamePlanItem[]> {
-    const taken = new Map<string, string>();
-    const out: RenamePlanItem[] = [];
-    for (const req of items) {
-      const row = this.docs.getRow(req.documentId);
-      const base = { documentId: row.id, from: row.archiveRelPath, to: null as string | null, unchanged: false, conflicts: [] as string[] };
-      if (row.status !== 'archived' || !row.archiveRelPath || row.archiveMode === 'index_only') {
-        out.push({ ...base, conflicts: ['Nur archivierte Dokumente mit einer Datei im Archiv lassen sich umbenennen.'] });
-        continue;
-      }
-      let name = sanitizeFileName(req.fileName);
-      if (path.extname(name).slice(1).toLowerCase() !== row.ext.toLowerCase()) name = `${name}.${row.ext}`;
-      const stem = path.basename(name, path.extname(name));
-      if (MEANINGLESS_NAME.test(stem)) {
-        out.push({ ...base, conflicts: [`„${name}“ ist kein sprechender Name (Hash oder UUID).`] });
-        continue;
-      }
-      const dir = path.posix.dirname(row.archiveRelPath);
-      const toRel = dir === '.' ? name : `${dir}/${name}`;
-      if (toRel === row.archiveRelPath) {
-        out.push({ ...base, to: toRel, unchanged: true });
-        continue;
-      }
-      const key = process.platform === 'win32' ? toRel.toLowerCase() : toRel;
-      const conflicts: string[] = [];
-      if (taken.has(key)) conflicts.push(`Derselbe Name ist schon für ein anderes Dokument dieser Umbenennung vorgesehen: ${name}`);
-      // a different case of the same name is the same file on NTFS – only allowed for the document itself
-      else if (fs.existsSync(resolveInside(this.root, toRel)) && !(process.platform === 'win32' && key === row.archiveRelPath.toLowerCase()))
-        conflicts.push(`Im Ordner existiert bereits „${name}“ – es wird nichts überschrieben.`);
-      taken.set(key, row.id);
-      out.push({ ...base, to: toRel, conflicts });
-    }
-    return out;
+    return this.renamer.previewRename(items);
   }
 
   /** Renames archived files within their folder; never overwrites, checks the checksum, logged with undo. */
   async rename(items: RenameRequest[], opts: { confirmed: boolean; trigger?: string }): Promise<ArchiveResult> {
-    if (!opts.confirmed) throw permissionError('Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.');
-    return this.guarded(async () => {
-      const plan = await this.previewRename(items);
-      const result: ArchiveResult = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0 };
-      for (const p of plan) {
-        const fail = (outcome: 'conflict' | 'skipped' | 'failed', message: string) => {
-          result.items.push({ documentId: p.documentId, outcome, targetPath: null, message, auditId: null });
-          if (outcome === 'conflict') result.conflicts += 1;
-          else if (outcome === 'skipped') result.skipped += 1;
-          else result.failed += 1;
-        };
-        if (p.conflicts.length) {
-          fail('conflict', p.conflicts.join(' '));
-          continue;
-        }
-        if (p.unchanged || !p.to || !p.from) {
-          fail('skipped', 'Der Name ist bereits so.');
-          continue;
-        }
-        const { from: fromRel, to: toRel } = p;
-        if (this.busy.has(p.documentId)) {
-          fail('conflict', 'Dieses Dokument wird gerade schon archiviert oder verschoben.');
-          continue;
-        }
-        this.busy.add(p.documentId);
-        try {
-          const row = this.docs.getRow(p.documentId);
-          const src = resolveInside(this.root, fromRel);
-          await assertRealInside(this.root, src);
-          if ((await sha256File(src)) !== row.sha256) {
-            fail('conflict', 'Die Archivdatei wurde seit der Archivierung verändert und wird deshalb nicht umbenannt.');
-            continue;
-          }
-          const dest = resolveInside(this.root, p.to);
-          const caseOnly = process.platform === 'win32' && p.to.toLowerCase() === p.from.toLowerCase();
-          if (caseOnly) await fsp.rename(src, dest);
-          else await this.moveExclusive(src, path.dirname(dest), path.basename(dest), row.sha256, true);
-          const updatedAt = nowIso();
-          const title = row.title === path.basename(p.from, path.extname(p.from)) ? path.basename(p.to, path.extname(p.to)) : row.title;
-          // database, graph and audit entry together – if they fail, the file goes back to its old name (#221)
-          const auditId = await this.commitOrPutBack({ moved: dest, original: src, sha256: row.sha256, caseOnly }, () => {
-            this.db.update(documents).set({ archiveRelPath: toRel, title, updatedAt }).where(eq(documents.id, row.id)).run();
-            if (title !== row.title) this.graph.registerNode('document', row.id, title, row.summary);
-            return this.audit.log({
-              action: 'archive.rename',
-              actor: opts.trigger === 'agent' ? 'agent' : 'user',
-              trigger: opts.trigger ?? 'manual',
-              confirmed: true,
-              entityIds: [row.id],
-              paths: [src, dest],
-              before: { path: src },
-              after: { path: dest },
-              undo: {
-                type: 'archive_rename',
-                data: {
-                  documentId: row.id,
-                  fromRel,
-                  toRel,
-                  sha256: row.sha256,
-                  beforeTitle: row.title,
-                  beforeUpdatedAt: row.updatedAt,
-                  afterUpdatedAt: updatedAt,
-                } satisfies RenameUndoData,
-              },
-            });
-          });
-          result.items.push({ documentId: row.id, outcome: 'success', targetPath: dest, message: `Umbenannt in ${path.basename(dest)}.`, auditId });
-          result.success += 1;
-        } catch (err) {
-          const info = toErrorInfo(err);
-          fail('failed', info.message + (info.details ? ` (${info.details})` : ''));
-        } finally {
-          this.busy.delete(p.documentId);
-        }
-      }
-      this.ctx.events.changed('documents', 'audit', 'knowledge');
+    if (!opts.confirmed) throw permissionError(UNCONFIRMED);
+    return this.deps.locks.guarded(async () => {
+      const plan = this.renamer.previewRename(items);
+      const result = emptyArchiveResult();
+      for (const item of plan) addOutcome(result, await this.renamer.renameOne(item, opts.trigger));
+      this.deps.ctx.events.changed('documents', 'audit', 'knowledge');
       return result;
     });
   }
 
-  private async renameUndoCheck(d: RenameUndoData): Promise<string[]> {
-    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
-    const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
-    if (!row) return ['Das Dokument existiert nicht mehr.'];
-    const conflicts: string[] = [];
-    if (row.updatedAt !== d.afterUpdatedAt) conflicts.push('Das Dokument wurde seit dem Umbenennen verändert.');
-    const now = resolveInside(this.root, d.toRel);
-    if (!fs.existsSync(now)) conflicts.push('Die Datei fehlt unter dem neuen Namen.');
-    else if ((await sha256File(now)) !== d.sha256) conflicts.push('Die Datei wurde seit dem Umbenennen verändert.');
-    const caseOnly = process.platform === 'win32' && d.toRel.toLowerCase() === d.fromRel.toLowerCase();
-    if (!caseOnly && fs.existsSync(resolveInside(this.root, d.fromRel))) conflicts.push('Unter dem alten Namen liegt inzwischen eine andere Datei.');
-    return conflicts;
-  }
-
-  private async renameUndoRun(d: RenameUndoData): Promise<string> {
-    const now = resolveInside(this.root, d.toRel);
-    const back = resolveInside(this.root, d.fromRel);
-    const caseOnly = process.platform === 'win32' && d.toRel.toLowerCase() === d.fromRel.toLowerCase();
-    if (caseOnly) await fsp.rename(now, back);
-    else await this.moveExclusive(now, path.dirname(back), path.basename(back), d.sha256, true);
-    // the undo can be retried: if the database refuses, the file goes back to where the database still points (#238)
-    await this.commitOrPutBack({ moved: back, original: now, sha256: d.sha256, caseOnly }, () => {
-      this.db
-        .update(documents)
-        .set({ archiveRelPath: d.fromRel, title: d.beforeTitle, updatedAt: d.beforeUpdatedAt })
-        .where(eq(documents.id, d.documentId))
-        .run();
-      this.graph.registerNode('document', d.documentId, d.beforeTitle, null);
-    });
-    this.ctx.events.changed('documents', 'knowledge');
-    return 'Umbenennen rückgängig gemacht.';
-  }
-
   /** Removes empty folders of the archive (no file, no document) and their category entries; returns the removed paths. */
-  async removeEmptyFolders(): Promise<string[]> {
-    return this.guarded(async () => {
-      const used = new Set(
-        this.db
-          .select({ rel: documents.archiveRelPath })
-          .from(documents)
-          .where(isNotNull(documents.archiveRelPath))
-          .all()
-          .flatMap((r) => {
-            const parts = path.posix.dirname(r.rel!).split('/');
-            return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
-          }),
-      );
-      const removed: string[] = [];
-      for (const c of this.categories.list().toSorted((a, b) => b.path.length - a.path.length)) {
-        if (used.has(c.path) || !c.path.includes('/')) continue;
-        const abs = resolveInside(this.root, c.path);
-        try {
-          if (fs.existsSync(abs)) {
-            if ((await fsp.readdir(abs)).length) continue;
-            await fsp.rmdir(abs);
-          }
-          this.categories.remove(c.path);
-          removed.push(c.path);
-        } catch {
-          /* not empty or locked: stays */
-        }
-      }
-      if (removed.length)
-        this.audit.log({
-          action: 'category.removeEmpty',
-          actor: 'user',
-          trigger: 'manual',
-          confirmed: true,
-          paths: removed,
-          after: { removed },
-          undo: { type: FOLDERS_RESTORE_UNDO, data: { paths: removed } },
-        });
-      return removed;
-    });
+  removeEmptyFolders(): Promise<string[]> {
+    return this.deps.locks.guarded(() => this.maintenance.removeEmptyFolders());
   }
 
-  private async relocateUndoCheck(d: RelocateUndoData): Promise<string[]> {
-    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
-    const conflicts: string[] = [];
-    const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
-    if (!row) return ['Das Dokument existiert nicht mehr.'];
-    if (row.updatedAt !== d.afterUpdatedAt) conflicts.push('Das Dokument wurde seit dem Umlagern verändert.');
-    const now = resolveInside(this.root, d.toRel);
-    const back = resolveInside(this.root, d.fromRel);
-    if (!fs.existsSync(now)) conflicts.push('Die Datei fehlt am neuen Ort im Archiv.');
-    else if ((await sha256File(now)) !== d.sha256) conflicts.push('Die Datei wurde seit dem Umlagern verändert.');
-    if (fs.existsSync(back)) conflicts.push(`Am ursprünglichen Ort existiert bereits eine Datei: ${back}`);
-    conflicts.push(...this.relocateRelationConflicts(d));
-    return conflicts;
-  }
-
-  /** Category relations touched by relocating must still be as relocating left them, else undo would overwrite a newer decision. */
-  private relocateRelationConflicts(d: RelocateUndoData): string[] {
-    const conflicts: string[] = [];
-    const relation = (id: string) => this.db.select().from(relations).where(eq(relations.id, id)).get();
-    const name = (r: Pick<RelationRow, 'targetEntityId'>) => this.graph.getEntity(r.targetEntityId)?.name ?? r.targetEntityId;
-    const changed = (r: Pick<RelationRow, 'targetEntityId'>) => `Die Zuordnung zur Kategorie „${name(r)}“ wurde seit dem Umlagern geändert.`;
-    if (d.addedRelationId) {
-      const added = relation(d.addedRelationId);
-      if (added && added.status !== 'confirmed') conflicts.push(changed(added));
-    }
-    for (const before of d.relationsChanged ?? []) {
-      const now = relation(before.id);
-      if (now?.status !== 'confirmed') conflicts.push(changed(before));
-    }
-    for (const before of d.relationsRemoved ?? []) {
-      if (!this.graph.getEntity(before.targetEntityId)) {
-        conflicts.push(`Die bisherige Kategorie „${d.beforeCategoryPath ?? ''}“ existiert im Wissensgraph nicht mehr.`);
-        continue;
-      }
-      const now = this.db
-        .select()
-        .from(relations)
-        .where(
-          and(
-            eq(relations.sourceEntityId, before.sourceEntityId),
-            eq(relations.targetEntityId, before.targetEntityId),
-            eq(relations.relationType, before.relationType),
-          ),
-        )
-        .get();
-      if (now || relation(before.id)) conflicts.push(changed(before));
-    }
-    return conflicts;
-  }
-
-  private async relocateUndoRun(d: RelocateUndoData): Promise<string> {
-    const now = resolveInside(this.root, d.toRel);
-    const back = resolveInside(this.root, d.fromRel);
-    await this.moveExclusive(now, path.dirname(back), path.basename(back), d.sha256, true);
-    await this.commitOrPutBack({ moved: back, original: now, sha256: d.sha256, caseOnly: false }, () => {
-      this.db
-        .update(documents)
-        // the old timestamp comes back too: the document is exactly as before, so earlier undo entries (archiving) stay valid
-        .set({ archiveRelPath: d.fromRel, categoryPath: d.beforeCategoryPath, updatedAt: d.beforeUpdatedAt ?? nowIso() })
-        .where(eq(documents.id, d.documentId))
-        .run();
-      if (d.addedRelationId) this.graph.deleteRelation(d.addedRelationId);
-      for (const { id, ...rest } of d.relationsChanged ?? []) this.db.update(relations).set(rest).where(eq(relations.id, id)).run();
-      if (d.relationsRemoved?.length) this.db.insert(relations).values(d.relationsRemoved).run();
-      if (d.removedCategory)
-        this.graph.link(d.documentId, this.graph.ensureEntity('category', d.removedCategory).id, 'belongs_to', {
-          confidence: 1,
-          status: 'confirmed',
-          sourceIds: [d.documentId],
-        });
-    });
-    await this.pruneEmptyDirs(path.dirname(now));
-    await this.docs.indexDocument(d.documentId);
-    this.ctx.events.changed('documents', 'knowledge', 'status');
-    return 'Umlagern rückgängig gemacht; die Datei liegt wieder am vorherigen Ort.';
-  }
-
-  // ---------- Undo ----------
-  private async undoCheck(d: UndoData): Promise<string[]> {
-    if (this.rootChangeActive) return ['Der Archivordner wird gerade umgestellt.'];
-    const conflicts: string[] = [];
-    const row = this.db.select().from(documents).where(eq(documents.id, d.documentId)).get();
-    if (!row) return ['Das Dokument existiert nicht mehr.'];
-    if (row.updatedAt !== d.afterUpdatedAt) conflicts.push('Das Dokument wurde seit der Archivierung verändert.');
-    conflicts.push(...this.graph.relationChangeConflicts(d.relations));
-    if (d.mode === 'copy' || d.mode === 'move') {
-      const abs = d.archiveRel ? path.join(this.root, ...d.archiveRel.split('/')) : null;
-      if (!abs || !fs.existsSync(abs)) conflicts.push('Die archivierte Datei fehlt am erwarteten Ort.');
-      else if ((await sha256File(abs)) !== d.sha256) conflicts.push('Die archivierte Datei wurde seit der Archivierung verändert.');
-      if (d.removedStaged && d.stagedPath && fs.existsSync(d.stagedPath)) conflicts.push(`Am Eingangsort existiert bereits eine Datei: ${d.stagedPath}`);
-      if (d.removedSource && d.sourcePath) {
-        if (fs.existsSync(d.sourcePath)) conflicts.push(`Am ursprünglichen Ort existiert bereits eine Datei: ${d.sourcePath}`);
-        else if (!fs.existsSync(path.dirname(d.sourcePath))) conflicts.push(`Der ursprüngliche Ordner existiert nicht mehr: ${path.dirname(d.sourcePath)}`);
-      }
-      if (!(await this.otherCopyRemains(d))) {
-        // The archived version is the only copy left: undo puts it back to its origin instead of deleting it.
-        const origin = this.putBackOrigin(d);
-        if (!origin) conflicts.push('Es gibt keine weitere Kopie der Datei und keinen ursprünglichen Ort – Undo würde die einzige Kopie löschen.');
-        else if (!fs.existsSync(path.dirname(origin))) conflicts.push(`Der ursprüngliche Ordner existiert nicht mehr: ${path.dirname(origin)}`);
-      }
-    }
-    return conflicts;
-  }
-
-  /**
-   * True when, after undo, a file with the archived checksum still exists outside the archive: either a copy that
-   * undo restores itself (removed inbox copy / moved original) or an unchanged file at the source or inbox location.
-   */
-  private async otherCopyRemains(d: UndoData): Promise<boolean> {
-    if (d.removedStaged || d.removedSource) return true;
-    for (const p of [d.sourcePath, d.stagedPath]) if (p && (await hasChecksum(p, d.sha256))) return true;
-    return false;
-  }
-
-  /** Location the archived version returns to when it is the only copy left. */
-  private putBackOrigin(d: UndoData): string | null {
-    return d.sourcePath ?? d.stagedPath;
-  }
-
-  private async undoRun(d: UndoData): Promise<string> {
-    const abs = d.archiveRel ? path.join(this.root, ...d.archiveRel.split('/')) : null;
-    let putBackPath: string | null = null;
-    if ((d.mode === 'copy' || d.mode === 'move') && abs) {
-      const verifyRestored = async (dest: string) => {
-        if ((await sha256File(dest)) !== d.sha256) {
-          await fsp.unlink(dest).catch(() => undefined);
-          throw fsError('Wiederherstellung konnte nicht verifiziert werden.');
-        }
-      };
-      const restoreTo = async (dest: string) => {
-        await fsp.copyFile(abs, dest, fs.constants.COPYFILE_EXCL);
-        await verifyRestored(dest);
-      };
-      const origin = (await this.otherCopyRemains(d)) ? null : this.putBackOrigin(d);
-      if (d.removedStaged && d.stagedPath) await restoreTo(d.stagedPath);
-      if (d.removedSource && d.sourcePath) await restoreTo(d.sourcePath);
-      if (origin) {
-        // Never overwrite whatever is at the origin now (e.g. the edited original): a taken name becomes "Name (2).ext".
-        putBackPath = await this.copyExclusive(abs, path.dirname(origin), path.basename(origin));
-        await verifyRestored(putBackPath);
-      }
-      await fsp.unlink(abs);
-      // remove empty intermediate folders in the archive again (never non-empty ones)
-      let dir = path.dirname(abs);
-      while (dir !== this.root && dir.startsWith(this.root)) {
-        try {
-          await fsp.rmdir(dir);
-        } catch {
-          break;
-        }
-        dir = path.dirname(dir);
-      }
-    }
-    this.ctx.database.transaction(() => {
-      this.db
-        .update(documents)
-        .set({
-          ...d.before,
-          stagedPath: d.removedStaged ? d.stagedPath : d.before.stagedPath,
-          // the document now refers to the file that actually holds its content
-          ...(putBackPath ? (d.sourcePath ? { sourcePath: putBackPath } : { stagedPath: putBackPath }) : {}),
-          updatedAt: nowIso(),
-        })
-        .where(eq(documents.id, d.documentId))
-        .run();
-      if (d.relations) this.graph.revertRelationChanges(d.relations);
-      // undo data written before relation tracking existed only lists the linked relations
-      else for (const rid of d.relationIds ?? []) this.graph.deleteRelation(rid);
-    });
-    await this.docs.indexDocument(d.documentId);
-    this.ctx.events.emit('document:unarchived', { documentId: d.documentId });
-    this.ctx.events.changed('documents', 'knowledge', 'status');
-    if (putBackPath && path.basename(putBackPath) !== path.basename(this.putBackOrigin(d)!))
-      return `Archivierung rückgängig gemacht. Am ursprünglichen Ort liegt inzwischen eine andere Fassung; sie bleibt unberührt, und die archivierte Fassung liegt jetzt als „${path.basename(putBackPath)}“ daneben. Es wurde nichts gelöscht.`;
-    return d.mode === 'ignore'
-      ? 'Ignorieren rückgängig gemacht.'
-      : d.mode === 'index_only'
-        ? 'Indexierung rückgängig gemacht.'
-        : 'Archivierung rückgängig gemacht; die Datei liegt wieder am ursprünglichen Ort.';
-  }
-
-  // ---------- Archive state ----------
   /** Compares the database and file system state of the archive. */
-  async verify(): Promise<VerifyReport> {
-    const rows = this.db
-      .select()
-      .from(documents)
-      .where(inArray(documents.status, ['archived']))
-      .all();
-    const report: VerifyReport = { checkedDocuments: rows.length, missingFiles: [], changedFiles: [], untrackedFiles: [], ok: true };
-    const known = new Set<string>();
-    for (const r of rows) {
-      if (!r.archiveRelPath) continue;
-      const abs = path.join(this.root, ...r.archiveRelPath.split('/'));
-      known.add(path.resolve(abs));
-      if (!fs.existsSync(abs)) report.missingFiles.push({ documentId: r.id, title: r.title, path: abs });
-      else if ((await this.pool.run('hashFile', { path: abs })) !== r.sha256) report.changedFiles.push({ documentId: r.id, title: r.title, path: abs });
-    }
-    const walk = async (dir: string): Promise<void> => {
-      let entries: fs.Dirent[];
-      try {
-        entries = await fsp.readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const e of entries) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) await walk(full);
-        else if (e.isFile() && !known.has(path.resolve(full))) report.untrackedFiles.push(full);
-      }
-    };
-    await walk(this.root);
-    report.ok = report.missingFiles.length === 0 && report.changedFiles.length === 0;
-    return report;
+  verify(): Promise<VerifyReport> {
+    return this.maintenance.verify();
   }
 }
