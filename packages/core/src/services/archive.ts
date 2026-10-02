@@ -132,6 +132,8 @@ export class ArchiveService {
   private inFlight = 0;
   /** True while the archive root is being changed; file operations are refused meanwhile. */
   private rootChangeActive = false;
+  /** True while a full backup copies the archive; file operations and root changes are refused meanwhile. */
+  private backupActive = false;
 
   constructor(
     private readonly ctx: AppContext,
@@ -171,6 +173,8 @@ export class ArchiveService {
    */
   beginRootChange(): () => void {
     if (this.rootChangeActive) throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
+    if (this.backupActive)
+      throw new AppError('archive_conflict', 'Gerade läuft ein vollständiges Backup. Bitte versuche es gleich noch einmal.', { retryable: true });
     if (this.inFlight > 0)
       throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.', {
         retryable: true,
@@ -184,6 +188,27 @@ export class ArchiveService {
     };
   }
 
+  /**
+   * Blocks archive file operations while a full backup copies the archive, so the database snapshot and the
+   * copied files match. Refuses while operations run or the root is being changed; returns the release function.
+   */
+  beginBackup(): () => void {
+    if (this.rootChangeActive)
+      throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.', { retryable: true });
+    if (this.backupActive) throw new AppError('archive_conflict', 'Es läuft bereits ein vollständiges Backup.', { retryable: true });
+    if (this.inFlight > 0)
+      throw new AppError('archive_conflict', 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.', {
+        retryable: true,
+      });
+    this.backupActive = true;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.backupActive = false;
+    };
+  }
+
   /** True while the archive root is being changed. */
   isRootChangeActive(): boolean {
     return this.rootChangeActive;
@@ -193,6 +218,8 @@ export class ArchiveService {
   private async guarded<T>(fn: () => Promise<T>): Promise<T> {
     if (this.rootChangeActive)
       throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.', { retryable: true });
+    if (this.backupActive)
+      throw new AppError('archive_conflict', 'Gerade läuft ein vollständiges Backup. Bitte versuche es gleich noch einmal.', { retryable: true });
     this.inFlight += 1;
     try {
       return await fn();

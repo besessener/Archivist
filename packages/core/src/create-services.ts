@@ -137,7 +137,7 @@ function buildServices(opts: CreateServicesOptions) {
     entityDuplicates,
     appState.lastRunStore('consistency.lastRunAt'),
   );
-  const backup = new BackupService(ctx, settings, audit);
+  const backup = new BackupService(ctx, settings, audit, archive);
   const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
   consistency.addCheck((count) => {
     openItemDuplicates.check(count);
