@@ -74,7 +74,7 @@ export class ArchiveRootService {
   /** Data folders of the app that must never be copied along when the archive lies above the data directory. */
   private excludedFromCopy(from: string): string[] {
     const p = this.ctx.paths;
-    return [p.database, p.index, p.config, p.logs, p.backups, p.inbox, p.quarantine].filter((dir) => isInside(from, dir) && !samePath(from, dir));
+    return [p.database, p.index, p.config, p.logs, p.backups, p.inbox, p.quarantine, p.trash].filter((dir) => isInside(from, dir) && !samePath(from, dir));
   }
 
   private normalizeTarget(root: string): string {

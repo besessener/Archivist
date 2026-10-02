@@ -70,6 +70,7 @@ export class ArchiveService {
     this.relocator = new ArchiveRelocator(this.deps, (documentId, warnings) => this.executor.reindexAfterCommit(documentId, warnings));
     this.renamer = new ArchiveRenamer(this.deps);
     this.maintenance = new ArchiveMaintenance(this.deps);
+    docs.useFileLock(this.deps.locks);
     this.registerUndo(undo);
   }
 

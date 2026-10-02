@@ -13,7 +13,7 @@ function renameByPattern(services: Services, request: { ids: string[]; pattern: 
 }
 
 /** Documents, the scanner, categories, backups and the archive folder. */
-export function documentHandlers(services: Services): HandlerGroup<'documents' | 'scanner' | 'categories' | 'backup' | 'archive'> {
+export function documentHandlers(services: Services): HandlerGroup<'documents' | 'trash' | 'scanner' | 'categories' | 'backup' | 'archive'> {
   return {
     'documents:import': async (input) => services.documents.importPaths(input.paths),
     'documents:list': async (input) => services.documents.recordsFrom(await services.reader.run('documentList', input)),
@@ -56,6 +56,9 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
     },
     'documents:setLlmExcluded': (input) => services.documents.setLlmExcluded(input.id, input.excluded),
     'documents:releaseQuarantine': (input) => services.documents.releaseFromQuarantine(input.id, input.confirmed),
+    'documents:trash': (input) => services.documents.moveToTrash(input.id, { confirmed: input.confirmed, trigger: 'manual' }),
+    'trash:list': () => services.documents.trashEntries(),
+    'trash:empty': (input) => services.documents.emptyTrash(input),
 
     'scanner:addDirectory': (input) => services.scanner.addDirectory(input.path, input.recursive),
     'scanner:removeDirectory': (input) => {

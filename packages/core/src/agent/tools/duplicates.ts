@@ -21,7 +21,7 @@ interface MarkArgs {
   keep: string;
   duplicates: string[];
   as: 'duplicate' | 'older_version';
-  action: 'mark' | 'subfolder';
+  action: 'mark' | 'subfolder' | 'delete';
 }
 
 /** The duplicates to treat: never the document to keep. */
@@ -31,6 +31,28 @@ interface Treatment {
   keepRef: string;
   refs: string;
   unknown: string[];
+}
+
+/** Moves the duplicates into the trash: restorable via undo until the user empties the trash. */
+async function trashDuplicates({ deps, ctx }: ToolScope, treatment: Treatment): Promise<ToolOutput> {
+  const { keepRef, refs, targets, unknown } = treatment;
+  const failed: string[] = [];
+  let trashed = 0;
+  for (const d of targets) {
+    try {
+      await deps.docs.moveToTrash(d.id, { confirmed: true, trigger: 'agent' });
+      trashed += 1;
+    } catch (error) {
+      failed.push(`${ctx.refs.doc(d.id)}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return {
+    content: `${trashed} Duplikat(e) von ${keepRef} in den Papierkorb gelegt (${refs}); ${keepRef} bleibt. Wiederherstellen über das Änderungsprotokoll oder Einstellungen → Archiv → Papierkorb.${failed.length ? `\nFehlgeschlagen: ${failed.join('; ')}` : ''}${unknownNote(unknown)}`,
+    summary: `${trashed} im Papierkorb`,
+    change: `${trashed} Duplikat(e) in den Papierkorb gelegt`,
+    changed: trashed,
+    isError: trashed === 0,
+  };
 }
 
 /** Moves the duplicates into the subfolder „Duplikate“ / „Ältere Versionen“ next to the kept document; returns the report lines and the change. */
@@ -95,6 +117,7 @@ async function treatDuplicates(scope: ToolScope, args: MarkArgs): Promise<ToolOu
   const targets = duplicates.filter((d) => d.id !== keepId);
   if (!targets.length) return { content: `Keine Duplikate angegeben (keep wird nie verändert).${unknownNote(unknown)}`, isError: true };
   const treatment = { keep, targets, keepRef: ctx.refs.doc(keepId), refs: targets.map((d) => ctx.refs.doc(d.id)).join(', '), unknown };
+  if (args.action === 'delete') return trashDuplicates(scope, treatment);
   return markDuplicates(scope, { treatment, args });
 }
 
@@ -183,17 +206,19 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'mark_duplicates',
       description:
-        'Behandelt Duplikate bzw. ältere Versionen eines Dokuments (keep bleibt unverändert): action "mark" verknüpft und setzt das Schlagwort „Duplikat“ bzw. „ältere Version“; "subfolder" verschiebt sie zusätzlich in den Unterordner Duplikate bzw. Ältere Versionen neben keep. Gelöscht wird nie etwas.',
+        'Behandelt Duplikate bzw. ältere Versionen eines Dokuments (keep bleibt unverändert): action "mark" verknüpft und setzt das Schlagwort „Duplikat“ bzw. „ältere Version“; "subfolder" verschiebt sie zusätzlich in den Unterordner Duplikate bzw. Ältere Versionen neben keep; "delete" legt sie in den Papierkorb (wiederherstellbar, bis der Benutzer den Papierkorb leert; immer mit Rückfrage).',
       schema: z.object({
         keep: z.string().min(1),
         duplicates: list,
         as: z.enum(['duplicate', 'older_version']).default('duplicate'),
-        action: z.enum(['mark', 'subfolder']).default('mark'),
+        action: z.enum(['mark', 'subfolder', 'delete']).default('mark'),
       }),
-      risk: 'write',
+      risk: (a) => (a.action === 'delete' ? 'critical' : 'write'),
       count: (a, ctx) => affectedCount(ctx, a.duplicates),
       label: (a) =>
-        `Markiere ${a.duplicates.length} Dokument(e) als ${a.as === 'duplicate' ? 'Duplikat' : 'ältere Version'}${a.action === 'subfolder' ? ' und verschiebe sie' : ''}`,
+        a.action === 'delete'
+          ? `Lege ${a.duplicates.length} Duplikat(e) in den Papierkorb`
+          : `Markiere ${a.duplicates.length} Dokument(e) als ${a.as === 'duplicate' ? 'Duplikat' : 'ältere Version'}${a.action === 'subfolder' ? ' und verschiebe sie' : ''}`,
       run: (a, ctx) => treatDuplicates({ deps, ctx }, a),
     }),
     defineTool({

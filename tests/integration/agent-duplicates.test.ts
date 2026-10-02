@@ -178,7 +178,7 @@ describe('agent duplicate tools', () => {
     const tool = tools.get('mark_duplicates')!;
     const args = tool.schema.parse({ keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup)], as: 'duplicate', action: 'mark' });
     expect(riskOf(tool, args)).toBe('write');
-    expect(tool.schema.safeParse({ keep: 'D1', duplicates: ['D2'], action: 'delete' }).success, 'Archivist never deletes a document').toBe(false);
+    expect(riskOf(tool, tool.schema.parse({ keep: 'D1', duplicates: ['D2'], action: 'delete' }))).toBe('critical');
 
     const out = await tool.run(args, ctx);
 
@@ -208,6 +208,25 @@ describe('agent duplicate tools', () => {
       status: 'confirmed',
     });
     expect(row(keep)!.archiveRelPath).toBe('private/vertraege/Vertrag final.txt');
+  });
+
+  it('moves duplicates into the trash, never the kept document; undo brings them back', async () => {
+    const keep = await archived('Foto-Liste.txt', 'Liste A', { title: 'Foto-Liste' });
+    const dup = await archived('Foto-Liste Kopie.txt', 'Liste A Kopie', { title: 'Foto-Liste Kopie' });
+    app.services.graph.link(dup, keep, 'duplicate_of', { status: 'proposed' });
+
+    const out = await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup), ctx.refs.doc(keep)], action: 'delete' });
+
+    expect(out).toMatchObject({ changed: 1, change: '1 Duplikat(e) in den Papierkorb gelegt' });
+    expect(row(dup)).toBeUndefined();
+    expect(row(keep)).toBeDefined();
+    const trashed = lastAudit('document.trash')!;
+    expect(trashed).toMatchObject({ undoable: true, entityIds: [dup], trigger: 'agent' });
+
+    await app.services.undo.undo(trashed.id);
+
+    expect(row(dup)).toMatchObject({ title: 'Foto-Liste Kopie' });
+    expect(app.services.graph.relationsOf(keep, { types: ['duplicate_of'] })).toHaveLength(1);
   });
 
   it('merges duplicate topics through the existing merge flow', async () => {

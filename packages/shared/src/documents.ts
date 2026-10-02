@@ -84,3 +84,13 @@ export const DocumentRecord = z.object({
   archivedAt: IsoDate.nullable(),
 });
 export type DocumentRecord = z.infer<typeof DocumentRecord>;
+
+/** A document in the trash: restorable until the trash is emptied. */
+export const TrashEntry = z.object({
+  auditId: Id,
+  documentId: Id,
+  title: z.string(),
+  trashedAt: IsoDate,
+  files: z.array(z.string()),
+});
+export type TrashEntry = z.infer<typeof TrashEntry>;

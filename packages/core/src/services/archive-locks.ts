@@ -63,6 +63,17 @@ export class ArchiveLocks {
     }
   }
 
+  /** Like `guarded`, and exclusive for one document: another operation on it right now is a conflict. */
+  async guardedFor<T>(documentId: string, operation: () => Promise<T>): Promise<T> {
+    if (this.busy.has(documentId)) throw new AppError('archive_conflict', DOCUMENT_BUSY, { retryable: true });
+    this.busy.add(documentId);
+    try {
+      return await this.guarded(operation);
+    } finally {
+      this.busy.delete(documentId);
+    }
+  }
+
   /** Runs one file operation for a document unless another one is already working on it. */
   async onePerDocument(documentId: string, operation: () => Promise<ArchiveOutcome>): Promise<ArchiveOutcome> {
     if (this.busy.has(documentId)) return outcomeWithoutChange({ documentId, outcome: 'conflict', message: DOCUMENT_BUSY });

@@ -15,19 +15,19 @@ const stepOutcome = async (runId: string | null | undefined, tool: string) =>
   (await app.ok('agent:run', { id: runId! })).steps.find((s) => s.tool === tool)?.outcome;
 
 describe('Exceptions that ask in every mode (#298)', () => {
-  it('cannot delete duplicates: the action does not exist and both documents stay', async () => {
+  it('moving duplicates to the trash is only ever a proposal with the strong confirmation, even in „Auto“', async () => {
     const keep = await archived(app, { name: 'rechnung.txt', content: 'Rechnung 17', folder: 'private/finanzen' });
     const copy = await archived(app, { name: 'rechnung-kopie.txt', content: 'Rechnung 17 Kopie', folder: 'private/finanzen' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'rechnung' } }] },
       { calls: [{ name: 'mark_duplicates', args: { keep: 'D1', duplicates: ['D2'], action: 'delete' } }] },
-      { text: 'Löschen kann ich nicht.' },
+      { text: 'Bitte bestätige das Löschen.' },
     );
     const res = await app.ok('chat:send', { text: 'Lösch die Kopie der Rechnung' });
-    expect(await stepOutcome(res.assistantMessage.runId, 'mark_duplicates')).toBeUndefined();
+    expect(await stepOutcome(res.assistantMessage.runId, 'mark_duplicates')).toBe('proposed');
     expect(app.services.documents.findRow(copy)).toBeTruthy();
     expect(app.services.documents.findRow(keep)).toBeTruthy();
-    expect(res.assistantMessage.actions.find((a) => a.actionType === 'agent_batch')).toBeUndefined();
+    expect(res.assistantMessage.actions.find((a) => a.actionType === 'agent_batch')?.requiredConfirmation).toBe('strong');
   });
 
   it('moving originals out of their place (archive_inbox mode move) is only ever a proposal, even in „Auto“', async () => {

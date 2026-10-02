@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DocumentRecord, DocumentStatus } from '@archivist/shared';
+import type { DocumentRecord, DocumentStatus, TrashEntry } from '@archivist/shared';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, scanFiles, scanRoots } from '../db/schema';
@@ -17,6 +17,7 @@ import { isArchivedStatus, type DocRow, type DocumentDeps, type NewDocument } fr
 import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
 import { documentRecord, newDocumentRow, searchContent } from './document-record';
 import { DocumentRereader } from './document-reread';
+import { DocumentTrash, type FileOperationLock } from './document-trash';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
@@ -37,6 +38,8 @@ export class DocumentService {
   private readonly analyzer: DocumentAnalyzer;
   private readonly rereader: DocumentRereader;
   private readonly metadata: DocumentMetadataEditor;
+  private readonly trash: DocumentTrash;
+  private fileLock: FileOperationLock = { guardedFor: (_documentId, operation) => operation() };
 
   constructor(
     private readonly ctx: AppContext,
@@ -59,6 +62,8 @@ export class DocumentService {
     this.rereader = new DocumentRereader(this.deps);
     this.metadata = new DocumentMetadataEditor(this.deps);
     this.metadata.registerUndo(undo);
+    this.trash = new DocumentTrash(this.deps, () => this.fileLock);
+    this.trash.registerUndo(undo);
   }
 
   private get db() {
@@ -297,5 +302,25 @@ export class DocumentService {
     } catch (err) {
       this.ctx.logger.warn('documents', 'Indexing failed', { documentId: id, error: err });
     }
+  }
+
+  /** The archive's file locks, set by the archive service, so trash moves never run into archive operations. */
+  useFileLock(lock: FileOperationLock): void {
+    this.fileLock = lock;
+  }
+
+  /** Deleting with a safety net (level 2): the document goes to the trash and can be restored via undo. */
+  moveToTrash(id: string, opts: { confirmed: boolean; trigger: string }): Promise<{ auditId: string }> {
+    if (!opts.confirmed) throw new AppError('permission_error', 'Das Löschen eines Dokuments erfordert eine ausdrückliche Bestätigung.');
+    return this.trash.moveToTrash({ id, trigger: opts.trigger });
+  }
+
+  trashEntries(): TrashEntry[] {
+    return this.trash.list();
+  }
+
+  /** Empties the trash for good (level 3: second explicit confirmation). */
+  emptyTrash(request: { confirmed: boolean; permanentlyConfirmed: boolean }): Promise<{ deletedFiles: number; documents: number }> {
+    return this.trash.empty(request);
   }
 }

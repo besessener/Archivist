@@ -136,6 +136,12 @@ export class AuditService {
     return row;
   }
 
+  /** Ends the undo of an entry whose undo data no longer exists (e.g. files deleted from the trash); the entry itself stays. */
+  endUndo(id: string): void {
+    this.ctx.database.db.update(auditLog).set({ undoType: null, undoData: null }).where(eq(auditLog.id, id)).run();
+    this.ctx.events.changed('audit');
+  }
+
   markUndone(id: string): void {
     this.ctx.database.db.update(auditLog).set({ undoneAt: nowIso() }).where(eq(auditLog.id, id)).run();
     this.ctx.events.changed('audit');

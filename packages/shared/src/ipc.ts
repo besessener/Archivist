@@ -16,7 +16,7 @@ import {
 import { AuditEntry, LlmTransmission, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
 import { Decision, DecisionInput, DecisionPatch, DecisionStatus } from './decisions';
-import { DocumentRecord, DocumentStatus } from './documents';
+import { DocumentRecord, DocumentStatus, TrashEntry } from './documents';
 import { EventInput, EventRecord } from './events';
 import { Job } from './jobs';
 import { EntityDetail, GraphEntity, GraphRelation, KnowledgeCreateResult, SearchResult, TimelineEntry, TimelineQuery } from './knowledge';
@@ -264,6 +264,14 @@ export const ipcContract = {
   'documents:setLlmExcluded': channel(z.object({ id: Id, excluded: z.boolean() }), DocumentRecord),
   /** "Trotzdem importieren": takes a file out of quarantine into the inbox and starts the analysis */
   'documents:releaseQuarantine': channel(z.object({ id: Id, confirmed: Confirmed }), DocumentRecord),
+  /** Deleting with a safety net: into the trash, restorable via `audit:undo` until the trash is emptied */
+  'documents:trash': channel(z.object({ id: Id, confirmed: Confirmed }), z.object({ auditId: Id })),
+  'trash:list': channel(z.object({}), z.array(TrashEntry)),
+  /** Level 3: deleting for good needs the second, explicit confirmation */
+  'trash:empty': channel(
+    z.object({ confirmed: Confirmed, permanentlyConfirmed: Confirmed }),
+    z.object({ deletedFiles: z.number().int().min(0), documents: z.number().int().min(0) }),
+  ),
 
   // --- Scanner ---
   'scanner:addDirectory': channel(z.object({ path: z.string().min(1), recursive: z.boolean().default(true) }), ScanRoot),

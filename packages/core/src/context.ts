@@ -15,6 +15,8 @@ export interface DataPaths {
   backups: string;
   inbox: string;
   quarantine: string;
+  /** Documents moved to the trash, until restored or the trash is emptied. */
+  trash: string;
 }
 
 export function resolveDataPaths(root: string, archiveOverride?: string): DataPaths {
@@ -29,6 +31,7 @@ export function resolveDataPaths(root: string, archiveOverride?: string): DataPa
     backups: path.join(resolvedRoot, 'backups'),
     inbox: path.join(resolvedRoot, 'inbox'),
     quarantine: path.join(resolvedRoot, 'quarantine'),
+    trash: path.join(resolvedRoot, 'trash'),
   };
 }
 
