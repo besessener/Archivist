@@ -4,14 +4,15 @@
 
 Unit- und Integrationstests laufen gegen eine echte SQLite-Datenbank und einen Fake-LLM-Endpunkt. Abgedeckt sind u. a.:
 
-Decision-Rückfragen, Zod-Validierung von LLM-Ausgaben, IPC-Eingabevalidierung, Pfadnormalisierung, Path-Traversal, Symlink-Ausbruch, Scan-Bereichsgrenzen, Datei-Ausschlüsse, Duplikaterkennung, Bestätigungsworkflows, Archivieren durch Kopieren/Verschieben, Undo (inkl. Konflikte), Datenbankmigrationen, Job-Queue nach Neustart, Widerspruchserkennung mit kontrollierten Beispielen, Maskierung von Schlüsseln in Logs, Verhalten bei nicht erreichbarem LLM, Worker-Threads, Backups, Renderer-Auslieferung/CSP.
+Decision-Rückfragen, Agentenläufe gegen beide Anbieter-Formate (OpenAI Responses, Anthropic Messages), Zod-Validierung von LLM-Ausgaben, IPC-Eingabevalidierung, Pfadnormalisierung, Path-Traversal, Symlink-Ausbruch, Scan-Bereichsgrenzen, Datei-Ausschlüsse, Duplikaterkennung, Bestätigungsworkflows, Archivieren durch Kopieren/Verschieben, Undo (inkl. Konflikte), Datenbankmigrationen, Job-Queue nach Neustart, Widerspruchserkennung mit kontrollierten Beispielen, Maskierung von Schlüsseln in Logs, Verhalten bei nicht erreichbarem LLM, Worker-Threads, Backups, Renderer-Auslieferung/CSP.
 
 **Coverage**: `npm run test:coverage` (Bericht in `coverage/`). Die Schwellen in `vitest.config.mts` liegen knapp unter dem Ist-Wert und werden nur angehoben, nie gesenkt.
 
 ## Playwright (`tests/e2e`)
 
 - Jeder Test startet die echte Electron-App mit frischem Datenordner und einem lokalen Fake-LLM-HTTP-Server.
-- Aufgeteilt nach Funktionen: Einrichtung, Import/Archivierung, OCR, Chat-Entscheidungen, Chat-Eingabe, Timeline, Scan.
+- Aufgeteilt nach Funktionen: Einrichtung, Import/Archivierung, OCR, Chat-Entscheidungen, Chat-Eingabe, Agentenmodus, Timeline, Scan.
+- Der Fake-LLM-Server antwortet nur dann mit Werkzeugaufrufen, wenn eine Spec Agenten-Runden vorgibt (`llm.agentTurns`); alle anderen Specs laufen über den regelbasierten Chat.
 - Page Objects (`tests/e2e/pages`) mit `locators` und `do`, sodass die Specs wie eine Beschreibung des Verhaltens lesen.
 - `accessibility.spec.ts` prüft jeden Bereich der Navigation mit axe-core (WCAG 2.2 AA); schwere und kritische Verstöße lassen den Test fehlschlagen.
 - Lokal: `npm run build && xvfb-run -a npx playwright test` (unter Windows ohne `xvfb-run`).

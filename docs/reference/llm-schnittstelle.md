@@ -40,7 +40,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 ## Antworten auf Wissensfragen
 
 - Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen. Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen.
-- Bleibt keine belegte Aussage übrig, erscheint die Antwort des Modells nur als „Nicht belegt (Einschätzung des Modells)“, die Sicherheit wird auf höchstens 30 % gesetzt, und gefundene, aber nicht zitierte Quellen sind als „gefunden, nicht zitiert“ gekennzeichnet.
+- Bleibt keine belegte Aussage übrig, erscheint die Antwort des Modells nur als „Nicht belegt (Einschätzung des Modells)“, die Einschätzung wird auf „sehr unsicher“ gesetzt (Hinweis „Bitte prüfe diese Antwort“), und gefundene, aber nicht zitierte Quellen sind als „gefunden, nicht zitiert“ gekennzeichnet.
 - Zu gefundenen Entscheidungen kommen ihre Quelldokumente mit der passenden Textstelle in den Prompt.
 - Über **bestätigte** Beziehungen der drei besten Treffer kommen bis zu drei weitere Einträge hinzu (höchstens zwei je Treffer, halbe Gewichtung), mit dem Vermerk „Hinzugekommen über die bestätigte Verknüpfung: …“. Vorgeschlagene, abgelehnte und veraltete Beziehungen werden nie genutzt; Freigaben gelten wie für Treffer.
 
@@ -53,6 +53,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 ## Schutz vor Prompt-Injection
 
 - Dokumenttexte, Verlauf und Kontextlisten sind in jedem Prompt als Daten markiert.
+- Agentenmodus: Wird ein Dokument nach dem Lesen ausgeschlossen oder sein Ordner gesperrt, gehen frühere Werkzeugergebnisse und Antworten, die es nennen, nicht erneut mit; im Verlauf steht stattdessen „Ergebnis ausgeblendet“. Gedankenblöcke des Anbieters (Thinking, Reasoning) früherer Antworten entfallen dann ganz.
 - Vorschläge führt der Chat nur nach einem eindeutigen „ja“ des Benutzers aus, nie auf eine Einordnung des Modells hin.
 - Frühere Antworten aus dem Archiv gehen nicht als Text in die Intent-Erkennung ein.
 - Themen und Projekte, die unverändert aus einem Dokument übernommen wurden, werden dem Modell erst nach deiner Bestätigung (oder sobald du den Namen selbst verwendest) als bekannt genannt.
