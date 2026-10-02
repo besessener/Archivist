@@ -1896,8 +1896,16 @@ export class ChatService {
     });
     const uncertainties = [...ans.uncertainties, ...ans.missingInformation.map((m) => `Fehlt: ${m}`)];
     if (dropped.length) uncertainties.push(`${dropped.length} Aussage(n) des Modells ohne gültigen Quellenbeleg wurden verworfen.`);
-    if (ans.confidence < 0.5) uncertainties.push('Die Antwort ist nur mit geringer Sicherheit belegt.');
-    const parts = [ans.answer.trim()];
+    // Without a single fact backed by a valid source, the model's answer text is not shown as the answer (#166).
+    const backed = facts.length > 0;
+    const confidence = backed ? (dropped.length ? Math.min(ans.confidence, 0.6) : ans.confidence) : Math.min(ans.confidence, 0.3);
+    if (confidence < 0.5) uncertainties.push('Die Antwort ist nur mit geringer Sicherheit belegt.');
+    const parts = backed
+      ? [ans.answer.trim()]
+      : [
+          'Die gefundenen Quellen belegen keine Antwort auf deine Frage.',
+          ...(ans.answer.trim() ? [`**Nicht belegt (Einschätzung des Modells)**\n${ans.answer.trim()}`] : []),
+        ];
     if (facts.length)
       parts.push(
         `**Belegte Fakten**\n${facts
@@ -1922,16 +1930,18 @@ export class ChatService {
           )
           .join('\n')}`,
       );
-    if (uncertainties.length) parts.push(`**Unsicherheiten**\n${uncertainties.map((u) => `• ${u}`).join('\n')}`);
     const used = new Set(valid([...ans.usedSourceIds, ...facts.flatMap((f) => f.sourceIds)]));
     const usedSources = numbered.filter((_, i) => used.has(`S${i + 1}`));
-    const finalSources = usedSources.length ? usedSources : stripped.slice(0, 3);
+    if (!usedSources.length) uncertainties.push('Die angezeigten Quellen wurden gefunden, aber in der Antwort nicht zitiert.');
+    if (uncertainties.length) parts.push(`**Unsicherheiten**\n${uncertainties.map((u) => `• ${u}`).join('\n')}`);
+    // nothing cited: the top hits stay visible, but clearly as found, not as evidence
+    const finalSources = usedSources.length ? usedSources : stripped.slice(0, 3).map((src) => ({ ...src, title: `${src.title} (gefunden, nicht zitiert)` }));
     return {
       intent: 'knowledge_question',
       content: parts.join('\n\n'),
       sources: finalSources,
       context: this.contextFromSources(finalSources),
-      confidence: ans.confidence,
+      confidence,
       uncertainties,
       state,
     };

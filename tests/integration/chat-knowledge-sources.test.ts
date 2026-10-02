@@ -171,3 +171,46 @@ describe('Decision sources are part of the answer (#165)', () => {
     expect(r.assistantMessage.sources.map((s) => s.id)).toEqual(expect.arrayContaining([d.id]));
   });
 });
+
+describe('Unbacked answers do not look verified (#166)', () => {
+  beforeEach(async () => {
+    app = await createTestApp({ privacy: 'auto' });
+    await app.services.notes.create({ title: 'Zaun', content: 'Der Zaun am Garten soll irgendwann erneuert werden.' });
+    app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: 'Zaun' }));
+  });
+
+  it('an answer without a single validly cited fact is shown as unbacked, with low confidence and uncited sources marked', async () => {
+    app.llm.on('KnowledgeAnswer', () => ({
+      ...answer,
+      answer: 'Sie haben am 12.05.2019 entschieden, den Zaun auf 2 Meter zu erhöhen.',
+      facts: [{ statement: 'Zaun wird 2 Meter hoch', sourceIds: ['S9'] }],
+      usedSourceIds: [],
+      confidence: 0.95,
+    }));
+
+    const m = (await app.ok('chat:send', { text: 'Was haben wir zum Zaun entschieden?' })).assistantMessage;
+
+    expect(m.content).toMatch(
+      /^Die gefundenen Quellen belegen keine Antwort auf deine Frage\.\n\n\*\*Nicht belegt \(Einschätzung des Modells\)\*\*\nSie haben am 12\.05\.2019/,
+    );
+    expect(m.confidence).toBeLessThanOrEqual(0.3);
+    expect(m.sources.length).toBeGreaterThan(0);
+    expect(m.sources.every((s) => s.title.endsWith('(gefunden, nicht zitiert)'))).toBe(true);
+    expect(m.uncertainties).toContain('Die angezeigten Quellen wurden gefunden, aber in der Antwort nicht zitiert.');
+  });
+
+  it('a backed answer is shown as it is, with its cited source', async () => {
+    app.llm.on('KnowledgeAnswer', () => ({
+      ...answer,
+      answer: 'Der Zaun soll erneuert werden.',
+      facts: [{ statement: 'Der Zaun soll erneuert werden', sourceIds: ['S1'] }],
+      confidence: 0.8,
+    }));
+
+    const m = (await app.ok('chat:send', { text: 'Was ist mit dem Zaun?' })).assistantMessage;
+
+    expect(m.content).toMatch(/^Der Zaun soll erneuert werden\./);
+    expect(m.confidence).toBe(0.8);
+    expect(m.sources.map((s) => s.title)).toEqual(['1. Zaun']);
+  });
+});

@@ -181,7 +181,7 @@ Archivist/
 - Verwendet wird die OpenAI-kompatible **Responses API** (`POST {baseUrl}/responses`), z. B. `https://<resource>.openai.azure.com/openai/v1`. Authentifizierung wird als `Authorization: Bearer` und `api-key` gesendet.
 - Strukturierte Ausgaben: Das JSON-Schema wird aus dem Zod-Schema erzeugt und im Prompt mitgegeben, `text.format = json_object` angefordert (die Eingabe nennt dafür immer das Wort „JSON“, das die Responses API in der Eingabe – nicht in den Instructions – verlangt); die Antwort wird mit Zod validiert. Bei ungültiger Ausgabe genau eine Korrekturanfrage, danach Verwerfen + sichtbarer technischer Fehler. **Ungültige Ausgaben lösen nie Datei- oder Datenbankänderungen aus.**
 - Nicht erreichbarer Endpunkt: verständliche Fehlermeldung, Retries bei transienten Fehlern (Netzwerk/429/5xx), Status in der Kopfzeile; der Chat fällt auf eine regelbasierte Auswertung bzw. lokale Trefferlisten zurück und kennzeichnet das deutlich.
-- Antworten auf Wissensfragen: Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen – Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen.
+- Antworten auf Wissensfragen: Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen – Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen. Bleibt keine belegte Aussage übrig, erscheint die Antwort des Modells nur als „Nicht belegt (Einschätzung des Modells)“, die Sicherheit wird auf höchstens 30 % gesetzt und gefundene, aber nicht zitierte Quellen sind als „gefunden, nicht zitiert“ gekennzeichnet. Zu gefundenen Entscheidungen kommen ihre Quelldokumente mit der passenden Textstelle in den Prompt.
 
 ## Entwicklung, Tests, Build
 
