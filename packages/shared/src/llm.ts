@@ -123,17 +123,46 @@ export const ChatIntent = z.object({
     'Nur bei decision_new: clear = ausdrücklich getroffene Entscheidung; unsure = könnte auch Plan, Ereignis, Status oder Notiz sein',
   ),
   segment: opt(z.string()).describe('Der Teil der Nachricht, auf den sich diese Absicht bezieht'),
+  documentIds: opt(z.array(z.string()).transform((a) => a.slice(0, 200))).describe(
+    'IDs der gemeinten Dokumente aus Werkzeugergebnissen (z. B. „D3“) – bei document_search, archive_structure und archive_reorganize',
+  ),
 });
 export type ChatIntent = z.infer<typeof ChatIntent>;
 
-/** Result of the intent analysis: a message can contain several intents. */
-export const ChatAnalysis = z.object({
-  intents: z.array(ChatIntent).min(1).max(5),
-  clarification: opt(z.string()).describe('Rückfrage an den Benutzer, wenn die Absicht unklar ist und nichts geraten werden soll'),
-  saveAs: opt(z.enum(['decision', 'event', 'note', 'nothing'])).describe(
-    'Nur als Antwort auf die offene Rückfrage „Entscheidung, Ereignis, Notiz oder nichts speichern?“; sonst null',
-  ),
+/** Read-only tools the chat agent can call before it decides what to do. */
+export const AGENT_TOOLS = ['find_documents', 'search', 'document_details', 'list_folders', 'list_subjects', 'archive_overview'] as const;
+export const AgentToolName = z.enum(AGENT_TOOLS);
+export type AgentToolName = z.infer<typeof AgentToolName>;
+
+export const AgentToolCall = z.object({
+  tool: AgentToolName,
+  args: z
+    .record(z.string(), z.unknown())
+    .nullish()
+    .transform((a) => a ?? {}),
 });
+export type AgentToolCall = z.infer<typeof AgentToolCall>;
+
+/**
+ * One step of the chat agent: either tool calls (read-only, results come back in the next step) or the result –
+ * intents to execute and/or an answer of its own. A message can contain several intents.
+ */
+export const ChatAnalysis = z
+  .object({
+    tools: opt(z.array(AgentToolCall).transform((a) => a.slice(0, 4))).describe(
+      'Werkzeugaufrufe, wenn du für die Entscheidung erst Daten aus dem Archiv brauchst; dann intents leer lassen',
+    ),
+    intents: z.array(ChatIntent).max(5).default([]),
+    reply: opt(z.string()).describe('Eigene Antwort an den Benutzer, gestützt auf die Werkzeugergebnisse (z. B. eine Anzahl oder Übersicht)'),
+    replyDocumentIds: opt(z.array(z.string()).transform((a) => a.slice(0, 50))).describe('Dokument-IDs (z. B. „D3“), auf die sich reply stützt'),
+    clarification: opt(z.string()).describe('Rückfrage an den Benutzer, wenn die Absicht unklar ist und nichts geraten werden soll'),
+    saveAs: opt(z.enum(['decision', 'event', 'note', 'nothing'])).describe(
+      'Nur als Antwort auf die offene Rückfrage „Entscheidung, Ereignis, Notiz oder nichts speichern?“; sonst null',
+    ),
+  })
+  .refine((a) => a.tools?.length || a.intents.length || a.reply?.trim() || a.clarification?.trim() || a.saveAs, {
+    message: 'Liefere tools, intents, reply oder clarification.',
+  });
 export type ChatAnalysis = z.infer<typeof ChatAnalysis>;
 
 export const DocumentClassification = z.object({

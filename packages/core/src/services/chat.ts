@@ -27,6 +27,7 @@ import { isInside, sanitizeCategoryPath } from '../util/paths';
 import { nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { isSelfReference } from '../util/person-names';
 import type { ActionService } from './actions';
+import { AGENT_TOOL_HELP, AgentRefs, ChatTools, toolCallKey } from './chat-tools';
 import type { ArchiveService } from './archive';
 import { chooseTargetFolder, folderLabel, folderOf, groupByFolder, splitSubjects, type FolderGroup } from './archive-structure';
 import type { ContradictionService } from './contradictions';
@@ -394,7 +395,39 @@ export function shortAnswer(text: string): 'yes' | 'no' | null {
   return null;
 }
 
-const INTENT_HELP = `Du bist der Intent-Klassifikator von Archivist, einem persönlichen Archivar. Bestimme die Absicht der Benutzernachricht und extrahiere strukturierte Angaben.
+/** At most this many agent steps per message; the last one must decide. */
+const AGENT_MAX_STEPS = 6;
+/** Older tool results are shortened once the steps grow beyond this, so the prompt stays within the input limit. */
+const AGENT_STEPS_MAX_CHARS = 12000;
+
+/** The tool calls and results so far, for the next agent step. */
+function agentSteps(steps: Array<{ call: string; result: string }>, step: number, last: boolean): string {
+  if (!steps.length) return '';
+  let budget = AGENT_STEPS_MAX_CHARS;
+  const lines = [...steps]
+    .reverse()
+    .map((s, i, all) => {
+      const full = `[${all.length - i}] ${s.call}\n${s.result}`;
+      const text = full.length <= budget ? full : `[${all.length - i}] ${s.call}\n${truncate(s.result, 300)} [gekürzt – die IDs daraus gelten weiter]`;
+      budget = Math.max(0, budget - text.length);
+      return text;
+    })
+    .reverse();
+  return `\n\nDeine bisherigen Werkzeugaufrufe und ihre Ergebnisse (Schritt ${step} von ${AGENT_MAX_STEPS}):\n${lines.join('\n\n')}${
+    last ? '\n\nDas ist dein letzter Schritt: rufe keine Werkzeuge mehr auf, sondern liefere intents und/oder reply.' : ''
+  }`;
+}
+
+const INTENT_HELP = `Du bist der Agent von Archivist, einem persönlichen Archivar. Verstehe die Nachricht des Benutzers, beschaffe dir bei Bedarf mit Werkzeugen die nötigen Daten aus dem Archiv und lege fest, was zu tun ist.
+
+Arbeitsweise in Schritten:
+- Brauchst du Daten aus dem Archiv, um die Nachricht richtig auszuführen oder zu beantworten (z. B. welche Dokumente gemeint sind – nach Dateityp, Name, Ordner, Zeitraum, Thema –, wie die Ablage aussieht, wie viele es sind), rufe Werkzeuge über „tools“ auf und lasse intents leer. Die Ergebnisse bekommst du im nächsten Schritt. Denke selbst nach: „PowerPoint-Folien“ sind z. B. Dateien mit Endung pptx/ppt, „Scans“ oft pdf/jpg/png.
+- Ist klar, was zu tun ist, liefere intents (Ausführen) und/oder reply (eine Antwort, die du aus den Werkzeugergebnissen selbst geben kannst, z. B. eine Anzahl oder Übersicht; mit replyDocumentIds). Ist ohne Daten klar, was zu tun ist (z. B. eine Notiz, Entscheidung, Erinnerung), antworte sofort ohne Werkzeuge.
+- Erfinde keine Dokumente oder IDs. Verwende in documentIds nur IDs aus Werkzeugergebnissen (D3) oder ganze Ergebnismengen (S1). Passt eine Ergebnismenge nur teilweise, nenne die passenden D-IDs einzeln oder grenze mit einem weiteren Aufruf ein.
+- Werkzeuge ändern nichts. Geändert wird nur über intents; Verschieben und andere kritische Änderungen werden als Vorschlag vorbereitet und erst nach Bestätigung des Benutzers ausgeführt.
+- Liefern die Werkzeuge nichts Passendes, sag das in reply ehrlich und schlage vor, wie der Benutzer es genauer sagen kann.
+
+${AGENT_TOOL_HELP}
 
 Absichten (intent):
 - decision_new: Der Benutzer teilt eine getroffene Entscheidung mit („Wir haben entschieden, dass …“).
@@ -402,7 +435,7 @@ Absichten (intent):
 - decision_supersede: Eine neue Entscheidung ersetzt oder widerruft eine ältere.
 - note_capture: Wissen oder eine Notiz festhalten.
 - knowledge_question: Frage zum Archivwissen (Wann/Warum/Wer/Wie/„Haben wir jemals …“/Haltungsänderung/Widersprüche).
-- document_search: Dokumente suchen oder anzeigen (nicht, um ihre Verzeichnisse zu bewerten).
+- document_search: Dokumente suchen oder anzeigen (nicht, um ihre Verzeichnisse zu bewerten). Hast du die Dokumente mit Werkzeugen gefunden, setze documentIds.
 - timeline_query: Chronologische Übersicht zu Thema/Projekt/Zeitraum.
 - event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description. Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.
 - open_item_new / open_item_update / open_item_close: offene Punkte erfassen/ändern/schließen.
@@ -411,7 +444,7 @@ Absichten (intent):
 - archive_execute: Dokumente, die NOCH NICHT archiviert sind (Inbox, Scan), ins Archiv übernehmen. Bereits archivierte Dateien in andere Verzeichnisse zu legen ist archive_reorganize.
 - archive_status: Zahlen und Zustand des Archivs erfragen (wie viele Dokumente, Jobs, offene Hinweise).
 - archive_structure: Die Ablage prüfen: Sind die Dateien bzw. Verzeichnisse konsistent und sinnvoll geordnet? In welchen Verzeichnissen liegen die Dokumente zu einem Thema? Gemeint sind die Verzeichnisse, nicht die Inhalte. Setze topic/project/query nur, wenn die Nachricht ein Thema nennt (z. B. „Bildungsurlaub 2026“); bezieht sie sich auf eben genannte Dokumente („die“, „alle“, „sie“), lasse sie leer.
-- archive_reorganize: Bereits archivierte Dokumente in EIN gemeinsames Verzeichnis legen, zusammenführen oder umsortieren („können die nicht alle ins selbe Verzeichnis?“, „leg alle Bildungsurlaub-Dateien zusammen“, „gehören alle in einen Ordner“). path nur, wenn ein Zielverzeichnis genannt wird; Thema wie bei archive_structure.
+- archive_reorganize: Bereits archivierte Dokumente in EIN gemeinsames Verzeichnis legen, zusammenführen oder umsortieren („können die nicht alle ins selbe Verzeichnis?“, „leg alle Bildungsurlaub-Dateien zusammen“, „gehören alle in einen Ordner“). Auch Dokumente, die nach Dateityp, Name, Ordner o. Ä. ausgewählt werden („verschiebe alle PowerPoint-Dateien nach presentations“): dann erst mit find_documents suchen und documentIds setzen. path nur, wenn ein Zielverzeichnis genannt wird (relativ zum Archiv); Thema wie bei archive_structure.
 - scan_start: Manuellen Scan nach neuen Dokumenten starten.
 - exclude_path: Datei oder Verzeichnis von künftigen Scans ausschließen.
 - contradiction_check: Inhaltliche Widersprüche zwischen Entscheidungen prüfen (nicht für Verzeichnisse oder Ordnung der Ablage: das ist archive_structure).
@@ -422,7 +455,7 @@ Mehrere Absichten: Eine Nachricht kann mehrere Anliegen enthalten (z. B. Notiz +
 
 Entscheidung oder nicht? Setze decisionCertainty=clear nur, wenn ausdrücklich eine Entscheidung mitgeteilt wird („wir haben entschieden/beschlossen …“, „ab jetzt machen wir …“). Setze decisionCertainty=unsure, wenn es auch ein Plan, eine Absicht, ein Ereignis („habe eingereicht“), ein Status oder eine bloße Notiz sein könnte. Rate in diesem Fall nicht: die Rückfrage stellt der Agent.
 
-Unklare Absicht: Ist die Absicht nicht erkennbar und wäre jede Annahme geraten, liefere intents=[{intent:"unknown"}] und formuliere in „clarification“ eine kurze, konkrete Rückfrage auf Deutsch. Sprich den Benutzer darin mit „du“ an.
+Unklare Absicht: Ist die Absicht auch nach Nachsehen im Archiv nicht erkennbar und wäre jede Annahme geraten, liefere intents=[{intent:"unknown"}] und formuliere in „clarification“ eine kurze, konkrete Rückfrage auf Deutsch. Sprich den Benutzer darin mit „du“ an.
 
 Regeln:
 - Extrahiere nur Angaben, die im Text stehen; fehlende Angaben = null. Erfinde nichts.
@@ -466,7 +499,11 @@ export class ChatService {
     private readonly privacy: PrivacyService,
     private readonly events: EventService,
     private readonly notes: NoteService,
-  ) {}
+  ) {
+    this.tools = new ChatTools(docs, search, graph, privacy);
+  }
+
+  private readonly tools: ChatTools;
 
   wire(deps: { actions: ActionService; archive: ArchiveService }): void {
     this.actions = deps.actions;
@@ -677,36 +714,94 @@ export class ChatService {
     return `Bisheriger Verlauf (zur Auflösung von Bezügen; nur die letzte Nachricht ist zu klassifizieren):\n${recent.map((m) => `${m.role === 'user' ? 'Benutzer' : 'Agent'}: ${truncate(m.content.replace(/\s+/g, ' '), 280)}`).join('\n')}\n\n`;
   }
 
-  private async classify(conv: string, text: string, state: ConvState): Promise<{ analysis: ChatAnalysis; viaLlm: boolean; llmError: string | null }> {
+  /**
+   * The agent: in each step the LLM either calls read-only tools (results come back in the next step) or decides –
+   * intents to execute and/or an answer of its own. Executing stays with the intent handlers, so follow-up questions
+   * and confirmations work as before. Without LLM (or if it fails), the message is evaluated rule-based.
+   */
+  private async classify(
+    conv: string,
+    text: string,
+    state: ConvState,
+  ): Promise<{ analysis: ChatAnalysis; viaLlm: boolean; llmError: string | null; agentReply: Reply | null }> {
     if (this.llm.canUse()) {
       try {
         const now = new Date();
-        const refs = this.promptContext(conv, text);
-        const analysis = await this.llm.completeJson(ChatAnalysis, {
-          schemaName: 'ChatIntent',
-          purpose: 'Chat-Intent',
-          instructions: INTENT_HELP,
-          input: `Heutiges Datum: ${promptNow(now)}\nOffene Rückfrage: ${this.pendingHint(state)}\nZuletzt gezeigte Dokumente: ${state.last?.documentIds?.length ?? 0}\n${refs.text}\nBekannte Themen: ${
-            this.graph
-              .listEntities({ type: 'topic', limit: 40 })
-              .map((e) => e.name)
-              .join(', ') || '–'
-          }\nBekannte Projekte: ${
-            this.graph
-              .listEntities({ type: 'project', limit: 40 })
-              .map((e) => e.name)
-              .join(', ') || '–'
-          }\n\n${this.historyHint(conv)}Nachricht des Benutzers:\n${text}`,
-        });
-        this.resolveRefs(analysis, refs);
-        return { analysis, viaLlm: true, llmError: null };
+        const prompt = this.promptContext(conv, text);
+        const refs = new AgentRefs(prompt.ids);
+        const base = `Heutiges Datum: ${promptNow(now)}\nOffene Rückfrage: ${this.pendingHint(state)}\nZuletzt gezeigte Dokumente: ${this.lastShown(state, refs)}\n${prompt.text}\nBekannte Themen: ${
+          this.graph
+            .listEntities({ type: 'topic', limit: 40 })
+            .map((e) => e.name)
+            .join(', ') || '–'
+        }\nBekannte Projekte: ${
+          this.graph
+            .listEntities({ type: 'project', limit: 40 })
+            .map((e) => e.name)
+            .join(', ') || '–'
+        }\n\n${this.historyHint(conv)}Nachricht des Benutzers:\n${text}`;
+        const steps: Array<{ call: string; result: string }> = [];
+        const seen = new Map<string, string>();
+        let analysis: ChatAnalysis | null = null;
+        for (let step = 1; step <= AGENT_MAX_STEPS; step += 1) {
+          this.throwIfCancelled();
+          const last = step === AGENT_MAX_STEPS;
+          const next = await this.llm.completeJson(ChatAnalysis, {
+            schemaName: 'ChatIntent',
+            purpose: 'Chat-Agent',
+            instructions: INTENT_HELP,
+            input: `${base}${agentSteps(steps, step, last)}`,
+            documentIds: [...refs.shared],
+          });
+          const calls = next.tools ?? [];
+          if (!calls.length || last) {
+            analysis = next;
+            break;
+          }
+          for (const call of calls) {
+            this.throwIfCancelled();
+            const key = toolCallKey(call);
+            const result = seen.has(key) ? `(Schon ausgeführt – Ergebnis siehe oben.)` : await this.tools.run(call, refs);
+            seen.set(key, result);
+            steps.push({ call: `${call.tool} ${JSON.stringify(call.args)}`, result });
+          }
+        }
+        const done = analysis!;
+        this.resolveRefs(done, refs);
+        // only tool calls even in the last step: nothing was decided
+        if (!done.intents.length && !done.reply?.trim() && !done.clarification?.trim() && !done.saveAs)
+          done.clarification = 'Das konnte ich nicht abschließen. Sag mir bitte genauer, was ich tun soll.';
+        return { analysis: done, viaLlm: true, llmError: null, agentReply: this.agentReply(done, refs, state) };
       } catch (err) {
         this.throwIfCancelled();
         const info = toErrorInfo(err);
-        return { analysis: { intents: [this.ruleBased(text, state)] }, viaLlm: false, llmError: info.message };
+        return { analysis: { intents: [this.ruleBased(text, state)] }, viaLlm: false, llmError: info.message, agentReply: null };
       }
     }
-    return { analysis: { intents: [this.ruleBased(text, state)] }, viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.' };
+    return { analysis: { intents: [this.ruleBased(text, state)] }, viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.', agentReply: null };
+  }
+
+  /** The documents shown last, as references the agent can use („die“, „alle davon“). */
+  private lastShown(state: ConvState, refs: AgentRefs): string {
+    const ids = state.last?.documentIds ?? [];
+    if (!ids.length) return '0';
+    return `${ids.length} (Ergebnismenge ${refs.set(ids)})`;
+  }
+
+  /** The agent's own answer (e.g. a count or an overview from the tool results), with the documents it is based on. */
+  private agentReply(analysis: ChatAnalysis, refs: AgentRefs, state: ConvState): Reply | null {
+    const content = analysis.reply?.trim();
+    if (!content) return null;
+    const ids = refs.documents(analysis.replyDocumentIds);
+    const sources = this.tools.sources(ids);
+    return {
+      intent: 'agent_answer',
+      content,
+      sources,
+      context: sources.length ? { documents: sources.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })) } : undefined,
+      confidence: 0.7,
+      state: sources.length ? { ...state, last: { ...(state.last ?? {}), documentIds: sources.map((d) => d.id), topic: null } } : state,
+    };
   }
 
   /**
@@ -761,7 +856,7 @@ export class ChatService {
   }
 
   /** Replaces the LLM's short ids with real ids; unknown or unsuitable ids are discarded. */
-  private resolveRefs(analysis: ChatAnalysis, refs: PromptRefs): void {
+  private resolveRefs(analysis: ChatAnalysis, refs: AgentRefs): void {
     const real = (v: string | null | undefined, prefix: string) => {
       const key = v?.trim().toUpperCase();
       return key?.startsWith(prefix) ? (refs.ids.get(key) ?? null) : null;
@@ -771,6 +866,7 @@ export class ChatService {
       if (i.reminder) i.reminder.targetId = real(i.reminder.targetId, 'P');
       if (i.decision) i.decision.supersedesId = real(i.decision.supersedesId, 'E');
       i.proposalId = real(i.proposalId, 'V');
+      if (i.documentIds) i.documentIds = refs.documents(i.documentIds);
     }
   }
 
@@ -1074,7 +1170,7 @@ export class ChatService {
       const choice = parseSaveChoice(text);
       if (choice) return this.applySaveChoice(conv, choice, state, saving);
     }
-    const { analysis, viaLlm, llmError } = await this.classify(conv, text, state);
+    const { analysis, viaLlm, llmError, agentReply } = await this.classify(conv, text, state);
     let reply: Reply;
     // without LLM: a short answer without a request of its own (even „ja“) is an attempt to answer the follow-up question
     const shortTry = !viaLlm && words(text) <= 8 && ['note_capture', 'proposal_confirm', 'proposal_reject'].includes(analysis.intents[0]?.intent ?? '');
@@ -1090,7 +1186,7 @@ export class ChatService {
         const more = await this.runWork(conv, others, [], { ...after, pending: null, queue: [] }, viaLlm, null);
         reply = this.mergeReplies([first, more], more.state ?? after);
       }
-    } else reply = await this.runIntents(conv, text, analysis, state, viaLlm);
+    } else reply = await this.runIntents(conv, text, analysis, agentReply?.state ?? state, viaLlm, agentReply);
     if (!viaLlm && llmError) {
       reply = {
         ...reply,
@@ -1114,13 +1210,13 @@ export class ChatService {
    * intents do not see it. If a new follow-up question arises, at most the intents after it are deferred –
    * with a visible hint. Unclear decisions are never saved without asking.
    */
-  private async runIntents(conv: string, text: string, analysis: ChatAnalysis, state: ConvState, viaLlm: boolean): Promise<Reply> {
+  private async runIntents(conv: string, text: string, analysis: ChatAnalysis, state: ConvState, viaLlm: boolean, lead: Reply | null = null): Promise<Reply> {
     const intents = analysis.intents
       // the same request twice counts once – but one update per open item („für alle drei“) are different requests
       .filter((i, idx, all) => all.findIndex((o) => intentKey(o) === intentKey(i)) === idx)
       .filter((i) => !(analysis.clarification && (i.intent === 'unknown' || i.intent === 'smalltalk')));
     const fresh: QueuedIntent[] = intents.map((intent) => ({ text, intent }));
-    return this.runWork(conv, fresh, state.queue ?? [], state, viaLlm, analysis.clarification ?? null);
+    return this.runWork(conv, fresh, state.queue ?? [], state, viaLlm, analysis.clarification ?? null, lead);
   }
 
   private async runWork(
@@ -1130,11 +1226,13 @@ export class ChatService {
     state: ConvState,
     viaLlm: boolean,
     clarification: string | null,
+    lead: Reply | null = null,
   ): Promise<Reply> {
     const work = [...fresh, ...queued];
     const old = state.pending ?? null;
     let consumed = false;
-    const replies: Reply[] = [];
+    // the agent's own answer comes first, the results of the executed requests follow
+    const replies: Reply[] = lead ? [lead] : [];
     let current: ConvState = { ...state, pending: null, queue: [] };
     let deferred: QueuedIntent[] = [];
     // optional follow-up questions (owner/due date, „Thema oder Projekt?“) do not hold up further requests
@@ -1239,7 +1337,10 @@ export class ChatService {
     for (const r of replies) for (const a of r.actions ?? []) actions.set(a.id, a);
     const confidences = replies.map((r) => r.confidence).filter((c): c is number => typeof c === 'number');
     return {
-      intent: replies.find((r) => r.intent !== 'clarification')?.intent ?? last.intent,
+      intent:
+        replies.find((r) => r.intent !== 'clarification' && r.intent !== 'agent_answer')?.intent ??
+        replies.find((r) => r.intent !== 'clarification')?.intent ??
+        last.intent,
       content: replies.map((r) => r.content).join('\n\n'),
       sources: [...sources.values()],
       context,
@@ -2004,7 +2105,9 @@ export class ChatService {
     const query = intent.query?.trim() || text;
     const topicName = intent.topic?.trim();
     let docs: SourceReference[] = [];
-    if (topicName) {
+    // documents the agent found with its tools: shown as they are, also ones still in the inbox
+    if (intent.documentIds?.length) docs = this.tools.sources(intent.documentIds);
+    if (!docs.length && topicName) {
       const ent = this.graph.findByName('topic', topicName) ?? this.graph.findByName('project', topicName);
       if (ent) {
         const rows = this.docs.list({ [ent.type === 'topic' ? 'topicId' : 'projectId']: ent.id, limit: 50 });
@@ -2682,6 +2785,8 @@ export class ChatService {
     forMove: boolean,
   ): Promise<{ docs: DocumentRecord[]; subject: string | null; choices?: string[] }> {
     const named = (intent.topic ?? intent.project)?.trim() || null;
+    // documents the agent picked with its tools (by file type, name, folder …) take precedence
+    if (intent.documentIds?.length) return { docs: this.archivedByIds(intent.documentIds), subject: named };
     const query = intent.query?.trim() || null;
     const subject = named ?? (query && subjectTokens(query).length ? query : null);
     if (subject) {
