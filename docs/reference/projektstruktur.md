@@ -30,13 +30,14 @@ archivist/
 | `packages/shared/src/ipc.ts` | IPC-Vertrag: Input- und Output-Schema je Kanal |
 | `packages/core/src/db/schema.ts` | Drizzle-Schema der Datenbank |
 | `packages/core/src/agent/runner.ts` | Agentenschleife |
+| `packages/core/src/agent/gate.ts` | Entscheidung je Werkzeugaufruf: ausführen, vorschlagen oder blockieren |
 | `apps/desktop/src/main.ts` | Electron-Main-Prozess |
 | `apps/desktop/electron-builder.yml` | Packaging-Konfiguration |
 | `.dependency-cruiser.cjs` | Architekturgrenzen |
 
 ## Services (`@archivist/core`)
 
-Erzeugt und verdrahtet in `packages/core/src/create-services.ts`.
+Erzeugt und verdrahtet in `packages/core/src/create-services.ts`; die Schritte liegen in `composition/` (Basisdienste, Fachdienste, Agent, Verdrahtung, Verknüpfungsautomatik, Job-Handler, Start und Beenden). Die IPC-Handler liegen nach Bereich in `handlers/` (App, Agent, Einträge, Dokumente, Wissen); `handlers.ts` setzt sie zusammen und validiert Ein- und Ausgabe.
 
 | Service | Datei | Aufgabe |
 | --- | --- | --- |
@@ -82,6 +83,36 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`.
 | `AuditService` | `services/audit.ts` | Änderungsprotokoll |
 | `UndoService` | `services/undo.ts` | Rückgängig machen |
 | `BackupService` | `services/backup.ts` | Backups |
+
+### Aufteilung der großen Services
+
+Jede Service-Klasse bleibt unter dem Pfad aus der Tabelle; ihre Teile liegen daneben:
+
+| Service | Teile | Inhalt |
+| --- | --- | --- |
+| `ChatService` | `services/chat/` | Gesprächsspeicher, Intent-Erkennung (LLM und regelbasiert), Ablauf einer Nachricht, Rückfragen, Antworten zu Suche, Archiv und Vorschlägen |
+| `CaptureService` | `services/capture/` | Erfassen von Entscheidungen (inkl. Ersetzen), offenen Punkten, Erinnerungen, Notizen und Ereignissen |
+| `KnowledgeGraphService` | `services/graph/` | Entitäten, Beziehungen, Ansichten, Nachbarschaftsgraph, Verknüpfungen des Benutzers, Zusammenführen und Umbenennen mit Undo |
+| `LinkMethodsService` | `services/links/` | Kandidaten, Vorschlagsliste, verwandte und verwaiste Einträge, Kennzahlen, Themen aus Gruppen, gemeinsamer Ursprung, rückwirkender Lauf |
+| `ConsistencyService` | `services/archive-check/` | die einzelnen Prüfschritte der Archivprüfung und ihre Zusammenfassung |
+| `ArchiveService` | `services/archive-*.ts` | Plan, Ausführung, Dateioperationen ohne Überschreiben, Sperren, Umlagern, Umbenennen, Undo, Wartung |
+| `ArchiveRootService` | `services/archive-root-*.ts` | Prüfung und Plan des Umzugs, Kopieren mit Prüfsumme |
+| `DocumentService` | `services/document-*.ts` | Import und Quarantäne, Analyse und Klassifikation, erneutes Lesen, Metadaten mit Undo, Massenänderung |
+| `ActionService` | `services/action-*.ts` | Ausführung je Aktionstyp, erneute Prüfung vor der Ausführung |
+| `DecisionService`, `OpenItemService`, `SolutionService` | `services/decision-*.ts`, `open-item-*.ts`, `previous-values.ts`, `solution-content.ts` | reine Feldlogik, Erkennung, Undo-Handler, Lösungs-Prompt |
+| `SubjectService` | `services/subject-*.ts` | Plan einer Massenzuordnung und ihr Undo |
+| `InsightService`, `SearchService`, `ContradictionService`, `KnowledgeAnswerService` | `services/insight-*.ts`, `search-*.ts`, `contradiction-rules.ts`, `knowledge-*.ts` | Vorschläge und Antworten zu Hinweisen, Stichwortsuche und Rangfusion, lexikalische Widerspruchsprüfung, Quellen und Antworttext |
+| `LlmService` | `services/llm/` | HTTP, optionale Parameter, Responses API, Eingabe und JSON, Endpunktzustand, Übertragungsprotokoll |
+| `JobQueueService` | `services/jobs/` | Fehlertypen, Zeilen, Kontext eines Versuchs, Ergebnis eines Versuchs, Wartezeiten |
+| `ScannerService` | `services/scanner/` | Dateizeilen, Scanlauf, Inhaltsanalyse, Zuordnungsvorschläge |
+| Dubletten der Archivprüfung | `services/cleanup/` | Namensvergleich, Bewertung, Hinweistexte, Zusammenführen von Notizen und Ereignissen, Verknüpfungen zusammengeführter Einträge |
+| Parser | `parsers/` | Ergebnis- und Texttypen, PDF, DOCX/PPTX, XLSX |
+| `AgentService` | `agent/*.ts` | Gate (ausführen, vorschlagen, blockieren), Ausführung der Werkzeugaufrufe, Verlauf, Fähigkeitstest, Laufausführung, Hintergrundaufgaben, Korrekturen |
+| Agentenwerkzeuge | `agent/tools/` mit `research/`, `exports/` | Werkzeugdefinitionen; Rechercheberichte (Beträge, Fristen, Lücken, Zahlungen, Mails), Exporte (ZIP, PDF, CSV, Übersicht) |
+
+`packages/shared/src/` ist nach Bereichen aufgeteilt (`documents.ts`, `archive.ts`, `decisions.ts`, `open-items.ts`, `events.ts`, `notifications.ts`, `knowledge.ts`, `links.ts`, `actions.ts`, `chat.ts`, `jobs.ts`, `audit.ts`, `scan.ts`, `status.ts`) und wird über `index.ts` exportiert. Die Kanäle stehen weiterhin vollständig in `ipc.ts`.
+
+Im Renderer liegen die Teile einer Seite unter `components/<bereich>/`, z. B. `knowledge/entity-list.tsx`, `decisions/decision-detail.tsx`, `documents/documents-table.tsx`, `chat/chat-composer.tsx`.
 
 Electron-Spezifisches (safeStorage, Dialoge, `shell`) wird über kleine Schnittstellen (`SecretCipher`, `HostApi`) injiziert, siehe [Architektur](../explanation/architektur.md).
 
