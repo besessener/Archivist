@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { EntityType } from '@archivist/shared';
+import { RELATION_METHOD_LABELS, type EntityType, type GraphRelation, type RelationMethod } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { currentRun } from '../agent/scope';
 import { newId } from '../util/ids';
@@ -31,6 +31,27 @@ export interface LinkCandidate {
   method: 'similarity' | 'mention';
   /** Why: the matching passage or the mentioned name. */
   reason: string;
+}
+
+/** Methods whose proposals are reviewed in the list of link proposals (#280); field mirrors and own flows are not. */
+export const LINK_PROPOSAL_METHODS: RelationMethod[] = ['similarity', 'mention', 'co_origin', 'date_person', 'analysis', 'agent', 'wikilink'];
+/** Relation types with a flow of their own (contradictions, versions, duplicates). */
+const OWN_FLOW_TYPES = ['contradicts', 'supersedes', 'duplicate_of'];
+
+export interface LinkProposal {
+  relation: GraphRelation;
+  source: { id: string; type: EntityType; name: string };
+  target: { id: string; type: EntityType; name: string };
+  /** The group the proposal belongs to (method or source entry). */
+  groupKey: string;
+}
+
+export interface LinkProposalPage {
+  /** All open proposals (not only this page). */
+  total: number;
+  /** Every group with its number of proposals, in the order of the list. */
+  groups: Array<{ key: string; label: string; count: number }>;
+  items: LinkProposal[];
 }
 
 export interface OrphanPage {
@@ -146,6 +167,51 @@ export class LinkMethodsService {
         });
       }
     return [...out.values()].toSorted((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  private proposalSql(groupBy: 'method' | 'entry') {
+    const methods = LINK_PROPOSAL_METHODS.map((m) => `'${m}'`).join(',');
+    const types = OWN_FLOW_TYPES.map((t) => `'${t}'`).join(',');
+    return {
+      from: `FROM relations r JOIN entities s ON s.id = r.source_entity_id JOIN entities t ON t.id = r.target_entity_id
+        WHERE r.status = 'proposed' AND r.method IN (${methods}) AND r.relation_type NOT IN (${types})
+          AND s.duplicate_of_id IS NULL AND t.duplicate_of_id IS NULL`,
+      key: groupBy === 'method' ? 'r.method' : 'r.source_entity_id',
+      sort: groupBy === 'method' ? 'r.method' : 's.normalized_name, r.source_entity_id',
+    };
+  }
+
+  /**
+   * Open link proposals for review in one place (#280): grouped by method or by entry, each with its evidence, paged with
+   * the total – not capped. Contradictions, versions and duplicates have flows of their own and are not listed.
+   */
+  proposals(opts: { groupBy?: 'method' | 'entry'; limit?: number; offset?: number } = {}): LinkProposalPage {
+    const groupBy = opts.groupBy ?? 'method';
+    const q = this.proposalSql(groupBy);
+    const groups = (
+      this.sqlite
+        .prepare(`SELECT ${q.key} AS key, min(s.name) AS name, count(*) AS count ${q.from} GROUP BY ${q.key} ORDER BY min(${q.sort.split(',')[0]}), ${q.key}`)
+        .all() as Array<{ key: string; name: string; count: number }>
+    ).map((g) => ({ key: g.key, label: groupBy === 'method' ? (RELATION_METHOD_LABELS[g.key as RelationMethod] ?? g.key) : g.name, count: g.count }));
+    const rows = this.sqlite
+      .prepare(`SELECT r.id AS id, ${q.key} AS groupKey ${q.from} ORDER BY ${q.sort}, r.confidence DESC, r.id LIMIT ? OFFSET ?`)
+      .all(opts.limit ?? 50, opts.offset ?? 0) as Array<{ id: string; groupKey: string }>;
+    const items = rows.flatMap((row) => {
+      const relation = this.graph.getRelation(row.id);
+      const s = relation && this.graph.getEntity(relation.sourceEntityId);
+      const t = relation && this.graph.getEntity(relation.targetEntityId);
+      return relation && s && t
+        ? [{ relation, source: { id: s.id, type: s.type, name: s.name }, target: { id: t.id, type: t.type, name: t.name }, groupKey: row.groupKey }]
+        : [];
+    });
+    return { total: groups.reduce((n, g) => n + g.count, 0), groups, items };
+  }
+
+  /** Confirms or rejects every open proposal of a group („Alle bestätigen“, #280) – one undo step. */
+  decideGroup(groupBy: 'method' | 'entry', key: string, decision: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): number {
+    const q = this.proposalSql(groupBy);
+    const ids = (this.sqlite.prepare(`SELECT r.id AS id ${q.from} AND ${q.key} = ?`).all(key) as Array<{ id: string }>).map((r) => r.id);
+    return this.graph.decideRelations(ids, decision, opts);
   }
 
   /**

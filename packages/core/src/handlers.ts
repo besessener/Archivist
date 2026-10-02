@@ -348,9 +348,16 @@ export function createHandlers(s: Services, host: HostApi): HandlerMap {
     'links:suggestions': (i) => s.links.candidates(i.id, { limit: i.limit }),
     'links:unlinked': (i) => s.links.orphans(i),
     'links:startRun': () => ({ jobId: s.enqueueLinkRun('manual').id }),
+    'links:proposals': (i) => s.links.proposals(i),
+    'links:decide': (i) => ({ decided: s.graph.decideRelations(i.relationIds, i.decision, { trigger }) }),
+    'links:decideGroup': (i) => ({ decided: s.links.decideGroup(i.groupBy, i.key, i.decision, { trigger }) }),
     'knowledge:resolveRelation': (i) => {
-      s.graph.setRelationStatus(i.relationId, i.status);
-      s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });
+      // confirming and rejecting are undoable decisions (#280); other statuses are only logged
+      if (i.status === 'confirmed' || i.status === 'rejected') s.graph.decideRelation(i.relationId, i.status, { trigger });
+      else {
+        s.graph.setRelationStatus(i.relationId, i.status);
+        s.audit.log({ action: `relation.${i.status}`, actor: 'user', trigger, confirmed: true, entityIds: [i.relationId] });
+      }
       return { ok: true as const };
     },
     'knowledge:createEntity': async (i) => {

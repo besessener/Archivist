@@ -198,6 +198,29 @@ function buildServices(opts: CreateServicesOptions) {
 
   // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
   const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+  /**
+   * ONE notification for open link proposals, only when new ones came up (#280): while the current one is unread it is
+   * updated in place; once it was read or dismissed, the next new proposals bring a new one.
+   */
+  const notifyLinkProposals = (created: number) => {
+    if (created <= 0) return;
+    const open = links.proposals({ limit: 1 }).total;
+    if (!open) return;
+    let key = appState.get('links.notification.key');
+    const current = key ? notifications.byDedupeKey(key) : null;
+    if (!key || current?.readAt || current?.resolvedAt) {
+      key = `link-proposals:${Date.now()}`;
+      appState.set('links.notification.key', key);
+    }
+    notifications.create({
+      title: 'Verknüpfungsvorschläge',
+      description: `${open === 1 ? 'Ein Vorschlag wartet' : `${open} Vorschläge warten`} auf deine Prüfung. Du entscheidest, was übernommen wird.`,
+      type: 'assignment_proposal',
+      priority: 'low',
+      proposedActions: [{ label: 'Vorschläge prüfen', kind: 'navigate', target: '/insights/' }],
+      dedupeKey: key,
+    });
+  };
   // after every new or changed entry: look for similar ones in a job of its own, never on the caller's path (#271)
   search.onIndexed(({ id }) => {
     if (!settings.get().links.autoPropose || !links.queueSimilar([id])) return;
@@ -276,7 +299,7 @@ function buildServices(opts: CreateServicesOptions) {
     agent,
     createdTogether: (entries, message) => {
       if (settings.get().links.autoPropose)
-        links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] });
+        notifyLinkProposals(links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] }));
     },
   });
   // a new or edited note is analysed like a document, in a job of its own (#273)
@@ -295,7 +318,7 @@ function buildServices(opts: CreateServicesOptions) {
   events.on('entry:created', (entry: { id: string }) => {
     if (!settings.get().links.autoPropose) return;
     try {
-      links.linkSameDocument(entry.id);
+      notifyLinkProposals(links.linkSameDocument(entry.id));
     } catch (err) {
       logger.warn('links', 'Linking entries of one document failed', { error: err, id: entry.id });
     }
@@ -400,10 +423,12 @@ function buildServices(opts: CreateServicesOptions) {
   });
   jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, async (job) => {
     const r = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
+    notifyLinkProposals(r?.proposed ?? 0);
     return { summary: r ? `${r.proposed} Verknüpfungen vorgeschlagen, ${r.outdated} veraltet` : 'Notiz nicht (mehr) vorhanden' };
   });
   jobs.register(LINK_SIMILAR_JOB, async (job) => {
     const r = await links.runPendingSimilar({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
+    notifyLinkProposals(r.proposed);
     job.throwIfCancelled();
     return { summary: `${r.processed} Einträge geprüft, ${r.proposed} Verknüpfungen vorgeschlagen` };
   });

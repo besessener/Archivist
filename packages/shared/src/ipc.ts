@@ -142,6 +142,16 @@ export const RelatedEntry = z.object({
 });
 export type RelatedEntry = z.infer<typeof RelatedEntry>;
 
+/** An open link proposal with both ends, for the review list (#280). */
+const LinkProposalEnd = z.object({ id: z.string(), type: EntityType, name: z.string() });
+export const LinkProposalPage = z.object({
+  total: z.number().int(),
+  groups: z.array(z.object({ key: z.string(), label: z.string(), count: z.number().int() })),
+  items: z.array(z.object({ relation: GraphRelation, source: LinkProposalEnd, target: LinkProposalEnd, groupKey: z.string() })),
+});
+export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
+const LinkGroupBy = z.enum(['method', 'entry']);
+
 /** A link candidate of the fixed link methods with its reason (#271, #283, #313). */
 export const LinkCandidate = z.object({
   id: z.string(),
@@ -516,6 +526,21 @@ export const ipcContract = {
   'links:unlinked': ch(
     z.object({ limit: z.number().int().min(1).max(200).default(50), offset: z.number().int().min(0).default(0) }),
     z.object({ total: z.number().int(), items: z.array(z.object({ id: z.string(), type: EntityType, name: z.string(), createdAt: IsoDate })) }),
+  ),
+  /** Open link proposals, grouped by method or entry, paged with the total (#280). */
+  'links:proposals': ch(
+    z.object({ groupBy: LinkGroupBy.default('method'), limit: z.number().int().min(1).max(200).default(50), offset: z.number().int().min(0).default(0) }),
+    LinkProposalPage,
+  ),
+  /** Confirms or rejects the given proposals – one undo step (#280). */
+  'links:decide': ch(
+    z.object({ relationIds: z.array(Id).min(1).max(500), decision: z.enum(['confirmed', 'rejected']), confirmed: Confirmed }),
+    z.object({ decided: z.number().int() }),
+  ),
+  /** Confirms or rejects every open proposal of a group („Alle bestätigen“) – one undo step (#280). */
+  'links:decideGroup': ch(
+    z.object({ groupBy: LinkGroupBy, key: z.string().min(1), decision: z.enum(['confirmed', 'rejected']), confirmed: Confirmed }),
+    z.object({ decided: z.number().int() }),
   ),
   /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. */
   'links:startRun': ch(Empty, z.object({ jobId: Id })),

@@ -39,6 +39,12 @@ export class NotificationService {
     return this.ctx.database.db;
   }
 
+  /** The notification with this dedupe key (also a read or resolved one), if any. */
+  byDedupeKey(key: string): AppNotification | null {
+    const r = this.db.select().from(notifications).where(eq(notifications.dedupeKey, key)).get();
+    return r ? map(r) : null;
+  }
+
   create(input: NotificationInput): AppNotification {
     if (input.dedupeKey) {
       const existing = this.db

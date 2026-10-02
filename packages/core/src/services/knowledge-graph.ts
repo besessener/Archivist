@@ -285,6 +285,13 @@ const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 /** Undo of a link or unlink made through {@link KnowledgeGraphService.linkEntries} / `unlinkEntries` (#277). */
 const LINK_UNDO_TYPE = 'relation.link';
 const CASE_UNDO_TYPE = 'case.status';
+/** Undo of several proposals decided at once (#280). */
+const DECIDE_MANY_UNDO_TYPE = 'relation.decideMany';
+interface DecideManyUndoData {
+  before: Array<Pick<RelationRow, 'id' | 'status' | 'resolvedByUser' | 'updatedAt'>>;
+  /** updatedAt of each relation right after the decision; a later change blocks the undo. */
+  after: Record<string, string>;
+}
 interface LinkUndoData {
   /** The relation as it was before (null: the call created it). */
   before: RelationRow | null;
@@ -353,6 +360,24 @@ export class KnowledgeGraphService {
         this.db.update(entities).set({ status: d.before, updatedAt: d.beforeUpdatedAt }).where(eq(entities.id, d.id)).run();
         this.ctx.events.changed('knowledge');
         return 'Status des Vorgangs zurückgesetzt.';
+      },
+    });
+    undo.register(DECIDE_MANY_UNDO_TYPE, {
+      check: async (data) => {
+        const d = data as DecideManyUndoData;
+        const ids = Object.keys(d.after);
+        const now = new Map((ids.length ? this.db.select().from(relations).where(inArray(relations.id, ids)).all() : []).map((r) => [r.id, r.updatedAt]));
+        const changed = ids.filter((id) => now.get(id) !== d.after[id]).length;
+        return changed ? [`${changed} der Verknüpfungen wurde${changed === 1 ? '' : 'n'} seither verändert oder entfernt.`] : [];
+      },
+      run: async (data) => {
+        const d = data as DecideManyUndoData;
+        this.ctx.database.transaction(() => {
+          for (const b of d.before)
+            this.db.update(relations).set({ status: b.status, resolvedByUser: b.resolvedByUser, updatedAt: b.updatedAt }).where(eq(relations.id, b.id)).run();
+        });
+        this.ctx.events.changed('knowledge');
+        return `${d.before.length} Entscheidung${d.before.length === 1 ? '' : 'en'} über Verknüpfungen zurückgenommen.`;
       },
     });
     undo.register(LINK_UNDO_TYPE, {
@@ -816,6 +841,52 @@ export class KnowledgeGraphService {
       undo: { type: LINK_UNDO_TYPE, data: { before, after } satisfies LinkUndoData },
     });
     return mapRelation(after);
+  }
+
+  /**
+   * Confirms or rejects several proposals at once („Alle bestätigen“, #280): ONE audit entry, ONE undo step. Relations that
+   * are no longer proposals are left as they are. Returns the number decided.
+   */
+  decideRelations(ids: string[], status: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): number {
+    const unique = [...new Set(ids)];
+    if (!unique.length) return 0;
+    const rows = this.db
+      .select()
+      .from(relations)
+      .where(and(inArray(relations.id, unique), eq(relations.status, 'proposed')))
+      .all();
+    if (!rows.length) return 0;
+    const updatedAt = nowIso();
+    this.ctx.database.transaction(() => {
+      this.db
+        .update(relations)
+        .set({ status, resolvedByUser: true, updatedAt })
+        .where(
+          inArray(
+            relations.id,
+            rows.map((r) => r.id),
+          ),
+        )
+        .run();
+      this.audit.log({
+        action: status === 'confirmed' ? 'relation.confirmMany' : 'relation.rejectMany',
+        actor: 'user',
+        trigger: opts.trigger ?? 'manual',
+        confirmed: true,
+        entityIds: rows.map((r) => r.id).slice(0, 200),
+        before: { count: rows.length, status: 'proposed' },
+        after: { count: rows.length, status },
+        undo: {
+          type: DECIDE_MANY_UNDO_TYPE,
+          data: {
+            before: rows.map((r) => ({ id: r.id, status: r.status, resolvedByUser: r.resolvedByUser, updatedAt: r.updatedAt })),
+            after: Object.fromEntries(rows.map((r) => [r.id, updatedAt])),
+          } satisfies DecideManyUndoData,
+        },
+      });
+    });
+    this.ctx.events.changed('knowledge');
+    return rows.length;
   }
 
   /** Opens or closes a case („Vorgang“, #286); logged with undo. */
