@@ -26,15 +26,15 @@ export function initDecisions(page: Page) {
   const row = (text: string) => locators.rows.filter({ hasText: text });
   const interactions = {
     /** Records a complete decision via the form and waits until it is listed. */
-    create: async (text: string, isoDate: string, topic: string, participants: string) => {
+    create: async (decision: { text: string; isoDate: string; topic: string; participants: string }) => {
       await locators.buttons.create.click();
-      await locators.inputs.text.fill(text);
-      await locators.inputs.date.fill(isoDate);
-      await locators.inputs.topic.fill(topic);
-      await locators.inputs.participants.fill(participants);
+      await locators.inputs.text.fill(decision.text);
+      await locators.inputs.date.fill(decision.isoDate);
+      await locators.inputs.topic.fill(decision.topic);
+      await locators.inputs.participants.fill(decision.participants);
       await locators.buttons.save.click();
       await expect(form).toBeHidden();
-      await expect(row(text)).toBeVisible();
+      await expect(row(decision.text)).toBeVisible();
     },
     /** Picks the newer decision in the „Ersetzt durch“ select by (part of) its text. */
     pickSupersededBy: async (text: string) => {
@@ -43,5 +43,5 @@ export function initDecisions(page: Page) {
       await locators.inputs.supersededBy.selectOption((await option.getAttribute('value')) ?? '');
     },
   };
-  return Object.assign(pageObject(locators.detail, locators, interactions), { row });
+  return Object.assign(pageObject({ root: locators.detail, locators, actions: interactions }), { row });
 }

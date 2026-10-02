@@ -3,6 +3,6 @@ import type { Locator } from '@playwright/test';
 /** A page object: calling it returns its root element; it also has `locators` (elements) and `do` (actions). */
 export type PageObject<TLocators, TActions> = (() => Locator) & { locators: TLocators; do: TActions };
 
-export function pageObject<TLocators, TActions>(root: Locator, locators: TLocators, actions: TActions): PageObject<TLocators, TActions> {
-  return Object.assign(() => root, { locators, do: actions });
+export function pageObject<TLocators, TActions>(parts: { root: Locator; locators: TLocators; actions: TActions }): PageObject<TLocators, TActions> {
+  return Object.assign(() => parts.root, { locators: parts.locators, do: parts.actions });
 }

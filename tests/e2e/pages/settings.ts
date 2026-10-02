@@ -62,5 +62,5 @@ export function initSettings(page: Page) {
       await expect(locators.notifications.saveReminderTime).toBeDisabled();
     },
   };
-  return pageObject(page.getByRole('tablist', { name: 'Einstellungsbereiche' }), locators, interactions);
+  return pageObject({ root: page.getByRole('tablist', { name: 'Einstellungsbereiche' }), locators, actions: interactions });
 }

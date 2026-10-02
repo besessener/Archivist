@@ -15,10 +15,10 @@ test.describe('Privacy mode "ask first" (confirm)', () => {
     await expect(app.inbox.locators.proposals.first()).toBeVisible({ timeout: 30_000 });
     expect(classifications(), 'an import in mode "ask first" is analysed locally').toBe(0);
 
-    await app.inbox.do.reprocessConfirmed(false);
+    await app.inbox.do.reprocessConfirmed({ allowLlm: false });
     await expect(app.inbox.locators.proposals.first()).toBeVisible({ timeout: 30_000 });
 
-    await app.inbox.do.reprocessConfirmed(true);
+    await app.inbox.do.reprocessConfirmed({ allowLlm: true });
     await expect(app.inbox.locators.llmStatus.first()).toContainText(/LLM analysiert/i, { timeout: 30_000 });
     expect(classifications(), 'only the confirmed reprocessing reaches the AI').toBe(1);
   });
