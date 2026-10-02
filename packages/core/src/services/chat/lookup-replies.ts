@@ -2,7 +2,7 @@ import type { DocumentStatus, SourceReference } from '@archivist/shared';
 import { normalizeDateInput } from '../../util/dates';
 import { truncate } from '../../util/text';
 import type { ConvState, Reply } from '../chat-state';
-import { documentDateRef } from '../knowledge-answers';
+import { documentDateRef } from '../knowledge-sources';
 import type { ChatDeps, ChatRequest } from './types';
 
 /** Timeline queries in chat show at most this many (newest) entries. */

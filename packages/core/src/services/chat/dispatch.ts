@@ -34,7 +34,7 @@ export class ChatDispatcher {
     if (CaptureService.handles(intent.intent)) return this.deps.capture.handle(conversationId, text, intent, state, { viaLlm: options.viaLlm });
     switch (intent.intent) {
       case 'knowledge_question':
-        return this.deps.answers.knowledgeQuestion(text, intent, state);
+        return this.deps.answers.knowledgeQuestion(request);
       case 'document_search':
         return this.lookups.documentSearch(request);
       case 'timeline_query':
