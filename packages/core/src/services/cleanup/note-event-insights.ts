@@ -1,13 +1,24 @@
-import type { EntityRef } from '@archivist/shared';
+import type { AgentActionProposal, EntityRef } from '@archivist/shared';
 import type { entities, events } from '../../db/schema';
 import { truncate } from '../../util/text';
-import type { InsightActionSpec, InsightInput } from '../insights';
 import { words, type EventPairAssessment, type NotePairAssessment } from './note-event-assessment';
 
 export type EntityRow = typeof entities.$inferSelect;
 export type EventRow = typeof events.$inferSelect;
 
 export const noteText = (note: Pick<EntityRow, 'name' | 'description'>) => note.description ?? note.name;
+
+/** The insight of a duplicate pair, in the shape `InsightService.upsert` takes (not imported: that would close a cycle). */
+interface DuplicateInsight {
+  kind: 'duplicate';
+  title: string;
+  explanation: string;
+  confidence: number;
+  affected: EntityRef[];
+  sourceIds: string[];
+  action: { label: string; proposal: AgentActionProposal & { label: string } };
+  dedupeKey: string;
+}
 
 const NOT_DELETED = 'Es wird nichts gelöscht, und die Zusammenführung lässt sich rückgängig machen.';
 
@@ -17,7 +28,13 @@ function howNotesMatch(assessment: NotePairAssessment): string {
   return `sind nahezu gleich (${Math.round(assessment.similarity * 100)} % gemeinsame Wörter)`;
 }
 
-function mergeAction(input: { actionType: 'merge_notes' | 'merge_events'; label: string; rationale: string; confidence: number; affected: EntityRef[] }) {
+function mergeAction(input: {
+  actionType: 'merge_notes' | 'merge_events';
+  label: string;
+  rationale: string;
+  confidence: number;
+  affected: EntityRef[];
+}): DuplicateInsight['action'] {
   const [keep, duplicate] = input.affected as [EntityRef, EntityRef];
   return {
     label: 'Zusammenführen',
@@ -30,11 +47,17 @@ function mergeAction(input: { actionType: 'merge_notes' | 'merge_events'; label:
       requiredConfirmation: 'confirm',
       proposedParameters: { keepId: keep.id, duplicateId: duplicate.id },
     },
-  } satisfies InsightActionSpec;
+  };
 }
 
 /** Insight with the merge proposal for a pair of duplicate notes; `missingLinks` counts the links the kept note lacks. */
-export function noteInsight(pair: { keep: EntityRow; duplicate: EntityRow; assessment: NotePairAssessment; key: string; missingLinks: number }): InsightInput {
+export function noteInsight(pair: {
+  keep: EntityRow;
+  duplicate: EntityRow;
+  assessment: NotePairAssessment;
+  key: string;
+  missingLinks: number;
+}): DuplicateInsight {
   const { keep, duplicate, assessment, missingLinks } = pair;
   const how = howNotesMatch(assessment);
   const affected: EntityRef[] = [
@@ -66,7 +89,13 @@ export function noteInsight(pair: { keep: EntityRow; duplicate: EntityRow; asses
 }
 
 /** Insight with the merge proposal for a pair of duplicate events; `takenOver` labels what the kept event would take over. */
-export function eventInsight(pair: { keep: EventRow; duplicate: EventRow; assessment: EventPairAssessment; key: string; takenOver: string[] }): InsightInput {
+export function eventInsight(pair: {
+  keep: EventRow;
+  duplicate: EventRow;
+  assessment: EventPairAssessment;
+  key: string;
+  takenOver: string[];
+}): DuplicateInsight {
   const { keep, duplicate, assessment, takenOver } = pair;
   const day = keep.occurredAt.slice(0, 10);
   const reasons = assessment.reasons.length ? `, ${assessment.reasons.join(', ')}` : '';
