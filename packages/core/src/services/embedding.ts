@@ -22,9 +22,9 @@ export function localEmbed(text: string): Float32Array {
   for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
   const add = (feature: string, weight: number) => {
     const h = fnv1a(feature);
-    const idx = h % LOCAL_DIM;
+    const slot = h % LOCAL_DIM;
     const sign = (fnv1a(feature, 0x9747b28c) & 1) === 0 ? 1 : -1;
-    vec[idx] = (vec[idx] ?? 0) + sign * weight;
+    vec[slot] = (vec[slot] ?? 0) + sign * weight;
   };
   for (const [tok, count] of tf) {
     const w = 1 + Math.log(count);

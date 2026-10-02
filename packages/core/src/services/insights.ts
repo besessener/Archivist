@@ -293,7 +293,7 @@ export class InsightService {
 
   /** Answers a question insight with one of its `choices`; the proposals of the other answers are withdrawn. */
   async choose(id: string, choiceId: string, opts: { strongConfirmed?: boolean } = {}): Promise<Insight> {
-    return this.answers.choose(id, choiceId, opts);
+    return this.answers.choose(id, { choiceId, ...opts });
   }
 
   remindLater(id: string, remindAt: string): Insight {

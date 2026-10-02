@@ -84,7 +84,7 @@ export class NoteAnalysisService {
     // only in „automatisch“: a note is analysed in the background, nobody could confirm a request in „vorher fragen“
     if (this.privacy.mode() !== 'auto' || !this.llm.canUseInBackground()) return local;
     try {
-      const res = await this.llm.completeJson(NoteAnalysis, {
+      const analysis = await this.llm.completeJson(NoteAnalysis, {
         schemaName: 'NoteAnalysis',
         purpose: 'Analyse einer Notiz (Thema, Projekt, Personen, Tags)',
         signal: opts.signal,
@@ -110,10 +110,10 @@ export class NoteAnalysisService {
         ) ??
         (name?.trim() || null);
       return {
-        topic: snap(res.topic, topics),
-        project: snap(res.project, projects),
-        persons: res.persons.map((p) => p.trim()).filter(Boolean),
-        tags: [...new Set(res.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 8),
+        topic: snap(analysis.topic, topics),
+        project: snap(analysis.project, projects),
+        persons: analysis.persons.map((p) => p.trim()).filter(Boolean),
+        tags: [...new Set(analysis.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 8),
         via: 'llm',
       };
     } catch (err) {

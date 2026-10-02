@@ -65,7 +65,7 @@ export class InsightAnswers {
   }
 
   /** An answer with an action executes it; one without („verschieden“) rejects the question, so it is not asked again while its cause exists. */
-  async choose(id: string, choiceId: string, opts: { strongConfirmed?: boolean }): Promise<Insight> {
+  async choose(id: string, { choiceId, ...opts }: { choiceId: string; strongConfirmed?: boolean }): Promise<Insight> {
     const { proposals, records } = this.helpers;
     const i = records.get(id);
     if (i.status === 'accepted' || i.status === 'rejected') throw new AppError('validation_error', 'Diese Frage wurde bereits beantwortet.');

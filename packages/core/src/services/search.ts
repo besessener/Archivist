@@ -185,29 +185,29 @@ export class SearchService {
     const ids = scored.map((s) => s.hit.entityId);
     const db = this.ctx.database.db;
     const byId = <T extends { id: string }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]));
-    const ents = byId(db.select().from(entities).where(inArray(entities.id, ids)).all());
-    const docs = byId(
+    const entityRows = byId(db.select().from(entities).where(inArray(entities.id, ids)).all());
+    const documentRows = byId(
       db
         .select({ id: documents.id, rel: documents.archiveRelPath, src: documents.sourcePath, at: documents.archivedAt, created: documents.createdAt })
         .from(documents)
         .where(inArray(documents.id, ids))
         .all(),
     );
-    const decs = byId(db.select({ id: decisions.id, at: decisions.decidedAt }).from(decisions).where(inArray(decisions.id, ids)).all());
+    const decisionRows = byId(db.select({ id: decisions.id, at: decisions.decidedAt }).from(decisions).where(inArray(decisions.id, ids)).all());
     const max = scored[0]?.score || 1;
     return scored.flatMap(({ hit, score }) => {
-      const ent = ents.get(hit.entityId);
-      if (!ent) return [];
-      const d = docs.get(hit.entityId);
+      const entity = entityRows.get(hit.entityId);
+      if (!entity) return [];
+      const d = documentRows.get(hit.entityId);
       return [
         {
           type: hit.entityType as EntityType,
           id: hit.entityId,
-          title: ent.name,
+          title: entity.name,
           snippet: hit.snippet || truncate(hit.chunkText, 200),
           score: Math.round((score / max) * 1000) / 1000,
           path: d?.rel ?? d?.src ?? null,
-          date: d ? (d.at ?? d.created) : (decs.get(hit.entityId)?.at ?? ent.updatedAt),
+          date: d ? (d.at ?? d.created) : (decisionRows.get(hit.entityId)?.at ?? entity.updatedAt),
           passage: hit.chunkText,
           matchedBy: [
             ...(hit.keywordRank !== undefined ? (['keyword'] as const) : []),

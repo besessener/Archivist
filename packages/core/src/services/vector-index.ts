@@ -206,13 +206,22 @@ export class VectorIndex {
     if (!index || index.live === 0) return [];
     const typeMask = opts.types ? this.typeMask(opts.types) : null;
     if (typeMask && !typeMask.some(Boolean)) return [];
-    const q = new Float32Array(index.dim);
-    q.set(query.vector.length > index.dim ? query.vector.subarray(0, index.dim) : query.vector);
+    const padded = new Float32Array(index.dim);
+    padded.set(query.vector.length > index.dim ? query.vector.subarray(0, index.dim) : query.vector);
     // snapshot: rows written after this point are not part of this search
     const parts = index.segments.map((s) => ({ seg: s, matrix: s.matrix, types: s.types, rows: s.rows, chunkIds: s.chunkIds, entityIds: s.entityIds }));
     const results = await Promise.all(
       parts.map((p) =>
-        this.pool.run('cosineTopK', { query: q, matrix: p.matrix, types: p.types, rows: p.rows, typeMask, dim: index.dim, k: opts.k, minScore: opts.minScore }),
+        this.pool.run('cosineTopK', {
+          query: padded,
+          matrix: p.matrix,
+          types: p.types,
+          rows: p.rows,
+          typeMask,
+          dim: index.dim,
+          k: opts.k,
+          minScore: opts.minScore,
+        }),
       ),
     );
     const hits: VectorHit[] = [];
