@@ -62,7 +62,10 @@ function deps(): ToolDeps {
     openItemDuplicates: s.openItemDuplicates,
     noteEventDuplicates: s.noteEventDuplicates,
     memory: {} as never,
-    capture: { capture: async () => Promise.reject(new Error('unused')) },
+    fileJobs: s.agentFileJobs,
+    links: s.links,
+    capture: s.capture,
+    answers: s.answers,
     enqueueConsistency: () => undefined,
   };
 }

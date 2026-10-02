@@ -12,6 +12,7 @@ import type { EventService } from '../../services/events';
 import type { InsightService } from '../../services/insights';
 import type { JobQueueService } from '../../services/jobs';
 import type { KnowledgeGraphService } from '../../services/knowledge-graph';
+import type { LinkMethodsService } from '../../services/link-methods';
 import type { NoteService } from '../../services/notes';
 import type { NotificationService } from '../../services/notifications';
 import type { OpenItemService } from '../../services/open-items';
@@ -25,9 +26,11 @@ import type { TimelineService } from '../../services/timeline';
 import type { UndoService } from '../../services/undo';
 import { truncate } from '../../util/text';
 import { folderLabel, folderOf } from '../../services/archive-structure';
+import type { AgentFileJobs } from '../file-jobs';
 import type { MemoryService } from '../memory';
 import type { ToolContext } from '../registry';
-import type { CaptureBridge } from './knowledge';
+import type { CaptureService } from '../../services/capture';
+import type { KnowledgeAnswerService } from '../../services/knowledge-answers';
 
 /** Services the tools use – the same service functions the user interface calls (#294: one function, two callers). */
 export interface ToolDeps {
@@ -56,7 +59,11 @@ export interface ToolDeps {
   openItemDuplicates: OpenItemDuplicateService;
   noteEventDuplicates: NoteEventDuplicateService;
   memory: MemoryService;
-  capture: CaptureBridge;
+  fileJobs: AgentFileJobs;
+  links: LinkMethodsService;
+  /** Capturing knowledge: the same module as the rule-based chat (#307). */
+  capture: CaptureService;
+  answers: KnowledgeAnswerService;
   enqueueConsistency: (trigger: string) => void;
 }
 

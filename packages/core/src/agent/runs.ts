@@ -111,6 +111,25 @@ export class AgentRunService {
     this.ctx.events.changed('agent');
   }
 
+  /**
+   * Audit entries a file job wrote for a step after its run had ended (the job continued after a restart, #304): they
+   * join the step, so undo per step covers them. While the run is live the step collects them itself.
+   */
+  addStepAudit(id: string, stepId: string, auditIds: string[]): void {
+    if (!auditIds.length) return;
+    const r = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
+    const steps = (r?.steps as unknown as AgentStep[] | undefined) ?? [];
+    const step = steps.find((s) => s.id === stepId);
+    if (!step) return;
+    step.auditIds = [...new Set([...step.auditIds, ...auditIds])];
+    this.db
+      .update(agentRuns)
+      .set({ steps: steps as unknown as ArchivistJson })
+      .where(eq(agentRuns.id, id))
+      .run();
+    this.ctx.events.changed('agent');
+  }
+
   /** Runs still marked as running from before a restart are closed as cancelled; what they did stays logged. */
   closeInterrupted(): number {
     const res = this.db

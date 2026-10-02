@@ -142,6 +142,17 @@ export const RelatedEntry = z.object({
 });
 export type RelatedEntry = z.infer<typeof RelatedEntry>;
 
+/** A link candidate of the fixed link methods with its reason (#271, #283, #313). */
+export const LinkCandidate = z.object({
+  id: z.string(),
+  type: EntityType,
+  name: z.string(),
+  score: z.number(),
+  method: z.enum(['similarity', 'mention']),
+  reason: z.string(),
+});
+export type LinkCandidate = z.infer<typeof LinkCandidate>;
+
 const NullableText = z.string().nullish();
 
 const ch = <I extends z.ZodType, O extends z.ZodType>(input: I, output: O) => ({ input, output });
@@ -486,6 +497,15 @@ export const ipcContract = {
   'knowledge:unlink': ch(z.object({ relationId: Id, confirmed: Confirmed }), Ok),
   /** Related entries with the reason (#276, #289). */
   'knowledge:related': ch(z.object({ id: Id, depth: z.number().int().min(1).max(2).default(1) }), z.array(RelatedEntry)),
+  /** Link proposals for an entry: similar entries and mentioned topics/projects (#283); the same function as the agent's suggest_links. */
+  'links:suggestions': ch(z.object({ id: Id, limit: z.number().int().min(1).max(5).default(3) }), z.array(LinkCandidate)),
+  /** Entries without any link (#290), paged with the total. */
+  'links:unlinked': ch(
+    z.object({ limit: z.number().int().min(1).max(200).default(50), offset: z.number().int().min(0).default(0) }),
+    z.object({ total: z.number().int(), items: z.array(z.object({ id: z.string(), type: EntityType, name: z.string(), createdAt: IsoDate })) }),
+  ),
+  /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. */
+  'links:startRun': ch(Empty, z.object({ jobId: Id })),
   'knowledge:proposeMerge': ch(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
   /** Accepts a topic/project taken from a document; only confirmed ones are listed in LLM prompts. */
   'knowledge:confirmEntity': ch(z.object({ id: Id }), GraphEntity),

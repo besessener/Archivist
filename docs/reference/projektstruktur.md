@@ -69,9 +69,13 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`.
 | `ContradictionService` | `services/contradictions.ts` | Widerspruchserkennung |
 | `OpenItemDuplicateService`, `NoteEventDuplicateService`, `PersonDuplicateService`, `PersonQuestionService`, `EntityDuplicateCheck` | `services/cleanup/` | Dublettenprüfungen der Archivprüfung |
 | `ActionService` | `services/actions.ts` | Vorschläge (`agent_actions`) und ihre Bestätigung |
-| `ChatService` | `services/chat.ts` | Chat, Intent-Erkennung, regelbasierte Auswertung |
+| `ChatService` | `services/chat.ts` | Gesprächsablauf; Intent-Erkennung und `dispatch()` als regelbasierter Rückfall |
+| `CaptureService` | `services/capture.ts` | Wissen erfassen (Entscheidungen, Notizen, offene Punkte, Erinnerungen, Ereignisse) – für Agentenwerkzeuge und Rückfall |
+| `KnowledgeAnswerService` | `services/knowledge-answers.ts` | geprüfte Wissensantworten mit Quellen |
+| `LinkMethodsService` | `services/link-methods.ts` | Verknüpfungsmethoden (ähnliche Einträge, verwaiste Einträge, Themen aus Gruppen, rückwirkender Lauf) |
 | `AgentService` | `agent/service.ts` | Agentenmodus in Chat und Hintergrund |
 | `AgentRunService` | `agent/runs.ts` | Agentenläufe und „Lauf rückgängig“ |
+| `AgentFileJobs` | `agent/file-jobs.ts` | große Dateiaktionen des Agenten als eigener Auftrag |
 | `MemoryService` | `agent/memory.ts` | Gedächtnis des Agenten (Regeln, Abläufe, Vorlieben) |
 | `JobQueueService` | `services/jobs.ts` | persistente Job-Queue |
 | `AuditService` | `services/audit.ts` | Änderungsprotokoll |

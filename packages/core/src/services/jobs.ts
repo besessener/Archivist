@@ -102,6 +102,12 @@ const resultSummary = (result: Row['result']): string | null =>
 const storedCheckpoint = (result: Row['result']): unknown =>
   result && typeof result === 'object' && !Array.isArray(result) && 'checkpoint' in result ? result.checkpoint : null;
 
+/** Agent run of a job: in the payload of a file job of a run, in the result of a background run (#304). */
+const runIdOf = (r: Row): string | null => {
+  for (const v of [r.payload, r.result]) if (v && typeof v === 'object' && !Array.isArray(v) && typeof v.runId === 'string') return v.runId;
+  return null;
+};
+
 const mapJob = (r: Row): Job => ({
   id: r.id,
   type: r.type,
@@ -112,6 +118,7 @@ const mapJob = (r: Row): Job => ({
   attempts: r.attempts,
   error: r.error,
   summary: resultSummary(r.result),
+  runId: runIdOf(r),
   cancelRequested: r.cancelRequested,
   createdAt: r.createdAt,
   startedAt: r.startedAt,

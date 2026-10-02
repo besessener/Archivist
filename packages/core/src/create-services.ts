@@ -9,6 +9,8 @@ import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
 import { ChatService } from './services/chat';
+import { CaptureService } from './services/capture';
+import { KnowledgeAnswerService } from './services/knowledge-answers';
 import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
 import { AppStateService } from './services/app-state';
 import { ConsistencyService } from './services/consistency';
@@ -22,6 +24,7 @@ import { EmbeddingService } from './services/embedding';
 import { InsightService } from './services/insights';
 import { JobQueueService } from './services/jobs';
 import { KnowledgeGraphService } from './services/knowledge-graph';
+import { LinkMethodsService } from './services/link-methods';
 import { LlmService, type FetchLike } from './services/llm';
 import { NoteService } from './services/notes';
 import { NotificationService } from './services/notifications';
@@ -46,6 +49,7 @@ import { AgentService, type BackgroundKind } from './agent/service';
 import { AgentRunService } from './agent/runs';
 import { MemoryService } from './agent/memory';
 import { registerCreatedUndo } from './agent/created-undo';
+import { AgentFileJobs } from './agent/file-jobs';
 
 export interface CreateServicesOptions {
   /** Root of the local data storage (default: ~/Documents/Archivist) */
@@ -66,6 +70,9 @@ export interface CreateServicesOptions {
 }
 
 export type Services = ReturnType<typeof buildServices>;
+
+/** Job of the retroactive link run (#279). */
+const LINK_RUN_JOB = 'links.run';
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -162,28 +169,36 @@ function buildServices(opts: CreateServicesOptions) {
     noteEventDuplicates.check(count);
   });
   const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documentsSvc, eventsSvc, graph, search, audit, notes);
+  // capturing knowledge and verified answers: one module each for the agent tools and the rule-based chat (#307)
+  const capture = new CaptureService(ctx, settings, decisions, openItems, reminders, graph, persons, contradictions, insights, notes, eventsSvc);
+  const answers = new KnowledgeAnswerService(settings, llm, decisions, openItems, search, graph, documentsSvc, privacy, eventsSvc);
   const chat = new ChatService(
     ctx,
     settings,
     llm,
     decisions,
     openItems,
-    reminders,
     search,
     graph,
-    persons,
     documentsSvc,
     scanner,
     contradictions,
     insights,
     timeline,
     jobs,
-    privacy,
-    eventsSvc,
-    notes,
+    capture,
+    answers,
   );
 
+  // the fixed link methods (Epic #269) – the same functions for the UI and the agent tools (#313)
+  const links = new LinkMethodsService(ctx, graph, search, insights, appState);
+
+  // large file operations of the agent run as jobs of their own, under the run id (#304)
+  const agentFileJobs = new AgentFileJobs(jobs, archive, agentRuns);
+  agentFileJobs.register();
+
   // a check that is still queued or running covers a new request (startup, interval and manual triggers can meet)
+  const enqueueLinkRun = (trigger: string) => jobs.enqueue(LINK_RUN_JOB, 'Verknüpfungslauf (rückwirkend)', { trigger }, { maxAttempts: 2, sameAs: () => true });
   const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1, sameAs: () => true });
   const agent = new AgentService(
     ctx,
@@ -213,7 +228,10 @@ function buildServices(opts: CreateServicesOptions) {
       openItemDuplicates,
       noteEventDuplicates,
       memory,
-      capture: { capture: (conv, text, intent, opts) => chat.captureForAgent(conv, text, intent, opts) },
+      fileJobs: agentFileJobs,
+      links,
+      capture,
+      answers,
       enqueueConsistency,
     },
     llm,
@@ -241,6 +259,7 @@ function buildServices(opts: CreateServicesOptions) {
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
   chat.wire({ actions, archive, agent });
+  capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));
   graph.setReindexer(async (refs) => {
     await Promise.all([
@@ -295,8 +314,48 @@ function buildServices(opts: CreateServicesOptions) {
   });
   // background runs of the agent (#313): one job per trigger, cancellable, resumed after a restart
   jobs.register<{ kind: BackgroundKind; docIds?: string[] }>('agent.background', async (job) => {
-    const run = await agent.runBackground(job.payload.kind, { docIds: job.payload.docIds, signal: job.signal });
+    const run = await agent.runBackground(job.payload.kind, { docIds: job.payload.docIds, signal: job.signal, report: (p, m) => job.report(p, m) });
     return { summary: run ? `${run.status}: ${run.steps.length} Schritt(e)` : 'nichts zu tun', runId: run?.id ?? null };
+  });
+  // the retroactive link run (#279) and topic proposals from groups (#281): local, resumable, ONE notification at the end
+  jobs.register<{ trigger?: string }>(LINK_RUN_JOB, async (job) => {
+    let processed = 0;
+    let proposed = 0;
+    for (;;) {
+      job.throwIfCancelled();
+      const r = await links.backfill({
+        maxEntries: 100,
+        signal: job.signal,
+        onProgress: (done, total) => job.report(null, `${processed + done} Einträge geprüft (dieser Abschnitt: ${done} von ${total})`),
+      });
+      processed += r.processed;
+      proposed += r.proposed;
+      if (r.done || !r.processed) break;
+    }
+    job.throwIfCancelled();
+    job.report(null, 'Suche Gruppen ähnlicher Einträge ohne Thema');
+    const clusters = await links.clusters({ signal: job.signal });
+    for (const c of clusters)
+      links.proposeTopic(
+        c.name,
+        c.members.map((m) => m.id),
+      );
+    if (proposed || clusters.length)
+      notifications.create({
+        title: 'Verknüpfungsvorschläge',
+        description: [
+          proposed ? `${proposed} Verknüpfung${proposed === 1 ? '' : 'en'} vorgeschlagen.` : null,
+          clusters.length ? `${clusters.length} neue${clusters.length === 1 ? 's Thema' : ' Themen'} vorgeschlagen.` : null,
+          'Du entscheidest, was übernommen wird.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        type: 'assignment_proposal',
+        priority: 'low',
+        proposedActions: [{ label: 'Hinweise ansehen', kind: 'navigate', target: '/insights/' }],
+        dedupeKey: `link-run:${job.id}`,
+      });
+    return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${clusters.length} Themen vorgeschlagen` };
   });
   jobs.register<{ trigger?: string }>('consistency.check', async (job) => {
     await archive.cleanupInbox(); // retries inbox copies that were locked right after archiving
@@ -360,8 +419,13 @@ function buildServices(opts: CreateServicesOptions) {
     appState,
     backup,
     chat,
+    capture,
+    answers,
     agent,
     agentRuns,
+    agentFileJobs,
+    links,
+    enqueueLinkRun,
     memory,
     enqueueConsistency,
 
@@ -381,6 +445,11 @@ function buildServices(opts: CreateServicesOptions) {
       const startupCheck = settings.get().consistency.onStartup;
       if (startupCheck) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'), { startupCheckQueued: startupCheck });
+      // the retroactive link run starts once after the update that brought it (#279); later only on request or by the agent
+      if (!appState.get('links.run.initial')) {
+        appState.set('links.run.initial', new Date().toISOString());
+        enqueueLinkRun('update');
+      }
       const BG_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
       agent.start({
         enqueue: (kind, docIds) => jobs.enqueue('agent.background', `Hintergrund-Agent: ${BG_LABEL[kind] ?? 'Ablauf'}`, { kind, docIds }, { maxAttempts: 2 }),

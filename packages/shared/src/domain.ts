@@ -443,6 +443,8 @@ export const InsightKind = z.enum([
   'unclear_person',
   /** Several similar corrections of the agent: shall Archivist store a rule? (#315) */
   'learned_rule',
+  /** Similar entries without a topic: „Neues Thema ‚…‘ anlegen?“ (#281) */
+  'topic_cluster',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
 /**
@@ -764,6 +766,8 @@ export const Job = z.object({
   error: z.string().nullable(),
   /** Short outcome of a finished job for the job history (from a handler result with a `summary` string). */
   summary: z.string().nullable(),
+  /** Agent run the job belongs to (file jobs of a run, background runs); the job list links to it (#304). */
+  runId: z.string().nullable().default(null),
   cancelRequested: z.boolean(),
   createdAt: IsoDate,
   startedAt: IsoDate.nullable(),

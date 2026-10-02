@@ -12,6 +12,15 @@ export interface RefState {
   sets: Record<string, string[]>;
 }
 
+/** Agent state of a conversation, stored with the conversation (refs survive follow-ups, the mode override too). */
+export interface AgentChatState {
+  refs?: RefState;
+  /** Mode for this conversation only („frag mich diesmal vorher“); null = setting. */
+  mode?: AgentMode | null;
+  /** The request the agent asked a question about; it continues with the answer. */
+  task?: string | null;
+}
+
 export class RefStore {
   private readonly byId = new Map<string, string>();
 
@@ -100,6 +109,8 @@ export interface ToolContext {
   changedCount: number;
   /** Set when a tool result contained text that looks like an instruction to the agent (#301). */
   tainted: string | null;
+  /** The background job the run is part of: longer steps report their progress to it instead of starting jobs of their own (#304). */
+  job?: { report: (progress: number, message: string) => void } | null;
   /** Set when the provider's web search brought web pages into the run; changes then need the user's own request. */
   webContent?: boolean;
 }

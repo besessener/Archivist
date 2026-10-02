@@ -32,6 +32,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   persons_merged: 'Zusammengeführte Personen',
   unclear_person: 'Unklare Personen',
   learned_rule: 'Gelernte Regel',
+  topic_cluster: 'Vorschläge für neue Themen',
 };
 
 export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {

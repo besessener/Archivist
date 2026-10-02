@@ -4,6 +4,7 @@ import type { ArchiveResult, DocumentRecord } from '@archivist/shared';
 import { sanitizeCategoryPath } from '../../util/paths';
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
+import type { FileOp, FileOpResult } from '../file-jobs';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
 import { docLine, normFolder, resolveDocs, unknownNote, type ToolDeps } from './common';
 
@@ -34,32 +35,25 @@ export function fillPattern(
   return filled.slice(start, end).trim();
 }
 
-/** Larger amounts run in chunks: a stop of the run ends cleanly between two chunks, what is done stays (#304). */
-const CHUNK = 25;
-async function inChunks<T>(items: T[], ctx: ToolContext, fn: (chunk: T[]) => Promise<ArchiveResult>): Promise<ArchiveResult & { stopped: number }> {
-  const total: ArchiveResult & { stopped: number } = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0, stopped: 0 };
-  for (let i = 0; i < items.length; i += CHUNK) {
-    if (ctx.signal.aborted) {
-      total.stopped = items.length - i;
-      break;
-    }
-    const r = await fn(items.slice(i, i + CHUNK));
-    total.items.push(...r.items);
-    total.success += r.success;
-    total.skipped += r.skipped;
-    total.failed += r.failed;
-    total.conflicts += r.conflicts;
-  }
-  return total;
+/** Moves and renames go through the file jobs: larger amounts as a job of their own, in chunks either way (#304). */
+function bulk(
+  deps: ToolDeps,
+  ctx: ToolContext,
+  op: FileOp,
+  items: Array<{ documentId: string; categoryPath: string } | { documentId: string; fileName: string }>,
+  label: string,
+) {
+  return deps.fileJobs.run(op, items, { signal: ctx.signal, label, inJob: Boolean(ctx.job), report: ctx.job?.report });
 }
 
-function summarize(res: ArchiveResult & { stopped?: number }): string {
+function summarize(res: ArchiveResult & Partial<Pick<FileOpResult, 'stopped' | 'jobId' | 'resumes'>>): string {
   const parts = [`${res.success} erfolgreich`];
   if (res.skipped) parts.push(`${res.skipped} übersprungen`);
   if (res.conflicts) parts.push(`${res.conflicts} Konflikte`);
   if (res.failed) parts.push(`${res.failed} fehlgeschlagen`);
-  if (res.stopped) parts.push(`${res.stopped} wegen Abbruch nicht mehr bearbeitet`);
-  return parts.join(', ');
+  if (res.stopped && res.resumes) parts.push(`${res.stopped} folgen nach dem nächsten Start (der Auftrag wird fortgesetzt)`);
+  else if (res.stopped) parts.push(`${res.stopped} wegen Abbruch nicht mehr bearbeitet`);
+  return `${parts.join(', ')}${res.jobId ? ' (als eigener Auftrag ausgeführt)' : ''}`;
 }
 
 function details(res: ArchiveResult, ctx: ToolContext): string {
@@ -107,10 +101,12 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
             content: `Nichts zu verschieben: ${already} liegen bereits in ${target}${inbox.length ? `, ${inbox.length} sind noch im Eingang (archive_inbox)` : ''}.${unknownNote(unknown)}`,
             summary: 'nichts zu tun',
           };
-        const res = await inChunks(
-          movable.map((d) => ({ documentId: d.id, categoryPath: target })),
+        const res = await bulk(
+          deps,
           ctx,
-          (chunk) => archive.relocate(chunk, { confirmed: true, trigger: 'agent' }),
+          'relocate',
+          movable.map((d) => ({ documentId: d.id, categoryPath: target })),
+          `Agent: ${movable.length} Dateien nach ${target} verschieben`,
         );
         return {
           content: `Verschoben nach ${target}: ${summarize(res)}.${already ? ` ${already} lagen bereits dort.` : ''}${inbox.length ? ` ${inbox.length} sind noch im Eingang (nicht verschoben).` : ''}\n${details(res, ctx)}${unknownNote(unknown)}`,
@@ -150,7 +146,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
             content: `Vorschau (noch nichts umbenannt), ${plan.length} Datei(en), ${conflicts} mit Konflikt:\n${plan.slice(0, 80).map(line).join('\n')}${unknownNote(unknown)}`,
             summary: `${plan.length} geplant, ${conflicts} Konflikte`,
           };
-        const res = await inChunks(items, ctx, (chunk) => archive.rename(chunk, { confirmed: true, trigger: 'agent' }));
+        const res = await bulk(deps, ctx, 'rename', items, `Agent: ${items.length} Dateien umbenennen`);
         return {
           content: `Umbenannt: ${summarize(res)}.\n${details(res, ctx)}`,
           summary: `${res.success} umbenannt`,
@@ -205,7 +201,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         const main = categories.needsApproval(to);
         if (main) categories.create(main, true);
         const items = docs.map((d) => ({ documentId: d.id, categoryPath: `${to}${folderOf(d).slice(from.length)}` }));
-        const res = await inChunks(items, ctx, (chunk) => archive.relocate(chunk, { confirmed: true, trigger: 'agent' }));
+        const res = await bulk(deps, ctx, 'relocate', items, `Agent: Ordner ${from} nach ${to} umlegen`);
         const removed = res.success ? await archive.removeEmptyFolders() : [];
         return {
           content: `${from} → ${to}: ${summarize(res)}.${removed.length ? ` Leere Ordner entfernt: ${removed.join(', ')}.` : ''}\n${details(res, ctx)}`,

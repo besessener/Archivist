@@ -3,28 +3,16 @@ import type { ChatIntent, DecisionField, OpenItemPatch } from '@archivist/shared
 import { normalizeDateInput } from '../../util/dates';
 import { truncate } from '../../util/text';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
+import type { CaptureResult } from '../../services/capture';
 import type { ToolDeps } from './common';
+import { linkHint } from './link-methods';
 
 /**
- * The existing capture logic of the chat (required fields and follow-up questions, duplicate checks for open items, notes
- * and events, „Entscheidung oder nur Notiz?“, person resolution, superseding and contradiction checks) is offered to the
- * agent through this bridge, so both callers run the same code (#307). A follow-up question of a handler comes back as
- * text: the agent asks it through its own question exit (ask_user) and continues with the answer.
+ * Capturing knowledge as agent tools (#307): the tools call the capture module the rule-based chat uses as well (required
+ * fields and follow-up questions, duplicate checks for open items, notes and events, „Entscheidung oder nur Notiz?“, person
+ * resolution, superseding and contradiction checks). A follow-up question of a handler comes back as text: the agent asks
+ * it through its own question exit (ask_user) and continues with the answer.
  */
-export interface CaptureResult {
-  content: string;
-  /** Proposal cards the handler created (e.g. „ältere Entscheidung als überholt markieren?“). */
-  actionIds: string[];
-  /** The handler would have asked this (required field, duplicate …). */
-  question: string | null;
-  decisionId: string | null;
-  openItemId: string | null;
-}
-
-export interface CaptureBridge {
-  capture(conversationId: string | null, text: string, intent: ChatIntent, opts?: { force?: boolean }): Promise<CaptureResult>;
-}
-
 const base = (intent: ChatIntent['intent'], segment: string): ChatIntent => ({
   intent,
   confidence: 0.9,
@@ -117,10 +105,10 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
           },
         };
         if (a.supersedes && !supersedesId) intent.topic = a.topic ?? a.supersedes;
-        const r = await capture.capture(ctx.conversationId, ctx.userText || a.text, intent);
+        const r = await capture.forAgent(ctx.conversationId, ctx.userText || a.text, intent);
         ctx.actionIds.push(...r.actionIds);
         return {
-          content: `${ref(ctx, r.decisionId)} ${r.content}${asked(r)}${r.actionIds.length ? `\n(${r.actionIds.length} Vorschlagskarte(n) zur Bestätigung angelegt)` : ''}`,
+          content: `${ref(ctx, r.decisionId)} ${r.content}${asked(r)}${r.actionIds.length ? `\n(${r.actionIds.length} Vorschlagskarte(n) zur Bestätigung angelegt)` : ''}${await linkHint(deps, ctx, r.decisionId)}`,
           summary: r.question ? 'als Entwurf, Angaben fehlen' : 'gespeichert',
           change: `Entscheidung „${truncate(a.title ?? a.text, 60)}“ erfasst`,
         };
@@ -184,14 +172,14 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       risk: 'write',
       label: (a) => `Halte eine Notiz fest: „${truncate(a.title ?? a.content, 50)}“`,
       run: async (a, ctx) => {
-        const r = await capture.capture(ctx.conversationId, a.content, { ...base('note_capture', a.content), note: a.content, topic: a.topic });
+        const r = await capture.forAgent(ctx.conversationId, a.content, { ...base('note_capture', a.content), note: a.content, topic: a.topic });
         const created = deps.graph.listEntities({ type: 'note', limit: 2000 }).find((n) => (n.description ?? n.name).trim() === a.content.trim());
         if (created) {
           deps.audit.log({ action: 'note.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [created.id], after: { title: created.name } });
           for (const l of ctx.refs.resolveMany(a.links ?? []).ids) deps.graph.link(created.id, l, 'relates_to', { confidence: 0.9, status: 'confirmed' });
         }
         return {
-          content: `${created ? ctx.refs.entry(created.id) : ''} ${r.content}`,
+          content: `${created ? ctx.refs.entry(created.id) : ''} ${r.content}${await linkHint(deps, ctx, created?.id ?? null)}`,
           summary: 'gespeichert',
           change: `Notiz „${truncate(a.title ?? a.content, 50)}“ gespeichert`,
         };
@@ -215,7 +203,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       risk: 'write',
       label: (a) => `Lege den offenen Punkt „${truncate(a.title, 60)}“ an`,
       run: async (a, ctx) => {
-        const r = await capture.capture(
+        const r = await capture.forAgent(
           ctx.conversationId,
           [a.title, a.description].filter(Boolean).join(' – '),
           {
@@ -240,7 +228,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
           for (const docId of ctx.refs.resolveMany(a.sources ?? []).ids)
             deps.openItems.addSource(r.openItemId, docId, {}, { actor: 'agent', trigger: 'agent' });
         return {
-          content: `${ref(ctx, r.openItemId)} ${r.content}${asked(r)}`,
+          content: `${ref(ctx, r.openItemId)} ${r.content}${asked(r)}${await linkHint(deps, ctx, r.openItemId)}`,
           summary: r.openItemId ? 'angelegt' : 'nicht angelegt',
           change: r.openItemId ? `Offener Punkt „${truncate(a.title, 60)}“ angelegt` : undefined,
         };
@@ -379,7 +367,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       risk: 'write',
       label: (a) => `Trage das Ereignis „${truncate(a.title, 60)}“ ein`,
       run: async (a, ctx) => {
-        const r = await capture.capture(ctx.conversationId, ctx.userText || a.title, {
+        const r = await capture.forAgent(ctx.conversationId, ctx.userText || a.title, {
           ...base('event_record', a.title),
           topic: a.topic,
           project: a.project,
@@ -417,14 +405,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       schema: z.object({ question: z.string().min(3), alternativeQueries: list.nullish() }),
       risk: 'read',
       label: (a) => `Prüfe die Antwort auf „${truncate(a.question, 60)}“`,
-      run: async (a, ctx) => {
-        const r = await capture.capture(ctx.conversationId, a.question, {
-          ...base('knowledge_question', a.question),
-          query: a.question,
-          alternativeQueries: a.alternativeQueries ?? null,
-        });
-        return { content: r.content, summary: 'geprüft' };
-      },
+      run: async (a) => ({ content: await deps.answers.verifiedAnswer(a.question, a.alternativeQueries ?? null), summary: 'geprüft' }),
     }),
   ];
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { Loader2, RotateCcw, XCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Bot, Loader2, RotateCcw, XCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress, ProgressIndeterminate } from '@/components/ui/progress';
@@ -63,7 +64,15 @@ export function JobRow({ job, onChanged }: { job: JobRecord; onChanged?: () => v
             Letzter Versuch fehlgeschlagen: {job.error}
           </p>
         ))}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        {job.runId && (
+          // the progress of an agent step is shown in its run (#304) – the job only links there
+          <Button size="sm" variant="ghost" asChild>
+            <Link href={`/settings/?tab=agent&run=${job.runId}`} data-testid="job-run-link">
+              <Bot aria-hidden /> Agentenlauf ansehen
+            </Link>
+          </Button>
+        )}
         {(job.status === 'failed' || job.status === 'cancelled') && (
           <Button
             size="sm"

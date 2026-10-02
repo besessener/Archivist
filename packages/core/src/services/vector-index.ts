@@ -171,6 +171,31 @@ export class VectorIndex {
     this.models.clear();
   }
 
+  /**
+   * Entries whose chunks are closest to the chunks of `entityId` (cosine, computed in the worker like a search): the best
+   * score per other entry with its best matching chunk. Uses the entity's first `maxChunks` chunks as queries. Empty when
+   * the entity has no vectors of this model.
+   */
+  async similarTo(
+    model: string,
+    entityId: string,
+    opts: { k: number; minScore: number; types?: readonly string[] | null; maxChunks?: number },
+  ): Promise<VectorHit[]> {
+    const idx = this.load(model);
+    const own = idx?.byEntity.get(entityId);
+    if (!idx || !own?.length) return [];
+    const best = new Map<string, VectorHit>();
+    for (const [segIndex, row] of own.slice(0, opts.maxChunks ?? 4)) {
+      const seg = idx.segments[segIndex];
+      if (!seg) continue;
+      // a copy: the shared row may be overwritten while the worker reads the query
+      const query = seg.matrix.slice(row * idx.dim, (row + 1) * idx.dim);
+      for (const h of await this.search(model, query, { k: opts.k + own.length + 1, minScore: opts.minScore, types: opts.types }))
+        if (h.entityId !== entityId && (best.get(h.entityId)?.score ?? -1) < h.score) best.set(h.entityId, h);
+    }
+    return [...best.values()].toSorted((a, b) => b.score - a.score).slice(0, opts.k);
+  }
+
   async search(model: string, query: Float32Array, opts: { k: number; minScore: number; types?: readonly string[] | null }): Promise<VectorHit[]> {
     const idx = this.load(model);
     if (!idx || idx.live === 0) return [];

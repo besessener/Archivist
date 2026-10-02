@@ -647,7 +647,7 @@ export class KnowledgeGraphService {
     sourceId: string,
     targetId: string,
     relationType: RelationType,
-    opts: { status: 'confirmed' | 'proposed'; trigger?: string; confidence?: number },
+    opts: { status: 'confirmed' | 'proposed'; trigger?: string; confidence?: number; origin?: 'user' | 'system' },
   ): { relation: GraphRelation; created: boolean } {
     if (sourceId === targetId) throw new AppError('validation_error', 'Ein Eintrag kann nicht mit sich selbst verknüpft werden.');
     const a = this.getEntity(sourceId);
@@ -672,7 +672,8 @@ export class KnowledgeGraphService {
             confidence: opts.confidence ?? (confirmed ? 1 : 0.6),
             status: opts.status,
             resolvedByUser: confirmed,
-            origin: 'user',
+            // proposals of the fixed link methods are the system's, not the user's (#270)
+            origin: opts.origin ?? 'user',
           });
     const after = this.db
       .select()
