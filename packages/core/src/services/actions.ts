@@ -43,6 +43,16 @@ const map = (r: Row): StoredAgentAction => ({
   resolvedAt: r.resolvedAt,
 });
 
+/** Entity ids named by a merge proposal (sources and target). */
+function mergedIds(type: 'merge_entities' | 'merge_topics', params: Record<string, unknown>): string[] {
+  if (type === 'merge_topics') {
+    const p = ActionParamSchemas.merge_topics.parse(params);
+    return [p.sourceTopicId, p.targetTopicId];
+  }
+  const p = ActionParamSchemas.merge_entities.parse(params);
+  return [...p.sourceIds, p.targetId];
+}
+
 export interface ActionDeps {
   archive: ArchiveService;
   documents: DocumentService;
@@ -292,6 +302,12 @@ export class ActionService {
         if (c.status === 'resolved' || c.status === 'false_positive') return { stale: 'Der Widerspruch ist bereits aufgelöst.' };
         return { params };
       }
+      case 'merge_entities':
+      case 'merge_topics': {
+        if (mergedIds(type, params).some((id) => !d.graph.getEntity(id)))
+          return { stale: 'Einer der Einträge wurde inzwischen zusammengeführt oder gelöscht.' };
+        return { params };
+      }
       case 'merge_open_items': {
         const p = ActionParamSchemas.merge_open_items.parse(params);
         const stale = d.openItemDuplicates.staleReason(p.keepId, p.duplicateId);
@@ -304,6 +320,15 @@ export class ActionService {
 
   /** Other open proposals that the executed action made obsolete are withdrawn, so nothing outdated can run later. */
   private afterExecuted(id: string, type: AgentActionType, params: Record<string, unknown>): void {
+    if (type === 'merge_entities' || type === 'merge_topics') {
+      // proposals that still name a merged-away entity can no longer run; the next archive check asks anew
+      const gone = new Set(mergedIds(type, params).filter((x) => !this.deps.graph.getEntity(x)));
+      for (const other of this.list('proposed')) {
+        if (other.id === id || (other.actionType !== 'merge_entities' && other.actionType !== 'merge_topics')) continue;
+        if (mergedIds(other.actionType, other.proposedParameters).some((x) => gone.has(x)))
+          this.withdraw(other.id, 'Einer der Einträge wurde inzwischen mit einem anderen zusammengeführt.');
+      }
+    }
     if (type === 'relocate_documents') {
       const p = ActionParamSchemas.relocate_documents.parse(params);
       for (const other of this.openRelocationsFor(p.items.map((i) => i.documentId)))

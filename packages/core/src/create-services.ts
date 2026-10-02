@@ -9,6 +9,7 @@ import { AuditService } from './services/audit';
 import { BackupService } from './services/backup';
 import { CategoryService } from './services/categories';
 import { ChatService } from './services/chat';
+import { EntityDuplicateCheck } from './services/cleanup/entity-duplicates';
 import { ConsistencyService } from './services/consistency';
 import { ContradictionService } from './services/contradictions';
 import { DecisionService } from './services/decisions';
@@ -109,7 +110,8 @@ function buildServices(opts: CreateServicesOptions) {
   const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
   const scanner = new ScannerService(ctx, settings, pool, documentsSvc, graph, privacy, notifications, insights, audit, jobs);
   const timeline = new TimelineService(ctx, graph);
-  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications);
+  const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
+  const consistency = new ConsistencyService(ctx, settings, decisions, openItems, graph, contradictions, insights, notifications, entityDuplicates);
   const backup = new BackupService(ctx, settings, audit);
   const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
   consistency.addCheck((count) => {
