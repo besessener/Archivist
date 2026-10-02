@@ -6,7 +6,7 @@ test.describe('text recognition (OCR)', () => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     // deliberately outside the scan folder
-    const scan = await writeTextImage(workspace.dataDir, 'scan.png', ['Rechnung 4711', 'Zahlungsziel 30 Tage']);
+    const scan = await writeTextImage({ dir: workspace.dataDir, name: 'scan.png', lines: ['Rechnung 4711', 'Zahlungsziel 30 Tage'] });
 
     await app.inbox.do.importFile(scan);
 
