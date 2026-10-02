@@ -55,6 +55,20 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 /** An additional archive check step (cleanup detectors in services/cleanup); `count` adds to the summary per kind. */
+/** The document columns the check reads – never extracted_text (#213). */
+const CHECKED_COLUMNS = {
+  id: documents.id,
+  title: documents.title,
+  status: documents.status,
+  sha256: documents.sha256,
+  textHash: documents.textHash,
+  archiveRelPath: documents.archiveRelPath,
+  categoryPath: documents.categoryPath,
+  topicId: documents.topicId,
+  projectId: documents.projectId,
+};
+type CheckedDocument = Pick<typeof documents.$inferSelect, keyof typeof CHECKED_COLUMNS>;
+
 export type ConsistencyCheck = (count: (kind: string, n?: number) => void) => void | Promise<void>;
 
 /** Key prefixes of the hints this check owns; a hint whose cause no longer exists is closed after each run. */
@@ -110,7 +124,7 @@ export class ConsistencyService {
   }
 
   /** Documents of the same topic or project that lie in different archive directories: hint plus relocation proposal. */
-  private checkScatteredDocuments(archived: Array<typeof documents.$inferSelect>, count: (kind: string) => void): void {
+  private checkScatteredDocuments(archived: CheckedDocument[], count: (kind: string) => void): void {
     const entityIds = new Map<string, string>();
     const entityName = (kind: 'topic' | 'project', id: string | null) => {
       const name = id ? (this.graph.getEntity(id)?.name ?? null) : null;
@@ -229,8 +243,9 @@ export class ConsistencyService {
 
     // ---- Documents ----
     step(0.1, 'Prüfe Dokumente');
+    // metadata only: SELECT * loaded every extracted text (up to 400k chars each) into the main process (#213)
     const archived = this.db
-      .select()
+      .select(CHECKED_COLUMNS)
       .from(documents)
       .where(inArray(documents.status, ['archived', 'indexed_only']))
       .all();
@@ -278,10 +293,7 @@ export class ConsistencyService {
     const bySha = new Map<string, typeof archived>();
     for (const d of archived) bySha.set(d.sha256, [...(bySha.get(d.sha256) ?? []), d]);
     const bySimilarText = new Map<string, typeof archived>();
-    for (const d of archived) {
-      const th = (d.technicalMeta as { textHash?: string } | null)?.textHash;
-      if (th) bySimilarText.set(th, [...(bySimilarText.get(th) ?? []), d]);
-    }
+    for (const d of archived) if (d.textHash) bySimilarText.set(d.textHash, [...(bySimilarText.get(d.textHash) ?? []), d]);
     for (const group of [...bySha.values(), ...bySimilarText.values()]) {
       if (group.length < 2) continue;
       const ids = group.map((d) => d.id);
@@ -519,7 +531,18 @@ export class ConsistencyService {
     }
 
     // ---- External, already analyzed files related to known topics ----
-    const pending = this.db.select().from(documents).where(eq(documents.status, 'proposed')).all();
+    const pending = this.db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        proposal: documents.proposal,
+        sourcePath: documents.sourcePath,
+        stagedPath: documents.stagedPath,
+        confidence: documents.confidence,
+      })
+      .from(documents)
+      .where(eq(documents.status, 'proposed'))
+      .all();
     for (const p of pending) {
       const prop = p.proposal as DocumentProposal | null;
       const topic = prop?.topic ?? prop?.project;
