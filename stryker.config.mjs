@@ -6,7 +6,7 @@ export default {
   testRunner: 'vitest',
   vitest: { configFile: 'vitest.mutation.config.mts' },
   coverageAnalysis: 'perTest',
-  // Targeted: only modules where an unnoticed bug would be expensive (path safety, secrets, privacy gate, undo).
+  // Targeted: modules where an unnoticed bug would be expensive (path safety, secrets, privacy and agent gate, undo, pure domain rules).
   mutate: MUTATE_TARGETS,
   reporters: ['clear-text', 'progress', 'json', 'html'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
