@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { patchSchema } from './common';
 import { LOCAL_TIME } from './dates';
-import { SUPPORTED_EXTENSIONS } from './domain';
+import { SUPPORTED_EXTENSIONS } from './documents';
 import { AgentSettings, BackgroundAgentSettings } from './agent';
 
 export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high']);
@@ -54,10 +54,7 @@ const ConsistencySettings = z.object({
 
 /** Link proposals of the fixed link methods (Epic #269). */
 export const LinkSettings = z.object({
-  /**
-   * Propose links automatically: similar entries after every new or changed entry (#271), entries created by the same
-   * message or taken from the same document (#272).
-   */
+  /** Propose links automatically: similar entries (#271) and entries from the same message or document (#272). */
   autoPropose: z.boolean().default(true),
   /** At most this many open similarity proposals per entry (#271). */
   maxProposalsPerEntry: z.number().int().min(1).max(10).default(3),

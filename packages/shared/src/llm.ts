@@ -1,9 +1,7 @@
 import { z } from 'zod';
-import { ArchiveLocationProposal, DecisionField, DecisionKind } from './domain';
 import { Confidence, RelationType } from './common';
-
-export { AgentActionProposal, ArchiveLocationProposal } from './domain';
-export { SourceReference } from './common';
+import { DecisionField, DecisionKind } from './decisions';
+import { ArchiveLocationProposal } from './documents';
 
 /** LLMs tend to return null instead of omitting fields. */
 const opt = <T extends z.ZodType>(t: T) => t.nullish();

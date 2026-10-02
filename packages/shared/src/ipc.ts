@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import { AppErrorInfo, EntityType, Id, IsoDate, RelationMethod, RelationStatus, RelationType, SourceReference, type Result } from './common';
+import { EntityType, Id, IsoDate, RelationMethod, RelationStatus, RelationType, type Result } from './common';
+import { AgentActionStatus, StoredAgentAction } from './actions';
 import {
-  AgentActionProposal,
-  AgentActionStatus,
   ArchiveItemRequest,
   ArchivePlan,
   ArchiveResult,
@@ -10,41 +9,33 @@ import {
   ArchiveRootChangeResult,
   ArchiveRootPreview,
   ArchiveRootStatus,
-  AppNotification,
-  AuditEntry,
   BackupInfo,
   Category,
-  ChatMessage,
-  Contradiction,
-  Decision,
-  DecisionInput,
-  DecisionPatch,
-  DecisionStatus,
-  DocumentRecord,
-  DocumentStatus,
-  EntityDetail,
-  GraphEntity,
-  GraphRelation,
-  Insight,
-  Job,
-  LlmTransmission,
-  EventInput,
-  EventRecord,
-  OpenItem,
-  OpenItemInput,
-  OpenItemPatch,
-  OpenItemStatus,
-  Reminder,
-  ScanFile,
-  ScanFileStatus,
-  ScanRoot,
-  ScanSummary,
-  SearchResult,
-  SolutionPreview,
-  StoredAgentAction,
-  TimelineEntry,
   VerifyReport,
-} from './domain';
+} from './archive';
+import { AuditEntry, LlmTransmission, UndoRunResult } from './audit';
+import { ChatMessage, ChatSendResult, Conversation } from './chat';
+import { Decision, DecisionInput, DecisionPatch, DecisionStatus } from './decisions';
+import { DocumentRecord, DocumentStatus } from './documents';
+import { EventInput, EventRecord } from './events';
+import { Job } from './jobs';
+import { EntityDetail, GraphEntity, GraphRelation, KnowledgeCreateResult, SearchResult, TimelineEntry, TimelineQuery } from './knowledge';
+import {
+  CaseEntry,
+  CaseSummary,
+  EntrySubjects,
+  LearnedThreshold,
+  LinkCandidate,
+  LinkGroupBy,
+  LinkProposalPage,
+  LinkageMetrics,
+  NeighborhoodGraph,
+  RelatedPage,
+} from './links';
+import { AppNotification, Contradiction, Insight, Reminder } from './notifications';
+import { OpenItem, OpenItemInput, OpenItemPatch, OpenItemStatus, SolutionPreview } from './open-items';
+import { ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from './scan';
+import { AppStatus, LlmTestResult } from './status';
 import { Settings, SettingsPatch } from './settings';
 import {
   AgentCapability,
@@ -61,204 +52,12 @@ import {
 const Empty = z.object({});
 const Ok = z.object({ ok: z.literal(true) });
 
-export const AppStatus = z.object({
-  version: z.string(),
-  dataRoot: z.string(),
-  archiveRoot: z.string(),
-  platform: z.string(),
-  setupCompleted: z.boolean(),
-  llm: z.object({
-    configured: z.boolean(),
-    hasApiKey: z.boolean(),
-    status: z.enum(['unknown', 'ok', 'error']),
-    lastError: z.string().nullable(),
-    lastCheckedAt: z.string().nullable(),
-  }),
-  secretStorage: z.object({ available: z.boolean(), backend: z.string() }),
-  jobs: z.object({ pending: z.number(), running: z.number(), failed: z.number() }),
-  unreadNotifications: z.number(),
-  openInsights: z.number(),
-  services: z.array(z.object({ name: z.string(), status: z.enum(['ok', 'degraded', 'error']), detail: z.string().nullable() })),
-});
-export type AppStatus = z.infer<typeof AppStatus>;
-
-export const KnowledgeCreateResult = z.object({ entity: GraphEntity, created: z.boolean() });
-export type KnowledgeCreateResult = z.infer<typeof KnowledgeCreateResult>;
-
-export const LlmTestResult = z.object({
-  ok: z.boolean(),
-  latencyMs: z.number().nullable(),
-  message: z.string(),
-  modelReply: z.string().nullable(),
-  error: AppErrorInfo.nullable(),
-  /** Agent capability: adapter, native tool calling, streaming (#296, #297). */
-  agent: AgentCapability.nullish(),
-});
-export type LlmTestResult = z.infer<typeof LlmTestResult>;
-
-export const ChatSendResult = z.object({
-  conversationId: Id,
-  userMessage: ChatMessage,
-  assistantMessage: ChatMessage,
-});
-export type ChatSendResult = z.infer<typeof ChatSendResult>;
-
-export const Conversation = z.object({ id: Id, title: z.string(), createdAt: IsoDate, updatedAt: IsoDate });
-export type Conversation = z.infer<typeof Conversation>;
-
-export const ScanProposalGroup = z.object({
-  key: z.string(),
-  label: z.string(),
-  topic: z.string().nullable(),
-  project: z.string().nullable(),
-  documentIds: z.array(z.string()),
-  confidence: z.number(),
-});
-export type ScanProposalGroup = z.infer<typeof ScanProposalGroup>;
-
-export const ScanExclusion = z.object({ id: Id, kind: z.enum(['file', 'dir']), path: z.string(), createdAt: IsoDate });
-export type ScanExclusion = z.infer<typeof ScanExclusion>;
-
-export const TimelineQuery = z.object({
-  topicId: z.string().optional(),
-  projectId: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-  /** Maximum number of entries; the newest ones are returned (chronologically sorted). */
-  limit: z.number().int().min(1).max(10000).default(300),
-});
-
 const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benutzers (Pflicht)');
-
-export const UndoRunResult = z.object({ undone: z.number().int(), failed: z.number().int(), conflicts: z.array(z.string()), message: z.string() });
-export type UndoRunResult = z.infer<typeof UndoRunResult>;
-
-/** A related entry – direct or over shared topics, projects, persons, tags, cases – with strength and reason (#276). */
-const RelatedItem = z.object({
-  entity: z.object({ id: z.string(), type: EntityType, name: z.string(), description: z.string().nullable() }),
-  score: z.number(),
-  reason: z.string(),
-  relation: GraphRelation.nullable(),
-  shared: z.array(z.object({ id: z.string(), type: EntityType, name: z.string() })),
-});
-export const RelatedPage = z.object({ total: z.number().int(), items: z.array(RelatedItem) });
-export type RelatedPage = z.infer<typeof RelatedPage>;
-
-/** An open link proposal with both ends, for the review list (#280). */
-const LinkProposalEnd = z.object({ id: z.string(), type: EntityType, name: z.string() });
-export const LinkProposalPage = z.object({
-  total: z.number().int(),
-  groups: z.array(z.object({ key: z.string(), label: z.string(), count: z.number().int() })),
-  items: z.array(z.object({ relation: GraphRelation, source: LinkProposalEnd, target: LinkProposalEnd, groupKey: z.string() })),
-});
-export type LinkProposalPage = z.infer<typeof LinkProposalPage>;
-const LinkGroupBy = z.enum(['method', 'entry']);
-
-const SubjectRef = z.object({ id: z.string(), name: z.string() });
-/** Main and further topics/projects of an entry (#287). */
-const EntrySubjects = z.object({
-  topic: SubjectRef.nullable(),
-  project: SubjectRef.nullable(),
-  extraTopics: z.array(SubjectRef),
-  extraProjects: z.array(SubjectRef),
-});
-export type EntrySubjects = z.infer<typeof EntrySubjects>;
-
-/** The surroundings of an entry for the graph view (#288). */
-export const NeighborhoodGraph = z.object({
-  centerId: z.string(),
-  nodes: z.array(
-    z.object({
-      id: z.string(),
-      type: EntityType,
-      name: z.string(),
-      depth: z.number().int(),
-      count: z.number().int().nullable(),
-      status: z.string().nullable(),
-    }),
-  ),
-  edges: z.array(
-    z.object({ id: z.string(), source: z.string(), target: z.string(), relationType: RelationType, status: RelationStatus, grouped: z.boolean().optional() }),
-  ),
-  truncated: z.boolean(),
-});
-export type NeighborhoodGraph = z.infer<typeof NeighborhoodGraph>;
-
-/** A case („Vorgang“) with its numbers (#286). */
-const CaseSummary = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  status: z.enum(['open', 'closed']),
-  entries: z.number().int(),
-  openItems: z.number().int(),
-  updatedAt: IsoDate,
-});
-/** An entry of a case, with its date for the timeline (#286). */
-const CaseEntry = z.object({
-  id: z.string(),
-  type: EntityType,
-  name: z.string(),
-  date: z.string().nullable(),
-  status: z.string().nullable(),
-  proposed: z.boolean(),
-  relationId: z.string(),
-});
-
-/** A threshold learned from the user's rejections (#275). */
-const LearnedThreshold = z.object({
-  method: RelationMethod,
-  label: z.string(),
-  measure: z.string(),
-  offset: z.number(),
-  cap: z.number(),
-  confirmed: z.number().int(),
-  rejected: z.number().int(),
-});
-
-/** How well the archive is linked (#292): current values, confirmation rate per method and the history. */
-const LinkageSnapshot = z.object({
-  at: IsoDate,
-  entries: z.number().int(),
-  orphans: z.number().int(),
-  openProposals: z.number().int(),
-  confirmationRate: z.number().nullable(),
-});
-export const LinkageMetrics = z.object({
-  current: LinkageSnapshot,
-  methods: z.array(
-    z.object({
-      method: RelationMethod,
-      label: z.string(),
-      confirmed: z.number().int(),
-      rejected: z.number().int(),
-      open: z.number().int(),
-      rate: z.number().nullable(),
-    }),
-  ),
-  history: z.array(LinkageSnapshot),
-});
-export type LinkageMetrics = z.infer<typeof LinkageMetrics>;
-
-/** A link candidate of the fixed link methods with its reason (#271, #283, #313). */
-export const LinkCandidate = z.object({
-  id: z.string(),
-  type: EntityType,
-  name: z.string(),
-  score: z.number(),
-  method: z.enum(['similarity', 'mention']),
-  reason: z.string(),
-});
-export type LinkCandidate = z.infer<typeof LinkCandidate>;
-
 const NullableText = z.string().nullish();
 
 const ch = <I extends z.ZodType, O extends z.ZodType>(input: I, output: O) => ({ input, output });
 
-/**
- * Central, explicit IPC allowlist. Every channel has an input and an output schema.
- * Dynamic channel names are not allowed.
- */
+/** The IPC allowlist: every channel has an input and an output schema; dynamic channel names are not allowed. */
 export const ipcContract = {
   // --- App ---
   'app:getStatus': ch(Empty, AppStatus),
@@ -591,10 +390,7 @@ export const ipcContract = {
   ),
   'knowledge:getEntity': ch(z.object({ id: Id }), EntityDetail),
   'knowledge:resolveRelation': ch(z.object({ relationId: Id, status: RelationStatus, confirmed: Confirmed }), Ok),
-  /**
-   * Creates an entry from the knowledge page: topics/projects/persons as graph nodes, notes as indexed notes,
-   * events as real dated records. `created: false` means an identical entry already existed and is returned instead.
-   */
+  /** Creates an entry from the knowledge page; `created: false` returns the identical entry that already existed. */
   'knowledge:createEntity': ch(
     z.discriminatedUnion('type', [
       z.object({ type: z.enum(['topic', 'project', 'case', 'person', 'note']), name: z.string().trim().min(1), description: z.string().optional() }),
@@ -618,8 +414,6 @@ export const ipcContract = {
   'knowledge:unlink': ch(z.object({ relationId: Id, confirmed: Confirmed }), Ok),
   /** Edits a note's title and/or text; it is analysed again afterwards (#273). Undoable. */
   'knowledge:updateNote': ch(z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }), GraphEntity),
-  /** Related entries with the reason (#276, #289). */
-  /** Related entries of an entry, strongest first, paged (#276). */
   /** The surroundings of an entry as a graph, 1–2 steps, filtered; big hubs grouped (#288). */
   'knowledge:neighborhood': ch(
     z.object({
@@ -644,6 +438,7 @@ export const ipcContract = {
     z.object({ names: z.array(z.string().max(200)).max(200), noteId: z.string().optional() }),
     z.array(z.object({ name: z.string(), entity: z.object({ id: z.string(), type: EntityType, name: z.string() }).nullable() })),
   ),
+  /** Related entries of an entry with the reason, strongest first, paged (#276, #289). */
   'knowledge:related': ch(z.object({ id: Id, limit: z.number().int().min(1).max(50).default(10), offset: z.number().int().min(0).default(0) }), RelatedPage),
   /** Link proposals for an entry: similar entries and mentioned topics/projects (#283); the same function as the agent's suggest_links. */
   'links:suggestions': ch(z.object({ id: Id, limit: z.number().int().min(1).max(5).default(3) }), z.array(LinkCandidate)),
@@ -764,5 +559,3 @@ export interface ArchivistBridge {
   /** Path of a file dropped via drag and drop (Electron webUtils). */
   getPathForFile(file: File): string;
 }
-
-export { AgentActionProposal, SourceReference };

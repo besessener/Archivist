@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import { Id, IsoDate } from './common';
 
-/**
- * Agent mode (Epic #294): Archivist works as an agent – it understands a request, fetches the data it needs with tools,
- * plans several steps and carries out changes. Everything below is shared between the main process and the renderer.
- */
-
 /** „Auto“ carries out changes itself (logged, undoable); „Fragen“ prepares every change as a proposal. */
 export const AgentMode = z.enum(['auto', 'ask']);
 export type AgentMode = z.infer<typeof AgentMode>;
