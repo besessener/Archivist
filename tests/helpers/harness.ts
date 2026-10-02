@@ -35,6 +35,8 @@ export interface AgentTurn {
   refusal?: string;
   /** stop at the output limit (OpenAI: incomplete/max_output_tokens) */
   truncated?: boolean;
+  /** OpenAI only: a hosted web search before the text, which then cites the page */
+  web?: { query: string; url: string; title: string };
 }
 export type AgentScript = (req: { body: Record<string, unknown>; round: number; tools: string[]; provider: 'openai' | 'anthropic' }) => AgentTurn;
 
@@ -230,7 +232,32 @@ export class FakeLlm {
           name: c.name,
           arguments: JSON.stringify(c.args ?? {}),
         })),
-        ...(turn.text ? [{ type: 'message', id: 'msg_1', role: 'assistant', content: [{ type: 'output_text', text: turn.text }] }] : []),
+        ...(turn.web
+          ? [
+              {
+                type: 'web_search_call',
+                id: 'ws_1',
+                status: 'completed',
+                action: { type: 'search', query: turn.web.query, sources: [{ type: 'url', url: turn.web.url }] },
+              },
+            ]
+          : []),
+        ...(turn.text
+          ? [
+              {
+                type: 'message',
+                id: 'msg_1',
+                role: 'assistant',
+                content: [
+                  {
+                    type: 'output_text',
+                    text: turn.text,
+                    ...(turn.web ? { annotations: [{ type: 'url_citation', url: turn.web.url, title: turn.web.title, start_index: 0, end_index: 1 }] } : {}),
+                  },
+                ],
+              },
+            ]
+          : []),
         ...(turn.refusal ? [{ type: 'message', id: 'msg_2', role: 'assistant', content: [{ type: 'refusal', refusal: turn.refusal }] }] : []),
       ];
       return new Response(

@@ -134,6 +134,7 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
   const [bgLimits, setBgLimits] = useState(toLimits(a.backgroundLimits));
   const [retries, setRetries] = useState(String(a.maxRetries));
   const [learning, setLearning] = useState(a.learning);
+  const [webSearch, setWebSearch] = useState(a.webSearch);
   const [bg, setBg] = useState(a.background);
   const [leadDays, setLeadDays] = useState(String(a.background.deadlineLeadDays));
   const [prices, setPrices] = useState<PriceRow[]>(() =>
@@ -178,6 +179,7 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
         backgroundLimits: backgroundLimits.value,
         maxRetries,
         learning,
+        webSearch,
         prices: priceTable,
         background: { ...bg, deadlineLeadDays },
       },
@@ -220,6 +222,12 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
         </div>
         <SwitchRow label="Lernen" hint="Gelernte Regeln, Abläufe und Wissen werden jedem Lauf mitgegeben.">
           <Switch checked={learning} onCheckedChange={setLearning} aria-label="Lernen" data-testid="agent-learning" />
+        </SwitchRow>
+        <SwitchRow
+          label="Websuche im Chat"
+          hint="Archivist darf im Chat über den KI-Anbieter im Internet suchen (Claude oder OpenAI); die Quellen stehen unter der Antwort. Suchanfragen gehen an den Anbieter, Archivinhalte nicht. Hintergrundaufgaben suchen nie im Web."
+        >
+          <Switch checked={webSearch} onCheckedChange={setWebSearch} aria-label="Websuche im Chat" data-testid="agent-web-search" />
         </SwitchRow>
       </Section>
 

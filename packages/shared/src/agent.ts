@@ -85,6 +85,8 @@ export const AgentSettings = z.object({
   background: BackgroundAgentSettings.default(() => BackgroundAgentSettings.parse({})),
   /** Learned rules, workflows and memory are given to every run (#315). */
   learning: z.boolean().default(true),
+  /** Chat runs may use the provider's web search (Claude: web_search server tool, OpenAI: hosted web_search). */
+  webSearch: z.boolean().default(true),
 });
 export type AgentSettings = z.infer<typeof AgentSettings>;
 

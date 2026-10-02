@@ -51,7 +51,23 @@ export interface TurnRequest {
   purpose: string;
   /** Documents whose metadata or content are part of this request (transmission log, #301). */
   documentIds: string[];
+  /** Offer the provider's own web search (server-side tool); only in chat runs. */
+  webSearch?: boolean;
   signal?: AbortSignal;
+}
+
+/** A web page the provider's web search found or the answer cites. */
+export interface WebSource {
+  url: string;
+  title: string;
+}
+
+/** What the provider's web search did during one turn (searches run on the provider's side, not as agent tools). */
+export interface WebSearchActivity {
+  /** Search queries in order; an empty string for a search whose query is unknown. */
+  queries: string[];
+  /** Pages cited in the answer, else the pages found – without duplicates. */
+  sources: WebSource[];
 }
 
 export interface TurnResult {
@@ -64,6 +80,8 @@ export interface TurnResult {
   refusal?: { category: string | null; explanation: string | null };
   /** true if the answer arrived as a stream (connection test). */
   streamed: boolean;
+  /** Set when the provider searched the web in this turn. */
+  web?: WebSearchActivity;
 }
 
 export type StreamEvent = { type: 'text'; delta: string };
