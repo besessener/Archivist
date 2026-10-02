@@ -36,7 +36,7 @@ describe('Agent in the chat (#295, #303, #304)', () => {
     const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
     expect(run.status).toBe('done');
     expect(run.steps.map((s) => s.tool)).toEqual(['find_documents', 'move_documents']);
-    expect(run.steps[1]!.auditIds.length).toBe(2);
+    expect(run.steps[1]!.auditIds?.length).toBe(2);
     expect(run.undoable).toBe(2);
     expect(run.usage.requests).toBe(3);
     // every change of the run carries its id

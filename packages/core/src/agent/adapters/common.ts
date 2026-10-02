@@ -1,6 +1,7 @@
 import type { LlmTransmission } from '@archivist/shared';
-import type { FetchLike } from '../../services/llm';
 import type { AgentMessage } from '../types';
+
+export type FetchLike = typeof fetch;
 
 /** Everything an adapter needs from the LLM client: endpoint, credentials, transport and the transmission log. */
 export interface AdapterConfig {

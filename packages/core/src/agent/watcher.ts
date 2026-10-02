@@ -100,7 +100,13 @@ export class DeadlineWatcher {
     const closed = items.filter((o) => (o.status === 'resolved' || o.status === 'dismissed') && inWeek(o.updatedAt));
     const created = items.filter((o) => inWeek(o.createdAt));
     const active = items.filter((o) => ['open', 'waiting', 'blocked'].includes(o.status));
-    const previously = new Set<string>(loadReported(this.d.appState, 'agent.review.listed') as unknown as string[]);
+    let listedBefore: unknown = [];
+    try {
+      listedBefore = JSON.parse(this.d.appState.get('agent.review.listed') ?? '[]');
+    } catch {
+      /* start fresh */
+    }
+    const previously = new Set<string>(Array.isArray(listedBefore) ? (listedBefore as string[]) : []);
     const stillOpen = active.filter((o) => previously.has(o.id));
     const newlyOpen = active.filter((o) => !previously.has(o.id));
     const horizon = addDays(today, 14);

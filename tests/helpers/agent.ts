@@ -1,7 +1,7 @@
 import { RefStore, type ToolContext } from '../../packages/core/src/agent/registry';
-import { createTestApp, scriptedTurns, type AgentTurn, type TestApp, type TestAppOptions } from './harness';
+import { createTestApp, scriptedTurns, type TestApp, type TestAppOptions } from './harness';
 
-export { scriptedTurns, type AgentTurn };
+export { scriptedTurns };
 
 /** Test app with the agent mode switched on (OpenAI-compatible fake endpoint unless `baseUrl` says otherwise). */
 export async function agentApp(opts: TestAppOptions & { baseUrl?: string; model?: string } = {}): Promise<TestApp> {
@@ -76,13 +76,6 @@ export const folderOf = (app: TestApp, id: string) => {
 
 /** All texts the agent sent to the model (tool results included) – for privacy and secret checks. */
 export const sentText = (app: TestApp) => JSON.stringify(app.llm.agentRequests);
-
-/** The tool result for the n-th call as the model saw it in the following request (Responses API format). */
-export function toolOutputs(app: TestApp): string[] {
-  const last = app.llm.agentRequests.at(-1);
-  const input = (last?.input as Array<{ type?: string; output?: string }> | undefined) ?? [];
-  return input.filter((i) => i.type === 'function_call_output').map((i) => i.output ?? '');
-}
 
 /** A tool context for calling tools directly. */
 export function toolContext(overrides: Partial<ToolContext> = {}): ToolContext {

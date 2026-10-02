@@ -34,11 +34,31 @@ export function fillPattern(
   return filled.slice(start, end).trim();
 }
 
-function summarize(res: ArchiveResult): string {
+/** Larger amounts run in chunks: a stop of the run ends cleanly between two chunks, what is done stays (#304). */
+const CHUNK = 25;
+async function inChunks<T>(items: T[], ctx: ToolContext, fn: (chunk: T[]) => Promise<ArchiveResult>): Promise<ArchiveResult & { stopped: number }> {
+  const total: ArchiveResult & { stopped: number } = { items: [], success: 0, skipped: 0, failed: 0, conflicts: 0, stopped: 0 };
+  for (let i = 0; i < items.length; i += CHUNK) {
+    if (ctx.signal.aborted) {
+      total.stopped = items.length - i;
+      break;
+    }
+    const r = await fn(items.slice(i, i + CHUNK));
+    total.items.push(...r.items);
+    total.success += r.success;
+    total.skipped += r.skipped;
+    total.failed += r.failed;
+    total.conflicts += r.conflicts;
+  }
+  return total;
+}
+
+function summarize(res: ArchiveResult & { stopped?: number }): string {
   const parts = [`${res.success} erfolgreich`];
   if (res.skipped) parts.push(`${res.skipped} übersprungen`);
   if (res.conflicts) parts.push(`${res.conflicts} Konflikte`);
   if (res.failed) parts.push(`${res.failed} fehlgeschlagen`);
+  if (res.stopped) parts.push(`${res.stopped} wegen Abbruch nicht mehr bearbeitet`);
   return parts.join(', ');
 }
 
@@ -87,9 +107,10 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
             content: `Nichts zu verschieben: ${already} liegen bereits in ${target}${inbox.length ? `, ${inbox.length} sind noch im Eingang (archive_inbox)` : ''}.${unknownNote(unknown)}`,
             summary: 'nichts zu tun',
           };
-        const res = await archive.relocate(
+        const res = await inChunks(
           movable.map((d) => ({ documentId: d.id, categoryPath: target })),
-          { confirmed: true, trigger: 'agent' },
+          ctx,
+          (chunk) => archive.relocate(chunk, { confirmed: true, trigger: 'agent' }),
         );
         return {
           content: `Verschoben nach ${target}: ${summarize(res)}.${already ? ` ${already} lagen bereits dort.` : ''}${inbox.length ? ` ${inbox.length} sind noch im Eingang (nicht verschoben).` : ''}\n${details(res, ctx)}${unknownNote(unknown)}`,
@@ -129,7 +150,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
             content: `Vorschau (noch nichts umbenannt), ${plan.length} Datei(en), ${conflicts} mit Konflikt:\n${plan.slice(0, 80).map(line).join('\n')}${unknownNote(unknown)}`,
             summary: `${plan.length} geplant, ${conflicts} Konflikte`,
           };
-        const res = await archive.rename(items, { confirmed: true, trigger: 'agent' });
+        const res = await inChunks(items, ctx, (chunk) => archive.rename(chunk, { confirmed: true, trigger: 'agent' }));
         return {
           content: `Umbenannt: ${summarize(res)}.\n${details(res, ctx)}`,
           summary: `${res.success} umbenannt`,
@@ -184,7 +205,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         const main = categories.needsApproval(to);
         if (main) categories.create(main, true);
         const items = docs.map((d) => ({ documentId: d.id, categoryPath: `${to}${folderOf(d).slice(from.length)}` }));
-        const res = await archive.relocate(items, { confirmed: true, trigger: 'agent' });
+        const res = await inChunks(items, ctx, (chunk) => archive.relocate(chunk, { confirmed: true, trigger: 'agent' }));
         const removed = res.success ? await archive.removeEmptyFolders() : [];
         return {
           content: `${from} → ${to}: ${summarize(res)}.${removed.length ? ` Leere Ordner entfernt: ${removed.join(', ')}.` : ''}\n${details(res, ctx)}`,

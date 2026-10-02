@@ -11,12 +11,13 @@ type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
 /** Optional features; an endpoint that rejects one gets requests without it from then on (#296). */
 type Feature = 'effort' | 'task_budget' | 'compaction' | 'eager_streaming' | 'top_cache' | 'fallbacks';
 const FEATURE_MENTIONS: Record<Feature, RegExp> = {
-  effort: /\beffort\b|output_config/i,
+  // the specific features come first: „output_config.task_budget: …“ must switch off the task budget, not the effort
   task_budget: /task[_-]?budget/i,
-  compaction: /context_management|compact/i,
   eager_streaming: /eager_input_streaming/i,
-  top_cache: /cache_control/i,
+  compaction: /context_management|compact/i,
   fallbacks: /fallback/i,
+  effort: /\beffort\b|output_config/i,
+  top_cache: /cache_control/i,
 };
 
 /** Minimum total of a Claude task budget. */
@@ -183,6 +184,7 @@ export class AnthropicAdapter implements ProviderAdapter {
   async turn(req: TurnRequest, onEvent?: (e: StreamEvent) => void): Promise<TurnResult> {
     const off = rejectedFeatures(`${this.endpoint}\n${this.model}`);
     let success = false;
+    let usage: TurnResult['usage'] | null = null;
     let bytes = 0;
     try {
       for (let fallback = 0; ; fallback += 1) {
@@ -198,7 +200,9 @@ export class AnthropicAdapter implements ProviderAdapter {
           });
           const message = await stream.finalMessage();
           success = true;
-          return this.toResult(message, streamed);
+          const result = this.toResult(message, streamed);
+          usage = result.usage;
+          return result;
         } catch (err) {
           if (err instanceof Anthropic.BadRequestError && fallback < 6) {
             const feature = (Object.keys(FEATURE_MENTIONS) as Feature[]).find((f) => !off.has(f) && FEATURE_MENTIONS[f].test(err.message));
@@ -221,6 +225,9 @@ export class AnthropicAdapter implements ProviderAdapter {
         documentIds: req.documentIds,
         preview: previewOf(req.messages),
         success,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        cacheReadTokens: usage?.cacheReadTokens ?? null,
       });
     }
   }

@@ -115,6 +115,24 @@ export class FakeLlm {
     return /tool_result|function_call_output/.test(asText) ? { text: 'OK' } : { calls: [{ name: 'echo', args: { text: 'archivist' } }] };
   }
 
+  /** Answers a plain text request (no tools) with the responder of its JSON schema. */
+  private async textAnswer(instructions: string, rawInput: string, body: Record<string, unknown>): Promise<string> {
+    // the technical JSON hint of the client is not part of what the tests check
+    const input = rawInput.replace(/^Antworte als JSON\.\n\n/, '');
+    const schema = /JSON-Schema „(\w+)“/.exec(instructions)?.[1] ?? 'plain';
+    this.calls.push({ schema, input, instructions });
+    if (this.raw !== null) return this.raw;
+    const fn = this.responders.get(schema);
+    let out = fn
+      ? await fn(schema, input.replace(/Bisheriger Verlauf[\s\S]*?\n\n(?=Nachricht des Benutzers:)/, ''), body)
+      : schema === 'plain'
+        ? 'OK'
+        : { error: `no responder for ${schema}` };
+    // For simplicity tests return a single intent; the analysis expects {intents: [...]}
+    if (schema === 'ChatIntent' && out && typeof out === 'object' && 'intent' in out) out = { intents: [out] };
+    return typeof out === 'string' ? out : JSON.stringify(out);
+  }
+
   on(schema: string, fn: Responder) {
     this.responders.set(schema, fn);
     return this;
@@ -150,7 +168,26 @@ export class FakeLlm {
       });
     }
     const toolNames = Array.isArray(body.tools) ? (body.tools as Array<{ name?: string }>).map((t) => t.name ?? '') : [];
-    if (u.endsWith('/v1/messages')) {
+    // the SDK posts beta requests to `/v1/messages?beta=true`
+    if (u.split('?')[0]!.endsWith('/v1/messages') && !toolNames.length && !body.stream) {
+      // plain text request via Claude (classification, summaries): the same responders as /responses
+      const messages = (body.messages as Array<{ content?: unknown }> | undefined) ?? [];
+      const first = messages[0]?.content;
+      const text = await this.textAnswer(typeof body.system === 'string' ? body.system : '', typeof first === 'string' ? first : JSON.stringify(first ?? ''), body);
+      return new Response(
+        JSON.stringify({
+          id: 'msg_text',
+          type: 'message',
+          role: 'assistant',
+          model: body.model,
+          content: [{ type: 'text', text }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (u.split('?')[0]!.endsWith('/v1/messages')) {
       // Anthropic Messages API (Claude adapter, also via Microsoft Foundry)
       this.agentRequests.push(body);
       this.agentHeaders.push(headersOf(init));
@@ -218,23 +255,7 @@ export class FakeLlm {
           }),
           { status: 400 },
         );
-      // the technical JSON hint of the client is not part of what the tests check
-      const input = rawInput.replace(/^Antworte als JSON\.\n\n/, '');
-      const schema = /JSON-Schema „(\w+)“/.exec(instructions)?.[1] ?? 'plain';
-      this.calls.push({ schema, input, instructions });
-      let text: string;
-      if (this.raw !== null) text = this.raw;
-      else {
-        const fn = this.responders.get(schema);
-        let out = fn
-          ? await fn(schema, input.replace(/Bisheriger Verlauf[\s\S]*?\n\n(?=Nachricht des Benutzers:)/, ''), body)
-          : schema === 'plain'
-            ? 'OK'
-            : { error: `no responder for ${schema}` };
-        // For simplicity tests return a single intent; the analysis expects {intents: [...]}
-        if (schema === 'ChatIntent' && out && typeof out === 'object' && 'intent' in out) out = { intents: [out] };
-        text = typeof out === 'string' ? out : JSON.stringify(out);
-      }
+      const text = await this.textAnswer(instructions, rawInput, body);
       return new Response(
         JSON.stringify({ id: 'resp_1', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] }),
         { status: 200, headers: { 'content-type': 'application/json' } },

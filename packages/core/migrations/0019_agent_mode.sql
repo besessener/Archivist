@@ -49,6 +49,9 @@ CREATE INDEX `agent_runs_conv_idx` ON `agent_runs` (`conversation_id`);--> state
 ALTER TABLE `audit_log` ADD `run_id` text;--> statement-breakpoint
 CREATE INDEX `audit_run_idx` ON `audit_log` (`run_id`);--> statement-breakpoint
 ALTER TABLE `entities` ADD `status` text;--> statement-breakpoint
+ALTER TABLE `llm_transmissions` ADD `input_tokens` integer;--> statement-breakpoint
+ALTER TABLE `llm_transmissions` ADD `output_tokens` integer;--> statement-breakpoint
+ALTER TABLE `llm_transmissions` ADD `cache_read_tokens` integer;--> statement-breakpoint
 ALTER TABLE `messages` ADD `run_id` text;--> statement-breakpoint
 ALTER TABLE `relations` ADD `origin` text;--> statement-breakpoint
 ALTER TABLE `relations` ADD `run_id` text;--> statement-breakpoint

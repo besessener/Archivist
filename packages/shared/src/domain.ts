@@ -847,6 +847,10 @@ export const LlmTransmission = z.object({
   documentIds: z.array(z.string()),
   preview: z.string(),
   success: z.boolean(),
+  /** Tokens per request (agent requests, #302). */
+  inputTokens: z.number().nullish(),
+  outputTokens: z.number().nullish(),
+  cacheReadTokens: z.number().nullish(),
 });
 export type LlmTransmission = z.infer<typeof LlmTransmission>;
 

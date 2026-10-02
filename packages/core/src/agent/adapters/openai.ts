@@ -85,31 +85,37 @@ async function readStream(res: Response, onEvent?: (e: StreamEvent) => void): Pr
   const decoder = new TextDecoder();
   let buffer = '';
   let final: ResponseBody | null = null;
+  const handle = (chunk: string) => {
+    const data = chunk
+      .split('\n')
+      .filter((l) => l.startsWith('data:'))
+      .map((l) => l.slice(5).trim())
+      .join('');
+    if (!data || data === '[DONE]') return;
+    let ev: { type?: string; delta?: string; response?: ResponseBody; message?: string };
+    try {
+      ev = JSON.parse(data) as typeof ev;
+    } catch {
+      return;
+    }
+    if (ev.type === 'response.output_text.delta' && typeof ev.delta === 'string') onEvent?.({ type: 'text', delta: ev.delta });
+    else if (ev.type === 'response.completed' || ev.type === 'response.incomplete' || ev.type === 'response.failed') final = ev.response ?? null;
+    else if (ev.type === 'error') throw new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Fehler.', { details: ev.message, retryable: true });
+  };
   for (;;) {
     const { done, value } = (await reader.read()) as { done: boolean; value?: Uint8Array };
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    // line endings may be CRLF (proxies); events are separated by an empty line
+    buffer += decoder.decode(value, { stream: true }).replaceAll('\r\n', '\n');
     let idx: number;
     while ((idx = buffer.indexOf('\n\n')) !== -1) {
       const chunk = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 2);
-      const data = chunk
-        .split('\n')
-        .filter((l) => l.startsWith('data:'))
-        .map((l) => l.slice(5).trim())
-        .join('');
-      if (!data || data === '[DONE]') continue;
-      let ev: { type?: string; delta?: string; response?: ResponseBody; message?: string };
-      try {
-        ev = JSON.parse(data) as typeof ev;
-      } catch {
-        continue;
-      }
-      if (ev.type === 'response.output_text.delta' && typeof ev.delta === 'string') onEvent?.({ type: 'text', delta: ev.delta });
-      else if (ev.type === 'response.completed' || ev.type === 'response.incomplete' || ev.type === 'response.failed') final = ev.response ?? null;
-      else if (ev.type === 'error') throw new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Fehler.', { details: ev.message, retryable: true });
+      handle(chunk);
     }
   }
+  // the last event may end without the empty line
+  if (buffer.trim()) handle(buffer);
   if (!final) throw new AppError('llm_error', 'Der Datenstrom des LLM-Endpunkts endete unvollständig.', { retryable: true });
   return final;
 }
@@ -151,6 +157,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
     };
     const body = () => Object.fromEntries(Object.entries(full).filter(([k]) => !rejected.has(k)));
     let success = false;
+    let usage: TurnResult['usage'] | null = null;
     const sent = { bytes: 0 };
     try {
       for (let fallback = 0; ; fallback += 1) {
@@ -183,6 +190,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         const result = this.toResult(parsed, streamed);
         if (!streamed && result.text) onEvent?.({ type: 'text', delta: result.text });
         success = true;
+        usage = result.usage;
         return result;
       }
     } finally {
@@ -195,6 +203,9 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         documentIds: req.documentIds,
         preview: previewOf(req.messages),
         success,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        cacheReadTokens: usage?.cacheReadTokens ?? null,
       });
     }
   }

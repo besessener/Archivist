@@ -11,8 +11,9 @@ import { abortedError, mapHttpError } from '../util/llm-errors';
 import type { SecretService } from './secret';
 import type { SettingsService } from './settings';
 import { AnthropicAdapter, detectAdapter, type AdapterConfig } from '../agent/adapters';
+import type { FetchLike } from '../agent/adapters/common';
 
-export type FetchLike = typeof fetch;
+export type { FetchLike } from '../agent/adapters/common';
 
 export interface LlmRequest {
   instructions: string;
@@ -27,7 +28,7 @@ export interface LlmRequest {
   signal?: AbortSignal;
 }
 
-export { abortedError, mapHttpError } from '../util/llm-errors';
+export { abortedError } from '../util/llm-errors';
 
 /**
  * Cancellation scope: every LLM request started inside `llmCancelScope.run(signal, …)` uses this signal

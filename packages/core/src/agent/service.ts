@@ -106,7 +106,11 @@ export function historyWindow(history: AgentMessage[], maxChars = MAX_HISTORY_CH
     start = i;
   }
   while (start < history.length && history[start]!.role !== 'user') start += 1;
-  return start >= history.length ? history.slice(-1) : history.slice(start);
+  if (start < history.length) return history.slice(start);
+  // the current request alone is larger than the window: start at its user message anyway – tool results without the
+  // calls they answer would be rejected by every provider
+  const lastUser = history.findLastIndex((m) => m.role === 'user');
+  return lastUser === -1 ? history.slice(-1) : history.slice(lastUser);
 }
 
 const TYPE_TO_REF: Partial<Record<string, RefType>> = { task: 'task', question: 'question' };
@@ -605,7 +609,8 @@ export class AgentService {
       steps: outcome.steps,
       usage: outcome.usage,
       costUsd: costOf(outcome.usage, adapter.model, s.prices),
-      rounds: outcome.rounds,
+      // a round is one model request (the last one usually has no tool call)
+      rounds: Math.max(outcome.rounds, outcome.usage.requests),
       applied: ctx.applied,
       files: ctx.files,
       error: outcome.error,
@@ -613,6 +618,19 @@ export class AgentService {
     progress.status = outcome.status;
     progress.steps = outcome.steps;
     this.emit(progress, true);
+    // prompt caching: cache hits are logged with every run (#296)
+    this.ctx.logger.info('agent', 'Agent run finished', {
+      runId,
+      trigger: o.trigger,
+      provider: adapter.id,
+      status: outcome.status,
+      rounds: outcome.rounds,
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      cacheReadTokens: outcome.usage.cacheReadTokens,
+      cacheWriteTokens: outcome.usage.cacheWriteTokens,
+      retries: outcome.usage.retries,
+    });
     if (actionId) ctx.actionIds.unshift(actionId);
     return { outcome, ctx, run, proposals: proposals.length };
   }

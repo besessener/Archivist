@@ -105,6 +105,8 @@ export class AgentRunner {
   private usage: AgentUsage = emptyUsage();
   private readonly seen = new Map<string, number>();
   private loopHits = 0;
+  /** Model rounds of the loop so far (also rounds without tool calls; the wrap-up request is not counted). */
+  private rounds = 0;
   private pendingTool: Extract<AgentMessage, { role: 'tool' }> | null = null;
   private readonly started: number;
 
@@ -126,6 +128,8 @@ export class AgentRunner {
     if (!this.pendingTool) return;
     const m = this.pendingTool;
     this.pendingTool = null;
+    // a round whose only call was ask_user has no results yet – no empty tool message (its answer follows later)
+    if (!m.results.length && !m.note) return;
     this.append(m);
   }
 
@@ -146,8 +150,11 @@ export class AgentRunner {
         const limit = round >= this.o.limits.maxRounds ? 'rounds' : this.limitReached();
         if (limit) return this.wrapUp(limit, round);
         round += 1;
+        this.rounds = round;
         const turn = await this.turn(round, this.o.maxOutputTokens ?? 32_000);
         if (!turn) return this.finish('cancelled', lastText);
+        // cancelled while the answer was arriving: its tool calls are not executed any more
+        if (ctx.signal.aborted) return this.finish('cancelled', turn.text);
         lastText = turn.text;
         if (turn.stopReason === 'refusal') {
           const why = turn.refusal?.explanation ? ` (${turn.refusal.explanation})` : '';
@@ -192,7 +199,7 @@ export class AgentRunner {
   }
 
   private roundsDone(): number {
-    return this.steps.reduce((m, s) => Math.max(m, s.round), 0);
+    return this.rounds;
   }
 
   private finish(status: AgentRunStatus, text: string, error: string | null = null): RunOutcome {

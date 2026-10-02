@@ -46,9 +46,9 @@ const base = (intent: ChatIntent['intent'], segment: string): ChatIntent => ({
 });
 
 function asked(r: CaptureResult): string {
-  return r.question
-    ? `\nOFFENE RÜCKFRAGE: ${r.question}\nStelle sie dem Benutzer mit ask_user (falls er es nicht schon gesagt hat) und ergänze danach mit dem passenden Werkzeug.`
-    : '';
+  if (!r.question) return '';
+  const q = r.question.trim() === r.content.trim() ? '(siehe oben)' : r.question;
+  return `\nOFFENE RÜCKFRAGE ${q}\nStelle sie dem Benutzer mit ask_user (falls er es nicht schon gesagt hat) und ergänze danach mit dem passenden Werkzeug.`;
 }
 
 /** A date given in words or numbers → YYYY-MM-DD (deterministic, also for „31.10.“). */

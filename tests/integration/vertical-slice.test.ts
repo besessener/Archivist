@@ -39,8 +39,12 @@ describe('LLM connection', () => {
     const r = await app.ok('llm:testConnection', {});
     expect(r.ok).toBe(true);
     expect(r.modelReply).toBe('OK');
-    // the test also checks native tool calling (#296): this fake endpoint only answers with text
-    expect(r.agent).toMatchObject({ adapter: 'openai', toolCalling: false });
+    // the test also checks native tool calling with a result round trip (#296)
+    expect(r.agent).toMatchObject({ adapter: 'openai', toolCalling: true });
+    app.llm.toolCalling = false;
+    const without = await app.ok('llm:testConnection', {});
+    expect(without.agent).toMatchObject({ toolCalling: false });
+    expect(without.agent?.message).toMatch(/kein Werkzeug/);
     const tx = await app.ok('llm:transmissions', { limit: 10 });
     expect(tx.map((t) => t.purpose)).toEqual(expect.arrayContaining(['Verbindungstest', 'Verbindungstest (Werkzeuge)']));
   });

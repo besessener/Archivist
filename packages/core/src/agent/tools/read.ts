@@ -95,7 +95,17 @@ export function pageOf(deps: ToolDeps, ctx: ToolContext, docs: DocumentRecord[],
   ].join('\n');
 }
 
-const ENTRY_KINDS = ['decision', 'open_item', 'reminder', 'event', 'note', 'proposal', 'insight', 'case', 'contradiction'] as const;
+/** Section (for read_document) and page of a passage within the document text, e.g. " (Abschnitt 3, Seite 5)". */
+export function locate(text: string, passage: string): string {
+  const probe = passage.trim().slice(0, 60);
+  const at = probe ? text.indexOf(probe) : -1;
+  if (at < 0) return '';
+  const section = Math.floor(at / SECTION_CHARS) + 1;
+  const page = text.includes('\f') ? text.slice(0, at).split('\f').length : null;
+  return ` (Abschnitt ${section}${page ? `, Seite ${page}` : ''})`;
+}
+
+const ENTRY_KINDS = ['decision', 'open_item', 'reminder', 'event', 'note', 'proposal', 'insight', 'case'] as const;
 
 export function readTools(deps: ToolDeps): AgentTool[] {
   const { docs, privacy, graph } = deps;
@@ -143,7 +153,9 @@ export function readTools(deps: ToolDeps): AgentTool[] {
               return `- ${ctx.refs.entry(h.id)} ${TYPE_LABEL[h.type] ?? h.type}: ${truncate(h.title, 80)} – ${asData(ctx.refs.entry(h.id), truncate(h.passage.replace(/\s+/g, ' '), 300))}`;
             const d = docOrNull(h.id);
             if (!d) return null;
-            const passage = privacy.mayShareDocument(d) ? `\n  Fundstelle: ${asData(ctx.refs.doc(d.id), truncate(h.passage.replace(/\s+/g, ' '), 400))}` : '';
+            const passage = privacy.mayShareDocument(d)
+              ? `\n  Fundstelle${locate(docs.getRow(d.id).extractedText, h.passage)}: ${asData(ctx.refs.doc(d.id), truncate(h.passage.replace(/\s+/g, ' '), 400))}`
+              : '';
             return `- ${docLine(d, ctx, privacy)}${passage}`;
           })
           .filter(Boolean);
@@ -290,7 +302,7 @@ export function readTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'list_entries',
       description:
-        'Weitere Einträge abfragen: decision, open_item, reminder, event, note, proposal (offene Vorschlagskarten), insight (Hinweise der Archivprüfung), case (Vorgänge), contradiction. Filter: status, topic, project, query, from/to; seitenweise.',
+        'Weitere Einträge abfragen: decision, open_item, reminder, event, note, proposal (offene Vorschlagskarten), insight (Hinweise der Archivprüfung, auch Widersprüche), case (Vorgänge). Filter: status, topic, project, query, from/to; seitenweise.',
       schema: z.object({
         kind: z.enum(ENTRY_KINDS),
         status: optText,
@@ -382,7 +394,6 @@ const ENTRY_LABEL: Record<(typeof ENTRY_KINDS)[number], string> = {
   proposal: 'die offenen Vorschläge',
   insight: 'die Hinweise',
   case: 'die Vorgänge',
-  contradiction: 'die Widersprüche',
 };
 
 function describeEntity(deps: ToolDeps, ctx: ToolContext, id: string, type: EntityType, name: string): string {
@@ -471,7 +482,5 @@ function entryRows(deps: ToolDeps, a: EntryArgs): Array<{ id: string; text: stri
         .listEntities({ type: 'case', limit: 500 })
         .filter((c) => match(c.name, c.description) && (!a.status || c.status === a.status))
         .map((c) => ({ id: c.id, date: c.createdAt, text: `Vorgang „${c.name}“ [${c.status ?? 'open'}] – ${c.relationCount} Einträge` }));
-    case 'contradiction':
-      return [];
   }
 }

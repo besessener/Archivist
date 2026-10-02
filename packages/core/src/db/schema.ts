@@ -426,6 +426,10 @@ export const llmTransmissions = sqliteTable('llm_transmissions', {
   documentIds: jsonArr('document_ids'),
   preview: text('preview').notNull().default(''),
   success: integer('success', { mode: 'boolean' }).notNull().default(true),
+  /** Tokens of the request as reported by the provider (agent requests, #302); null for older entries. */
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  cacheReadTokens: integer('cache_read_tokens'),
 });
 
 export type { Json };

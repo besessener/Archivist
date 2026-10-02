@@ -58,6 +58,11 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
             : [];
         });
         if (unclear.length) return { content: `Unklare Person(en): ${unclear.join('; ')}. Frag den Benutzer mit ask_user, wer gemeint ist.`, isError: true };
+        // „ich/mir/mich“ is the user's own person (#305)
+        const addPersons = (a.addPersons ?? []).map((p) => {
+          const r = deps.persons.resolve(p, { create: false });
+          return r.selfReference || r.matchedBy === 'self' ? (r.entity?.name ?? (deps.settings.get().profile.name || p)) : p;
+        });
         const changed: string[] = [];
         if (docIds.length) {
           const res = deps.docs.bulkUpdate(
@@ -68,7 +73,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
               ...(a.project !== undefined ? { project: a.project } : {}),
               ...(a.addTags?.length ? { addTags: a.addTags } : {}),
               ...(a.removeTags?.length ? { removeTags: a.removeTags } : {}),
-              ...(a.addPersons?.length ? { addPersons: a.addPersons } : {}),
+              ...(addPersons.length ? { addPersons } : {}),
               ...(a.removePersons?.length ? { removePersons: a.removePersons } : {}),
               ...(a.docType !== undefined ? { docType: a.docType } : {}),
               ...(date !== undefined ? { documentDate: date } : {}),

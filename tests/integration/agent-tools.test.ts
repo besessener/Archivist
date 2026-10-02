@@ -1,0 +1,222 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { fillPattern } from '../../packages/core/src/agent/tools/files';
+import { SECTION_CHARS, locate } from '../../packages/core/src/agent/tools/read';
+import type { TestApp } from '../helpers/harness';
+import { agentApp, archived, folderOf, scriptedTurns, sentText } from '../helpers/agent';
+
+let app: TestApp;
+beforeEach(async () => {
+  app = await agentApp();
+});
+afterEach(async () => {
+  await app.cleanup();
+});
+
+const lastOutput = () =>
+  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ?? '';
+const fileName = (id: string) => path.posix.basename(app.services.documents.getRow(id).archiveRelPath!);
+
+describe('File and folder tools (#304)', () => {
+  it('renames by pattern: preview first with conflicts, then executes without overwriting; undo restores the names', async () => {
+    const a = await archived(app, 'scan001.txt', 'Rechnung A', 'work/misc', { docType: 'Rechnung', documentDate: '2026-03-01', persons: ['Müller'] });
+    const b = await archived(app, 'scan002.txt', 'Rechnung B', 'work/misc', { docType: 'Rechnung', documentDate: '2026-03-01', persons: ['Müller'] });
+    await app.ok('documents:bulkUpdate', { ids: [a, b], docType: 'Rechnung', documentDate: '2026-03-01', addPersons: ['Müller'], confirmed: true });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'scan' } }] },
+      { calls: [{ name: 'rename_documents', args: { documents: ['S1'], pattern: '{datum} {typ} {absender}' } }] },
+      () => {
+        expect(lastOutput()).toContain('Vorschau');
+        expect(lastOutput()).toContain('Konflikt');
+        return { calls: [{ name: 'rename_documents', args: { documents: ['D1'], pattern: '{datum} {typ} {absender}', preview: false } }] };
+      },
+      { text: 'Umbenannt.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Benenne die Scans nach Datum, Typ und Absender um' });
+    const names = [fileName(a), fileName(b)];
+    expect(names).toContain('2026-03-01 Rechnung Müller.txt');
+    expect(names.filter((n) => n.startsWith('2026-03-01'))).toHaveLength(1);
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect([fileName(a), fileName(b)].sort()).toEqual(['scan001.txt', 'scan002.txt']);
+  });
+
+  it('refuses hash- and UUID-like names', async () => {
+    const a = await archived(app, 'x.txt', 'X', 'work/misc');
+    const plan = await app.services.archive.previewRename([{ documentId: a, fileName: '8f14e45fceea167a5a36dedd4bea2543' }]);
+    expect(plan[0]!.conflicts[0]).toMatch(/kein sprechender Name/);
+  });
+
+  it('fills the naming scheme and trims separators of empty placeholders', () => {
+    const d = { documentDate: '2026-01-05', archivedAt: null, createdAt: '2026-01-06', docType: null, persons: [], title: 'T', topicName: null, projectName: null, originalName: 'o.pdf' };
+    expect(fillPattern('{datum} - {typ} - {absender}', d)).toBe('2026-01-05');
+    expect(fillPattern('{jahr}_{titel}', d)).toBe('2026_T');
+  });
+
+  it('folders: create, merge one folder into another with structure, remove empty ones; upper/lower case of existing folders is kept (#244)', async () => {
+    const a = await archived(app, 'a.txt', 'A', 'work/Projekte/alt');
+    const b = await archived(app, 'b.txt', 'B', 'work/Projekte/alt/2025');
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'rename_folder', args: { from: 'work/projekte/alt', to: 'work/projekte/archiv' } }] },
+      { calls: [{ name: 'create_folder', args: { path: 'WORK/neu' } }] },
+      { text: 'Fertig.' },
+    );
+    await app.ok('chat:send', { text: 'Leg den Ordner alt nach archiv um und leg work/neu an' });
+    expect(folderOf(app, a)).toBe('work/Projekte/archiv');
+    expect(folderOf(app, b)).toBe('work/Projekte/archiv/2025');
+    expect(app.services.categories.list().some((c) => c.path === 'work/neu')).toBe(true);
+    expect(app.services.categories.list().some((c) => c.path === 'work/Projekte/alt')).toBe(false);
+  });
+
+  it('path limits: traversal and absolute paths are refused', async () => {
+    const a = await archived(app, 'a.txt', 'A', 'work/misc');
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
+      () => ({ calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: '../../etc' } }] }),
+      () => {
+        expect(lastOutput()).toMatch(/Ungültig|relativ|nicht erlaubt|Fehler/i);
+        return { calls: [{ name: 'create_folder', args: { path: '/tmp/evil' } }] };
+      },
+      { text: 'Nicht möglich.' },
+    );
+    await app.ok('chat:send', { text: 'Finde a.txt und verschiebe sie nach ../../etc' });
+    expect(folderOf(app, a)).toBe('work/misc');
+    expect(fs.existsSync('/tmp/evil')).toBe(false);
+  });
+});
+
+describe('Search hits with section and page (#303)', () => {
+  it('locates a passage in the document text', () => {
+    const text = `${'a'.repeat(SECTION_CHARS + 10)}\fSeite zwei mit dem Fundstück hier`;
+    expect(locate(text, 'Seite zwei mit dem Fundstück')).toBe(' (Abschnitt 2, Seite 2)');
+    expect(locate('kurz', 'nicht enthalten')).toBe('');
+  });
+});
+
+describe('Metadata tools (#305, #291)', () => {
+  it('bulk assignment of topic, project, tags and persons is ONE undo step; „ich“ resolves to the user', async () => {
+    app.services.settings.update({ profile: { name: 'Erika Muster' } });
+    app.services.self.ensure();
+    const ids = [await archived(app, 'beleg1.txt', 'Autokauf Beleg', 'private/auto'), await archived(app, 'beleg2.txt', 'Autokauf Beleg 2', 'private/auto')];
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'beleg' } }] },
+      { calls: [{ name: 'set_metadata', args: { targets: ['S1'], project: 'Auto', addTags: ['Autokauf'], addPersons: ['ich'] } }] },
+      { text: 'Zugeordnet.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Ordne alle Belege vom Autokauf dem Projekt Auto zu, Käufer bin ich' });
+    for (const id of ids) {
+      const d = await app.ok('documents:get', { id });
+      expect(d.projectName).toBe('Auto');
+      expect(d.tags).toContain('Autokauf');
+      expect(d.persons).toContain('Erika Muster');
+    }
+    const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
+    expect(run.undoable).toBe(1);
+    await app.ok('agent:undoRun', { runId: run.id });
+    for (const id of ids) expect((await app.ok('documents:get', { id })).projectName).toBeNull();
+  });
+
+  it('unclear persons are asked about, not guessed', async () => {
+    await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Schmidt' });
+    await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Meier' });
+    const id = await archived(app, 'brief.txt', 'Brief', 'private/post');
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'set_metadata', args: { targets: [id], addPersons: ['Anna'] } }] }, { text: '?' });
+    await app.ok('chat:send', { text: 'Ordne den Brief Anna zu' });
+    expect(lastOutput()).toMatch(/Unbekannte|Unklare Person/);
+    expect((await app.ok('documents:get', { id })).persons).toEqual([]);
+  });
+
+  it('privacy exclusion per document is critical: always a proposal', async () => {
+    const id = await archived(app, 'pw.txt', 'Passwort', 'private/misc');
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: { name: 'pw' } }] }, { calls: [{ name: 'exclude_from_llm', args: { documents: ['D1'] } }] }, { text: 'Bitte bestätigen.' });
+    const res = await app.ok('chat:send', { text: 'Schließ pw.txt von der KI-Analyse aus' });
+    expect((await app.ok('documents:get', { id })).llmStatus).not.toBe('excluded');
+    expect(res.assistantMessage.actions.some((a) => a.actionType === 'agent_batch')).toBe(true);
+  });
+});
+
+describe('Links and cases (#306, #277, #286)', () => {
+  it('explicit request → confirmed (origin agent, run id); own accord → proposed; rejected pairs are never proposed again', async () => {
+    const vertrag = await archived(app, 'mietvertrag.txt', 'Mietvertrag', 'private/wohnen');
+    const nebenkosten = await archived(app, 'nebenkosten.txt', 'Nebenkosten', 'private/wohnen');
+    const other = await archived(app, 'urlaub.txt', 'Urlaub', 'private/urlaub');
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: {} }] },
+      {
+        calls: [
+          { name: 'link', args: { a: 'D3', b: 'D1', onUserRequest: true } },
+          { name: 'link', args: { a: 'D2', b: 'D1', onUserRequest: false } },
+        ],
+      },
+      { text: 'Verknüpft.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Verknüpf die Nebenkosten mit dem Mietvertrag' });
+    const rel = (a: string, b: string) => app.services.graph.relationsOf(a).find((r) => r.sourceEntityId === b || r.targetEntityId === b);
+    const refs = res.assistantMessage.runId!;
+    const run = await app.ok('agent:run', { id: refs });
+    expect(run.steps.filter((s) => s.tool === 'link')).toHaveLength(2);
+    // D-refs follow the date order of find_documents; resolve which document got which status
+    const statuses = [rel(vertrag, nebenkosten), rel(vertrag, other), rel(nebenkosten, other)].filter(Boolean).map((r) => r!.status).sort();
+    expect(statuses).toEqual(['confirmed', 'proposed']);
+    const confirmed = [rel(vertrag, nebenkosten), rel(vertrag, other), rel(nebenkosten, other)].find((r) => r?.status === 'confirmed')!;
+    expect(confirmed.origin).toBe('agent');
+    expect(confirmed.runId).toBe(run.id);
+    // the user rejects the proposal → the agent may not propose it again
+    const proposed = [rel(vertrag, nebenkosten), rel(vertrag, other), rel(nebenkosten, other)].find((r) => r?.status === 'proposed')!;
+    await app.ok('knowledge:resolveRelation', { relationId: proposed.id, status: 'rejected', confirmed: true });
+    expect(() => app.services.graph.linkEntries(proposed.sourceEntityId, proposed.targetEntityId, 'relates_to', { status: 'proposed' })).toThrow(/abgelehnt/);
+  });
+
+  it('cases: create with entries, add more, close and undo the closing', async () => {
+    const a = await archived(app, 'kaufvertrag.txt', 'Kaufvertrag Auto', 'private/auto');
+    const b = await archived(app, 'versicherung.txt', 'Versicherung Auto', 'private/auto');
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { name: 'kaufvertrag' } }] },
+      { calls: [{ name: 'create_case', args: { name: 'Autokauf 2026', entries: ['D1'] } }] },
+      { calls: [{ name: 'find_documents', args: { name: 'versicherung' } }] },
+      { calls: [{ name: 'add_to_case', args: { case: 'K1', entries: ['D2'] } }] },
+      { calls: [{ name: 'close_case', args: { case: 'K1' } }] },
+      { text: 'Vorgang angelegt und abgeschlossen.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Leg alles zum Autokauf in einen Vorgang und schließ ihn ab' });
+    const c = app.services.graph.listEntities({ type: 'case' })[0]!;
+    expect(c.name).toBe('Autokauf 2026');
+    expect(c.status).toBe('closed');
+    expect(app.services.graph.neighbors(c.id).map((e) => e.id).sort()).toEqual([a, b].sort());
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(app.services.graph.listEntities({ type: 'case' })).toHaveLength(0);
+  });
+
+  it('related entries come with a reason (#276)', async () => {
+    const a = await archived(app, 'a.txt', 'A', 'private/x', { topic: 'Wohnung' });
+    const rel = await app.ok('knowledge:related', { id: a, depth: 2 });
+    expect(rel.some((r) => r.entity.type === 'topic' && r.reason.length > 0)).toBe(true);
+  });
+});
+
+describe('Settings per chat (#312)', () => {
+  it('„Stell den Agenten auf Fragen“ changes the setting (undoable); privacy settings always ask', async () => {
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'set_setting', args: { key: 'agent.mode', value: 'ask' } }] },
+      { calls: [{ name: 'set_setting', args: { key: 'privacy.llmMode', value: 'local_only' } }] },
+      { text: 'Erledigt bzw. zur Bestätigung vorbereitet.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Stell den Agenten auf Fragen und den Datenschutz auf nur lokal' });
+    expect(app.services.settings.get().agent.mode).toBe('ask');
+    expect(app.services.settings.get().privacy.llmMode).toBe('auto');
+    expect(res.assistantMessage.actions.some((a) => a.actionType === 'agent_batch')).toBe(true);
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(app.services.settings.get().agent.mode).toBe('auto');
+  });
+
+  it('scan exclusions can be set and lifted', async () => {
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'exclude_from_scan', args: { path: path.join(app.home, 'Downloads') } }] },
+      { calls: [{ name: 'exclude_from_scan', args: { path: path.join(app.home, 'Downloads'), remove: true } }] },
+      { text: 'ok' },
+    );
+    await app.ok('chat:send', { text: 'Schließ Downloads vom Scan aus – ach nein, doch nicht' });
+    expect(await app.ok('scanner:listExclusions', {})).toHaveLength(0);
+    expect(sentText(app)).toContain('nicht mehr gescannt');
+  });
+});

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "38186945-550c-4320-ab04-242aefa173f5",
+  "id": "dfddcf6d-c6df-48f0-a2cd-86bc647f3d8e",
   "prevId": "ae34f049-5be8-4304-a1d1-93d9d8e5604c",
   "tables": {
     "agent_actions": {
@@ -1864,6 +1864,27 @@
           "notNull": true,
           "autoincrement": false,
           "default": true
+        },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cache_read_tokens": {
+          "name": "cache_read_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
