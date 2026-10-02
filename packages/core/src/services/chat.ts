@@ -49,6 +49,8 @@ import type { ScannerService } from './scanner';
 import type { SearchHit, SearchService } from './search';
 import type { SettingsService } from './settings';
 import type { TimelineService } from './timeline';
+import type { AgentChatState, AgentService } from '../agent/service';
+import type { CaptureResult } from '../agent/tools/knowledge';
 
 type MsgRow = typeof messages.$inferSelect;
 
@@ -128,6 +130,8 @@ interface ConvState {
   pending?: Pending | null;
   queue?: QueuedIntent[];
   last?: { openItemId?: string; decisionId?: string; documentIds?: string[]; topic?: string | null };
+  /** Agent mode (#294): short ids, mode override and the request a question was asked about. */
+  agent?: AgentChatState;
 }
 
 interface Reply {
@@ -141,6 +145,7 @@ interface Reply {
   errorMessage?: string | null;
   quickReplies?: string[];
   state?: ConvState;
+  runId?: string | null;
 }
 
 const UNKNOWN_RE = /(wei(ß|ss)\s+(ich|man)\s+(nicht|nich)|unbekannt|keine\s+ahnung|nicht\s+bekannt|k\.?\s?a\.?$|egal|spielt\s+keine\s+rolle)/i;
@@ -494,6 +499,7 @@ Regeln:
 export class ChatService {
   private actions!: ActionService;
   private archive!: ArchiveService;
+  private agent: AgentService | null = null;
   /** Requests of the current message that are already done, per conversation – for the last-resort error handling in send(). */
   private readonly progress = new Map<string, { replies: Reply[]; state: ConvState }>();
   /** Running requests per conversation; `cancel` aborts their LLM calls and the requests not started yet (#151). */
@@ -520,9 +526,52 @@ export class ChatService {
     private readonly notes: NoteService,
   ) {}
 
-  wire(deps: { actions: ActionService; archive: ArchiveService }): void {
+  wire(deps: { actions: ActionService; archive: ArchiveService; agent?: AgentService }): void {
     this.actions = deps.actions;
     this.archive = deps.archive;
+    this.agent = deps.agent ?? null;
+  }
+
+  /**
+   * Capture bridge for the agent (#307): runs one capture capability with the existing handler logic (required fields,
+   * duplicate checks, person resolution, superseding, contradictions). A follow-up question of the handler is returned as
+   * text – the agent asks it through its own question exit instead of the `Pending` special cases.
+   */
+  async captureForAgent(conversationId: string | null, text: string, intent: ChatIntent, opts: { force?: boolean } = {}): Promise<CaptureResult> {
+    const conv = conversationId ?? '';
+    const base = conversationId ? this.state(conversationId) : {};
+    const state: ConvState = { last: base.last };
+    const reply =
+      intent.intent === 'open_item_new' && opts.force
+        ? await this.openItemNew(conv, text, intent, state, true)
+        : await this.dispatch(conv, text, intent, state, true);
+    const pending = reply.state?.pending ?? null;
+    return {
+      content: reply.content,
+      actionIds: (reply.actions ?? []).map((a) => a.id),
+      question: pending && !(pending.kind === 'open_item' && pending.optional) ? reply.content : null,
+      decisionId: reply.state?.last?.decisionId ?? null,
+      openItemId: pending?.kind === 'open_item_duplicate' ? null : (reply.state?.last?.openItemId ?? null),
+    };
+  }
+
+  /** Runs the message through the agent; null when the agent cannot (then the rule-based evaluation applies). */
+  private async agentReply(conv: string, text: string, state: ConvState): Promise<Reply | null> {
+    // an open question of the rule-based flow (from before the agent mode) is still answered by that flow
+    if (!this.agent || state.pending || !(await this.agent.ensureCapable())) return null;
+    const r = await this.agent.chat(conv, text, state.agent ?? {});
+    return {
+      intent: 'agent',
+      content: r.content,
+      sources: r.sources,
+      actions: this.actions.getMany(r.actionIds),
+      quickReplies: r.quickReplies,
+      errorMessage: r.errorMessage,
+      uncertainties: r.uncertainties,
+      confidence: null,
+      runId: r.runId,
+      state: { ...state, agent: r.state },
+    };
   }
 
   private get db() {
@@ -546,6 +595,32 @@ export class ChatService {
     this.db.insert(conversations).values(row).run();
     this.ctx.events.changed('chat');
     return { id: row.id, title, createdAt: now, updatedAt: now };
+  }
+
+  /** Mode override of a conversation („frag mich diesmal vorher“, #298); null = the setting applies. */
+  agentModeOverride(conversationId: string): 'auto' | 'ask' | null {
+    return this.state(conversationId).agent?.mode ?? null;
+  }
+
+  setAgentModeOverride(conversationId: string, mode: 'auto' | 'ask' | null): void {
+    const state = this.state(conversationId);
+    if (!this.db.select().from(conversations).where(eq(conversations.id, conversationId)).get())
+      throw new AppError('validation_error', 'Unterhaltung nicht gefunden.');
+    this.db
+      .update(conversations)
+      .set({ pending: { ...state, agent: { ...(state.agent ?? {}), mode } } as unknown as ArchivistJson })
+      .where(eq(conversations.id, conversationId))
+      .run();
+    this.ctx.events.changed('chat');
+  }
+
+  /** Posts a message of Archivist into a conversation of its own (weekly review, #314); creates it when missing. */
+  postAssistant(title: string, content: string, existingId: string | null): string {
+    const conv = existingId && this.db.select().from(conversations).where(eq(conversations.id, existingId)).get() ? existingId : this.newConversation(title).id;
+    this.saveMessage(conv, 'assistant', content, { intent: 'weekly_review', content });
+    this.db.update(conversations).set({ updatedAt: nowIso() }).where(eq(conversations.id, conv)).run();
+    this.ctx.events.changed('chat');
+    return conv;
   }
 
   /** Renames a conversation (title only; contents stay unchanged). */
@@ -578,6 +653,7 @@ export class ChatService {
       intent: r.intent,
       errorMessage: r.errorMessage,
       quickReplies: r.quickReplies,
+      runId: r.runId,
     };
   }
 
@@ -607,6 +683,7 @@ export class ChatService {
       intent: reply?.intent ?? null,
       errorMessage: reply?.errorMessage ?? null,
       quickReplies: reply?.quickReplies ?? [],
+      runId: reply?.runId ?? null,
       createdAt: nowIso(),
     };
     this.db.insert(messages).values(row).run();
@@ -635,7 +712,7 @@ export class ChatService {
     const controller = new AbortController();
     this.running.set(conv, controller);
     try {
-      reply = await llmCancelScope.run(controller.signal, () => this.handle(conv, text, state));
+      reply = (await this.agentReply(conv, text, state)) ?? (await llmCancelScope.run(controller.signal, () => this.handle(conv, text, state)));
     } catch (err) {
       if (controller.signal.aborted) {
         // cancelled by the user: what is already done stays, nothing else runs
@@ -673,6 +750,7 @@ export class ChatService {
 
   /** Cancels the running request of a conversation (without id: all running requests). Returns how many were cancelled. */
   cancel(conversationId?: string): number {
+    const agentRuns = this.agent?.cancel(conversationId) ?? 0;
     const targets = conversationId ? [conversationId] : [...this.running.keys()];
     let n = 0;
     for (const id of targets) {
@@ -681,7 +759,7 @@ export class ChatService {
       c.abort();
       n += 1;
     }
-    return n;
+    return Math.max(n, agentRuns);
   }
 
   /** Throws when the current request was cancelled – before anything else is changed. */

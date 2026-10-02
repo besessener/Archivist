@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Archive, CheckCircle2, FolderPlus, Loader2, PlugZap, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
 import { Notice } from '@/components/common/states';
+import { AgentCapabilityNote } from '@/components/agent/capability-note';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -279,6 +280,7 @@ export function SetupWizard() {
                   <p>{test.message}</p>
                   {test.ok && test.latencyMs !== null && <p className="mt-1 text-xs">Antwortzeit: {test.latencyMs} ms</p>}
                   {!test.ok && test.error && <p className="mt-1 text-xs">{test.error.message}</p>}
+                  {test.ok && test.agent && <AgentCapabilityNote capability={test.agent} onApplyBaseUrl={setBaseUrl} testId="setup-agent-capability" />}
                 </Notice>
               )}
               {!test?.ok && (

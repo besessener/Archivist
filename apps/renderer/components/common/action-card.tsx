@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
 import type { ActionRecord } from '@/lib/types';
@@ -74,18 +75,100 @@ function ProposedValues({ action }: { action: ActionRecord }) {
   );
 }
 
+interface BatchItem {
+  label: string;
+  reason: string;
+  risk: 'read' | 'write' | 'critical';
+}
+
+function batchItems(action: ActionRecord): BatchItem[] {
+  if (action.actionType !== 'agent_batch') return [];
+  const items = (action.proposedParameters as Params).items;
+  if (!Array.isArray(items)) return [];
+  return items.map((it) => {
+    const o = (it && typeof it === 'object' ? it : {}) as Params;
+    const risk = o.risk === 'critical' || o.risk === 'read' ? o.risk : 'write';
+    return { label: str(o.label) ?? str(o.tool) ?? 'Änderung', reason: str(o.reason) ?? '', risk };
+  });
+}
+
+/** Checklist of the changes an agent run prepared (#298); all are checked by default. */
+function BatchChecklist({
+  items,
+  selected,
+  onToggle,
+  editable,
+}: {
+  items: BatchItem[];
+  selected: Set<number>;
+  onToggle: (index: number, checked: boolean) => void;
+  editable: boolean;
+}) {
+  return (
+    <ul className="mt-2 flex flex-col gap-1.5" data-testid="action-batch-items" aria-label="Vorbereitete Änderungen">
+      {items.map((it, i) => (
+        <li key={`${i}-${it.label}`} className="flex items-start gap-2">
+          {editable ? (
+            <Checkbox
+              className="mt-0.5"
+              checked={selected.has(i)}
+              onCheckedChange={(v) => onToggle(i, v === true)}
+              aria-label={it.label}
+              data-testid="action-batch-item"
+            />
+          ) : (
+            <span className="mt-0.5 text-xs text-muted-foreground" aria-hidden>
+              {selected.has(i) ? '✓' : '–'}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-center gap-1.5">
+              <span>{it.label}</span>
+              {it.risk === 'critical' && <Badge variant="warning">fragt immer</Badge>}
+              {!editable && !selected.has(i) && <span className="text-xs text-muted-foreground">(nicht ausgewählt)</span>}
+            </p>
+            {it.reason && <p className="text-xs text-muted-foreground">{it.reason}</p>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Card for an action proposal from the agent, with confirm/reject. */
 export function ActionCard({ action, onResolved }: { action: ActionRecord; onResolved?: (a: ActionRecord) => void }) {
   const [current, setCurrent] = useState<ActionRecord>(action);
   const [strongOpen, setStrongOpen] = useState(false);
   const { run, busy } = useRun();
   const st = STATUS[current.status];
+  const items = batchItems(current);
+  const isBatch = current.actionType === 'agent_batch';
+  const [selected, setSelected] = useState<Set<number>>(() => {
+    const pre = (current.proposedParameters as Params).selected;
+    return new Set(Array.isArray(pre) ? pre.filter((n): n is number => typeof n === 'number') : items.map((_, i) => i));
+  });
+  const allSelected = selected.size === items.length;
+  const toggle = (index: number, checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(index);
+      else next.delete(index);
+      return next;
+    });
 
   async function resolve(decision: 'approve' | 'reject', strongConfirmed = false) {
+    // partial confirmation of an agent batch: only the checked items are executed
+    const parameterOverrides = isBatch && !allSelected ? { selected: [...selected].sort((a, b) => a - b) } : undefined;
     const out = await run(
       () =>
         decision === 'approve'
-          ? call('actions:resolve', { decision: 'approve', actionId: current.id, confirmed: true, strongConfirmed })
+          ? call('actions:resolve', {
+              decision: 'approve',
+              actionId: current.id,
+              confirmed: true,
+              strongConfirmed,
+              ...(parameterOverrides ? { parameterOverrides } : {}),
+            })
           : call('actions:resolve', { decision: 'reject', actionId: current.id }),
       { success: decision === 'approve' ? 'Aktion bestätigt.' : 'Vorschlag abgelehnt.' },
     );
@@ -104,6 +187,16 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
       </div>
       {current.rationale && <p className="mt-1 text-muted-foreground">{current.rationale}</p>}
       <ProposedValues action={current} />
+      {isBatch && items.length > 0 && (
+        <>
+          <BatchChecklist items={items} selected={selected} onToggle={toggle} editable={current.status === 'proposed'} />
+          {current.status === 'proposed' && items.length > 1 && (
+            <p className="mt-1 text-xs text-muted-foreground" aria-live="polite">
+              {selected.size} von {items.length} ausgewählt
+            </p>
+          )}
+        </>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <ConfidenceBadge value={current.confidence} />
         {current.requiredConfirmation === 'strong' && <Badge variant="danger">Besonders folgenreich</Badge>}
@@ -116,11 +209,11 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || (isBatch && selected.size === 0)}
             data-testid="action-approve"
             onClick={() => (current.requiredConfirmation === 'strong' ? setStrongOpen(true) : void resolve('approve'))}
           >
-            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} Bestätigen
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} {isBatch ? 'Ausführen' : 'Bestätigen'}
           </Button>
           <Button size="sm" variant="outline" disabled={busy} data-testid="action-reject" onClick={() => void resolve('reject')}>
             <X aria-hidden /> Ablehnen
@@ -143,6 +236,15 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
         <div className="rounded-md border bg-muted/50 p-3 text-sm">
           <p className="font-medium">{current.label}</p>
           <p className="mt-1 text-muted-foreground">{current.rationale}</p>
+          {isBatch && (
+            <ul className="mt-2 list-disc pl-5">
+              {items
+                .filter((_, i) => selected.has(i))
+                .map((it, i) => (
+                  <li key={`${i}-${it.label}`}>{it.label}</li>
+                ))}
+            </ul>
+          )}
           {current.affectedEntities.length > 0 && (
             <ul className="mt-2 list-disc pl-5">
               {current.affectedEntities.map((e) => (

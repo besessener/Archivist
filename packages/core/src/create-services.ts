@@ -42,6 +42,10 @@ import { UndoService } from './services/undo';
 import { Logger } from './util/logger';
 import { DbReader } from './workers/db-reader';
 import { WorkerPool } from './workers/pool';
+import { AgentService, type BackgroundKind } from './agent/service';
+import { AgentRunService } from './agent/runs';
+import { MemoryService } from './agent/memory';
+import { registerCreatedUndo } from './agent/created-undo';
 
 export interface CreateServicesOptions {
   /** Root of the local data storage (default: ~/Documents/Archivist) */
@@ -119,6 +123,9 @@ function buildServices(opts: CreateServicesOptions) {
   const openItems = new OpenItemService(ctx, graph, persons, search, audit, undo);
   const eventsSvc = new EventService(ctx, graph, search, audit, persons, undo);
   const notes = new NoteService(ctx, graph, search);
+  const memory = new MemoryService(ctx);
+  const agentRuns = new AgentRunService(ctx, audit, undo);
+  registerCreatedUndo(ctx, undo, graph, search);
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
@@ -176,6 +183,45 @@ function buildServices(opts: CreateServicesOptions) {
     notes,
   );
 
+  // a check that is still queued or running covers a new request (startup, interval and manual triggers can meet)
+  const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1, sameAs: () => true });
+  const agent = new AgentService(
+    ctx,
+    {
+      paths,
+      settings,
+      docs: documentsSvc,
+      search,
+      graph,
+      privacy,
+      decisions,
+      openItems,
+      reminders,
+      events: eventsSvc,
+      notes,
+      timeline,
+      insights,
+      actions,
+      archive,
+      categories,
+      scanner,
+      jobs,
+      audit,
+      undo,
+      persons,
+      notifications,
+      openItemDuplicates,
+      noteEventDuplicates,
+      memory,
+      capture: { capture: (conv, text, intent, opts) => chat.captureForAgent(conv, text, intent, opts) },
+      enqueueConsistency,
+    },
+    llm,
+    agentRuns,
+    appState,
+    memory,
+  );
+
   // 5) resolve cyclic dependencies
   actions.wire({
     archive,
@@ -194,7 +240,8 @@ function buildServices(opts: CreateServicesOptions) {
   insights.wire({ actions, reminders });
   contradictions.wire({ actions });
   archive.wire({ actions, openItems });
-  chat.wire({ actions, archive });
+  chat.wire({ actions, archive, agent });
+  actions.setAgentBatchExecutor((params) => agent.executeBatch(params));
   graph.setReindexer(async (refs) => {
     await Promise.all([
       ...refs.documents.map((id) => documentsSvc.indexDocument(id)),
@@ -241,7 +288,16 @@ function buildServices(opts: CreateServicesOptions) {
     }
     return summaries;
   });
-  jobs.register<{ fileIds: string[]; confirmLlm: boolean }>('scanner.analyze', (job) => scanner.analyzeFiles(job.payload.fileIds, job.payload.confirmLlm, job));
+  jobs.register<{ fileIds: string[]; confirmLlm: boolean }>('scanner.analyze', async (job) => {
+    const res = await scanner.analyzeFiles(job.payload.fileIds, job.payload.confirmLlm, job);
+    agent.scheduleInbox();
+    return res;
+  });
+  // background runs of the agent (#313): one job per trigger, cancellable, resumed after a restart
+  jobs.register<{ kind: BackgroundKind; docIds?: string[] }>('agent.background', async (job) => {
+    const run = await agent.runBackground(job.payload.kind, { docIds: job.payload.docIds, signal: job.signal });
+    return { summary: run ? `${run.status}: ${run.steps.length} Schritt(e)` : 'nichts zu tun', runId: run?.id ?? null };
+  });
   jobs.register<{ trigger?: string }>('consistency.check', async (job) => {
     await archive.cleanupInbox(); // retries inbox copies that were locked right after archiving
     return consistency.run(job.payload.trigger ?? 'manual', (p, m) => job.report(p, m), job.signal);
@@ -258,9 +314,6 @@ function buildServices(opts: CreateServicesOptions) {
     }
     if (e.scopes.includes('settings') || e.scopes.includes('scanner')) scanner.applySettings();
   });
-
-  // a check that is still queued or running covers a new request (startup, interval and manual triggers can meet)
-  const enqueueConsistency = (trigger: string) => jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1, sameAs: () => true });
 
   return {
     paths,
@@ -307,6 +360,9 @@ function buildServices(opts: CreateServicesOptions) {
     appState,
     backup,
     chat,
+    agent,
+    agentRuns,
+    memory,
     enqueueConsistency,
 
     /** Starts background work (only while the application runs). */
@@ -325,6 +381,11 @@ function buildServices(opts: CreateServicesOptions) {
       const startupCheck = settings.get().consistency.onStartup;
       if (startupCheck) enqueueConsistency('startup');
       consistency.startTimer(() => enqueueConsistency('interval'), { startupCheckQueued: startupCheck });
+      const BG_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
+      agent.start({
+        enqueue: (kind, docIds) => jobs.enqueue('agent.background', `Hintergrund-Agent: ${BG_LABEL[kind] ?? 'Ablauf'}`, { kind, docIds }, { maxAttempts: 2 }),
+        post: (title, content, existing) => chat.postAssistant(title, content, existing),
+      });
       if (settings.get().backups.autoOnStartup)
         void backup.create(settings.get().backups.includeArchive, 'startup').catch((err) => logger.warn('backup', 'Automatic backup failed', { error: err }));
     },
@@ -335,6 +396,7 @@ function buildServices(opts: CreateServicesOptions) {
      */
     async shutdown(opts: { jobTimeoutMs?: number } = {}): Promise<void> {
       reminders.stop();
+      agent.stop();
       scanner.stop();
       consistency.stopTimer();
       await jobs.interrupt(opts.jobTimeoutMs);

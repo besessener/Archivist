@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { AlertCircle, FileText, HelpCircle } from 'lucide-react';
+import { RunSummary } from '@/components/agent/run-summary';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { EntityIcon } from '@/components/common/entity-chip';
@@ -121,6 +122,7 @@ export function ChatBubble({
                 ))}
               </div>
             )}
+            {message.runId && !pending && <RunSummary runId={message.runId} />}
             {message.sources.length > 0 && (
               <div>
                 <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">

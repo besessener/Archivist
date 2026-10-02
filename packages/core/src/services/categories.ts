@@ -48,6 +48,28 @@ export class CategoryService {
     return this.mainCategories().some((m) => m.toLowerCase() === main.toLowerCase()) ? null : main;
   }
 
+  /** Existing category with the same path apart from upper/lower case (NTFS treats both as one folder, #244). */
+  canonical(rawPath: string): string {
+    const p = sanitizeCategoryPath(rawPath);
+    const all = this.list();
+    const exact = all.find((c) => c.path === p);
+    if (exact) return exact.path;
+    // keep the casing of every known leading segment
+    const parts = p.split('/');
+    for (let i = parts.length; i > 0; i -= 1) {
+      const prefix = parts.slice(0, i).join('/').toLowerCase();
+      const known = all.find((c) => c.path.toLowerCase() === prefix);
+      if (known) return [known.path, ...parts.slice(i)].join('/');
+    }
+    return p;
+  }
+
+  /** Removes a category entry (only used for empty folders). */
+  remove(p: string): void {
+    this.db.delete(categories).where(eq(categories.path, p)).run();
+    this.ctx.events.changed('documents');
+  }
+
   /** Creates the path including intermediate levels. New main categories only with `confirmed`. */
   create(rawPath: string, confirmed: boolean): Category {
     const p = sanitizeCategoryPath(rawPath);

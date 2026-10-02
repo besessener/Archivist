@@ -1,7 +1,8 @@
 import type { Page } from '@playwright/test';
 import { pageObject } from './page-object';
 
-const COLUMNS = ['Titel', 'Typ', 'Kategorie', 'Thema', 'Projekt', 'Datum', 'Pfad'] as const;
+/** The first column is the selection checkbox (no heading). */
+const COLUMNS = ['Auswahl', 'Titel', 'Typ', 'Kategorie', 'Thema', 'Projekt', 'Datum', 'Pfad'] as const;
 
 /** The document list with topic and project columns. */
 export function initDocuments(page: Page) {

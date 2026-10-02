@@ -4,12 +4,13 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { EntityType, KnowledgeCreateResult, RelationStatus } from '@archivist/shared';
-import { Check, GitMerge, Plus, Search, X } from 'lucide-react';
+import { Check, GitMerge, Link2, Plus, Search, Unlink, X } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { EventFormDialog } from '@/components/events/event-form-dialog';
+import { LinkDialog, RelatedEntries } from '@/components/knowledge/related';
 import { MARKDOWN_HINT, Markdown } from '@/components/common/markdown';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
@@ -30,7 +31,7 @@ import { useToast } from '@/lib/toast';
 import type { ActionRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
-const TYPES: EntityType[] = ['topic', 'project', 'person', 'event', 'note', 'category', 'tag', 'document', 'decision', 'task', 'question'];
+const TYPES: EntityType[] = ['topic', 'project', 'person', 'event', 'note', 'category', 'tag', 'document', 'decision', 'task', 'question', 'case'];
 const CREATABLE = ['topic', 'project', 'person', 'event', 'note'] as const;
 type Creatable = (typeof CREATABLE)[number];
 
@@ -270,6 +271,8 @@ function EntityView({ id }: { id: string }) {
   const [pending, setPending] = useState<{ relationId: string; status: RelationStatus; label: string } | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeAction, setMergeAction] = useState<ActionRecord | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [unlinking, setUnlinking] = useState<{ relationId: string; label: string } | null>(null);
 
   if (detail.error && !detail.data) return <ErrorNote error={detail.error} onRetry={() => void detail.refetch()} />;
   if (!detail.data) return <Loading />;
@@ -309,6 +312,16 @@ function EntityView({ id }: { id: string }) {
           </Button>
         </span>
       )}
+      <Button
+        size="sm"
+        variant="ghost"
+        className={r.status === 'proposed' ? undefined : 'ml-auto'}
+        aria-label={`Verknüpfung zu „${r.other.name}“ entfernen`}
+        data-testid="relation-unlink"
+        onClick={() => setUnlinking({ relationId: r.id, label: `„${entity.name}“ ${RELATION_TYPE_LABELS[r.relationType]} „${r.other.name}“` })}
+      >
+        <Unlink aria-hidden /> Entfernen
+      </Button>
     </li>
   );
 
@@ -363,11 +376,16 @@ function EntityView({ id }: { id: string }) {
             </Button>
           </div>
         )}
-        {entity.type === 'topic' && (
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => setMergeOpen(true)} data-testid="knowledge-merge">
-            <GitMerge aria-hidden /> Mit anderem Thema zusammenführen vorschlagen
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="knowledge-link">
+            <Link2 aria-hidden /> Verknüpfen
           </Button>
-        )}
+          {entity.type === 'topic' && (
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)} data-testid="knowledge-merge">
+              <GitMerge aria-hidden /> Mit anderem Thema zusammenführen vorschlagen
+            </Button>
+          )}
+        </div>
       </div>
 
       {mergeAction && (
@@ -393,6 +411,8 @@ function EntityView({ id }: { id: string }) {
           <ul className="flex flex-col gap-2">{incoming.map(renderRel)}</ul>
         )}
       </section>
+
+      <RelatedEntries id={entity.id} />
 
       {isTopic && (
         <section>
@@ -434,6 +454,37 @@ function EntityView({ id }: { id: string }) {
           Bestätigte Verknüpfungen fließen in Antworten und Zusammenhänge ein, abgelehnte werden nicht mehr vorgeschlagen.
         </p>
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={unlinking !== null}
+        onOpenChange={(o) => !o && setUnlinking(null)}
+        title="Verknüpfung entfernen?"
+        description={unlinking?.label}
+        confirmLabel="Entfernen"
+        destructive
+        confirmTestId="relation-unlink-confirm"
+        onConfirm={async () => {
+          if (!unlinking) return;
+          const ok = await run(() => call('knowledge:unlink', { relationId: unlinking.relationId, confirmed: true }), {
+            success: 'Verknüpfung entfernt. Rückgängig im Änderungsprotokoll.',
+          });
+          if (ok) {
+            setUnlinking(null);
+            void detail.refetch();
+          }
+        }}
+      />
+
+      <LinkDialog
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        sourceId={entity.id}
+        sourceName={entity.name}
+        onLinked={() => {
+          setLinkOpen(false);
+          void detail.refetch();
+        }}
+      />
 
       <MergeDialog
         open={mergeOpen}

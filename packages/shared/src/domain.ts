@@ -398,6 +398,11 @@ export const NotificationType = z.enum([
   'reminder',
   'classification_ready',
   'system',
+  /** One bundled notification per background run of the agent (#313). */
+  'agent_run',
+  /** Deadline watcher and weekly review (#314). */
+  'deadline_watch',
+  'weekly_review',
 ]);
 export type NotificationType = z.infer<typeof NotificationType>;
 export const AppNotification = z.object({
@@ -436,6 +441,8 @@ export const InsightKind = z.enum([
   'topic_project_name',
   'persons_merged',
   'unclear_person',
+  /** Several similar corrections of the agent: shall Archivist store a rule? (#315) */
+  'learned_rule',
 ]);
 export type InsightKind = z.infer<typeof InsightKind>;
 /**
@@ -503,6 +510,8 @@ export const GraphEntity = z.object({
   duplicateOfId: z.string().nullable(),
   /** The user's own person (shown with the badge „Du“). */
   isSelf: z.boolean(),
+  /** Lifecycle of a case („Vorgang“): open | closed. */
+  status: z.string().nullish(),
   /** Topic/project taken from a document and not yet confirmed: never listed in LLM prompts (#199). */
   unconfirmed: z.boolean().optional(),
   createdAt: IsoDate,
@@ -517,6 +526,9 @@ export const GraphRelation = z.object({
   confidence: z.number(),
   sourceIds: z.array(z.string()),
   status: RelationStatus,
+  /** system = fixed methods, user, agent (#270); null for relations from before. */
+  origin: z.string().nullish(),
+  runId: z.string().nullish(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
@@ -581,6 +593,8 @@ export const AgentActionType = z.enum([
   'merge_open_items',
   'record_decision',
   'undo_change',
+  /** Changes an agent run prepared as proposals (mode „Fragen“ or critical, #298); confirmable as a whole or in part. */
+  'agent_batch',
 ]);
 export type AgentActionType = z.infer<typeof AgentActionType>;
 export const ConfirmationLevel = z.enum(['none', 'confirm', 'strong']);
@@ -680,6 +694,17 @@ export const ActionParamSchemas = {
   merge_open_items: z.object({ keepId: Id, duplicateId: Id }),
   /** Undoes a recorded change (audit entry), e.g. an automatic merge of person duplicates. */
   undo_change: z.object({ auditId: Id }),
+  agent_batch: z.object({
+    runId: Id,
+    conversationId: z.string().nullish(),
+    items: z
+      .array(z.object({ tool: z.string(), args: z.unknown(), label: z.string(), risk: z.enum(['read', 'write', 'critical']), reason: z.string().default('') }))
+      .min(1),
+    /** Short ids (D1, S1 …) as they were when the proposal was made. */
+    refs: z.object({ ids: z.record(z.string(), z.string()), sets: z.record(z.string(), z.array(z.string())) }).default({ ids: {}, sets: {} }),
+    /** Partial confirmation: indexes of the items to execute (all when absent). */
+    selected: z.array(z.number().int().min(0)).optional(),
+  }),
   record_decision: z.object({
     title: z.string(),
     decisionText: z.string(),
@@ -720,6 +745,8 @@ export const ChatMessage = z.object({
   errorMessage: z.string().nullable(),
   /** Answer buttons for a follow-up question (e.g. „Entscheidung“, „Notiz“); a click sends the text. */
   quickReplies: z.array(z.string()).default([]),
+  /** Agent run that produced this answer (steps, changes, undo, tokens – #300). */
+  runId: z.string().nullish(),
 });
 export type ChatMessage = z.infer<typeof ChatMessage>;
 
@@ -759,6 +786,8 @@ export const AuditEntry = z.object({
   error: z.string().nullable(),
   undoable: z.boolean(),
   undoneAt: IsoDate.nullable(),
+  /** Agent run that made the change (#299). */
+  runId: z.string().nullish(),
 });
 export type AuditEntry = z.infer<typeof AuditEntry>;
 
@@ -826,6 +855,10 @@ export const LlmTransmission = z.object({
   documentIds: z.array(z.string()),
   preview: z.string(),
   success: z.boolean(),
+  /** Tokens per request (agent requests, #302). */
+  inputTokens: z.number().nullish(),
+  outputTokens: z.number().nullish(),
+  cacheReadTokens: z.number().nullish(),
 });
 export type LlmTransmission = z.infer<typeof LlmTransmission>;
 

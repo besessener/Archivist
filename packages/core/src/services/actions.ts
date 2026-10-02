@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import {
   ActionParamSchemas,
   type AgentActionProposal,
@@ -55,6 +56,9 @@ function mergedIds(type: 'merge_entities' | 'merge_topics', params: Record<strin
   return [...p.sourceIds, p.targetId];
 }
 
+/** Executes a confirmed proposal card of an agent run (provided by the agent service, #298). */
+export type AgentBatchExecutor = (params: z.output<(typeof ActionParamSchemas)['agent_batch']>) => Promise<string>;
+
 export interface ActionDeps {
   archive: ArchiveService;
   documents: DocumentService;
@@ -68,6 +72,7 @@ export interface ActionDeps {
   reminders: ReminderService;
   audit: AuditService;
   undo: UndoService;
+  agentBatch?: AgentBatchExecutor;
 }
 
 /** From this many documents a relocation counts as especially far-reaching („besonders folgenreich“). */
@@ -85,6 +90,10 @@ export class ActionService {
 
   wire(deps: ActionDeps): void {
     this.deps = deps;
+  }
+
+  setAgentBatchExecutor(fn: AgentBatchExecutor): void {
+    this.deps.agentBatch = fn;
   }
 
   private get db() {
@@ -503,6 +512,11 @@ export class ActionService {
         const r = await d.undo.undo(params.auditId);
         if (!r.undone) throw new AppError('validation_error', r.message, { details: r.conflicts.join(' ') || undefined });
         return r.message;
+      }
+      case 'agent_batch': {
+        const params = ActionParamSchemas.agent_batch.parse(p);
+        if (!d.agentBatch) throw new AppError('validation_error', 'Der Agentenmodus ist nicht verfügbar.');
+        return d.agentBatch(params);
       }
       case 'record_decision': {
         const params = ActionParamSchemas.record_decision.parse(p);

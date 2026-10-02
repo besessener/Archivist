@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { patchSchema } from './common';
 import { LOCAL_TIME } from './dates';
 import { SUPPORTED_EXTENSIONS } from './domain';
+import { AgentSettings, BackgroundAgentSettings } from './agent';
 
 export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high']);
 
@@ -89,6 +90,7 @@ export const Settings = z.object({
   backups: BackupSettings.default(() => BackupSettings.parse({})),
   consistency: ConsistencySettings.default(() => ConsistencySettings.parse({})),
   ocr: OcrSettings.default(() => OcrSettings.parse({})),
+  agent: AgentSettings.default(() => AgentSettings.parse({})),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -105,5 +107,8 @@ export const SettingsPatch = z.object({
   backups: patchSchema(BackupSettings).optional(),
   consistency: patchSchema(ConsistencySettings).optional(),
   ocr: patchSchema(OcrSettings).optional(),
+  agent: patchSchema(AgentSettings)
+    .extend({ background: patchSchema(BackgroundAgentSettings).optional() })
+    .optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

@@ -21,7 +21,7 @@ export function patchSchema<Shape extends z.ZodRawShape>(schema: z.ZodObject<Sha
   return z.object(shape).partial();
 }
 
-export const EntityType = z.enum(['document', 'decision', 'topic', 'project', 'person', 'event', 'question', 'task', 'note', 'category', 'tag']);
+export const EntityType = z.enum(['document', 'decision', 'topic', 'project', 'person', 'event', 'question', 'task', 'note', 'category', 'tag', 'case']);
 export type EntityType = z.infer<typeof EntityType>;
 
 export const RelationType = z.enum([

@@ -21,6 +21,8 @@ export const entities = sqliteTable(
     duplicateOfId: text('duplicate_of_id'),
     /** The user's own person („Du“); at most one entity carries the flag. */
     isSelf: integer('is_self', { mode: 'boolean' }).notNull().default(false),
+    /** Lifecycle of a case („Vorgang“, #286): open | closed; null for all other entity types. */
+    status: text('status'),
     /** Topic/project taken from a document and not yet confirmed by the user: kept out of LLM prompts (#199). */
     unconfirmed: integer('unconfirmed', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull(),
@@ -41,6 +43,10 @@ export const relations = sqliteTable(
     status: text('status').notNull().default('proposed'),
     /** Set once the user explicitly confirmed or rejected the relation; such relations are never changed by field sync. */
     resolvedByUser: integer('resolved_by_user', { mode: 'boolean' }).notNull().default(false),
+    /** Who created the relation: system (fixed methods), user, agent (#270); null for relations from before #270. */
+    origin: text('origin'),
+    /** Agent run that created the relation (#299). */
+    runId: text('run_id'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -292,6 +298,8 @@ export const messages = sqliteTable(
     intent: text('intent'),
     errorMessage: text('error_message'),
     quickReplies: jsonArr('quick_replies'),
+    /** Agent run that produced the answer (#300). */
+    runId: text('run_id'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [index('messages_conv_idx').on(t.conversationId, t.createdAt)],
@@ -337,8 +345,10 @@ export const auditLog = sqliteTable(
     undoType: text('undo_type'),
     undoData: text('undo_data', { mode: 'json' }).$type<ArchivistJson | null>(),
     undoneAt: text('undone_at'),
+    /** Agent run during which the change was made (#299); null for changes outside of a run. */
+    runId: text('run_id'),
   },
-  (t) => [index('audit_at_idx').on(t.at)],
+  (t) => [index('audit_at_idx').on(t.at), index('audit_run_idx').on(t.runId)],
 );
 
 export const scanRoots = sqliteTable('scan_roots', {
@@ -420,6 +430,10 @@ export const llmTransmissions = sqliteTable('llm_transmissions', {
   documentIds: jsonArr('document_ids'),
   preview: text('preview').notNull().default(''),
   success: integer('success', { mode: 'boolean' }).notNull().default(true),
+  /** Tokens of the request as reported by the provider (agent requests, #302); null for older entries. */
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  cacheReadTokens: integer('cache_read_tokens'),
 });
 
 export type { Json };
@@ -430,3 +444,62 @@ export const appState = sqliteTable('app_state', {
   value: text('value').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+/** Agent runs (#299): trigger, provider, tool calls with shortened results, tokens, cost, duration and outcome. */
+export const agentRuns = sqliteTable(
+  'agent_runs',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id'),
+    trigger: text('trigger').notNull(),
+    task: text('task').notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    mode: text('mode').notNull(),
+    status: text('status').notNull(),
+    summary: text('summary').notNull().default(''),
+    steps: text('steps', { mode: 'json' }).$type<ArchivistJson>().notNull().default([]),
+    usage: text('usage', { mode: 'json' }).$type<ArchivistJson>().notNull().default({}),
+    costUsd: real('cost_usd'),
+    rounds: integer('rounds').notNull().default(0),
+    applied: text('applied', { mode: 'json' }).$type<ArchivistJson>().notNull().default([]),
+    files: jsonArr('files'),
+    error: text('error'),
+    startedAt: text('started_at').notNull(),
+    finishedAt: text('finished_at'),
+  },
+  (t) => [index('agent_runs_started_idx').on(t.startedAt), index('agent_runs_conv_idx').on(t.conversationId)],
+);
+
+/** Provider-neutral agent history per conversation (append-only, #297); `raw` is replayed only to the same provider and model. */
+export const agentMessages = sqliteTable(
+  'agent_messages',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id').notNull(),
+    seq: integer('seq').notNull(),
+    runId: text('run_id'),
+    data: text('data', { mode: 'json' }).$type<ArchivistJson>().notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('agent_messages_seq_idx').on(t.conversationId, t.seq)],
+);
+
+/** What Archivist has learned (#315): rules, workflows, corrections, preferences and facts. Visible and deletable. */
+export const agentMemory = sqliteTable(
+  'agent_memory',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    name: text('name').notNull(),
+    content: text('content').notNull(),
+    data: text('data', { mode: 'json' }).$type<ArchivistJson | null>(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    origin: text('origin').notNull().default('user'),
+    timesApplied: integer('times_applied').notNull().default(0),
+    lastAppliedAt: text('last_applied_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('agent_memory_kind_idx').on(t.kind)],
+);

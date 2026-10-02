@@ -17,7 +17,9 @@ Alles ist ausschließlich JavaScript/TypeScript – **kein Python, kein HTTP-Bac
 - [Datenhaltung und Dateiablage](#datenhaltung-und-dateiablage)
 - [Sicherheits- und Datenschutzmodell](#sicherheits--und-datenschutzmodell)
 - [LLM-Anbindung](#llm-anbindung)
+- [Agentenmodus](#agentenmodus)
 - [Entwicklung, Tests, Build](#entwicklung-tests-build)
+- [Evaluation des Agenten](#evaluation-des-agenten)
 - [Packaging](#packaging)
 - [Bewusste Abweichungen und ehrliche Grenzen](#bewusste-abweichungen-und-ehrliche-grenzen)
 - [Fehlerbehebung](#fehlerbehebung)
@@ -184,6 +186,19 @@ Archivist/
 - Antworten auf Wissensfragen: Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen – Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen. Bleibt keine belegte Aussage übrig, erscheint die Antwort des Modells nur als „Nicht belegt (Einschätzung des Modells)“, die Sicherheit wird auf höchstens 30 % gesetzt und gefundene, aber nicht zitierte Quellen sind als „gefunden, nicht zitiert“ gekennzeichnet. Zu gefundenen Entscheidungen kommen ihre Quelldokumente mit der passenden Textstelle in den Prompt.
 - Schutz vor Anweisungen in Dokumenten (Prompt-Injection): Dokumenttexte, Verlauf und Kontextlisten sind in jedem Prompt als Daten markiert. Vorschläge führt der Chat nur nach einem eindeutigen „ja“ des Benutzers aus, nie auf eine Einordnung des Modells hin. Frühere Antworten aus dem Archiv gehen nicht als Text in die Intent-Erkennung ein. Themen und Projekte, die unverändert aus einem Dokument übernommen wurden, sind auf der Wissen-Seite „unbestätigt“ und werden dem Modell erst nach deiner Bestätigung (oder sobald du den Namen selbst verwendest) als bekannt genannt. Bei reinen HTML-E-Mails fällt für den Leser unsichtbarer Text (display:none, font-size:0, …) aus dem Dokumenttext heraus.
 
+## Agentenmodus
+
+Archivist arbeitet als Agent (Epic #294): Er versteht ein Anliegen, beschafft sich mit Werkzeugen selbst die nötigen Daten, plant mehrere Schritte und führt Änderungen aus – im Chat und im Hintergrund. Ohne LLM, im Modus „nur lokal“ oder bei einem Endpunkt ohne natives Tool-Calling gilt weiter die regelbasierte Auswertung.
+
+- **Kern** (`packages/core/src/agent/`): anbieterneutrale Schleife (`runner.ts`) mit Werkzeug-Register (Name, Beschreibung, Zod-Schema, Risikostufe `read`/`write`/`critical`, Ausführung über dieselben Service-Funktionen wie die Oberfläche). Ungültige Argumente gehen als Fehler-Ergebnis an das Modell zurück; lesende Aufrufe einer Runde laufen parallel; Rückfragen (`ask_user`) sind ein eigener Ausgang, die Antwort setzt den Lauf mit vollem Kontext fort. Statt einer festen Schrittzahl begrenzen Token-Budget, Notbremse für Runden, Zeitlimit, Schleifenerkennung und „Stopp“ den Lauf; an einer Grenze fasst der Agent zusammen, was erledigt ist und was fehlt.
+- **Anbieter**: Claude über die Anthropic Messages API mit dem offiziellen SDK (`@anthropic-ai/sdk`, für Microsoft Foundry `@anthropic-ai/foundry-sdk`) und ChatGPT/OpenAI über die Responses API (auch Azure OpenAI bzw. Foundry `…/openai/v1`). Der Adapter wird aus der Base URL erkannt (`api.anthropic.com` bzw. `…/anthropic` → Claude, sonst Responses) und lässt sich unter „Erweitert“ überschreiben. Der Verbindungstest prüft einen echten Werkzeugaufruf mit Rückgabe und Streaming; Claude-Modelle auf Foundry bieten natives Tool-Calling am Anthropic-Endpunkt derselben Ressource (`https://<resource>.services.ai.azure.com/anthropic`) – der Dialog schlägt ihn vor. Für Claude: Thinking ist immer an und wird nur über `effort` gesteuert (Standard `high`), Werkzeugaufrufe werden nie erzwungen (`tool_choice: auto`), Systemanweisung und Werkzeugliste werden gecacht, Task-Budget (nur Claude API) und Kompaktierung werden genutzt, wo verfügbar, und abgeschaltet, wenn ein Endpunkt sie ablehnt. Der Verlauf wird anbieterneutral gespeichert – ein Wechsel des Anbieters braucht keinen Neustart.
+- **Modi**: „Auto“ (Standard) führt Änderungen selbst aus, protokolliert sie und macht sie auf Wunsch rückgängig; „Fragen“ bereitet jede Änderung als Vorschlag vor (eine Karte, ganz oder teilweise bestätigbar). Pro Gespräch umschaltbar, auch per „frag mich diesmal vorher“. Immer nachgefragt wird bei endgültigem Löschen, Änderungen an Originaldateien außerhalb des Archivs, Datenschutz-Einstellungen, neuen Hauptkategorien und Massenaktionen über der Schwelle (Standard: mehr als 100 Einträge in einem Lauf).
+- **Agentenläufe**: Jeder Lauf hat eine Lauf-ID mit Auslöser, Anbieter und Modell, Werkzeugaufrufen (gekürzte Ergebnisse), Tokens und geschätzten Kosten, Dauer und Ergebnis. Jede Änderung trägt die Lauf-ID (Änderungsprotokoll, Beziehungen mit Herkunft `agent`); „Lauf rückgängig“ setzt alle Änderungen in umgekehrter Reihenfolge mit Konfliktprüfung zurück, einzelne Schritte ebenso. Ansicht unter Einstellungen → Agent.
+- **Sicherheit**: Dokumentinhalte gehen nur als markierte Daten an das Modell, nie als Anweisungen; enthält ein Dokument eine Aufforderung an den Agenten, ändert der Lauf nichts ohne eigene Bitte des Benutzers (im Hintergrund nur als Vorschlag). Jedes Werkzeugergebnis läuft durch den Datenschutzfilter (nicht freigegebene Dokumente nur mit Endung, Ordner und Status), Geheimnisse werden vor jeder Übertragung maskiert, und welche Dokumente an das LLM gingen, steht im Übertragungsprotokoll.
+- **Verbrauch**: Tokens (Eingabe, Ausgabe, Cache) pro Anfrage und Lauf, Kosten aus einer pflegbaren Preistabelle – nur zur Information, es gibt keine Kostenobergrenze. Übersicht pro Tag und Monat, nach Chat und Hintergrund.
+- **Hintergrund**: neue Dateien nach Scan bzw. Analyse einsortieren, agentische Archivprüfung, Verknüpfungsvorschläge (bleiben Vorschläge), geplante eigene Abläufe – als Jobs mit eigenem Budget, abbrechbar, je Lauf eine gebündelte Benachrichtigung. Dazu Fristen-Wächter und Wochenrückblick (ohne LLM).
+- **Lernen heißt Speichern, nicht Trainieren**: Regeln, eigene Abläufe, Korrekturen, Vorlieben und Wissen über den Benutzer werden gespeichert und jedem Lauf mitgegeben – nur auf ausdrücklichen Wunsch oder nach Rückfrage, nie aus Dokumenten. Nach mehreren gleichartigen Korrekturen schlägt Archivist eine Regel vor. Alles ist unter Einstellungen → Agent einsehbar, abschaltbar und löschbar; Gelerntes hebt nie Modus, Ausnahmen, Datenschutz oder Grenzen auf.
+
 ## Entwicklung, Tests, Build
 
 ```bash
@@ -215,6 +230,45 @@ Alle Actions sind auf Commit-SHAs gepinnt (Kommentar nennt den Tag), Workflows l
 **Ansprache**: Wir duzen – in der Oberfläche, im Chat, in Benachrichtigungen, Fehlermeldungen und der Dokumentation. Die LLM-Prompts weisen das Modell entsprechend an, den Benutzer mit „du“ anzusprechen.
 
 **Sprache**: Alles, was programmiert ist, ist Englisch – Bezeichner, Code-Kommentare, Testnamen, Log-Meldungen, Build- und CI-Ausgaben. Alles, was Benutzer sehen, ist Deutsch – Oberfläche, Fehlermeldungen, Benachrichtigungen, Hinweise, Chat-Antworten. Deutsch bleiben auch die LLM-Prompts (sie erzeugen deutsche Antworten), Muster für deutsche Eingaben und Testdaten.
+
+## Evaluation des Agenten
+
+`npm run eval:agent` prüft den Agentenmodus mit **echten Modellen** (Claude und ChatGPT) an knapp 60 realistischen Aufgaben aus allen Stories des Epics #294 (`tests/eval/tasks.ts`): „Verschiebe alle Folien nach presentations“, „Wie viel habe ich 2025 für Handwerker ausgegeben?“, „Wann muss ich den Mietvertrag spätestens kündigen?“, „Fehlt ein Kontoauszug?“, „Merk dir: Rechnungen der Stadtwerke immer nach finanzen/energie“, „Leg zu allen Kündigungsfristen Erinnerungen an“, unklare Anliegen, ein Dokument mit eingeschleuster Anweisung, Modus „Fragen“, Massenaktionen über der Schwelle, Hintergrund-Läufe u. v. m.
+
+- Jede Aufgabe läuft in einer frischen App mit einem Test-Archiv aus ~40 kleinen Dokumenten (Folien, Handwerkerrechnungen, Kontoauszüge mit Lücke, Mietvertrag in zwei Fassungen, Garantie, Versicherung, E-Mails, Duplikate, ein gesperrtes Dokument). Das Archiv wird **ohne LLM** aufgebaut (Import nur lokal, Ordner, Typ und Datum explizit); Fristen liegen relativ zu heute.
+- Bewertet wird das **Ergebnis im Archiv**, nicht der Weg: Dateien im richtigen Ordner und sonst nichts verändert (Vorher/Nachher-Abgleich aller Pfade und Metadaten), Erinnerungen mit dem richtigen Datum, eine Rückfrage bei unklarem Anliegen (Laufstatus `ask_user`), ignorierte Anweisungen aus Dokumenten, die deterministische Summe in der Antwort usw.
+- **Kostet Geld** und ist deshalb **nicht Teil von `npm test` und der CI** (eigene Konfiguration `vitest.eval.config.mts`, nur `tests/eval/**/*.eval.ts`, Aufgaben nacheinander). Ohne konfigurierte Anbieter wird sie sauber übersprungen. Damit der Code nicht veraltet, prüft `tests/unit/agent-eval-tasks.test.ts` im normalen Testlauf Aufgabenliste und Archivaufbau mit dem Fake-LLM.
+
+Konfiguration über Umgebungsvariablen:
+
+| Variable | Bedeutung |
+|---|---|
+| `ARCHIVIST_EVAL_PROVIDERS` | Kommaliste von Namen, z. B. `claude,gpt` |
+| `ARCHIVIST_EVAL_<NAME>_BASE_URL` | Base URL wie im Einrichtungsassistenten (bestimmt den Adapter) |
+| `ARCHIVIST_EVAL_<NAME>_MODEL` | Modell- bzw. Deployment-Name |
+| `ARCHIVIST_EVAL_<NAME>_API_KEY` | API-Key |
+| `ARCHIVIST_EVAL_<NAME>_EFFORT` | optional: `low`, `medium`, `high` (Standard), `xhigh`, `max` |
+| `ARCHIVIST_EVAL_<NAME>_ADAPTER` | optional: `auto` (Standard), `anthropic`, `openai` |
+| `ARCHIVIST_EVAL_TASKS` | optional: nur diese Aufgaben-IDs oder Stories, z. B. `move-slides,#309` |
+
+`<NAME>` ist der Name in Großbuchstaben (Sonderzeichen werden zu `_`).
+
+```bash
+# Claude auf Microsoft Foundry (Anthropic-Endpunkt) und GPT auf Azure OpenAI
+export ARCHIVIST_EVAL_PROVIDERS=claude,gpt
+export ARCHIVIST_EVAL_CLAUDE_BASE_URL=https://<resource>.services.ai.azure.com/anthropic
+export ARCHIVIST_EVAL_CLAUDE_MODEL=claude-opus-5-5
+export ARCHIVIST_EVAL_CLAUDE_API_KEY=...
+export ARCHIVIST_EVAL_CLAUDE_EFFORT=high
+export ARCHIVIST_EVAL_GPT_BASE_URL=https://<resource>.openai.azure.com/openai/v1
+export ARCHIVIST_EVAL_GPT_MODEL=<deployment>
+export ARCHIVIST_EVAL_GPT_API_KEY=...
+npm run eval:agent
+```
+
+Ergebnis: `eval-results/agent-<Zeitstempel>.json` und `.md` (nicht im Repository) – je Anbieter Quote, Kosten, Tokens, Ø Runden und Ø Dauer, je Aufgabe bestanden/fehlgeschlagen mit Grund, dazu der Vergleich mit dem vorigen Ergebnis (neue Fehlschläge und Behobenes hervorgehoben). Am Ende werden die Kosten des Laufs ausgegeben (Schätzung aus der Preistabelle; ein Modell ohne Eintrag zählt mit 0).
+
+**Effort und Budgets abstimmen**: Denselben Anbieter mehrfach mit unterschiedlichem Effort eintragen (z. B. `claude-high` und `claude-medium` mit gleicher URL) und Quote gegen Kosten und Dauer abwägen; nach Änderungen an Prompt, Werkzeugen oder Grenzen zeigt der Vergleich mit dem vorigen Lauf, welche Aufgaben neu scheitern. Läufe, die an `limit` scheitern oder sehr viele Runden brauchen, sprechen für höhere `chatLimits`/`backgroundLimits` – oder für ein Werkzeug, das die Arbeit deterministisch erledigt. Für schnelle Iterationen mit `ARCHIVIST_EVAL_TASKS` nur die betroffenen Aufgaben laufen lassen.
 
 ## Packaging
 
