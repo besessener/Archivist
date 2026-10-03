@@ -14,8 +14,6 @@ export function relevantNames(names: string[], text: string, limit: number): str
     const asPhrase = normalized.length >= MIN_WORD_LENGTH && haystack.includes(` ${normalized} `) ? 1 : 0;
     return { name, position, score: shared + asPhrase };
   });
-  return scored
-    .sort((a, b) => b.score - a.score || a.position - b.position)
-    .slice(0, limit)
-    .map((entry) => entry.name);
+  scored.sort((a, b) => b.score - a.score || a.position - b.position);
+  return scored.slice(0, limit).map((entry) => entry.name);
 }

@@ -23,6 +23,16 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
       });
     }
 
+    test('the page of proposed decisions has no serious or critical violations', async ({ on, page }, testInfo) => {
+      const { decisions, navigation } = on(page);
+      await navigation.do.open('decisions');
+      await decisions.locators.proposed.open.click();
+      await expect(page.getByRole('heading', { name: 'Vorgeschlagene Entscheidungen' })).toBeVisible();
+      await expect(decisions.locators.proposed.back).toBeVisible();
+
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
+
     test('the agent settings (runs, link run) have no serious or critical violations', async ({ on, page }, testInfo) => {
       await on(page).navigation.do.open('settings');
       await page.getByTestId('tab-agent').click();

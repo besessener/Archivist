@@ -6,6 +6,7 @@ import { initInbox } from './inbox';
 import { initInsights } from './insights';
 import { initKnowledge } from './knowledge';
 import { initNavigation } from './navigation';
+import { initNotifications } from './notifications';
 import { initOpenItems } from './open-items';
 import { initScan } from './scan';
 import { initSettings } from './settings';
@@ -37,6 +38,9 @@ export function createPageTree(page: Page) {
     },
     get navigation() {
       return initNavigation(page);
+    },
+    get notifications() {
+      return initNotifications(page);
     },
     get openItems() {
       return initOpenItems(page);

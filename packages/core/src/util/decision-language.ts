@@ -13,4 +13,6 @@ export const mentionsDecision = (sentence: string): boolean =>
 /** Explicit first-person statement – the only wording trusted without asking back. */
 export const isExplicitDecision = (sentence: string): boolean =>
   !isUndecidedWording(sentence) &&
-  /\b(?:wir|ich)\s+haben\s+[^?!]{0,60}?(?:entschieden|beschlossen)|^beschluss:|^entscheidung:|\b(?:we|i)\s+(?:have\s+)?(?:decided|agreed)\b|^(?:decision|resolution):/i.test(sentence.trim());
+  /\b(?:wir|ich)\s+haben\s+[^?!]{0,60}?(?:entschieden|beschlossen)|^beschluss:|^entscheidung:|\b(?:we|i)\s+(?:have\s+)?(?:decided|agreed)\b|^(?:decision|resolution):/i.test(
+    sentence.trim(),
+  );

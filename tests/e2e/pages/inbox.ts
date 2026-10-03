@@ -7,6 +7,8 @@ export function initInbox(page: Page) {
     fileInput: page.getByTestId('file-input'),
     items: page.getByTestId('inbox-item'),
     proposals: page.getByTestId('inbox-proposal'),
+    /** What the analysis did not see of a long document. */
+    coverage: page.getByTestId('document-coverage'),
     llmStatus: page.getByTestId('inbox-llm-status'),
     folderLocked: page.getByTestId('inbox-folder-locked'),
     fields: {

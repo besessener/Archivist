@@ -3,9 +3,12 @@ import { isNotAPersonName, parsePersonName } from '../util/person-names';
 const MAX_PERSONS = 15;
 const SAMPLE_CHARS = 20_000;
 
-/** Header lines that name people: attendee lists and the sender of a mail or letter (German and English). */
-const PERSON_LINE =
-  /^[ \t]*(?:teilnehmer(?:innen)?|teilnehmende|anwesend(?:e)?|attendees?|participants?|present|von|from|absender|sender|verfasser|autor|author)[ \t]*:[ \t]*(.+)$/gimu;
+/** Labels of header lines that name people: attendee lists and the sender of a mail or letter (German and English). */
+const PERSON_LABELS = new Set(
+  'teilnehmer teilnehmerinnen teilnehmende anwesend anwesende attendee attendees participant participants present von from absender sender verfasser autor author'.split(
+    ' ',
+  ),
+);
 
 const NAME_PARTICLES = new Set(['von', 'van', 'de', 'der', 'zu', 'ten', 'ter', 'da', 'di']);
 
@@ -13,20 +16,29 @@ const NAME_PARTICLES = new Set(['von', 'van', 'de', 'der', 'zu', 'ten', 'ter', '
 function looksLikePersonName(name: string): boolean {
   const words = name.split(' ');
   if (words.length > 4 || name.length > 40 || /\d/.test(name)) return false;
-  return words.every((word) => /^\p{Lu}[\p{L}'.-]*$/u.test(word) || NAME_PARTICLES.has(word));
+  return words.every((word) => /^\p{Lu}[\p{L}'.-]{0,30}$/u.test(word) || NAME_PARTICLES.has(word));
 }
 
 function namesOfLine(line: string): string[] {
-  const withoutAddresses = line.replace(/<[^>]*>|\[[^\]]*\]/g, ' ');
+  const withoutAddresses = line.replace(/<[^>]{0,200}>|\[[^\]]{0,200}\]/g, ' ');
   return withoutAddresses
-    .split(/[;,]|\s+(?:und|and|&)\s+/)
+    .split(/[;,&]/)
+    .flatMap((part) => part.split(' und '))
+    .flatMap((part) => part.split(' and '))
     .map((part) => parsePersonName(part).cleanName)
     .filter((name) => name !== '' && !name.includes('@') && !isNotAPersonName(name) && looksLikePersonName(name));
 }
 
+/** The names after the label of a header line, or nothing for any other line. */
+function namesOnLabelledLine(line: string): string[] {
+  const colon = line.indexOf(':');
+  if (colon < 0 || !PERSON_LABELS.has(line.slice(0, colon).trim().toLowerCase())) return [];
+  return namesOfLine(line.slice(colon + 1));
+}
+
 /** People named on attendee and sender lines („Teilnehmer: Anna Berg, Ben Roth“, „From: Carla Neu <c@x.de>“); nothing is guessed from running text. */
 export function personsInHeaderLines(text: string): string[] {
-  const names = [...text.slice(0, SAMPLE_CHARS).matchAll(PERSON_LINE)].flatMap((match) => namesOfLine(match[1]!));
+  const names = text.slice(0, SAMPLE_CHARS).split('\n').flatMap(namesOnLabelledLine);
   return [...new Map(names.map((name) => [name.toLowerCase(), name])).values()].slice(0, MAX_PERSONS);
 }
 
