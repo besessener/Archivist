@@ -3,7 +3,7 @@ import { MIME_BY_EXT } from '../../../parsers';
 import { truncate } from '../../../util/text';
 import { ARCHIVED } from '../common';
 
-const READABLE_EXT = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'txt', 'md', 'markdown', 'eml']);
+const READABLE_EXT = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'txt', 'md', 'markdown', 'eml', 'png', 'jpg', 'jpeg']);
 
 type ProblemFields = Pick<DocumentRecord, 'status' | 'processingError' | 'ext' | 'mime' | 'textLength' | 'processingStatus'>;
 
