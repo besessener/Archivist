@@ -40,8 +40,8 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'find_deadlines',
       description:
-        'Erkennt Fristen und Ablaufdaten (Kündigung, Garantie, Ausweis, Versicherung, TÜV/HU, Widerspruch, Ablauf, Fälligkeit) mit Fundstelle und Rechenweg. Nennt, ob für das Dokument schon eine Erinnerung besteht („Erinnerung vorhanden“ – dann keine zweite anlegen).',
-      schema: z.object({ documents: docsArg }),
+        'Erkennt Fristen und Ablaufdaten (Kündigung, Garantie, Ausweis, Versicherung, TÜV/HU, Widerspruch, Ablauf, Fälligkeit) mit Fundstelle und Rechenweg. Ohne Angabe: alle archivierten Dokumente (die neuesten 1000, vorbeigegangene Fristen ausgelassen, höchstens 60 Fristen). Nennt je Frist, ob schon eine Erinnerung oder ein offener Punkt besteht; nicht freigegebene Dokumente werden nur gezählt. Für eine Frist „keine Erinnerung“ legst du mit create_reminder (target = D-ID, deadline = Art und Datum) eine an – bei „vorhanden“ nichts.',
+      schema: z.object({ documents: list.nullish().describe('D…/S…; leer = alle archivierten') }),
       risk: 'read',
       label: () => 'Suche Fristen und Ablaufdaten',
       run: (a, ctx) => deadlinesReport({ deps, ctx }, a.documents),

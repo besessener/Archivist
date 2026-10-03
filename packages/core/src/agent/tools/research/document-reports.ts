@@ -1,11 +1,12 @@
-import type { DocumentRecord, Reminder } from '@archivist/shared';
+import { localDate, type DocumentRecord } from '@archivist/shared';
 import { truncate } from '../../../util/text';
 import type { ToolContext, ToolOutput } from '../../registry';
 import { asData } from '../../security';
-import { docDay, docLine, resolveDocs, unknownNote, type ToolScope } from '../common';
-import { businessDate, documentText, shareableDocs, skippedNote } from './access';
+import { docDay, docLine, resolveDocs, unknownNote, type ToolDeps, type ToolScope } from '../common';
+import { archivedDocs, businessDate, documentText, shareableDocs, skippedNote } from './access';
 import { formatEuro, invoiceTotal, sumAmounts } from './amounts';
-import { DEADLINE_LABEL, findDeadlines, type Deadline } from './deadlines';
+import { coverageLookup, scanDeadlines, type DeadlineCoverage } from './deadline-coverage';
+import { DEADLINE_LABEL, type Deadline } from './deadlines';
 import { monthGaps, numberGaps, sequenceNumber } from './gaps';
 import { invoiceNumber, matchPayments, parseStatement, type InvoiceInfo, type Payment } from './payments';
 
@@ -111,43 +112,83 @@ export async function gapsReport(scope: ToolScope, args: { documents: string[]; 
   return { ...output, content: output.content + skippedNote(skipped) + unknownNote(unknown) };
 }
 
-function reminderNote(pending: Reminder[], documentId: string): string {
-  const reminders = pending.filter((r) => r.targetId === documentId);
-  return reminders.length ? ` | Erinnerung vorhanden (${reminders.map((r) => r.remindAt.slice(0, 10)).join(', ')})` : ' | keine Erinnerung';
+/** Deadlines listed per call; the rest is counted. */
+const MAX_LISTED_DEADLINES = 60;
+/** Documents scanned when no documents are given (the newest ones). */
+const MAX_SCANNED_DOCUMENTS = 1000;
+
+const SKIPPED_REFS_SHOWN = 10;
+
+function blockedNote({ ctx }: ToolScope, blocked: DocumentRecord[]): string {
+  if (!blocked.length) return '';
+  const refs = blocked.slice(0, SKIPPED_REFS_SHOWN).map((d) => ctx.refs.doc(d.id));
+  const more = blocked.length > SKIPPED_REFS_SHOWN ? ` und ${blocked.length - SKIPPED_REFS_SHOWN} weitere` : '';
+  return `\n${blocked.length} nicht freigegebene Dokumente übersprungen (nicht geprüft): ${refs.join(', ')}${more}.`;
 }
 
-function documentDeadlineLines(scope: ToolScope, found: { document: DocumentRecord; hits: Deadline[]; reminderNote: string }): string[] {
-  const { ctx, deps } = scope;
-  const { document: d, hits } = found;
-  if (!deps.privacy.mayShareDocument(d))
-    return hits.map(
-      (h) => `- ${ctx.refs.doc(d.id)} [nicht freigegeben]: Frist am ${h.date ?? 'unbekannt'} (Art: ${DEADLINE_LABEL[h.kind]})${found.reminderNote}`,
-    );
-  return [
-    `- ${docLine(scope, d)}${found.reminderNote}`,
-    ...hits.map(
-      (h) =>
-        `  • ${DEADLINE_LABEL[h.kind]}: ${h.date ?? 'Datum offen'}${h.past ? ' (bereits vorbei)' : ''} – Rechenweg: ${h.rechenweg}\n    Fundstelle: ${asData(ctx.refs.doc(d.id), h.evidence)}`,
-    ),
-  ];
+function deadlineLine(scope: ToolScope, found: { hit: Deadline; documentId: string; covered: ReturnType<typeof coverageLookup> }): string {
+  const { ctx } = scope;
+  const { hit, documentId } = found;
+  const coverage = hit.date && !hit.past ? found.covered(documentId, { kind: hit.kind, date: hit.date }) : null;
+  const note = !hit.date || hit.past ? '' : coverage ? ` | ${coverageText(scope, coverage)}` : ' | keine Erinnerung';
+  return `  • ${DEADLINE_LABEL[hit.kind]}: ${hit.date ?? 'Datum offen'}${hit.past ? ' (bereits vorbei)' : ''} (Art: ${hit.kind})${note}\n    Rechenweg: ${hit.rechenweg}\n    Fundstelle: ${asData(ctx.refs.doc(documentId), hit.evidence)}`;
 }
 
-export async function deadlinesReport(scope: ToolScope, refs: readonly string[]): Promise<ToolOutput> {
-  const { deps } = scope;
-  const { docs: found, unknown } = resolveDocs(scope, refs);
-  const pending = deps.reminders.list('pending');
-  const today = new Date();
-  const lines: string[] = [];
-  let count = 0;
-  for (const d of found) {
-    const baseDate = d.documentDate ? d.documentDate.slice(0, 10) : docDay(d);
-    const hits = findDeadlines(documentText(deps, d.id), { baseDate, today, baseLabel: d.documentDate ? 'Dokumentdatum' : 'Archivdatum' });
-    if (!hits.length) continue;
-    count += hits.length;
-    lines.push(...documentDeadlineLines(scope, { document: d, hits, reminderNote: reminderNote(pending, d.id) }));
+function coverageText({ ctx }: ToolScope, coverage: DeadlineCoverage): string {
+  return coverage.by === 'reminder'
+    ? `Erinnerung vorhanden (${localDate(coverage.reminder.remindAt)})`
+    : `offener Punkt vorhanden (${ctx.refs.entry(coverage.openItem.id)}, fällig ${coverage.openItem.dueAt ? localDate(coverage.openItem.dueAt) : '–'})`;
+}
+
+const firstDate = (hits: Deadline[]) => hits[0]?.date ?? '9999';
+
+type DeadlineGroups = Array<[DocumentRecord, Deadline[]]>;
+
+/** Deadlines per document, earliest first; with `all` the past ones are only counted. */
+function groupDeadlines(deps: ToolDeps, found: { documents: DocumentRecord[]; all: boolean }): { groups: DeadlineGroups; past: number } {
+  const groups = new Map<DocumentRecord, Deadline[]>();
+  let past = 0;
+  for (const { document, deadline } of scanDeadlines(deps, { documents: found.documents, today: new Date() })) {
+    if (found.all && deadline.past) past += 1;
+    else groups.set(document, [...(groups.get(document) ?? []), deadline]);
   }
-  if (!lines.length) return { content: `Keine Fristen erkannt.${unknownNote(unknown)}`, summary: 'keine Fristen' };
-  return { content: lines.join('\n') + unknownNote(unknown), summary: `${count} Frist(en) erkannt` };
+  return { groups: [...groups].toSorted(([, a], [, b]) => (found.all ? firstDate(a).localeCompare(firstDate(b)) : 0)), past };
+}
+
+function deadlineLines(scope: ToolScope, groups: DeadlineGroups): { lines: string[]; listed: number } {
+  const covered = coverageLookup(scope.deps);
+  const lines: string[] = [];
+  let listed = 0;
+  for (const [document, hits] of groups) {
+    if (listed >= MAX_LISTED_DEADLINES) break;
+    const shown = hits.slice(0, MAX_LISTED_DEADLINES - listed);
+    listed += shown.length;
+    lines.push(`- ${docLine(scope, document)}`, ...shown.map((hit) => deadlineLine(scope, { hit, documentId: document.id, covered })));
+  }
+  return { lines, listed };
+}
+
+/** Deadlines per document; without documents all archived ones (newest first, past deadlines left out). */
+export async function deadlinesReport(scope: ToolScope, refs: readonly string[] | null | undefined): Promise<ToolOutput> {
+  const { deps } = scope;
+  const all = !refs?.length;
+  const { docs: found, unknown } = all ? { docs: archivedDocs(deps), unknown: [] as string[] } : resolveDocs(scope, refs);
+  const shareable = found.filter((d) => deps.privacy.mayShareDocument(d));
+  const blocked = found.filter((d) => !shareable.includes(d));
+  const scanned = all ? shareable.toSorted((a, b) => docDay(b).localeCompare(docDay(a))).slice(0, MAX_SCANNED_DOCUMENTS) : shareable;
+  const { groups, past } = groupDeadlines(deps, { documents: scanned, all });
+  const { lines, listed } = deadlineLines(scope, groups);
+  const total = groups.reduce((n, [, hits]) => n + hits.length, 0);
+  const notes = [
+    all
+      ? `Geprüft: ${scanned.length} von ${shareable.length} freigegebenen archivierten Dokumenten${shareable.length > scanned.length ? ' (nur die neuesten)' : ''}.`
+      : null,
+    total > listed ? `… und ${total - listed} weitere Fristen – mit documents gezielt abfragen.` : null,
+    past ? `${past} bereits vorbeigegangene Fristen ausgelassen (mit documents gezielt abfragen).` : null,
+  ].filter(Boolean);
+  const tail = (notes.length ? `\n${notes.join('\n')}` : '') + blockedNote(scope, blocked) + unknownNote(unknown);
+  if (!lines.length) return { content: `Keine Fristen erkannt.${tail}`, summary: 'keine Fristen' };
+  return { content: lines.join('\n') + tail, summary: `${total} Frist(en) erkannt` };
 }
 
 export async function paymentsReport(scope: ToolScope, args: { statements: string[]; invoices: string[] }): Promise<ToolOutput> {

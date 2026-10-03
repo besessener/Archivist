@@ -29,6 +29,7 @@ interface ScheduleDeps {
 export class BackgroundSchedule {
   private timer: NodeJS.Timeout | null = null;
   private inboxTimer: NodeJS.Timeout | null = null;
+  private firstTickTimer: NodeJS.Timeout | null = null;
   private watcher: DeadlineWatcher | null = null;
   /** Puts a background run into the job queue; does nothing until `start`. */
   private enqueue: EnqueueBackground = () => undefined;
@@ -52,13 +53,16 @@ export class BackgroundSchedule {
     this.deps.runs.closeInterrupted();
     this.timer ??= setInterval(() => this.tick(), TICK_INTERVAL_MS);
     this.timer.unref?.();
-    setTimeout(() => this.tick(), FIRST_TICK_MS).unref?.();
+    this.firstTickTimer = setTimeout(() => this.tick(), FIRST_TICK_MS);
+    this.firstTickTimer.unref?.();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     if (this.inboxTimer) clearTimeout(this.inboxTimer);
+    if (this.firstTickTimer) clearTimeout(this.firstTickTimer);
     this.timer = null;
+    this.firstTickTimer = null;
     this.inboxTimer = null;
   }
 

@@ -5,6 +5,7 @@ import { truncate } from '../../util/text';
 import { defineTool, list, optText, type AgentTool, type ToolOutput } from '../registry';
 import type { ToolDeps, ToolScope } from './common';
 import { agentIntent, dueDateArg, entryRef, followUpQuestion } from './knowledge-capture';
+import { createReminder, ReminderArgs } from './knowledge-reminders';
 import { linkHint } from './link-methods';
 import { REMINDER_SNOOZE_UNDO, type ReminderSnoozeUndoData } from './tool-undo';
 
@@ -74,46 +75,6 @@ function openItemPatch(args: z.output<typeof UpdateArgs>, currentDescription: st
   if (args.priority) patch.priority = args.priority;
   if (args.status) patch.status = args.status;
   return patch;
-}
-
-function reminderTargetType(deps: ToolDeps, targetId: string | null): 'custom' | 'document' | 'open_item' {
-  if (!targetId) return 'custom';
-  if (deps.docs.findRow(targetId)) return 'document';
-  try {
-    deps.openItems.get(targetId);
-    return 'open_item';
-  } catch {
-    return 'custom';
-  }
-}
-
-async function createReminder({ deps, ctx }: ToolScope, args: { title: string; remindAt: string; target: string | null }): Promise<ToolOutput> {
-  const when = normalizeDueDate(args.remindAt) ?? args.remindAt;
-  if (!/^\d{4}-\d{2}-\d{2}/.test(when)) return { content: `Ungültiges Datum „${args.remindAt}“ – erwartet YYYY-MM-DD.`, isError: true };
-  const targetId = args.target ? ctx.refs.resolve(args.target) : null;
-  const targetType = reminderTargetType(deps, targetId);
-  const sameTarget = (r: { targetId: string | null; title: string }) =>
-    targetId ? r.targetId === targetId : r.title.toLowerCase() === args.title.toLowerCase();
-  const duplicate = deps.reminders.list('pending').find((r) => r.remindAt.slice(0, 10) === when.slice(0, 10) && sameTarget(r));
-  if (duplicate)
-    return {
-      content: `Es gibt schon eine Erinnerung „${duplicate.title}“ am ${duplicate.remindAt.slice(0, 10)} – keine zweite angelegt.`,
-      summary: 'schon vorhanden',
-    };
-  const reminder = deps.reminders.create({ targetType, targetId: targetType === 'custom' ? null : targetId, title: args.title, remindAt: when });
-  deps.audit.log({
-    action: 'reminder.create',
-    actor: 'agent',
-    trigger: 'agent',
-    confirmed: true,
-    entityIds: [reminder.id],
-    after: { title: reminder.title, remindAt: reminder.remindAt },
-  });
-  return {
-    content: `Erinnerung „${reminder.title}“ am ${reminder.remindAt.slice(0, 16)} angelegt.`,
-    summary: `am ${reminder.remindAt.slice(0, 10)}`,
-    change: `Erinnerung „${truncate(reminder.title, 50)}“ am ${reminder.remindAt.slice(0, 10)}`,
-  };
 }
 
 async function snoozeReminder({ deps, ctx }: ToolScope, args: { id: string; remindAt: string }): Promise<ToolOutput> {
@@ -191,8 +152,8 @@ export function taskTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'create_reminder',
       description:
-        'Eine Erinnerung anlegen. target: K-ID eines offenen Punkts oder D-ID eines Dokuments (optional). remindAt: Datum (YYYY-MM-DD) oder Zeitpunkt. Gibt es für dasselbe Ziel schon eine Erinnerung am selben Tag, wird keine zweite angelegt.',
-      schema: z.object({ title: z.string().min(1), remindAt: z.string().min(4), target: optText }),
+        'Eine Erinnerung anlegen. target: K-ID eines offenen Punkts oder D-ID eines Dokuments (optional). remindAt: Datum (YYYY-MM-DD) oder Zeitpunkt. Für eine gefundene Frist (find_deadlines): target = D-ID und deadline = Art und Datum der Frist, remindAt weglassen (Standard: Vorlauf der Einstellungen vor der Frist). Gibt es für dieselbe Frist oder dasselbe Ziel am selben Tag schon eine Erinnerung oder einen offenen Punkt, wird nichts angelegt.',
+      schema: ReminderArgs,
       risk: 'write',
       label: (a) => `Lege eine Erinnerung an: „${truncate(a.title, 50)}“`,
       run: (a, ctx) => createReminder({ deps, ctx }, a),

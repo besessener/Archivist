@@ -146,6 +146,14 @@ Weitere Werkzeuge für die Verknüpfungen:
 - Der Hintergrund-Lauf „Verknüpfungen“ arbeitet mit diesen Werkzeugen.
 - Ohne Agent startet der rückwirkende Lauf einmal nach dem Update und unter Einstellungen → Agent → Agentenläufe auf Knopfdruck (lokal, ein gebündelter Hinweis am Ende).
 
+## Fristen und Ablaufdaten
+
+- `find_deadlines` erkennt Fristen und Ablaufdaten (Kündigung, Garantie, Ausweis, Versicherung, TÜV/HU, Widerspruch, Ablauf, Fälligkeit) deterministisch mit Fundstelle und Rechenweg. Ohne Angabe prüft es alle archivierten Dokumente: die neuesten 1000, vorbeigegangene Fristen ausgelassen, höchstens 60 Fristen je Aufruf; der Rest wird gezählt.
+- Je Frist (nicht je Dokument) steht dabei, ob schon eine Erinnerung oder ein offener Punkt besteht. Eine Erinnerung gilt für die Frist, wenn sie zum Dokument gehört und mit ihr angelegt wurde (Titel „Kündigungsfrist 30.09.2026: …“) oder am Tag der Frist liegt; ein offener Punkt, wenn das Dokument seine Quelle ist und er am Tag der Frist fällig ist.
+- Nicht zur Übertragung freigegebene Dokumente werden nicht ausgewertet: keine Titel, Daten oder Fundstellen, nur Anzahl und Verweise („übersprungen“).
+- `create_reminder` nimmt für eine gefundene Frist `deadline` (Art und Datum) und `target` (das Dokument). Ohne `remindAt` liegt die Erinnerung so viele Tage vor der Frist, wie der Vorlauf des Fristen-Wächters (Einstellungen → Agent) angibt, frühestens heute. Gibt es für dieselbe Frist schon eine Erinnerung oder einen offenen Punkt, wird nichts angelegt und das gemeldet; eine schon vorbeigegangene Frist lehnt das Werkzeug ab. Zwei Fristen in einem Dokument bekommen je eine eigene Erinnerung.
+- Der Agent legt für eine Frist ohne Erinnerung eine an, wenn du Fristen im Blick behalten willst.
+
 ## Sicherheit
 
 - Dokumentinhalte gehen nur als markierte Daten an das Modell, nie als Anweisungen. Enthält ein Dokument eine Aufforderung an den Agenten, ändert der Lauf nichts ohne eigene Bitte des Benutzers (im Hintergrund nur als Vorschlag).
@@ -168,6 +176,19 @@ Weitere Werkzeuge für die Verknüpfungen:
 - Geplante eigene Abläufe.
 
 Alles als Jobs mit eigenem Budget, abbrechbar, je Lauf eine gebündelte Benachrichtigung. Dazu ohne LLM: Fristen-Wächter und Wochenrückblick.
+
+**Fristen-Wächter** (ohne LLM, einmal pro Tag, eine gebündelte Benachrichtigung):
+
+- Er meldet offene Punkte und ausstehende Erinnerungen bis zum Vorlauf (Standard 14 Tage), auch überfällige, sowie Fristen aus freigegebenen archivierten Dokumenten, für die weder Erinnerung noch offener Punkt besteht. Vorbeigegangene Dokumentfristen meldet er nicht.
+- Die Benachrichtigung hat bis zu drei Knöpfe zu den betroffenen Seiten (Dokument oder „Offene Punkte“).
+- Ein gemeldeter Eintrag kommt erst wieder, wenn er in zwei Tagen fällig oder überfällig ist. Gemerkte Einträge, die nicht mehr anstehen, werden vergessen.
+
+**Wochenrückblick** (ohne LLM, am eingestellten Wochentag, in einem eigenen Gespräch):
+
+- Neu archivierte Dokumente, Entscheidungen, offene Punkte (erledigt, neu, offen), anstehende Fristen der nächsten 14 Tage einschließlich Dokumentfristen, offene Vorschläge und Hinweise sowie die Hintergrundläufe.
+- Einträge sind mit der Seite in der App verlinkt (`[Titel](/documents/?id=…)`, `/decisions/?id=…`, `/open-items/`). Titel nicht freigegebener Dokumente fehlen, sie werden nur gezählt.
+- Was schon der letzte Rückblick nannte (offene Punkte, Fristen, Vorschläge), wird nur gezählt: „Weiterhin offen/anstehend seit letzter Woche: N“.
+
 
 ## Gedächtnis
 
