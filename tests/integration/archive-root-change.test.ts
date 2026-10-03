@@ -233,12 +233,41 @@ describe('changing the archive root', () => {
     expect((await app.ok('archive:rootStatus', {})).current).toMatchObject({ documents: 2, missing: 2 });
   });
 
-  it('warns as well when the path is changed directly through the settings', async () => {
+  it('refuses a direct path change through the settings while archived documents exist', async () => {
+    const a = await archived('a.txt', 'Inhalt A');
+    const old = archiveRoot();
+
+    const r = await app.call('settings:update', { archiveRoot: newRoot(), llm: { timeoutMs: 45_000 } });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.category).toBe('archive_conflict');
+      expect(r.error.message).toMatch(/1 archiviertes Dokument.*„Archiv umziehen“ oder „Nur Pfad ändern“/);
+    }
+    const settings = app.services.settings.get();
+    expect(settings.archiveRoot, 'the settings stay unchanged, also the other fields of the patch').toBe(old);
+    expect(settings.llm.timeoutMs).not.toBe(45_000);
+    expect(fs.existsSync(newRoot()), 'the refused folder is not even created').toBe(false);
+    expect(fs.existsSync(absIn(old, a))).toBe(true);
+  });
+
+  it('allows a direct path change through the settings while no document is archived', async () => {
+    const res = await app.ok('settings:update', { archiveRoot: newRoot() });
+
+    expect(res.settings.archiveRoot).toBe(newRoot());
+    expect(archiveRoot()).toBe(newRoot());
+    expect(fs.existsSync(newRoot())).toBe(true);
+  });
+
+  it('keeps accepting the unchanged archive path and other settings while documents are archived', async () => {
     await archived('a.txt', 'Inhalt A');
+    const old = archiveRoot();
 
-    await app.ok('settings:update', { archiveRoot: newRoot() });
+    const res = await app.ok('settings:update', { archiveRoot: `${old}${path.sep}`, llm: { timeoutMs: 45_000 } });
 
-    expect(await notificationTitles()).toContain('1 archiviertes Dokument nicht erreichbar');
+    expect(res.settings).toMatchObject({ archiveRoot: old, llm: { timeoutMs: 45_000 } });
+    await app.ok('settings:update', { notifications: { reminderTime: '07:30' } });
+    expect(archiveRoot()).toBe(old);
   });
 
   it('blocks archive file operations while the root is being changed', async () => {

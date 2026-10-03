@@ -181,9 +181,14 @@ export class SettingsService {
     return this.get();
   }
 
-  /** The absolute archive path (empty means the default), created if missing and checked for write access. */
+  /** The absolute archive path; empty means the default. */
+  resolveArchiveRoot(archiveRoot: string): string {
+    return path.resolve(archiveRoot.trim() ? archiveRoot : this.defaultArchiveRoot);
+  }
+
+  /** The absolute archive path, created if missing and checked for write access. */
   private writableArchiveRoot(archiveRoot: string): string {
-    const root = path.resolve(archiveRoot.trim() ? archiveRoot : this.defaultArchiveRoot);
+    const root = this.resolveArchiveRoot(archiveRoot);
     try {
       fs.mkdirSync(root, { recursive: true });
       fs.accessSync(root, fs.constants.W_OK);

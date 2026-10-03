@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { ArchiveRootChangeMode, ArchiveRootChangeResult, ArchiveRootPresence, ArchiveRootPreview, ArchiveRootStatus } from '@archivist/shared';
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { auditLog, documents } from '../db/schema';
 import { AppError, permissionError, validationError } from '../util/errors';
@@ -32,6 +32,7 @@ const AUDIT_ACTION = 'archive.changeRoot';
 const UNDO_TYPE = 'archive_root_change';
 const MIGRATE_JOB = 'archive.migrateRoot';
 const CHANGE_RUNNING = 'Der Archivordner wird gerade umgestellt.';
+const ARCHIVED_WITH_PATH = and(eq(documents.status, 'archived'), isNotNull(documents.archiveRelPath));
 
 type RootChangeUndoData = RootRoute & CreatedByMove & { mode: ArchiveRootChangeMode };
 
@@ -72,9 +73,25 @@ export class ArchiveRootService {
     return this.db
       .select({ id: documents.id, title: documents.title, rel: documents.archiveRelPath, size: documents.size, sha256: documents.sha256 })
       .from(documents)
-      .where(and(eq(documents.status, 'archived'), isNotNull(documents.archiveRelPath)))
+      .where(ARCHIVED_WITH_PATH)
       .all()
       .map((d) => ({ ...d, rel: d.rel! }));
+  }
+
+  /** Refuses a plain settings change to another archive folder while archived documents exist: only the move or relink flow keeps them reachable. */
+  assertDirectChangeAllowed(root: string): void {
+    if (samePath(this.settings.resolveArchiveRoot(root), this.settings.get().archiveRoot)) return;
+    const archived =
+      this.db
+        .select({ total: sql<number>`count(*)` })
+        .from(documents)
+        .where(ARCHIVED_WITH_PATH)
+        .get()?.total ?? 0;
+    if (archived === 0) return;
+    throw new AppError(
+      'archive_conflict',
+      `Der Archivordner lässt sich hier nicht direkt ändern: ${archivedDocsText(archived)} verweisen auf ihren Platz im bisherigen Ordner. Wähle in den Einstellungen unter „Archiv“ „Archiv umziehen“ oder „Nur Pfad ändern“.`,
+    );
   }
 
   /** Checks (by existence and size) whether the archived documents are found under `root`. */
@@ -195,7 +212,7 @@ export class ArchiveRootService {
   }
 
   /** Warns (notification) that archived documents are not reachable under the current archive root. */
-  warnUnreachable(root: string, presence = this.presence(root)): void {
+  private warnUnreachable(root: string, presence: ArchiveRootPresence): void {
     const n = presence.missing + presence.different;
     if (n === 0) return;
     this.notifications.create({
