@@ -5,7 +5,6 @@ import { SUPPORTED_EXTENSIONS, type DocumentRecord } from '@archivist/shared';
 import { and, eq } from 'drizzle-orm';
 import { documents } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
-import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
 import { isInside, sanitizeFileName, uniquePath } from '../util/paths';
 import type { DocumentDeps } from './document-model';
@@ -130,7 +129,7 @@ export class DocumentImporter {
     }
     const staged = await copyToFolder({ source: checked.real, dir: this.deps.ctx.paths.inbox, fileName: sanitizeFileName(path.basename(checked.real)) });
     state.staging.path = staged;
-    const sha = await sha256File(staged);
+    const sha = await this.deps.pool.run('hashFile', { path: staged });
     const duplicate = this.deps.documents.findDuplicates(sha)[0];
     if (duplicate) {
       await fsp.unlink(staged); // our own temporary copy
@@ -187,7 +186,7 @@ export class DocumentImporter {
 
   /** Records a copy of a file whose content does not match its extension as `quarantined` (once per content), unparsed. */
   private async quarantine(file: CheckedFile): Promise<void> {
-    const sha = await sha256File(file.real);
+    const sha = await this.deps.pool.run('hashFile', { path: file.real });
     const existing = this.db
       .select()
       .from(documents)
@@ -234,7 +233,7 @@ export class DocumentImporter {
     const file = row.stagedPath;
     if (!file || !isInside(this.deps.ctx.paths.quarantine, file) || !fs.existsSync(file))
       throw fsError('Die Datei in der Quarantäne ist nicht mehr vorhanden.', { retryable: false });
-    const sha = await sha256File(file);
+    const sha = await this.deps.pool.run('hashFile', { path: file });
     if (sha !== row.sha256) throw new AppError('validation_error', 'Die Datei in der Quarantäne wurde seither verändert und wird nicht importiert.');
     const duplicate = this.deps.documents.findDuplicates(sha, id)[0];
     if (duplicate) throw new AppError('validation_error', `Die Datei entspricht bereits dem Dokument „${duplicate.title}“.`);

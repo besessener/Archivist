@@ -108,14 +108,28 @@ export class ScanRun {
   }
 
   /** One page of walked files: the content of new or changed ones is read first, then all rows are written in one transaction. */
-  private async scanBatch(batch: { root: RootRow; entries: ScanDirectoryResult['entries']; summary: ScanSummary; now: string; job?: JobContext }): Promise<void> {
+  private async scanBatch(batch: {
+    root: RootRow;
+    entries: ScanDirectoryResult['entries'];
+    summary: ScanSummary;
+    now: string;
+    job?: JobContext;
+  }): Promise<void> {
     const { root, entries, summary, now, job } = batch;
     if (entries.length === 0) return;
     const known = new Map(
       this.db
         .select()
         .from(scanFiles)
-        .where(and(eq(scanFiles.rootId, root.id), inArray(scanFiles.path, entries.map((entry) => entry.path))))
+        .where(
+          and(
+            eq(scanFiles.rootId, root.id),
+            inArray(
+              scanFiles.path,
+              entries.map((entry) => entry.path),
+            ),
+          ),
+        )
         .all()
         .map((file) => [file.path, file]),
     );
@@ -137,7 +151,10 @@ export class ScanRun {
         .where(
           and(
             eq(scanFiles.rootId, root.id),
-            inArray(scanFiles.path, entries.map((entry) => entry.path)),
+            inArray(
+              scanFiles.path,
+              entries.map((entry) => entry.path),
+            ),
           ),
         )
         .run();
@@ -156,7 +173,10 @@ export class ScanRun {
     return { sha, refreshed: previous && changedContent ? await this.recorder.refreshIndexedOnly(previous) : false };
   }
 
-  private walkInput(root: RootRow, scope: { realPath: string; exclusions: Exclusion[]; cursor: Pick<ScanDirectoryInput, 'after' | 'visited'> }): ScanDirectoryInput {
+  private walkInput(
+    root: RootRow,
+    scope: { realPath: string; exclusions: Exclusion[]; cursor: Pick<ScanDirectoryInput, 'after' | 'visited'> },
+  ): ScanDirectoryInput {
     const { realPath, exclusions, cursor } = scope;
     return {
       root: realPath,
@@ -185,7 +205,10 @@ export class ScanRun {
       .all();
     const vanished = unseen.filter((file) => !unreadable.some((area) => isInside(area, file.path))).map((file) => file.id);
     for (let start = 0; start < vanished.length; start += SCAN_PAGE_SIZE)
-      this.db.delete(scanFiles).where(inArray(scanFiles.id, vanished.slice(start, start + SCAN_PAGE_SIZE))).run();
+      this.db
+        .delete(scanFiles)
+        .where(inArray(scanFiles.id, vanished.slice(start, start + SCAN_PAGE_SIZE)))
+        .run();
   }
 
   private notifyScan(root: RootRow, summary: ScanSummary): void {

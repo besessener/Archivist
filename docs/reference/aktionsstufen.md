@@ -26,7 +26,7 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 ## Dateien
 
 - Originale werden nie ohne ausdrückliche Bestätigung verändert. Standard ist *Kopieren*.
-- Zieldateien werden mit `COPYFILE_EXCL` angelegt (kein Überschreiben, bei Namenskollision `Name (2).ext`) und per SHA-256 verifiziert. Erst danach werden – nur bei „Verschieben“ und zusätzlicher Bestätigung – Quellen entfernt.
+- Zieldateien werden mit `COPYFILE_EXCL` angelegt (kein Überschreiben, bei Namenskollision `Name (2).ext`) und per SHA-256 verifiziert (Quelle und Archivkopie werden im Hintergrund-Worker gelesen, nie im Hauptprozess). Erst danach werden – nur bei „Verschieben“ und zusätzlicher Bestätigung – Quellen entfernt.
 - Pfade werden abgesichert gegen Traversal (`..`, absolute Pfade, Nullbytes), Symlink-Ausbruch (realpath-Prüfung) und ungültige Dateinamen (Windows-reservierte Namen, Sonderzeichen).
 - Dateien, die sich seit der Analyse geändert haben, werden nicht archiviert.
 - Vorgeschlagene Pfade werden bereinigt. Unterkategorien darf der Agent vorschlagen, **neue Hauptkategorien** (erstes Pfadsegment) nur nach Bestätigung.
@@ -43,7 +43,7 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 
 - Nur ausdrücklich freigegebene Verzeichnisse. Wurzeln, Systemverzeichnisse und Verzeichnisse anderer Benutzer werden abgelehnt; das Archivist-Datenverzeichnis wird nie gescannt.
 - Symlinks werden nur verfolgt, wenn ihr Ziel im freigegebenen Bereich liegt. Versteckte Einträge und `node_modules` werden übersprungen.
-- Bekannte, unveränderte Dateien (Größe + Änderungszeit) werden weder neu gehasht noch analysiert.
+- Bekannte, unveränderte Dateien (Größe + Änderungszeit) werden weder neu gehasht noch analysiert; die Analyse übernimmt den Hash des Scans, solange Größe und Änderungszeit unverändert sind.
 - Dateien, deren Inhalt bereits als Dokument im Eingang oder im Archiv liegt (auch als Upload, in einer anderen Wurzel oder als „x (1).pdf“), werden als Duplikat markiert statt erneut angelegt.
 - Ändert sich eine gescannte Datei, deren Dokument noch im Eingang liegt, aktualisiert die nächste Analyse diesen Eintrag.
 - Der Scan hat keine Obergrenze: Er durchläuft jede Wurzel seitenweise (500 Dateien) und schreibt jede Seite in einer Transaktion. Nicht mehr gesehene, noch unbearbeitete Dateien gelten als verschwunden; Dateien in (vorübergehend) nicht lesbaren Ordnern nicht.

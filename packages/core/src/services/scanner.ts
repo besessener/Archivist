@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Job, ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
 import { and, count, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
+import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, permissionError, validationError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { isForbiddenScanRoot, isInside, normalizeFsPath } from '../util/paths';
@@ -198,7 +198,11 @@ export class ScannerService {
     return this.scans.run(rootId, job);
   }
 
-  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number; offset?: number } = {}): { files: ScanFile[]; total: number; lastSummary: ScanSummary | null } {
+  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number; offset?: number } = {}): {
+    files: ScanFile[];
+    total: number;
+    lastSummary: ScanSummary | null;
+  } {
     const conditions = [];
     if (options.rootId) conditions.push(eq(scanFiles.rootId, options.rootId));
     if (options.status) conditions.push(eq(scanFiles.status, options.status));

@@ -143,7 +143,15 @@ describe('symlink escape and scan scope limits', () => {
       names.push(...page.entries.map((e) => path.relative(root, e.path)));
       pages += 1;
     }
-    expect(names).toEqual(['a.txt', 'b.txt', path.join('d', 'c.txt'), path.join('d', 'deep', 'x.txt'), path.join('d', 'deep', 'y.txt'), path.join('d', 'z.txt'), 'f.txt']);
+    expect(names).toEqual([
+      'a.txt',
+      'b.txt',
+      path.join('d', 'c.txt'),
+      path.join('d', 'deep', 'x.txt'),
+      path.join('d', 'deep', 'y.txt'),
+      path.join('d', 'z.txt'),
+      'f.txt',
+    ]);
     expect(pages).toBe(4);
   });
 

@@ -38,7 +38,8 @@ export interface EntryOutcome {
 const sizeAndTimeUnchanged = (previous: FileRow, entry: ScanEntry): boolean => previous.size === entry.size && previous.mtimeMs === entry.mtimeMs;
 
 /** Known, unchanged (size and mtime) and excluded files are neither hashed nor analyzed again. */
-export const needsHash = (previous: FileRow | undefined, entry: ScanEntry): boolean => previous?.status !== 'excluded' && !(previous && sizeAndTimeUnchanged(previous, entry));
+export const needsHash = (previous: FileRow | undefined, entry: ScanEntry): boolean =>
+  previous?.status !== 'excluded' && !(previous && sizeAndTimeUnchanged(previous, entry));
 
 export const scanResultsAction = () => ({ label: 'Scan-Ergebnisse prüfen', kind: 'navigate' as const, target: '/scan/' });
 
@@ -84,7 +85,11 @@ export class ScanRecorder {
       return;
     }
     if (previous && outcome.refreshed) {
-      this.db.update(scanFiles).set({ size: entry.size, mtimeMs: entry.mtimeMs, sha256: outcome.sha, lastSeenAt: now }).where(eq(scanFiles.id, previous.id)).run();
+      this.db
+        .update(scanFiles)
+        .set({ size: entry.size, mtimeMs: entry.mtimeMs, sha256: outcome.sha, lastSeenAt: now })
+        .where(eq(scanFiles.id, previous.id))
+        .run();
       summary.changedFiles += 1;
       return;
     }
