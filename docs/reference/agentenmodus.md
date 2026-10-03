@@ -126,6 +126,28 @@ Weitere Werkzeuge für die Verknüpfungen:
 - Der Hintergrund-Lauf „Verknüpfungen“ arbeitet mit diesen Werkzeugen.
 - Ohne Agent startet der rückwirkende Lauf einmal nach dem Update und unter Einstellungen → Agent → Agentenläufe auf Knopfdruck (lokal, ein gebündelter Hinweis am Ende).
 
+## Spezialaufgaben
+
+Aufgaben für besondere Fälle (Story #312). Alles Rechnen und Erkennen läuft lokal und deterministisch; das Modell liest nur das Ergebnis. Dokumentinhalte (Fundstellen, Buchungszeilen) stehen als markierte Daten im Ergebnis, nicht freigegebene Dokumente nur mit Endung, Ordner und Status.
+
+| Werkzeug | Stufe | Zweck |
+| --- | --- | --- |
+| `match_payments` | lesen | Rechnungen mit Kontoauszügen abgleichen (Rechnungsnummer im Verwendungszweck oder gleicher Betrag 0–90 Tage nach dem Rechnungsdatum). Lesbar sind Zeilen `TT.MM.JJJJ Text -Betrag` (auch `JJJJ-MM-TT`) und CSV-Zeilen `TT.MM.JJJJ;Text;-Betrag` (Trenner `;` oder Tab, Komma oder Punkt als Dezimaltrenner, optionale Währungsspalte). Wird keine Buchung erkannt, sagt das Werkzeug es, statt zu raten |
+| `match_receipt_photos` | lesen | Belegfotos (PNG/JPG mit erkanntem Text): schlägt den passenden Beleg, Vorgang bzw. das Projekt vor – nach Betrag (50 Punkte), Datum (bis 3 Tage 30, bis 14 Tage 15) und Händler (20); ab 50 Punkten gibt es einen Vorschlag. Fundstellen aus dem Fototext stehen als Daten im Ergebnis. Zugeordnet wird nur auf Wunsch mit `set_metadata` bzw. `add_to_case` |
+| `email_threads` | lesen | E-Mail-Verläufe (mindestens zwei Nachrichten). Mit `Message-ID`, `In-Reply-To` und `References` (der .eml-Parser speichert sie lokal in den technischen Metadaten) werden Verläufe auch ohne gemeinsamen Betreff zusammengehalten und gleiche Betreffs verschiedener Verläufe getrennt. Mails ohne diese Kopfzeilen (vor dem Update gelesen – „Erneut lesen“ holt sie nach) werden nach Betreff gruppiert; das Ergebnis nennt je Verlauf die Grundlage |
+| `file_mail_thread` | schreiben (neue Hauptkategorie: kritisch) | Einen Verlauf zusammen ablegen: die Nachrichten werden mit der ersten bestätigt verknüpft und in einen gemeinsamen Ordner verschoben. Alles trägt die Lauf-ID; „Lauf rückgängig“ nimmt Verknüpfungen und Verschiebung zurück |
+| `capture_device` | schreiben | Gerät mit Beleg erfassen: Seriennummer (aus dem Beleg nach `Seriennummer`, `S/N`, `Serial No` oder angegeben; geprüft: 5–30 Zeichen, mindestens eine Ziffer) und Garantieende als Notiz „Gerät: …“, bestätigt verknüpft mit dem Beleg, plus eine Erinnerung am Garantieende (am Beleg, für denselben Tag nie doppelt; keine, wenn die Garantie schon abgelaufen ist). Garantieende: `warrantyEnd`, sonst Kaufdatum (Belegdatum) + `warrantyMonths`, sonst die im Beleg genannte Garantiezeit, sonst die gesetzlichen 24 Monate – als Annahme genannt –, immer mit Rechenweg. Rückgängig nimmt Notiz, Verknüpfung und Erinnerung zurück |
+| `resolve_person` | lesen | Welche bekannte Person ist gemeint (Name, Alias, Spitzname, „ich“ = Benutzer); bei Mehrdeutigkeit fragt der Agent nach |
+| `add_person_alias` | schreiben | Weitere Namen für eine Person merken, z. B. „Tochter“ und „meine Tochter“; ein Name, den schon eine andere Person trägt, wird nicht vergeben. Rückgängig machbar |
+| `find_documents` (`person`) | lesen | Der Personenfilter läuft über dieselbe Auflösung wie `resolve_person`: „meine Tochter“ findet die Dokumente der Person mit diesem Alias. Ist keine Person bekannt, bleibt es ein Textvergleich |
+| `find_secrets` | lesen | Passwörter, Zugangsdaten, PINs, IBANs und Schlüssel erkennen – nur Art und Anzahl je Dokument, nie die Werte |
+| `exclude_from_llm` | kritisch | Dokumente von der Analyse durch das LLM ausschließen (oder wieder freigeben); fragt immer nach |
+| `problem_files` | lesen | Fehlgeschlagene und in Quarantäne gelegte Dokumente, verschlüsselte PDFs, Endung passt nicht zum Dateityp, lesbare Dateien (auch PNG/JPG) ohne erkannten Text – mit Erklärung |
+| `find_foreign_language_documents` | lesen | Archivierte Dokumente, die nicht auf Deutsch (oder der gewählten Sprache) sind, mit erkannter Sprache (Deutsch, Englisch, Französisch, Spanisch, Italienisch). Die Sprache wird lokal aus häufigen Wörtern erkannt (ohne Abhängigkeit); kurze, zahlenlastige oder gemischte Texte bleiben „unklar“. Suchbegriffe übersetzt das Modell selbst und gibt sie bei `search` als `alsoTry` mit; deren Treffer kommen nach denen des Suchbegriffs |
+| `storage_report` | lesen | Größte Dateien, exakte Duplikate mit verschwendetem Platz, Dokumente ohne Thema, Projekt oder Verknüpfung. Archivist erfasst nicht, wann ein Dokument zuletzt geöffnet wurde; „Vermutlich lange nicht genutzt“ ist deshalb eine Näherung (älteste archivierte Dokumente ohne Bezug), und der Bericht sagt das |
+| `set_setting` | schreiben; Datenschutz, Massenschwelle und automatische Analyse: kritisch | Einstellungen auf Wunsch ändern; rückgängig machbar |
+| `exclude_from_scan` | schreiben | Datei oder Verzeichnis vom Scan ausschließen (nur in freigegebenen Scan-Ordnern); rückgängig machbar |
+
 ## Sicherheit
 
 - Dokumentinhalte gehen nur als markierte Daten an das Modell, nie als Anweisungen. Enthält ein Dokument eine Aufforderung an den Agenten, ändert der Lauf nichts ohne eigene Bitte des Benutzers (im Hintergrund nur als Vorschlag).
