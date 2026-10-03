@@ -1,5 +1,5 @@
 import type { LlmTransmission } from '@archivist/shared';
-import { desc } from 'drizzle-orm';
+import { desc, lt } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { llmTransmissions } from '../../db/schema';
 import { newId, nowIso } from '../../util/ids';
@@ -22,6 +22,12 @@ export class TransmissionLog {
       // a failing record must not make the call fail
       this.ctx.logger.error('llm', 'Recording the LLM transmission failed', { error });
     }
+  }
+
+  /** Deletes entries older than `days` days; returns how many. */
+  prune(days: number): number {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    return this.ctx.database.db.delete(llmTransmissions).where(lt(llmTransmissions.at, cutoff)).run().changes;
   }
 
   list(limit: number): LlmTransmission[] {

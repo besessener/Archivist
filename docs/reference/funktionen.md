@@ -253,6 +253,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 
 - Persistent in SQLite, überlebt Neustarts; Fortschritt und Wiederholen.
 - Vorübergehende Fehler werden mit zunehmender Wartezeit erneut versucht; Fehlermeldungen erst nach dem letzten Versuch.
+- Das erneute Indexieren nach einer Zusammenführung läuft als Job „Einträge neu indizieren“ mit höchstens zwei Einträgen gleichzeitig und setzt nach einem Neustart fort.
 - Abbrechen wirkt auch bei Analyse und Archivprüfung (Status „abgebrochen“).
 - Beim Beenden werden laufende Jobs unterbrochen und nach dem nächsten Start fortgesetzt. Läuft gerade eine Archivierung, Umlagerung oder ein Rückgängigmachen, wartet Archivist bis zu 8 Sekunden darauf, bevor die Datenbank geschlossen wird; neue Dateiaktionen werden dann abgelehnt. Das Beenden dauert insgesamt höchstens etwa 10 Sekunden; ein erneuter Start währenddessen öffnet die Anwendung danach wieder.
 - Nach einem Absturz läuft ein Job höchstens noch einmal; ohne verbleibende Versuche schlägt er fehl, statt bei jedem Start erneut abzustürzen.

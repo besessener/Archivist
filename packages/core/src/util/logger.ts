@@ -8,6 +8,9 @@ const order: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 }
 /** Keys whose values never reach the log (only their length). */
 const SENSITIVE_KEYS = /^(api[-_]?key|authorization|password|secret|token|content|text|prompt|input|body|extractedtext|messages?)$/i;
 
+/** All log files together stay below this size: the oldest ones go first (the file of today is kept). */
+export const LOG_SIZE_CAP_BYTES = 50 * 1024 * 1024;
+
 /** Local JSON Lines log without API keys, full document contents or complete LLM requests. */
 export class Logger {
   private secrets = new Set<string>();
@@ -99,16 +102,30 @@ export class Logger {
     this.write('error', { scope, message, context });
   }
 
-  /** Deletes log files older than `days` days. */
-  prune(days: number): void {
+  /** Deletes log files older than `days` days, then the oldest ones until all together fit into `maxBytes`. */
+  prune(days: number, maxBytes = LOG_SIZE_CAP_BYTES): void {
     if (!this.dir) return;
     const cutoff = Date.now() - days * 86_400_000;
-    for (const name of fs.readdirSync(this.dir)) {
+    const kept: { file: string; mtimeMs: number; size: number }[] = [];
+    for (const name of fs.readdirSync(this.dir).filter((entry) => entry.endsWith('.log'))) {
       const file = path.join(this.dir, name);
       try {
-        if (name.endsWith('.log') && fs.statSync(file).mtimeMs < cutoff) fs.unlinkSync(file);
+        const { mtimeMs, size } = fs.statSync(file);
+        if (mtimeMs < cutoff) fs.unlinkSync(file);
+        else kept.push({ file, mtimeMs, size });
       } catch {
         /* a log file that vanished or is locked is pruned next time */
+      }
+    }
+    let total = kept.reduce((sum, entry) => sum + entry.size, 0);
+    for (const entry of kept.toSorted((a, b) => a.mtimeMs - b.mtimeMs)) {
+      if (total <= maxBytes) return;
+      if (entry.file === this.currentFile) continue;
+      try {
+        fs.unlinkSync(entry.file);
+        total -= entry.size;
+      } catch {
+        /* locked: stays until the next run */
       }
     }
   }

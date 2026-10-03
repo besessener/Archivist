@@ -28,6 +28,24 @@ test.describe('privacy mode', () => {
     await expect(app.settings.locators.privacy.activeMode).toContainText('Nur lokal');
   });
 
+  test('shows „Nur lokal“ in the connection indicator instead of a stale connection state', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await expect(app.navigation.locators.llmStatus).toHaveAccessibleName(/Verbunden|Ungeprüft/);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openPrivacy();
+
+    await app.settings.do.selectMode('local_only');
+
+    await expect(app.navigation.locators.llmStatus).toHaveAccessibleName('Verbindung zur KI: Nur lokal');
+    await app.navigation.locators.llmStatus.click();
+    await expect(page.getByText('Der Datenschutzmodus „nur lokal“ ist aktiv')).toBeVisible();
+
+    await app.settings.do.selectMode('auto');
+
+    await expect(app.navigation.locators.llmStatus).not.toHaveAccessibleName(/Nur lokal/);
+  });
+
   test('does not discard unsaved input under „Nie analysieren“ when switching the mode', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);

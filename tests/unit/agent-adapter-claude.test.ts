@@ -220,7 +220,7 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
     ];
     for (const [status, message, retryable] of cases) {
       const t = fakeFetch(claudeError(status, 'nope'));
-      const { config, logs } = adapterSetup({ baseUrl: 'https://api.anthropic.com', model: uniqueModel('claude-opus-5-5'), fetchImpl: t.fetchImpl });
+      const { config, logs, failures } = adapterSetup({ baseUrl: 'https://api.anthropic.com', model: uniqueModel('claude-opus-5-5'), fetchImpl: t.fetchImpl });
       const err = (await new AnthropicAdapter(config).turn(request([user('x')])).catch((e: unknown) => e)) as AppError;
       expect(err, `HTTP ${status}`).toBeInstanceOf(AppError);
       expect(err.message, `HTTP ${status}`).toMatch(message);
@@ -228,6 +228,7 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
       // the SDK must not retry on its own: the core counts retries
       expect(t.sent, `HTTP ${status}`).toHaveLength(1);
       expect(logs.at(-1)).toMatchObject({ success: false });
+      expect(failures, `HTTP ${status}`).toEqual([err]);
     }
     const down = fakeFetch(new TypeError('fetch failed'));
     const err = (await new AnthropicAdapter(

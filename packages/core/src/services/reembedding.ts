@@ -13,9 +13,12 @@ export interface ReembeddingDeps {
   reindex: (entry: IndexedEntry) => Promise<void>;
 }
 
-/** Queues re-embedding (#173): a waiting job covers the request, a running one may still use the previous model. */
-export function enqueueReembedding(jobs: JobQueueService): Job {
-  return jobs.enqueue(REEMBED_JOB, { label: 'Einträge neu einbetten', sameAs: (_payload, status) => status === 'pending' });
+/** Queues re-embedding (#173): a waiting job covers the request, a running one may still use the previous model; `coveredBy` lets a running job cover a fallback request too. */
+export function enqueueReembedding(jobs: JobQueueService, { coveredBy = 'pending' }: { coveredBy?: 'pending' | 'pending_or_running' } = {}): Job {
+  return jobs.enqueue(REEMBED_JOB, {
+    label: 'Einträge neu einbetten',
+    sameAs: (_payload, status) => status === 'pending' || coveredBy === 'pending_or_running',
+  });
 }
 
 /** Moves the entries onto the current model; fails (retryable) while entries that should be remote kept local vectors only. */

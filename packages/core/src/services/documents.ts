@@ -5,6 +5,7 @@ import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
+import { runBounded } from '../util/bounded';
 import { newId, nowIso } from '../util/ids';
 import type { AuditService } from './audit';
 import { DocumentAnalyzer, QUARANTINE_NOT_ANALYZED, type AnalysisResult, type AnalyzeOptions } from './document-analysis';
@@ -19,6 +20,7 @@ import { DocumentTrash, type FileOperationLock } from './document-trash';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { DocumentPrivacyFields, PrivacyService } from './privacy';
+import { REINDEX_CONCURRENCY } from './reindex-refs';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
@@ -261,14 +263,16 @@ export class DocumentService {
       .all()
       .filter((d) => linked.has(d.id) || (d.sourcePath !== null && this.privacy.paths.inside(root.path, d.sourcePath)));
     let changed = 0;
+    const lockedIds: string[] = [];
     for (const d of rows) {
       const allowed = root.llmAllowed && (d.sourcePath === null || this.folderLlmAllowedFor(d.sourcePath));
       if (allowed === d.folderLlmAllowed) continue;
       this.db.update(documents).set({ folderLlmAllowed: allowed }).where(eq(documents.id, d.id)).run();
       // remote vectors of a newly locked document are replaced by local ones
-      if (!allowed) void this.indexDocument(d.id);
+      if (!allowed) lockedIds.push(d.id);
       changed += 1;
     }
+    this.indexDocumentsInBackground(lockedIds);
     if (changed) this.ctx.events.changed('documents');
     return changed;
   }
@@ -293,6 +297,11 @@ export class DocumentService {
     } catch (err) {
       this.ctx.logger.warn('documents', 'Indexing failed', { documentId: id, error: err });
     }
+  }
+
+  /** Bulk re-indexing without waiting: at most `REINDEX_CONCURRENCY` documents at the same time (#224). */
+  indexDocumentsInBackground(ids: string[]): void {
+    void runBounded(ids, { limit: REINDEX_CONCURRENCY }, (id) => this.indexDocument(id));
   }
 
   /** Whether indexing would give the document remote vectors now (#173); false for an unknown id. */
