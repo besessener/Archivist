@@ -16,7 +16,13 @@ function userSettings(archiveRoot: string) {
     llm: { ...defaults.llm, baseUrl: 'https://llm.example.com/v1', model: 'model-a', timeoutMs: 120000 },
     archiveRoot,
     scan: { ...defaults.scan, enabled: true, intervalMinutes: 15 },
-    privacy: { llmMode: 'local_only', neverAnalyzeDirs: ['/geheim'], neverAnalyzeExtensions: ['eml'], neverAnalyzeFiles: ['/a/b.pdf'], maskPersonalData: false },
+    privacy: {
+      llmMode: 'local_only',
+      neverAnalyzeDirs: ['/geheim'],
+      neverAnalyzeExtensions: ['eml'],
+      neverAnalyzeFiles: ['/a/b.pdf'],
+      maskPersonalData: false,
+    },
     backups: { keep: 3, autoOnStartup: true, includeArchive: true },
     ocr: { enabled: true, languages: 'deu+eng' },
   };

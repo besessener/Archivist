@@ -334,7 +334,16 @@ export class LlmService {
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
     assertSecureBaseUrl(llm.baseUrl);
     return requestEmbeddings(
-      { url: endpointUrl(llm.baseUrl, 'embeddings'), apiKey, model: llm.embeddingModel, timeoutMs: llm.timeoutMs, texts, purpose, documentIds, masking: maskingOf(this.deps.settings.get()) },
+      {
+        url: endpointUrl(llm.baseUrl, 'embeddings'),
+        apiKey,
+        model: llm.embeddingModel,
+        timeoutMs: llm.timeoutMs,
+        texts,
+        purpose,
+        documentIds,
+        masking: maskingOf(this.deps.settings.get()),
+      },
       {
         post: (request) => this.post(request),
         record: (transmission) => this.transmissions.record(transmission),

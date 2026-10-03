@@ -13,7 +13,16 @@ const MAX_TEXT_CHARS = 8000;
 
 /** One masked /embeddings request: logged in any case with its tokens, the daily token limit checked first. */
 export async function requestEmbeddings(
-  request: { url: string; apiKey: string; model: string; timeoutMs: number; texts: string[]; purpose: string; documentIds: string[]; masking: RedactionOptions },
+  request: {
+    url: string;
+    apiKey: string;
+    model: string;
+    timeoutMs: number;
+    texts: string[];
+    purpose: string;
+    documentIds: string[];
+    masking: RedactionOptions;
+  },
   deps: { post: (request: PostRequest) => Promise<PostResponse>; record: (transmission: Transmission) => void; assertWithinCap: () => void },
 ): Promise<number[][]> {
   const { url, apiKey, model, timeoutMs, texts, purpose, documentIds, masking } = request;
