@@ -107,4 +107,13 @@ describe('Known topics in the intent prompt (#197)', () => {
     await app.ok('chat:send', { text: 'Was war mit dem Zebrastreifen?' });
     expect(knownTopicsLine(lastInput('ChatIntent'))).toMatch(/^Zebrastreifen, /);
   });
+
+  it('ranks open items by search, so an inflected match beats 40 other items (#197)', async () => {
+    await app.ok('openItems:create', { title: 'Heizung entkalken', priority: 'normal', sourceIds: [], confidence: 0.9 });
+    for (let i = 0; i < 40; i += 1) await app.ok('openItems:create', { title: `Aufgabe ${i}`, priority: 'normal', sourceIds: [], confidence: 0.9 });
+    await app.services.jobs.whenIdle();
+    app.llm.on('ChatIntent', () => intent);
+    await app.ok('chat:send', { text: 'Die Heizungen machen Probleme' });
+    expect(lastInput('ChatIntent')).toContain('Heizung entkalken');
+  });
 });

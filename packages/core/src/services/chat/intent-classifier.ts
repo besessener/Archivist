@@ -22,12 +22,19 @@ export interface Classification {
   llmFailed: boolean;
 }
 
-type ClassifierDeps = Pick<ChatDeps, 'llm' | 'graph' | 'settings' | 'openItems' | 'decisions' | 'capture'>;
+type ClassifierDeps = Pick<ChatDeps, 'ctx' | 'llm' | 'graph' | 'settings' | 'openItems' | 'decisions' | 'capture' | 'search'>;
 
-/** Ranks a list by how many words of the message its key shares, keeping the original order on ties. */
-function mostRelevant<T>(list: T[], spec: { query: Set<string>; keyOf: (entry: T) => string; limit: number }): T[] {
+/** Entries the search found for the message get a head start that outweighs any word overlap (#197). */
+const SEARCH_BONUS = 100;
+
+/** Ranks a list by search hit order, then by how many words of the message its key shares, keeping the original order on ties. */
+function mostRelevant<T extends { id?: string }>(
+  list: T[],
+  spec: { query: Set<string>; keyOf: (entry: T) => string; limit: number; hits?: Map<string, number> },
+): T[] {
+  const bonus = (entry: T) => (entry.id !== undefined && spec.hits?.has(entry.id) ? SEARCH_BONUS - spec.hits.get(entry.id)! : 0);
   return list
-    .map((entry, index) => ({ entry, index, score: tokenize(spec.keyOf(entry)).filter((t) => spec.query.has(t)).length }))
+    .map((entry, index) => ({ entry, index, score: bonus(entry) + tokenize(spec.keyOf(entry)).filter((t) => spec.query.has(t)).length }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .slice(0, spec.limit)
     .map((ranked) => ranked.entry);
@@ -44,7 +51,7 @@ export class IntentClassifier {
     const ruleBased = () => ({ intents: [this.helpers.rules.classify(turn.text, turn.state)] });
     if (!this.deps.llm.canUse()) return { analysis: ruleBased(), viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.', llmFailed: false };
     try {
-      const refs = this.promptContext(turn);
+      const refs = this.promptContext(turn, await this.searchRanks(turn.text));
       const analysis = await this.deps.llm.completeJson(ChatAnalysis, {
         schemaName: 'ChatIntent',
         purpose: 'Chat-Intent',
@@ -59,6 +66,17 @@ export class IntentClassifier {
     }
   }
 
+  /** Position of each open item and decision the (local) search finds for the message; a failing search only costs the ranking. */
+  private async searchRanks(text: string): Promise<Map<string, number>> {
+    try {
+      const found = await this.deps.search.search(text, { types: ['task', 'question', 'decision'], limit: 40, allowRemoteEmbedding: false });
+      return new Map(found.map((hit, rank) => [hit.id, rank]));
+    } catch (err) {
+      this.deps.ctx.logger.warn('chat', 'Search for the intent prompt context failed', { error: err });
+      return new Map();
+    }
+  }
+
   private promptInput(turn: ChatTurn, refs: PromptRefs): string {
     const query = new Set(tokenize(turn.text));
     // names sharing words with the message come first; the rest stay alphabetical (#197)
@@ -70,7 +88,7 @@ export class IntentClassifier {
   }
 
   /** Context for the intent prompt: user, open items, decisions and open proposals – titles and metadata only, most relevant first. */
-  private promptContext(turn: ChatTurn): PromptRefs {
+  private promptContext(turn: ChatTurn, hits: Map<string, number>): PromptRefs {
     const ids = new Map<string, string>();
     const query = new Set(tokenize(turn.text));
     const section = <T extends { id: string }>(spec: { title: string; prefix: string; list: T[]; line: (entry: T) => string }) =>
@@ -82,10 +100,10 @@ export class IntentClassifier {
           })
           .join('\n') || '- keine'
       }`;
-    const items = mostRelevant(this.deps.openItems.list({ onlyActive: true }), { query, keyOf: (i) => `${i.title} ${i.description ?? ''}`, limit: 25 });
+    const items = mostRelevant(this.deps.openItems.list({ onlyActive: true }), { query, keyOf: (i) => `${i.title} ${i.description ?? ''}`, limit: 25, hits });
     const decisions = mostRelevant(
       this.deps.decisions.list().filter((d) => ['active', 'confirmed', 'draft'].includes(d.status)),
-      { query, keyOf: (d) => `${d.title} ${d.topicName ?? ''} ${d.projectName ?? ''}`, limit: 20 },
+      { query, keyOf: (d) => `${d.title} ${d.topicName ?? ''} ${d.projectName ?? ''}`, limit: 20, hits },
     );
     const parts = [
       this.userLine(),

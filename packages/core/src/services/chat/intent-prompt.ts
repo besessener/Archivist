@@ -99,9 +99,14 @@ function openItemHint(group: Array<{ item: { title: string }; asked: OpenItemFie
 
 /** The last messages before this one; answers built from documents are left out, they may repeat injected text (#199). */
 export function historyHint(history: ChatMessage[]): string {
-  const recent = history.slice(-7, -1);
-  if (!recent.length) return '';
-  return `Bisheriger Verlauf (zur Auflösung von Bezügen; nur die letzte Nachricht ist zu klassifizieren):\n${recent.map(historyLine).join('\n')}\n\n`;
+  const lines = historyLines(history);
+  if (!lines.length) return '';
+  return `Bisheriger Verlauf (zur Auflösung von Bezügen; nur die letzte Nachricht ist zu klassifizieren):\n${lines.join('\n')}\n\n`;
+}
+
+/** The lines of the last six messages before the newest one (the one being answered). */
+export function historyLines(history: ChatMessage[]): string[] {
+  return history.slice(-7, -1).map(historyLine);
 }
 
 function historyLine(message: ChatMessage): string {

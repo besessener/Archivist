@@ -23,4 +23,11 @@ describe('chat without a configured LLM (#248)', () => {
     expect(reply.assistantMessage.content).toContain('regelbasiert');
     expect(reply.assistantMessage.errorMessage).toBeFalsy();
   });
+
+  it('mentions the missing LLM once per conversation', async () => {
+    const first = await app.ok('chat:send', { text: 'Wo ist mein Mietvertrag' });
+    const second = await app.ok('chat:send', { text: 'Wo ist mein Kaufvertrag', conversationId: first.conversationId });
+    expect(first.assistantMessage.content).toContain('regelbasiert');
+    expect(second.assistantMessage.content).not.toContain('regelbasiert');
+  });
 });

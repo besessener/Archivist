@@ -112,6 +112,10 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
       ).relation;
     },
     'knowledge:updateNote': (input) => services.notes.update(input.id, { patch: { title: input.title, content: input.content }, trigger: UI_TRIGGER }),
+    'knowledge:deleteNote': (input) => {
+      services.notes.delete(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER });
+      return { ok: true as const };
+    },
     'knowledge:unlink': (input) => {
       services.graph.unlinkEntries(input.relationId, { trigger: UI_TRIGGER });
       return { ok: true as const };

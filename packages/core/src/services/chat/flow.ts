@@ -52,10 +52,12 @@ export class ChatFlow {
     const classified = await this.helpers.classifier.classify({ ...turn, state });
     const reply = withUnansweredNote(await this.replyTo({ ...turn, state }, { classified, saving }), unanswered);
     if (classified.viaLlm || !classified.llmError) return reply;
+    // unconfigured or „nur lokal“ is no error and needs saying once per conversation, a failed attempt every time
+    if (!classified.llmFailed && turn.state.rulesHintShown) return reply;
     return {
       ...reply,
       content: `${reply.content}\n\n_Hinweis: ${classified.llmError} Ich habe die Nachricht regelbasiert ausgewertet – Ergebnisse können ungenauer sein._`,
-      ...(classified.llmFailed ? { errorMessage: classified.llmError } : {}),
+      ...(classified.llmFailed ? { errorMessage: classified.llmError } : { state: { ...(reply.state ?? state), rulesHintShown: true } }),
       uncertainties: [...(reply.uncertainties ?? []), 'Ohne LLM nur regelbasierte Auswertung.'],
     };
   }

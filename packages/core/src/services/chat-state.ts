@@ -75,6 +75,8 @@ export interface ConvState {
   last?: { openItemId?: string; decisionId?: string; documentIds?: string[]; topic?: string | null };
   /** Agent mode (#294): short ids, mode override and the request a question was asked about. */
   agent?: AgentChatState;
+  /** The note „rule-based because there is no LLM“ was shown in this conversation (#248). */
+  rulesHintShown?: boolean;
 }
 
 export interface Reply {

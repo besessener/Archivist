@@ -428,6 +428,8 @@ export const ipcContract = {
     z.object({ id: Id, title: z.string().max(200).nullish(), content: z.string().trim().min(1).max(100_000).nullish() }),
     GraphEntity,
   ),
+  /** Deletes a note after confirmation; undoable in the change log (#248). */
+  'knowledge:deleteNote': channel(z.object({ id: Id, confirmed: Confirmed }), Ok),
   /** The surroundings of an entry as a graph, 1–2 steps, filtered; big hubs grouped (#288). */
   'knowledge:neighborhood': channel(
     z.object({
