@@ -1,5 +1,6 @@
 import type { ChatIntent, DecisionField } from '@archivist/shared';
 import { parseDecisionDate, parseGermanDate } from '../../util/dates';
+import { isExplicitDecision, isUndecidedWording } from '../../util/decision-language';
 import { normalizeName, truncate } from '../../util/text';
 import { deriveOpenItem, shortAnswer, TOPIC_KIND_RE, TOPIC_KIND_THEMA_RE, UNKNOWN_RE, words, type ConvState, type Pending } from '../chat-state';
 import type { KnowledgeGraphService } from '../knowledge-graph';
@@ -30,7 +31,7 @@ export class RuleBasedIntents {
   }
 
   private captureIntent(text: string): RuleIntent | null {
-    if (/\b(entschieden|beschlossen|entscheidung:)/i.test(text) && !QUESTION_END.test(text)) return this.decisionIntent(text);
+    if (/\b(entschieden|beschlossen|entscheidung:)/i.test(text) && !QUESTION_END.test(text) && !isUndecidedWording(text)) return this.decisionIntent(text);
     if (/\b(erinner\w*)\b/i.test(text))
       return {
         intent: /verschieb|erneut|wieder/i.test(text) ? 'reminder_snooze' : 'reminder_create',
@@ -49,7 +50,7 @@ export class RuleBasedIntents {
     const topic = known.find((k) => lower.includes(` ${normalizeName(k)} `)) ?? /\b([a-z0-9]+(?:[-_][a-z0-9]+)+)\b/i.exec(text)?.[1] ?? null;
     return {
       intent: 'decision_new',
-      decisionCertainty: 'clear',
+      decisionCertainty: isExplicitDecision(text) ? 'clear' : 'unsure',
       decision: {
         decisionText: text.replace(/^wir\s+haben\s+(?:uns\s+)?(?:gemeinsam\s+)?(?:entschieden|beschlossen),?\s*(?:dass\s+)?/i, '').trim() || text,
         title: truncate(text, 80),

@@ -1,4 +1,5 @@
 import type { DocumentProposal } from '@archivist/shared';
+import { isUndecidedWording } from '../util/decision-language';
 import { normalizeDateInput, parseGermanDate, toIsoDate } from '../util/dates';
 import { firstSentence, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { detectOpenItemSentences } from './open-items';
@@ -215,7 +216,7 @@ export function classifyLocally(input: {
   const openItems = detectOpenItemSentences(input.text).map((s) => ({ title: truncate(s, 100), description: s, dueAt: null as string | null }));
   const decisionSentences = input.text
     .split(/(?<=[.!?])\s+|\n+/)
-    .filter((s) => /(?:wir\s+haben\s+)?(?:beschlossen|entschieden)|beschluss:|entscheidung:/i.test(s) && s.length < 400)
+    .filter((s) => /(?:wir\s+haben\s+)?(?:beschlossen|entschieden)|beschluss:|entscheidung:/i.test(s) && s.length < 400 && !isUndecidedWording(s))
     .slice(0, 5)
     .map((s) => ({
       title: firstSentence(s, 90),
