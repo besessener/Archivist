@@ -167,7 +167,8 @@ prek run --all-files      # gitleaks, zizmor, file hygiene
 ```
 
 Mutation tests are not part of the local gate and never run in full locally.
-`mutation.yml` runs them in CI only on push to `main`, not on pull requests.
+`mutation.yml` runs them in CI, never on pull requests: incrementally on push
+to `main`, in full once a day.
 Locally, only when asked or when chasing a specific surviving mutant, and only
 on the files you changed: `npx stryker run --mutate <file>`.
 
