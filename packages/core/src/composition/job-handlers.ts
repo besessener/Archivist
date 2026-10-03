@@ -7,6 +7,7 @@ import { isJobCancelled, type JobContext } from '../services/jobs';
 import { toErrorInfo } from '../util/errors';
 import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
+import { reembedEntries } from '../services/reembedding';
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -128,13 +129,8 @@ export function registerJobHandlers(services: JobServices): void {
   });
   jobs.register<Record<string, never>>(REEMBED_JOB, {
     handler: async (job) => {
-      const stale = search.entriesWithOtherModel(embedding.currentModel({ allowRemote: true }), { ownRecords: search.ownRecordsGoRemote() });
-      for (const [index, entry] of stale.entries()) {
-        job.signal.throwIfAborted();
-        job.report(index / stale.length, `${index} von ${stale.length} neu eingebettet`);
-        await reindexers[entry.type]?.(entry.id);
-      }
-      return { summary: stale.length === 1 ? '1 Eintrag neu eingebettet' : `${stale.length} Einträge neu eingebettet` };
+      const documentGoesRemote = (id: string) => services.documents.embedsRemotely(id);
+      return reembedEntries({ search, embedding, documentGoesRemote, reindex: async (entry) => reindexers[entry.type]?.(entry.id) }, job);
     },
   });
   jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {
