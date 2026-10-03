@@ -49,12 +49,12 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
 
     'decisions:create': async (input) => {
       const decision = services.decisions.create(input, { actor: 'user', trigger: UI_TRIGGER });
-      if (decision.status === 'active') await services.contradictions.checkDecision(decision.id); // contradictions only as a hint
+      await services.contradictions.checkDecision(decision.id); // contradictions only as a hint, and only for active decisions
       return decision;
     },
     'decisions:update': async (input) => {
       const decision = services.decisions.update(input.id, { patch: input.patch, trigger: UI_TRIGGER });
-      if (decision.status === 'active') await services.contradictions.checkDecision(decision.id);
+      await services.contradictions.checkDecision(decision.id);
       return decision;
     },
     'decisions:get': (input) => services.decisions.get(input.id),

@@ -48,11 +48,22 @@ export class DecisionService {
   private readonly persons: PersonService;
   private readonly search: SearchService;
   private readonly audit: AuditService;
+  private readonly statusUndoneListeners: Array<(decisionIds: string[]) => void> = [];
 
   constructor(deps: DecisionServiceDeps) {
     ({ ctx: this.ctx, graph: this.graph, persons: this.persons, search: this.search, audit: this.audit } = deps);
     const { ctx, graph, undo } = deps;
-    registerDecisionUndo(undo, { ctx, graph, reindex: (id) => this.reindex(id) });
+    registerDecisionUndo(undo, {
+      ctx,
+      graph,
+      reindex: (id) => this.reindex(id),
+      statusUndone: (ids) => this.statusUndoneListeners.forEach((listener) => listener(ids)),
+    });
+  }
+
+  /** Registers a listener for undone status changes (supersede, revoke). */
+  onStatusUndone(listener: (decisionIds: string[]) => void): void {
+    this.statusUndoneListeners.push(listener);
   }
 
   private get db() {
@@ -102,12 +113,6 @@ export class DecisionService {
         .orderBy(desc(decisions.decidedAt), desc(decisions.createdAt))
         .all(),
     );
-  }
-
-  /** Active decisions on a topic or project (for the contradiction/superseded check). */
-  activeFor({ topicId, projectId, excludeId }: { topicId: string | null; projectId: string | null; excludeId?: string }): Decision[] {
-    const all = this.list().filter((d) => ACTIVE_DECISION_STATUSES.includes(d.status) && d.id !== excludeId);
-    return all.filter((d) => (topicId && d.topicId === topicId) || (!topicId && projectId && d.projectId === projectId));
   }
 
   async searchDecisions(query: string, limit = 20): Promise<Decision[]> {

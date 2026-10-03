@@ -1,3 +1,4 @@
+import type { Decision } from '@archivist/shared';
 import { inArray } from 'drizzle-orm';
 import type { Db } from '../db/database';
 import { documents } from '../db/schema';
@@ -36,4 +37,29 @@ export function decisionDates(db: Db, list: Datable[]): Map<string, DecisionDati
     out.set(d.id, fromSources ? { date: fromSources, basis: 'source' } : { date: null, basis: null });
   }
   return out;
+}
+
+/** Two decisions in time order, with the dates and labels the order is based on. */
+export interface DecisionOrder {
+  older: Decision;
+  newer: Decision;
+  ordered: boolean;
+  label: (d: Decision) => string;
+  dateOf: (d: Decision) => string | null;
+}
+
+/** Older and newer decision by decision dates or the dates of the source documents, never by the capture date (#168). */
+export function orderDecisions(db: Db, [a, b]: [Decision, Decision]): DecisionOrder {
+  const dating = decisionDates(db, [a, b]);
+  const dateOf = (d: Decision) => dating.get(d.id)?.date ?? null;
+  const label = (d: Decision) => {
+    const dated = dating.get(d.id);
+    if (!dated?.date) return 'ohne Datum';
+    return dated.basis === 'source' ? `${dated.date.slice(0, 10)} laut Quelldokument` : dated.date.slice(0, 10);
+  };
+  const dateA = dateOf(a);
+  const dateB = dateOf(b);
+  const ordered = dateA !== null && dateB !== null && dateA.slice(0, 10) !== dateB.slice(0, 10);
+  const [older, newer] = ordered && dateA > dateB ? [b, a] : [a, b];
+  return { older, newer, ordered, label, dateOf };
 }

@@ -68,7 +68,7 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`; die Schritte l
 | `SolutionService` | `services/solutions.ts` | Lösungsvorschläge für offene Punkte |
 | `ConsistencyService` | `services/consistency.ts` | Archivprüfung |
 | `InsightService` | `services/insights.ts` | Hinweise der Archivprüfung |
-| `ContradictionService` | `services/contradictions.ts` | Widerspruchserkennung |
+| `ContradictionService` | `services/contradictions.ts`, `contradiction-review.ts` | Widerspruchserkennung; das LLM-Urteil je Textpaar speichert `contradiction_reviews` |
 | `OpenItemDuplicateService`, `NoteEventDuplicateService`, `PersonDuplicateService`, `PersonQuestionService`, `EntityDuplicateCheck` | `services/cleanup/` | Dublettenprüfungen der Archivprüfung |
 | `ActionService` | `services/actions.ts` | Vorschläge (`agent_actions`) und ihre Bestätigung |
 | `ChatService` | `services/chat.ts` | Gesprächsablauf; Intent-Erkennung und `dispatch()` als regelbasierter Rückfall |

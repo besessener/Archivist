@@ -26,6 +26,8 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 
 - Die Diagnose des Agenten (`diagnose`) schickt im Modus „automatisch“ einmal `POST {baseUrl}/embeddings` mit dem festen Text „Verbindungstest“ (ohne Dokument-IDs), um die Antwortzeit zu messen; sie steht im Übertragungsprotokoll mit Zweck „Diagnose: Embedding-Endpunkt“. Das Protokoll, das `read_logs` liest, geht als Werkzeugergebnis (maskiert, ohne ausgeschlossene Dateien) mit der Agentenanfrage hinaus ([Agentenmodus](agentenmodus.md#archivist-untersuchen)).
 
+- Die Widerspruchsprüfung (Zweck „Widerspruchsprüfung“) schickt im Modus „automatisch“ je Paar aktiver Entscheidungen desselben Themas oder Projekts beide Entscheidungstexte (je auf 800 Zeichen gekürzt, maskiert, als Daten gekennzeichnet; im Übertragungsprotokoll). Jedes Paar von Texten wird nur einmal gefragt: Das Urteil steht in der Tabelle `contradiction_reviews` (Hash beider Texte, Urteil, Zeitpunkt – kein Klartext). Je Lauf gehen höchstens 60 Paare hinaus. In „vorher fragen“ und „nur lokal“ geht nichts hinaus.
+
 ## Strukturierte Ausgaben
 
 - Das JSON-Schema wird aus dem Zod-Schema erzeugt und im Prompt mitgegeben; angefordert wird `text.format = json_object`. Die Eingabe nennt dafür immer das Wort „JSON“, das die Responses API in der Eingabe – nicht in den Instructions – verlangt.

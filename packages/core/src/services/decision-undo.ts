@@ -29,6 +29,8 @@ interface DecisionUndoDeps {
   ctx: AppContext;
   graph: KnowledgeGraphService;
   reindex: (id: string) => Promise<void>;
+  /** Called with the decisions whose status an undo restored. */
+  statusUndone: (decisionIds: string[]) => void;
 }
 
 function statusConflicts({ ctx, graph }: DecisionUndoDeps, undoData: DecisionStatusUndo): string[] {
@@ -41,7 +43,7 @@ function statusConflicts({ ctx, graph }: DecisionUndoDeps, undoData: DecisionSta
   return [...conflicts, ...graph.relationChangeConflicts(undoData.relations)];
 }
 
-function undoStatus({ ctx, graph, reindex }: DecisionUndoDeps, undoData: DecisionStatusUndo): string {
+function undoStatus({ ctx, graph, reindex, statusUndone }: DecisionUndoDeps, undoData: DecisionStatusUndo): string {
   const db = ctx.database.db;
   db.transaction(() => {
     for (const change of undoData.changes)
@@ -54,6 +56,7 @@ function undoStatus({ ctx, graph, reindex }: DecisionUndoDeps, undoData: Decisio
     else for (const relationId of undoData.relationIds ?? []) graph.deleteRelation(relationId);
   });
   for (const change of undoData.changes) void reindex(change.id);
+  statusUndone(undoData.changes.map((change) => change.id));
   ctx.events.changed('decisions', 'knowledge');
   return 'Status der Entscheidung(en) wiederhergestellt.';
 }

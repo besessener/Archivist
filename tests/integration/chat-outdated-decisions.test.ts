@@ -28,7 +28,7 @@ describe('Contradiction check in the chat (#252)', () => {
   it('also reports possibly outdated decisions', async () => {
     app.llm.down = true;
     await decision('Das Meeting findet dienstags statt.', '2026-01-10');
-    await decision('Das Protokoll schreibt Anna.', '2026-03-01');
+    await decision('Das Meeting findet donnerstags statt.', '2026-03-01');
     await app.services.consistency.run({ trigger: 'test' });
     app.llm.down = false;
     app.llm.on('ChatIntent', () => intent({ intent: 'contradiction_check' }));
