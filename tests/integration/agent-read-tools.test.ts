@@ -164,7 +164,7 @@ describe('Other read tools (#303)', () => {
       confidence: 0.9,
     });
     const item = await app.ok('openItems:create', { title: 'Förderung beantragen', dueAt: '2026-04-01' });
-    const event = await app.ok('events:create', { title: 'Einbau Wärmepumpe', occurredAt: '2026-02-20', sourceIds: [], confidence: 0.9 });
+    const event = await app.ok('events:create', { title: 'Einbau Wärmepumpe', occurredAt: '2026-02-20', sourceIds: [] });
     const other = await app.ok('decisions:create', {
       decisionText: 'Anderes',
       title: 'Nicht im Vorgang',
@@ -178,7 +178,10 @@ describe('Other read tools (#303)', () => {
     const { case: heating } = app.services.cases.create({ name: 'Heizungstausch' });
     app.services.cases.assign({ entryIds: [contract, decision.id, item.id, event.id], caseId: heating.id });
 
-    const [timeline, unknown] = await call({ name: 'timeline', args: { case: 'Heizungstausch' } }, { name: 'timeline', args: { case: 'Gibt es nicht' } });
+    const [timeline = '', unknown = ''] = await call(
+      { name: 'timeline', args: { case: 'Heizungstausch' } },
+      { name: 'timeline', args: { case: 'Gibt es nicht' } },
+    );
 
     const order = ['2026-02-10 document', '2026-02-20 event', '2026-03-05 decision', '2026-04-01 open_item'].map((prefix) => timeline.indexOf(prefix));
     expect(order.every((i) => i >= 0)).toBe(true);
