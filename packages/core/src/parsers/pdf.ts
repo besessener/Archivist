@@ -1,15 +1,14 @@
 import fsp from 'node:fs/promises';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { ocrOptionsFor, recognizeImages } from './ocr';
+import { ocrOptionsFor, recognizeImage } from './ocr';
 import { cleanText, errorMessage, MAX_TEXT_CHARS, type ParsedDocument, type ParseOptions } from './parsed-document';
 
 const MAX_PDF_PAGES = 300;
 const MAX_OCR_PAGES = 40;
-/** Below this many characters a PDF counts as empty (e.g. a scan without a text layer). */
+/** Below this many characters a page (or a whole PDF) counts as empty, e.g. a scan without a text layer. */
 const MIN_TEXT_CHARS = 20;
 
 type TextItems = Awaited<ReturnType<PDFPageProxy['getTextContent']>>['items'];
-type CleanText = ReturnType<typeof cleanText>;
 
 async function pdfMetadata(doc: PDFDocumentProxy): Promise<ParsedDocument['meta']> {
   const meta: ParsedDocument['meta'] = {};
@@ -42,25 +41,25 @@ function pageText(items: TextItems): string {
   return lines.join('\n').trim();
 }
 
-async function textLayer(doc: PDFDocumentProxy, maxPages: number): Promise<string> {
-  const parts: string[] = [];
+/** Text of each page in order; stops early once enough text is collected. */
+async function textLayer(doc: PDFDocumentProxy, maxPages: number): Promise<string[]> {
+  const pages: string[] = [];
   let total = 0;
   for (let pageNumber = 1; pageNumber <= maxPages && total < MAX_TEXT_CHARS; pageNumber += 1) {
     const page = await doc.getPage(pageNumber);
     const text = pageText((await page.getTextContent()).items);
-    parts.push(text);
+    pages.push(text);
     total += text.length;
     page.cleanup();
   }
-  return parts.join('\n\n');
+  return pages;
 }
 
-/** Renders PDF pages to images (@napi-rs/canvas) and recognizes the text locally. */
-async function ocrPdfPages(doc: PDFDocumentProxy, pages: number, options: ParseOptions): Promise<string> {
+/** Renders one PDF page to a PNG (@napi-rs/canvas). */
+async function renderPage(doc: PDFDocumentProxy, pageNumber: number): Promise<Buffer> {
   const { createCanvas } = await import('@napi-rs/canvas');
-  const images: Buffer[] = [];
-  for (let pageNumber = 1; pageNumber <= pages; pageNumber += 1) {
-    const page = await doc.getPage(pageNumber);
+  const page = await doc.getPage(pageNumber);
+  try {
     const base = page.getViewport({ scale: 1 });
     const scale = Math.min(3, Math.max(1.5, 2000 / Math.max(base.width, 1)));
     const viewport = page.getViewport({ scale });
@@ -69,23 +68,34 @@ async function ocrPdfPages(doc: PDFDocumentProxy, pages: number, options: ParseO
     context.fillStyle = '#fff';
     context.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvas: canvas as never, canvasContext: context as never, viewport }).promise;
-    images.push(canvas.toBuffer('image/png'));
+    return canvas.toBuffer('image/png');
+  } finally {
     page.cleanup();
   }
-  const results = await recognizeImages(images, ocrOptionsFor(options));
-  return results
-    .map((result) => result.text.trim())
-    .filter(Boolean)
-    .join('\n\n');
 }
 
-/** Local OCR of a PDF without a text layer; on failure the error message instead of a text. */
-async function ocrText(doc: PDFDocumentProxy, options: ParseOptions): Promise<{ text: CleanText } | { error: string }> {
+interface OcrOutcome {
+  /** Recognized text by page index; pages without a result are absent. */
+  recognized: Map<number, string>;
+  skipped: number;
+  error: string | null;
+}
+
+/** Local OCR of the pages without a text layer, one page at a time (a scan of 40 pages must not sit in memory as 40 PNGs). */
+async function ocrBlankPages(doc: PDFDocumentProxy, pageTexts: string[], options: ParseOptions): Promise<OcrOutcome> {
+  const blank = pageTexts.flatMap((text, index) => (text.length < MIN_TEXT_CHARS ? [index] : []));
+  const chosen = blank.slice(0, options.maxOcrPages ?? MAX_OCR_PAGES);
+  const outcome: OcrOutcome = { recognized: new Map(), skipped: blank.length - chosen.length, error: null };
   try {
-    return { text: cleanText(await ocrPdfPages(doc, Math.min(doc.numPages, MAX_OCR_PAGES), options)) };
+    for (const index of chosen) {
+      const result = await recognizeImage(await renderPage(doc, index + 1), ocrOptionsFor(options));
+      const text = result.text.trim();
+      if (text) outcome.recognized.set(index, text);
+    }
   } catch (err) {
-    return { error: `OCR fehlgeschlagen: ${errorMessage(err)}` };
+    outcome.error = `OCR fehlgeschlagen: ${errorMessage(err)}`;
   }
+  return outcome;
 }
 
 function emptyPdfError(options: ParseOptions, ocrError: string | null): string {
@@ -101,23 +111,25 @@ export async function parsePdf(file: string, options: ParseOptions): Promise<Par
   try {
     const meta: ParsedDocument['meta'] = { pages: doc.numPages, ...(await pdfMetadata(doc)) };
     const maxPages = Math.min(doc.numPages, MAX_PDF_PAGES);
-    let text = cleanText(await textLayer(doc, maxPages));
+    const pageTexts = await textLayer(doc, maxPages);
     let ocrError: string | null = null;
-    if (text.text.length < MIN_TEXT_CHARS && options.ocrEnabled) {
-      const ocr = await ocrText(doc, options);
-      if ('error' in ocr) ocrError = ocr.error;
-      else {
-        text = ocr.text;
-        meta.ocr = true;
-      }
+    let skippedPages = 0;
+    if (options.ocrEnabled) {
+      const ocr = await ocrBlankPages(doc, pageTexts, options);
+      ocrError = ocr.error;
+      for (const [index, text] of ocr.recognized) pageTexts[index] = text;
+      if (ocr.recognized.size > 0) meta.ocr = true;
+      skippedPages = ocr.skipped;
+      if (skippedPages > 0) meta.ocrPagesSkipped = skippedPages;
     }
+    const text = cleanText(pageTexts.join('\n\n'));
     const empty = text.text.length < MIN_TEXT_CHARS;
     return {
       text: text.text,
-      status: empty ? 'partial' : 'extracted',
-      error: empty ? emptyPdfError(options, ocrError) : null,
+      status: empty || ocrError ? 'partial' : 'extracted',
+      error: empty || ocrError ? emptyPdfError(options, ocrError) : null,
       meta,
-      truncated: text.truncated || doc.numPages > maxPages,
+      truncated: text.truncated || doc.numPages > maxPages || skippedPages > 0,
     };
   } finally {
     await task.destroy();

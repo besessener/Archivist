@@ -176,7 +176,7 @@ export function cosineTopK(input: CosineTopKInput): { index: number; score: numb
 }
 
 export interface TaskMap {
-  hashFile: { in: { path: string }; out: string };
+  hashFile: { in: { path: string; /** Only set when the task runs inline; a worker is terminated instead. */ signal?: AbortSignal }; out: string };
   scanDirectory: { in: ScanDirectoryInput; out: ScanDirectoryResult };
   extractDocument: { in: { path: string; options?: ParseOptions }; out: ParsedDocument };
   cosineTopK: { in: CosineTopKInput; out: { index: number; score: number }[] };
@@ -184,7 +184,7 @@ export interface TaskMap {
 export type TaskName = keyof TaskMap;
 
 export const tasks: { [K in TaskName]: (input: TaskMap[K]['in']) => Promise<TaskMap[K]['out']> } = {
-  hashFile: ({ path: file }) => sha256File(file),
+  hashFile: ({ path: file, signal }) => sha256File(file, signal),
   scanDirectory,
   extractDocument: ({ path: file, options }) => parseDocument(file, options),
   cosineTopK: async (input) => cosineTopK(input),

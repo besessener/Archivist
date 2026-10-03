@@ -30,6 +30,8 @@ export const AnalysisCoverage = z.object({
   llmParts: z.number().int().min(0),
   /** The extraction itself stopped at its limit (400,000 characters or 300 PDF pages): the rest is neither analysed nor searchable. */
   extractionTruncated: z.boolean(),
+  /** Scanned PDF pages left without OCR because of the page limit (0 for rows stored before this field existed, #226). */
+  ocrPagesSkipped: z.number().int().min(0).default(0),
 });
 export type AnalysisCoverage = z.infer<typeof AnalysisCoverage>;
 

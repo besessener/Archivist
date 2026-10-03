@@ -68,6 +68,8 @@ export function createBaseServices(options: CreateServicesOptions) {
   if (restore) audit.log({ action: 'backup.restore', actor: 'user', trigger: 'startup', confirmed: true, after: { ...restore } });
   const undo = new UndoService(ctx, audit);
   const pool = new WorkerPool(options.workerFile ?? null);
+  // own worker, so a slow file never delays a search
+  const searchPool = new WorkerPool(options.workerFile ?? null, 1);
   const reader = new DbReader(database.db, { workerFile: options.readerFile ?? null, databaseFile: database.file, logger });
   const llm = new LlmService({ ctx, settings, secrets, fetchImpl: options.fetchImpl, retryDelayMs: options.llmRetryDelayMs });
   const privacy = new PrivacyService(settings);
@@ -77,7 +79,7 @@ export function createBaseServices(options: CreateServicesOptions) {
   const self = new SelfService({ ctx, settings, graph });
   persons.setSelfResolver(self.resolver);
   // Search queries go to the embedding endpoint only in mode „automatisch“ – „vorher fragen“ uses local vectors only.
-  const search = new SearchService({ ctx, embedding, pool, remoteAllowed: () => privacy.mode() === 'auto' && llm.isConfigured() });
+  const search = new SearchService({ ctx, embedding, pool: searchPool, remoteAllowed: () => privacy.mode() === 'auto' && llm.isConfigured() });
   const categories = new CategoryService(ctx);
   const jobs = new JobQueueService(ctx, { concurrency: options.jobConcurrency ?? 2, retryBaseDelayMs: options.jobRetryDelayMs });
   const notifications = new NotificationService(ctx);
@@ -101,6 +103,7 @@ export function createBaseServices(options: CreateServicesOptions) {
     audit,
     undo,
     pool,
+    searchPool,
     reader,
     llm,
     privacy,

@@ -78,7 +78,7 @@ function startupBackup({ settings, backup, logger }: WiredServices): void {
 }
 
 export function createLifecycle(services: LifecycleServices) {
-  const { logger, settings, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, reader, database } = services;
+  const { logger, settings, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, searchPool, reader, database } = services;
   return {
     /** Starts background work (only while the application runs). */
     start(): void {
@@ -110,7 +110,7 @@ export function createLifecycle(services: LifecycleServices) {
       const drained = archive.drain(options.archiveTimeoutMs ?? ARCHIVE_DRAIN_TIMEOUT_MS);
       await jobs.interrupt(options.jobTimeoutMs);
       if (!(await drained)) logger.warn('archive', 'Quit while archive file operations were still running');
-      await pool.close();
+      await Promise.all([pool.close(), searchPool.close()]);
       await reader.close();
       database.close();
       await logger.close();

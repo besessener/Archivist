@@ -9,7 +9,7 @@ import { createServices } from '../../packages/core/src';
 import { DatabaseService } from '../../packages/core/src/db/database';
 import { WorkerPool } from '../../packages/core/src/workers/pool';
 import { Logger } from '../../packages/core/src/util/logger';
-import { makePdf } from '../helpers/fixtures';
+import { makePdf, makePng } from '../helpers/fixtures';
 import { createTestApp, MIGRATIONS, TestCipher } from '../helpers/harness';
 import { classification } from '../helpers/document-classifications';
 
@@ -181,6 +181,19 @@ describe('Worker threads', () => {
     expect(await pool.run('hashFile', { path: path.join(tmp, 'b.txt') })).toBe(hash);
     await pool.close();
   });
+
+  it('reuses one OCR worker per pool thread and shuts it down with the pool (#226)', async () => {
+    const pool = new WorkerPool(workerFile, 1);
+    const image = path.join(tmp, 'blank.png');
+    await makePng(image);
+    const options = { ocrEnabled: true, ocrLanguages: 'eng', tessdataDir: path.join(tmp, 'tessdata') };
+    const first = await pool.run('extractDocument', { path: image, options });
+    const started = Date.now();
+    const second = await pool.run('extractDocument', { path: image, options });
+    expect([first.meta.ocr, second.meta.ocr]).toEqual([true, true]);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    await pool.close();
+  }, 120_000);
 
   it('the complete application works with worker threads (import + search)', async () => {
     const app = await createTestApp({ privacy: 'auto', workerFile });

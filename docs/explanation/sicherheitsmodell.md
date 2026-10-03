@@ -36,4 +36,4 @@ Die Oberfläche zeigt Inhalte aus Dokumenten an. Sollte darüber je Code in den 
 
 ## Ehrlich über Grenzen
 
-Hintergrundaufgaben laufen nur, solange die App geöffnet ist, und Widerspruchserkennung liefert Hinweise, keine Wahrheiten. Archivist behauptet nichts anderes. Mehr dazu in [Bewusste Abweichungen und ehrliche Grenzen](grenzen.md).
+Hintergrundaufgaben laufen nur, solange die App geöffnet ist, und Widerspruchserkennung liefert Hinweise, keine Wahrheiten. Archivist behauptet nichts anderes. Ebenso ehrlich: Die Parser für fremde Dateien laufen in Worker-Threads ohne Betriebssystem-Sandbox; Zeitlimits, ZIP-Grenzen und lineare Suchmuster begrenzen nur den Schaden durch präparierte Dateien (Einzelheiten und Begründung in den Grenzen). Mehr dazu in [Bewusste Abweichungen und ehrliche Grenzen](grenzen.md).

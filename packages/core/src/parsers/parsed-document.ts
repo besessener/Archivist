@@ -14,6 +14,8 @@ export interface ParseOptions {
   ocrEnabled?: boolean;
   ocrLanguages?: string;
   tessdataDir?: string;
+  /** Pages of one PDF that get OCR (default 40); the rest is recorded as skipped. */
+  maxOcrPages?: number;
 }
 
 export const MAX_TEXT_CHARS = 400_000;

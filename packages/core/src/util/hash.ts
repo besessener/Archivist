@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 
-export function sha256File(file: string): Promise<string> {
+export function sha256File(file: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256');
-    const stream = fs.createReadStream(file);
+    const stream = fs.createReadStream(file, { signal });
     stream.on('error', reject);
     stream.on('data', (chunk) => hash.update(chunk));
     stream.on('end', () => resolve(hash.digest('hex')));
