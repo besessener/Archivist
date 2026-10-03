@@ -12,7 +12,7 @@ So legst du fest, was Archivist an den LLM-Endpunkt senden darf.
 | `confirm` (Standard) | vor jeder externen Analyse ausdrücklich bestätigen |
 | `local_only` | nie extern – keine Klassifikation, keine Chat-Auswertung, keine Embeddings per LLM |
 
-Die Auswahl wird sofort gespeichert; der aktive Modus steht darunter. Was die Modi im Einzelnen bewirken, steht in der [Referenz](../reference/aktionsstufen.md#llm-datenschutz).
+Die Auswahl wird sofort gespeichert; der aktive Modus steht darunter. Wechselst du in „vorher fragen“ oder „nur lokal“ das Embedding-Modell, geht dadurch nichts hinaus: Lokal eingebettete Einträge bleiben lokal. Was die Modi im Einzelnen bewirken, steht in der [Referenz](../reference/aktionsstufen.md#llm-datenschutz).
 
 ## Ordner, Dateitypen oder Dateien ausschließen
 

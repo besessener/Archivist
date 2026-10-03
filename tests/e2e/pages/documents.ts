@@ -9,6 +9,10 @@ export function initDocuments(page: Page) {
   const table = page.getByTestId('documents-table');
   const locators = {
     rows: page.getByTestId('document-row'),
+    typeFilter: page.getByTestId('documents-type-filter'),
+    /** „N von M“ note with „Mehr laden“ while the list holds only the newest documents (#222). */
+    capped: page.getByTestId('documents-capped'),
+    loadMore: page.getByTestId('documents-load-more'),
     /** Cell of a row by column heading. */
     cell: (row: number, column: (typeof COLUMNS)[number]) => page.getByTestId('document-row').nth(row).getByRole('cell').nth(COLUMNS.indexOf(column)),
     /** Multi-selection with its bulk actions (#291, #304). */
