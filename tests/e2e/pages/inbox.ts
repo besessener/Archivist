@@ -5,6 +5,9 @@ import { pageObject } from './page-object';
 export function initInbox(page: Page) {
   const locators = {
     fileInput: page.getByTestId('file-input'),
+    /** The import progress card bottom left; it covers what lies beneath until closed. */
+    importCard: page.getByTestId('import-card'),
+    closeImportCard: page.getByRole('button', { name: 'Import-Hinweis schließen' }),
     items: page.getByTestId('inbox-item'),
     proposals: page.getByTestId('inbox-proposal'),
     llmStatus: page.getByTestId('inbox-llm-status'),
@@ -44,6 +47,12 @@ export function initInbox(page: Page) {
   const interactions = {
     importFile: async (file: string) => {
       await locators.fileInput.setInputFiles(file);
+    },
+    /** Imports several files at once and closes the import card again. */
+    importFiles: async (files: string[]) => {
+      await locators.fileInput.setInputFiles(files);
+      await locators.closeImportCard.click();
+      await expect(locators.importCard).toBeHidden();
     },
     /** Waits for the first entry including its proposal and checks that the proposal shows the given target. */
     waitForProposal: async (target: string) => {

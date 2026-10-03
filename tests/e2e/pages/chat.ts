@@ -21,6 +21,8 @@ export function initChat(page: Page) {
     /** In-app links in an answer (weekly review, agent answers). */
     appLinks: root.getByTestId('app-link'),
     conversationSelect: root.getByTestId('conversation-select'),
+    /** Proposal cards below an answer; `data-status` holds the action's status. */
+    actionCards: root.getByTestId('action-card'),
     /** Agent mode (#300): live steps of a running run, its summary below the answer and the mode switch. */
     agent: {
       steps: root.getByTestId('chat-loading').getByTestId('agent-step'),
@@ -47,6 +49,10 @@ export function initChat(page: Page) {
       await locators.buttons.send.click();
     },
     lastReply: () => locators.messages.last(),
+    /** „Bestätigen“ on the last proposal card. */
+    approveLastAction: async () => {
+      await locators.actionCards.last().getByTestId('action-approve').click();
+    },
     /** Opens the technical details of a live step. */
     showStepDetails: async (index: number) => {
       await locators.agent.steps.nth(index).getByText('Technische Details').click();

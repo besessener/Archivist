@@ -132,6 +132,7 @@ export const ipcContract = {
 
   // --- Agent actions ---
   'actions:list': channel(z.object({ status: AgentActionStatus.optional() }), z.array(StoredAgentAction)),
+  'actions:get': channel(z.object({ id: Id }), StoredAgentAction),
   'actions:resolve': channel(
     z.discriminatedUnion('decision', [
       z.object({
