@@ -27,6 +27,12 @@ describe('document parsers', () => {
     expect(r.text.startsWith('Zeile eins\nZeile zwei\n\n\nEnde')).toBe(true);
   });
 
+  it('expands ligature code points so keyword search finds the word (#172)', async () => {
+    const f = writeFile(dir, 'ligatur.txt', 'Of\uFB01ce \uFB02ie\uFB00 \uFB03');
+    const r = await parseDocument(f);
+    expect(r.text).toBe('Office flieff ffi');
+  });
+
   it('reads PDF text', async () => {
     const f = path.join(dir, 'a.pdf');
     makePdf(f, ['Vertrag Hauskauf Musterstrasse', 'Kaufpreis 450000 Euro']);

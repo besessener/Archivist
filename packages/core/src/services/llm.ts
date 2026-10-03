@@ -342,9 +342,7 @@ export class LlmService {
         },
         overrides,
       );
-      const latencyMs = Date.now() - started;
-      const structured = await this.testStructuredAnswer(overrides);
-      return { ok: true, latencyMs, message: 'Verbindung erfolgreich.', modelReply: reply.trim().slice(0, 80), error: null, structured };
+      return { ok: true, latencyMs: Date.now() - started, message: 'Verbindung erfolgreich.', modelReply: reply.trim().slice(0, 80), error: null };
     } catch (err) {
       const info: AppErrorInfo = toErrorInfo(err);
       return { ok: false, latencyMs: null, message: info.message, modelReply: null, error: info };
@@ -352,7 +350,7 @@ export class LlmService {
   }
 
   /** Same path as every feature (completeJson); no output limit, so reasoning tokens cannot cut the answer short. */
-  private async testStructuredAnswer(overrides: LlmOverrides): Promise<{ ok: boolean; message: string }> {
+  async testStructuredAnswer(overrides: LlmOverrides): Promise<{ ok: boolean; message: string }> {
     try {
       await this.completeJson(
         z.object({ ok: z.boolean() }),

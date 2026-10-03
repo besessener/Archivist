@@ -130,7 +130,7 @@ export class SourceReader {
       id: hit.id,
       type: 'document',
       title: d.title,
-      snippet: truncate(d.summary ?? hit.snippet, 220),
+      snippet: truncate(hit.snippet || d.summary || '', 220),
       path: this.documentPath(d),
       ...documentDateRef(d),
       score: hit.score,
