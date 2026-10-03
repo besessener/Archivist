@@ -36,7 +36,7 @@ function nextBatch(ordered: CheckedDocument[], cursor: string): CheckedDocument[
 
 /**
  * Rolling checksum check: every run reads the next batch of archive files in the worker and compares the checksum;
- * files found changed are read again on every run until they match again, so their hint stays open in between.
+ * files found changed are read again on every run until they match again, so their hint stays open in between (also while unreadable).
  */
 export async function checkArchiveHashes(run: CheckRun, archived: CheckedDocument[]): Promise<void> {
   const { deps } = run;
@@ -51,18 +51,19 @@ export async function checkArchiveHashes(run: CheckRun, archived: CheckedDocumen
   const result = new Set<string>();
   for (const document of verified.values()) {
     run.signal?.throwIfAborted();
-    const hash = await deps.pool.run('hashFile', { path: absolutePath(root, document.archiveRelPath!) }).catch(() => null);
-    if (hash === null) continue; // missing or unreadable files are reported by the storage check
-    if (hash !== document.sha256) {
-      result.add(document.id);
-      reportChangedFile(run, {
-        document,
-        explanation: `Die Prüfsumme der Datei ${absolutePath(root, document.archiveRelPath!)} weicht von der beim Archivieren ab. Sie wurde möglicherweise überschrieben oder beschädigt.`,
-      });
-    }
+    const file = absolutePath(root, document.archiveRelPath!);
+    const hash = await deps.pool.run('hashFile', { path: file }).catch((err: unknown) => {
+      deps.ctx.logger.warn('consistency', 'Archive file could not be hashed', { documentId: document.id, error: err });
+      return null;
+    });
+    // an unreadable file is reported by the storage check; one already known as changed stays reported meanwhile
+    if (hash === null ? !mismatched.has(document.id) : hash === document.sha256) continue;
+    result.add(document.id);
+    reportChangedFile(run, {
+      document,
+      explanation: `Die Prüfsumme der Datei ${file} weicht von der beim Archivieren ab. Sie wurde möglicherweise überschrieben oder beschädigt.`,
+    });
   }
-  // documents of the batch that matched leave the list; the others of the stored list stay (e.g. files not readable right now)
-  for (const id of mismatched) if (!verified.has(id) && placed.some((document) => document.id === id)) result.add(id);
   deps.appState.set(MISMATCH_KEY, JSON.stringify([...result]));
   deps.appState.set(CURSOR_KEY, batch.at(-1) && batch.at(-1)!.id !== placed.at(-1)?.id ? batch.at(-1)!.id : '');
 }

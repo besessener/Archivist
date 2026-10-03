@@ -23,7 +23,7 @@
 ![zizmor](https://img.shields.io/badge/workflow%20security-zizmor-blue?logo=githubactions&logoColor=white)
 [![CI](https://github.com/besessener/Archivist/actions/workflows/ci.yml/badge.svg)](https://github.com/besessener/Archivist/actions/workflows/ci.yml)
 [![Mutation test](https://github.com/besessener/Archivist/actions/workflows/mutation.yml/badge.svg)](https://github.com/besessener/Archivist/actions/workflows/mutation.yml)
-[![CodeQL](https://img.shields.io/badge/security-CodeQL-blue?logo=github)](https://github.com/besessener/Archivist/security/code-scanning)
+[![CodeQL](https://github.com/besessener/Archivist/actions/workflows/codeql.yml/badge.svg)](https://github.com/besessener/Archivist/actions/workflows/codeql.yml)
 [![Last commit](https://img.shields.io/github/last-commit/besessener/Archivist)](https://github.com/besessener/Archivist/commits/main)
 [![License: MIT](https://img.shields.io/github/license/besessener/Archivist)](LICENSE)
 

@@ -63,6 +63,8 @@ export function createBaseServices(options: CreateServicesOptions) {
 
   const secrets = new SecretService({ file: path.join(paths.config, 'llm-api-key.enc'), cipher: options.cipher, logger });
   const audit = new AuditService(ctx);
+  // the request was logged in the database that is now set aside: the restored one records that it took over
+  if (restore) audit.log({ action: 'backup.restore', actor: 'user', trigger: 'startup', confirmed: true, after: { ...restore } });
   const undo = new UndoService(ctx, audit);
   const pool = new WorkerPool(options.workerFile ?? null);
   const reader = new DbReader(database.db, { workerFile: options.readerFile ?? null, databaseFile: database.file, logger });

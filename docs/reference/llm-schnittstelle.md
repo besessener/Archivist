@@ -46,6 +46,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen. Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen.
 - Bleibt keine belegte Aussage übrig, erscheint die Antwort des Modells nur als „Nicht belegt (Einschätzung des Modells)“, die Einschätzung wird auf „sehr unsicher“ gesetzt (Hinweis „Bitte prüfe diese Antwort“), und gefundene, aber nicht zitierte Quellen sind als „gefunden, nicht zitiert“ gekennzeichnet.
 - Zu gefundenen Entscheidungen kommen ihre Quelldokumente mit der passenden Textstelle in den Prompt.
+- Im Chat gehen bis zu sechs vorherige Nachrichten des Gesprächs mit, als Daten markiert und nur zum Auflösen von Bezügen wie „daran“, nie als Quelle für Fakten. Deine Nachrichten sind auf 280, Antworten auf 200 Zeichen gekürzt; Antworten aus dem Archiv (mit Quellen) erscheinen nur als Vermerk „Inhalt ausgelassen“. Ruft der Agent die geprüfte Wissensantwort als Werkzeug auf, geht kein Chatverlauf mit.
 - Über **bestätigte** Beziehungen der drei besten Treffer kommen bis zu drei weitere Einträge hinzu (höchstens zwei je Treffer, halbe Gewichtung), mit dem Vermerk „Hinzugekommen über die bestätigte Verknüpfung: …“. Vorgeschlagene, abgelehnte und veraltete Beziehungen werden nie genutzt; Freigaben gelten wie für Treffer.
 
 ## Analyse von Notizen

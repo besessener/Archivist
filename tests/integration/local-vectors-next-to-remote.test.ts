@@ -31,10 +31,31 @@ describe('Local vectors next to remote ones (#173)', () => {
     expect(hits.map((hit) => hit.id)).toContain(note.id);
   });
 
-  it('lets the re-embedding job add the missing local vector to older remote entries', async () => {
+  it('adds the missing local vector to older remote entries in a job queued on startup', async () => {
     const note = await app.services.notes.create({ title: 'Notiz', content: 'Inhalt der Notiz' });
-    await app.services.search.index({ type: 'note', id: note.id, title: 'Notiz', content: 'Inhalt der Notiz', allowRemoteEmbedding: true });
-    expect(app.services.search.entriesWithOtherModel('test-embedding')).toEqual([]);
+    await app.services.jobs.whenIdle();
+    const sqlite = app.services.ctx.database.sqlite;
+    // a remote entry from before local vectors were kept next to remote ones
+    sqlite.prepare('UPDATE chunks SET local_embedding = NULL WHERE entity_id = ?').run(note.id);
+    const localVectors = () => sqlite.prepare('SELECT count(*) AS n FROM chunks WHERE entity_id = ? AND local_embedding IS NOT NULL').get(note.id);
+    expect(localVectors()).toEqual({ n: 0 });
+
+    app.services.start();
+    await app.services.jobs.whenIdle();
+
+    expect(app.services.jobs.list().find((job) => job.type === 'search.reembed')).toMatchObject({ status: 'succeeded', summary: '1 Eintrag neu eingebettet' });
+    expect(localVectors()).toEqual({ n: 1 });
+    expect(sqlite.prepare('SELECT DISTINCT embedding_model AS model FROM chunks WHERE entity_id = ?').all(note.id)).toEqual([{ model: 'test-embedding' }]);
+  });
+
+  it('queues no re-embedding on startup when every remote entry has its local vector', async () => {
+    await app.services.notes.create({ title: 'Notiz', content: 'Inhalt der Notiz' });
+    await app.services.jobs.whenIdle();
+
+    app.services.start();
+    await app.services.jobs.whenIdle();
+
+    expect(app.services.jobs.list().some((job) => job.type === 'search.reembed')).toBe(false);
   });
 
   it('embeds own records remotely in the automatic mode, but never in the mode „vorher fragen“ (#173)', async () => {

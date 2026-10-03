@@ -37,6 +37,7 @@ function proposeSupersede(services: Services, input: { oldDecisionId: string; ne
 export function recordHandlers(services: Services): HandlerGroup<RecordChannelPrefix> {
   return {
     'actions:list': (input) => services.actions.list(input.status),
+    'actions:get': (input) => services.actions.get(input.id),
     'actions:resolve': (input) =>
       input.decision === 'approve'
         ? services.actions.resolve(input.actionId, {

@@ -23,7 +23,7 @@ Der Chat ist die zentrale Schnittstelle.
 
 - **Intent-Erkennung**: LLM-gestützt, strukturiert und Zod-validiert. Erkannt werden Entscheidungen, Notizen, Wissensfragen, Dokumentsuche, Timeline, offene Punkte, Erinnerungen, Archivierung, Scan, Ausschlüsse und Widersprüche.
 - **Ohne LLM** (nicht eingerichtet oder „nur lokal“) wertet der Chat regelbasiert aus und weist darauf hin, ohne es als Fehler zu markieren: „Wo ist …“, „Zeig …“ und „Finde …“ sind Suchen, keine Notizen; Sätze wie „noch nicht entschieden“ oder „ob wir …“ werden nicht zur Entscheidung. Nachrichten einer Unterhaltung laufen nacheinander. Antwortet eine Nachricht nicht auf eine Auswahl-Rückfrage („den zweiten“ gilt als Antwort), sagt der Chat, dass die ursprüngliche Anfrage nicht ausgeführt wurde.
-- Die Widerspruchsprüfung im Chat nennt auch möglicherweise überholte Entscheidungen; in Wissensantworten stehen widerrufene und ersetzte Entscheidungen hinter den aktuellen.
+- Die Widerspruchsprüfung im Chat nennt auch möglicherweise überholte Entscheidungen und sagt dazu, wenn sie noch läuft, fehlgeschlagen ist oder abgebrochen wurde; in Wissensantworten stehen widerrufene und ersetzte Entscheidungen hinter den aktuellen.
 - **Mehrere Absichten pro Nachricht** werden nacheinander ausgeführt; Rückfragen stellen die übrigen zurück. Legt eine Nachricht mehrere offene Punkte an, gilt die Antwort auf „Bis wann?“ bzw. „Wer ist verantwortlich?“ für alle („für alle drei 31.12.2026“), außer sie nennt einzelne Punkte.
 - **Kontext**: Das LLM kennt die aktiven offenen Punkte, Entscheidungen und offenen Vorschläge des Gesprächs (nur Titel und Metadaten, mit IDs) sowie deinen Namen (Einstellungen → Über dich).
 - **Rückfrage statt Raten** bei unklarer Absicht und **bevor eine unsichere „Entscheidung“ gespeichert wird** (Entscheidung / Ereignis / Notiz / nichts speichern).
@@ -45,7 +45,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Import** per Drag-and-Drop oder Dateiauswahl in einen sicheren Eingang (`inbox/`), mit Prüfsumme und Duplikaterkennung.
 - **Parser** für PDF, DOCX, PPTX, XLSX, EML, TXT/MD, PNG/JPG (Bilder und Scans per [OCR](#ocr)).
 - **Klassifikation** per LLM oder lokal, mit menschenlesbarem Zielpfad.
-- **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000).
+- **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen, irgendwo im Dokument); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000). Der Typfilter wirkt nur auf die geladenen Dokumente.
 - **Archivierung** per Kopieren (Standard), Verschieben, nur Indexieren oder Ignorieren; Undo.
 - **Nur indexierte Dokumente**: Ändert sich das Original, wird es beim nächsten Scan bzw. bei der Archivprüfung (andere Dateigröße) lokal neu eingelesen und neu indexiert – kein zweites Dokument, kein veralteter Inhalt in der Suche. Fehlt das Original, meldet die Archivprüfung „Original fehlt“.
 - **Archivdateien**: Die regelmäßige Archivprüfung meldet „Archivdatei fehlt“ und „Archivdatei verändert“ (andere Größe als beim Archivieren, z. B. überschrieben oder abgeschnitten); zusätzlich liest jeder Lauf einen Teil der Archivdateien im Hintergrund-Worker (bis zu 25 Dateien bzw. etwa 256 MB) und vergleicht die Prüfsumme, sodass das ganze Archiv nach und nach geprüft wird; eine als verändert erkannte Datei wird bei jedem Lauf erneut gelesen, bis sie wieder stimmt. „Archivzustand prüfen“ in den Einstellungen vergleicht sofort alle Prüfsummen.
@@ -173,7 +173,7 @@ Hybrid: FTS5-Stichwortsuche + Vektorähnlichkeit (Cosine, im Worker-Thread), per
 **Vektorsuche**
 
 - Lokale Hash-Vektoren sind lexikalisch und stimmen nicht mit ab – sie ergänzen nur Einträge, die die Stichwortsuche nicht gefunden hat.
-- Echte Embeddings (falls konfiguriert) stimmen mit ab. Je Eintrag gehen höchstens `llm.maxInputChars` Zeichen insgesamt an den Embedding-Endpunkt (Abschnitte von vorn); die übrigen Abschnitte haben nur den lokalen Vektor. Zu jedem echten Vektor wird ein lokaler gespeichert, damit ein Eintrag auch ohne erreichbaren Endpunkt semantisch auffindbar bleibt. Im Modus „automatisch“ werden auch Entscheidungen, Notizen, Aufgaben und Ereignisse mit dem Embedding-Modell eingebettet (maskiert und im Übertragungsprotokoll); in „vorher fragen“ und „nur lokal“ bleiben sie lokal. Wechselst du das Embedding-Modell, bettet ein Job die vorhandenen Einträge neu ein; Dokumente, die nicht extern analysiert werden dürfen, behalten lokale Vektoren.
+- Echte Embeddings (falls konfiguriert) stimmen mit ab. Je Eintrag gehen höchstens `llm.maxInputChars` Zeichen insgesamt an den Embedding-Endpunkt (Abschnitte von vorn); die übrigen Abschnitte haben nur den lokalen Vektor. Zu jedem echten Vektor wird ein lokaler gespeichert, damit ein Eintrag auch ohne erreichbaren Endpunkt semantisch auffindbar bleibt. Im Modus „automatisch“ werden auch Entscheidungen, Notizen, Aufgaben und Ereignisse mit dem Embedding-Modell eingebettet (maskiert und im Übertragungsprotokoll); in „vorher fragen“ und „nur lokal“ bleiben sie lokal. Wechselst du das Embedding-Modell, bettet ein Job die vorhandenen Einträge neu ein; Dokumente, die nicht extern analysiert werden dürfen, und in „vorher fragen“ und „nur lokal“ alle lokal eingebetteten Einträge behalten ihre lokalen Vektoren und werden nicht neu indexiert. Ist der Endpunkt dabei nicht erreichbar, schlägt der Job mit „Nur N von M Einträgen neu eingebettet“ fehl und wird wiederholt. Ältere Einträge mit echtem, aber ohne lokalen Vektor bekommen ihn einmal beim ersten Start nach dem Update.
 - Im Datenschutzmodus `confirm` nutzen Suchindex und Suchanfragen ausschließlich lokale Vektoren. Antwortet der Embedding-Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer. Warum das passiert, zeigt der Agent mit `read_logs` und `diagnose` ([Archivist untersuchen](agentenmodus.md#archivist-untersuchen)).
 
 ## Verzeichnisscan
@@ -238,12 +238,13 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Persistent in SQLite, überlebt Neustarts; Fortschritt und Wiederholen.
 - Vorübergehende Fehler werden mit zunehmender Wartezeit erneut versucht; Fehlermeldungen erst nach dem letzten Versuch.
 - Abbrechen wirkt auch bei Analyse und Archivprüfung (Status „abgebrochen“).
-- Beim Beenden werden laufende Jobs unterbrochen und nach dem nächsten Start fortgesetzt. Läuft gerade eine Archivierung, Umlagerung oder ein Rückgängigmachen, wartet Archivist bis zu 15 Sekunden darauf, bevor die Datenbank geschlossen wird; neue Dateiaktionen werden dann abgelehnt. Das Beenden dauert sonst höchstens etwa 10 Sekunden; ein erneuter Start währenddessen öffnet die Anwendung danach wieder.
+- Beim Beenden werden laufende Jobs unterbrochen und nach dem nächsten Start fortgesetzt. Läuft gerade eine Archivierung, Umlagerung oder ein Rückgängigmachen, wartet Archivist bis zu 8 Sekunden darauf, bevor die Datenbank geschlossen wird; neue Dateiaktionen werden dann abgelehnt. Das Beenden dauert insgesamt höchstens etwa 10 Sekunden; ein erneuter Start währenddessen öffnet die Anwendung danach wieder.
 - Nach einem Absturz läuft ein Job höchstens noch einmal; ohne verbleibende Versuche schlägt er fehl, statt bei jedem Start erneut abzustürzen.
 - Stapel-Analysen setzen nach Absturz oder Beenden hinter den bereits erledigten Dateien fort.
 - Ein Scan desselben Ordners bzw. eine Archivprüfung wird nicht doppelt eingereiht.
 - Als Job laufen auch die Widerspruchsprüfung aus dem Chat, das Archivieren oder Umlagern ab 10 Dokumenten nach deiner Bestätigung (die Karte zeigt „Wird ausgeführt“, bis das Ergebnis da ist) und das Neu-Einbetten aller Einträge, wenn du das Embedding-Modell wechselst. Kurze Läufe antworten noch im selben Zug.
 - Abgeschlossene Jobs werden nach 30 Tagen entfernt.
+- Schlägt eine Aktion fehl, die als Job läuft, schlägt auch der Job mit ihrem Grund fehl, auch beim Wiederholen. Ein Hinweis, dessen Empfehlung so läuft, bleibt offen, bis sie ausgeführt ist; schlägt sie fehl, bleibt er offen.
 - Schwere Arbeit läuft in Worker-Threads.
 - Einsehbar unter Einstellungen → Verarbeitung.
 

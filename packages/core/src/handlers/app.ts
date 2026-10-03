@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { AppStatus } from '@archivist/shared';
 import type { Services } from '../create-services';
 import type { DocRow } from '../services/document-model';
-import { REEMBED_JOB } from '../services/search';
+import { enqueueReembedding } from '../services/reembedding';
 import { AppError, permissionError } from '../util/errors';
 import { isInside } from '../util/paths';
 import type { HandlerGroup, HostApi } from './types';
@@ -112,7 +112,7 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
       }
       const settings = services.settings.update(input);
       // vectors of another model are useless for the new one: move the entries over in the background (#173)
-      if (settings.llm.embeddingModel !== embeddingBefore) services.jobs.enqueue(REEMBED_JOB, { label: 'Einträge neu einbetten', sameAs: () => true });
+      if (settings.llm.embeddingModel !== embeddingBefore) enqueueReembedding(services.jobs);
       return { settings };
     },
     'settings:setApiKey': (input) => {

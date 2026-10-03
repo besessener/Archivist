@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { call } from '@/lib/ipc';
+import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { ActionRecord } from '@/lib/types';
 import { ConfidenceBadge } from './confidence';
@@ -152,6 +153,11 @@ function BatchChecklist({
 /** Card for an action proposal from the agent, with confirm/reject. */
 export function ActionCard({ action, onResolved }: { action: ActionRecord; onResolved?: (resolved: ActionRecord) => void }) {
   const [current, setCurrent] = useState<ActionRecord>(action);
+  // a big action runs as a job (#254): while it runs, the card reloads it whenever the job or the action changes
+  const running = useQuery('actions:get', { id: current.id }, { scopes: ['status'], jobs: true, enabled: current.status === 'approved' });
+  useEffect(() => {
+    if (running.data) setCurrent(running.data);
+  }, [running.data]);
   const [strongOpen, setStrongOpen] = useState(false);
   const { run, busy } = useRun();
   const status = STATUS[current.status];

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveDataPaths } from '../../packages/core/src/context';
-import { scheduleNewestRestore } from '../../packages/core/src/services/backup-restore';
+import { newestIntactSource, scheduleRestore } from '../../packages/core/src/services/backup-restore';
 import { classification } from '../helpers/document-classifications';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
@@ -15,6 +15,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-restore-'));
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const app of apps.splice(0)) await app.services.shutdown();
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -68,6 +69,7 @@ describe('Restoring a backup', () => {
     app = await restart(app);
 
     expect(documentTitles(app)).toEqual(['alt.txt']);
+    expect(app.services.audit.list({ limit: 5 }).find((e) => e.action === 'backup.restore')?.after).toMatchObject({ restoredFrom: backup.name });
     const asides = fs.readdirSync(path.join(root, 'Archivist', 'database')).filter((f) => f.startsWith('vor-wiederherstellung-'));
     expect(asides).toHaveLength(1);
     expect(fs.existsSync(path.join(root, 'Archivist', 'database', asides[0]!, 'archivist.db'))).toBe(true);
@@ -90,6 +92,31 @@ describe('Restoring a backup', () => {
     expect(fs.readFileSync(lost, 'utf8')).toBe('Verlorene Datei');
     expect(fs.readFileSync(edited, 'utf8')).toBe('Nachträglich geändert');
     expect(app.services.settings.get().archiveRoot).toBeTruthy();
+  });
+
+  it('a database file that cannot be set aside stays in place with all its parts, and the next start works', async () => {
+    let app = await startApp();
+    await archived(app, 'bleibt.txt', 'Dokument bleibt');
+    const backup = await app.ok('backup:create', { includeArchive: false });
+    await app.ok('backup:restore', { name: backup.name, confirmed: true });
+    await app.services.shutdown();
+    apps.splice(apps.indexOf(app), 1);
+    const databaseDir = path.join(root, 'Archivist', 'database');
+    fs.writeFileSync(path.join(databaseDir, 'archivist.db-wal'), '');
+    const realRename = fs.renameSync.bind(fs);
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (String(from).endsWith('archivist.db-wal') && String(to).includes('vor-wiederherstellung-'))
+        throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+      realRename(from, to);
+    });
+
+    await expect(startApp()).rejects.toMatchObject({ category: 'filesystem_error', message: expect.stringContaining('nicht beiseitelegen') });
+    rename.mockRestore();
+
+    expect(fs.readdirSync(databaseDir).filter((f) => f.startsWith('vor-wiederherstellung-'))).toEqual([]);
+    expect(fs.existsSync(path.join(databaseDir, 'archivist.db'))).toBe(true);
+    app = await startApp();
+    expect(documentTitles(app)).toEqual(['bleibt.txt']);
   });
 
   it('an unknown backup is refused and nothing is scheduled', async () => {
@@ -129,9 +156,10 @@ describe('Restoring a backup', () => {
     fs.writeFileSync(path.join(newer.path, 'archivist.db'), 'beschädigt '.repeat(500));
     const paths = app.services.paths;
 
-    const source = scheduleNewestRestore(paths);
+    const source = newestIntactSource(paths.backups);
 
     expect(source?.name).toBe(older.name);
+    expect(fs.existsSync(path.join(paths.root, 'restore-pending.json')), 'choosing schedules nothing').toBe(false);
   });
 
   it('recovers from a damaged database: start refused, restore scheduled, next start works', async () => {
@@ -147,7 +175,8 @@ describe('Restoring a backup', () => {
     fs.rmSync(`${databaseFile}-shm`, { force: true });
 
     await expect(startApp()).rejects.toMatchObject({ category: 'database_corrupt' });
-    expect(scheduleNewestRestore(resolveDataPaths(dataRoot))).not.toBeNull();
+    const paths = resolveDataPaths(dataRoot);
+    scheduleRestore(paths, newestIntactSource(paths.backups)!.name);
     const recovered = await startApp();
 
     expect(documentTitles(recovered)).toEqual(['gerettet.txt']);
