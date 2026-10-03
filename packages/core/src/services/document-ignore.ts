@@ -43,12 +43,9 @@ export class DocumentIgnore {
     const row = this.deps.documents.getRow(id);
     if (row.status !== 'ignored') throw new AppError('validation_error', 'Das Dokument ist nicht ignoriert.');
     const entry = this.deps.audit.list({ entityId: id, onlyUndoable: true, limit: 50 }).find((e) => IGNORE_ACTIONS.includes(e.action));
-    if (!entry) {
-      this.changeStatus(row, { action: 'document.unignore', status: row.proposal ? 'proposed' : 'staged', archiveMode: null });
-      return;
-    }
-    const result = await undo.undo(entry.id);
-    if (!result.undone) throw new AppError('validation_error', result.message);
+    if (entry && (await undo.undo(entry.id)).undone) return;
+    // no undo entry, or the document changed since: the logged restore to the state its proposal implies
+    this.changeStatus(row, { action: 'document.unignore', status: row.proposal ? 'proposed' : 'staged', archiveMode: null });
   }
 
   private changeStatus(row: DocRow, change: { action: string; status: DocumentStatus; archiveMode: string | null }): string {

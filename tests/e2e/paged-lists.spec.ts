@@ -55,3 +55,31 @@ test.describe('long lists load page by page (#223)', () => {
     await expectNoSeriousA11yViolations(page, testInfo);
   });
 });
+
+const beyondLimit = base.extend({
+  workspace: async ({ workspace }, provide) => {
+    seedLongLists(workspace.dataDir, 1005);
+    await provide(workspace);
+  },
+});
+
+beyondLimit.describe('lists past the IPC limit stay reachable (#223)', () => {
+  beyondLimit.beforeEach(async ({ llm, on, page }) => {
+    await on(page).setup.do.complete(llm.url);
+  });
+
+  beyondLimit('„Mehr laden“ pages by offset until the oldest of 1005 decisions is shown', async ({ on, page }) => {
+    const app = on(page);
+    await app.navigation.do.open('decisions');
+    const decisions = app.decisions.locators;
+
+    for (let shown = 100; shown < 1005; shown += 100) {
+      await expect(decisions.rows).toHaveCount(shown);
+      await decisions.loadMore.click();
+    }
+
+    await expect(decisions.rows).toHaveCount(1005);
+    await expect(decisions.capped).toBeHidden();
+    await expect(decisions.rows.getByText('Entscheidung 1', { exact: true })).toHaveCount(1);
+  });
+});

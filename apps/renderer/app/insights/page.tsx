@@ -17,7 +17,7 @@ import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { INSIGHT_KIND_LABELS } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
-import { usePageWindow } from '@/lib/use-page-window';
+import { usePagedQuery, usePageWindow } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { InsightRecord } from '@/lib/types';
@@ -39,10 +39,10 @@ function groupByKind(insights: InsightRecord[]): Array<[InsightKind, InsightReco
 export default function InsightsPage() {
   const [status, setStatus] = useState<InsightStatus>('open');
   const insightWindow = usePageWindow(status);
-  const insights = useQuery('insights:list', { status, limit: insightWindow.limit }, { scopes: ['insights'] });
+  const insights = usePagedQuery('insights:list', { status }, insightWindow.window, { scopes: ['insights'] });
   const insightTotal = useQuery('insights:count', { status }, { scopes: ['insights'] });
   const contradictionWindow = usePageWindow('contradictions');
-  const contradictions = useQuery('contradictions:list', { limit: contradictionWindow.limit }, { scopes: ['contradictions'] });
+  const contradictions = usePagedQuery('contradictions:list', {}, contradictionWindow.window, { scopes: ['contradictions'] });
   const contradictionTotal = useQuery('contradictions:count', {}, { scopes: ['contradictions'] });
   const { run, busy } = useRun();
   const [accepting, setAccepting] = useState<InsightRecord | null>(null);
@@ -127,7 +127,6 @@ export default function InsightsPage() {
           noun="Hinweisen"
           onMore={insightWindow.more}
           loading={insights.loading}
-          atMaximum={insightWindow.atMaximum}
           testId="insights"
         />
 
@@ -138,7 +137,6 @@ export default function InsightsPage() {
           noun="Widersprüchen"
           onMore={contradictionWindow.more}
           loading={contradictions.loading}
-          atMaximum={contradictionWindow.atMaximum}
           testId="contradictions"
         />
       </div>

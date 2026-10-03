@@ -1,8 +1,7 @@
 import { localDate, localToday, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
-import { and, count, desc, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
-import { withSubject } from '../db/subject-filter';
 import { syncReminderAt } from './reminders';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
@@ -10,6 +9,7 @@ import { normalizeDateInput } from '../util/dates';
 import type { AuditService } from './audit';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import { assertEditableStatusChange, newOpenItemRow, openItemIndexContent, plainPatchColumns, toOpenItem, type OpenItemRow } from './open-item-fields';
+import { ACTIVE_STATUSES, countOpenItemRows, openItemRows, type OpenItemFilter } from './open-item-list';
 import { matchOpenItems, type HintMatch } from './open-item-matching';
 import {
   OPEN_ITEM_STATUS_UNDO_TYPE,
@@ -25,7 +25,7 @@ import type { UndoService } from './undo';
 
 export { detectOpenItemSentences, hintTokens, matchOpenItems } from './open-item-matching';
 
-export const ACTIVE_STATUSES: OpenItemStatus[] = ['open', 'waiting', 'blocked'];
+export { ACTIVE_STATUSES };
 
 type Origin = { actor?: 'user' | 'agent'; trigger?: string };
 
@@ -39,13 +39,6 @@ export interface OpenItemServiceDeps {
 }
 
 /** Open items (tasks/questions) including responsible person, due date and status. */
-interface OpenItemFilter {
-  status?: OpenItemStatus;
-  topicId?: string;
-  projectId?: string;
-  onlyActive?: boolean;
-}
-
 export class OpenItemService {
   constructor(private readonly deps: OpenItemServiceDeps) {
     const { ctx, graph, undo } = deps;
@@ -101,31 +94,13 @@ export class OpenItemService {
     return this.map(this.row(id));
   }
 
-  private listCondition(filter: OpenItemFilter) {
-    const conditions = [];
-    if (filter.status) conditions.push(eq(openItems.status, filter.status));
-    if (filter.onlyActive) conditions.push(inArray(openItems.status, ACTIVE_STATUSES));
-    // the main topic/project or a further one (#287)
-    if (filter.topicId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.topicId, subjectId: filter.topicId }));
-    if (filter.projectId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.projectId, subjectId: filter.projectId }));
-    return conditions.length ? and(...conditions) : undefined;
-  }
-
   /** Newest first; without `limit` all matching items (internal callers), the IPC channel always pages. */
   list(opts: OpenItemFilter & { limit?: number; offset?: number } = {}): OpenItem[] {
-    const query = this.db.select().from(openItems).where(this.listCondition(opts)).orderBy(desc(openItems.createdAt), desc(openItems.id));
-    return this.mapMany(
-      opts.limit === undefined
-        ? query.all()
-        : query
-            .limit(opts.limit)
-            .offset(opts.offset ?? 0)
-            .all(),
-    );
+    return this.mapMany(openItemRows(this.db, opts));
   }
 
   count(filter: OpenItemFilter = {}): number {
-    return this.db.select({ n: count() }).from(openItems).where(this.listCondition(filter)).get()?.n ?? 0;
+    return countOpenItemRows(this.db, filter);
   }
 
   /** Finds an active open item by a hint – only on an unambiguous hit. */

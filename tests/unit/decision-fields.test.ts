@@ -206,11 +206,11 @@ describe('rendering a decision', () => {
         'Beteiligte: Anna, Bert',
         'Begründung: Bewährt',
         'Auswirkungen: Migration nötig',
-        'Status: active',
+        'Status: Gültig',
       ].join('\n'),
     );
     const sparse = decision({ topicName: null, projectName: null, decidedAt: null, participants: [], rationale: null, consequences: null });
-    expect(decisionIndexContent(sparse)).toBe('Wir nehmen Postgres.\nStatus: active');
+    expect(decisionIndexContent(sparse)).toBe('Wir nehmen Postgres.\nStatus: Gültig');
   });
 
   it('summarises a decision in one line', () => {

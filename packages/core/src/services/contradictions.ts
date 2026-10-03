@@ -1,5 +1,5 @@
 import type { Contradiction, Decision } from '@archivist/shared';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { contradictions } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
@@ -9,6 +9,7 @@ import { truncate } from '../util/text';
 import type { ActionService } from './actions';
 import { announce, proposeSupersede, type ContradictionRow } from './contradiction-notices';
 import { ContradictionReviewer, MAX_REVIEWS_PER_CHECK, MAX_REVIEWS_PER_SCAN, type ReviewBudget } from './contradiction-review';
+import { countContradictions, listContradictions, toContradiction, type ContradictionFilter } from './contradiction-list';
 import { compareLexically, relatedPairs, sharesScope } from './contradiction-rules';
 import { DocumentContradictionScanner } from './document-contradictions';
 import type { DecisionService } from './decisions';
@@ -27,20 +28,6 @@ interface Finding {
   confidence: number;
 }
 
-const map = (r: ContradictionRow): Contradiction => ({
-  id: r.id,
-  title: r.title,
-  description: r.description,
-  affectedEntityIds: r.affectedEntityIds,
-  excerpts: r.excerpts as Contradiction['excerpts'],
-  sourceIds: r.sourceIds,
-  timestamps: r.timestamps,
-  confidence: r.confidence,
-  status: r.status as Contradiction['status'],
-  createdAt: r.createdAt,
-  resolvedAt: r.resolvedAt,
-});
-
 export interface ContradictionServiceDeps {
   ctx: AppContext;
   decisions: DecisionService;
@@ -58,12 +45,6 @@ const DECISION_PAIR_PREFIX = 'decision:';
 export const CONTRADICTION_SCAN_JOB = 'contradiction.scan';
 
 /** Contradictions are hints: decisions are never revoked or superseded autonomously, the resolution is an action the user confirms. */
-interface ContradictionFilter {
-  status?: Contradiction['status'];
-  /** Only contradictions that name this entry among the affected ones. */
-  entityId?: string;
-}
-
 export class ContradictionService {
   private actions!: ActionService;
   private readonly reviewer: ContradictionReviewer;
@@ -96,27 +77,18 @@ export class ContradictionService {
     return this.deps.ctx.database.db;
   }
 
-  private listCondition(filter: ContradictionFilter) {
-    const conditions = [];
-    if (filter.status) conditions.push(eq(contradictions.status, filter.status));
-    if (filter.entityId) conditions.push(sql`EXISTS (SELECT 1 FROM json_each(${contradictions.affectedEntityIds}) WHERE value = ${filter.entityId})`);
-    return conditions.length ? and(...conditions) : undefined;
-  }
-
-  /** Newest first; without `page` all matching contradictions (internal callers), the IPC channel always pages. */
   list(filter: ContradictionFilter = {}, page?: { limit: number; offset: number }): Contradiction[] {
-    const query = this.db.select().from(contradictions).where(this.listCondition(filter)).orderBy(desc(contradictions.createdAt), desc(contradictions.id));
-    return (page ? query.limit(page.limit).offset(page.offset).all() : query.all()).map(map);
+    return listContradictions(this.db, filter, page);
   }
 
   count(filter: ContradictionFilter = {}): number {
-    return this.db.select({ n: count() }).from(contradictions).where(this.listCondition(filter)).get()?.n ?? 0;
+    return countContradictions(this.db, filter);
   }
 
   get(id: string): Contradiction {
     const r = this.db.select().from(contradictions).where(eq(contradictions.id, id)).get();
     if (!r) throw new AppError('validation_error', 'Widerspruch nicht gefunden.');
-    return map(r);
+    return toContradiction(r);
   }
 
   private static pairKey(a: string, b: string): string {
@@ -130,7 +102,7 @@ export class ContradictionService {
       .from(contradictions)
       .where(eq(contradictions.dedupeKey, ContradictionService.pairKey(a, b)))
       .get();
-    return r ? map(r) : undefined;
+    return r ? toContradiction(r) : undefined;
   }
 
   /** The (possibly LLM-confirmed) finding for two decisions, or null: a stored or fresh LLM verdict decides, offline the lexical check does. */
@@ -177,7 +149,7 @@ export class ContradictionService {
       const found = await this.evaluate([d, o], budget, signal);
       if (found) created.push(await this.record([d, o], found));
     }
-    return [...created, ...(await this.documentScanner.scan(signal)).map(map)];
+    return [...created, ...(await this.documentScanner.scan(signal)).map(toContradiction)];
   }
 
   /** Contradictions found without the LLM (offline) are put to it once it is available; a veto closes them as false alarms. */
@@ -289,7 +261,7 @@ export class ContradictionService {
   private async record([a, b]: [Decision, Decision], { reason, confidence }: Finding): Promise<Contradiction> {
     const dedupeKey = ContradictionService.pairKey(a.id, b.id);
     const existing = this.db.select().from(contradictions).where(eq(contradictions.dedupeKey, dedupeKey)).get();
-    if (existing) return map(existing);
+    if (existing) return toContradiction(existing);
     const order = orderDecisions(this.db, [a, b]);
     const { older, newer, ordered, label } = order;
     const topic = a.topicName ?? b.topicName ?? a.projectName ?? 'diesem Thema';
@@ -323,7 +295,7 @@ export class ContradictionService {
     const action = ordered ? proposeSupersede(this.actions, order, confidence) : null;
     announce(this.deps, row, { older, newer, action });
     this.deps.ctx.events.changed('contradictions', 'insights', 'knowledge');
-    return map(row);
+    return toContradiction(row);
   }
 
   resolve(

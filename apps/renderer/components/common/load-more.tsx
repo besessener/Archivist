@@ -7,25 +7,20 @@ interface LoadMoreProps {
   noun: string;
   onMore: () => void;
   loading: boolean;
-  /** The window cannot grow any further. */
-  atMaximum: boolean;
   testId: string;
 }
 
 /** Below a paged list: how much of it is shown and „Mehr laden“ while more exists. */
-export function LoadMore({ shown, total, noun, onMore, loading, atMaximum, testId }: LoadMoreProps) {
+export function LoadMore({ shown, total, noun, onMore, loading, testId }: LoadMoreProps) {
   if (total <= shown) return null;
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground" data-testid={`${testId}-capped`}>
       <p>
         Angezeigt werden {shown.toLocaleString('de-DE')} von {total.toLocaleString('de-DE')} {noun}.
-        {atMaximum && ' Grenze die Liste mit der Suche oder einem Filter ein, um die übrigen zu finden.'}
       </p>
-      {!atMaximum && (
-        <Button variant="outline" size="sm" onClick={onMore} disabled={loading} data-testid={`${testId}-load-more`}>
-          Mehr laden
-        </Button>
-      )}
+      <Button variant="outline" size="sm" onClick={onMore} disabled={loading} data-testid={`${testId}-load-more`}>
+        Mehr laden
+      </Button>
     </div>
   );
 }

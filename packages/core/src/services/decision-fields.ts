@@ -156,7 +156,7 @@ export function decisionIndexContent(d: Decision): string {
     d.participants.length ? `Beteiligte: ${d.participants.join(', ')}` : '',
     d.rationale && `Begründung: ${d.rationale}`,
     d.consequences && `Auswirkungen: ${d.consequences}`,
-    `Status: ${d.status}`,
+    `Status: ${DECISION_STATUS_LABELS[d.status]}`,
   ]
     .filter(Boolean)
     .join('\n');

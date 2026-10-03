@@ -8,10 +8,9 @@ import {
   type DecisionStatus,
   type EditableDecisionStatus,
 } from '@archivist/shared';
-import { and, count, desc, eq, inArray, like, or } from 'drizzle-orm';
+import { eq, inArray, like, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { decisions, entities } from '../db/schema';
-import { withSubject } from '../db/subject-filter';
 import { CREATED_UNDO_TYPE } from '../agent/created-undo';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
@@ -19,6 +18,7 @@ import { normalizeDateInput, toIsoDate } from '../util/dates';
 import { firstSentence } from '../util/text';
 import type { AuditService } from './audit';
 import { trackedChanges } from './decision-audit';
+import { countDecisionRows, decisionRows, type DecisionFilter } from './decision-list';
 import { findDecisionDuplicate } from './decision-duplicates';
 import {
   assertEditableStatusChange,
@@ -60,14 +60,6 @@ export interface DecisionServiceDeps {
   search: SearchService;
   audit: AuditService;
   undo: UndoService;
-}
-
-interface DecisionFilter {
-  status?: DecisionStatus;
-  statuses?: DecisionStatus[];
-  ids?: string[];
-  topicId?: string;
-  projectId?: string;
 }
 
 export class DecisionService {
@@ -142,36 +134,13 @@ export class DecisionService {
     return this.map(this.row(id));
   }
 
-  private listCondition(filter: DecisionFilter) {
-    const conditions = [];
-    if (filter.status) conditions.push(eq(decisions.status, filter.status));
-    if (filter.statuses) conditions.push(inArray(decisions.status, filter.statuses));
-    if (filter.ids) conditions.push(inArray(decisions.id, filter.ids));
-    // the main topic/project or a further one (#287)
-    if (filter.topicId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.topicId, subjectId: filter.topicId }));
-    if (filter.projectId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.projectId, subjectId: filter.projectId }));
-    return conditions.length ? and(...conditions) : undefined;
-  }
-
   /** Newest first; without `limit` all matching decisions (internal callers), the IPC channel always pages. */
   list(opts: DecisionFilter & { limit?: number; offset?: number } = {}): Decision[] {
-    const query = this.db
-      .select()
-      .from(decisions)
-      .where(this.listCondition(opts))
-      .orderBy(desc(decisions.decidedAt), desc(decisions.createdAt), desc(decisions.id));
-    return this.mapMany(
-      opts.limit === undefined
-        ? query.all()
-        : query
-            .limit(opts.limit)
-            .offset(opts.offset ?? 0)
-            .all(),
-    );
+    return this.mapMany(decisionRows(this.db, opts));
   }
 
   count(filter: DecisionFilter = {}): number {
-    return this.db.select({ n: count() }).from(decisions).where(this.listCondition(filter)).get()?.n ?? 0;
+    return countDecisionRows(this.db, filter);
   }
 
   async searchDecisions(query: string, limit = 20): Promise<Decision[]> {

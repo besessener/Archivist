@@ -61,6 +61,17 @@ describe('ignoring a document (#232)', () => {
     expect(['staged', 'proposed']).toContain(restored.status);
   });
 
+  it('takes an ignored document back with a logged, undoable restore when it changed after ignoring', async () => {
+    const id = await inInbox(app, { name: 'Geändert.txt', content: 'Geändert Test' });
+    await app.ok('documents:ignore', { id });
+    app.services.ctx.database.db.update(documents).set({ updatedAt: '2099-01-01T00:00:00.000Z' }).where(eq(documents.id, id)).run();
+
+    const restored = await app.ok('documents:unignore', { id });
+
+    expect(['staged', 'proposed']).toContain(restored.status);
+    expect(app.services.audit.list({ entityId: id })[0]).toMatchObject({ action: 'document.unignore', undoable: true });
+  });
+
   it('refuses to ignore an archived or to take back a not ignored document', async () => {
     const archivedId = await archived(app, { name: 'Alt.txt', content: 'Alt Dokument', folder: 'Privat/alt' });
     const inboxId = await inInbox(app, { name: 'Neu.txt', content: 'Neu Dokument' });
