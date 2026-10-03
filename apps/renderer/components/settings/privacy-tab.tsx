@@ -13,6 +13,7 @@ import { formatBytes, formatDateTime } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { cn, parseList } from '@/lib/utils';
+import { MaskingSection } from './masking-section';
 import { Section, useSaveSettings, type TabProps } from './shared';
 
 type Mode = 'auto' | 'confirm' | 'local_only';
@@ -39,11 +40,12 @@ export function PrivacyTab({ settings, reload }: TabProps) {
     <div className="flex flex-col gap-4">
       {/* Separate keys: saving the mode must not discard unsaved edits in "Nie analysieren" and vice versa. */}
       <ModeSection key={llmMode} active={llmMode} reload={reload} />
+      <MaskingSection settings={settings} reload={reload} />
       <NeverAnalyzeSection key={JSON.stringify([neverAnalyzeDirs, neverAnalyzeExtensions, neverAnalyzeFiles])} settings={settings} reload={reload} />
 
       <Section
         title="An die KI übertragene Inhalte"
-        description="Protokoll aller Übertragungen. „Maskiert“ zeigt, wie viele Geheimnisse (z. B. Passwörter) vor dem Senden unkenntlich gemacht wurden."
+        description="Protokoll aller Übertragungen. „Maskiert“ zeigt, wie viele Geheimnisse (z. B. Passwörter) und, falls eingeschaltet, persönliche Daten (z. B. IBAN) vor dem Senden unkenntlich gemacht wurden."
       >
         {tx.error && !tx.data && <ErrorNote error={tx.error} onRetry={() => void tx.refetch()} />}
         {!tx.data && tx.loading && <Loading />}
@@ -74,7 +76,12 @@ export function PrivacyTab({ settings, reload }: TabProps) {
                       <span className="block break-all text-xs text-muted-foreground">{t.endpoint}</span>
                     </TD>
                     <TD className="whitespace-nowrap">{formatBytes(t.bytes)}</TD>
-                    <TD>{t.redactions}</TD>
+                    <TD>
+                      {t.redactions}
+                      {(t.personalRedactions ?? 0) > 0 && (
+                        <span className="block text-xs text-muted-foreground">davon {t.personalRedactions} persönliche Daten</span>
+                      )}
+                    </TD>
                     <TD>{t.success ? <Badge variant="success">Gesendet</Badge> : <Badge variant="danger">Fehler</Badge>}</TD>
                     <TD>
                       <Button size="sm" variant="ghost" onClick={() => setOpen(open === t.id ? null : t.id)} aria-expanded={open === t.id}>

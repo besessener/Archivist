@@ -33,6 +33,8 @@ export const PrivacySettings = z.object({
   neverAnalyzeDirs: z.array(z.string()).default([]),
   neverAnalyzeExtensions: z.array(z.string()).default([]),
   neverAnalyzeFiles: z.array(z.string()).default([]),
+  /** Replaces IBAN, card numbers, tax and social security IDs and PINs by placeholders before they leave the machine or reach the log (#203). */
+  maskPersonalData: z.boolean().default(true),
 });
 
 const LogSettings = z.object({

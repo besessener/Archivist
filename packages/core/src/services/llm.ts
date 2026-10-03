@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { checkLlmBaseUrl, type AgentAdapterId, type AppErrorInfo, type LlmTestResult, type LlmTransmission } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { AppError, toErrorInfo, validationError } from '../util/errors';
-import { redactSecrets } from '../util/redact';
+import { maskingOf, redactSecrets } from '../util/redact';
 import { abortedError, mapHttpError } from '../util/llm-errors';
 import type { SecretService } from './secret';
 import type { SettingsService } from './settings';
@@ -55,6 +55,7 @@ interface PreparedRequest {
   sent: string;
   instructions: string;
   redactions: number;
+  personalRedactions: number;
   signal?: AbortSignal;
 }
 
@@ -138,14 +139,16 @@ export class LlmService {
     if (signal?.aborted) throw abortedError();
     // the explicit connection test always goes through – it is how the user checks whether the endpoint is back
     if (!request.bypassPrivacy) this.health.assertCircuitClosed();
-    const input = redactSecrets(preparedInput(request, llm.maxInputChars));
-    const instructions = redactSecrets(request.instructions);
+    const masking = maskingOf(this.deps.settings.get());
+    const input = redactSecrets(preparedInput(request, llm.maxInputChars), masking);
+    const instructions = redactSecrets(request.instructions, masking);
     const prepared: PreparedRequest = {
       connection,
       request,
       sent: input.text,
       instructions: instructions.text,
       redactions: input.count + instructions.count,
+      personalRedactions: input.personalData + instructions.personalData,
       signal,
     };
     if (this.adapterId(connection.baseUrl) === 'anthropic') return this.completeViaClaude(prepared);
@@ -159,6 +162,7 @@ export class LlmService {
       endpoint,
       bytes: Buffer.byteLength(prepared.sent, 'utf8') + Buffer.byteLength(prepared.instructions, 'utf8'),
       redactions: prepared.redactions,
+      personalRedactions: prepared.personalRedactions,
       documentIds: prepared.request.documentIds ?? [],
       preview: prepared.sent.slice(0, 280),
     };
@@ -307,7 +311,8 @@ export class LlmService {
     const apiKey = this.deps.secrets.getApiKey();
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
     assertSecureBaseUrl(llm.baseUrl);
-    const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000)));
+    const masking = maskingOf(this.deps.settings.get());
+    const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000), masking));
     const url = endpointUrl(llm.baseUrl, 'embeddings');
     let success = false;
     try {
@@ -330,6 +335,7 @@ export class LlmService {
         endpoint: url,
         bytes: redacted.reduce((sum, entry) => sum + Buffer.byteLength(entry.text), 0),
         redactions: redacted.reduce((sum, entry) => sum + entry.count, 0),
+        personalRedactions: redacted.reduce((sum, entry) => sum + entry.personalData, 0),
         documentIds,
         preview: redacted[0]?.text.slice(0, 200) ?? '',
         success,

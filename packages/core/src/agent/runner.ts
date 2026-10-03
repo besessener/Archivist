@@ -1,5 +1,6 @@
 import type { AgentEffort, AgentLimits, AgentRunStatus, AgentStep, AgentUsage } from '@archivist/shared';
 import { AppError, toErrorInfo } from '../util/errors';
+import type { RedactionOptions } from '../util/redact';
 import type { Logger } from '../util/logger';
 import type { UserQuestion } from './ask-user';
 import { addUsage, budgetTokens, emptyUsage } from './pricing';
@@ -28,6 +29,10 @@ export interface RunnerOptions {
   logger: Logger;
   /** Secrets already masked before the run (system instructions, the user's message). */
   redactions?: number;
+  /** Of `redactions`: personal data. */
+  personalRedactions?: number;
+  /** What tool results are masked for (default: everything). */
+  masking?: RedactionOptions;
   /** Offer the provider's web search (chat runs only, setting „Websuche“). */
   webSearch?: boolean;
   propose: ProposeChange;
@@ -102,6 +107,8 @@ export class AgentRunner {
       onStep: options.onStep,
       now: () => this.now(),
       redactions: options.redactions ?? 0,
+      personalRedactions: options.personalRedactions ?? 0,
+      masking: options.masking,
     });
   }
 
@@ -307,6 +314,7 @@ export class AgentRunner {
       purpose: 'Agent',
       documentIds: [...this.options.ctx.shared],
       redactions: this.tools.redactions,
+      personalRedactions: this.tools.personalRedactions,
       webSearch: this.options.webSearch ?? false,
       signal,
     };

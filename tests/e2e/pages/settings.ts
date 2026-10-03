@@ -35,6 +35,8 @@ export function initSettings(page: Page) {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
       activeMode: page.getByTestId('privacy-mode-active'),
       extensions: page.getByTestId('privacy-exts'),
+      maskPersonal: page.getByTestId('privacy-mask-personal'),
+      maskNote: page.getByTestId('privacy-mask-note'),
     },
     archiveRoot: {
       input: page.getByTestId('settings-archive-root'),

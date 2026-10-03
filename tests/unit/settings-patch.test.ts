@@ -22,8 +22,14 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
     b: { enabled: false, onStartup: false, periodic: false, intervalMinutes: 240, maxFileSizeMb: 5, allowedExtensions: ['txt', 'md'], autoAnalyze: false },
   },
   privacy: {
-    a: { llmMode: 'auto', neverAnalyzeDirs: ['/geheim'], neverAnalyzeExtensions: ['eml'], neverAnalyzeFiles: ['/a/b.pdf'] },
-    b: { llmMode: 'local_only', neverAnalyzeDirs: ['/privat', '/hr'], neverAnalyzeExtensions: ['xlsx'], neverAnalyzeFiles: ['/c/d.docx'] },
+    a: { llmMode: 'auto', neverAnalyzeDirs: ['/geheim'], neverAnalyzeExtensions: ['eml'], neverAnalyzeFiles: ['/a/b.pdf'], maskPersonalData: true },
+    b: {
+      llmMode: 'local_only',
+      neverAnalyzeDirs: ['/privat', '/hr'],
+      neverAnalyzeExtensions: ['xlsx'],
+      neverAnalyzeFiles: ['/c/d.docx'],
+      maskPersonalData: false,
+    },
   },
   notifications: {
     a: { desktop: true, reminderTime: '07:30' },

@@ -1,6 +1,7 @@
 import type { Job } from '@archivist/shared';
 import type { AgentService } from '../agent/service';
 import { enqueueReembedding } from '../services/reembedding';
+import { maskingOf } from '../util/redact';
 import type { WiredServices } from './domain-services';
 
 type LifecycleServices = WiredServices & {
@@ -24,6 +25,7 @@ export function reactToSettingsChanges(services: WiredServices): void {
   events.on('data:changed', (change: { scopes: string[] }) => {
     if (change.scopes.includes('settings')) {
       logger.setLevel(settings.get().logs.level);
+      logger.setMasking(maskingOf(settings.get()));
       consistency.applySettings();
       // a new profile name renames the own person or merges a person with that name into it
       syncOwnPerson(services);

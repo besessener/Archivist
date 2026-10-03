@@ -19,6 +19,7 @@ import { SelfService } from '../services/self';
 import { SettingsService, settingsLoadNotification } from '../services/settings';
 import { UndoService } from '../services/undo';
 import { Logger } from '../util/logger';
+import { maskingOf } from '../util/redact';
 import { DbReader } from '../workers/db-reader';
 import { WorkerPool } from '../workers/pool';
 
@@ -54,6 +55,7 @@ export function createBaseServices(options: CreateServicesOptions) {
   fs.mkdirSync(paths.archive, { recursive: true });
 
   const logger = new Logger(paths.logs, settings.get().logs.level);
+  logger.setMasking(maskingOf(settings.get()));
   const restore = applyPendingRestore(paths, paths.archive);
   if (restore) logger.info('backup', 'Database restored from a backup', { ...restore });
   const database = new DatabaseService(path.join(paths.database, 'archivist.db'), logger);
