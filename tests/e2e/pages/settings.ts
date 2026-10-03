@@ -67,6 +67,12 @@ export function initSettings(page: Page) {
         syncNotice: dialog.getByTestId('archive-root-dialog-sync'),
       },
     },
+    index: {
+      status: page.getByTestId('index-status'),
+      rebuild: page.getByTestId('index-rebuild'),
+      reembed: page.getByTestId('index-reembed'),
+      confirmReembed: page.getByTestId('index-reembed-confirm'),
+    },
     trash: {
       items: page.getByTestId('trash-item'),
       restore: page.getByTestId('trash-restore'),

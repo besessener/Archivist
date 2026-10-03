@@ -1,5 +1,6 @@
 import type { Job } from '@archivist/shared';
 import type { AgentService } from '../agent/service';
+import { NEAR_DUPLICATE_BACKFILL_JOB } from '../services/near-duplicates';
 import { enqueueReembedding } from '../services/reembedding';
 import { maskingOf } from '../util/redact';
 import type { WiredServices } from './domain-services';
@@ -66,6 +67,13 @@ function addMissingLocalVectors({ appState, search, jobs }: LifecycleServices): 
   if (search.hasRemoteVectorsWithoutLocal()) enqueueReembedding(jobs);
 }
 
+/** Documents from before the near-duplicate signatures get theirs once, in a resumable job (#230). */
+function signExistingDocuments({ appState, jobs }: LifecycleServices): void {
+  if (appState.get('documents.near-duplicates.v1')) return;
+  appState.set('documents.near-duplicates.v1', new Date().toISOString());
+  jobs.enqueue(NEAR_DUPLICATE_BACKFILL_JOB, { label: 'Dokumente auf ähnlichen Inhalt vergleichen', sameAs: () => true });
+}
+
 function startAgent({ agent, jobs, chat }: LifecycleServices): void {
   agent.start({
     enqueue: (kind, docIds) =>
@@ -112,6 +120,7 @@ export function createLifecycle(services: LifecycleServices) {
       scheduleArchiveChecks(services);
       startInitialLinkRun(services);
       addMissingLocalVectors(services);
+      signExistingDocuments(services);
       startAgent(services);
       startupBackup(services);
     },

@@ -6,11 +6,16 @@ import type { AppContext } from '../context';
 import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
+import { LLM_ANALYSIS_ATTEMPTS } from './analysis-retry';
 import type { AuditService } from './audit';
 import { DocumentAnalyzer, QUARANTINE_NOT_ANALYZED, type AnalysisResult, type AnalyzeOptions } from './document-analysis';
 import type { BulkPatch } from './document-bulk';
+import { DocumentBatchAnalysis } from './document-batch';
 import { DocumentImporter, type ImportResult } from './document-import';
+import { FolderImport } from './document-import-folder';
+import { DocumentIndexRepair } from './document-index';
 import { DocumentMetadataEditor, type MetadataPatch } from './document-metadata';
+import { DocumentReanalysis } from './document-reanalysis';
 import { isArchivedStatus, type DocRow, type DocumentDeps, type NewDocument } from './document-model';
 import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
 import { documentRecord, newDocumentRow, searchContent } from './document-record';
@@ -18,6 +23,7 @@ import { DocumentRereader } from './document-reread';
 import { DocumentTrash, type FileOperationLock } from './document-trash';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
+import { NearDuplicateIndex } from './near-duplicates';
 import type { DocumentPrivacyFields, PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
@@ -27,7 +33,7 @@ export type { DocRow } from './document-model';
 
 export const DOCUMENT_REREAD_JOB = 'documents.reread';
 
-export type DocumentServiceDeps = Omit<DocumentDeps, 'documents'> & { undo: UndoService };
+export type DocumentServiceDeps = Omit<DocumentDeps, 'documents' | 'nearDuplicates'> & { undo: UndoService };
 
 export class DocumentService {
   private readonly deps: DocumentDeps;
@@ -36,6 +42,11 @@ export class DocumentService {
   private readonly rereader: DocumentRereader;
   private readonly metadata: DocumentMetadataEditor;
   private readonly trash: DocumentTrash;
+  readonly nearDuplicates: NearDuplicateIndex;
+  readonly reanalysis: DocumentReanalysis;
+  readonly batch: DocumentBatchAnalysis;
+  readonly folderImport: FolderImport;
+  readonly indexRepair: DocumentIndexRepair;
   private fileLock: FileOperationLock = { guardedFor: (_documentId, operation) => operation() };
 
   private readonly ctx: AppContext;
@@ -48,12 +59,17 @@ export class DocumentService {
 
   constructor({ undo, ...services }: DocumentServiceDeps) {
     ({ ctx: this.ctx, settings: this.settings, graph: this.graph, search: this.search, privacy: this.privacy, audit: this.audit, jobs: this.jobs } = services);
-    this.deps = { ...services, documents: this };
+    this.nearDuplicates = new NearDuplicateIndex(services.ctx);
+    this.deps = { ...services, documents: this, nearDuplicates: this.nearDuplicates };
     this.importer = new DocumentImporter(this.deps);
     this.analyzer = new DocumentAnalyzer(this.deps);
+    this.batch = new DocumentBatchAnalysis({ ctx: services.ctx, documents: this, jobs: services.jobs, notifications: services.notifications });
+    this.folderImport = new FolderImport(this.deps, this.importer, this.batch);
+    this.indexRepair = new DocumentIndexRepair(services.ctx, this);
     this.rereader = new DocumentRereader(this.deps);
     this.metadata = new DocumentMetadataEditor(this.deps);
     this.metadata.registerUndo(undo);
+    this.reanalysis = new DocumentReanalysis(this.deps, { analyzer: this.analyzer, metadata: this.metadata });
     this.trash = new DocumentTrash(this.deps, () => this.fileLock);
     this.trash.registerUndo(undo);
   }
@@ -187,7 +203,11 @@ export class DocumentService {
     const doc = this.getRow(id);
     if (doc.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
     if (isArchivedStatus(doc.status)) throw new AppError('validation_error', 'Archivierte oder nur indexierte Dokumente werden nicht erneut analysiert.');
-    return this.jobs.enqueue('document.analyze', { label: `Analysiere ${doc.originalName}`, payload: { documentId: id, allowLlm } }).id;
+    return this.jobs.enqueue('document.analyze', {
+      label: `Analysiere ${doc.originalName}`,
+      payload: { documentId: id, allowLlm },
+      maxAttempts: LLM_ANALYSIS_ATTEMPTS,
+    }).id;
   }
 
   /** Assigns the document to a topic/project (confirmed relations); without a file action. */

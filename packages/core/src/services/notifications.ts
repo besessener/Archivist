@@ -136,6 +136,17 @@ export class NotificationService {
     this.ctx.events.changed('notifications', 'status');
   }
 
+  /** Marks every open, unread notification as read ("Alle als gelesen markieren"); returns how many. */
+  markAllRead(): number {
+    const result = this.db
+      .update(notifications)
+      .set({ readAt: nowIso() })
+      .where(and(isNull(notifications.readAt), isNull(notifications.resolvedAt)))
+      .run();
+    if (result.changes > 0) this.ctx.events.changed('notifications', 'status');
+    return result.changes;
+  }
+
   resolve(id: string): AppNotification {
     const now = nowIso();
     this.db

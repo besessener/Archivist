@@ -1,5 +1,8 @@
 import type { Services } from '../create-services';
+import { DOCUMENT_REINDEX_JOB } from '../services/document-index';
+import { enqueueReembedding } from '../services/reembedding';
 import { fillPattern } from '../services/rename-pattern';
+import { SCAN_ANALYZE_ALL_JOB } from '../services/scanner/bulk-analysis';
 import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
 /** Rename requests for a scheme: each document gets its own name from its metadata. */
@@ -56,6 +59,20 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'documents:setLlmExcluded': (input) => services.documents.setLlmExcluded(input.id, { excluded: input.excluded }),
     'documents:releaseQuarantine': (input) => services.documents.releaseFromQuarantine(input.id, { confirmed: input.confirmed }),
     'documents:trash': (input) => services.documents.moveToTrash(input.id, { confirmed: input.confirmed, trigger: 'manual' }),
+    'documents:reanalysis': (input) => services.documents.reanalysis.get(input.id),
+    'documents:reanalysisPending': () => ({ documentIds: services.documents.reanalysis.pendingIds() }),
+    'documents:applyReanalysis': (input) => services.documents.reanalysis.apply(input.id, { confirmed: input.confirmed }),
+    'documents:discardReanalysis': (input) => {
+      services.documents.reanalysis.discard(input.id);
+      return { ok: true as const };
+    },
+    'documents:reprocessEstimate': (input) => services.reprocessing.estimate(input.ids),
+    'documents:reprocess': (input) => ({ jobId: services.reprocessing.enqueue(input).id }),
+    'documents:indexStatus': () => services.documents.indexRepair.status(),
+    'documents:rebuildIndex': () => ({
+      jobId: services.jobs.enqueue(DOCUMENT_REINDEX_JOB, { label: 'Suchindex ergänzen', sameAs: () => true, maxAttempts: 1 }).id,
+    }),
+    'documents:reembed': () => ({ jobId: enqueueReembedding(services.jobs).id }),
     'trash:list': () => services.documents.trashEntries(),
     'trash:empty': (input) => services.documents.emptyTrash(input),
 
@@ -75,6 +92,15 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
       jobId: services.jobs.enqueue('scanner.analyze', {
         label: `Analysiere ${input.fileIds.length} Datei(en)`,
         payload: { fileIds: input.fileIds, confirmLlm: input.confirmLlm },
+        maxAttempts: 1,
+      }).id,
+    }),
+    'scanner:analyzeAllPreview': () => services.scanner.bulk.estimate(),
+    'scanner:analyzeAll': (input) => ({
+      jobId: services.jobs.enqueue(SCAN_ANALYZE_ALL_JOB, {
+        label: 'Analysiere alle neuen Dateien',
+        payload: { confirmLlm: input.confirmLlm },
+        sameAs: () => true,
         maxAttempts: 1,
       }).id,
     }),

@@ -232,7 +232,8 @@ describe('Archive state and processing status', () => {
     const empty = app.file('in/leer.txt', '');
     const res = await app.ok('documents:import', { paths: [fake, exe, empty, path.join(app.home, 'in'), '/nicht/vorhanden.txt', 'relativ.txt'] });
     expect(res.imported).toHaveLength(0);
-    expect(res.rejected).toHaveLength(6);
+    expect(res.rejected).toHaveLength(5);
+    expect(res.folders).toEqual([{ path: path.join(app.home, 'in'), jobId: expect.any(String) }]);
     expect(fs.readdirSync(app.services.paths.quarantine)).toContain('fake.pdf');
   });
 });

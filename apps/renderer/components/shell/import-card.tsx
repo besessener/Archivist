@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { CheckCircle2, CopyX, FileWarning, X } from 'lucide-react';
+import { CheckCircle2, CopyX, FileWarning, FolderInput, X } from 'lucide-react';
+import { JobRow } from '@/components/common/jobs-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress, ProgressIndeterminate } from '@/components/ui/progress';
 import { useApp } from '@/lib/app-context';
 import { useQuery } from '@/lib/use-query';
+import type { ImportedFolder } from '@archivist/shared';
 import { basename } from '@/lib/utils';
 
 const STATUS_TEXT: Record<string, string> = {
@@ -24,6 +26,25 @@ const STATUS_TEXT: Record<string, string> = {
 
 /** Imported files whose status the card follows (one list request); the rest is only counted (#222). */
 const TRACKED = 1000;
+
+/** The jobs that import dropped folders: copying, then analysing, with the progress line of the job. */
+function FolderImports({ folders }: { folders: ImportedFolder[] }) {
+  const jobs = useQuery('jobs:list', { limit: 100 }, { scopes: ['jobs'], jobs: true });
+  const byId = new Map((jobs.data ?? []).map((job) => [job.id, job]));
+  return (
+    <div data-testid="import-folders">
+      <p className="mb-1 flex items-center gap-1.5 font-medium">
+        <FolderInput className="size-4" aria-hidden /> Ordner
+      </p>
+      <ul className="flex flex-col gap-2">
+        {folders.flatMap((folder) => {
+          const job = byId.get(folder.jobId);
+          return job ? [<JobRow key={folder.jobId} job={job} />] : [];
+        })}
+      </ul>
+    </div>
+  );
+}
 
 /** Progress and result of the last file import (drag and drop or file picker). */
 export function ImportCard() {
@@ -48,7 +69,7 @@ export function ImportCard() {
       </div>
     );
   }
-  const { imported, duplicates, rejected } = importState.result;
+  const { imported, duplicates, rejected, folders } = importState.result;
   const byId = new Map((docs ?? []).map((d) => [d.id, d]));
   // only the followed files: a status from the import result would stay „Wartet auf Analyse“ forever
   const current = imported.slice(0, TRACKED).map((d) => byId.get(d.id) ?? d);
@@ -74,6 +95,7 @@ export function ImportCard() {
           {duplicates.length > 0 && <Badge variant="warning">{duplicates.length} bereits vorhanden</Badge>}
           {rejected.length > 0 && <Badge variant="danger">{rejected.length} abgelehnt</Badge>}
         </div>
+        {folders.length > 0 && <FolderImports folders={folders} />}
         {imported.length > 0 && (
           <div>
             <Progress value={pct} aria-label="Verarbeitungsfortschritt" />

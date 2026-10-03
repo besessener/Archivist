@@ -218,6 +218,13 @@
       "when": 1791060452560,
       "tag": "0030_search_fts_external_content",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791064682290,
+      "tag": "0031_merged_enhancements",
+      "breakpoints": true
     }
   ]
 }

@@ -30,6 +30,7 @@ export class DocumentRereader {
       .where(and(eq(documents.id, id), eq(documents.status, 'indexed_only'), eq(documents.sha256, row.sha256)))
       .run();
     if (!updated.changes) return false;
+    this.deps.nearDuplicates.record(id, parsed.text);
     if (row.stagedPath)
       await fsp
         .rm(row.stagedPath, { force: true })
@@ -63,6 +64,7 @@ export class DocumentRereader {
       .where(and(eq(documents.id, id), inArray(documents.status, ARCHIVED_STATUSES)))
       .run();
     if (!updated.changes) return false;
+    this.deps.nearDuplicates.record(id, parsed.text);
     this.deps.audit.log({
       action: 'document.reread',
       actor: 'user',

@@ -1,16 +1,19 @@
 import type { EntityType } from '@archivist/shared';
+import { SCAN_ANALYZE_ALL_JOB } from '../services/scanner/bulk-analysis';
 import { REEMBED_JOB } from '../services/search';
 import { ACTION_EXECUTE_JOB } from '../services/actions';
 import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
+import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from '../services/document-batch';
+import { DOCUMENT_IMPORT_FOLDER_JOB, type ImportFolderPayload } from '../services/document-import-folder';
+import { DOCUMENT_REINDEX_JOB } from '../services/document-index';
+import { DOCUMENT_REPROCESS_JOB, type ReprocessPayload } from '../services/document-reprocess';
 import { DOCUMENT_REREAD_JOB } from '../services/documents';
 import { isJobCancelled, type JobContext } from '../services/jobs';
 import { AppError, toErrorInfo } from '../util/errors';
 import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
 import { reembedEntries } from '../services/reembedding';
-
-/** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
-const AUTO_ANALYZE_BATCH = 500;
+import { backfillNearDuplicates, NEAR_DUPLICATE_BACKFILL_JOB } from '../services/near-duplicates';
 
 type JobServices = WiredServices & { agent: AgentService };
 
@@ -18,7 +21,12 @@ type JobServices = WiredServices & { agent: AgentService };
 function registerDocumentAnalysis({ jobs, documents, notifications, agent }: JobServices): void {
   jobs.register<{ documentId: string; allowLlm: boolean }>('document.analyze', {
     handler: async (job) => {
-      const analyzed = await documents.analyze(job.payload.documentId, { allowLlm: job.payload.allowLlm, signal: job.signal, deferFailure: true });
+      const analyzed = await documents.analyze(job.payload.documentId, {
+        allowLlm: job.payload.allowLlm,
+        signal: job.signal,
+        deferFailure: true,
+        llmAttempt: job.attempts,
+      });
       agent.scheduleInbox();
       return analyzed;
     },
@@ -42,14 +50,9 @@ function registerDocumentAnalysis({ jobs, documents, notifications, agent }: Job
 }
 
 /** Analyses new files automatically only if explicitly enabled and the privacy mode allows it. */
-function enqueueAutoAnalysis({ settings, privacy, scanner, jobs }: JobServices): void {
+function enqueueAutoAnalysis({ settings, privacy, jobs }: JobServices): void {
   if (!settings.get().scan.autoAnalyze || privacy.mode() !== 'auto') return;
-  // every waiting file (oldest first), in batches like a manual analysis
-  const ids = scanner.filesAwaitingAnalysis();
-  for (let offset = 0; offset < ids.length; offset += AUTO_ANALYZE_BATCH) {
-    const batch = ids.slice(offset, offset + AUTO_ANALYZE_BATCH);
-    jobs.enqueue('scanner.analyze', { label: `Analysiere ${batch.length} neue Dateien`, payload: { fileIds: batch, confirmLlm: false } });
-  }
+  jobs.enqueue(SCAN_ANALYZE_ALL_JOB, { label: 'Analysiere alle neuen Dateien', payload: { confirmLlm: false }, sameAs: () => true, maxAttempts: 1 });
 }
 
 function registerScannerJobs(services: JobServices): void {
@@ -59,6 +62,13 @@ function registerScannerJobs(services: JobServices): void {
       const summaries = await scanner.runScan(job.payload.rootId, job);
       enqueueAutoAnalysis(services);
       return summaries;
+    },
+  });
+  jobs.register<{ confirmLlm: boolean }>(SCAN_ANALYZE_ALL_JOB, {
+    handler: async (job) => {
+      const analyzed = await scanner.bulk.run({ confirmLlm: job.payload.confirmLlm, job });
+      agent.scheduleInbox();
+      return analyzed;
     },
   });
   jobs.register<{ fileIds: string[]; confirmLlm: boolean }>('scanner.analyze', {
@@ -111,6 +121,10 @@ export function registerJobHandlers(services: JobServices): void {
   };
   registerDocumentAnalysis(services);
   registerScannerJobs(services);
+  jobs.register<AnalyzeBatchPayload>(DOCUMENT_ANALYZE_BATCH_JOB, { handler: (job) => services.documents.batch.runImported(job) });
+  jobs.register<ImportFolderPayload>(DOCUMENT_IMPORT_FOLDER_JOB, { handler: (job) => services.documents.folderImport.run(job) });
+  jobs.register<Record<string, never>>(DOCUMENT_REINDEX_JOB, { handler: (job) => services.documents.indexRepair.rebuild(job) });
+  jobs.register<ReprocessPayload>(DOCUMENT_REPROCESS_JOB, { handler: (job) => services.reprocessing.run(job) });
   jobs.register<{ documentIds: string[] }>(DOCUMENT_REREAD_JOB, { handler: (job) => rereadArchived(services, job) });
   // one job per trigger, cancellable, resumed after a restart
   jobs.register<{ kind: BackgroundKind; docIds?: string[] }>('agent.background', {
@@ -141,6 +155,7 @@ export function registerJobHandlers(services: JobServices): void {
       return reembedEntries({ search, embedding, documentGoesRemote, reindex: async (entry) => reindexers[entry.type]?.(entry.id) }, job);
     },
   });
+  jobs.register<Record<string, never>>(NEAR_DUPLICATE_BACKFILL_JOB, { handler: (job) => backfillNearDuplicates(services.documents.nearDuplicates, job) });
   jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {
     handler: async (job) => {
       job.report(null, 'Prüfe Entscheidungen auf Widersprüche');

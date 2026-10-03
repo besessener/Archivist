@@ -259,7 +259,7 @@ describe('Document analysis with retry', () => {
     const id = (await app.ok('documents:import', { paths: [src] })).imported[0]!.id;
     await app.services.jobs.whenIdle();
 
-    expect(analyzeJob()).toMatchObject({ status: 'failed', attempts: 3 });
+    expect(analyzeJob()).toMatchObject({ status: 'failed', attempts: 5 });
     const d = await app.ok('documents:get', { id });
     expect(d.status).toBe('failed');
     expect(d.processingError).toMatch(/gesperrt/);
