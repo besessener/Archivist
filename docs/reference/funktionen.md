@@ -23,7 +23,7 @@ Der Chat ist die zentrale Schnittstelle.
 
 - **Intent-Erkennung**: LLM-gestützt, strukturiert und Zod-validiert. Erkannt werden Entscheidungen, Notizen, Wissensfragen, Dokumentsuche, Timeline, offene Punkte, Erinnerungen, Archivierung, Scan, Ausschlüsse und Widersprüche.
 - **Ohne LLM** (nicht eingerichtet oder „nur lokal“) wertet der Chat regelbasiert aus und weist darauf hin, ohne es als Fehler zu markieren: „Wo ist …“, „Zeig …“ und „Finde …“ sind Suchen, keine Notizen; Sätze wie „noch nicht entschieden“ oder „ob wir …“ werden nicht zur Entscheidung. Nachrichten einer Unterhaltung laufen nacheinander. Antwortet eine Nachricht nicht auf eine Auswahl-Rückfrage („den zweiten“ gilt als Antwort), sagt der Chat, dass die ursprüngliche Anfrage nicht ausgeführt wurde.
-- Die Widerspruchsprüfung im Chat nennt auch möglicherweise überholte Entscheidungen; in Wissensantworten stehen widerrufene und ersetzte Entscheidungen hinter den aktuellen.
+- Die Widerspruchsprüfung im Chat nennt auch möglicherweise überholte Entscheidungen und sagt dazu, wenn sie noch läuft, fehlgeschlagen ist oder abgebrochen wurde; in Wissensantworten stehen widerrufene und ersetzte Entscheidungen hinter den aktuellen.
 - **Mehrere Absichten pro Nachricht** werden nacheinander ausgeführt; Rückfragen stellen die übrigen zurück. Legt eine Nachricht mehrere offene Punkte an, gilt die Antwort auf „Bis wann?“ bzw. „Wer ist verantwortlich?“ für alle („für alle drei 31.12.2026“), außer sie nennt einzelne Punkte.
 - **Kontext**: Das LLM kennt die aktiven offenen Punkte, Entscheidungen und offenen Vorschläge des Gesprächs (nur Titel und Metadaten, mit IDs) sowie deinen Namen (Einstellungen → Über dich).
 - **Rückfrage statt Raten** bei unklarer Absicht und **bevor eine unsichere „Entscheidung“ gespeichert wird** (Entscheidung / Ereignis / Notiz / nichts speichern).
@@ -243,6 +243,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Ein Scan desselben Ordners bzw. eine Archivprüfung wird nicht doppelt eingereiht.
 - Als Job laufen auch die Widerspruchsprüfung aus dem Chat, das Archivieren oder Umlagern ab 10 Dokumenten nach deiner Bestätigung (die Karte zeigt „Wird ausgeführt“, bis das Ergebnis da ist) und das Neu-Einbetten aller Einträge, wenn du das Embedding-Modell wechselst. Kurze Läufe antworten noch im selben Zug.
 - Abgeschlossene Jobs werden nach 30 Tagen entfernt.
+- Schlägt eine Aktion fehl, die als Job läuft, schlägt auch der Job mit ihrem Grund fehl, auch beim Wiederholen. Ein Hinweis, dessen Empfehlung so läuft, bleibt offen, bis sie ausgeführt ist; schlägt sie fehl, bleibt er offen.
 - Schwere Arbeit läuft in Worker-Threads.
 - Einsehbar unter Einstellungen → Verarbeitung.
 

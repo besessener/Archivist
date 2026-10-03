@@ -39,8 +39,8 @@ describe('Knowledge answers know the conversation (#156)', () => {
     await app.ok('chat:send', { text: 'Und wer war daran beteiligt?', conversationId: first.conversationId });
 
     const input = app.llm.calls.filter((c) => c.schema === 'KnowledgeAnswer').at(-1)!.input;
-    expect(input).toContain('Bisheriger Verlauf');
+    expect(input).toContain('=== BISHERIGER VERLAUF');
     expect(input).toContain('Benutzer: Was haben wir zum Hosting entschieden?');
-    expect(input).not.toMatch(/Verlauf[^]*Und wer war daran beteiligt\?[^]*Frage:/);
+    expect(input).not.toMatch(/BISHERIGER VERLAUF[^]*Und wer war daran beteiligt\?[^]*ENDE VERLAUF/);
   });
 });

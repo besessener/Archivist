@@ -58,10 +58,10 @@ export interface ContradictionServiceDeps {
   llm: LlmService;
 }
 
-/** Contradictions are hints: decisions are never revoked or superseded autonomously, the resolution is an action the user confirms. */
 /** Job type of the contradiction scan the chat starts (#254). */
 export const CONTRADICTION_SCAN_JOB = 'contradiction.scan';
 
+/** Contradictions are hints: decisions are never revoked or superseded autonomously, the resolution is an action the user confirms. */
 export class ContradictionService {
   private actions!: ActionService;
   /** pairs (with their texts) the LLM judged not contradictory, so a scan does not ask again for the same texts */

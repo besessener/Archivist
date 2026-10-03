@@ -42,7 +42,7 @@ export class InsightAnswers {
     return this.answering.has(id);
   }
 
-  /** Executes the recommended action (a failed one is retried, an outdated one not) and accepts the insight. */
+  /** Executes the recommended action (a failed one is retried, an outdated one not) and accepts the insight once it is executed. */
   async accept(id: string, opts: { strongConfirmed?: boolean }): Promise<Insight> {
     const { actions, records } = this.helpers;
     const i = records.get(id);
@@ -59,6 +59,8 @@ export class InsightAnswers {
           ? action
           : await actions.resolve(action.id, { decision: 'approve', confirmed: true, strongConfirmed: opts.strongConfirmed ?? false });
       if (result.status === 'failed') throw new AppError('validation_error', result.result ?? 'Die Aktion ist fehlgeschlagen.');
+      // still running as a job (#254): the insight stays open until the job has executed the action
+      if (result.status === 'approved') return records.get(id);
       if (result.status === 'withdrawn') {
         this.db.delete(insights).where(eq(insights.id, id)).run();
         this.ctx.events.changed('insights', 'status');
