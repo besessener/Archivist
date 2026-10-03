@@ -18,6 +18,7 @@ Drei Mechanismen sorgen dafür, dass die Wahl auch an unerwarteten Stellen gilt:
 
 - **Ausschlüsse hängen am Dokument**, nicht am Arbeitsschritt. Ein ausgeschlossenes Dokument taucht weder in einer Analyse noch als Chat-Quelle, Lösungsvorschlag, Embedding oder Werkzeugergebnis des Agenten im Klartext auf.
 - **Maskierung** entfernt Zugangsdaten und Geheimnisse vor jeder Übertragung – auch aus freigegebenen Dokumenten, denn ein Passwort in einer Notiz soll auch dann nicht hinaus, wenn die Notiz es darf.
+- **Auch das Protokoll von Archivist ist kein Schlupfloch.** Liest der Agent es (`read_logs`) oder lässt den Zustand prüfen (`diagnose`), bleiben Zeilen und Fehlertexte mit ausgeschlossenen Dateien draußen, alles wird maskiert und als Daten markiert; die Endpunkt-Messung ist eine feste Testanfrage ohne Dokumentinhalt.
 - **Das Übertragungsprotokoll** macht jede Übertragung nachprüfbar. Vertrauen soll auf Nachsehen beruhen, nicht auf Versprechen.
 
 Der API-Key wird nur verschlüsselt über das Betriebssystem (Windows DPAPI) gespeichert. Gibt es keinen sicheren Speicher, verweigert Archivist das Speichern, statt auf Klartext auszuweichen.

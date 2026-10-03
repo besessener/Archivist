@@ -35,6 +35,8 @@ import type { ToolContext } from '../registry';
 import type { Logger } from '../../util/logger';
 import type { CaptureService } from '../../services/capture';
 import type { KnowledgeAnswerService } from '../../services/knowledge-answers';
+import type { DiagnosticsService } from '../../services/diagnostics/diagnostics';
+import type { LogReader } from '../../services/diagnostics/log-reader';
 
 /** Services the tools use – the same service functions the user interface calls (#294: one function, two callers). */
 export interface ToolDeps {
@@ -74,6 +76,9 @@ export interface ToolDeps {
   /** Capturing knowledge: the same module as the rule-based chat (#307). */
   capture: CaptureService;
   answers: KnowledgeAnswerService;
+  /** Read-only looks at Archivist itself: the log files and the state of this installation. */
+  logs: LogReader;
+  diagnostics: DiagnosticsService;
   enqueueConsistency: (trigger: string) => void;
   logger: Logger;
 }

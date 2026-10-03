@@ -169,7 +169,7 @@ Hybrid: FTS5-Stichwortsuche + Vektorähnlichkeit (Cosine, im Worker-Thread), per
 
 - Lokale Hash-Vektoren sind lexikalisch und stimmen nicht mit ab – sie ergänzen nur Einträge, die die Stichwortsuche nicht gefunden hat.
 - Echte Embeddings (falls konfiguriert) stimmen mit ab.
-- Im Datenschutzmodus `confirm` nutzen Suchindex und Suchanfragen ausschließlich lokale Vektoren. Antwortet der Embedding-Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer.
+- Im Datenschutzmodus `confirm` nutzen Suchindex und Suchanfragen ausschließlich lokale Vektoren. Antwortet der Embedding-Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer. Warum das passiert, zeigt der Agent mit `read_logs` und `diagnose` ([Archivist untersuchen](agentenmodus.md#archivist-untersuchen)).
 
 ## Verzeichnisscan
 
