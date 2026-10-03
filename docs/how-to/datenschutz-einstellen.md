@@ -14,6 +14,10 @@ So legst du fest, was Archivist an den LLM-Endpunkt senden darf.
 
 Die Auswahl wird sofort gespeichert; der aktive Modus steht darunter. Was die Modi im Einzelnen bewirken, steht in der [Referenz](../reference/aktionsstufen.md#llm-datenschutz).
 
+## Begrenzen, wie viel Text an das Embedding-Modell geht
+
+Mit einem Embedding-Modell im Modus `auto` geht der Text freigegebener Dokumente abschnittsweise an `/embeddings`. Wie viel davon, begrenzt **Einstellungen → KI → maximale Eingabegröße** (`llm.maxInputChars`, Standard 24 000 Zeichen): Pro Dokument gehen höchstens so viele Zeichen insgesamt hinaus, Titel jedes Abschnitts eingerechnet, vor der Maskierung. Der Rest des Dokuments bekommt nur lokale Vektoren. Willst du, dass von einem Dokument nur ein kleiner Anfang den Rechner verlässt, senke den Wert; willst du gar nichts senden, lass das Embedding-Modell leer oder wähle `confirm`.
+
 ## Ordner, Dateitypen oder Dateien ausschließen
 
 Unter **Einstellungen → Datenschutz → Nie analysieren**:

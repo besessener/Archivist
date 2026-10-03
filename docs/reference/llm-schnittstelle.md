@@ -13,7 +13,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 | Modellname | `llm.model` |
 | Reasoning effort (optional) | `llm.reasoningEffort` |
 | Timeout | `llm.timeoutMs` |
-| maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben) |
+| maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben; für Embeddings gilt sie als Obergrenze je Eintrag, siehe [Anfragen](#anfragen)) |
 | Embedding-Modell (optional) | `llm.embeddingModel` |
 
 ## Anfragen
@@ -23,7 +23,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Gesendet wird mit `store: false`.
 - Lehnt ein kompatibler Endpunkt einen optionalen Parameter ab, wird nur genau dieser weggelassen (und für Endpunkt + Modell gemerkt). `store: false` entfällt nur, wenn der Endpunkt `store` selbst ablehnt.
 - Embeddings über `/embeddings`, sofern ein Embedding-Modell konfiguriert ist und der Datenschutzmodus es erlaubt. Gesendet werden maskierte Abschnitte freigegebener Dokumente und – nur im Modus `auto` – deine Entscheidungen, Notizen, offenen Punkte und Ereignisse sowie Suchanfragen; jede Übertragung steht im Übertragungsprotokoll.
-
+- Was ein Eintrag an `/embeddings` schickt, ist auf `llm.maxInputChars` Zeichen **insgesamt** begrenzt (Standard 24 000), gezählt vor der Maskierung. Ein Dokument wird in Abschnitte von rund 900 Zeichen geteilt, jeder Abschnitt mit dem Titel davor; gesendet werden die Abschnitte von vorn, solange sie vollständig in die Grenze passen. Alles dahinter – bei langen Dokumenten der größte Teil – geht nicht an den Endpunkt. Diese Abschnitte bekommen nur den lokalen Vektor, bleiben also über die Volltext- und die lokale Vektorsuche auffindbar. Ist schon der erste Abschnitt länger als die Grenze, wird er gekürzt. Im Übertragungsprotokoll steht die tatsächlich gesendete Größe.
 - Die Diagnose des Agenten (`diagnose`) schickt im Modus „automatisch“ einmal `POST {baseUrl}/embeddings` mit dem festen Text „Verbindungstest“ (ohne Dokument-IDs), um die Antwortzeit zu messen; sie steht im Übertragungsprotokoll mit Zweck „Diagnose: Embedding-Endpunkt“. Das Protokoll, das `read_logs` liest, geht als Werkzeugergebnis (maskiert, ohne ausgeschlossene Dateien) mit der Agentenanfrage hinaus ([Agentenmodus](agentenmodus.md#archivist-untersuchen)).
 
 ## Strukturierte Ausgaben
