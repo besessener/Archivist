@@ -14,14 +14,17 @@ import {
 } from '@archivist/core';
 import { IPC_CHANNELS, type AppNotification } from '@archivist/shared';
 import { appUserModelId } from './app-id';
+import { readUnpackagedEnv } from './test-environment';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { isExternalWebUrl } from './external-links';
 import { recoverFromDamagedDatabase, type RecoveryDeps } from './recovery';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
 // Electron main process: lifecycle, secure windows, IPC allowlist and OS access; the business logic lives in @archivist/core.
-const isDev = Boolean(process.env.ARCHIVIST_DEV_URL);
-const testMode = process.env.ARCHIVIST_TEST_MODE === '1';
+const unpackagedEnv = (name: string) => readUnpackagedEnv({ packaged: app.isPackaged, env: process.env }, name);
+const devUrl = unpackagedEnv('ARCHIVIST_DEV_URL');
+const isDev = Boolean(devUrl);
+const testMode = unpackagedEnv('ARCHIVIST_TEST_MODE') === '1';
 
 // the interface is German only: date and time fields follow Chromium's language, not the operating system's
 app.commandLine.appendSwitch('lang', 'de-DE');
@@ -91,7 +94,8 @@ const host: HostApi = {
   platform: process.platform,
   selectDirectory: async (title) => {
     const options: Electron.OpenDialogOptions = { title: title ?? 'Verzeichnis auswählen', properties: ['openDirectory'] };
-    if (process.env.ARCHIVIST_TEST_PICK_DIR) return process.env.ARCHIVIST_TEST_PICK_DIR; // E2E: no native dialog
+    const testPickDir = unpackagedEnv('ARCHIVIST_TEST_PICK_DIR');
+    if (testPickDir) return testPickDir; // E2E: no native dialog
     const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
     return result.canceled || result.filePaths.length === 0 ? null : (result.filePaths[0] ?? null);
   },
@@ -111,7 +115,7 @@ const host: HostApi = {
 
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
   const url = event.senderFrame?.url ?? '';
-  const trusted = url.startsWith(`${APP_ORIGIN}/`) || (isDev && url.startsWith(process.env.ARCHIVIST_DEV_URL!));
+  const trusted = url.startsWith(`${APP_ORIGIN}/`) || (isDev && url.startsWith(devUrl!));
   return trusted && mainWindow !== null && event.sender === mainWindow.webContents;
 }
 
@@ -180,7 +184,7 @@ function createWindow(): void {
   // the window title stays short; the page <title> carries the subtitle
   mainWindow.on('page-title-updated', (event) => event.preventDefault());
   const contents = mainWindow.webContents;
-  const allowed = (url: string) => url.startsWith(`${APP_ORIGIN}/`) || (isDev && url.startsWith(process.env.ARCHIVIST_DEV_URL!));
+  const allowed = (url: string) => url.startsWith(`${APP_ORIGIN}/`) || (isDev && url.startsWith(devUrl!));
   contents.on('will-navigate', (event, url) => {
     if (!allowed(url)) event.preventDefault();
   });
@@ -197,7 +201,7 @@ function createWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  void mainWindow.loadURL(isDev ? process.env.ARCHIVIST_DEV_URL! : `${APP_ORIGIN}/chat/`);
+  void mainWindow.loadURL(isDev ? devUrl! : `${APP_ORIGIN}/chat/`);
 }
 
 /** Brings the main window to the front, or opens a new one if there is none (e.g. after it was closed). */

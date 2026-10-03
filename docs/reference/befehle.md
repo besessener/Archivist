@@ -34,4 +34,4 @@ Alle Befehle werden im Wurzelverzeichnis ausgeführt.
 | `npm run depcruise` | Architekturgrenzen prüfen (dependency-cruiser) |
 | `npm run knip` | toten Code finden |
 
-E2E lokal: `npm run build && xvfb-run -a npx playwright test` (unter Windows ohne `xvfb-run`). Gegen die gepackte App: `npm run pack -w archivist && ARCHIVIST_E2E_PACKAGED=1 xvfb-run -a npx playwright test`.
+E2E lokal: `npm run build && xvfb-run -a npx playwright test` (unter Windows ohne `xvfb-run`).

@@ -34,6 +34,8 @@ Deshalb sind Dokumenttexte, Verlauf, Kontextlisten, Werkzeugergebnisse und Webse
 
 Die Oberfläche zeigt Inhalte aus Dokumenten an. Sollte darüber je Code in den Renderer gelangen, darf er nichts erreichen: Der Renderer läuft in einer Sandbox ohne Node, Dateisystem, Datenbank oder Shell, unter strenger CSP, und spricht nur über eine Allowlist von IPC-Kanälen, deren Ein- und Ausgaben der Main-Prozess validiert. Kritische Aktionen verlangen zusätzlich `confirmed: true` im Schema – ein manipulierter Renderer kann sie nicht stillschweigend auslösen.
 
+Die gepackte App ist zusätzlich gehärtet: Die Electron-Fuses `runAsNode`, `NODE_OPTIONS` und `--inspect` sind abgeschaltet, Code wird nur aus `app.asar` geladen, und `file://`-Seiten bekommen keine Sonderrechte (das Frontend kommt über `app://`). Die Test-Umgebungsvariablen (`ARCHIVIST_TEST_MODE`, `ARCHIVIST_TEST_PICK_DIR`) und `ARCHIVIST_DEV_URL` gelten nur in einer ungepackten App; in der installierten App bleibt der unsichere `basic_text`-Speicher für Schlüssel damit ausgeschlossen.
+
 ## Ehrlich über Grenzen
 
 Hintergrundaufgaben laufen nur, solange die App geöffnet ist, und Widerspruchserkennung liefert Hinweise, keine Wahrheiten. Archivist behauptet nichts anderes. Mehr dazu in [Bewusste Abweichungen und ehrliche Grenzen](grenzen.md).
