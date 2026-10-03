@@ -209,7 +209,8 @@ Zwei Werkzeuge der Stufe **lesen** (keine Bestätigung, ändern nichts) lassen d
 ## Verbrauch
 
 - Tokens (Eingabe, Ausgabe, Cache) pro Anfrage und Lauf.
-- Kosten aus einer pflegbaren Preistabelle – nur zur Information, es gibt **keine Kostenobergrenze**.
+- Kosten aus einer pflegbaren Preistabelle – nur zur Information.
+- Die Tokens aller Anfragen, auch der Agentenläufe, stehen im Übertragungsprotokoll und zählen für das optionale **Tageslimit** (`llm.dailyTokenCap`, [LLM-Schnittstelle](llm-schnittstelle.md#tokenverbrauch-und-tageslimit)): Ist es erreicht, starten Hintergrundläufe nicht, und im Chat fragt Archivist vorher, ob er trotzdem fortfahren soll.
 - Übersicht pro Tag und Monat, getrennt nach Chat und Hintergrund.
 
 ## Hintergrund

@@ -14,8 +14,24 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
     b: { name: 'Max Mustermann', nicknames: ['Maxi', 'MM'] },
   },
   llm: {
-    a: { baseUrl: 'https://llm-a.example.com/v1', model: 'model-a', reasoningEffort: 'high', timeoutMs: 120000, maxInputChars: 50000, embeddingModel: 'emb-a' },
-    b: { baseUrl: 'https://llm-b.example.com/v1', model: 'model-b', reasoningEffort: null, timeoutMs: 30000, maxInputChars: 8000, embeddingModel: 'emb-b' },
+    a: {
+      baseUrl: 'https://llm-a.example.com/v1',
+      model: 'model-a',
+      reasoningEffort: 'high',
+      timeoutMs: 120000,
+      maxInputChars: 50000,
+      embeddingModel: 'emb-a',
+      dailyTokenCap: 50000,
+    },
+    b: {
+      baseUrl: 'https://llm-b.example.com/v1',
+      model: 'model-b',
+      reasoningEffort: null,
+      timeoutMs: 30000,
+      maxInputChars: 8000,
+      embeddingModel: 'emb-b',
+      dailyTokenCap: null,
+    },
   },
   scan: {
     a: { enabled: true, onStartup: true, periodic: true, intervalMinutes: 15, maxFileSizeMb: 10, allowedExtensions: ['pdf'], autoAnalyze: true },

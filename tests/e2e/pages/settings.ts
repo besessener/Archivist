@@ -30,6 +30,8 @@ export function initSettings(page: Page) {
       baseUrlError: page.getByTestId('s-baseurl-error'),
       save: page.getByTestId('settings-save'),
       testConnection: page.getByTestId('settings-test-connection'),
+      testResult: page.getByTestId('settings-test-result'),
+      effort: page.getByTestId('settings-effort'),
     },
     privacy: {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
@@ -42,6 +44,11 @@ export function initSettings(page: Page) {
       },
       maskPersonal: page.getByTestId('privacy-mask-personal'),
       maskNote: page.getByTestId('privacy-mask-note'),
+      usageToday: page.getByTestId('usage-today'),
+      usageMonth: page.getByTestId('usage-month'),
+      capInput: page.getByTestId('usage-cap'),
+      capError: page.getByTestId('usage-cap-error'),
+      capSave: page.getByTestId('usage-cap-save'),
     },
     archiveRoot: {
       input: page.getByTestId('settings-archive-root'),

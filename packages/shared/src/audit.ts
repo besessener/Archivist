@@ -46,8 +46,31 @@ export const LlmTransmission = z.object({
   inputTokens: z.number().nullish(),
   outputTokens: z.number().nullish(),
   cacheReadTokens: z.number().nullish(),
+  /** POSTs the transmission took, retries included; absent in entries from before #153. */
+  requests: z.number().int().optional(),
+  /** Visible fallback of the request, e.g. „json_schema abgelehnt“. */
+  note: z.string().nullish(),
 });
 export type LlmTransmission = z.infer<typeof LlmTransmission>;
 
 export const UndoRunResult = z.object({ undone: z.number().int(), failed: z.number().int(), conflicts: z.array(z.string()), message: z.string() });
 export type UndoRunResult = z.infer<typeof UndoRunResult>;
+
+export const TokenTotals = z.object({
+  inputTokens: z.number().int(),
+  outputTokens: z.number().int(),
+  cacheReadTokens: z.number().int(),
+  /** input + cache + output */
+  totalTokens: z.number().int(),
+  requests: z.number().int(),
+});
+export type TokenTotals = z.infer<typeof TokenTotals>;
+
+/** Token use of the LLM today and in this month (local time) and the state of the daily limit. */
+export const LlmUsage = z.object({
+  today: TokenTotals,
+  month: TokenTotals,
+  dailyCap: z.number().int().nullable(),
+  capReached: z.boolean(),
+});
+export type LlmUsage = z.infer<typeof LlmUsage>;

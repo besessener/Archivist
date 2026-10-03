@@ -176,6 +176,7 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
       id: 'r',
       status: 'completed',
       output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }],
+      usage: { input_tokens: 2000, output_tokens: 50, input_tokens_details: { cached_tokens: 0 } },
     });
     setTimeout(() => response.writeHead(200, { 'content-type': 'application/json' }).end(payload), control.delayMs);
   };

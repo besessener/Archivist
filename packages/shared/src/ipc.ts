@@ -15,7 +15,7 @@ import {
   RelinkResult,
   VerifyReport,
 } from './archive';
-import { AuditEntry, AuditVerification, LlmTransmission, UndoRunResult } from './audit';
+import { AuditEntry, AuditVerification, LlmTransmission, LlmUsage, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
 import { Decision, DecisionInput, DecisionPatch, DecisionStatus } from './decisions';
 import { DocumentRecord, DocumentStatus, TrashEntry } from './documents';
@@ -88,6 +88,7 @@ export const ipcContract = {
     z.object({ limit: z.number().int().min(1).max(500).default(100), offset: z.number().int().min(0).default(0) }),
     z.array(LlmTransmission),
   ),
+  'llm:usage': channel(Empty, LlmUsage),
 
   // --- Chat ---
   'chat:send': channel(z.object({ conversationId: Id.optional(), text: z.string().min(1).max(20000) }), ChatSendResult),

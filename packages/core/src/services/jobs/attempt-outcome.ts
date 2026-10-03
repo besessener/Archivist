@@ -3,6 +3,8 @@ import type { AppContext } from '../../context';
 import { jobs } from '../../db/schema';
 import { toErrorInfo } from '../../util/errors';
 import { nowIso } from '../../util/ids';
+import { isTokenCapError } from '../../util/token-cap';
+import { startOfNextDay } from '../llm/token-ledger';
 import type { ArchivistJson } from '../../util/json';
 import { isJobCancelled } from './job-errors';
 import type { JobRow } from './job-rows';
@@ -31,8 +33,14 @@ export interface AttemptOutcomeDeps {
   notify: (row: JobRow) => void;
 }
 
+/** Message of a job that waits because the daily token limit is reached. */
+export const TOKEN_CAP_PAUSE_MESSAGE = 'Pausiert: Das Tageslimit für Tokens ist erreicht – weiter morgen oder sobald du das Limit erhöhst';
+
 /** Stores how an attempt ended: succeeded, cancelled, waiting for a retry, failed or interrupted on quit. */
 export class AttemptOutcomes {
+  /** Jobs paused by the daily token limit (their wait lasts until the next day unless the limit is raised). */
+  readonly pausedForTokenCap = new Set<string>();
+
   constructor(private readonly deps: AttemptOutcomeDeps) {}
 
   private get db() {
@@ -61,6 +69,10 @@ export class AttemptOutcomes {
         .run();
       return;
     }
+    if (isTokenCapError(outcome.error) && !attempt.isCancelled()) {
+      this.pauseForTokenCap(job, attempts);
+      return;
+    }
     if (!isJobCancelled(outcome.error) && !attempt.isCancelled()) {
       this.recordFailure(attempt, outcome.error);
       return;
@@ -69,6 +81,18 @@ export class AttemptOutcomes {
     this.db.update(jobs).set({ status: 'cancelled', progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
     this.deps.ctx.logger.info('jobs', `Job cancelled: ${job.type}`, { jobId: job.id, attempts });
     this.deps.runHook({ type: job.type, hook: 'onCancelled' }, () => registered?.hooks.onCancelled?.({ id: job.id, payload: job.payload as never }));
+  }
+
+  /** The attempt did not count: the job waits for the next day (or a raised limit) and keeps all its attempts. */
+  private pauseForTokenCap(job: JobRow, attempts: number): void {
+    this.pausedForTokenCap.add(job.id);
+    this.deps.retryWaits.set(job.id, startOfNextDay(new Date()));
+    this.deps.ctx.logger.info('jobs', `Job paused by the daily token limit: ${job.type}`, { jobId: job.id });
+    this.db
+      .update(jobs)
+      .set({ status: 'pending', attempts: Math.max(0, attempts - 1), error: null, progress: null, progressMessage: TOKEN_CAP_PAUSE_MESSAGE, finishedAt: null })
+      .where(eq(jobs.id, job.id))
+      .run();
   }
 
   /** A failed attempt: retryable errors wait (exponential backoff) for the next attempt, otherwise the job fails. */

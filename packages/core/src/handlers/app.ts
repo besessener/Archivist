@@ -120,6 +120,8 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
         services.audit.log({ action: 'settings.change', actor: 'user', trigger: UI_TRIGGER, confirmed: true, before: changes.before, after: changes.after });
       // vectors of another model are useless for the new one: move the entries over in the background (#173)
       if (settings.llm.embeddingModel !== embeddingBefore) enqueueReembedding(services.jobs);
+      // jobs paused by the daily token limit continue as soon as it no longer applies
+      if (settings.llm.dailyTokenCap !== previous.llm.dailyTokenCap && !services.llm.tokenCapReached()) services.jobs.resumeTokenCapPaused();
       return { settings };
     },
     'settings:setApiKey': (input) => {
@@ -135,5 +137,6 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
 
     'llm:testConnection': (input) => services.agent.testConnection({ baseUrl: input.baseUrl, model: input.model, apiKey: input.apiKey }),
     'llm:transmissions': (input) => services.llm.listTransmissions(input.limit, input.offset),
+    'llm:usage': () => services.llm.usage(),
   };
 }

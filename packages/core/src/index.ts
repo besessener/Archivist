@@ -3,7 +3,10 @@ export { createHandlers, createIpcDispatcher, type HostApi, type IpcDispatcher }
 export { resolveDataPaths, ensureDataDirs, type DataLocations, type DataPaths } from './context';
 export type { SecretCipher } from './services/secret';
 export type { FetchLike } from './services/llm';
-export { AppError, toErrorInfo } from './util/errors';
+export { AppError, toErrorInfo, type AppErrorOptions } from './util/errors';
+export { estimateTokens } from './util/estimate-tokens';
+export { isTokenCapError, TokenCapError } from './util/token-cap';
+export { MAX_RETRY_AFTER_MS } from './util/retry-after';
 export { newestIntactSource, scheduleRestore, type RestorePaths, type RestoreSource } from './services/backup-restore';
 export { Logger } from './util/logger';
 export { redactSecrets } from './util/redact';

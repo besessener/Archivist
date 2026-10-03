@@ -51,24 +51,32 @@ export const auditLog = sqliteTable(
   (t) => [index('audit_at_idx').on(t.at), index('audit_run_idx').on(t.runId)],
 );
 
-export const llmTransmissions = sqliteTable('llm_transmissions', {
-  id: text('id').primaryKey(),
-  at: text('at').notNull(),
-  purpose: text('purpose').notNull(),
-  model: text('model').notNull(),
-  endpoint: text('endpoint').notNull(),
-  bytes: integer('bytes').notNull(),
-  redactions: integer('redactions').notNull().default(0),
-  /** Of `redactions`: spots with personal data (IBAN, card, IDs, PINs); the rest are secrets. */
-  personalRedactions: integer('personal_redactions').notNull().default(0),
-  documentIds: jsonArr('document_ids'),
-  preview: text('preview').notNull().default(''),
-  success: integer('success', { mode: 'boolean' }).notNull().default(true),
-  /** Tokens of the request as reported by the provider (agent requests, #302); null for older entries. */
-  inputTokens: integer('input_tokens'),
-  outputTokens: integer('output_tokens'),
-  cacheReadTokens: integer('cache_read_tokens'),
-});
+export const llmTransmissions = sqliteTable(
+  'llm_transmissions',
+  {
+    id: text('id').primaryKey(),
+    at: text('at').notNull(),
+    purpose: text('purpose').notNull(),
+    model: text('model').notNull(),
+    endpoint: text('endpoint').notNull(),
+    bytes: integer('bytes').notNull(),
+    redactions: integer('redactions').notNull().default(0),
+    /** Of `redactions`: spots with personal data (IBAN, card, IDs, PINs); the rest are secrets. */
+    personalRedactions: integer('personal_redactions').notNull().default(0),
+    documentIds: jsonArr('document_ids'),
+    preview: text('preview').notNull().default(''),
+    success: integer('success', { mode: 'boolean' }).notNull().default(true),
+    /** Tokens of the request as reported by the provider (agent requests, #302); null for older entries. */
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    /** POSTs this transmission took (retries and resends of rejected parameters included); 1 for older entries. */
+    requests: integer('requests').notNull().default(1),
+    /** Visible fallback of the request (e.g. json_schema → json_object); null when nothing was downgraded. */
+    note: text('note'),
+  },
+  (t) => [index('llm_transmissions_at_idx').on(t.at)],
+);
 
 /** Small key-value store for application state that must survive restarts (e.g. when a periodic task last ran). */
 export const appState = sqliteTable('app_state', {

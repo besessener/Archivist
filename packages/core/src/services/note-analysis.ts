@@ -20,7 +20,7 @@ export interface NoteFindings {
   via: 'llm' | 'local';
 }
 
-const NoteAnalysis = z.object({
+export const NoteAnalysis = z.object({
   topic: z.string().nullish(),
   project: z.string().nullish(),
   persons: z.array(z.string()).max(20).default([]),

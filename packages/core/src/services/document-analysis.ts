@@ -5,6 +5,7 @@ import { documents, scanFiles } from '../db/schema';
 import type { ParsedDocument } from '../parsers/parsed-document';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
+import { isTokenCapError } from '../util/token-cap';
 import { classifyLocally } from './classifier';
 import { classificationRequest, mergeLlmClassification, type Classification, type KnownSubjects } from './document-classification';
 import { MAX_LLM_PARTS, mergeParts, partSize, splitIntoParts } from './document-parts';
@@ -179,6 +180,7 @@ export class DocumentAnalyzer {
       return { classification: mergeLlmClassification(local, { result: merged, text, known }), usedLlm: true, warning: null, read };
     } catch (err) {
       signal?.throwIfAborted(); // a cancelled request is no LLM problem – stop instead of falling back
+      if (isTokenCapError(err)) throw err; // the daily token limit pauses the job instead of degrading the proposal
       const warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
       this.deps.ctx.logger.warn('documents', 'LLM classification failed', { documentId: row.id, error: err });
       this.deps.notifications.create({
@@ -217,6 +219,7 @@ export class DocumentAnalyzer {
         chars += part.length;
       } catch (err) {
         signal?.throwIfAborted();
+        if (isTokenCapError(err)) throw err;
         this.deps.ctx.logger.warn('documents', 'LLM analysis of a later part failed', { documentId: row.id, part: index + 2, error: err });
         break;
       }

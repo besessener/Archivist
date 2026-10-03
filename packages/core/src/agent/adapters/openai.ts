@@ -1,5 +1,6 @@
 import type { AgentEffort } from '@archivist/shared';
 import { abortedError, mapHttpError } from '../../util/llm-errors';
+import { parseRetryAfter } from '../../util/retry-after';
 import { AppError } from '../../util/errors';
 import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
 import { authHeaders, previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
@@ -170,6 +171,8 @@ async function readStream(response: Response, onEvent?: (e: StreamEvent) => void
   return final;
 }
 
+const retryAfterOf = (response: Response) => parseRetryAfter(response.headers.get('retry-after'), Date.now());
+
 /** OpenAI Responses API with function calling (#297), also Azure OpenAI and Foundry `…/openai/v1`; `store: false`, reasoning replayed encrypted. */
 export class OpenAiResponsesAdapter implements ProviderAdapter {
   readonly id = 'openai' as const;
@@ -203,7 +206,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
           this.config.warn('Endpoint rejected optional agent parameters – retrying without them', { params: named });
           continue;
         }
-        if (response.status >= 400) throw mapHttpError(response.status, await response.text());
+        if (response.status >= 400) throw mapHttpError(response.status, await response.text(), retryAfterOf(response));
         const result = await this.readResult(response, onEvent);
         success = true;
         usage = result.usage;

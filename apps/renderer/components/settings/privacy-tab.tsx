@@ -9,13 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
-import { formatBytes, formatDateTime } from '@/lib/format';
+import { formatBytes, formatDateTime, formatNumber } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { cn, parseList } from '@/lib/utils';
 import { MaskingSection } from './masking-section';
 import { Section, useSaveSettings, type TabProps } from './shared';
 import { TRANSMISSION_PAGE_SIZE, useTransmissionPages } from './use-transmission-pages';
+import { UsageSection } from './usage-section';
 
 type Mode = 'auto' | 'confirm' | 'local_only';
 const MODES: Array<{ id: Mode; title: string; text: string }> = [
@@ -44,6 +45,7 @@ export function PrivacyTab({ settings, reload }: TabProps) {
       <ModeSection key={llmMode} active={llmMode} reload={reload} />
       <MaskingSection settings={settings} reload={reload} />
       <NeverAnalyzeSection key={JSON.stringify([neverAnalyzeDirs, neverAnalyzeExtensions, neverAnalyzeFiles])} settings={settings} reload={reload} />
+      <UsageSection key={settings.llm.dailyTokenCap ?? 'none'} settings={settings} reload={reload} />
 
       <Section
         title="An die KI übertragene Inhalte"
@@ -104,6 +106,17 @@ export function PrivacyTab({ settings, reload }: TabProps) {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {t.documents.length === 0 ? 'Keine Dokumente beteiligt.' : `Betroffene Dokumente: ${documentNames(t.documents, t.documents.length)}`}
                         </p>
+                        {t.inputTokens != null && (
+                          <p className="mt-1 text-xs text-muted-foreground" data-testid="transmission-tokens">
+                            Tokens: Eingabe {formatNumber(t.inputTokens + (t.cacheReadTokens ?? 0))}, Ausgabe {formatNumber(t.outputTokens ?? 0)},{' '}
+                            {t.requests ?? 1} {t.requests === 1 || t.requests === undefined ? 'Anfrage' : 'Anfragen'}
+                          </p>
+                        )}
+                        {t.note && (
+                          <p className="mt-1 text-xs text-warning" data-testid="transmission-note">
+                            Hinweis: {t.note}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   )}
