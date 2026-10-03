@@ -97,6 +97,11 @@ export class ArchiveService {
     return this.deps.locks.beginBackup();
   }
 
+  /** For quitting: refuses new file operations and waits for the running ones; false when some are still running. */
+  drain(timeoutMs: number): Promise<boolean> {
+    return this.deps.locks.drain(timeoutMs);
+  }
+
   isRootChangeActive(): boolean {
     return this.deps.locks.isRootChangeActive();
   }
