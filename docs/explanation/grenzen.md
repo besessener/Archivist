@@ -24,7 +24,7 @@ Scans, Erinnerungen und Archivprüfungen laufen nur, **solange Archivist geöffn
 
 ## Löschen nur über den Papierkorb
 
-Ein gelöschtes Dokument landet im Papierkorb und lässt sich wiederherstellen, bis du ihn leerst; erst das Leeren löscht endgültig und braucht eine zweite Bestätigung – siehe [Sicherheitsmodell](sicherheitsmodell.md#keine-datei-geht-verloren). Deine Originale außerhalb des Archivs löscht Archivist nie. Selbst erfasste Ereignisse lassen sich löschen; auch das ist über das Änderungsprotokoll rückgängig machbar.
+Ein gelöschtes Dokument landet im Papierkorb und lässt sich wiederherstellen, bis du ihn leerst; erst das Leeren („Aus Archivist entfernen“) löscht endgültig, entfernt auch den gespeicherten Text und die Übertragungsvorschauen und braucht eine zweite Bestätigung; bereits angelegte Backups schreibt Archivist nicht um – siehe [Sicherheitsmodell](sicherheitsmodell.md#keine-datei-geht-verloren). Deine Originale außerhalb des Archivs löscht Archivist nie. Selbst erfasste Ereignisse lassen sich löschen; auch das ist über das Änderungsprotokoll rückgängig machbar.
 
 ## Widersprüche sind Hinweise
 

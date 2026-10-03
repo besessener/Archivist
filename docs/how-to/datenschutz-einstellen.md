@@ -43,6 +43,17 @@ Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `dia
 - **Protokoll:** Es enthält keine Schlüssel und keine Dokumentinhalte, aber Dateipfade und Fehlermeldungen. Zeilen, die ausgeschlossene Dateien, Ordner oder Dateitypen nennen, gibt `read_logs` nicht heraus. Alles andere geht, maskiert, an das LLM, sobald der Agent es liest. Das Protokoll selbst bleibt lokal; die Aufbewahrung stellst du unter Einstellungen → Protokolle (Stufe und Aufbewahrung) ein.
 - **Endpunkt-Messung:** `diagnose` sendet nur im Modus „automatisch“ eine feste Testanfrage an den Embedding-Endpunkt. Sie enthält keinen Dokumentinhalt, steht mit Zweck „Diagnose: Embedding-Endpunkt“ im Übertragungsprotokoll und entfällt in „vorher fragen“ und „nur lokal“.
 
+## Ein Dokument endgültig aus Archivist entfernen
+
+Lege das Dokument im Dokument-Dialog „In den Papierkorb“ und wähle unter **Einstellungen → Archiv → Papierkorb** **Aus Archivist entfernen …**. Bis dahin lässt sich alles wiederherstellen. Nach der zweiten Bestätigung ist weg:
+
+- die Archivdatei und die eigene Eingangskopie im Papierkorb (dein Original außerhalb von Archivist bleibt),
+- der gespeicherte Text samt Zusammenfassung und Vorschlag, auch in den Undo-Daten des Änderungsprotokolls,
+- die Vorschau der Übertragungen, an denen das Dokument beteiligt war (die Einträge selbst bleiben),
+- die Reste in der Datenbank: Archivist verdichtet sie danach, was bei großen Archiven einige Sekunden dauert.
+
+Es bleibt, was aus dem Dokument entstanden ist: Entscheidungen, offene Punkte, Notizen und Erkenntnisse. Lösche sie bei Bedarf einzeln. **Ältere Backups enthalten den Text weiterhin**; Archivist schreibt sie nicht um. Lösche sie unter Einstellungen → Backups, wenn auch dort nichts bleiben soll.
+
 ## Änderungsprotokoll
 
 Das Änderungsprotokoll (Einstellungen → Änderungsprotokoll) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert.

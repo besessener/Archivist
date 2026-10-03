@@ -282,7 +282,7 @@ export const ipcContract = {
   /** Level 3: deleting for good needs the second, explicit confirmation */
   'trash:empty': channel(
     z.object({ confirmed: Confirmed, permanentlyConfirmed: Confirmed }),
-    z.object({ deletedFiles: z.number().int().min(0), documents: z.number().int().min(0) }),
+    z.object({ deletedFiles: z.number().int().min(0), documents: z.number().int().min(0), databaseCompacted: z.boolean() }),
   ),
 
   // --- Scanner ---
