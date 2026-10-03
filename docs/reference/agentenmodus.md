@@ -90,6 +90,26 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 - `related` liefert dieselbe Liste wie „Verwandte Einträge“ in der Oberfläche (direkte Beziehungen und gemeinsame Projekte, Vorgänge, Themen, Personen, Tags, nach Stärke, seitenweise); `depth: 2` nennt auch die Nachbarn der Nachbarn.
 - Einträge, die nur aus nicht freigegebenen Dokumenten stammen, nennt `list_entries` ohne Inhalt.
 
+## Duplikate und Versionen
+
+- `find_duplicates` sucht unter Dokumenten drei Arten: `exact` (gleiche Prüfsumme), `near` (gleicher Text oder gleicher Textanfang – verglichen werden die ersten 200 Zeichen, spätere Unterschiede ändern die Gruppe nicht) und `versions` (gleicher Name bis auf final, v2, Kopie, (1), Entwurf oder Datum, ähnlicher Titel). Jede Gruppe nennt den Grund und das neueste Dokument. Paare, die du als verschieden markiert hast, fehlen. Nicht freigegebene Dokumente erscheinen ohne Titel.
+- `mark_duplicates` behandelt Duplikate (`as: duplicate`) oder ältere Versionen (`as: older_version`) eines Dokuments, `keep` bleibt unverändert. `mark` setzt die bestätigte Verknüpfung („Duplikat von“ bzw. „ersetzt“) und das Schlagwort „Duplikat“ bzw. „ältere Version“; `subfolder` verschiebt sie zusätzlich in „Duplikate“ bzw. „Ältere Versionen“ neben `keep` (nie in einen neuen Hauptordner); `delete` legt sie in den Papierkorb und fragt immer nach. Verknüpfung, Schlagwort und Verschiebung sind einzeln rückgängig machbar, ein Agentenlauf macht sie gemeinsam rückgängig.
+- `mark_different` merkt, dass zwei Dokumente oder Einträge **keine** Duplikate sind (abgelehnte „Duplikat von“-Verknüpfung). Weder `find_duplicates` noch die Archivprüfung nennen das Paar danach wieder.
+- `merge_entries` führt doppelte offene Punkte, Notizen, Ereignisse, Themen, Projekte oder Personen zusammen: `keep` bleibt und übernimmt fehlende Angaben und Verknüpfungen, `duplicate` wird als Duplikat verworfen. Jede Zusammenführung ist ein Rückgängig-Schritt.
+- Wissensantworten (Chat und `verified_answer`) belegen ein Dokument nur einmal: Treffer mit gleicher Prüfsumme, gleichem Textinhalt oder bestätigter „Duplikat von“-Verknüpfung zu einem besseren Treffer belegen keinen Antwortplatz, die frei werdenden Plätze gehen an weitere eigenständige Quellen.
+
+## Recherche über mehrere Quellen
+
+Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nur das Ergebnis. Dokumentzeilen als Fundstelle stehen als Daten markiert mit der D-ID. Nicht freigegebene Dokumente werden übersprungen und gezählt.
+
+- `sum_amounts`: Belegliste mit Datum, Betrag und Fundstelle, Summe und Anzahl; Dokumente ohne erkennbaren Betrag werden genannt.
+- `find_gaps`: Lücken in einer Serie nach Monat (`by: month`) oder laufender Nummer (`by: number`); erstes und letztes Dokument der Serie stehen mit der Fundstelle (Zeile mit dem Datum bzw. der Nummer) im Ergebnis.
+- `compare_documents`: vergleicht zeilenweise. Geänderte Zeilen stehen in einer Tabelle „In A (alt) | In B (neu) | Änderung“ (z. B. „Miete 800 € → 850 €“), danach Zeilen nur in A und nur in B. Mit `weitere` wird das erste Dokument mit jedem weiteren verglichen (B1, B2, …). Alle Dokumente müssen freigegeben sein.
+- `find_deadlines`: Fristen und Ablaufdaten mit Rechenweg und Fundstelle; nennt bestehende Erinnerungen.
+- `match_payments`: ordnet Rechnungen Buchungen aus Kontoauszügen zu (Rechnungsnummer oder Betrag) und nennt offene Rechnungen und Zahlungen ohne Rechnung.
+- `timeline`: Zeitlinie zu `topic`, `project` oder Zeitraum. Mit `case` (Vorgang) werden Dokumente, Entscheidungen, offene Punkte, Ereignisse und Notizen des Vorgangs chronologisch verschränkt; vorgeschlagene, nicht bestätigte Zuordnungen zählen nicht.
+- `verified_answer` schließt eine Recherche mit der geprüften Antwortlogik des Chats ab: Quellen suchen, Aussagen gegen Belege prüfen, Unsicheres unter „Unsicherheiten“ kennzeichnen.
+
 ## Wissen erfassen
 
 - Entscheidungen, Notizen, offene Punkte, Erinnerungen und Ereignisse erfasst ein Modul (`services/capture.ts`): Pflichtangaben und Rückfragen, Dubletten-Prüfung, Personen-Auflösung, Ersetzen und Widerspruchsprüfung.
