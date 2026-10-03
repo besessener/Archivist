@@ -1,4 +1,4 @@
-import { RelationType, type IpcParsedInput, type KnowledgeCreateResult } from '@archivist/shared';
+import { RelationType, type EntityType, type IpcParsedInput, type KnowledgeCreateResult } from '@archivist/shared';
 import type { Services } from '../create-services';
 import { AppError } from '../util/errors';
 import { UI_TRIGGER, type HandlerGroup } from './types';
@@ -75,21 +75,25 @@ async function createEntity(services: Services, input: CreateEntityInput): Promi
   return createGraphEntity(services, { type: input.type, name: input.name, description: input.description });
 }
 
-function proposeTopicMerge(services: Services, input: { sourceTopicId: string; targetTopicId: string }) {
-  const source = services.graph.getEntity(input.sourceTopicId);
-  const target = services.graph.getEntity(input.targetTopicId);
-  if (!source || !target) throw new AppError('validation_error', 'Thema nicht gefunden.');
+const MERGEABLE_TYPES = new Set<EntityType>(['topic', 'project', 'person', 'tag']);
+
+function proposeMerge(services: Services, input: { sourceId: string; targetId: string }) {
+  const source = services.graph.getEntity(input.sourceId);
+  const target = services.graph.getEntity(input.targetId);
+  if (!source || !target) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
+  if (source.id === target.id || source.type !== target.type || !MERGEABLE_TYPES.has(source.type))
+    throw new AppError('validation_error', 'Nur zwei verschiedene Themen, Projekte, Personen oder Schlagwörter lassen sich zusammenführen.');
   return services.actions.propose({
-    actionType: 'merge_topics',
-    label: `Themen „${source.name}“ in „${target.name}“ zusammenführen`,
+    actionType: 'merge_entities',
+    label: `„${source.name}“ in „${target.name}“ zusammenführen`,
     rationale: 'Vom Benutzer vorgeschlagen.',
     confidence: 0.9,
     affectedEntities: [
-      { type: 'topic', id: source.id, label: source.name },
-      { type: 'topic', id: target.id, label: target.name },
+      { type: source.type, id: source.id, label: source.name },
+      { type: target.type, id: target.id, label: target.name },
     ],
     requiredConfirmation: 'confirm',
-    proposedParameters: { sourceTopicId: source.id, targetTopicId: target.id },
+    proposedParameters: { sourceIds: [source.id], targetId: target.id, allowCrossType: false },
   });
 }
 
@@ -148,7 +152,7 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
       });
       return entity;
     },
-    'knowledge:proposeMerge': (input) => proposeTopicMerge(services, input),
+    'knowledge:proposeMerge': (input) => proposeMerge(services, input),
 
     'links:suggestions': (input) => services.links.candidates(input.id, { limit: input.limit }),
     'links:unlinked': (input) => services.links.orphans(input),

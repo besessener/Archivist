@@ -42,7 +42,7 @@ async function archived(persons: string[], tags: string[]): Promise<string> {
 describe('editing an archived document', () => {
   it('syncs the relations to persons and tags; confirmed or rejected ones stay; undo restores the previous state', async () => {
     const id = await archived(['Anna Albers', 'Bernd Brandt', 'Carla Conrad'], ['budget', 'reise']);
-    expect(relStatus(personId('Anna Albers'), id, 'produced')).toBe('proposed');
+    expect(relStatus(personId('Anna Albers'), id, 'mentioned_in')).toBe('confirmed');
     expect(relStatus(id, tagId('reise')!, 'relates_to')).toBe('confirmed');
     // the user confirmed that Carla belongs to the document
     const carla = graph()
@@ -52,10 +52,10 @@ describe('editing an archived document', () => {
 
     await app.ok('documents:updateMetadata', { id, persons: ['Anna Albers', 'Dora Dietz'], tags: ['budget', 'umzug'], confirmed: true });
 
-    expect(relStatus(personId('Anna Albers'), id, 'produced')).toBe('proposed');
-    expect(relStatus(personId('Dora Dietz'), id, 'produced')).toBe('proposed');
-    expect(relStatus(personId('Bernd Brandt'), id, 'produced')).toBe('outdated');
-    expect(relStatus(personId('Carla Conrad'), id, 'produced')).toBe('confirmed'); // a user decision is kept
+    expect(relStatus(personId('Anna Albers'), id, 'mentioned_in')).toBe('confirmed');
+    expect(relStatus(personId('Dora Dietz'), id, 'mentioned_in')).toBe('confirmed');
+    expect(relStatus(personId('Bernd Brandt'), id, 'mentioned_in')).toBe('outdated');
+    expect(relStatus(personId('Carla Conrad'), id, 'mentioned_in')).toBe('confirmed'); // a user decision is kept
     expect(relStatus(id, tagId('umzug')!, 'relates_to')).toBe('confirmed');
     expect(relStatus(id, tagId('reise')!, 'relates_to')).toBe('outdated');
     expect(relStatus(id, tagId('budget')!, 'relates_to')).toBe('confirmed');
@@ -65,8 +65,8 @@ describe('editing an archived document', () => {
     const doc = await app.ok('documents:get', { id });
     expect(doc.persons).toEqual(['Anna Albers', 'Bernd Brandt', 'Carla Conrad']);
     expect(doc.tags).toEqual(['budget', 'reise']);
-    expect(relStatus(personId('Bernd Brandt'), id, 'produced')).toBe('proposed');
-    expect(relStatus(personId('Dora Dietz'), id, 'produced')).toBeUndefined();
+    expect(relStatus(personId('Bernd Brandt'), id, 'mentioned_in')).toBe('confirmed');
+    expect(relStatus(personId('Dora Dietz'), id, 'mentioned_in')).toBeUndefined();
     expect(relStatus(id, tagId('reise')!, 'relates_to')).toBe('confirmed');
     expect(relStatus(id, tagId('umzug')!, 'relates_to')).toBeUndefined();
   });
@@ -75,7 +75,7 @@ describe('editing an archived document', () => {
     const persons = Array.from({ length: 15 }, (_, i) => `Person Nummer${String.fromCharCode(65 + i)}`);
     const tags = Array.from({ length: 10 }, (_, i) => `tag${i}`);
     const id = await archived(persons, tags);
-    for (const p of persons) expect(relStatus(personId(p), id, 'produced'), p).toBe('proposed');
+    for (const p of persons) expect(relStatus(personId(p), id, 'mentioned_in'), p).toBe('confirmed');
     for (const t of tags) expect(relStatus(id, tagId(t)!, 'relates_to'), t).toBe('confirmed');
     expect((await app.ok('documents:get', { id })).persons).toHaveLength(15);
   });

@@ -1,17 +1,26 @@
 import fs from 'node:fs';
-import type { DocumentRecord, DocumentStatus, StoredAgentAction } from '@archivist/shared';
+import type { ArchivePlanItem, DocumentRecord, DocumentStatus, StoredAgentAction } from '@archivist/shared';
 import { toErrorInfo } from '../../util/errors';
 import type { ConvState, Reply } from '../chat-state';
+import { RELATION_LABEL } from '../graph/relation-reason';
 import { CONTRADICTION_SCAN_JOB } from '../contradictions';
 import type { ChatDeps, ChatRequest } from './types';
 
-type ArchiveDeps = Pick<ChatDeps, 'docs' | 'actions' | 'jobs' | 'openItems' | 'decisions' | 'insights' | 'scanner' | 'contradictions' | 'graph'>;
+type ArchiveDeps = Pick<ChatDeps, 'docs' | 'actions' | 'jobs' | 'openItems' | 'decisions' | 'insights' | 'scanner' | 'contradictions' | 'graph' | 'archive'>;
 type Relation = ReturnType<ChatDeps['graph']['relationsOf']>[number];
 
 /** How long the chat waits for the scan job before it answers with what is known so far. */
 const SCAN_WAIT_MS = 20_000;
 
 const isInInbox = (d: DocumentRecord) => d.status === 'proposed' || d.status === 'staged';
+
+/** One document of the archive proposal: where it comes from and under which folder and file name it will be stored. */
+function planLine(document: DocumentRecord, item: ArchivePlanItem | undefined): string {
+  const folder = document.proposal?.location.categoryPath ?? document.categoryPath ?? '?';
+  const source = document.sourcePath ?? item?.sourcePath ?? document.originalName;
+  const target = item?.targetRelPath ?? folder;
+  return `• ${document.title}: ${source} → ${target}${item?.renamed ? ' (wird umbenannt, der Name ist dort belegt)' : ''}`;
+}
 
 /** Archiving, status, scan, exclusions, contradictions and relations in the rule-based chat; changes only as proposal cards. */
 export class ArchiveReplies {
@@ -20,7 +29,7 @@ export class ArchiveReplies {
     private readonly scatterHint: () => string,
   ) {}
 
-  archiveExecute({ conversationId, intent, state }: ChatRequest): Reply {
+  async archiveExecute({ conversationId, intent, state }: ChatRequest): Promise<Reply> {
     const candidates = this.inboxCandidates(state);
     if (candidates.length === 0)
       return { intent: 'archive_execute', content: 'Es gibt aktuell keine analysierten Dokumente, die auf Archivierung warten.', confidence: 0.5, state };
@@ -34,10 +43,19 @@ export class ArchiveReplies {
       topic: topic || undefined,
       project: project || undefined,
     }));
+    const plan = await this.deps.archive.preview(items);
+    const details = candidates
+      .map((d) =>
+        planLine(
+          d,
+          plan.items.find((item) => item.documentId === d.id),
+        ),
+      )
+      .join('\n');
     const action = this.deps.actions.propose({
       actionType: 'archive_documents',
       label: `${items.length} Dokument(e) kopieren und archivieren${project ? ` (Projekt ${project})` : topic ? ` (Thema ${topic})` : ''}`,
-      rationale: 'Auf deinen Wunsch vorbereitet. Es wird kopiert; Originale bleiben unverändert.',
+      rationale: `Auf deinen Wunsch vorbereitet. Es wird kopiert; Originale bleiben unverändert.\n\n${details}`,
       confidence: Math.min(...candidates.map((d) => d.confidence ?? 0.5)),
       affectedEntities: candidates.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })),
       requiredConfirmation: 'confirm',
@@ -46,7 +64,7 @@ export class ArchiveReplies {
     });
     return {
       intent: 'archive_execute',
-      content: `Ich habe ${items.length} Dokument(e) für die Archivierung vorbereitet (Standard: Kopieren ins Archiv):\n\n${candidates.map((d) => `• ${d.title} → ${d.proposal?.location.categoryPath ?? d.categoryPath ?? '?'}`).join('\n')}\n\nBitte bestätige – vorher kannst du in der Inbox alle Quell- und Zielpfade prüfen.`,
+      content: `Ich habe ${items.length} Dokument(e) für die Archivierung vorbereitet (Standard: Kopieren ins Archiv):\n\n${details}\n\nBitte bestätige – in der Inbox kannst du die Pfade vorher noch ändern.`,
       actions: [action],
       context: { documents: candidates.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })) },
       confidence: action.confidence,
@@ -175,7 +193,7 @@ export class ArchiveReplies {
       actions.push(
         this.deps.actions.propose({
           actionType: 'confirm_relation',
-          label: `Beziehung: ${source} → ${r.relationType} → ${target}`,
+          label: `Beziehung: ${source} → ${RELATION_LABEL[r.relationType]} → ${target}`,
           rationale: `Vorgeschlagene Beziehung (Confidence ${Math.round(r.confidence * 100)} %). Bestätigen übernimmt sie, Ablehnen verwirft sie.`,
           confidence: r.confidence,
           affectedEntities: [],
@@ -184,7 +202,7 @@ export class ArchiveReplies {
           conversationId,
         }),
       );
-      return `• ${source} → ${r.relationType} → ${target} (${Math.round(r.confidence * 100)} %)`;
+      return `• ${source} → ${RELATION_LABEL[r.relationType]} → ${target} (${Math.round(r.confidence * 100)} %)`;
     });
     return { intent: 'relation_decide', content: `Diese Beziehungen sind noch ungeklärt:\n\n${lines.join('\n')}`, actions, confidence: 0.7, state };
   }

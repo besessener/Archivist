@@ -55,6 +55,10 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
     expect(d.projectName).toBe('prod-plat');
     expect(d.status).toBe('active');
     expect(await app.ok('decisions:list', {})).toHaveLength(1);
+    // the topic moved into the project instead of living on next to it under the same name (#188)
+    expect(d.topicName).toBeNull();
+    expect(app.services.graph.findByName('topic', 'prod-plat')).toBeUndefined();
+    expect(app.services.graph.findByName('project', 'prod-plat')).toBeDefined();
   });
 
   it('understands „Thema“ and „Projekt“ without an LLM too', async () => {
@@ -72,8 +76,9 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
     const r4 = await send('Wir haben am 04.03.2026 mit nord-licht entschieden: Start.');
     expect(r4.assistantMessage.content).toMatch(/Ist „nord-licht“ das Thema oder der Name des Projekts\?/);
     await send('Das ist ein Projekt', r4.conversationId);
-    const nl = (await app.ok('decisions:list', {})).find((x) => x.topicName === 'nord-licht')!;
-    expect(nl.projectName).toBe('nord-licht');
+    const nl = (await app.ok('decisions:list', {})).find((x) => x.projectName === 'nord-licht')!;
+    expect(nl.status).toBe('active');
+    expect(app.services.graph.findByName('topic', 'nord-licht')).toBeUndefined();
   });
 
   it('does not ask when the name is already known as a project, and saves the decision with the project', async () => {

@@ -12,6 +12,7 @@ import { errorCode, leftoverNote } from './archive-files';
 import { archiveRootOf, outcomeWithoutChange, toPosix, type ArchiveOutcome, type ArchiveUndoData, type ExecuteOptions } from './archive-model';
 import { assignmentNames, type ArchivePlanner, type ArchiveTarget, type PlannedArchive } from './archive-plan';
 import type { DocRow } from './documents';
+import { mentionLink } from './graph/mention-link';
 import type { RelationChangeSet } from './knowledge-graph';
 import type { ArchiveDeps } from './archive-deps';
 import { archivedEntry, plannedRemovals, type ArchivedEntryInput, type PlannedRemovals } from './archive-entry';
@@ -267,8 +268,7 @@ export class ArchiveExecutor {
         { sourceId: row.id, targetId: graph.ensureEntity({ type: 'category', name: links.categoryPath }).id, relationType: 'belongs_to' },
         { confidence: 1, status: 'confirmed', sourceIds: [row.id] },
       );
-    for (const personId of links.personIds)
-      graph.link({ sourceId: personId, targetId: row.id, relationType: 'produced' }, { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
+    for (const personId of links.personIds) graph.link({ sourceId: personId, targetId: row.id, relationType: 'mentioned_in' }, mentionLink(row.id));
     for (const tag of row.tags)
       graph.link(
         { sourceId: row.id, targetId: graph.ensureEntity({ type: 'tag', name: tag }).id, relationType: 'relates_to' },

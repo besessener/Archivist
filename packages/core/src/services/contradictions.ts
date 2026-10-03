@@ -215,12 +215,22 @@ export class ContradictionService {
   /** Shared lifecycle: contradiction, its notification, its insight and its proposal are closed together. */
   private close(id: string, { resolution, reason }: { resolution: 'resolved' | 'false_positive'; reason: string }): void {
     this.db.update(contradictions).set({ status: resolution, resolvedAt: nowIso() }).where(eq(contradictions.id, id)).run();
+    this.settleRelation(id, resolution);
     this.deps.notifications.resolveByDedupePrefix(`contradiction:${id}`);
     this.deps.insights.settle(`contradiction:${id}`, {
       status: resolution === 'resolved' ? 'accepted' : 'rejected',
       reason: `Der Widerspruch wurde bereits aufgelöst: ${reason}`,
     });
     this.deps.ctx.events.changed('contradictions', 'insights');
+  }
+
+  /** The pair's still proposed „widerspricht“ relation follows the contradiction: outdated when resolved, rejected as a false alarm (#189). */
+  private settleRelation(id: string, resolution: 'resolved' | 'false_positive'): void {
+    const [first, second] = this.get(id).affectedEntityIds;
+    if (!first || !second) return;
+    const proposed = this.deps.graph.relationsOf(first, { statuses: ['proposed'], types: ['contradicts'] });
+    for (const relation of proposed.filter((r) => [r.sourceEntityId, r.targetEntityId].includes(second)))
+      this.deps.graph.setRelationStatus(relation.id, resolution === 'resolved' ? { status: 'outdated', by: 'system' } : { status: 'rejected', by: 'user' });
   }
 
   /** A contradiction found elsewhere (the LLM's refinement of a link, #284), recorded like one of the own check; an existing one is returned. */

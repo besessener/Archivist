@@ -1,7 +1,7 @@
 import { RELATION_METHOD_LABELS, RELATION_PROVENANCE_LABELS, relationProvenance } from '@archivist/shared';
 import type { GraphRelation, RelationStatus, RelationType } from '@archivist/shared';
 
-const RELATION_LABEL: Record<RelationType, string> = {
+export const RELATION_LABEL: Record<RelationType, string> = {
   belongs_to: 'gehört zu',
   relates_to: 'bezieht sich auf',
   supports: 'stützt',
@@ -14,6 +14,7 @@ const RELATION_LABEL: Record<RelationType, string> = {
   blocks: 'blockiert',
   results_from: 'folgt aus',
   produced: 'hat erzeugt',
+  mentioned_in: 'erwähnt in',
   duplicate_of: 'Duplikat von',
   related_to: 'verwandt mit',
   subtopic_of: 'Unterthema von',

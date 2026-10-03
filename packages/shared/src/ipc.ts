@@ -518,7 +518,8 @@ export const ipcContract = {
   /** Puts entries into a case – ONE undo step (#286, #291). */
   'cases:assign': channel(z.object({ entryIds: z.array(Id).min(1).max(500), caseId: Id }), z.object({ assigned: z.number().int() })),
   'cases:setStatus': channel(z.object({ id: Id, status: z.enum(['open', 'closed']) }), GraphEntity),
-  'knowledge:proposeMerge': channel(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
+  /** Proposes merging two entries of the same kind (topic, project, person, tag); the user confirms the action card. */
+  'knowledge:proposeMerge': channel(z.object({ sourceId: Id, targetId: Id }), StoredAgentAction),
   /** Accepts a topic/project taken from a document; only confirmed ones are listed in LLM prompts. */
   'knowledge:confirmEntity': channel(z.object({ id: Id }), GraphEntity),
 

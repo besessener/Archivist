@@ -156,7 +156,7 @@ export class DecisionService {
     const project = input.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: input.project }) : null;
     const decidedAt = checkedDecisionDate(input.decidedAt, today());
     const participants = this.persons.resolveNames(input.participants, { context: opts.personContext }).names;
-    const missing = computeMissingFields({ ...input, decidedAt, topic: topic?.name ?? null });
+    const missing = computeMissingFields({ ...input, decidedAt, topic: (topic ?? project)?.name ?? null });
     return {
       id: newId(),
       title: input.title?.trim() || firstSentence(input.decisionText, 90),
@@ -193,7 +193,7 @@ export class DecisionService {
     const merged = { ...current, ...set };
     const missing = computeMissingFields({
       ...merged,
-      topic: merged.topicId ? (this.graph.getEntity(merged.topicId)?.name ?? null) : null,
+      topic: this.graph.getEntity(merged.topicId ?? merged.projectId ?? '')?.name ?? null,
       unknownFields: merged.unknownFields as DecisionField[],
     });
     set.missingFields = missing;

@@ -106,7 +106,16 @@ export class DecisionCapture {
     return { topic, project, clarify: unclear };
   }
 
-  private create(request: DecisionRequest, scope: { extracted: Extracted; fields: DecisionFields }): Promise<Reply> {
+  /** A name confirmed as project is one entry: the topic of the same name moves into the project (undoable merge). */
+  private async moveTopicToProject(name: string): Promise<void> {
+    const { graph } = this.deps;
+    const topic = graph.findByName('topic', name);
+    const project = graph.findByName('project', name);
+    if (!topic || !project) return;
+    await graph.merge({ sourceIds: [topic.id], targetId: project.id, allowCrossType: true }, { trigger: 'chat' });
+  }
+
+  private async create(request: DecisionRequest, scope: { extracted: Extracted; fields: DecisionFields }): Promise<Reply> {
     const { text, intent } = request;
     const { extracted, fields } = scope;
     const created = this.deps.decisions.create(
@@ -130,8 +139,10 @@ export class DecisionCapture {
       { actor: 'user', trigger: 'chat' },
     );
     const supersedes = intent.intent === 'decision_supersede';
+    const movedToProject = extracted.topicIsProject === true && fields.topic && fields.project && normalizeName(fields.topic) === normalizeName(fields.project);
+    if (movedToProject) await this.moveTopicToProject(fields.project!);
     return this.afterChange(request, {
-      decision: created,
+      decision: movedToProject ? this.deps.decisions.get(created.id) : created,
       clarifyTopic: fields.clarify,
       supersedesHint: supersedes ? (intent.topic ?? fields.topic ?? intent.query ?? '') : null,
       supersedesId: supersedes ? (extracted.supersedesId ?? null) : null,
@@ -154,7 +165,7 @@ export class DecisionCapture {
     return { ...patch, ...detailPatch(target, { extracted, unknownFields: fields.unknownFields }) };
   }
 
-  private amend(
+  private async amend(
     request: DecisionRequest,
     change: { target: Decision; extracted: Extracted; pending: DecisionPending | null; fields: DecisionFields },
   ): Promise<Reply> {
@@ -162,14 +173,18 @@ export class DecisionCapture {
     const { target, extracted, pending, fields } = change;
     const patch = this.amendPatch(change, request.text);
     if (!pending && Object.keys(patch).length === 0)
-      return Promise.resolve({
+      return {
         intent: intent.intent,
         content: `Was soll ich an der Entscheidung „${target.title}“ ergänzen? Nenne bitte Datum, Beteiligte, Begründung, Thema oder Projekt.`,
         sources: [decisionSource(target)],
         confidence: 0.4,
         state: { ...state, last: { ...(state.last ?? {}), decisionId: target.id } },
-      });
-    const updated = this.deps.decisions.update(target.id, { patch, trigger: 'chat' });
+      };
+    let updated = this.deps.decisions.update(target.id, { patch, trigger: 'chat' });
+    if (extracted.topicIsProject === true && pending?.clarifyTopic) {
+      await this.moveTopicToProject(pending.clarifyTopic);
+      updated = this.deps.decisions.get(target.id);
+    }
     // „Thema oder Projekt?“ stays asked until it is answered (or another topic was named)
     const unanswered = extracted.topicIsProject === null || extracted.topicIsProject === undefined;
     const sameTopic = !fields.topic || normalizeName(fields.topic) === normalizeName(pending?.clarifyTopic ?? '');

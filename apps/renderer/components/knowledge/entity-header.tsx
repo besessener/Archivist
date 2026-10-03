@@ -5,6 +5,7 @@ import { Check, FolderKanban, GitMerge, Link2, Pencil, Trash2, Waypoints } from 
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown, type WikiResolver } from '@/components/common/markdown';
 import { CASE_ENTRY_TYPES } from '@/components/knowledge/case-dialog';
+import { isMergeable } from '@/components/knowledge/merge-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { call } from '@/lib/ipc';
@@ -118,9 +119,9 @@ function EntityActions({ entity, graphOpen, onToggleGraph, onOpenDialog }: Entit
           <Trash2 aria-hidden /> Löschen
         </Button>
       )}
-      {entity.type === 'topic' && (
+      {isMergeable(entity.type) && (
         <Button variant="outline" size="sm" onClick={() => onOpenDialog('merge')} data-testid="knowledge-merge">
-          <GitMerge aria-hidden /> Mit anderem Thema zusammenführen vorschlagen
+          <GitMerge aria-hidden /> Mit anderem Eintrag zusammenführen vorschlagen
         </Button>
       )}
     </div>

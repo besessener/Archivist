@@ -32,6 +32,8 @@ export const RelationType = z.enum([
   'blocks',
   'results_from',
   'produced',
+  /** A person named in a document's text: person → document (#189). */
+  'mentioned_in',
   'duplicate_of',
   'related_to',
   /** A topic or project below another one: „Urlaub 2026“ is a subtopic of „Urlaub“ (#282). */

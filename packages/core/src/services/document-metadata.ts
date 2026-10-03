@@ -5,6 +5,7 @@ import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
 import { bulkChanges, type BulkPatch, type BulkTargets } from './document-bulk';
 import { isArchivedStatus, type DocRow, type DocumentDeps } from './document-model';
+import { mentionLink } from './graph/mention-link';
 import type { RelationChangeSet } from './knowledge-graph';
 import type { UndoService } from './undo';
 
@@ -265,8 +266,8 @@ export class DocumentMetadataEditor {
     const { graph } = this.deps;
     if (set.persons) {
       const people = this.deps.persons.resolveNames(set.persons, { context: 'document', create: false }).entities;
-      for (const p of people) graph.link({ sourceId: p.id, targetId: id, relationType: 'produced' }, { confidence: 0.5, status: 'proposed', sourceIds: [id] });
-      graph.unlinkSystemRelations({ entityId: id, relationType: 'produced', keepIds: people.map((p) => p.id), direction: 'in', otherType: 'person' });
+      for (const p of people) graph.link({ sourceId: p.id, targetId: id, relationType: 'mentioned_in' }, mentionLink(id));
+      graph.unlinkSystemRelations({ entityId: id, relationType: 'mentioned_in', keepIds: people.map((p) => p.id), direction: 'in', otherType: 'person' });
     }
     if (set.tags) {
       const tagIds = set.tags.map((t) => graph.ensureEntity({ type: 'tag', name: t }).id);

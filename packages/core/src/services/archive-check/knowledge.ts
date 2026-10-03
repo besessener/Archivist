@@ -8,7 +8,7 @@ export function checkLowConfidenceRelations(run: CheckRun): void {
   const ids = run.deps.ctx.database.db
     .select({ id: relations.id })
     .from(relations)
-    .where(and(eq(relations.status, 'proposed'), sql`${relations.confidence} < 0.5`))
+    .where(and(eq(relations.status, 'proposed'), sql`${relations.confidence} <= 0.5`))
     .all()
     .map((row) => row.id);
   if (ids.length === 0) return;

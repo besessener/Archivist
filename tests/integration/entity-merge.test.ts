@@ -168,7 +168,9 @@ describe('Merging topics (#33)', () => {
     const newTopic = graph().ensureEntity({ type: 'topic', name: 'Neuthema' });
     const oldTopic = graph().ensureEntity({ type: 'topic', name: 'Altthema' });
     const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
-    graph().ensureEntity({ type: 'topic', name: 'Altthema' });
+    // the old name is an alias of the target now, so naming it again resolves to the target (#188)
+    expect(graph().ensureEntity({ type: 'topic', name: 'Altthema' }).id).toBe(newTopic.id);
+    graph().registerNode({ type: 'topic', id: 'recreated-topic', name: 'Altthema' });
 
     const u = await app.ok('audit:undo', { auditId: r.auditId });
     expect(u.undone).toBe(false);
@@ -306,17 +308,17 @@ describe('Multiple merges in one run (#33)', () => {
 });
 
 describe('Agent actions for merging (#33)', () => {
-  it('merge_topics can be undone', async () => {
+  it('the user-proposed merge (knowledge:proposeMerge) can be undone', async () => {
     const ev = await app.ok('events:create', { title: 'Treffen', occurredAt: '2026-09-04', topic: 'Altthema', sourceIds: [] });
     const oldTopic = graph().findByName('topic', 'Altthema')!;
     const newTopic = graph().ensureEntity({ type: 'topic', name: 'Neuthema' });
     const before = state();
-    const action = await app.ok('knowledge:proposeMerge', { sourceTopicId: oldTopic.id, targetTopicId: newTopic.id });
+    const action = await app.ok('knowledge:proposeMerge', { sourceId: oldTopic.id, targetId: newTopic.id });
     const done = await app.ok('actions:resolve', { decision: 'approve', actionId: action.id, confirmed: true } as never);
-    expect(done).toMatchObject({ status: 'executed', result: expect.stringContaining('Themen zusammengeführt') });
+    expect(done).toMatchObject({ status: 'executed', result: expect.stringContaining('zusammengeführt') });
     expect(app.services.eventRecords.get(ev.id).topicId).toBe(newTopic.id);
 
-    const entry = (await app.ok('audit:list', { limit: 20, onlyUndoable: true })).find((a) => a.action === 'topics.merge')!;
+    const entry = (await app.ok('audit:list', { limit: 20, onlyUndoable: true })).find((a) => a.action === 'entity.merge')!;
     expect(entry.undoable).toBe(true);
     expect((await app.ok('audit:undo', { auditId: entry.id })).undone).toBe(true);
     expect(state()).toEqual(before);

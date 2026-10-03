@@ -113,6 +113,7 @@ export const RELATION_TYPE_LABELS: Record<RelationType, string> = {
   blocks: 'blockiert',
   results_from: 'ergibt sich aus',
   produced: 'hat erzeugt',
+  mentioned_in: 'erwähnt in',
   duplicate_of: 'Duplikat von',
   related_to: 'verwandt mit',
   subtopic_of: 'Unterthema von',
