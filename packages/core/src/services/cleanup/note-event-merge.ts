@@ -47,12 +47,24 @@ interface NoteMergeUndo {
   keepId: string;
   duplicateId: string;
   duplicateUpdatedAt: string;
+  /** Missing in undo data written before it existed. */
+  duplicateContent?: string;
   createdRelations: CreatedRelation[];
 }
 
 interface EventMergeUndo extends NoteMergeUndo {
   keepBefore: Partial<EventRow>;
   keepUpdatedAt: string;
+  keepContent?: string;
+}
+
+/** A record apart from its timestamp: a change within the same millisecond as the merge leaves `updatedAt` as it was. */
+function contentOf(row: EntityRow | EventRow): string {
+  return JSON.stringify({ ...row, updatedAt: null });
+}
+
+function changedSince(row: EntityRow | EventRow, saved: { updatedAt: string; content?: string }): boolean {
+  return row.updatedAt !== saved.updatedAt || (saved.content !== undefined && contentOf(row) !== saved.content);
 }
 
 type Origin = { actor?: 'user' | 'agent'; trigger?: string };
@@ -121,7 +133,13 @@ export class NoteEventMerger {
       const copied = this.deps.links.copyLinks({ from: duplicate.id, to: keep.id }, []);
       const createdRelations = [...copied, ...this.deps.links.markDuplicate(duplicate.id, keep.id)];
       this.db.update(entities).set({ duplicateOfId: keep.id, updatedAt: now }).where(eq(entities.id, duplicate.id)).run();
-      const data: NoteMergeUndo = { keepId: keep.id, duplicateId: duplicate.id, duplicateUpdatedAt: now, createdRelations };
+      const data: NoteMergeUndo = {
+        keepId: keep.id,
+        duplicateId: duplicate.id,
+        duplicateUpdatedAt: now,
+        duplicateContent: contentOf(this.entity(duplicate.id)!),
+        createdRelations,
+      };
       const auditId = this.deps.audit.log({
         action: 'note.merge_duplicate',
         actor: origin.actor ?? 'user',
@@ -151,7 +169,7 @@ export class NoteEventMerger {
     const duplicate = this.entity(undoData.duplicateId);
     if (!keep || !duplicate) return ['Eine der zusammengeführten Notizen existiert nicht mehr.'];
     const conflicts: string[] = [];
-    if (duplicate.updatedAt !== undoData.duplicateUpdatedAt || duplicate.duplicateOfId !== undoData.keepId)
+    if (changedSince(duplicate, { updatedAt: undoData.duplicateUpdatedAt, content: undoData.duplicateContent }) || duplicate.duplicateOfId !== undoData.keepId)
       conflicts.push(`Die als Duplikat verworfene Notiz „${duplicate.name}“ wurde seit der Zusammenführung verändert.`);
     return [...conflicts, ...this.deps.links.createdRelationConflicts(undoData.createdRelations)];
   }
@@ -209,7 +227,9 @@ export class NoteEventMerger {
       duplicateId: duplicate.id,
       keepBefore: before,
       keepUpdatedAt: now,
+      keepContent: contentOf(this.event(keep.id)!),
       duplicateUpdatedAt: now,
+      duplicateContent: contentOf(this.event(duplicate.id)!),
       createdRelations,
     };
     const auditId = this.deps.audit.log({
@@ -230,8 +250,9 @@ export class NoteEventMerger {
     const duplicate = this.event(undoData.duplicateId);
     if (!keep || !duplicate) return ['Eines der zusammengeführten Ereignisse existiert nicht mehr.'];
     const conflicts: string[] = [];
-    if (keep.updatedAt !== undoData.keepUpdatedAt) conflicts.push(`Das behaltene Ereignis „${keep.title}“ wurde seit der Zusammenführung verändert.`);
-    if (duplicate.updatedAt !== undoData.duplicateUpdatedAt || duplicate.duplicateOfId !== undoData.keepId)
+    if (changedSince(keep, { updatedAt: undoData.keepUpdatedAt, content: undoData.keepContent }))
+      conflicts.push(`Das behaltene Ereignis „${keep.title}“ wurde seit der Zusammenführung verändert.`);
+    if (changedSince(duplicate, { updatedAt: undoData.duplicateUpdatedAt, content: undoData.duplicateContent }) || duplicate.duplicateOfId !== undoData.keepId)
       conflicts.push(`Das als Duplikat verworfene Ereignis „${duplicate.title}“ wurde seit der Zusammenführung verändert.`);
     return [...conflicts, ...this.deps.links.createdRelationConflicts(undoData.createdRelations)];
   }

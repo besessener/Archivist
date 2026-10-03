@@ -9,6 +9,7 @@ beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await app.cleanup();
 });
 
@@ -109,8 +110,11 @@ describe('Duplicate notes (archive check)', () => {
   it('undo is refused when the discarded note was changed since', async () => {
     const a = await app.services.notes.create({ content: 'Steuerunterlagen bis Ende Mai sammeln' });
     const b = await app.services.notes.create({ content: 'Steuerunterlagen bis Ende Mai sammeln!' });
+    // merge and change within the same millisecond: the timestamp alone does not show the change
+    vi.useFakeTimers({ toFake: ['Date'] });
     const r = app.services.noteEventDuplicates.mergeNotes(a.id, b.id);
     app.services.graph.registerNode('note', b.id, b.name, 'Steuerunterlagen bis Ende Mai sammeln – erledigt');
+    vi.useRealTimers();
     const res = await app.ok('audit:undo', { auditId: r.auditId });
     expect(res.undone).toBe(false);
     expect(res.conflicts.join(' ')).toMatch(/verändert/);
@@ -193,9 +197,11 @@ describe('Duplicate events (archive check)', () => {
   it('undo is refused when the kept event was edited since', async () => {
     const a = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', sourceIds: [] });
     const b = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', description: 'mit Kunde', sourceIds: [] });
+    vi.useFakeTimers({ toFake: ['Date'] });
     const r = app.services.noteEventDuplicates.mergeEvents(a.id, b.id);
     expect(r.takenOver).toEqual(['Beschreibung']);
     app.services.eventRecords.update(a.id, { title: 'Kickoff Projekt Nord (verschoben)' });
+    vi.useRealTimers();
     const res = await app.ok('audit:undo', { auditId: r.auditId });
     expect(res.undone).toBe(false);
     expect(res.conflicts.join(' ')).toMatch(/behaltene Ereignis .* verändert/);
