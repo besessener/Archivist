@@ -38,17 +38,28 @@ type RootChangeUndoData = RootRoute & CreatedByMove & { mode: ArchiveRootChangeM
 /** `request`: asked for by the user; `migration`: the running move itself, which already holds the lock. */
 type CheckPhase = 'request' | 'migration';
 
+export interface ArchiveRootServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  archive: ArchiveService;
+  audit: AuditService;
+  notifications: NotificationService;
+  jobs: JobQueueService;
+  undo: UndoService;
+}
+
 /** Changes the archive root without losing documents: `migrate` copies, verifies and switches (old folder stays), `pathOnly` only switches. */
 export class ArchiveRootService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly archive: ArchiveService,
-    private readonly audit: AuditService,
-    private readonly notifications: NotificationService,
-    private readonly jobs: JobQueueService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly archive: ArchiveService;
+  private readonly audit: AuditService;
+  private readonly notifications: NotificationService;
+  private readonly jobs: JobQueueService;
+
+  constructor(deps: ArchiveRootServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, archive: this.archive, audit: this.audit, notifications: this.notifications, jobs: this.jobs } = deps);
+    const { jobs, undo } = deps;
     undo.register(UNDO_TYPE, { check: (d) => this.undoCheck(d as RootChangeUndoData), run: (d) => this.undoRun(d as RootChangeUndoData) });
     jobs.register<RootRoute>(MIGRATE_JOB, (job) => this.runMigration(job));
   }

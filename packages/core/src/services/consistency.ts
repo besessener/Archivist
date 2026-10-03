@@ -13,12 +13,6 @@ import { checkIndexedOriginals, checkStorage, type IndexRefresher } from './arch
 import { RECONCILED_INSIGHTS, RECONCILED_NOTIFICATIONS, summarize } from './archive-check/summary';
 import { checkTopicProjectNames } from './cleanup/topic-project-names';
 import type { EntityDuplicateCheck } from './cleanup/entity-duplicates';
-import type { ContradictionService } from './contradictions';
-import type { DecisionService } from './decisions';
-import type { InsightService } from './insights';
-import type { KnowledgeGraphService } from './knowledge-graph';
-import type { NotificationService } from './notifications';
-import type { OpenItemService } from './open-items';
 import { IntervalSchedule, type LastRunStore } from './scheduler';
 import type { SettingsService } from './settings';
 
@@ -38,6 +32,8 @@ export type ConsistencyCheck = (count: (kind: string, n?: number) => void) => vo
 
 type ProgressReport = (progress: number, message: string) => void;
 
+export type ConsistencyServiceDeps = CheckDeps & { entityDuplicates: EntityDuplicateCheck; lastRun?: LastRunStore };
+
 /** Active archive maintenance: only creates hints, never changes anything – except re-reading a changed index-only original. */
 export class ConsistencyService {
   /** Periodic check; every completed run (also manual or on startup) restarts the interval. */
@@ -47,20 +43,15 @@ export class ConsistencyService {
   private refreshIndexedOnly: IndexRefresher = async () => false;
   private readonly deps: CheckDeps;
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    decisions: DecisionService,
-    openItems: OpenItemService,
-    graph: KnowledgeGraphService,
-    contradictions: ContradictionService,
-    insights: InsightService,
-    notifications: NotificationService,
-    private readonly entityDuplicates: EntityDuplicateCheck,
-    lastRun?: LastRunStore,
-  ) {
-    this.deps = { ctx, settings, decisions, openItems, graph, contradictions, insights, notifications };
-    this.schedule = new IntervalSchedule({ name: 'consistency', run: () => this.enqueueInterval(), logger: ctx.logger, lastRun });
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly entityDuplicates: EntityDuplicateCheck;
+
+  constructor({ entityDuplicates, lastRun, ...checks }: ConsistencyServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings } = checks);
+    this.entityDuplicates = entityDuplicates;
+    this.deps = checks;
+    this.schedule = new IntervalSchedule({ name: 'consistency', run: () => this.enqueueInterval(), logger: checks.ctx.logger, lastRun });
   }
 
   /** Re-reads an index-only document whose original changed (DocumentService.refreshIndexedOnly). */

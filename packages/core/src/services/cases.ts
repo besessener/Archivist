@@ -33,13 +33,21 @@ export interface CaseEntry {
   relationId: string;
 }
 
+export interface CaseServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  audit: AuditService;
+}
+
 /** Cases („Vorgänge“, #286): graph nodes collecting the entries of one matter over `belongs_to`; every change is undoable. */
 export class CaseService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly audit: AuditService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly audit: AuditService;
+
+  constructor(deps: CaseServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, audit: this.audit } = deps);
+  }
 
   private get sqlite() {
     return this.ctx.database.sqlite;

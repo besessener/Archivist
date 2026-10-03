@@ -49,20 +49,30 @@ const map = (r: Row): Contradiction => ({
   resolvedAt: r.resolvedAt,
 });
 
+export interface ContradictionServiceDeps {
+  ctx: AppContext;
+  decisions: DecisionService;
+  graph: KnowledgeGraphService;
+  insights: InsightService;
+  notifications: NotificationService;
+  llm: LlmService;
+}
+
 /** Contradictions are hints: decisions are never revoked or superseded autonomously, the resolution is an action the user confirms. */
 export class ContradictionService {
   private actions!: ActionService;
   /** pairs (with their texts) the LLM judged not contradictory, so a scan does not ask again for the same texts */
   private readonly vetoed = new Set<string>();
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly decisions: DecisionService,
-    private readonly graph: KnowledgeGraphService,
-    private readonly insights: InsightService,
-    private readonly notifications: NotificationService,
-    private readonly llm: LlmService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly decisions: DecisionService;
+  private readonly graph: KnowledgeGraphService;
+  private readonly insights: InsightService;
+  private readonly notifications: NotificationService;
+  private readonly llm: LlmService;
+
+  constructor(deps: ContradictionServiceDeps) {
+    ({ ctx: this.ctx, decisions: this.decisions, graph: this.graph, insights: this.insights, notifications: this.notifications, llm: this.llm } = deps);
     // rejecting the insight closes the contradiction notice as well (seen, both decisions stay)
     this.insights.onRejected((key) => {
       if (!key.startsWith('contradiction:')) return;

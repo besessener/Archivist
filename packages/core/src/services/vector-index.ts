@@ -116,17 +116,25 @@ class ModelIndex {
   }
 }
 
+export interface VectorIndexDeps {
+  sqlite: () => Database.Database;
+  pool: WorkerPool;
+  maxSegmentRows?: number;
+}
+
 /** In-memory vector index per embedding model (#163) in SharedArrayBuffers: a search only sends the query vector to the workers. */
 export class VectorIndex {
   private readonly models = new Map<string, ModelIndex>();
   private readonly typeCodes = new Map<string, number>();
   private readonly typeNames: string[] = [''];
 
-  constructor(
-    private readonly sqlite: () => Database.Database,
-    private readonly pool: WorkerPool,
-    private readonly maxSegmentRows = MAX_SEGMENT_ROWS,
-  ) {}
+  private readonly sqlite: () => Database.Database;
+  private readonly pool: WorkerPool;
+  private readonly maxSegmentRows: number;
+
+  constructor(deps: VectorIndexDeps) {
+    ({ sqlite: this.sqlite, pool: this.pool, maxSegmentRows: this.maxSegmentRows = MAX_SEGMENT_ROWS } = deps);
+  }
 
   private typeCode = (type: string): number => {
     let code = this.typeCodes.get(type);

@@ -51,15 +51,25 @@ function namesIn(text: string, entries: Array<Pick<GraphEntity, 'name' | 'aliase
     .map((e) => e.name);
 }
 
+export interface NoteAnalysisServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  persons: PersonService;
+  llm: LlmService;
+  privacy: PrivacyService;
+}
+
 /** Analyses notes like documents (#273) into PROPOSED relations; a rerun marks what it no longer finds `outdated`, the user's decisions stay. */
 export class NoteAnalysisService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly persons: PersonService,
-    private readonly llm: LlmService,
-    private readonly privacy: PrivacyService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly persons: PersonService;
+  private readonly llm: LlmService;
+  private readonly privacy: PrivacyService;
+
+  constructor(deps: NoteAnalysisServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, persons: this.persons, llm: this.llm, privacy: this.privacy } = deps);
+  }
 
   /** Finds topic, project, persons and tags of a note (no change). */
   async findings(note: GraphEntity, opts: { signal?: AbortSignal } = {}): Promise<NoteFindings> {

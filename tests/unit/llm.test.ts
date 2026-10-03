@@ -21,7 +21,13 @@ const client = (rejection: string, unsupported: string[] = ['store']) => {
     }),
   };
   const secrets = { getApiKey: () => 'sk-test' };
-  const llm = new LlmService(ctx as unknown as AppContext, settings as unknown as SettingsService, secrets as unknown as SecretService, fetchImpl, 0);
+  const llm = new LlmService({
+    ctx: ctx as unknown as AppContext,
+    settings: settings as unknown as SettingsService,
+    secrets: secrets as unknown as SecretService,
+    fetchImpl,
+    retryDelayMs: 0,
+  });
   return { llm, bodies };
 };
 
@@ -107,7 +113,13 @@ describe('LLM client: JSON mode', () => {
       }),
     };
     const secrets = { getApiKey: () => 'sk-test' };
-    const llm = new LlmService(ctx as unknown as AppContext, settings as unknown as SettingsService, secrets as unknown as SecretService, fetchImpl, 0);
+    const llm = new LlmService({
+      ctx: ctx as unknown as AppContext,
+      settings: settings as unknown as SettingsService,
+      secrets: secrets as unknown as SecretService,
+      fetchImpl,
+      retryDelayMs: 0,
+    });
     return { llm, bodies };
   };
 
@@ -149,7 +161,13 @@ describe('LLM client: circuit breaker (#151)', () => {
       }),
     };
     const secrets = { getApiKey: () => 'sk-test' };
-    const llm = new LlmService(ctx as unknown as AppContext, settings as unknown as SettingsService, secrets as unknown as SecretService, fetchImpl, 0);
+    const llm = new LlmService({
+      ctx: ctx as unknown as AppContext,
+      settings: settings as unknown as SettingsService,
+      secrets: secrets as unknown as SecretService,
+      fetchImpl,
+      retryDelayMs: 0,
+    });
     return {
       llm,
       requests: () => requests,

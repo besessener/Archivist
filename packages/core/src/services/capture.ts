@@ -3,16 +3,6 @@ import type { AppContext } from '../context';
 import { AppError } from '../util/errors';
 import type { ActionService } from './actions';
 import { conversationState, type ConvState, type OpenItemField, type OpenItemPending, type Pending, type Reply } from './chat-state';
-import type { ContradictionService } from './contradictions';
-import type { DecisionService } from './decisions';
-import type { EventService } from './events';
-import type { InsightService } from './insights';
-import type { KnowledgeGraphService } from './knowledge-graph';
-import type { NoteService } from './notes';
-import type { OpenItemService } from './open-items';
-import type { PersonService } from './persons';
-import type { ReminderService } from './reminders';
-import type { SettingsService } from './settings';
 import type { CaptureDeps, CaptureRequest } from './capture/capture-deps';
 import { DecisionCapture } from './capture/decision-capture';
 import { DecisionSupersede } from './capture/decision-supersede';
@@ -47,6 +37,8 @@ export interface CaptureResult {
   supersedeCandidateIds: string[];
 }
 
+export type CaptureServiceDeps = Omit<CaptureDeps, 'actions'>;
+
 /** Capturing knowledge (#307) for the agent's tools and the rule-based chat (which keeps follow-up questions in its state). */
 export class CaptureService {
   private actions!: ActionService;
@@ -57,22 +49,12 @@ export class CaptureService {
   private readonly openItemCapture: OpenItemCapture;
   private readonly reminderCapture: ReminderCapture;
 
-  constructor(
-    private readonly ctx: AppContext,
-    settings: SettingsService,
-    decisions: DecisionService,
-    openItems: OpenItemService,
-    reminders: ReminderService,
-    graph: KnowledgeGraphService,
-    persons: PersonService,
-    contradictions: ContradictionService,
-    insights: InsightService,
-    notes: NoteService,
-    events: EventService,
-  ) {
-    const actions = () => this.actions;
-    this.deps = { ctx, settings, decisions, openItems, reminders, graph, persons, contradictions, insights, notes, events, actions };
-    this.lookup = new OpenItemLookup(openItems);
+  private readonly ctx: AppContext;
+
+  constructor(deps: CaptureServiceDeps) {
+    this.ctx = deps.ctx;
+    this.deps = { ...deps, actions: () => this.actions };
+    this.lookup = new OpenItemLookup(deps.openItems);
     this.supersede = new DecisionSupersede(this.deps);
     this.decisionCapture = new DecisionCapture(this.deps, this.supersede);
     this.openItemCapture = new OpenItemCapture(this.deps, this.lookup);

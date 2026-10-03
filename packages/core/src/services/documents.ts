@@ -6,9 +6,7 @@ import type { AppContext } from '../context';
 import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
-import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
-import type { CategoryService } from './categories';
 import { DocumentAnalyzer, QUARANTINE_NOT_ANALYZED, type AnalysisResult, type AnalyzeOptions } from './document-analysis';
 import type { BulkPatch } from './document-bulk';
 import { DocumentImporter, type ImportResult } from './document-import';
@@ -20,9 +18,6 @@ import { DocumentRereader } from './document-reread';
 import { DocumentTrash, type FileOperationLock } from './document-trash';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
-import type { LlmService } from './llm';
-import type { NotificationService } from './notifications';
-import type { PersonService } from './persons';
 import type { PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
@@ -31,6 +26,8 @@ import type { UndoService } from './undo';
 export type { DocRow } from './document-model';
 
 export const DOCUMENT_REREAD_JOB = 'documents.reread';
+
+export type DocumentServiceDeps = Omit<DocumentDeps, 'documents'> & { undo: UndoService };
 
 export class DocumentService {
   private readonly deps: DocumentDeps;
@@ -41,22 +38,17 @@ export class DocumentService {
   private readonly trash: DocumentTrash;
   private fileLock: FileOperationLock = { guardedFor: (_documentId, operation) => operation() };
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly graph: KnowledgeGraphService,
-    persons: PersonService,
-    private readonly search: SearchService,
-    llm: LlmService,
-    private readonly privacy: PrivacyService,
-    pool: WorkerPool,
-    private readonly audit: AuditService,
-    notifications: NotificationService,
-    categories: CategoryService,
-    private readonly jobs: JobQueueService,
-    undo: UndoService,
-  ) {
-    this.deps = { ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, documents: this };
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly graph: KnowledgeGraphService;
+  private readonly search: SearchService;
+  private readonly privacy: PrivacyService;
+  private readonly audit: AuditService;
+  private readonly jobs: JobQueueService;
+
+  constructor({ undo, ...services }: DocumentServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, graph: this.graph, search: this.search, privacy: this.privacy, audit: this.audit, jobs: this.jobs } = services);
+    this.deps = { ...services, documents: this };
     this.importer = new DocumentImporter(this.deps);
     this.analyzer = new DocumentAnalyzer(this.deps);
     this.rereader = new DocumentRereader(this.deps);

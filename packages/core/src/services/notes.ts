@@ -31,18 +31,27 @@ export interface NoteInput {
 const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
 const sameText = (a: string, b: string) => collapse(a).toLowerCase() === collapse(b).toLowerCase();
 
+export interface NoteServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  search: SearchService;
+  audit?: AuditService;
+  undo?: UndoService;
+}
+
 /** The single place where notes are created: each is its own indexed graph node, never merged for a similar title. */
 export class NoteService {
   /** `[[Name]]` links in the text (#285). */
   readonly wiki: WikiLinks;
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly search: SearchService,
-    private readonly audit?: AuditService,
-    undo?: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly search: SearchService;
+  private readonly audit?: AuditService;
+
+  constructor(deps: NoteServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, search: this.search, audit: this.audit } = deps);
+    const { ctx, graph, undo } = deps;
     this.wiki = new WikiLinks(ctx, graph);
     undo?.register(NOTE_UPDATE_UNDO, {
       check: async (data) => this.updateConflicts(data as NoteUpdateUndo),

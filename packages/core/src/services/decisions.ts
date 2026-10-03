@@ -33,15 +33,25 @@ export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'
 
 const today = () => toIsoDate(new Date());
 
+export interface DecisionServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  persons: PersonService;
+  search: SearchService;
+  audit: AuditService;
+  undo: UndoService;
+}
+
 export class DecisionService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly persons: PersonService,
-    private readonly search: SearchService,
-    private readonly audit: AuditService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly persons: PersonService;
+  private readonly search: SearchService;
+  private readonly audit: AuditService;
+
+  constructor(deps: DecisionServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, persons: this.persons, search: this.search, audit: this.audit } = deps);
+    const { ctx, graph, undo } = deps;
     registerDecisionUndo(undo, { ctx, graph, reindex: (id) => this.reindex(id) });
   }
 

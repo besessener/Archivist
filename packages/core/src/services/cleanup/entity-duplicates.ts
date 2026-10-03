@@ -51,15 +51,25 @@ export function duplicateKey(ids: string[]): string {
   return `${KEY_PREFIX}${[...ids].sort().join('|')}`;
 }
 
+export interface EntityDuplicateCheckDeps {
+  ctx: AppContext;
+  insights: InsightService;
+  actions: ActionService;
+  llm: LlmService;
+  privacy: PrivacyService;
+}
+
 /** Archive check: asks via an insight about topics, projects and tags that are probably the same; nothing merges by itself. */
 export class EntityDuplicateCheck {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly insights: InsightService,
-    private readonly actions: ActionService,
-    private readonly llm: LlmService,
-    private readonly privacy: PrivacyService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly insights: InsightService;
+  private readonly actions: ActionService;
+  private readonly llm: LlmService;
+  private readonly privacy: PrivacyService;
+
+  constructor(deps: EntityDuplicateCheckDeps) {
+    ({ ctx: this.ctx, insights: this.insights, actions: this.actions, llm: this.llm, privacy: this.privacy } = deps);
+  }
 
   private tagDocCounts: Map<string, number> | null = null;
 

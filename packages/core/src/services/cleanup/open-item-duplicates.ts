@@ -121,16 +121,26 @@ function duplicateInsight(pair: DuplicatePair & { key: string; takenOver: string
   };
 }
 
+export interface OpenItemDuplicateServiceDeps {
+  ctx: AppContext;
+  openItems: OpenItemService;
+  graph: KnowledgeGraphService;
+  audit: AuditService;
+  undo: UndoService;
+  insights: InsightService;
+}
+
 /** Duplicate open items: the archive check proposes keeping the first one and discarding the other (undoable, never deleted). */
 export class OpenItemDuplicateService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly openItems: OpenItemService,
-    private readonly graph: KnowledgeGraphService,
-    private readonly audit: AuditService,
-    undo: UndoService,
-    private readonly insights: InsightService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly openItems: OpenItemService;
+  private readonly graph: KnowledgeGraphService;
+  private readonly audit: AuditService;
+  private readonly insights: InsightService;
+
+  constructor(deps: OpenItemDuplicateServiceDeps) {
+    ({ ctx: this.ctx, openItems: this.openItems, graph: this.graph, audit: this.audit, insights: this.insights } = deps);
+    const { undo } = deps;
     undo.register(OPEN_ITEM_MERGE_UNDO_TYPE, {
       check: async (data) => this.undoConflicts(data as MergeUndoData),
       run: async (data) => this.undoMerge(data as MergeUndoData),

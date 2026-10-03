@@ -28,16 +28,26 @@ interface EventDeleteUndo {
   node: NodeSnapshot | null;
 }
 
+export interface EventServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  search: SearchService;
+  audit: AuditService;
+  persons: PersonService;
+  undo: UndoService;
+}
+
 /** Dated events („habe am 01.10.2026 beim German Testing Day eingereicht“): a type of their own, shown in the timeline, search and knowledge graph. */
 export class EventService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly search: SearchService,
-    private readonly audit: AuditService,
-    private readonly persons: PersonService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly search: SearchService;
+  private readonly audit: AuditService;
+  private readonly persons: PersonService;
+
+  constructor(deps: EventServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, search: this.search, audit: this.audit, persons: this.persons } = deps);
+    const { undo } = deps;
     undo.register('event_update', {
       check: async (data) => this.updateConflicts(data as EventUpdateUndo),
       run: async (data) => this.revertUpdate(data as EventUpdateUndo),

@@ -46,7 +46,7 @@ export function createBaseServices(options: CreateServicesOptions) {
   const baseline = resolveDataPaths(options.dataRoot);
   ensureDataDirs(baseline);
   const events = new EventBus();
-  const settings = new SettingsService(path.join(baseline.config, 'settings.json'), baseline.archive, events);
+  const settings = new SettingsService({ file: path.join(baseline.config, 'settings.json'), defaultArchiveRoot: baseline.archive, events });
   const paths = resolveDataPaths(options.dataRoot, settings.get().archiveRoot);
   fs.mkdirSync(paths.archive, { recursive: true });
 
@@ -56,24 +56,24 @@ export function createBaseServices(options: CreateServicesOptions) {
   logger.info('app', 'Database ready', { migrations: migration });
   const ctx: AppContext = { paths, database, logger, events };
 
-  const secrets = new SecretService(path.join(paths.config, 'llm-api-key.enc'), options.cipher, logger);
+  const secrets = new SecretService({ file: path.join(paths.config, 'llm-api-key.enc'), cipher: options.cipher, logger });
   const audit = new AuditService(ctx);
   const undo = new UndoService(ctx, audit);
   const pool = new WorkerPool(options.workerFile ?? null);
   const reader = new DbReader(database.db, { workerFile: options.readerFile ?? null, databaseFile: database.file, logger });
-  const llm = new LlmService(ctx, settings, secrets, options.fetchImpl, options.llmRetryDelayMs);
+  const llm = new LlmService({ ctx, settings, secrets, fetchImpl: options.fetchImpl, retryDelayMs: options.llmRetryDelayMs });
   const privacy = new PrivacyService(settings);
   const embedding = new EmbeddingService(settings, llm);
-  const graph = new KnowledgeGraphService(ctx, audit, undo);
+  const graph = new KnowledgeGraphService({ ctx, audit, undo });
   const persons = new PersonService(ctx, graph);
-  const self = new SelfService(ctx, settings, graph);
+  const self = new SelfService({ ctx, settings, graph });
   persons.setSelfResolver(self.resolver);
   // Search queries go to the embedding endpoint only in mode „automatisch“ – „vorher fragen“ uses local vectors only.
-  const search = new SearchService(ctx, embedding, pool, () => privacy.mode() === 'auto' && llm.isConfigured());
+  const search = new SearchService({ ctx, embedding, pool, remoteAllowed: () => privacy.mode() === 'auto' && llm.isConfigured() });
   const categories = new CategoryService(ctx);
   const jobs = new JobQueueService(ctx, { concurrency: options.jobConcurrency ?? 2, retryBaseDelayMs: options.jobRetryDelayMs });
   const notifications = new NotificationService(ctx);
-  const reminders = new ReminderService(ctx, notifications, settings);
+  const reminders = new ReminderService({ ctx, notifications, settings });
   // Settings are loaded before the database exists; report a repaired or unreadable settings.json now.
   const settingsProblem = settings.takeLoadProblem();
   if (settingsProblem) {

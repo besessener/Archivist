@@ -31,6 +31,19 @@ const mapExclusion = (row: typeof scanExclusions.$inferSelect): ScanExclusion =>
   createdAt: row.createdAt,
 });
 
+export interface ScannerServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  pool: WorkerPool;
+  docs: DocumentService;
+  graph: KnowledgeGraphService;
+  privacy: PrivacyService;
+  notifications: NotificationService;
+  insights: InsightService;
+  audit: AuditService;
+  jobs: JobQueueService;
+}
+
 /** Controlled scan of explicitly approved directories; a plain file scan never sends content to the LLM, originals stay untouched. */
 export class ScannerService {
   /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
@@ -41,18 +54,25 @@ export class ScannerService {
   /** Upper bound of files collected per scan root (lowered in tests). */
   maxFilesPerRoot = SCAN_MAX_FILES;
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    pool: WorkerPool,
-    private readonly docs: DocumentService,
-    graph: KnowledgeGraphService,
-    privacy: PrivacyService,
-    private readonly notifications: NotificationService,
-    private readonly insights: InsightService,
-    private readonly audit: AuditService,
-    private readonly jobs: JobQueueService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly docs: DocumentService;
+  private readonly notifications: NotificationService;
+  private readonly insights: InsightService;
+  private readonly audit: AuditService;
+  private readonly jobs: JobQueueService;
+
+  constructor(deps: ScannerServiceDeps) {
+    ({
+      ctx: this.ctx,
+      settings: this.settings,
+      docs: this.docs,
+      notifications: this.notifications,
+      insights: this.insights,
+      audit: this.audit,
+      jobs: this.jobs,
+    } = deps);
+    const { ctx, settings, pool, docs, graph, privacy, notifications } = deps;
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
     this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });

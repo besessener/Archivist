@@ -51,14 +51,23 @@ async function realpathOrSelf(p: string): Promise<string> {
   return fsp.realpath(p).catch(() => path.resolve(p));
 }
 
+export interface BackupServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  audit: AuditService;
+  archive: ArchiveService;
+}
+
 /** Backups: SQLite snapshot via the online backup API plus settings (never the API key), optionally the archive; retention per kind. */
 export class BackupService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly audit: AuditService,
-    private readonly archive: ArchiveService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly audit: AuditService;
+  private readonly archive: ArchiveService;
+
+  constructor(deps: BackupServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, audit: this.audit, archive: this.archive } = deps);
+  }
 
   /** Creates a backup; the manifest is written last, so an interrupted backup never counts and never pushes a complete one out. */
   async create(includeArchive: boolean, trigger: 'manual' | 'startup' = 'manual'): Promise<BackupInfo> {

@@ -18,6 +18,12 @@ export type { MergeRequest } from './graph/merge-types';
 export { relationReason } from './graph/relation-reason';
 export type { RelationChangeSet } from './graph/relations';
 
+export interface KnowledgeGraphServiceDeps {
+  ctx: AppContext;
+  audit: AuditService;
+  undo: UndoService;
+}
+
 /** Knowledge graph over entity and relation tables in SQLite. */
 export class KnowledgeGraphService {
   private readonly entities: GraphEntities;
@@ -26,16 +32,16 @@ export class KnowledgeGraphService {
   private readonly userLinks: UserLinks;
   private readonly merges: EntityMerges;
 
-  constructor(
-    private readonly ctx: AppContext,
-    audit: AuditService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+
+  constructor(deps: KnowledgeGraphServiceDeps) {
+    ({ ctx: this.ctx } = deps);
+    const { ctx, audit, undo } = deps;
     this.entities = new GraphEntities(ctx);
     this.relations = new GraphRelations(ctx);
     this.views = new GraphViews(this.entities, this.relations);
-    this.userLinks = new UserLinks(ctx, audit, { entities: this.entities, relations: this.relations });
-    this.merges = new EntityMerges(ctx, audit, undo);
+    this.userLinks = new UserLinks({ ctx, audit, graph: { entities: this.entities, relations: this.relations } });
+    this.merges = new EntityMerges({ ctx, audit, undo });
     new LinkUndo(ctx).register(undo);
   }
 

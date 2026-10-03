@@ -12,13 +12,21 @@ export const SELF_PLACEHOLDER = 'Ich';
 /** Audit action when an existing person with the user's name is merged into the own person. */
 export const SELF_MERGE_ACTION = 'persons.self_merge';
 
+export interface SelfServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  graph: KnowledgeGraphService;
+}
+
 /** The user's own person (`isSelf`, badge „Du“): named like the profile, else „Ich“ until a name is entered. */
 export class SelfService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly graph: KnowledgeGraphService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly graph: KnowledgeGraphService;
+
+  constructor(deps: SelfServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, graph: this.graph } = deps);
+  }
 
   private get db() {
     return this.ctx.database.db;

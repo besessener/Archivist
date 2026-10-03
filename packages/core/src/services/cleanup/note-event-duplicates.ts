@@ -44,20 +44,27 @@ function chooseKeptNote(a: EntityRow, b: EntityRow): { keep: EntityRow; duplicat
 /** Both notes filed under topics/projects, but under different ones: not the same note. */
 const filedApart = (a: Set<string>, b: Set<string>) => a.size > 0 && b.size > 0 && ![...a].some((subject) => b.has(subject));
 
+export interface NoteEventDuplicateServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  notes: NoteService;
+  eventRecords: EventService;
+  audit: AuditService;
+  undo: UndoService;
+  insights: InsightService;
+}
+
 /** Duplicate notes and events: the archive check proposes a merge as an insight; „Verschieden“ is remembered via its key. */
 export class NoteEventDuplicateService {
   private readonly links: MergeLinks;
   private readonly merger: NoteEventMerger;
 
-  constructor(
-    private readonly ctx: AppContext,
-    graph: KnowledgeGraphService,
-    notes: NoteService,
-    eventRecords: EventService,
-    audit: AuditService,
-    undo: UndoService,
-    private readonly insights: InsightService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly insights: InsightService;
+
+  constructor(deps: NoteEventDuplicateServiceDeps) {
+    ({ ctx: this.ctx, insights: this.insights } = deps);
+    const { ctx, graph, notes, eventRecords, audit, undo } = deps;
     this.links = new MergeLinks(ctx, graph);
     this.merger = new NoteEventMerger({ ctx, graph, links: this.links, notes, eventRecords, audit }, undo);
   }

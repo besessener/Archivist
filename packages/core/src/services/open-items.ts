@@ -29,16 +29,26 @@ export const ACTIVE_STATUSES: OpenItemStatus[] = ['open', 'waiting', 'blocked'];
 
 type Origin = { actor?: 'user' | 'agent'; trigger?: string };
 
+export interface OpenItemServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  persons: PersonService;
+  search: SearchService;
+  audit: AuditService;
+  undo: UndoService;
+}
+
 /** Open items (tasks/questions) including responsible person, due date and status. */
 export class OpenItemService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly persons: PersonService,
-    private readonly search: SearchService,
-    private readonly audit: AuditService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly persons: PersonService;
+  private readonly search: SearchService;
+  private readonly audit: AuditService;
+
+  constructor(deps: OpenItemServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, persons: this.persons, search: this.search, audit: this.audit } = deps);
+    const { ctx, graph, undo } = deps;
     registerOpenItemUndo(undo, { ctx, graph, reindex: (id) => this.reindex(id) });
   }
 

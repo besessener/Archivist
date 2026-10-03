@@ -30,18 +30,40 @@ const KIND_DE: Record<string, string> = {
   supports: 'stützt',
 };
 
+export interface RelationRefinerDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  llm: LlmService;
+  privacy: PrivacyService;
+  docs: DocumentService;
+  insights: InsightService;
+  contradictions: ContradictionService;
+  appState: AppStateService;
+}
+
 /** The kind of a link, more precisely (#284): an LLM hint for confirmed `related_to` pairs in mode „automatisch“, shareable content only, as a proposal. */
 export class RelationRefiner {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly llm: LlmService,
-    private readonly privacy: PrivacyService,
-    private readonly docs: DocumentService,
-    private readonly insights: InsightService,
-    private readonly contradictions: ContradictionService,
-    private readonly appState: AppStateService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly llm: LlmService;
+  private readonly privacy: PrivacyService;
+  private readonly docs: DocumentService;
+  private readonly insights: InsightService;
+  private readonly contradictions: ContradictionService;
+  private readonly appState: AppStateService;
+
+  constructor(deps: RelationRefinerDeps) {
+    ({
+      ctx: this.ctx,
+      graph: this.graph,
+      llm: this.llm,
+      privacy: this.privacy,
+      docs: this.docs,
+      insights: this.insights,
+      contradictions: this.contradictions,
+      appState: this.appState,
+    } = deps);
+  }
 
   private done(): string[] {
     try {

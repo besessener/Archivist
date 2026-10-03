@@ -8,14 +8,23 @@ import type { PrivacyService } from './privacy';
 
 const TopicName = z.object({ name: z.string().nullable() });
 
+export interface TopicNamerDeps {
+  ctx: AppContext;
+  llm: LlmService;
+  privacy: PrivacyService;
+  docs: DocumentService;
+}
+
 /** A topic name for a group of similar entries by the LLM (#281), only in mode „automatisch“ and from shareable names; null keeps the local one. */
 export class TopicNamer {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly llm: LlmService,
-    private readonly privacy: PrivacyService,
-    private readonly docs: DocumentService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly llm: LlmService;
+  private readonly privacy: PrivacyService;
+  private readonly docs: DocumentService;
+
+  constructor(deps: TopicNamerDeps) {
+    ({ ctx: this.ctx, llm: this.llm, privacy: this.privacy, docs: this.docs } = deps);
+  }
 
   async name(cluster: TopicCluster, opts: { known: string[]; signal?: AbortSignal }): Promise<string | null> {
     if (this.privacy.mode() !== 'auto' || !this.llm.canUseInBackground()) return null;

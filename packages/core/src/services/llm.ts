@@ -68,6 +68,14 @@ interface Transfer {
 
 const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
+export interface LlmServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  secrets: SecretService;
+  fetchImpl?: FetchLike;
+  retryDelayMs?: number;
+}
+
 /** OpenAI-compatible Responses API client: every transmission is logged masked, structured answers are validated with Zod. */
 export class LlmService {
   /** Optional parameters an endpoint (base URL + model) has rejected; kept in memory so they are not re-learned every call. */
@@ -76,13 +84,21 @@ export class LlmService {
   private readonly health: EndpointHealth;
   private readonly transmissions: TransmissionLog;
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly secrets: SecretService,
-    private readonly fetchImpl: FetchLike = (...args) => fetch(...args),
-    private readonly retryDelayMs = 400,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly secrets: SecretService;
+  private readonly fetchImpl: FetchLike;
+  private readonly retryDelayMs: number;
+
+  constructor(deps: LlmServiceDeps) {
+    ({
+      ctx: this.ctx,
+      settings: this.settings,
+      secrets: this.secrets,
+      fetchImpl: this.fetchImpl = (...args) => fetch(...args),
+      retryDelayMs: this.retryDelayMs = 400,
+    } = deps);
+    const { ctx } = deps;
     this.health = new EndpointHealth(ctx);
     this.transmissions = new TransmissionLog(ctx);
   }

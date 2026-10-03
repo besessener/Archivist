@@ -57,16 +57,24 @@ interface SubjectRow {
 const namesOf = (patch: SubjectPatch, kind: SubjectKind) => (kind === 'topic' ? patch.topics : patch.projects);
 const extrasOf = (subjects: EntrySubjects, kind: SubjectKind) => (kind === 'topic' ? subjects.extraTopics : subjects.extraProjects);
 
+export interface SubjectServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  audit: AuditService;
+  undo: UndoService;
+}
+
 /** Several topics and projects per entry (#287): the column stays the main one, further ones are confirmed relations. */
 export class SubjectService {
   private reindexer: SubjectReindexer = async () => {};
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly audit: AuditService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly audit: AuditService;
+
+  constructor(deps: SubjectServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, audit: this.audit } = deps);
+    const { ctx, undo } = deps;
     registerSubjectUndo(undo, { ctx, reindex: (ids) => this.reindexEntries(ids) });
   }
 

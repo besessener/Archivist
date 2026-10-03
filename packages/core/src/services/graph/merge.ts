@@ -43,15 +43,22 @@ function combineRelations(a: RelationRow, b: RelationRow): Pick<RelationRow, 'st
 
 const CHANGED_SCOPES = ['knowledge', 'documents', 'decisions', 'openItems', 'events'] as const;
 
+export interface EntityMergesDeps {
+  ctx: AppContext;
+  audit: AuditService;
+  undo: UndoService;
+}
+
 /** Merging and renaming named entities with exact, conflict-checked undo. */
 export class EntityMerges {
   private reindexer: MergeReindexer = async () => {};
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly audit: AuditService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly audit: AuditService;
+
+  constructor(deps: EntityMergesDeps) {
+    ({ ctx: this.ctx, audit: this.audit } = deps);
+    const { undo } = deps;
     undo.register(MERGE_UNDO_TYPE, {
       check: async (data) => mergeConflicts(this.db, data as MergeUndoData),
       run: (data) => this.undoMerge(data as MergeUndoData),

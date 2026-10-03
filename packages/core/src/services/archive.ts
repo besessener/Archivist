@@ -1,7 +1,5 @@
 import type { ArchiveItemRequest, ArchivePlan, ArchiveResult, VerifyReport } from '@archivist/shared';
-import type { AppContext } from '../context';
 import { permissionError, toErrorInfo } from '../util/errors';
-import type { WorkerPool } from '../workers/pool';
 import { ArchiveExecutor } from './archive-execute';
 import { ExtractedItemProposer, type ProposalSink } from './archive-extracted-items';
 import { ArchiveFileOps } from './archive-files';
@@ -26,20 +24,15 @@ import { ArchiveRelocator } from './archive-relocate';
 import { RelocateUndo } from './archive-relocate-undo';
 import { ArchiveRenamer } from './archive-rename';
 import { ArchiveUndo } from './archive-undo';
-import type { AuditService } from './audit';
-import type { CategoryService } from './categories';
-import type { DocumentService } from './documents';
-import type { KnowledgeGraphService } from './knowledge-graph';
-import type { NotificationService } from './notifications';
 import type { OpenItemService } from './open-items';
-import type { PersonService } from './persons';
-import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
 import type { ArchiveDeps } from './archive-deps';
 
 export type { RelocateRequest, RenameRequest } from './archive-model';
 
 const UNCONFIRMED = 'Dateiaktionen erfordern eine ausdrückliche Bestätigung des Benutzers.';
+
+export type ArchiveServiceDeps = Omit<ArchiveDeps, 'locks' | 'files'> & { undo: UndoService };
 
 /** Controlled file actions: only with `confirmed`, never overwriting, verified before sources go, inside the archive, undo checks first. */
 export class ArchiveService {
@@ -51,26 +44,15 @@ export class ArchiveService {
   private readonly renamer: ArchiveRenamer;
   private readonly maintenance: ArchiveMaintenance;
 
-  constructor(
-    ctx: AppContext,
-    settings: SettingsService,
-    docs: DocumentService,
-    categories: CategoryService,
-    graph: KnowledgeGraphService,
-    persons: PersonService,
-    audit: AuditService,
-    notifications: NotificationService,
-    pool: WorkerPool,
-    undo: UndoService,
-  ) {
-    this.deps = { ctx, settings, docs, categories, graph, persons, audit, notifications, pool, locks: new ArchiveLocks(), files: new ArchiveFileOps(ctx) };
-    this.extractedItems = new ExtractedItemProposer(notifications);
+  constructor({ undo, ...services }: ArchiveServiceDeps) {
+    this.deps = { ...services, locks: new ArchiveLocks(), files: new ArchiveFileOps(services.ctx) };
+    this.extractedItems = new ExtractedItemProposer(services.notifications);
     this.planner = new ArchivePlanner(this.deps);
     this.executor = new ArchiveExecutor(this.deps, { planner: this.planner, extractedItems: this.extractedItems });
     this.relocator = new ArchiveRelocator(this.deps, (documentId, warnings) => this.executor.reindexAfterCommit(documentId, warnings));
     this.renamer = new ArchiveRenamer(this.deps);
     this.maintenance = new ArchiveMaintenance(this.deps);
-    docs.useFileLock(this.deps.locks);
+    services.docs.useFileLock(this.deps.locks);
     this.registerUndo(undo);
   }
 

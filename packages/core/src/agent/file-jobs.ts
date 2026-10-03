@@ -73,6 +73,12 @@ interface Waiting {
   fail: (err: unknown) => void;
 }
 
+export interface AgentFileJobsDeps {
+  jobs: JobQueueService;
+  archive: ArchiveService;
+  runs: AgentRunService;
+}
+
 /** Large file operations of the agent as jobs under the run id and step (#304): live progress, „Stopp“ between chunks, resume after restart. */
 export class AgentFileJobs {
   private readonly waiting = new Map<string, Waiting>();
@@ -80,11 +86,13 @@ export class AgentFileJobs {
   threshold = FILE_JOB_THRESHOLD;
   chunk = FILE_CHUNK;
 
-  constructor(
-    private readonly jobs: JobQueueService,
-    private readonly archive: ArchiveService,
-    private readonly runs: AgentRunService,
-  ) {}
+  private readonly jobs: JobQueueService;
+  private readonly archive: ArchiveService;
+  private readonly runs: AgentRunService;
+
+  constructor(deps: AgentFileJobsDeps) {
+    ({ jobs: this.jobs, archive: this.archive, runs: this.runs } = deps);
+  }
 
   register(): void {
     this.jobs.register<FileJobPayload>(FILE_JOB_TYPE, (job) => this.handle(job), {

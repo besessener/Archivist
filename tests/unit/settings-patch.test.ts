@@ -146,7 +146,7 @@ describe('SettingsService.update: saving one field keeps the rest (Issue #55)', 
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
   function seeded(): SettingsService {
-    const svc = new SettingsService(file, archiveRoot);
+    const svc = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     svc.update(Object.fromEntries(SECTION_KEYS.map((k) => [k, SECTIONS[k].a])));
     return svc;
   }
@@ -158,7 +158,7 @@ describe('SettingsService.update: saving one field keeps the rest (Issue #55)', 
     for (const [field, value] of Object.entries(SECTIONS[key].b)) {
       const after = svc.update({ [key]: { [field]: value } });
       expect(after).toEqual({ ...before, [key]: { ...SECTIONS[key].a, [field]: value } });
-      expect(new SettingsService(file, archiveRoot).get()).toEqual(after);
+      expect(new SettingsService({ file, defaultArchiveRoot: archiveRoot }).get()).toEqual(after);
       svc.update({ [key]: { [field]: SECTIONS[key].a[field] } });
       expect(svc.get()).toEqual(before);
     }
@@ -171,7 +171,7 @@ describe('SettingsService.update: saving one field keeps the rest (Issue #55)', 
   });
 
   it('fields of a section that were never saved still get their defaults after the merge', () => {
-    const svc = new SettingsService(file, archiveRoot);
+    const svc = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     const after = svc.update({ backups: { autoOnStartup: true } });
     expect(after.backups).toEqual({ ...Settings.parse({}).backups, autoOnStartup: true });
   });

@@ -64,6 +64,16 @@ const SERIAL = new Map<string, Promise<unknown>>();
 
 const TAINTED_NOTE = 'Ein Dokument enthielt Anweisungen an den Agenten; sie wurden ignoriert.';
 
+export interface AgentServiceDeps {
+  ctx: AppContext;
+  /** The services the agent's tools work with. */
+  tools: ToolDeps;
+  llm: LlmService;
+  runs: AgentRunService;
+  appState: AppStateService;
+  memory: MemoryService;
+}
+
 /** Agent mode (Epic #294): chat and background runs with modes, exceptions, run log with undo, privacy filter and limits. */
 export class AgentService {
   private readonly registry: ToolRegistry;
@@ -75,14 +85,16 @@ export class AgentService {
   private readonly humanizer: RefHumanizer;
   private readonly corrections: CorrectionLearner;
 
-  constructor(
-    ctx: AppContext,
-    private readonly deps: ToolDeps,
-    private readonly llm: LlmService,
-    private readonly runs: AgentRunService,
-    appState: AppStateService,
-    private readonly memory: MemoryService,
-  ) {
+  private readonly deps: ToolDeps;
+  private readonly llm: LlmService;
+  private readonly runs: AgentRunService;
+  private readonly memory: MemoryService;
+
+  constructor({ ctx, tools: deps, llm, runs, appState, memory }: AgentServiceDeps) {
+    this.deps = deps;
+    this.llm = llm;
+    this.runs = runs;
+    this.memory = memory;
     registerSettingUndo(deps);
     registerToolUndo(deps);
     const tools = [

@@ -1,10 +1,5 @@
 import type { EntityType } from '@archivist/shared';
-import type { AppContext } from '../context';
 import type { CreatedEntry } from '../util/origin-scope';
-import type { AppStateService } from './app-state';
-import type { InsightService } from './insights';
-import type { KnowledgeGraphService } from './knowledge-graph';
-import type { LinkThresholds } from './link-thresholds';
 import { LinkBackfill, type BackfillOptions, type BackfillResult, type NoteAnalyzer } from './links/backfill';
 import { CapturedSuggestions, type CapturedSuggestion } from './links/captured';
 import { LinkCandidates, type LinkCandidate } from './links/candidates';
@@ -15,7 +10,6 @@ import { OrphanLinks, type OrphanPage } from './links/orphans';
 import { LinkProposalList, type LinkProposalPage, type ProposalGrouping } from './links/proposal-list';
 import { RelatedItems, type RelatedItem } from './links/related-items';
 import { TopicClusters, type TopicCluster, type TopicNamer } from './links/topic-clusters';
-import type { SearchService } from './search';
 
 export { MIN_SIMILARITY, type LinkCandidate } from './links/candidates';
 export { ORPHAN_INSIGHT } from './links/orphans';
@@ -34,15 +28,8 @@ export class LinkMethodsService {
   private readonly captured: CapturedSuggestions;
   private readonly runs: LinkBackfill;
 
-  constructor(
-    ctx: AppContext,
-    graph: KnowledgeGraphService,
-    search: SearchService,
-    insights: InsightService,
-    appState: AppStateService,
-    thresholds?: LinkThresholds,
-  ) {
-    this.deps = { ctx, graph, search, insights, appState, thresholds };
+  constructor(deps: LinkDeps) {
+    this.deps = deps;
     this.linkCandidates = new LinkCandidates(this.deps);
     this.proposalList = new LinkProposalList(this.deps);
     this.relatedItems = new RelatedItems(this.deps);
