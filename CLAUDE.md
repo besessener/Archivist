@@ -166,10 +166,10 @@ npm run native:check      # if you touched Electron or native modules
 prek run --all-files      # gitleaks, zizmor, file hygiene
 ```
 
-Mutation tests (`npm run test:mutation`) usually don't run locally: they take
-too long, and `mutation.yml` runs them in CI whenever a target, the tests or
-the Stryker config change. Run them locally only when asked or when chasing a
-specific surviving mutant.
+Mutation tests are not part of the local gate and never run in full locally.
+`mutation.yml` runs them in CI only on push to `main`, not on pull requests.
+Locally, only when asked or when chasing a specific surviving mutant, and only
+on the files you changed: `npx stryker run --mutate <file>`.
 
 A partial run is a status update, not a stopping point. If a gate blocks
 finishing, say so — never relax the gate.

@@ -27,7 +27,7 @@ Alle Befehle werden im Wurzelverzeichnis ausgeführt.
 | `npm run test:watch` | Vitest im Watch-Modus |
 | `npm run test:coverage` | Tests mit Coverage, Bericht in `coverage/` |
 | `npm run test:e2e` | baut und startet Playwright gegen die Electron-App; in der CI (Ubuntu) headless mit `xvfb-run -a` |
-| `npm run test:mutation` | Mutationstests mit Stryker |
+| `npm run test:mutation` | Mutationstests mit Stryker (lokal nur für geänderte Dateien, z. B. `npx stryker run --mutate <Datei>`, nie vollständig) |
 | `npm run mutation:summary` | Zusammenfassung der Mutationstests |
 | `npm run eval:agent` | Agent-Evaluation mit echten Modellen – **kostet Geld**, siehe [Den Agenten evaluieren](../how-to/agent-evaluieren.md) |
 | `npm run format` / `format:check` | Prettier schreiben bzw. prüfen |
