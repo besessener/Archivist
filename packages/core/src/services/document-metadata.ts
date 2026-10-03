@@ -204,7 +204,7 @@ export class DocumentMetadataEditor {
       trigger: 'manual',
       confirmed: true,
       entityIds: [id],
-      before: { title: row.title, docType: row.docType, summary: row.summary, topicId: row.topicId, projectId: row.projectId, tags: row.tags },
+      before: { title: row.title, docType: row.docType, topicId: row.topicId, projectId: row.projectId, tags: row.tags },
       after: { title: set.title, docType: set.docType, topicId: set.topicId, projectId: set.projectId, tags: set.tags },
       undo: { type: 'document_metadata', data: metadataUndo(row, { set, relations: changes }) },
     });

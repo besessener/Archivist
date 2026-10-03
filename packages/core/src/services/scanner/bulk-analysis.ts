@@ -2,9 +2,10 @@ import type { BulkEstimate } from '@archivist/shared';
 import { and, asc, eq, gt, inArray, ne, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { scanFiles, scanRoots } from '../../db/schema';
-import { estimateTokens } from '../../util/estimate-tokens';
 import { progressLine, runSummary } from '../../util/bulk-text';
+import { estimateAnalysisTokens } from '../bulk-estimate';
 import type { JobContext, JobQueueService } from '../jobs';
+import type { LlmService } from '../llm';
 import type { PrivacyService } from '../privacy';
 import type { SettingsService } from '../settings';
 import type { FileAnalysis, FileResult } from './file-analysis';
@@ -14,8 +15,6 @@ export const SCAN_ANALYZE_ALL_JOB = 'scanner.analyzeAll';
 
 /** Files per read; the run itself is one job, so no round trips through the UI. */
 export const BULK_BATCH_SIZE = 500;
-/** Characters the instructions of one analysis request add to the text. */
-const PROMPT_OVERHEAD_CHARS = 2_000;
 const MAX_REPORTED_FAILURES = 3;
 
 interface Cursor {
@@ -37,6 +36,7 @@ export interface BulkAnalysisDeps {
   analysis: FileAnalysis;
   privacy: PrivacyService;
   settings: SettingsService;
+  llm: LlmService;
   jobs: JobQueueService;
   /** Assignment proposals for the documents of a finished batch. */
   buildProposals: (documentIds: string[]) => void;
@@ -85,9 +85,15 @@ export class BulkFileAnalysis {
       .from(scanFiles)
       .where(this.awaiting())
       .all();
-    const eligible = rows.filter((row) => privacy.evaluate({ path: row.path, ext: row.ext, rootLlmAllowed: rootAllowed.get(row.rootId) ?? false }).allowed);
-    const chars = eligible.reduce((sum, row) => sum + Math.min(row.size, maxChars) + PROMPT_OVERHEAD_CHARS, 0);
-    return { total: rows.length, llmEligible: eligible.length, estimatedTokens: estimateTokens(chars) };
+    const allowed = (row: (typeof rows)[number]) =>
+      privacy.evaluate({ path: row.path, ext: row.ext, rootLlmAllowed: rootAllowed.get(row.rootId) ?? false }).allowed;
+    const eligible = this.deps.llm.isConfigured() ? rows.filter(allowed) : [];
+    // the text is only known after reading: the file size is the upper bound
+    const estimatedTokens = estimateAnalysisTokens(
+      eligible.map((row) => row.size),
+      maxChars,
+    );
+    return { total: rows.length, llmEligible: eligible.length, estimatedTokens };
   }
 
   private nextPage(cursor: Cursor | null) {

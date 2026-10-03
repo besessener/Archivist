@@ -10,10 +10,7 @@ function isOpenAiHost(baseUrl: string): boolean {
   }
 }
 
-/**
- * The thinking depth to send. OpenAI knows no „max“ (its highest is „xhigh“); other endpoints get what was chosen.
- * Depths an endpoint rejected step down: max → xhigh → high. „none“ is sent as such, only null (the model's default) is left out.
- */
+/** The thinking depth to send: OpenAI has no „max“ (→ „xhigh“), rejected depths step down max → xhigh → high, only null is left out. */
 export function effectiveEffort(requested: string | null, { baseUrl, rejected }: { baseUrl: string; rejected: Set<OptionalParam> }): string | null {
   let effort = requested === 'max' && isOpenAiHost(baseUrl) ? 'xhigh' : requested;
   if (effort === 'max' && rejected.has('effort_max')) effort = 'xhigh';
@@ -29,7 +26,7 @@ export function degradationNotes(wanted: { jsonSchema: boolean; effort: string |
   if (wanted.jsonSchema && !format) notes.push('Der Endpunkt lehnt das Antwortformat ab: ohne Formatvorgabe gesendet.');
   const effort = (sent.body.reasoning as { effort?: string } | undefined)?.effort;
   const requested = wanted.effort;
-  if (requested && requested !== 'none' && !effort) notes.push(`Der Endpunkt lehnt die Denktiefe ab: „${requested}“ weggelassen.`);
+  if (requested && !effort) notes.push(`Der Endpunkt lehnt die Denktiefe ab: „${requested}“ weggelassen.`);
   else if (requested && effort && effort !== requested) notes.push(`Denktiefe „${requested}“ als „${effort}“ gesendet.`);
   return notes;
 }

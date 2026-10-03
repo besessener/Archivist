@@ -164,6 +164,20 @@ describe('output limits (#153)', () => {
     expect(app.llm.textBodies[0]).toMatchObject({ max_output_tokens: 400 });
   });
 
+  it('records a dropped „none“ and then sends no limit, as the model may think again', async () => {
+    app.services.settings.update({ llm: { reasoningEffort: 'none' } });
+    app.llm.rejectEfforts = ['none'];
+
+    await app.services.llm.completeJson(Topic, topic);
+    await app.services.llm.completeJson(Topic, topic);
+
+    expect(app.llm.textBodies.map((body) => body.max_output_tokens)).toEqual([400, undefined, undefined]);
+    expect(app.llm.textBodies.every((body, index) => index === 0 || !('reasoning' in body))).toBe(true);
+    const entries = await app.ok('llm:transmissions', { limit: 10 });
+    expect(entries[0]?.note).toContain('„none“ weggelassen');
+    expect(entries[1]?.note).toContain('„none“ weggelassen');
+  });
+
   it('sets the limit for Claude, which does not think here', async () => {
     app.services.settings.update({ llm: { baseUrl: 'https://llm.example.test/anthropic' } });
 

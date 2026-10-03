@@ -3,7 +3,7 @@ import { inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
 import { validationError } from '../util/errors';
-import { estimateTokens } from '../util/estimate-tokens';
+import { estimateAnalysisTokens } from './bulk-estimate';
 import { progressLine, runSummary } from '../util/bulk-text';
 import { untilSettled } from './analysis-retry';
 import type { DocumentService } from './documents';
@@ -16,8 +16,6 @@ import type { SettingsService } from './settings';
 /** Job type of „Auswahl neu verarbeiten“ (#220): re-read, propose new metadata, re-index – for archived documents. */
 export const DOCUMENT_REPROCESS_JOB = 'documents.reprocess';
 
-/** Characters the instructions of one analysis request add to the text. */
-const PROMPT_OVERHEAD_CHARS = 2_000;
 const ID_CHUNK = 500;
 
 export interface ReprocessPayload {
@@ -71,8 +69,11 @@ export class DocumentReprocessing {
     const maxChars = settings.get().llm.maxInputChars;
     const rows = this.archivedRows(ids);
     const eligible = llm.isConfigured() ? rows.filter((row) => privacy.evaluateDocument(row).allowed) : [];
-    const chars = eligible.reduce((sum, row) => sum + Math.min(row.extractedText.length, maxChars) + PROMPT_OVERHEAD_CHARS, 0);
-    return { total: rows.length, llmEligible: eligible.length, estimatedTokens: estimateTokens(chars) };
+    const estimatedTokens = estimateAnalysisTokens(
+      eligible.map((row) => row.extractedText.length),
+      maxChars,
+    );
+    return { total: rows.length, llmEligible: eligible.length, estimatedTokens };
   }
 
   enqueue(request: { ids: string[]; reread: boolean; reanalyze: boolean; confirmLlm: boolean }): Job {

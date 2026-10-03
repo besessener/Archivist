@@ -1,3 +1,4 @@
+import { maskingOf } from '../util/redact';
 import path from 'node:path';
 import { DocumentClassification, type DocumentProposal, type LlmStatus } from '@archivist/shared';
 import { and, eq, inArray, ne, notInArray } from 'drizzle-orm';
@@ -9,7 +10,7 @@ import { isTokenCapError } from '../util/token-cap';
 import { LlmAnalysisRetry, mayRetryLlm } from './analysis-retry';
 import { classifyLocally } from './classifier';
 import { classificationRequest, mergeLlmClassification, type Classification, type KnownSubjects } from './document-classification';
-import { MAX_LLM_PARTS, mergeParts, partSize, splitIntoParts } from './document-parts';
+import { MAX_LLM_PARTS, cutKeepsMasking, mergeParts, partSize, splitIntoParts } from './document-parts';
 import { ARCHIVED_STATUSES, extractFile, extractedColumns, type DocRow, type DocumentDeps } from './document-model';
 import { isJobCancelled, isJobInterrupted } from './jobs';
 import type { PrivacyDecision } from './privacy';
@@ -232,7 +233,10 @@ export class DocumentAnalyzer {
     const confirmed = { topics: this.knownNames('topic', { confirmedOnly: true }), projects: this.knownNames('project', { confirmedOnly: true }) };
     const context = { mainCategories: this.deps.categories.mainCategories(), confirmed };
     const promptChars = classificationRequest(row, { ...context, text: '', part: { number: MAX_LLM_PARTS, of: MAX_LLM_PARTS } }).input.length;
-    const parts = splitIntoParts(text, partSize({ maxInputChars: this.deps.settings.get().llm.maxInputChars, promptChars }));
+    const masking = maskingOf(this.deps.settings.get());
+    const parts = splitIntoParts(text, partSize({ maxInputChars: this.deps.settings.get().llm.maxInputChars, promptChars }), (whole, position) =>
+      cutKeepsMasking(whole, position, masking),
+    );
     const complete = (part: string, number: number) =>
       this.deps.llm.completeJson(DocumentClassification, {
         ...classificationRequest(row, { ...context, text: part, part: parts.length > 1 ? { number, of: parts.length } : undefined }),

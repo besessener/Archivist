@@ -8,7 +8,7 @@ import { embeddingsUsage, UsageTally } from './usage';
 
 const embeddingsSchema = z.object({ data: z.array(z.object({ embedding: z.array(z.number()), index: z.number().optional() })) });
 
-/** Texts are cut to this many characters before masking. */
+/** Texts are cut to this many characters after masking. */
 const MAX_TEXT_CHARS = 8000;
 
 /** One masked /embeddings request: logged in any case with its tokens, the daily token limit checked first. */
@@ -26,7 +26,10 @@ export async function requestEmbeddings(
   deps: { post: (request: PostRequest) => Promise<PostResponse>; record: (transmission: Transmission) => void; assertWithinCap: () => void },
 ): Promise<number[][]> {
   const { url, apiKey, model, timeoutMs, texts, purpose, documentIds, masking } = request;
-  const redacted = texts.map((text) => redactSecrets(text.slice(0, MAX_TEXT_CHARS), masking));
+  const redacted = texts.map((text) => {
+    const masked = redactSecrets(text, masking);
+    return { ...masked, text: masked.text.slice(0, MAX_TEXT_CHARS) };
+  });
   deps.assertWithinCap();
   const tally = new UsageTally();
   let success = false;

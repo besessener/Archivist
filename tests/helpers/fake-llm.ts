@@ -141,6 +141,8 @@ export class FakeLlm {
   rejectJsonSchema = false;
   /** Retry-After header of the error answers (`status` other than 200). */
   retryAfter: string | null = null;
+  /** The next `count` non-embedding requests fail with `status` (and Retry-After), then the endpoint answers normally. */
+  failing = { count: 0, status: 429, retryAfter: null as string | null };
 
   /** false: the endpoint answers tool requests with plain text only (no native tool calling). */
   toolCalling = true;
@@ -168,6 +170,11 @@ export class FakeLlm {
     if (this.down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
     const target = url instanceof Request ? url.url : String(url);
     const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Body;
+    if (this.failing.count > 0 && !target.endsWith('/embeddings')) {
+      this.failing.count -= 1;
+      const headers = this.failing.retryAfter ? { 'retry-after': this.failing.retryAfter } : undefined;
+      return new Response(JSON.stringify({ error: { message: 'nope' } }), { status: this.failing.status, headers });
+    }
     if (this.status !== 200)
       return new Response(JSON.stringify({ error: { message: 'nope' } }), {
         status: this.status,

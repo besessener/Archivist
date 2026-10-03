@@ -21,6 +21,7 @@ export function TrashSection() {
   const trash = useQuery('trash:list', {}, { scopes: ['documents', 'audit'] });
   const [results, setResults] = useState<Record<string, UndoResult>>({});
   const [emptying, setEmptying] = useState(false);
+  const [compactionFailed, setCompactionFailed] = useState(false);
   const entries = trash.data ?? [];
 
   async function restore(entry: TrashEntry) {
@@ -63,6 +64,12 @@ export function TrashSection() {
           ))}
         </ul>
       )}
+      {compactionFailed && (
+        <Notice tone="warning" title="Datenbank nicht vollständig bereinigt" data-testid="trash-compaction-warning">
+          Die Dokumente sind entfernt, aber die Datenbank konnte nicht verdichtet werden. Reste des Textes können in freien Seiten der Datenbank bleiben, bis
+          sie beim nächsten Start oder bei einer späteren Verdichtung überschrieben werden.
+        </Notice>
+      )}
       <div>
         <Button variant="outline" disabled={busy || entries.length === 0} onClick={() => setEmptying(true)} data-testid="trash-empty">
           <Trash2 aria-hidden /> Aus Archivist entfernen …
@@ -89,7 +96,9 @@ export function TrashSection() {
           const result = await run(() => call('trash:empty', { confirmed: true, permanentlyConfirmed: true }), {
             success: 'Aus Archivist entfernt',
           });
-          if (result) setEmptying(false);
+          if (!result) return;
+          setCompactionFailed(result.documents > 0 && !result.databaseCompacted);
+          setEmptying(false);
         }}
       />
     </Section>
