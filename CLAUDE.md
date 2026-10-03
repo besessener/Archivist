@@ -92,6 +92,12 @@ and say so; never work around it quietly. Reasoning lives in
   app stays usable through a plain fallback, but never add behaviour, extra
   questions or heuristics that exist only for that case; the rule-based chat is
   an emergency fallback, not a second product.
+- **Ask, don't bury.** A decision that is the user's (a design choice, a rule
+  that seems to need reversing, scope beyond the request) is asked with the
+  question tool (`AskUserQuestion`) as soon as it comes up, with options and a
+  recommendation. A note in a PR description, summary, ticket or comment does
+  not count as asking; the user will not notice it there. Without that tool,
+  put the question first in your reply and wait for the answer.
 - **Smallest necessary change.** Preserve existing behaviour unless changing it
   is what was asked. Boy-scout fixes stay inside the function or file you are
   already editing; if something outside it breaks a rule, say so rather than
