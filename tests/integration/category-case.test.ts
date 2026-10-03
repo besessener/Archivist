@@ -13,7 +13,8 @@ afterEach(async () => {
 
 const categoryPaths = () => app.services.categories.list().map((c) => c.path);
 const sql = (query: string, ...params: unknown[]) => app.services.database.sqlite.prepare(query).run(...params);
-const misplaced = () => app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'misplaced_file' && i.title.startsWith('Ablageort passt nicht'));
+const misplaced = () =>
+  app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'misplaced_file' && i.title.startsWith('Ablageort passt nicht'));
 
 async function archived(name: string, loc: string): Promise<string> {
   app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc }));
