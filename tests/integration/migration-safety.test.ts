@@ -85,6 +85,19 @@ describe('Migration safety (#217)', () => {
     db.close();
   });
 
+  it('refuses to migrate when the snapshot cannot be written, and leaves the database as it was', () => {
+    const first = open();
+    first.migrate(migrationsUpTo('0010'), backups);
+    first.close();
+    fs.writeFileSync(backups, 'eine Datei, kein Ordner');
+
+    const db = open();
+
+    expect(() => db.migrate(MIGRATIONS, backups)).toThrow(/keine Sicherung/);
+    expect(db.migrationStatus(MIGRATIONS).applied).toBe(11);
+    db.close();
+  });
+
   it('keeps only the newest three snapshots', () => {
     fs.mkdirSync(backups, { recursive: true });
     for (const stamp of ['2020-01-01', '2020-01-02', '2020-01-03']) fs.writeFileSync(path.join(backups, `vor-migration-${stamp}.db`), '');

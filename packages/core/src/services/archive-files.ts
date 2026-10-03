@@ -59,9 +59,14 @@ async function flushOwnFile(p: string): Promise<void> {
   }
 }
 
-/** Flushes a file and its folder entry to disk; only a folder flush the platform does not offer is skipped. */
+/** Flushes a file and its folder entry to disk. */
 async function syncToDisk(p: string): Promise<void> {
   await flushOwnFile(p);
+  await flushFolderOf(p);
+}
+
+/** Flushes the folder entry of `p`; only a folder flush the platform does not offer is skipped. */
+async function flushFolderOf(p: string): Promise<void> {
   try {
     const folder = await fsp.open(path.dirname(p), 'r');
     try {
@@ -151,6 +156,7 @@ export class ArchiveFileOps {
       return this.copyDirect(source, dest); // no hard links on this file system
     }
     await this.removeCreated(temporary);
+    await flushFolderOf(dest).catch((err) => this.failCopy(err, dest)); // the final name must survive a power cut, too
     return true;
   }
 

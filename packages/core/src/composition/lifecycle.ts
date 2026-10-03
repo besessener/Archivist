@@ -8,8 +8,8 @@ type LifecycleServices = WiredServices & {
   enqueueLinkRun: (trigger: string) => Job;
 };
 
-/** Longest wait on running archive file operations when quitting. */
-const ARCHIVE_DRAIN_TIMEOUT_MS = 15_000;
+/** Longest wait on running archive file operations when quitting; stays below the desktop's 10 s quit deadline (QUIT_DEADLINE_MS). */
+const ARCHIVE_DRAIN_TIMEOUT_MS = 8_000;
 
 const BACKGROUND_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
 
@@ -92,7 +92,7 @@ export function createLifecycle(services: LifecycleServices) {
       startupBackup(services);
     },
 
-    /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (15 s) were awaited. */
+    /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (8 s) were awaited. */
     async shutdown(options: { jobTimeoutMs?: number; archiveTimeoutMs?: number } = {}): Promise<void> {
       reminders.stop();
       agent.stop();

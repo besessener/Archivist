@@ -45,10 +45,7 @@ export class DatabaseService {
     this.db = drizzle(this.sqlite, { schema });
   }
 
-  /**
-   * MigrationService task: applies the Drizzle migrations from the folder.
-   * A database from a newer app version is refused; with `backupDir`, pending migrations are preceded by a snapshot.
-   */
+  /** Applies the Drizzle migrations; refuses a database of a newer app, snapshots into `backupDir` before pending ones. */
   migrate(migrationsFolder: string, backupDir?: string): MigrationStatus {
     const before = this.migrationStatus(migrationsFolder);
     if (before.total > 0 && before.applied > before.total) throw new AppError('database_error', NEWER_DATABASE);
