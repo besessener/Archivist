@@ -1,3 +1,5 @@
+import type { EntityType } from '@archivist/shared';
+import { REEMBED_JOB } from '../services/search';
 import { ACTION_EXECUTE_JOB } from '../services/actions';
 import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
 import { DOCUMENT_REREAD_JOB } from '../services/documents';
@@ -89,7 +91,15 @@ async function rereadArchived({ documents, ctx }: JobServices, job: JobContext<{
 
 /** Job handlers for documents, the scanner, background agent runs (#313) and the archive check. */
 export function registerJobHandlers(services: JobServices): void {
-  const { jobs, agent, archive, consistency, contradictions, actions } = services;
+  const { jobs, agent, archive, consistency, contradictions, actions, search, embedding } = services;
+  const reindexers: Partial<Record<EntityType, (id: string) => Promise<void>>> = {
+    document: (id) => services.documents.indexDocument(id),
+    decision: (id) => services.decisions.reindex(id),
+    task: (id) => services.openItems.reindex(id),
+    question: (id) => services.openItems.reindex(id),
+    event: (id) => services.eventRecords.reindex(id),
+    note: (id) => services.notes.reindex(id),
+  };
   registerDocumentAnalysis(services);
   registerScannerJobs(services);
   jobs.register<{ documentIds: string[] }>(DOCUMENT_REREAD_JOB, { handler: (job) => rereadArchived(services, job) });
@@ -114,6 +124,17 @@ export function registerJobHandlers(services: JobServices): void {
     hooks: {
       onFailed: (job, error) => actions.markNotExecuted(job.payload.actionId, toErrorInfo(error).message),
       onCancelled: (job) => actions.markNotExecuted(job.payload.actionId, 'Abgebrochen, bevor die Aktion ausgeführt wurde.'),
+    },
+  });
+  jobs.register<Record<string, never>>(REEMBED_JOB, {
+    handler: async (job) => {
+      const stale = search.entriesWithOtherModel(embedding.currentModel({ allowRemote: true }));
+      for (const [index, entry] of stale.entries()) {
+        job.signal.throwIfAborted();
+        job.report(index / stale.length, `${index} von ${stale.length} neu eingebettet`);
+        await reindexers[entry.type]?.(entry.id);
+      }
+      return { summary: stale.length === 1 ? '1 Eintrag neu eingebettet' : `${stale.length} Einträge neu eingebettet` };
     },
   });
   jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {

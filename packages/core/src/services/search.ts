@@ -1,5 +1,5 @@
 import type { EntityType, SearchResult } from '@archivist/shared';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { chunks, decisions, documents, entities } from '../db/schema';
 import { newId } from '../util/ids';
@@ -25,6 +25,9 @@ export interface SearchHit extends SearchResult {
   /** The best matching chunk of the entity – the passage an answer should be based on (#157). */
   passage: string;
 }
+
+/** Job type that re-embeds entries after the embedding model changed (#173). */
+export const REEMBED_JOB = 'search.reembed';
 
 /** Minimum number of entities the keyword pass returns (more when the caller asks for more results). */
 const FTS_ENTITY_LIMIT = 60;
@@ -128,6 +131,24 @@ export class SearchService {
         this.ctx.logger.warn('search', 'Listener after indexing failed', { error: err, id: input.id });
       }
     }
+  }
+
+  /**
+   * Entries whose vectors came from another model than `model` and that a re-index can move to it (#173): documents may change
+   * between local and remote, every other type only leaves an outdated remote model (it is always embedded locally otherwise).
+   */
+  entriesWithOtherModel(model: string): Array<{ id: string; type: EntityType }> {
+    return this.ctx.database.db
+      .selectDistinct({ id: chunks.entityId, type: chunks.entityType })
+      .from(chunks)
+      .where(
+        and(
+          or(isNull(chunks.embeddingModel), ne(chunks.embeddingModel, model)),
+          or(eq(chunks.entityType, 'document'), and(isNotNull(chunks.embeddingModel), ne(chunks.embeddingModel, LOCAL_MODEL))),
+        ),
+      )
+      .all()
+      .map((row) => ({ id: row.id, type: row.type as EntityType }));
   }
 
   async search(query: string, opts: { types?: EntityType[]; limit?: number; allowRemoteEmbedding?: boolean } = {}): Promise<SearchHit[]> {
