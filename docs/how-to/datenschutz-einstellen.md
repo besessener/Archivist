@@ -33,6 +33,10 @@ Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `dia
 - **Protokoll:** Es enthält keine Schlüssel und keine Dokumentinhalte, aber Dateipfade und Fehlermeldungen. Zeilen, die ausgeschlossene Dateien, Ordner oder Dateitypen nennen, gibt `read_logs` nicht heraus. Alles andere geht, maskiert, an das LLM, sobald der Agent es liest. Das Protokoll selbst bleibt lokal; die Aufbewahrung stellst du unter Einstellungen → Protokolle (Stufe und Aufbewahrung) ein.
 - **Endpunkt-Messung:** `diagnose` sendet nur im Modus „automatisch“ eine feste Testanfrage an den Embedding-Endpunkt. Sie enthält keinen Dokumentinhalt, steht mit Zweck „Diagnose: Embedding-Endpunkt“ im Übertragungsprotokoll und entfällt in „vorher fragen“ und „nur lokal“.
 
+## Änderungsprotokoll
+
+Das Änderungsprotokoll (Einstellungen → Änderungsprotokoll) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert.
+
 ## Prüfen, was gesendet wurde
 
 Unter **Einstellungen → Datenschutz → An die KI übertragene Inhalte** steht jede Übertragung mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und einer gekürzten, maskierten Vorschau. Bei Agentenläufen zählt die Anzahl alle bis dahin im Lauf maskierten Stellen – in deiner Nachricht, in der Systemanweisung (Gelerntes, Profil) und in Werkzeugergebnissen.

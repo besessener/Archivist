@@ -1,11 +1,12 @@
-import type { AuditEntry } from '@archivist/shared';
-import { and, desc, eq, isNotNull, like, sql } from 'drizzle-orm';
+import type { AuditEntry, AuditVerification } from '@archivist/shared';
+import { and, asc, desc, eq, inArray, isNotNull, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { auditLog } from '../db/schema';
+import { auditLog, entities } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
 import { AppError } from '../util/errors';
 import { currentRun } from '../agent/scope';
+import { chainHash, verifyChain } from './audit-chain';
 
 export interface AuditInput {
   action: string;
@@ -63,24 +64,30 @@ export class AuditService {
       (run && input.success !== false && /\.create$/.test(input.action) && input.entityIds?.[0]
         ? { type: 'agent_created', data: { action: input.action, id: input.entityIds[0] } }
         : undefined);
+    const fixed = {
+      id,
+      at: nowIso(),
+      action: input.action,
+      actor: run ? 'agent' : input.actor,
+      trigger: input.trigger,
+      confirmed: input.confirmed,
+      entityIds: input.entityIds ?? [],
+      paths: input.paths ?? [],
+      before: (input.before ?? null) as ArchivistJson | null,
+      success: input.success ?? true,
+      runId: run?.runId ?? null,
+    };
+    const prevHash = this.newestHash();
     this.ctx.database.db
       .insert(auditLog)
       .values({
-        id,
-        at: nowIso(),
-        action: input.action,
-        actor: run ? 'agent' : input.actor,
-        trigger: input.trigger,
-        confirmed: input.confirmed,
-        entityIds: input.entityIds ?? [],
-        paths: input.paths ?? [],
-        before: (input.before ?? null) as ArchivistJson | null,
+        ...fixed,
         after: (input.after ?? null) as ArchivistJson | null,
-        success: input.success ?? true,
         error: input.error ?? null,
         undoType: undo?.type ?? null,
         undoData: (undo?.data ?? null) as ArchivistJson | null,
-        runId: run?.runId ?? null,
+        prevHash,
+        hash: chainHash(fixed, prevHash),
       })
       .run();
     this.ctx.events.changed('audit');
@@ -94,7 +101,48 @@ export class AuditService {
     return id;
   }
 
-  private toEntry(r: Row): AuditEntry {
+  private newestHash(): string | null {
+    return (
+      this.ctx.database.db
+        .select({ hash: auditLog.hash })
+        .from(auditLog)
+        .orderBy(sql`rowid desc`)
+        .limit(1)
+        .get()?.hash ?? null
+    );
+  }
+
+  /** Checks the hash chain: no entry was changed, removed or inserted since it was written (entries from before the chain are not covered). */
+  verify(): AuditVerification {
+    return verifyChain(
+      this.ctx.database.db
+        .select()
+        .from(auditLog)
+        .orderBy(asc(sql`rowid`))
+        .all(),
+    );
+  }
+
+  /** Titles of the entries the rows concern: the graph node's name, else the title the entry itself recorded (e.g. of a deleted one). */
+  private titlesOf(rows: Row[]): Map<string, string> {
+    const ids = [...new Set(rows.flatMap((row) => row.entityIds))];
+    const named = new Map<string, string>();
+    for (let start = 0; start < ids.length; start += 500)
+      for (const { id, name } of this.ctx.database.db
+        .select({ id: entities.id, name: entities.name })
+        .from(entities)
+        .where(inArray(entities.id, ids.slice(start, start + 500)))
+        .all())
+        named.set(id, name);
+    for (const row of rows) {
+      const first = row.entityIds[0];
+      const recorded = [row.before, row.after].map((value) => (value as { title?: unknown } | null)?.title).find((title) => typeof title === 'string');
+      if (first && !named.has(first) && typeof recorded === 'string') named.set(first, recorded);
+    }
+    return named;
+  }
+
+  private toEntry(r: Row, titles: Map<string, string>): AuditEntry {
     return {
       id: r.id,
       at: r.at,
@@ -103,6 +151,7 @@ export class AuditService {
       trigger: r.trigger,
       confirmed: r.confirmed,
       entityIds: r.entityIds,
+      entities: r.entityIds.flatMap((id) => (titles.has(id) ? [{ id, title: titles.get(id)! }] : [])),
       paths: r.paths,
       before: r.before,
       after: r.after,
@@ -114,14 +163,16 @@ export class AuditService {
     };
   }
 
-  list({ limit = 200, onlyUndoable = false }: { limit?: number; onlyUndoable?: boolean } = {}): AuditEntry[] {
+  list({ limit = 200, onlyUndoable = false, entityId }: { limit?: number; onlyUndoable?: boolean; entityId?: string } = {}): AuditEntry[] {
     const rows = this.ctx.database.db
       .select()
       .from(auditLog)
-      .orderBy(desc(auditLog.at))
+      .where(entityId ? sql`EXISTS (SELECT 1 FROM json_each(${auditLog.entityIds}) WHERE value = ${entityId})` : undefined)
+      .orderBy(desc(auditLog.at), sql`rowid desc`)
       .limit(limit * (onlyUndoable ? 5 : 1))
       .all();
-    const entries = rows.map((r) => this.toEntry(r));
+    const titles = this.titlesOf(rows);
+    const entries = rows.map((r) => this.toEntry(r, titles));
     return (onlyUndoable ? entries.filter((e) => e.undoable) : entries).slice(0, limit);
   }
 

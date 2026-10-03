@@ -3,19 +3,25 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { DECISION_FIELD_LABELS } from '@archivist/shared';
-import { Pencil, Replace } from 'lucide-react';
+import { Pencil, Replace, Trash2 } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { Markdown } from '@/components/common/markdown';
+import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { ErrorNote, Loading } from '@/components/common/states';
+import { DecisionHints } from '@/components/decisions/decision-hints';
+import { DecisionHistory } from '@/components/decisions/decision-history';
 import { decisionStatusVariant } from '@/components/decisions/decision-list-item';
 import { SupersedeDialog } from '@/components/decisions/supersede-dialog';
 import { RelatedEntries } from '@/components/knowledge/related';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DECISION_STATUS_LABELS } from '@/lib/labels';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { call } from '@/lib/ipc';
+import { DECISION_STATUS_HINTS, DECISION_STATUS_LABELS } from '@/lib/labels';
 import { formatLongDate } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
+import { useRun } from '@/lib/use-run';
 import type { ActionRecord, DecisionRecord } from '@/lib/types';
 
 /** Where the decision was captured – a decision from a document is no dictated one (#175). */
@@ -43,10 +49,12 @@ function RequiredValue({ known, unknown, children }: { known: boolean; unknown: 
 
 const notGiven = <span className="text-muted-foreground">nicht angegeben</span>;
 
-export function DecisionDetail({ id, onEdit }: { id: string; onEdit: (decision: DecisionRecord) => void }) {
+export function DecisionDetail({ id, onEdit, onDeleted }: { id: string; onEdit: (decision: DecisionRecord) => void; onDeleted: () => void }) {
   const detail = useQuery('decisions:get', { id }, { scopes: ['decisions'] });
   const [supersedeOpen, setSupersedeOpen] = useState(false);
   const [action, setAction] = useState<ActionRecord | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const { run } = useRun();
   if (detail.error && !detail.data) return <ErrorNote error={detail.error} onRetry={() => void detail.refetch()} />;
   if (!detail.data) return <Loading />;
   const decision = detail.data;
@@ -64,22 +72,57 @@ export function DecisionDetail({ id, onEdit }: { id: string; onEdit: (decision: 
           <Button size="sm" variant="outline" onClick={() => setSupersedeOpen(true)} data-testid="decision-supersede">
             <Replace aria-hidden /> Ersetzt durch …
           </Button>
+          {(decision.status === 'draft' || decision.status === 'unclear') && (
+            <Button size="sm" variant="outline" onClick={() => setDeleteOpen(true)} data-testid="decision-delete">
+              <Trash2 aria-hidden /> Löschen
+            </Button>
+          )}
         </div>
       </div>
-      {decision.missingFields.length > 0 && (
-        <div className="rounded-lg border border-warning/60 bg-warning/10 p-3 text-sm" data-testid="decision-detail-missing">
-          <p className="font-medium">Diese Entscheidung ist noch unvollständig</p>
-          <p className="text-muted-foreground">Es fehlt: {decision.missingFields.map((field) => DECISION_FIELD_LABELS[field]).join(', ')}.</p>
-        </div>
-      )}
-      <DecisionFields decision={decision} />
-      <RelatedEntries id={decision.id} link={{ name: decision.title }} />
-      {action && (
-        <div data-testid="supersede-action">
-          <h3 className="mb-2 text-sm font-semibold">Vorschlag</h3>
-          <ActionCard action={action} onResolved={() => void detail.refetch()} />
-        </div>
-      )}
+      <Tabs defaultValue="details">
+        <TabsList aria-label="Ansichten der Entscheidung">
+          <TabsTrigger value="details" data-testid="decision-tab-details">
+            Details
+          </TabsTrigger>
+          <TabsTrigger value="history" data-testid="decision-tab-history">
+            Verlauf
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="details" className="flex flex-col gap-4">
+          {decision.missingFields.length > 0 && (
+            <div className="rounded-lg border border-warning/60 bg-warning/10 p-3 text-sm" data-testid="decision-detail-missing">
+              <p className="font-medium">Diese Entscheidung ist noch unvollständig</p>
+              <p className="text-muted-foreground">Es fehlt: {decision.missingFields.map((field) => DECISION_FIELD_LABELS[field]).join(', ')}.</p>
+            </div>
+          )}
+          <DecisionHints id={decision.id} />
+          <DecisionFields decision={decision} />
+          <RelatedEntries id={decision.id} link={{ name: decision.title }} />
+          {action && (
+            <div data-testid="supersede-action">
+              <h3 className="mb-2 text-sm font-semibold">Vorschlag</h3>
+              <ActionCard action={action} onResolved={() => void detail.refetch()} />
+            </div>
+          )}
+        </TabsContent>
+        <TabsContent value="history">
+          <DecisionHistory decision={decision} />
+        </TabsContent>
+      </Tabs>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Entscheidung löschen?"
+        description={`„${decision.title}“ wird aus Entscheidungen, Suche und Wissensgraph entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.`}
+        confirmLabel="Löschen"
+        confirmTestId="decision-delete-confirm"
+        destructive
+        onConfirm={async () => {
+          const result = await run(() => call('decisions:delete', { id: decision.id, confirmed: true }), { success: 'Entscheidung gelöscht.' });
+          setDeleteOpen(false);
+          if (result) onDeleted();
+        }}
+      />
       <SupersedeDialog
         open={supersedeOpen}
         onOpenChange={setSupersedeOpen}
@@ -139,6 +182,16 @@ function DecisionFields({ decision }: { decision: DecisionRecord }) {
       </Row>
       <Row label="Status">
         {DECISION_STATUS_LABELS[decision.status]}
+        <span className="text-muted-foreground"> – {DECISION_STATUS_HINTS[decision.status]}</span>
+        {decision.supersededBy.map((successor) => (
+          <span key={successor.id} className="text-muted-foreground" data-testid="decision-successor">
+            {' '}
+            · ersetzt durch{' '}
+            <Link className="text-primary hover:underline" href={`/decisions/?id=${encodeURIComponent(successor.id)}`}>
+              {successor.title}
+            </Link>
+          </span>
+        ))}
         {decision.supersedesDecisionId && (
           <span className="text-muted-foreground">
             {' '}

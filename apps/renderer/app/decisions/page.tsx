@@ -114,6 +114,10 @@ function DecisionsInner() {
                 setEditing(decision);
                 setFormOpen(true);
               }}
+              onDeleted={() => {
+                void active.refetch();
+                router.push('/decisions/');
+              }}
             />
           ) : (
             <EmptyState title="Wähle eine Entscheidung" description="Klicke links auf einen Eintrag, um alle Einzelheiten zu sehen." />

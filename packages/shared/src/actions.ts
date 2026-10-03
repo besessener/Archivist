@@ -26,6 +26,7 @@ export const AgentActionType = z.enum([
   'add_open_item_source',
   'merge_open_items',
   'record_decision',
+  'add_decision_source',
   'undo_change',
   /** Changes an agent run prepared as proposals (mode „Fragen“ or critical, #298); confirmable as a whole or in part. */
   'agent_batch',
@@ -141,6 +142,8 @@ export const ActionParamSchemas = {
     /** Partial confirmation: indexes of the items to execute (all when absent). */
     selected: z.array(z.number().int().min(0)).optional(),
   }),
+  /** Adds a document as a source to an existing decision (instead of recording it twice). */
+  add_decision_source: z.object({ decisionId: Id, documentId: Id }),
   record_decision: z.object({
     title: z.string(),
     decisionText: z.string(),

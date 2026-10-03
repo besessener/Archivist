@@ -125,7 +125,7 @@ describe('Decisions from documents get their own participants (#178)', () => {
     await approve(proposal!.id);
     const [decision] = await app.ok('decisions:list', {});
     expect(decision!.participants).toEqual(['Gerd']);
-    expect(decision!.status).toBe('active');
+    expect(decision!.status).toBe('confirmed');
   });
 
   it('without named participants the decision is still complete (#198)', async () => {

@@ -132,7 +132,7 @@ function documentEntries({ db, refsOf }: TimelineReader, q: TimelineQuery): Unda
   }));
 }
 
-const DECISION_STATUS_NOTE: Record<string, string> = { superseded: ' (überholt)', draft: ' (Entwurf)' };
+const DECISION_STATUS_NOTE: Record<string, string> = { superseded: ' (überholt)', draft: ' (Entwurf)', revoked: ' (widerrufen)', unclear: ' (unklar)' };
 
 /** Without a decision or source document date a decision is undated; its capture day only keeps it in order (#168). */
 function decisionEntries({ db, refsOf }: TimelineReader, rows: Array<typeof decisions.$inferSelect>): UndatedEntry[] {

@@ -80,7 +80,7 @@ export function plainPatchColumns(current: DecisionRow, patch: DecisionPatch): P
   return set;
 }
 
-export function toDecision(row: DecisionRow, nameOf: (id: string | null) => string | null): Decision {
+export function toDecision(row: DecisionRow, nameOf: (id: string | null) => string | null, supersededBy: Decision['supersededBy'] = []): Decision {
   return {
     id: row.id,
     title: row.title,
@@ -98,6 +98,7 @@ export function toDecision(row: DecisionRow, nameOf: (id: string | null) => stri
     validFrom: row.validFrom,
     validUntil: row.validUntil,
     supersedesDecisionId: row.supersedesDecisionId,
+    supersededBy,
     sourceIds: row.sourceIds,
     confidence: row.confidence,
     missingFields: row.missingFields as DecisionField[],
@@ -132,6 +133,7 @@ export function formatDecision(d: Decision): string {
     `**Auswirkungen:** ${d.consequences ?? '–'}`,
     `**Alternativen:** ${d.alternatives.length ? d.alternatives.join('; ') : '–'}`,
     `**Status:** ${d.status}`,
+    ...(d.supersededBy.length ? [`**Ersetzt durch:** ${d.supersededBy.map((successor) => successor.title).join('; ')}`] : []),
     `**Confidence:** ${Math.round(d.confidence * 100)} %`,
   ].join('\n');
 }

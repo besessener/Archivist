@@ -1,6 +1,6 @@
 'use client';
 
-import { EditableDecisionStatus, isEditableDecisionStatus, type DecisionStatus } from '@archivist/shared';
+import { ACTIVE_DECISION_STATUSES, EditableDecisionStatus, isEditableDecisionStatus, type DecisionStatus } from '@archivist/shared';
 import { Field } from '@/components/common/states';
 import { Select } from '@/components/ui/select';
 import { formatLongDate } from '@/lib/format';
@@ -82,11 +82,11 @@ export function SupersededByField({
 }) {
   const others = useQuery('decisions:list', {}, { scopes: ['decisions'], enabled: open });
   return (
-    <Field label="Ersetzt durch" htmlFor="d-superseded-by">
+    <Field label="Ersetzt durch" htmlFor="d-superseded-by" hint="Nur gültige oder bestätigte Entscheidungen können eine andere ersetzen.">
       <Select id="d-superseded-by" value={value} onChange={(e) => onChange(e.target.value)} data-testid="decision-superseded-by">
         <option value="">Neuere Entscheidung wählen …</option>
         {(others.data ?? [])
-          .filter((other) => other.id !== decision.id)
+          .filter((other) => other.id !== decision.id && ACTIVE_DECISION_STATUSES.includes(other.status))
           .map((other) => (
             <option key={other.id} value={other.id}>
               {(other.title || other.decisionText).slice(0, 80)} ({formatLongDate(other.decidedAt, 'ohne Datum')})

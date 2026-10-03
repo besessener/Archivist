@@ -51,6 +51,25 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
       await expectNoSeriousA11yViolations(page, testInfo);
     });
 
+    test('a decision with its history and the change log have no serious or critical violations', async ({ on, page }, testInfo) => {
+      const { decisions, navigation, settings } = on(page);
+      await navigation.do.open('decisions');
+      await decisions.do.create({ text: 'Wir nutzen SQLite.', isoDate: '2026-10-01', topic: 'Datenbank', participants: 'Anna' });
+      await decisions.row('Wir nutzen SQLite.').click();
+      await expect(decisions()).toBeVisible();
+      await expectNoSeriousA11yViolations(page, testInfo);
+
+      await decisions.locators.tabs.history.click();
+      await expect(decisions.locators.history.entries.first()).toBeVisible();
+      await expectNoSeriousA11yViolations(page, testInfo);
+
+      await navigation.do.open('settings');
+      await settings.do.openAudit();
+      await expect(settings.locators.audit.rows.first()).toBeVisible();
+      await expect(settings.locators.audit.chainOk).toBeVisible();
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
+
     test('the agent settings with the limits per background task have no serious or critical violations', async ({ on, page }, testInfo) => {
       await on(page).navigation.do.open('settings');
       await on(page).settings.do.openAgent();

@@ -101,5 +101,7 @@ export const SourceReference = z.object({
   score: z.number().default(0),
   /** The source came in over a confirmed relation of another hit, e.g. „„Angebot“ stützt diesen Eintrag“ (#289). */
   via: z.string().nullish(),
+  /** Status of a decision source („Widerrufen“, „Unklar“ …), so a source that is not valid is recognisable without the LLM. */
+  statusNote: z.string().nullish(),
 });
 export type SourceReference = z.infer<typeof SourceReference>;
