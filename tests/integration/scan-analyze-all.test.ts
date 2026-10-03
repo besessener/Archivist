@@ -34,6 +34,23 @@ describe('„Alle neuen Dateien analysieren“ (#228)', () => {
     expect(await app.ok('scanner:analyzeAllPreview', {})).toEqual({ total: 5, llmEligible: 0, estimatedTokens: 0 });
   });
 
+  it('counts the parts of a long file and reports no eligible file without a configured LLM', async () => {
+    await scanned('confirm', ['a.txt']);
+    const short = (await app.ok('scanner:analyzeAllPreview', {})).estimatedTokens;
+    app.services.database.sqlite.prepare('UPDATE scan_files SET size = 60000').run();
+
+    const long = await app.ok('scanner:analyzeAllPreview', {});
+    await app.cleanup();
+    app = await createTestApp({ privacy: 'confirm', scanEnabled: true, configured: false });
+    app.file('Downloads/b.txt', 'Datei mit ausreichend Text, damit die Analyse etwas zu lesen hat.');
+    await app.ok('scanner:addDirectory', { path: path.join(app.home, 'Downloads'), recursive: true });
+    await app.ok('scanner:start', {});
+    await app.services.jobs.whenIdle();
+
+    expect(long.estimatedTokens).toBeGreaterThan(2 * short);
+    expect(await app.ok('scanner:analyzeAllPreview', {})).toEqual({ total: 1, llmEligible: 0, estimatedTokens: 0 });
+  });
+
   it('analyses every new file in one job with one consent and one notification', async () => {
     await scanned('confirm');
 

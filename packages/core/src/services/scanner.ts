@@ -23,6 +23,7 @@ import { FileAnalysis } from './scanner/file-analysis';
 import { ScanProposals } from './scanner/proposals';
 import { mapFile, mapRoot, type RootRow } from './scanner/scan-files';
 import { ScanRun } from './scanner/scan-run';
+import type { LlmService } from './llm';
 import type { SettingsService } from './settings';
 
 const mapExclusion = (row: typeof scanExclusions.$inferSelect): ScanExclusion => ({
@@ -39,6 +40,7 @@ export interface ScannerServiceDeps {
   docs: DocumentService;
   graph: KnowledgeGraphService;
   privacy: PrivacyService;
+  llm: LlmService;
   notifications: NotificationService;
   insights: InsightService;
   audit: AuditService;
@@ -63,7 +65,15 @@ export class ScannerService {
     this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
     this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications, jobs: deps.jobs });
     this.scanProposals = new ScanProposals({ ctx, graph });
-    this.bulk = new BulkFileAnalysis({ ctx, analysis: this.analysis, privacy, settings, jobs: deps.jobs, buildProposals: (ids) => this.buildProposals(ids) });
+    this.bulk = new BulkFileAnalysis({
+      ctx,
+      analysis: this.analysis,
+      privacy,
+      settings,
+      llm: deps.llm,
+      jobs: deps.jobs,
+      buildProposals: (ids) => this.buildProposals(ids),
+    });
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
       if (!event.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: event.documentId }).where(eq(scanFiles.path, event.sourcePath)).run();

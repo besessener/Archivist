@@ -1,6 +1,5 @@
 import fs from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppError } from '../../packages/core/src/util/errors';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { archived } from '../helpers/agent';
 import { classification } from '../helpers/document-classifications';
 import { createTestApp, type TestApp } from '../helpers/harness';
@@ -29,7 +28,6 @@ beforeEach(async () => {
   );
 });
 afterEach(async () => {
-  vi.restoreAllMocks();
   await app.cleanup();
 });
 
@@ -143,26 +141,18 @@ describe('Metadata-only re-analysis of archived documents (#220)', () => {
   });
 
   it('waits and tries again when the endpoint rate-limits, keeping the proposal pending until it succeeds', async () => {
-    const complete = app.services.llm.completeJson.bind(app.services.llm);
-    let calls = 0;
-    vi.spyOn(app.services.llm, 'completeJson').mockImplementation(async (...args: Parameters<typeof complete>) => {
-      calls += 1;
-      if (calls <= 2) throw new AppError('llm_error', 'Das LLM-Limit wurde erreicht.', { retryable: true, retryAfterMs: 1 });
-      return complete(...args);
-    });
+    app.llm.failing = { count: 6, status: 429, retryAfter: '0' };
 
     const job = await reprocess();
 
-    expect(calls).toBe(3);
+    expect(app.llm.failing.count).toBe(0);
     expect(job.status).toBe('succeeded');
     expect((await app.ok('documents:reanalysis', { id }))!.analyzedBy).toBe('llm');
   });
 
   it('summarises a run in one notification and counts documents it could not process', async () => {
     const other = await archived(app, { name: 'zweites.txt', content: 'Zweites Dokument mit ausreichend Text für eine Neuanalyse.', folder: 'private/wohnen' });
-    vi.spyOn(app.services.llm, 'completeJson').mockImplementation(async () => {
-      throw new AppError('llm_error', 'kaputt', { retryable: false });
-    });
+    app.llm.status = 400;
     app.services.database.sqlite.prepare("UPDATE documents SET extracted_text = '' WHERE id = ?").run(other);
 
     const { jobId } = await app.ok('documents:reprocess', { ids: [id, other], reread: false, reanalyze: true, confirmLlm: true });
@@ -187,5 +177,43 @@ describe('Metadata-only re-analysis of archived documents (#220)', () => {
 
     expect(estimate).toMatchObject({ total: 1, llmEligible: 1 });
     expect(estimate.estimatedTokens).toBeGreaterThan(400);
+  });
+
+  it('estimates every part of a long text', async () => {
+    const short = (await app.ok('documents:reprocessEstimate', { ids: [id] })).estimatedTokens;
+    app.services.database.sqlite.prepare('UPDATE documents SET extracted_text = ? WHERE id = ?').run('Wort '.repeat(40_000), id);
+
+    const long = (await app.ok('documents:reprocessEstimate', { ids: [id] })).estimatedTokens;
+
+    expect(long).toBeGreaterThan(2 * short);
+  });
+
+  describe('honours the privacy rules', () => {
+    const analysisCalls = () =>
+      app.llm.calls.filter((call) => call.schema === 'DocumentClassification' && call.input.includes('Nebenkostenabrechnung 2025 für'));
+
+    it.each([
+      ['a document excluded from the LLM', async () => void (await app.ok('documents:setLlmExcluded', { id, excluded: true }))],
+      ['a file type on the never-analyse list', async () => void app.services.settings.update({ privacy: { neverAnalyzeExtensions: ['txt'] } })],
+      ['local-only mode', async () => void app.services.settings.update({ privacy: { llmMode: 'local_only' } })],
+    ])('sends nothing and logs no transmission for %s', async (_name, restrict) => {
+      await restrict();
+      const transmissions = (await app.ok('llm:transmissions', { limit: 100 })).length;
+
+      const estimate = await app.ok('documents:reprocessEstimate', { ids: [id] });
+      await reprocess();
+
+      expect(estimate.llmEligible).toBe(0);
+      expect(analysisCalls()).toHaveLength(0);
+      expect((await app.ok('llm:transmissions', { limit: 100 })).length).toBe(transmissions);
+      expect((await app.ok('documents:reanalysis', { id }))!.analyzedBy).toBe('local');
+    });
+
+    it('records the permitted analysis in the transmission log', async () => {
+      await reprocess();
+
+      expect(analysisCalls()).toHaveLength(1);
+      expect((await app.ok('llm:transmissions', { limit: 100 })).some((entry) => entry.documentIds.includes(id))).toBe(true);
+    });
   });
 });

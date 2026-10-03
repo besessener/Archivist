@@ -124,11 +124,7 @@ function stageCopies(places: LayoutMigrationPlaces, entries: string[]): void {
   }
 }
 
-/**
- * Moves the application state of an older install (next to the documents) to the per-user data folder: copy, verify
- * every file by checksum, switch, remove the old copies, leave a marker. Interrupted at any point it resumes on the
- * next start; an existing target is never overwritten.
- */
+/** Moves an older install's state to the per-user data folder (copy, verify, switch, remove, marker); resumable, never overwrites. */
 export function migrateLegacyLayout(places: LayoutMigrationPlaces): LayoutMigrationResult {
   const legacyRoot = path.resolve(places.legacyRoot);
   const appDataRoot = path.resolve(places.appDataRoot);

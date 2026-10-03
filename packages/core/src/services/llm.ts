@@ -15,7 +15,7 @@ import { endpointUrl, postJson, type PostRequest, type PostResponse } from './ll
 import { outputLimitFor } from './llm/output-limits';
 import { requestEmbeddings } from './llm/embeddings';
 import { runConnectionTest, runStructuredTest } from './llm/connection-tests';
-import { preparedInput, previewOf } from './llm/prompt-text';
+import { maskedInput, previewOf } from './llm/prompt-text';
 import { ResponsesRunner } from './llm/responses-runner';
 import { waitFor } from './llm/retry-wait';
 import { structuredAnswer } from './llm/structured';
@@ -144,7 +144,7 @@ export class LlmService {
       this.ledger.assertWithinCap();
     }
     const masking = maskingOf(this.deps.settings.get());
-    const input = redactSecrets(preparedInput(request, llm.maxInputChars), masking);
+    const input = maskedInput(request, { maxInputChars: llm.maxInputChars, masking });
     const instructions = redactSecrets(request.instructions, masking);
     const prepared: PreparedRequest = {
       connection,

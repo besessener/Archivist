@@ -1,4 +1,5 @@
 import type { DocumentClassification } from '@archivist/shared';
+import { redactSecrets, type RedactionOptions } from '../util/redact';
 import { normalizeName } from '../util/text';
 
 /** Upper bound of LLM requests for one document (cost and time); the rest of a longer text is reported as not read. */
@@ -15,8 +16,18 @@ export function partSize(limits: { maxInputChars: number; promptChars: number })
   return Math.max(MIN_PART_CHARS, Math.floor((limits.maxInputChars - limits.promptChars) * PART_FILL));
 }
 
-/** The text in consecutive parts of at most `size` characters, cut at a line break where one is near; at most `MAX_LLM_PARTS` parts. */
-export function splitIntoParts(text: string, size: number): string[] {
+/** Characters on each side of a cut that are checked for an identifier the cut would split. */
+const CUT_WINDOW = 2_000;
+
+/** Whether cutting `text` at `position` leaves every masked spot (secret, IBAN, card number …) whole on one side. */
+export function cutKeepsMasking(text: string, position: number, masking: RedactionOptions): boolean {
+  const left = text.slice(Math.max(0, position - CUT_WINDOW), position);
+  const right = text.slice(position, position + CUT_WINDOW);
+  return redactSecrets(left + right, masking).count === redactSecrets(left, masking).count + redactSecrets(right, masking).count;
+}
+
+/** The text in consecutive parts of at most `size` characters, cut at a line break where one is near and never inside `isSafeCut`'s refusal; at most `MAX_LLM_PARTS` parts. */
+export function splitIntoParts(text: string, size: number, isSafeCut: (text: string, position: number) => boolean = () => true): string[] {
   const parts: string[] = [];
   let start = 0;
   while (start < text.length && parts.length < MAX_LLM_PARTS) {
@@ -24,6 +35,7 @@ export function splitIntoParts(text: string, size: number): string[] {
     if (end < text.length) {
       const lineBreak = text.lastIndexOf('\n', end);
       if (lineBreak > start + size / 2) end = lineBreak + 1;
+      while (end > start + size / 2 && !isSafeCut(text, end)) end -= 1;
     }
     parts.push(text.slice(start, end));
     start = end;

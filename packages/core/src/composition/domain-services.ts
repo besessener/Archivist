@@ -57,7 +57,7 @@ export function createDomainServices(base: BaseServices) {
   const contradictions = new ContradictionService({ ctx, decisions, graph, insights, notifications, llm, privacy, docs: documents });
   const archive = new ArchiveService({ ctx, settings, docs: documents, categories, graph, persons, audit, notifications, pool, undo });
   const archiveRoot = new ArchiveRootService({ ctx, settings, archive, audit, notifications, jobs, undo });
-  const scanner = new ScannerService({ ctx, settings, pool, docs: documents, graph, privacy, notifications, insights, audit, jobs });
+  const scanner = new ScannerService({ ctx, settings, pool, docs: documents, graph, privacy, llm, notifications, insights, audit, jobs });
   const timeline = new TimelineService(ctx);
   const entityDuplicates = new EntityDuplicateCheck({ ctx, insights, actions, llm, privacy });
   const appState = new AppStateService(ctx);

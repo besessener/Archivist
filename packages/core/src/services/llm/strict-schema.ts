@@ -46,11 +46,7 @@ function convertNode(node: unknown): JsonObject {
   return { ...kept, properties, required: Object.keys(properties), additionalProperties: false };
 }
 
-/**
- * The JSON schema of a Zod schema in the strict form of Structured Outputs: every object closed (`additionalProperties: false`)
- * with all properties required. Optional properties stay required, because Zod would reject a `null` for them.
- * Returns null when the schema cannot be expressed (free-form objects, tuples, intersections, untyped values): the caller falls back to JSON mode.
- */
+/** The strict Structured Outputs JSON schema of a Zod schema (closed objects, all properties required); null if inexpressible. */
 export function toStrictJsonSchema(schema: z.ZodType): JsonObject | null {
   try {
     const converted = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'throw' }) as JsonObject;

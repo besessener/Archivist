@@ -26,22 +26,16 @@ const llmFailures = () => app.services.notifications.list().filter((n) => n.titl
 
 describe('A rate limit or an outage re-queues the analysis instead of downgrading it (#220)', () => {
   it('keeps the document pending and analyses it with the LLM once the endpoint answers again', async () => {
-    const complete = app.services.llm.completeJson.bind(app.services.llm);
-    let calls = 0;
-    vi.spyOn(app.services.llm, 'completeJson').mockImplementation(async (...args: Parameters<typeof complete>) => {
-      calls += 1;
-      if (calls <= 2) throw new AppError('llm_error', 'Das LLM-Limit wurde erreicht.', { retryable: true });
-      return complete(...args);
-    });
+    // the client's 3 attempts all fail once, so the job is re-queued
+    app.llm.failing = { count: 3, status: 429, retryAfter: '0' };
     const id = await importOne();
     await app.services.jobs.whenIdle();
 
-    expect(calls).toBe(3);
     const document = await app.ok('documents:get', { id });
     expect(document).toMatchObject({ status: 'proposed', llmStatus: 'analyzed' });
     expect(document.proposal?.analyzedBy).toBe('llm');
     expect(llmFailures()).toHaveLength(0);
-    expect(analyzeJob()).toMatchObject({ status: 'succeeded', attempts: 3 });
+    expect(analyzeJob()).toMatchObject({ status: 'succeeded', attempts: 2 });
   });
 
   it('falls back to the local classification, with the notification, after 5 failed attempts', async () => {
@@ -57,19 +51,13 @@ describe('A rate limit or an outage re-queues the analysis instead of downgradin
   });
 
   it('waits as long as the server asked (retryAfterMs) before the next attempt', async () => {
-    let calls = 0;
-    vi.spyOn(app.services.llm, 'completeJson').mockImplementation(async () => {
-      calls += 1;
-      throw new AppError('llm_error', 'Das LLM-Limit wurde erreicht.', { retryable: true, retryAfterMs: 120_000 });
-    });
+    app.llm.failing = { count: 1000, status: 429, retryAfter: '3600' };
     const id = await importOne();
-    await vi.waitFor(() => expect(calls).toBe(1));
-    await vi.waitFor(() => expect(analyzeJob().progressMessage).toMatch(/Neuer Versuch in 120 s/));
+    await vi.waitFor(() => expect(analyzeJob().progressMessage).toMatch(/Neuer Versuch in 300 s/));
 
     expect(analyzeJob().status).toBe('pending');
     expect(await app.ok('documents:get', { id })).toMatchObject({ llmStatus: 'pending', processingError: null });
     expect(llmFailures()).toHaveLength(0);
-    vi.restoreAllMocks();
     app.services.jobs.cancel(analyzeJob().id);
   });
 

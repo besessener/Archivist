@@ -24,10 +24,7 @@ interface CompletionRequest extends StructuredRequest {
 /** `text.format` name: letters, digits, `_` and `-`, at most 64 characters. */
 const formatName = (schemaName: string) => schemaName.replace(/[^\w-]/g, '_').slice(0, 64);
 
-/**
- * Asks for an answer in the shape of `schema` (Structured Outputs when the schema allows it, else JSON mode) and validates it with Zod.
- * An invalid answer gets exactly one correction request; the correction note is appended after the input was cut, so it always arrives.
- */
+/** Asks for an answer in the shape of `schema` (Structured Outputs, else JSON mode), validated with Zod; one correction request on invalid output. */
 export async function structuredAnswer<T extends z.ZodType>(
   schema: T,
   request: StructuredRequest,

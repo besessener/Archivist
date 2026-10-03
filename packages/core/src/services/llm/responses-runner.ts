@@ -42,7 +42,8 @@ export class ResponsesRunner {
         model: connection.model,
         instructions: call.instructions,
         input: call.input,
-        maxOutputTokens: call.maxOutputTokens,
+        // a dropped „none“ leaves the model its default thinking, which could eat the output limit
+        maxOutputTokens: call.reasoningEffort === 'none' && rejected.has('reasoning') ? undefined : call.maxOutputTokens,
         reasoningEffort: effectiveEffort(call.reasoningEffort, { baseUrl: connection.baseUrl, rejected }),
         json: call.json,
         jsonSchema: call.jsonSchema && !rejected.has('json_schema') ? call.jsonSchema : undefined,

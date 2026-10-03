@@ -7,7 +7,7 @@ import { documentReanalysis, documents, scanFiles } from '../db/schema';
 import { AppError, permissionError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { isInside } from '../util/paths';
-import { clearTransmissionPreviews, compactDatabase } from './document-purge';
+import { clearTransmissionPreviews, compactDatabase, purgeMetadataUndo } from './document-purge';
 import { ArchiveFileOps, pruneEmptyDirs, type MovedFile } from './archive-files';
 import type { DocRow, DocumentDeps } from './document-model';
 import type { NodeSnapshot } from './knowledge-graph';
@@ -124,10 +124,9 @@ export class DocumentTrash {
       audit.endUndo(entry.auditId);
     }
     await this.removeEmptyFolders();
-    clearTransmissionPreviews(
-      ctx,
-      entries.map((entry) => entry.documentId),
-    );
+    const documentIds = entries.map((entry) => entry.documentId);
+    clearTransmissionPreviews(ctx, documentIds);
+    purgeMetadataUndo(ctx, documentIds);
     const databaseCompacted = entries.length > 0 && compactDatabase(ctx);
     audit.log({
       action: 'trash.empty',

@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { redactSecrets, type RedactionOptions } from '../../util/redact';
+import { redactSecrets, type RedactionOptions, type RedactionResult } from '../../util/redact';
 
 /** JSON mode of the Responses API needs the word "json" in the input (instructions don't count), else HTTP 400. */
 const JSON_INPUT_HINT = 'Antworte als JSON.\n\n';
@@ -7,8 +7,24 @@ const JSON_INPUT_HINT = 'Antworte als JSON.\n\n';
 /** Share of the limit kept from the end: the user's own message and the final instruction come last (#155). */
 const TAIL_SHARE = 0.25;
 
+/** The input masked first and then cut, so an identifier at the cut cannot escape its checksum rule; counts add up. */
+export function maskedInput(
+  request: { input: string; json?: boolean; appendix?: string },
+  limits: { maxInputChars: number; masking: RedactionOptions },
+): RedactionResult {
+  const body = redactSecrets(request.input, limits.masking);
+  const appendix = redactSecrets(request.appendix ?? '', limits.masking);
+  const text = preparedInput({ input: body.text, json: request.json, appendix: appendix.text }, limits.maxInputChars);
+  return {
+    text,
+    count: body.count + appendix.count,
+    personalData: body.personalData + appendix.personalData,
+    kinds: [...new Set([...body.kinds, ...appendix.kinds])],
+  };
+}
+
 /** The input as sent: cut in the middle to `maxInputChars` (with a note), the appendix after it, and, in JSON mode, naming JSON. */
-export function preparedInput(request: { input: string; json?: boolean; appendix?: string }, maxInputChars: number): string {
+function preparedInput(request: { input: string; json?: boolean; appendix?: string }, maxInputChars: number): string {
   let input = request.input;
   if (input.length > maxInputChars) {
     const tail = Math.floor(maxInputChars * TAIL_SHARE);

@@ -1,10 +1,12 @@
 import fs from 'node:fs';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { documents, llmTransmissions } from '../../packages/core/src/db/schema';
 import { newId, nowIso } from '../../packages/core/src/util/ids';
 import { DecisionInput } from '@archivist/shared';
 import { agentApp, archived } from '../helpers/agent';
+import { classification } from '../helpers/document-classifications';
 import type { TestApp } from '../helpers/harness';
 
 const MARKER = 'zebrakraut4711geheimtext';
@@ -78,6 +80,57 @@ describe('emptying the trash removes the extracted text from Archivist', () => {
 
     const previews = (await app.ok('llm:transmissions', { limit: 100 })).filter((entry) => entry.documentIds.includes(kept));
     expect(previews.some((entry) => entry.preview.toLowerCase().includes('aprikosenmarmelade'))).toBe(true);
+  });
+
+  it('also removes the old summary from the undo steps of earlier edits, and the audit chain stays valid', async () => {
+    const id = await archivedWithTraces('Neuanalyse.txt', `Altbestand: ${MARKER} zur Neuanalyse.`);
+    app.services.database.sqlite.prepare('UPDATE documents SET proposal = NULL WHERE id = ?').run(id);
+    app.llm.on('DocumentClassification', () =>
+      classification({ title: 'Neu benannt', summary: 'Neue Zusammenfassung.', categoryPath: 'private/post', docType: 'Brief' }),
+    );
+    await app.ok('documents:reprocess', { ids: [id], reread: false, reanalyze: true, confirmLlm: true });
+    await app.services.jobs.whenIdle();
+    await app.ok('documents:applyReanalysis', { id, confirmed: true });
+    await app.ok('documents:bulkUpdate', { ids: [id], addTags: ['blau'], confirmed: true });
+    expect(tableText('audit_log'), 'precondition: the undo data keeps the old summary').toContain(MARKER);
+    await app.ok('documents:trash', { id, confirmed: true });
+
+    await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true });
+
+    expect(tableText('audit_log')).not.toContain(MARKER);
+    expect(storedBytes()).not.toContain(MARKER);
+    expect(await app.ok('audit:verify', {})).toMatchObject({ brokenEntryId: null, truncated: false });
+  });
+
+  it('keeps the undo of a bulk edit for the documents that stay', async () => {
+    const kept = await archivedWithTraces('Bleibt.txt', 'Bleibt: Aprikosenmarmelade');
+    const gone = await archivedWithTraces('Geht.txt', `Geht: ${MARKER}`);
+    await app.ok('documents:bulkUpdate', { ids: [kept, gone], addTags: ['blau'], confirmed: true });
+    await app.ok('documents:trash', { id: gone, confirmed: true });
+
+    await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true });
+
+    const bulk = (await app.ok('audit:list', {})).find((entry) => entry.action === 'document.bulkUpdate')!;
+    expect((await app.ok('audit:undo', { auditId: bulk.id })).undone).toBe(true);
+    expect(app.services.documents.getRow(kept).tags).not.toContain('blau');
+    expect(tableText('audit_log')).not.toContain(MARKER);
+  });
+
+  it('reports when the database could not be compacted', async () => {
+    const id = await archivedWithTraces('Gesperrt.txt', `Gesperrt: ${MARKER}`);
+    await app.ok('documents:trash', { id, confirmed: true });
+    // a second connection with an open read transaction keeps the write-ahead log from being truncated
+    const reader = new Database(app.services.database.file);
+    reader.pragma('busy_timeout = 0');
+    reader.exec('BEGIN');
+    reader.prepare('SELECT count(*) FROM documents').get();
+    app.services.database.sqlite.pragma('busy_timeout = 0');
+    try {
+      const result = await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true });
+      expect(result).toMatchObject({ documents: 1, databaseCompacted: false });
+    } finally {
+      reader.close();
+    }
   });
 
   it('does nothing with the database when the trash is empty', async () => {
