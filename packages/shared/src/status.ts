@@ -29,6 +29,8 @@ export const LlmTestResult = z.object({
   message: z.string(),
   modelReply: z.string().nullable(),
   error: AppErrorInfo.nullable(),
+  /** Structured (JSON) answers, which every feature but the plain connection test relies on (#265). */
+  structured: z.object({ ok: z.boolean(), message: z.string() }).nullish(),
   /** Agent capability: adapter, native tool calling, streaming (#296, #297). */
   agent: AgentCapability.nullish(),
 });

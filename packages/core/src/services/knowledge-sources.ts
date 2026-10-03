@@ -20,6 +20,8 @@ export type GatheredSource = SourceReference & {
   _dates?: string[];
   /** Archive date of a document source (the header names it separately from the document date). */
   _archivedAt?: string | null;
+  /** A superseded or revoked decision: listed after the current ones (#170). */
+  _outdated?: boolean;
 };
 
 /** Characters of the matched passage per source (a whole chunk of the search index). */
@@ -130,7 +132,7 @@ export class SourceReader {
       id: hit.id,
       type: 'document',
       title: d.title,
-      snippet: truncate(d.summary ?? hit.snippet, 220),
+      snippet: truncate(hit.snippet || d.summary || '', 220),
       path: this.documentPath(d),
       ...documentDateRef(d),
       score: hit.score,
@@ -155,6 +157,7 @@ export class SourceReader {
       _text: this.decisionPromptText(d, backing),
       _topics: subjectIds(d.topicId, d.projectId),
       _dates: d.decidedAt ? [d.decidedAt] : [],
+      ...(d.status === 'superseded' || d.status === 'revoked' ? { _outdated: true } : {}),
     };
   }
 

@@ -13,7 +13,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 | Modellname | `llm.model` |
 | Reasoning effort (optional) | `llm.reasoningEffort` |
 | Timeout | `llm.timeoutMs` |
-| maximale Eingabegröße | `llm.maxInputChars` |
+| maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben) |
 | Embedding-Modell (optional) | `llm.embeddingModel` |
 
 ## Anfragen

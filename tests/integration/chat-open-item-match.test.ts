@@ -34,6 +34,22 @@ describe('Accurate matching of open items in the chat (#39)', () => {
     expect(r2.assistantMessage.content).toContain('Vertrag kündigen');
   });
 
+  it('understands an ordinal answer („den zweiten“) and says so when an answer fits no choice (#250)', async () => {
+    const review = await item('Vertrag prüfen');
+    const cancel = await item('Vertrag kündigen');
+    app.llm.on('ChatIntent', () => intent({ intent: 'open_item_close', openItem: { targetHint: 'Vertrag' } }));
+    const asked = await send('Der Vertrag ist erledigt');
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
+    const chosen = await send('den zweiten', asked.conversationId);
+    expect([review.id, cancel.id]).toContain(closeTarget(chosen));
+
+    app.llm.on('ChatIntent', () => intent({ intent: 'open_item_close', openItem: { targetHint: 'Vertrag' } }));
+    const again = await send('Der Vertrag ist erledigt');
+    app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
+    const unrelated = await send('Wie war nochmal das Wetter', again.conversationId);
+    expect(unrelated.assistantMessage.content).toContain('keine Antwort auf meine Rückfrage');
+  });
+
   it('without an LLM: „Der PoC ist erledigt, schließ den Punkt bitte“ matches „PoC vorstellen“', async () => {
     const poc = await item('PoC vorstellen');
     await item('Steuer');

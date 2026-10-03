@@ -13,7 +13,7 @@ In diesem Tutorial richtest du Archivist ein, archivierst dein erstes Dokument, 
 Starte Archivist. Beim ersten Start öffnet sich der Einrichtungsdialog.
 
 1. Trag deinen Namen ein. Archivist weiß damit, wer „ich“ ist.
-2. Trag **Base URL**, **API-Key** und **Modell** ein und klick auf **Verbindung testen**. Der Test prüft einen echten Werkzeugaufruf. Schlägt er fehl, hilft die [Fehlerbehebung](../how-to/fehlerbehebung.md).
+2. Trag **Base URL**, **API-Key** und **Modell** ein und klick auf **Verbindung testen**. Der Test prüft Text, strukturierte Antworten und einen echten Werkzeugaufruf. Schlägt er fehl, hilft die [Fehlerbehebung](../how-to/fehlerbehebung.md).
 3. Scan-Verzeichnisse kannst du überspringen – das holst du später mit [Verzeichnisse scannen](../how-to/verzeichnisse-scannen.md) nach.
 4. Lass den Datenschutzmodus auf **Vor externer Analyse bestätigen** (`confirm`). So siehst du bei jedem Schritt, was das Modell zu sehen bekommt.
 

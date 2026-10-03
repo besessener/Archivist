@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
+import { connectionTitle, connectionTone } from '@/lib/labels';
 import type { IpcOutput } from '@archivist/shared';
 import { Section, useSaveSettings, type TabProps } from './shared';
 
@@ -100,15 +101,12 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           </Button>
         </div>
         {test && (
-          <Notice
-            tone={test.ok ? 'info' : 'danger'}
-            title={test.ok ? 'Verbindung erfolgreich' : 'Verbindung fehlgeschlagen'}
-            data-testid="settings-test-result"
-          >
+          <Notice tone={connectionTone(test)} title={connectionTitle(test)} data-testid="settings-test-result">
             <p>{test.message}</p>
             {test.latencyMs !== null && <p className="mt-1 text-xs">Antwortzeit: {test.latencyMs} ms</p>}
             {test.modelReply && <p className="mt-1 text-xs">Antwort des Modells: „{test.modelReply}“</p>}
             {!test.ok && test.error && <p className="mt-1 text-xs">{test.error.message}</p>}
+            {test.ok && test.structured && !test.structured.ok && <p className="mt-1 text-xs">{test.structured.message}</p>}
             {test.ok && test.agent && <AgentCapabilityNote capability={test.agent} onApplyBaseUrl={setBaseUrl} testId="settings-agent-capability" />}
           </Notice>
         )}

@@ -132,7 +132,9 @@ describe('LLM client: JSON mode', () => {
     );
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toMatchObject({ text: { format: { type: 'json_object' } } });
-    expect(String(bodies[0]?.input)).toMatch(/^Antworte als JSON\.\n\nNachricht des Benutz\n\[… Eingabe auf 20 Zeichen gekürzt\]$/);
+    expect(String(bodies[0]?.input)).toMatch(
+      /^Antworte als JSON\.\n\nNachricht des B\n\[… Eingabe auf 20 Zeichen gekürzt, der mittlere Teil fehlt …\]\ners: $/,
+    );
     expect(llm.status().state).toBe('ok');
   });
 

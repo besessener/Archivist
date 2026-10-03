@@ -98,3 +98,13 @@ describe('Relocating many documents is especially far-reaching (#199)', () => {
     expect(denied.ok).toBe(false);
   });
 });
+
+describe('Known topics in the intent prompt (#197)', () => {
+  it('names the topics that share words with the message even beyond the first 40 alphabetically', async () => {
+    for (let i = 0; i < 60; i += 1) app.services.graph.ensureEntity({ type: 'topic', name: `Alpha ${String(i).padStart(2, '0')}` });
+    app.services.graph.ensureEntity({ type: 'topic', name: 'Zebrastreifen' });
+    app.llm.on('ChatIntent', () => intent);
+    await app.ok('chat:send', { text: 'Was war mit dem Zebrastreifen?' });
+    expect(knownTopicsLine(lastInput('ChatIntent'))).toMatch(/^Zebrastreifen, /);
+  });
+});

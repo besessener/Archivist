@@ -54,6 +54,8 @@ export class SourceGatherer {
       out.push(source);
       if (hit.type === 'document') chosenDocuments.push(hit.id);
     }
+    // superseded or revoked decisions must not outrank the current ones (#170)
+    out.sort((a, b) => Number(a._outdated ?? false) - Number(b._outdated ?? false));
     // up to 3 supporting documents of retrieved decisions, after the hits
     const ids = new Set(out.map((o) => o.id));
     const support = supporting.filter((b, i) => !ids.has(b.id) && supporting.findIndex((x) => x.id === b.id) === i).slice(0, 3);

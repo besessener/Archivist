@@ -47,6 +47,21 @@ describe('replaying history without withdrawn documents (#202, #301)', () => {
     });
   });
 
+  it('withholds an answer built on a withheld result even when it names no document, up to the next question (#202)', () => {
+    const history = [
+      user('Was steht im Tagebuch?'),
+      assistant('', [findCall]),
+      toolResults('D7: Tagebuch'),
+      assistant('Du hast von GEHEIMNIS-0815 geschrieben.'),
+      user('Danke'),
+      assistant('Gern.'),
+    ];
+
+    const replay = withholdWithdrawn(history, new Set(['D7']));
+
+    expect(replay.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual(['', WITHHELD_TEXT, 'Gern.']);
+  });
+
   it('recognises document references with up to five digits', () => {
     const [replayed] = withholdWithdrawn([toolResults('D12: Mietvertrag', 'D12345: Police')], new Set(['D12', 'D12345']));
 

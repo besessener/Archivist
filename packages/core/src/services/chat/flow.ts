@@ -19,6 +19,13 @@ import {
 import type { ChatTurn } from './types';
 import type { WorkRunner } from './work-runner';
 
+/** The original request behind a choice the message did not answer is not run – say so instead of dropping it silently (#250). */
+function withUnansweredNote(reply: Reply, pending: ChoicePending | null): Reply {
+  if (pending?.kind !== 'open_item_choice' && pending?.kind !== 'subject_choice') return reply;
+  const note = `_Hinweis: Deine Nachricht war keine Antwort auf meine Rückfrage, deshalb habe ich „${truncate(pending.intent.segment ?? pending.text, 80)}“ nicht ausgeführt. Sag es gern noch einmal._`;
+  return { ...reply, content: `${reply.content}\n\n${note}` };
+}
+
 type SavePending = Extract<Pending, { kind: 'confirm_save' }>;
 
 /** A short answer without a request of its own (even „ja“) is, without LLM, an attempt to answer the follow-up question. */
@@ -30,23 +37,25 @@ export class ChatFlow {
 
   async handle(turn: ChatTurn): Promise<Reply> {
     let state = turn.state;
+    let unanswered: ChoicePending | null = null;
     if (isChoice(state.pending)) {
       const pending = state.pending;
       state = { ...state, pending: null };
       const answered = await this.answerChoice(pending, { ...turn, state });
       if (answered) return answered;
+      unanswered = pending;
     }
     // „Entscheidung, Ereignis, Notiz oder nichts?“: deterministically first, otherwise with a hint via the LLM
     const saving = state.pending?.kind === 'confirm_save' ? state.pending : null;
     const choice = saving ? parseSaveChoice(turn.text) : null;
     if (saving && choice) return this.applySaveChoice({ ...turn, state }, { choice, pending: saving });
     const classified = await this.helpers.classifier.classify({ ...turn, state });
-    const reply = await this.replyTo({ ...turn, state }, { classified, saving });
+    const reply = withUnansweredNote(await this.replyTo({ ...turn, state }, { classified, saving }), unanswered);
     if (classified.viaLlm || !classified.llmError) return reply;
     return {
       ...reply,
       content: `${reply.content}\n\n_Hinweis: ${classified.llmError} Ich habe die Nachricht regelbasiert ausgewertet – Ergebnisse können ungenauer sein._`,
-      errorMessage: classified.llmError,
+      ...(classified.llmFailed ? { errorMessage: classified.llmError } : {}),
       uncertainties: [...(reply.uncertainties ?? []), 'Ohne LLM nur regelbasierte Auswertung.'],
     };
   }

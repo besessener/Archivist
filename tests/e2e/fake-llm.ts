@@ -115,6 +115,7 @@ const KNOWLEDGE_ANSWER = {
 /** The text answer for a JSON schema; the analysis expects ChatIntent as {intents: [...]}. */
 function textAnswer(schema: string, input: string): string {
   if (schema === 'plain') return 'OK';
+  if (schema === 'ConnectionTest') return JSON.stringify({ ok: true });
   if (schema === 'DocumentClassification') return JSON.stringify(classification(input));
   if (schema === 'ChatIntent') return JSON.stringify({ intents: [chatIntent(input)] });
   if (schema === 'KnowledgeAnswer') return JSON.stringify(KNOWLEDGE_ANSWER);

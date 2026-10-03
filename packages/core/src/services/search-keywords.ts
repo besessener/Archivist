@@ -35,8 +35,14 @@ function queryTerms(query: string): string[] {
   return [...new Set((kept.length ? kept : tokens).map(searchStem))].slice(0, 12);
 }
 
+/** The index keeps ß while terms are folded to ss: a term with ss also matches its ß spelling (#161). */
+function termMatch(term: string): string {
+  const quoted = (t: string) => `"${t.replace(/"/g, '')}"*`;
+  return term.includes('ss') ? `(${quoted(term)} OR ${quoted(term.replaceAll('ss', 'ß'))})` : quoted(term);
+}
+
 function ftsQuery(terms: string[], operator: 'AND' | 'OR'): string {
-  return terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(` ${operator} `);
+  return terms.map(termMatch).join(` ${operator} `);
 }
 
 /** How many distinct terms a chunk (with its title) contains, as word prefixes. */

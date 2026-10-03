@@ -4,6 +4,7 @@ import type {
   InsightKind,
   JobStatus,
   LlmStatus,
+  LlmTestResult,
   NotificationType,
   OpenItemStatus,
   RelationStatus,
@@ -145,3 +146,10 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
 };
 
 export const SUPPORTED_TYPES_TEXT = 'pdf, docx, pptx, xlsx, txt, md, eml, png, jpg, jpeg';
+
+const structuredFailed = (test: LlmTestResult) => test.ok && test.structured?.ok === false;
+
+export const connectionTone = (test: LlmTestResult) => (!test.ok ? 'danger' : structuredFailed(test) ? 'warning' : 'info');
+
+export const connectionTitle = (test: LlmTestResult) =>
+  !test.ok ? 'Verbindung fehlgeschlagen' : structuredFailed(test) ? 'Verbindung steht, strukturierte Antworten fehlgeschlagen' : 'Verbindung erfolgreich';

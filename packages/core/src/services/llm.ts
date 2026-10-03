@@ -267,14 +267,18 @@ export class LlmService {
   }
 
   /** Structured answer validated with Zod: on invalid output exactly one correction request, then an error (nothing runs). */
-  async completeJson<T extends z.ZodType>(schema: T, request: Omit<LlmRequest, 'json'> & { schemaName: string }): Promise<z.output<T>> {
+  async completeJson<T extends z.ZodType>(
+    schema: T,
+    request: Omit<LlmRequest, 'json'> & { schemaName: string },
+    overrides: LlmOverrides = {},
+  ): Promise<z.output<T>> {
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }));
     const instructions = structuredInstructions(request, jsonSchema);
     let lastIssues = '';
     let lastRaw = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const input = attempt === 0 ? request.input : correctionInput(request.input, lastIssues);
-      const raw = await this.complete({ ...request, instructions, input, json: true });
+      const raw = await this.complete({ ...request, instructions, input, json: true }, overrides);
       lastRaw = raw;
       const parsed = parseJsonAnswer(raw);
       if (!parsed.ok) lastIssues = 'kein gültiges JSON';
@@ -342,6 +346,26 @@ export class LlmService {
     } catch (err) {
       const info: AppErrorInfo = toErrorInfo(err);
       return { ok: false, latencyMs: null, message: info.message, modelReply: null, error: info };
+    }
+  }
+
+  /** Same path as every feature (completeJson); no output limit, so reasoning tokens cannot cut the answer short. */
+  async testStructuredAnswer(overrides: LlmOverrides): Promise<{ ok: boolean; message: string }> {
+    try {
+      await this.completeJson(
+        z.object({ ok: z.boolean() }),
+        {
+          instructions: 'Du bist ein Verbindungstest. Antworte mit einem JSON-Objekt, bei dem ok true ist.',
+          input: 'Antworte mit {"ok": true}.',
+          purpose: 'Verbindungstest (strukturierte Antwort)',
+          schemaName: 'ConnectionTest',
+          bypassPrivacy: true,
+        },
+        overrides,
+      );
+      return { ok: true, message: 'Strukturierte Antworten funktionieren.' };
+    } catch (err) {
+      return { ok: false, message: toErrorInfo(err).message };
     }
   }
 

@@ -18,6 +18,8 @@ export interface Classification {
   analysis: ChatAnalysis;
   viaLlm: boolean;
   llmError: string | null;
+  /** The LLM was tried and failed; false when it is switched off or not configured (no error to show). */
+  llmFailed: boolean;
 }
 
 type ClassifierDeps = Pick<ChatDeps, 'llm' | 'graph' | 'settings' | 'openItems' | 'decisions' | 'capture'>;
@@ -40,7 +42,7 @@ export class IntentClassifier {
 
   async classify(turn: ChatTurn): Promise<Classification> {
     const ruleBased = () => ({ intents: [this.helpers.rules.classify(turn.text, turn.state)] });
-    if (!this.deps.llm.canUse()) return { analysis: ruleBased(), viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.' };
+    if (!this.deps.llm.canUse()) return { analysis: ruleBased(), viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.', llmFailed: false };
     try {
       const refs = this.promptContext(turn);
       const analysis = await this.deps.llm.completeJson(ChatAnalysis, {
@@ -50,20 +52,21 @@ export class IntentClassifier {
         input: this.promptInput(turn, refs),
       });
       resolveRefs(analysis, refs);
-      return { analysis, viaLlm: true, llmError: null };
+      return { analysis, viaLlm: true, llmError: null, llmFailed: false };
     } catch (err) {
       throwIfCancelled();
-      return { analysis: ruleBased(), viaLlm: false, llmError: toErrorInfo(err).message };
+      return { analysis: ruleBased(), viaLlm: false, llmError: toErrorInfo(err).message, llmFailed: true };
     }
   }
 
   private promptInput(turn: ChatTurn, refs: PromptRefs): string {
+    const query = new Set(tokenize(turn.text));
+    // names sharing words with the message come first; the rest stay alphabetical (#197)
     const known = (type: 'topic' | 'project') =>
-      this.deps.graph
-        .listEntities({ type, limit: 40, confirmedOnly: true })
+      mostRelevant(this.deps.graph.listEntities({ type, limit: 500, confirmedOnly: true }), { query, keyOf: (e) => e.name, limit: 40 })
         .map((e) => e.name)
         .join(', ') || '–';
-    return `Heutiges Datum: ${promptNow(new Date())}\nOffene Rückfrage: ${pendingHint(turn.state.pending, this.deps)}\nZuletzt gezeigte Dokumente: ${turn.state.last?.documentIds?.length ?? 0}\n${refs.text}\nBekannte Themen: ${known('topic')}\nBekannte Projekte: ${known('project')}\n\n${historyHint(this.helpers.store.history(turn.conversationId))}Nachricht des Benutzers:\n${turn.text}`;
+    return `Heutiges Datum: ${promptNow(new Date())}\nOffene Rückfrage: ${pendingHint(turn.state.pending, this.deps)}\nZuletzt gezeigte Dokumente: ${turn.state.last?.documentIds?.length ?? 0}\n${refs.text}\nBekannte Themen: ${known('topic')}\nBekannte Projekte: ${known('project')}\n\n${historyHint(this.helpers.store.recent(turn.conversationId, 7))}Nachricht des Benutzers:\n${turn.text}`;
   }
 
   /** Context for the intent prompt: user, open items, decisions and open proposals – titles and metadata only, most relevant first. */

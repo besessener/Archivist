@@ -6,7 +6,7 @@ import {
   type EntityRef,
   type StoredAgentAction,
 } from '@archivist/shared';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { agentActions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
@@ -104,8 +104,17 @@ export class ActionService {
   }
 
   getMany(ids: string[]): StoredAgentAction[] {
+    if (!ids.length) return [];
+    const rows = new Map(
+      this.db
+        .select()
+        .from(agentActions)
+        .where(inArray(agentActions.id, ids))
+        .all()
+        .map((r) => [r.id, r]),
+    );
     return ids.flatMap((id) => {
-      const r = this.db.select().from(agentActions).where(eq(agentActions.id, id)).get();
+      const r = rows.get(id);
       return r ? [toStoredAction(r)] : [];
     });
   }

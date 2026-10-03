@@ -19,6 +19,8 @@ import { errorDetails, WorkRunner, type ProgressLog } from './chat/work-runner';
 type CreatedTogether = (entries: CreatedEntry[], message: { id: string; text: string }) => void;
 type SuggestLinks = (entries: CreatedEntry[], reply: { messageId: string; conversationId: string }) => void;
 
+type SentMessage = { conversationId: string; userMessage: ChatMessage; assistantMessage: ChatMessage };
+
 export type ChatServiceDeps = Omit<ChatDeps, 'actions' | 'archive'>;
 
 /** The chat: persistence, cancellation and replies – by the agent with a tool-calling LLM (#294), else by the rule-based flow in `chat/`. */
@@ -34,6 +36,7 @@ export class ChatService {
   private readonly progress: ProgressLog = new Map();
   /** Running requests per conversation; `cancel` aborts their LLM calls and the requests not started yet (#151). */
   private readonly running = new Map<string, AbortController>();
+  private readonly queues = new Map<string, Promise<void>>();
 
   constructor(services: ChatServiceDeps) {
     this.services = services;
@@ -109,7 +112,22 @@ export class ChatService {
     return this.rules.classify(text, state);
   }
 
-  async send(conversationId: string | undefined, text: string): Promise<{ conversationId: string; userMessage: ChatMessage; assistantMessage: ChatMessage }> {
+  /** Requests of one conversation run one after the other: each reads the state its predecessor saved (#251). */
+  send(conversationId: string | undefined, text: string): Promise<SentMessage> {
+    if (!conversationId) return this.process(undefined, text);
+    const current = (this.queues.get(conversationId) ?? Promise.resolve()).then(() => this.process(conversationId, text));
+    const settled = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.queues.set(conversationId, settled);
+    void settled.then(() => {
+      if (this.queues.get(conversationId) === settled) this.queues.delete(conversationId);
+    });
+    return current;
+  }
+
+  private async process(conversationId: string | undefined, text: string): Promise<SentMessage> {
     const conversation = this.store.forMessage(conversationId, text);
     const userMessage = this.store.saveUserMessage(conversation, text);
     // the UI already shows the message while the reply is still being produced (e.g. after switching tabs)

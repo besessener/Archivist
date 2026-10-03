@@ -133,10 +133,11 @@ export class AgentCapabilityService {
     }
   }
 
-  /** Connection test of the setup dialog: text answer plus real tool calling (#296, #297). */
+  /** Connection test of the setup dialog: text answer, structured answer (#265) plus real tool calling (#296, #297). */
   async testConnection(overrides: LlmOverrides = {}): Promise<LlmTestResult> {
-    const text = await this.deps.llm.testConnection(overrides);
-    if (!text.ok) return { ...text, agent: null };
+    const plain = await this.deps.llm.testConnection(overrides);
+    if (!plain.ok) return { ...plain, agent: null };
+    const text = { ...plain, structured: await this.deps.llm.testStructuredAnswer(overrides) };
     let config: AdapterConfig;
     try {
       config = this.deps.llm.adapterConfig(overrides);

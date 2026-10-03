@@ -28,8 +28,11 @@ const trimLineEnd = (line: string): string => {
   return end === line.length ? line : line.slice(0, end);
 };
 
+/** Ligature code points (U+FB00-FB06) split words for the search index; PDF text already arrives expanded (#172). */
+const expandLigatures = (text: string) => text.replace(/[\uFB00-\uFB06]/g, (ligature) => ligature.normalize('NFKC'));
+
 const tidy = (text: string) =>
-  text
+  expandLigatures(text)
     .replaceAll('\r\n', '\n')
     .replaceAll('\u0000', '')
     .split('\n')

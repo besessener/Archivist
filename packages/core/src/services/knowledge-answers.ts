@@ -123,7 +123,7 @@ export class KnowledgeAnswerService {
         state,
       };
     const { sources, notes } = withinTimeRange(gathered, intent);
-    const reply = await this.answerKnowledge({ text, state }, this.subjectFirst(sources, intent));
+    const reply = await this.answerKnowledge({ text: intent.segment?.trim() || text, state }, this.subjectFirst(sources, intent));
     return notes.length ? { ...reply, uncertainties: [...(reply.uncertainties ?? []), ...notes] } : reply;
   }
 
