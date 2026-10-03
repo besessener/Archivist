@@ -23,8 +23,8 @@ export const AuditEntry = z.object({
 });
 export type AuditEntry = z.infer<typeof AuditEntry>;
 
-/** Result of checking the audit log's hash chain: `brokenEntryId` is the first entry that does not fit (null: intact). */
-export const AuditVerification = z.object({ checked: z.number().int(), brokenEntryId: z.string().nullable() });
+/** Result of checking the audit log: `brokenEntryId` is the first chained entry that does not fit (null: intact); `truncated` means entries are missing at its start or end. */
+export const AuditVerification = z.object({ checked: z.number().int(), brokenEntryId: z.string().nullable(), truncated: z.boolean() });
 export type AuditVerification = z.infer<typeof AuditVerification>;
 
 export const LlmTransmission = z.object({
