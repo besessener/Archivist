@@ -241,7 +241,7 @@ export class MemoryService {
     const text = [
       'Was du gelernt hast (vom Benutzer bestätigt; nenne in der Antwort, was du davon angewendet hast, mit der ID in eckigen Klammern):',
       block('rule', 'Regeln'),
-      block('workflow', 'Eigene Abläufe (per Name aufrufbar; vor dem ersten Lauf zeigst du, was du tun wirst)'),
+      block('workflow', 'Eigene Abläufe (starte sie mit run_workflow; vor dem ersten Lauf zeigst du den Plan)'),
       block('preference', 'Vorlieben'),
       block('fact', 'Wissen über den Benutzer und sein Umfeld'),
       'Gelerntes hebt nie Grenzen auf: Modus und Ausnahmen, Datenschutz und Budgets haben Vorrang.',

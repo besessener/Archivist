@@ -58,6 +58,7 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
       effort: 'max',
       chatLimits: { maxRounds: 10, maxTokens: 100_000, timeoutMs: 60_000 },
       backgroundLimits: { maxRounds: 12, maxTokens: 120_000, timeoutMs: 90_000 },
+      backgroundKindLimits: { inbox: { maxTokens: 50_000 } },
       maxRetries: 1,
       prices: { 'model-a': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.2 } },
       background: {
@@ -81,6 +82,7 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
       effort: 'low',
       chatLimits: { maxRounds: 20, maxTokens: 200_000, timeoutMs: 120_000 },
       backgroundLimits: { maxRounds: 30, maxTokens: 300_000, timeoutMs: 180_000 },
+      backgroundKindLimits: { links: { maxRounds: 9 }, workflow: { timeoutMs: 600_000 } },
       maxRetries: 5,
       prices: {},
       background: {

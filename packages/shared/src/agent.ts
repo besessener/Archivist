@@ -43,6 +43,10 @@ export const ModelPrice = z.object({
 });
 export type ModelPrice = z.infer<typeof ModelPrice>;
 
+/** Background trigger kinds with an own budget; a workflow run counts as `workflow`. */
+export const BackgroundLimitKind = z.enum(['inbox', 'archive_check', 'links', 'workflow']);
+export type BackgroundLimitKind = z.infer<typeof BackgroundLimitKind>;
+
 export const BackgroundAgentSettings = z.object({
   /** Sort new files of a scan or import into the archive (#313). */
   inbox: z.boolean().default(true),
@@ -73,6 +77,8 @@ export const AgentSettings = z.object({
   effort: AgentEffort.default('high'),
   chatLimits: AgentLimits.default({ maxRounds: 60, maxTokens: 1_500_000, timeoutMs: 15 * 60_000 }),
   backgroundLimits: AgentLimits.default({ maxRounds: 80, maxTokens: 2_000_000, timeoutMs: 45 * 60_000 }),
+  /** Own limits per background trigger; what is missing falls back to `backgroundLimits`. */
+  backgroundKindLimits: z.partialRecord(BackgroundLimitKind, AgentLimits.partial()).default({}),
   /** Retries per model request after rate limits, server or network errors. */
   maxRetries: z.number().int().min(0).max(10).default(3),
   /** Own prices per model (key: model name), override the built-in table. */

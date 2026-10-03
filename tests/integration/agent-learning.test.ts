@@ -26,6 +26,14 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       {
         calls: [
           {
+            name: 'ask_user',
+            args: { question: 'Soll ich mir die Regel „Rechnungen der Stadtwerke immer nach private/finanzen/energie“ merken?', options: ['Ja', 'Nein'] },
+          },
+        ],
+      },
+      {
+        calls: [
+          {
             name: 'remember',
             args: {
               kind: 'rule',
@@ -38,7 +46,9 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       },
       { text: 'Gemerkt.' },
     );
-    await app.ok('chat:send', { text: 'Merk dir: Rechnungen der Stadtwerke immer nach private/finanzen/energie' });
+    const asked = await app.ok('chat:send', { text: 'Merk dir: Rechnungen der Stadtwerke immer nach private/finanzen/energie' });
+    expect(await app.ok('agent:memory', { kind: 'rule' })).toHaveLength(0);
+    await app.ok('chat:send', { conversationId: asked.conversationId, text: 'Ja' });
     const rules = await app.ok('agent:memory', { kind: 'rule' });
     expect(rules).toHaveLength(1);
 
@@ -100,6 +110,9 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
   it('workflows: taught by name, changed later, given to the run', async () => {
     app.llm.agent = scriptedTurns(
       {
+        calls: [{ name: 'ask_user', args: { question: 'Soll ich mir den Ablauf „Steuer-Mappe“ mit diesen drei Schritten merken?', options: ['Ja', 'Nein'] } }],
+      },
+      {
         calls: [
           {
             name: 'remember',
@@ -117,9 +130,13 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       },
       { text: 'Ablauf gespeichert.' },
     );
-    await app.ok('chat:send', { text: 'Wenn ich „Steuer-Mappe“ sage: alle Belege des Vorjahres sammeln, auf Lücken prüfen, ZIP mit Übersicht erstellen' });
+    const asked = await app.ok('chat:send', {
+      text: 'Wenn ich „Steuer-Mappe“ sage: alle Belege des Vorjahres sammeln, auf Lücken prüfen, ZIP mit Übersicht erstellen',
+    });
+    await app.ok('chat:send', { conversationId: asked.conversationId, text: 'Ja' });
     const wf = (await app.ok('agent:memory', { kind: 'workflow' }))[0]!;
     app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'ask_user', args: { question: 'Soll ich die Steuer-Mappe um die Spendenquittungen ergänzen?', options: ['Ja', 'Nein'] } }] },
       {
         calls: [
           {
@@ -133,7 +150,8 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       },
       { text: 'Angepasst.' },
     );
-    await app.ok('chat:send', { text: 'Nimm bei der Steuer-Mappe künftig auch die Spendenquittungen mit' });
+    const change = await app.ok('chat:send', { text: 'Nimm bei der Steuer-Mappe künftig auch die Spendenquittungen mit' });
+    await app.ok('chat:send', { conversationId: change.conversationId, text: 'Ja' });
     expect(JSON.stringify((await app.ok('agent:memory', { kind: 'workflow' }))[0]!.data)).toContain('Spendenquittungen');
     app.llm.agent = scriptedTurns(({ body }) => {
       expect(String(body.instructions)).toContain('Steuer-Mappe');
