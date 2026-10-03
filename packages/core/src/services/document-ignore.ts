@@ -54,7 +54,12 @@ export class DocumentIgnore {
   private changeStatus(row: DocRow, change: { action: string; status: DocumentStatus; archiveMode: string | null }): string {
     const updatedAt = nowIso();
     this.db.update(documents).set({ status: change.status, archiveMode: change.archiveMode, updatedAt }).where(eq(documents.id, row.id)).run();
-    const undo: DocumentStatusUndo = { id: row.id, previousStatus: row.status as DocumentStatus, previousArchiveMode: row.archiveMode, afterUpdatedAt: updatedAt };
+    const undo: DocumentStatusUndo = {
+      id: row.id,
+      previousStatus: row.status as DocumentStatus,
+      previousArchiveMode: row.archiveMode,
+      afterUpdatedAt: updatedAt,
+    };
     const auditId = this.deps.audit.log({
       action: change.action,
       actor: 'user',

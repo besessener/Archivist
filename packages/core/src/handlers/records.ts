@@ -67,6 +67,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     },
     'decisions:get': (input) => services.decisions.get(input.id),
     'decisions:list': (input) => services.decisions.list(input),
+    'decisions:count': (input) => services.decisions.count(input),
     'decisions:search': (input) => services.decisions.searchDecisions(input.query, input.limit),
     'decisions:proposeSupersede': (input) => proposeSupersede(services, input),
     'decisions:supersede': (input) => {
@@ -100,7 +101,8 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       return services.reminders.create({ targetType: 'notification', targetId: input.id, title: notification.title, remindAt: input.remindAt });
     },
 
-    'insights:list': (input) => services.insights.list(input.status),
+    'insights:list': (input) => services.insights.list(input, { limit: input.limit, offset: input.offset }),
+    'insights:count': (input) => services.insights.count(input),
     'insights:respond': async (input) => {
       if (input.response === 'accept') return services.insights.accept(input.id, { strongConfirmed: input.strongConfirmed });
       if (input.response === 'reject') return services.insights.reject(input.id);
@@ -108,7 +110,8 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       return services.insights.remindLater(input.id, input.remindAt);
     },
     'consistency:run': () => ({ jobId: services.enqueueConsistency('manual').id }),
-    'contradictions:list': (input) => services.contradictions.list(input.status),
+    'contradictions:list': (input) => services.contradictions.list(input, { limit: input.limit, offset: input.offset }),
+    'contradictions:count': (input) => services.contradictions.count(input),
     'contradictions:resolve': (input) =>
       services.contradictions.resolve(input.id, {
         resolution: input.resolution,
@@ -126,6 +129,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'reminders:list': (input) => services.reminders.list(input.status),
 
     'openItems:list': (input) => services.openItems.list(input),
+    'openItems:count': (input) => services.openItems.count(input),
     'openItems:create': (input) => services.openItems.create(input, { actor: 'user', trigger: UI_TRIGGER }),
     'openItems:update': (input) => services.openItems.update(input.id, { patch: input.patch }),
     'openItems:close': (input) =>

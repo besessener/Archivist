@@ -6,6 +6,7 @@ import type { DecisionStatus } from '@archivist/shared';
 import { Gavel, Plus, Search } from 'lucide-react';
 import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
 import { useSubjectsOf } from '@/components/common/extra-subjects';
+import { LoadMore } from '@/components/common/load-more';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { DecisionDetail } from '@/components/decisions/decision-detail';
@@ -16,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { DECISION_STATUS_LABELS } from '@/lib/labels';
 import { useDebounced } from '@/lib/use-debounced';
+import { usePageWindow } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import type { DecisionRecord } from '@/lib/types';
 
@@ -26,7 +28,10 @@ function DecisionsInner() {
   const [status, setStatus] = useState<DecisionStatus | ''>('');
   const [search, setSearch] = useState('');
   const query = useDebounced(search.trim(), 300);
-  const byFilter = useQuery('decisions:list', { ...(status ? { status } : {}) }, { scopes: ['decisions'], enabled: !query });
+  const filter = status ? { status } : {};
+  const paging = usePageWindow(status);
+  const byFilter = useQuery('decisions:list', { ...filter, limit: paging.limit }, { scopes: ['decisions'], enabled: !query });
+  const total = useQuery('decisions:count', filter, { scopes: ['decisions'], enabled: !query });
   const bySearch = useQuery('decisions:search', { query: query || 'x', limit: 50 }, { scopes: ['decisions'], enabled: !!query });
   const active = query ? bySearch : byFilter;
   const decisions = (active.data ?? []).filter((decision) => !query || !status || decision.status === status);
@@ -94,6 +99,17 @@ function DecisionsInner() {
             <EmptyState
               title="Keine Entscheidungen"
               description="Halte eine Entscheidung fest – im Chat mit „Wir haben entschieden, dass …“ oder hier mit dem Formular."
+            />
+          )}
+          {!query && (
+            <LoadMore
+              shown={decisions.length}
+              total={total.data ?? 0}
+              noun="Entscheidungen"
+              onMore={paging.more}
+              loading={byFilter.loading}
+              atMaximum={paging.atMaximum}
+              testId="decisions"
             />
           )}
           <BulkAssignBar ids={selection.ids} noun={['Entscheidung', 'Entscheidungen']} onClear={selection.clear} onDone={() => void active.refetch()} />

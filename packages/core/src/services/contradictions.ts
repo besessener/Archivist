@@ -1,5 +1,5 @@
 import type { Contradiction, Decision } from '@archivist/shared';
-import { desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { contradictions } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
@@ -58,6 +58,12 @@ const DECISION_PAIR_PREFIX = 'decision:';
 export const CONTRADICTION_SCAN_JOB = 'contradiction.scan';
 
 /** Contradictions are hints: decisions are never revoked or superseded autonomously, the resolution is an action the user confirms. */
+interface ContradictionFilter {
+  status?: Contradiction['status'];
+  /** Only contradictions that name this entry among the affected ones. */
+  entityId?: string;
+}
+
 export class ContradictionService {
   private actions!: ActionService;
   private readonly reviewer: ContradictionReviewer;
@@ -90,14 +96,21 @@ export class ContradictionService {
     return this.deps.ctx.database.db;
   }
 
-  list(status?: Contradiction['status']): Contradiction[] {
-    return this.db
-      .select()
-      .from(contradictions)
-      .where(status ? eq(contradictions.status, status) : undefined)
-      .orderBy(desc(contradictions.createdAt))
-      .all()
-      .map(map);
+  private listCondition(filter: ContradictionFilter) {
+    const conditions = [];
+    if (filter.status) conditions.push(eq(contradictions.status, filter.status));
+    if (filter.entityId) conditions.push(sql`EXISTS (SELECT 1 FROM json_each(${contradictions.affectedEntityIds}) WHERE value = ${filter.entityId})`);
+    return conditions.length ? and(...conditions) : undefined;
+  }
+
+  /** Newest first; without `page` all matching contradictions (internal callers), the IPC channel always pages. */
+  list(filter: ContradictionFilter = {}, page?: { limit: number; offset: number }): Contradiction[] {
+    const query = this.db.select().from(contradictions).where(this.listCondition(filter)).orderBy(desc(contradictions.createdAt), desc(contradictions.id));
+    return (page ? query.limit(page.limit).offset(page.offset).all() : query.all()).map(map);
+  }
+
+  count(filter: ContradictionFilter = {}): number {
+    return this.db.select({ n: count() }).from(contradictions).where(this.listCondition(filter)).get()?.n ?? 0;
   }
 
   get(id: string): Contradiction {

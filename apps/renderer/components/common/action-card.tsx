@@ -188,17 +188,16 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
   async function resolve({ decision, strongConfirmed }: { decision: 'approve' | 'reject'; strongConfirmed: boolean }) {
     // partial confirmation of an agent batch: only the checked items are executed
     const parameterOverrides = isBatch && !allSelected ? { selected: [...selected].sort((a, b) => a - b) } : undefined;
-    const resolved = await run(
-      () =>
-        decision === 'approve'
-          ? call('actions:resolve', {
-              decision: 'approve',
-              actionId: current.id,
-              confirmed: true,
-              strongConfirmed,
-              ...(parameterOverrides ? { parameterOverrides } : {}),
-            })
-          : call('actions:resolve', { decision: 'reject', actionId: current.id }),
+    const resolved = await run(() =>
+      decision === 'approve'
+        ? call('actions:resolve', {
+            decision: 'approve',
+            actionId: current.id,
+            confirmed: true,
+            strongConfirmed,
+            ...(parameterOverrides ? { parameterOverrides } : {}),
+          })
+        : call('actions:resolve', { decision: 'reject', actionId: current.id }),
     );
     if (resolved) {
       toast(RESOLVED_TOASTS[resolved.status](resolved));

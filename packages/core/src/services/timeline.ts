@@ -182,7 +182,14 @@ function openItemEntries(row: typeof openItems.$inferSelect, refsOf: RefsOf): Un
     },
   ];
   if (row.dueAt)
-    out.push({ id: `task:${row.id}:due`, date: row.dueAt, kind: 'open_item', title: `Fällig: ${row.title}`, description: `Status: ${OPEN_ITEM_STATUS_LABELS[row.status as OpenItemStatus] ?? row.status}`, refs });
+    out.push({
+      id: `task:${row.id}:due`,
+      date: row.dueAt,
+      kind: 'open_item',
+      title: `Fällig: ${row.title}`,
+      description: `Status: ${OPEN_ITEM_STATUS_LABELS[row.status as OpenItemStatus] ?? row.status}`,
+      refs,
+    });
   if (row.status === 'resolved' || row.status === 'dismissed')
     out.push({
       id: `task:${row.id}:done`,

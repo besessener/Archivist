@@ -155,7 +155,7 @@ describe('Reopening after an undone supersede', () => {
     const [after] = app.services.contradictions.list();
     expect(app.services.contradictions.list()).toHaveLength(1);
     expect(after).toMatchObject({ id: before!.id, createdAt: before!.createdAt, status: 'detected', resolvedAt: null });
-    expect(app.services.insights.list('open').filter((i) => i.kind === 'contradiction')).toHaveLength(1);
+    expect(app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'contradiction')).toHaveLength(1);
   });
 
   it('leaves a contradiction the user resolved by hand, without superseding, resolved', async () => {

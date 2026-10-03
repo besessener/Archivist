@@ -12,7 +12,6 @@ import { DOCUMENT_STATUS_LABELS } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { basename } from '@/lib/utils';
 
-
 /** Imported files whose status the card follows (one list request); the rest is only counted (#222). */
 const TRACKED = 1000;
 

@@ -144,8 +144,8 @@ export class ArchiveReplies {
     // a job of its own (visible and cancellable under Jobs); short scans still answer right away (#254)
     const queued = this.deps.jobs.enqueue(CONTRADICTION_SCAN_JOB, { label: 'Widersprüche prüfen', sameAs: () => true });
     const scanNote = noteOnScan(await this.deps.jobs.waitFor(queued.id, SCAN_WAIT_MS));
-    const list = this.deps.contradictions.list('detected');
-    const outdated = this.deps.insights.list('open').filter((insight) => insight.kind === 'possibly_superseded');
+    const list = this.deps.contradictions.list({ status: 'detected' });
+    const outdated = this.deps.insights.list({ status: 'open' }).filter((insight) => insight.kind === 'possibly_superseded');
     if (list.length === 0 && outdated.length === 0)
       return {
         intent: 'contradiction_check',

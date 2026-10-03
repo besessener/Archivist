@@ -429,7 +429,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     await archived('b.txt', 'Inhalt B', 'work/a');
     const c = await archived('c.txt', 'Inhalt C', 'work/c');
     await app.services.consistency.run({ trigger: 'test' });
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'scattered_documents')!;
     expect(insight.recommendedActionId).toBeTruthy();
     return { c, insight };
   }
@@ -465,7 +465,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     await archived('c.txt', 'Inhalt C', 'work/c');
     const d = await archived('d.txt', 'Inhalt D', 'work/d');
     await app.services.consistency.run({ trigger: 'test' });
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'scattered_documents')!;
     fs.appendFileSync(abs(d), ' – bearbeitet');
 
     await app.services.insights.accept(insight.id, {});

@@ -1,5 +1,5 @@
 import type { EntityRef, Insight, InsightChoice, InsightKind } from '@archivist/shared';
-import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { insights } from '../db/schema';
 import { AppError } from '../util/errors';
@@ -46,6 +46,13 @@ const map = (r: Row): Insight => ({
 });
 
 /** Hints created by the agent (assignments, duplicates, contradictions, …) with confirm/reject/later. */
+interface InsightFilter {
+  status?: Insight['status'];
+  kind?: Insight['kind'];
+  /** Only insights that name this entry among the affected ones. */
+  entityId?: string;
+}
+
 export class InsightService {
   private actions!: ActionService;
   private proposals!: InsightProposals;
@@ -217,19 +224,28 @@ export class InsightService {
     return map(r);
   }
 
-  list(status?: Insight['status']): Insight[] {
+  private listCondition(filter: InsightFilter) {
+    const conditions = [];
+    if (filter.status) conditions.push(eq(insights.status, filter.status));
+    if (filter.kind) conditions.push(eq(insights.kind, filter.kind));
+    if (filter.entityId) conditions.push(sql`EXISTS (SELECT 1 FROM json_each(${insights.affected}) WHERE json_extract(value, '$.id') = ${filter.entityId})`);
+    return conditions.length ? and(...conditions) : undefined;
+  }
+
+  /** Newest first; without `page` all matching insights (internal callers), the IPC channel always pages. */
+  list(filter: InsightFilter = {}, page?: { limit: number; offset: number }): Insight[] {
     this.wakeSnoozed();
-    return this.db
-      .select()
-      .from(insights)
-      .where(status ? eq(insights.status, status) : undefined)
-      .orderBy(desc(insights.updatedAt))
-      .all()
-      .map(map);
+    const query = this.db.select().from(insights).where(this.listCondition(filter)).orderBy(desc(insights.updatedAt), desc(insights.id));
+    return (page ? query.limit(page.limit).offset(page.offset).all() : query.all()).map(map);
+  }
+
+  count(filter: InsightFilter = {}): number {
+    this.wakeSnoozed();
+    return this.db.select({ n: count() }).from(insights).where(this.listCondition(filter)).get()?.n ?? 0;
   }
 
   openCount(): number {
-    return this.list('open').length;
+    return this.count({ status: 'open' });
   }
 
   /** A snoozed insight wakes up together with its reminder: a date-only value at the local reminder time (#77). */

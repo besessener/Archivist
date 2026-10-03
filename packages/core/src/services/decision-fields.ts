@@ -1,4 +1,12 @@
-import { DECISION_STATUS_LABELS, isEditableDecisionStatus, type Decision, type DecisionField, type DecisionOrigin, type DecisionPatch, type DecisionStatus } from '@archivist/shared';
+import {
+  DECISION_STATUS_LABELS,
+  isEditableDecisionStatus,
+  type Decision,
+  type DecisionField,
+  type DecisionOrigin,
+  type DecisionPatch,
+  type DecisionStatus,
+} from '@archivist/shared';
 import type { decisions } from '../db/schema';
 import { AppError } from '../util/errors';
 import { normalizeDateInput } from '../util/dates';

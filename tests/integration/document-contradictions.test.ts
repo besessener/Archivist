@@ -22,7 +22,7 @@ const verdict = (isContradiction: boolean) => () => ({
 const questions = () => app.llm.calls.filter((call) => call.schema === 'ContradictionProposal');
 const setScope = (id: string, scope: { topicId?: string | null; projectId?: string | null }) =>
   app.services.database.db.update(documents).set(scope).where(eq(documents.id, id)).run();
-const found = (status = 'detected') => app.services.contradictions.list(status as never);
+const found = (status = 'detected') => app.services.contradictions.list({ status: status as never });
 
 const offer = (name: string, amount: string) =>
   archived(app, { name, content: `Angebot Dachsanierung Haus: Das Budget für die Dachsanierung beträgt ${amount} Euro.`, folder: 'private/misc' });
@@ -47,7 +47,7 @@ describe('Contradictions between documents (#179)', () => {
     expect(contradiction!.affectedEntityIds.toSorted()).toEqual([first, second].toSorted());
     expect(contradiction!.excerpts.map((excerpt) => excerpt.entityId).toSorted()).toEqual([first, second].toSorted());
     expect(contradiction!.description).toContain('unterschiedliche Beträge');
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'contradiction');
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'contradiction');
     expect(insight!.affected.map((e) => e.type)).toEqual(['document', 'document']);
     expect(app.services.notifications.list().some((n) => n.type === 'contradiction' && n.affectedEntityIds.includes(first))).toBe(true);
   });

@@ -194,7 +194,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
   });
 
   describe('Archive check („Archivprüfung jetzt starten“)', () => {
-    const scattered = () => app.services.insights.list('open').filter((i) => i.kind === 'scattered_documents');
+    const scattered = () => app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'scattered_documents');
 
     it('detects scattered documents and proposes a folder without moving anything', async () => {
       const { ids, other } = await scatteredArchive();

@@ -60,7 +60,7 @@ describe('The kind of a link per LLM (#284)', () => {
     );
     expect(await app.services.refiner.run()).toBe(2);
     expect(app.services.contradictions.forPair(d1.id, d2.id)).toMatchObject({ status: 'detected' });
-    const hint = app.services.insights.list('open').find((i) => i.kind === 'possibly_superseded')!;
+    const hint = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'possibly_superseded')!;
     expect(hint.title).toContain('Möglicherweise überholt');
     expect(app.services.actions.get(hint.recommendedActionId!)).toMatchObject({
       actionType: 'supersede_decision',

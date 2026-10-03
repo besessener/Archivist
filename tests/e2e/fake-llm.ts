@@ -88,6 +88,7 @@ function classification(input: string) {
 
 function chatIntent(input: string) {
   const text = userMessage(input);
+  if (/^ja[.!]?$/i.test(text.trim())) return { intent: 'proposal_confirm', confidence: 0.9, rationale: 'e2e' };
   if (/Archiviere alle/.test(text)) return { intent: 'archive_execute', confidence: 0.9, rationale: 'e2e' };
   if (/Wann haben wir/.test(text)) return { intent: 'knowledge_question', confidence: 0.9, rationale: 'e2e', query: 'Nordlicht pausiert Entscheidung' };
   if (/Am 4\. Mai/.test(text))
