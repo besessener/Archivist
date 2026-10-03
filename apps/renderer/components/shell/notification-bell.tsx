@@ -29,7 +29,7 @@ export function NotificationBell() {
   const [confirmAction, setConfirmAction] = useState<ActionRecord | null>(null);
   const [snoozeFor, setSnoozeFor] = useState<string | null>(null);
   const { run, busy } = useRun();
-  const { toast } = useToast();
+  const { toast, reportError } = useToast();
   const { data, loading, error, refetch } = useQuery('notifications:list', { includeResolved: false, limit: 50 }, { scopes: ['notifications'], enabled: open });
   const unread = status?.unreadNotifications ?? 0;
 
@@ -39,9 +39,9 @@ export function NotificationBell() {
     if (ids.length > 0) {
       void call('notifications:markRead', { ids })
         .then(() => refreshStatus())
-        .catch(() => undefined);
+        .catch((err: unknown) => reportError(err, undefined, 'Benachrichtigungen konnten nicht als gelesen markiert werden'));
     }
-  }, [open, data, refreshStatus]);
+  }, [open, data, refreshStatus, reportError]);
 
   async function handle(n: NotificationRecord, a: NotifAction) {
     switch (a.kind) {

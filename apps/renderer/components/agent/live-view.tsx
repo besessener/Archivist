@@ -6,6 +6,7 @@ import { AgentProgress } from '@archivist/shared';
 import { Button } from '@/components/ui/button';
 import { call } from '@/lib/ipc';
 import { subscribe } from '@/lib/events';
+import { useToast } from '@/lib/toast';
 import { RUN_STATUS, StepList, usageLine } from './run-utils';
 
 type Progress = AgentProgress;
@@ -18,6 +19,7 @@ function parseProgress(payload: unknown): Progress | null {
 /** Live state of a conversation's agent run (#300); while `pending` in a new conversation, the first running chat run is adopted. */
 export function useAgentProgress({ conversationId, pending }: { conversationId: string | null; pending: boolean }): Progress | null {
   const [progress, setProgress] = useState<Progress | null>(null);
+  const { reportError } = useToast();
   const adopted = useRef<string | null>(null);
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
@@ -34,7 +36,7 @@ export function useAgentProgress({ conversationId, pending }: { conversationId: 
           // an event may already have arrived in the meantime – it is newer
           if (p) setProgress((prev) => prev ?? p);
         })
-        .catch(() => undefined);
+        .catch((err: unknown) => alive && reportError(err, undefined, 'Agentenfortschritt konnte nicht geladen werden'));
     } else if (pendingRef.current) {
       // a new conversation whose id is not known here yet (e.g. back from another tab): adopt its running run
       call('agent:active', {})
@@ -44,7 +46,7 @@ export function useAgentProgress({ conversationId, pending }: { conversationId: 
           adopted.current = p.runId;
           setProgress((prev) => prev ?? p);
         })
-        .catch(() => undefined);
+        .catch((err: unknown) => alive && reportError(err, undefined, 'Agentenfortschritt konnte nicht geladen werden'));
     }
     const off = subscribe('agent:progress', (payload) => {
       const p = parseProgress(payload);
@@ -62,7 +64,7 @@ export function useAgentProgress({ conversationId, pending }: { conversationId: 
       alive = false;
       off();
     };
-  }, [conversationId]);
+  }, [conversationId, reportError]);
 
   // A new request starts: forget the finished run shown before.
   useEffect(() => {

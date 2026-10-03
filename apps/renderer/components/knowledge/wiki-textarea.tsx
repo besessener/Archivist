@@ -6,6 +6,7 @@ import { EntityIcon } from '@/components/common/entity-chip';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
 import { ENTITY_TYPE_LABELS } from '@/lib/nav';
+import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
 type Suggestion = IpcOutput<'knowledge:wikiSuggest'>[number];
@@ -31,6 +32,7 @@ export function WikiTextarea({
   const listId = useId();
   const [link, setLink] = useState<{ start: number; query: string } | null>(null);
   const [items, setItems] = useState<Suggestion[]>([]);
+  const { reportError } = useToast();
   const [active, setActive] = useState(0);
   const pendingCursor = useRef<number | null>(null);
 
@@ -56,14 +58,18 @@ export function WikiTextarea({
           setItems(r);
           setActive(0);
         },
-        () => setItems([]),
+        (err: unknown) => {
+          if (stale) return;
+          setItems([]);
+          reportError(err, undefined, 'Vorschläge konnten nicht geladen werden');
+        },
       );
     }, 120);
     return () => {
       stale = true;
       clearTimeout(t);
     };
-  }, [link, excludeId]);
+  }, [link, excludeId, reportError]);
 
   const track = (text: string, cursor: number) => setLink(openLink(text, cursor));
   const choose = (s: Suggestion) => {
@@ -164,6 +170,7 @@ export function wikiNamesOf(text: string): string[] {
 export function UnknownWikiLinks({ text, noteId }: { text: string; noteId?: string }) {
   const [unknown, setUnknown] = useState<string[]>([]);
   const [round, setRound] = useState(0);
+  const { reportError } = useToast();
   const names = wikiNamesOf(text).join('\u0000');
   useEffect(() => {
     const list = names ? names.split('\u0000') : [];
@@ -175,14 +182,14 @@ export function UnknownWikiLinks({ text, noteId }: { text: string; noteId?: stri
     const t = setTimeout(() => {
       call('knowledge:wikiResolve', { names: list, ...(noteId ? { noteId } : {}) }).then(
         (r) => !stale && setUnknown(r.filter((x) => !x.entity).map((x) => x.name)),
-        () => undefined,
+        (err: unknown) => !stale && reportError(err, undefined, 'Wiki-Links konnten nicht geprüft werden'),
       );
     }, 300);
     return () => {
       stale = true;
       clearTimeout(t);
     };
-  }, [names, noteId, round]);
+  }, [names, noteId, round, reportError]);
   if (!unknown.length) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs" data-testid="wiki-unknown">
@@ -197,7 +204,7 @@ export function UnknownWikiLinks({ text, noteId }: { text: string; noteId?: stri
           onClick={() =>
             void call('knowledge:createEntity', { type: 'note', name: n }).then(
               () => setRound((x) => x + 1),
-              () => undefined,
+              (err: unknown) => reportError(err, undefined, `Notiz „${n}“ konnte nicht angelegt werden`),
             )
           }
         >
