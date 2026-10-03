@@ -130,13 +130,26 @@ export class AuditService {
   }
 
   private chainedCount(db: Pick<Db, 'select'>): number {
-    return db.select({ count: sql<number>`count(*)` }).from(auditLog).where(isNotNull(auditLog.hash)).get()?.count ?? 0;
+    return (
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(auditLog)
+        .where(isNotNull(auditLog.hash))
+        .get()?.count ?? 0
+    );
   }
 
   /** Checks the hash chain and the separately kept anchor: no entry was changed, removed, inserted or cut off since it was written (entries from before the chain are not covered). */
   verify(): AuditVerification {
     const db = this.ctx.database.db;
-    return verifyAuditLog(db.select().from(auditLog).orderBy(asc(sql`rowid`)).all(), this.readAnchor(db));
+    return verifyAuditLog(
+      db
+        .select()
+        .from(auditLog)
+        .orderBy(asc(sql`rowid`))
+        .all(),
+      this.readAnchor(db),
+    );
   }
 
   /** Titles of the entries the rows concern: the graph node's name, else the title the entry itself recorded (e.g. of a deleted one). */

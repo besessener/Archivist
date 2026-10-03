@@ -204,7 +204,7 @@ export class ArchiveReplies {
   /** Proposed relations of the named topic/project, otherwise of all entries (each relation once). */
   private proposedRelations(name: string | null | undefined): Relation[] {
     const { graph } = this.deps;
-    const subject = name ? (graph.findByName('topic', name) ?? graph.findByName('project', name)) : undefined;
+    const subject = name ? (graph.findByNameOrAlias('topic', name) ?? graph.findByNameOrAlias('project', name)) : undefined;
     if (subject) return graph.relationsOf(subject.id, { statuses: ['proposed'] });
     const seen = new Set<string>();
     return graph

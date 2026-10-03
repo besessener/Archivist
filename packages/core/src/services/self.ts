@@ -61,9 +61,9 @@ export class SelfService {
     return this.graph.getEntity(entity.id)!;
   }
 
-  /** Self resolver of the person service: chat self references and the own name/nicknames mean the user. */
+  /** Self resolver of the person service: „ich“ in chat and decisions, and the own name/nicknames, mean the user. */
   readonly resolver: SelfResolver = (input) => {
-    if (input.selfReference) return input.context === 'chat' ? this.ensure() : null; // in documents „ich“ is the author
+    if (input.selfReference) return input.context === 'chat' || input.context === 'decision' ? this.ensure() : null; // in documents „ich“ is the author
     return input.parsed.comparisonKey && this.ownNameKeys().has(input.parsed.comparisonKey) ? this.ensure() : null;
   };
 

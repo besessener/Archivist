@@ -112,7 +112,7 @@ async function pdfBundle(scope: ToolScope, { overview, withOverview }: Bundle): 
 /** Assigns the documents to a case (created when new); returns the note for the model and the visible change. */
 function assignCase(scope: ToolScope, assignment: { name: string; docs: DocumentRecord[] }): { info: string; change: string } {
   const { deps, ctx } = scope;
-  const existed = deps.graph.findByName('case', assignment.name);
+  const existed = deps.graph.findByNameOrAlias('case', assignment.name);
   const caseEntity = deps.graph.ensureEntity({ type: 'case', name: assignment.name });
   if (!existed)
     deps.audit.log({ action: 'case.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [caseEntity.id], after: { name: caseEntity.name } });

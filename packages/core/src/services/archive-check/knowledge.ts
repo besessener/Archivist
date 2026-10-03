@@ -39,7 +39,7 @@ export function checkExternalFiles(run: CheckRun): void {
     .from(documents)
     .where(eq(documents.status, 'proposed'))
     .all();
-  const known = (name: string) => deps.graph.findByName('topic', name) || deps.graph.findByName('project', name);
+  const known = (name: string) => deps.graph.findByNameOrAlias('topic', name) || deps.graph.findByNameOrAlias('project', name);
   for (const document of pending) {
     const proposal = document.proposal as DocumentProposal | null;
     const topic = proposal?.topic ?? proposal?.project;

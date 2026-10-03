@@ -180,7 +180,9 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
     const entry = app.services.audit.log({ action: 'test.amend', actor: 'user', trigger: 'test', confirmed: true });
     app.services.audit.amend(entry, { after: { done: true }, undo: { type: 'composite', data: { steps: [] } } });
     app.services.audit.markUndone(entry);
-    const anchor = JSON.parse((app.services.database.sqlite.prepare("SELECT value FROM app_state WHERE key = 'audit.chainAnchor'").get() as { value: string }).value);
+    const anchor: { count: number } = JSON.parse(
+      (app.services.database.sqlite.prepare("SELECT value FROM app_state WHERE key = 'audit.chainAnchor'").get() as { value: string }).value,
+    );
     expect(anchor.count).toBe(ids().length);
     expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: false });
   });

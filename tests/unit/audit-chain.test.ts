@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { chainHash, isTruncated, parseAnchor, verifyAuditLog, verifyChain, type ChainedFields, type ChainedRow } from '../../packages/core/src/services/audit-chain';
+import {
+  chainHash,
+  isTruncated,
+  parseAnchor,
+  verifyAuditLog,
+  verifyChain,
+  type ChainedFields,
+  type ChainedRow,
+} from '../../packages/core/src/services/audit-chain';
 
 const fields = (id: string, over: Partial<ChainedFields> = {}): ChainedFields => ({
   id,

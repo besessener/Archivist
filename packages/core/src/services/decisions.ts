@@ -32,6 +32,7 @@ import {
   toDecision,
   type DecisionRow,
 } from './decision-fields';
+import { subjectColumns } from './decision-subjects';
 import { DecisionLifecycle } from './decision-lifecycle';
 import { successorsOf } from './decision-successors';
 import { DECISION_UPDATE_UNDO_TYPE, registerDecisionUndo, type DecisionUpdateUndo } from './decision-undo';
@@ -190,18 +191,17 @@ export class DecisionService {
     opts: { personContext: PersonMentionContext; trigger?: string; status?: Exclude<EditableDecisionStatus, 'draft'> },
   ): DecisionRow {
     const now = nowIso();
-    const topic = input.topic?.trim() ? this.graph.ensureEntity({ type: 'topic', name: input.topic }) : null;
-    const project = input.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: input.project }) : null;
+    const { topicId = null, projectId = null } = subjectColumns(this.graph, input);
     const decidedAt = checkedDecisionDate(input.decidedAt, today());
     const participants = this.persons.resolveNames(input.participants, { context: opts.personContext }).names;
-    const missing = computeMissingFields({ ...input, decidedAt, topic: (topic ?? project)?.name ?? null });
+    const missing = computeMissingFields({ ...input, decidedAt, topic: this.graph.getEntity(topicId ?? projectId ?? '')?.name ?? null });
     return {
       id: newId(),
       title: input.title?.trim() || firstSentence(input.decisionText, 90),
       decisionText: input.decisionText.trim(),
       decidedAt,
-      topicId: topic?.id ?? null,
-      projectId: project?.id ?? null,
+      topicId,
+      projectId,
       participants,
       rationale: input.rationale?.trim() || null,
       consequences: input.consequences?.trim() || null,
@@ -275,8 +275,7 @@ export class DecisionService {
   private patchColumns(current: DecisionRow, { patch, personContext }: { patch: DecisionPatch; personContext: PersonMentionContext }): Partial<DecisionRow> {
     const set: Partial<DecisionRow> = {};
     if (patch.decidedAt !== undefined) set.decidedAt = checkedDecisionDate(patch.decidedAt, today());
-    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity({ type: 'topic', name: patch.topic }).id : null;
-    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: patch.project }).id : null;
+    Object.assign(set, subjectColumns(this.graph, patch, current));
     if (patch.participants !== undefined) set.participants = this.persons.resolveNames(patch.participants, { context: personContext }).names;
     return { ...plainPatchColumns(current, patch), ...set };
   }
