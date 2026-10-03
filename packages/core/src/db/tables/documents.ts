@@ -1,4 +1,4 @@
-import { blob, index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { blob, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { ArchivistJson } from '../../util/json';
 import { jsonArr } from './columns';
 
@@ -49,6 +49,23 @@ export const documents = sqliteTable(
     index('documents_text_hash_idx').on(t.textHash),
     index('documents_created_idx').on(t.createdAt),
   ],
+);
+
+/** MinHash signature of a document's text (near-duplicate detection, #230). */
+export const documentMinhash = sqliteTable('document_minhash', {
+  documentId: text('document_id').primaryKey(),
+  signature: blob('signature', { mode: 'buffer' }).notNull(),
+});
+
+/** LSH band buckets of a signature: documents sharing a (band, bucket) are candidates for near-duplicates. */
+export const documentLshBands = sqliteTable(
+  'document_lsh_bands',
+  {
+    documentId: text('document_id').notNull(),
+    band: integer('band').notNull(),
+    bucket: integer('bucket').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.documentId, t.band] }), index('document_lsh_bucket_idx').on(t.band, t.bucket)],
 );
 
 export const categories = sqliteTable('categories', {
