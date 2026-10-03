@@ -1,0 +1,1 @@
+ALTER TABLE `llm_transmissions` ADD `personal_redactions` integer DEFAULT 0 NOT NULL;

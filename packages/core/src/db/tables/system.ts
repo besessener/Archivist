@@ -59,6 +59,8 @@ export const llmTransmissions = sqliteTable('llm_transmissions', {
   endpoint: text('endpoint').notNull(),
   bytes: integer('bytes').notNull(),
   redactions: integer('redactions').notNull().default(0),
+  /** Of `redactions`: spots with personal data (IBAN, card, IDs, PINs); the rest are secrets. */
+  personalRedactions: integer('personal_redactions').notNull().default(0),
   documentIds: jsonArr('document_ids'),
   preview: text('preview').notNull().default(''),
   success: integer('success', { mode: 'boolean' }).notNull().default(true),

@@ -35,6 +35,8 @@ export const LlmTransmission = z.object({
   endpoint: z.string(),
   bytes: z.number(),
   redactions: z.number(),
+  /** Of `redactions`: masked personal data; the rest are secrets. */
+  personalRedactions: z.number().default(0),
   documentIds: z.array(z.string()),
   preview: z.string(),
   success: z.boolean(),
