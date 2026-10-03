@@ -142,6 +142,16 @@ export class AuditService {
     this.ctx.events.changed('audit');
   }
 
+  /** Corrects what an entry recorded once the outcome is known (written before the files were touched). */
+  amend(id: string, patch: { after: unknown; undo: { type: string; data: unknown } }): void {
+    this.ctx.database.db
+      .update(auditLog)
+      .set({ after: patch.after as ArchivistJson, undoType: patch.undo.type, undoData: patch.undo.data as ArchivistJson })
+      .where(eq(auditLog.id, id))
+      .run();
+    this.ctx.events.changed('audit');
+  }
+
   markUndone(id: string): void {
     this.ctx.database.db.update(auditLog).set({ undoneAt: nowIso() }).where(eq(auditLog.id, id)).run();
     this.ctx.events.changed('audit');

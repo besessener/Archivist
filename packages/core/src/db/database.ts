@@ -34,6 +34,7 @@ export class DatabaseService {
       });
     }
     this.sqlite.pragma('journal_mode = WAL');
+    this.sqlite.pragma('synchronous = FULL'); // WAL+NORMAL does not sync commits; originals are deleted after them
     this.sqlite.pragma('foreign_keys = ON');
     this.sqlite.pragma('busy_timeout = 5000');
     this.db = drizzle(this.sqlite, { schema });

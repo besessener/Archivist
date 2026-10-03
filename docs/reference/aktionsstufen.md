@@ -21,7 +21,7 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 - **Papierkorb leeren** löscht endgültig und braucht zwei Bestätigungen, im Schema erzwungen (`confirmed` und `permanentlyConfirmed`, beide `z.literal(true)`): den Dialog und das Häkchen „Ich verstehe, dass diese Dateien endgültig gelöscht werden“. Danach lassen sich diese Dokumente nicht mehr wiederherstellen; gelöscht wird nur, was im Papierkorb liegt.
 - **Überschreiben und Umsortieren des ganzen Archivs** sind **nicht implementiert** – Archivist überschreibt keine Dateien.
 - **Einzige Ausnahme beim Löschen** sind von dir erfasste **Ereignisse**: Sie lassen sich nach Bestätigung löschen, und das Löschen lässt sich unter Einstellungen → Änderungsprotokoll rückgängig machen (Ereignis mit Thema, Projekt, Verknüpfungen und Suchtreffer; was inzwischen entfernt wurde, nennt die Meldung).
-- **Auch Undo löscht nie die einzige Kopie**: Als weitere Kopie zählt nur eine Datei mit gleicher Prüfsumme am Quell- bzw. Eingangsort. Fehlt sie, weil das Original seitdem bearbeitet oder entfernt wurde, legt Undo die archivierte Fassung an den Ursprungsort zurück, bei Namenskonflikt als `Name (2).ext`.
+- **Auch Undo löscht nie die einzige Kopie**: Als weitere Kopie zählt nur eine Datei mit gleicher Prüfsumme am Quell- bzw. Eingangsort. Fehlt sie, weil das Original seitdem bearbeitet oder entfernt wurde, legt Undo die archivierte Fassung an den Ursprungsort zurück, bei Namenskonflikt als `Name (2).ext`. Die Archivdatei wird erst entfernt, nachdem die Datenbank den Undo übernommen hat; scheitert das Entfernen, nennt die Meldung ihren Pfad. Schlägt die Datenbank fehl, bleibt die Archivierung bestehen, und ein erneuter Undo erkennt bereits wiederhergestellte Kopien (gleiche Prüfsumme) und läuft durch.
 
 ## Dateien
 
@@ -35,6 +35,7 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 
 - Bricht eine Kopie mittendrin ab (z. B. Datenträger voll), wird die Teilkopie entfernt; lässt sie sich nicht entfernen, nennt die Meldung ihren Pfad.
 - Scheitert beim Umlagern das Entfernen der alten Datei (z. B. weil sie geöffnet ist), wird der neue Eintrag zurückgenommen. Bleibt er übrig (zusätzlicher Hardlink oder Kopie), steht das in der Meldung statt „nichts wurde verändert“.
+- Der Eintrag im Änderungsprotokoll samt Undo-Daten wird geschrieben, bevor Original oder Eingangskopie entfernt werden; ein Abbruch dazwischen lässt die Dateien an Ort und Stelle und die Archivierung rückgängig machbar.
 - Lässt sich nach dem Archivieren die eigene Kopie im Eingang nicht löschen, bleibt die Archivierung gültig und rückgängig machbar. Die Eingangskopie wird vorgemerkt und beim nächsten Archivieren, bei der Archivprüfung oder beim nächsten Start entfernt – nur, wenn sie unverändert ist und die Archivdatei intakt.
 - Ein Umlager-Vorschlag, bei dem nichts verschoben wurde, gilt als fehlgeschlagen: Der Hinweis bleibt offen und erhält bei der nächsten Archivprüfung einen neuen Vorschlag.
 

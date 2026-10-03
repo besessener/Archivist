@@ -73,6 +73,24 @@ async function archived(name: string, content: string, loc: string): Promise<str
   return id;
 }
 
+describe('Archiving: the archive copy cannot be flushed to disk', () => {
+  it('fails without touching the source and leaves no copy behind', async () => {
+    const { src, id } = await imported('sync.txt', 'Nicht flushbares Dokument');
+    const handle = await fsp.open(src, 'r');
+    const failingSync = vi.spyOn(Object.getPrototypeOf(handle), 'sync').mockRejectedValue(errno('EIO'));
+    await handle.close();
+
+    const res = await archive(id);
+
+    expect(failingSync).toHaveBeenCalled();
+    expect(res).toMatchObject({ success: 0, failed: 1 });
+    expect(res.items[0]!.message).toMatch(/nicht kopiert werden.*EIO.*nichts verändert/);
+    expect(fs.existsSync(src)).toBe(true);
+    expect(filesIn(archiveRoot())).toEqual([]);
+    expect(row(id).status).not.toBe('archived');
+  });
+});
+
 describe('Archiving: the inbox copy cannot be removed after the commit', () => {
   it('stays validly archived with an undo entry; the inbox copy is marked and removed later', async () => {
     const { src, id } = await imported('offen.txt', 'Im Viewer geöffnetes Dokument');
@@ -158,6 +176,77 @@ describe('Archiving: the inbox copy cannot be removed after the commit', () => {
     expect(row(id)).toMatchObject({ status: 'proposed', stagedPath: staged });
     expect(fs.readFileSync(staged, 'utf8')).toBe('Dokument Y mit Inhalt');
     expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(false);
+  });
+});
+
+describe('Archiving: the audit entry exists before any source is deleted', () => {
+  it('moving logs the undoable entry first and corrects it when the original cannot be removed', async () => {
+    const { src, id } = await imported('move.txt', 'Zu verschiebendes Dokument');
+    const loggedWhenDeleted: boolean[] = [];
+    vi.spyOn(fsp, 'unlink').mockImplementation(async (p) => {
+      if (String(p) === src) {
+        loggedWhenDeleted.push(app.services.audit.list({ limit: 10, onlyUndoable: true }).some((e) => e.action === 'archive.move'));
+        throw errno('EBUSY');
+      }
+      return realUnlink(p);
+    });
+
+    const res = await app.ok('documents:archive', {
+      items: [{ documentId: id, mode: 'move', categoryPath: 'work/notes', topic: TOPIC }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: true,
+    } as never);
+
+    expect(loggedWhenDeleted).toEqual([true]);
+    expect(res.items[0]!.message).toMatch(/Original konnte nicht entfernt werden/);
+    const entry = app.services.audit.list({ limit: 10 }).find((e) => e.id === res.items[0]!.auditId)!;
+    expect(entry.after).toMatchObject({ removedSource: false, removedStaged: true });
+    vi.restoreAllMocks();
+    const undo = await app.ok('documents:undoArchive', { auditId: entry.id });
+    expect(undo).toMatchObject({ undone: true, conflicts: [] });
+    expect(fs.readFileSync(src, 'utf8')).toBe('Zu verschiebendes Dokument');
+  });
+});
+
+describe('Undoing an archiving with partial failures', () => {
+  it('database error: the archive file stays and a second undo accepts the already restored inbox copy', async () => {
+    const { id } = await imported('z.txt', 'Dokument Z mit Inhalt');
+    const staged = row(id).stagedPath!;
+    const res = await archive(id);
+    const auditId = res.items[0]!.auditId!;
+    const revert = vi.spyOn(app.services.graph, 'revertRelationChanges').mockImplementationOnce(() => {
+      throw new Error('SQLITE_IOERR: disk I/O error');
+    });
+
+    const failed = await app.call('documents:undoArchive', { auditId });
+
+    expect(failed.ok).toBe(false);
+    expect(revert).toHaveBeenCalled();
+    expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(true);
+    expect(row(id).status).toBe('archived');
+
+    const retry = await app.ok('documents:undoArchive', { auditId });
+
+    expect(retry).toMatchObject({ undone: true, conflicts: [] });
+    expect(row(id)).toMatchObject({ status: 'proposed', stagedPath: staged });
+    expect(fs.readFileSync(staged, 'utf8')).toBe('Dokument Z mit Inhalt');
+    expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(false);
+  });
+
+  it('archive file locked: the undo still counts and the message names the leftover file', async () => {
+    const { id } = await imported('w.txt', 'Dokument W mit Inhalt');
+    const res = await archive(id);
+    const target = res.items[0]!.targetPath!;
+    lockForUnlink((p) => p === target);
+
+    const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
+
+    expect(undo).toMatchObject({ undone: true });
+    expect(undo.message).toContain(target);
+    expect(row(id).status).toBe('proposed');
+    expect(fs.existsSync(target)).toBe(true);
+    expect(fs.readFileSync(row(id).stagedPath!, 'utf8')).toBe('Dokument W mit Inhalt');
   });
 });
 

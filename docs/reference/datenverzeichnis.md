@@ -27,7 +27,7 @@ Dateien in `quarantine/` erscheinen in der Inbox unter „Quarantäne“: „Ord
 
 ## Datenbank
 
-- SQLite im WAL-Modus, Zugriff über better-sqlite3 + Drizzle.
+- SQLite im WAL-Modus mit `synchronous=FULL`, Zugriff über better-sqlite3 + Drizzle.
 - Schema: `packages/core/src/db/schema.ts` (Tabellen in `db/tables/`); Migrationen in `packages/core/migrations/`, beim Start automatisch angewendet. Ändern: [Datenbankschema ändern](../how-to/datenbankschema-aendern.md).
 - Die FTS5-Tabelle für die Stichwortsuche ist eine benutzerdefinierte Migration.
 - Embeddings liegen als BLOB in SQLite. Zu einem Vektor des Embedding-Modells wird ein lokaler Hash-Vektor daneben gespeichert (`chunks.local_embedding`), damit die Suche ohne erreichbaren Endpunkt weiter greift.
