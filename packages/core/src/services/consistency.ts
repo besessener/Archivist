@@ -9,6 +9,7 @@ import { Findings, yieldToEventLoop, type CheckDeps, type CheckRun } from './arc
 import { checkExternalFiles, checkLowConfidenceRelations } from './archive-check/knowledge';
 import { checkOpenItems } from './archive-check/open-items';
 import { checkScatteredDocuments } from './archive-check/scattered';
+import { checkArchiveHashes } from './archive-check/hashes';
 import { checkIndexedOriginals, checkStorage, type IndexRefresher } from './archive-check/storage';
 import { RECONCILED_INSIGHTS, RECONCILED_NOTIFICATIONS, summarize } from './archive-check/summary';
 import { checkTopicProjectNames } from './cleanup/topic-project-names';
@@ -96,6 +97,7 @@ export class ConsistencyService {
     checkDuplicates(check, archived);
     await step(0.3, 'Prüfe Ablageorte');
     await checkStorage(check, archived);
+    await checkArchiveHashes(check, archived);
     await checkIndexedOriginals(check, { archived, refresh: this.refreshIndexedOnly });
     await step(0.4, 'Prüfe Verzeichnisse');
     checkScatteredDocuments(check, archived);

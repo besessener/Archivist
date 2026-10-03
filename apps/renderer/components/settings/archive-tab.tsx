@@ -24,6 +24,8 @@ export function ArchiveTab({ settings, reload }: TabProps) {
   const [confirmCat, setConfirmCat] = useState(false);
   const [report, setReport] = useState<IpcOutput<'archive:verify'> | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [confirmRelink, setConfirmRelink] = useState(false);
+  const [relinkNote, setRelinkNote] = useState<string | null>(null);
   const [staleDays, setStaleDays] = useState(String(settings.consistency.staleOpenItemDays));
   const [intervalH, setIntervalH] = useState(String(settings.consistency.intervalHours));
 
@@ -32,6 +34,18 @@ export function ArchiveTab({ settings, reload }: TabProps) {
     const r = await run(() => call('archive:verify'));
     if (r) setReport(r);
     setVerifying(false);
+  }
+
+  async function relink() {
+    const result = await run(() => call('archive:relink', { confirmed: true }));
+    if (!result) return;
+    setConfirmRelink(false);
+    setRelinkNote(
+      result.relinked.length === 0
+        ? 'Zu keiner fehlenden Datei wurde eine passende Datei gefunden.'
+        : `${result.relinked.length} Datei(en) neu verknüpft${result.stillMissing > 0 ? `, ${result.stillMissing} fehlen weiterhin` : ''}. Du kannst das im Änderungsprotokoll rückgängig machen.`,
+    );
+    await verify();
   }
 
   return (
@@ -100,6 +114,18 @@ export function ArchiveTab({ settings, reload }: TabProps) {
                 </ul>
               </div>
             )}
+            {report.missingFiles.length > 0 && report.untrackedFiles.length > 0 && (
+              <div>
+                <Button variant="outline" size="sm" onClick={() => setConfirmRelink(true)} disabled={runBusy} data-testid="archive-relink">
+                  Verschobene Dateien neu verknüpfen
+                </Button>
+              </div>
+            )}
+            {relinkNote && (
+              <Notice tone="info" data-testid="archive-relink-result">
+                {relinkNote}
+              </Notice>
+            )}
             {report.changedFiles.length > 0 && (
               <div>
                 <p className="font-medium">Veränderte Dateien ({report.changedFiles.length})</p>
@@ -167,6 +193,16 @@ export function ArchiveTab({ settings, reload }: TabProps) {
       </Section>
 
       <TrashSection />
+
+      <ConfirmDialog
+        open={confirmRelink}
+        onOpenChange={setConfirmRelink}
+        title="Verschobene Dateien neu verknüpfen?"
+        description="Archivist sucht unter den Dateien im Archiv, die es nicht kennt, nach solchen mit demselben Inhalt (Prüfsumme) wie eine fehlende Datei und hinterlegt dort den neuen Ort. Es wird keine Datei verändert, verschoben oder gelöscht."
+        confirmLabel="Neu verknüpfen"
+        confirmTestId="archive-relink-confirm"
+        onConfirm={relink}
+      />
 
       <ConfirmDialog
         open={confirmCat}

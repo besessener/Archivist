@@ -74,6 +74,13 @@ export function initSettings(page: Page) {
         save: page.getByTestId('memory-save'),
       },
     },
+    archiveCheck: {
+      verify: page.getByTestId('archive-verify'),
+      report: page.getByTestId('verify-report'),
+      relink: page.getByTestId('archive-relink'),
+      confirmRelink: page.getByTestId('archive-relink-confirm'),
+      relinkResult: page.getByTestId('archive-relink-result'),
+    },
     backups: {
       createMetadata: page.getByTestId('backup-metadata'),
       rows: page.getByTestId('backup-row'),

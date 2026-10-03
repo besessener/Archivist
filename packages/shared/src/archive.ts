@@ -71,6 +71,12 @@ export const BackupInfo = z.object({
 });
 export type BackupInfo = z.infer<typeof BackupInfo>;
 
+export const RelinkResult = z.object({
+  relinked: z.array(z.object({ documentId: Id, title: z.string(), path: z.string() })),
+  stillMissing: z.number(),
+});
+export type RelinkResult = z.infer<typeof RelinkResult>;
+
 export const VerifyReport = z.object({
   checkedDocuments: z.number(),
   missingFiles: z.array(z.object({ documentId: Id, title: z.string(), path: z.string() })),

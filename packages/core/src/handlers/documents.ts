@@ -96,6 +96,7 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
       return { restartRequired: true as const };
     },
     'archive:verify': () => services.archive.verify(),
+    'archive:relink': (input) => services.archive.relink({ confirmed: input.confirmed }),
     'archive:rootStatus': () => services.archiveRoot.status(),
     'archive:previewRootChange': (input) => services.archiveRoot.preview(input.root),
     'archive:changeRoot': (input) => services.archiveRoot.change(input),

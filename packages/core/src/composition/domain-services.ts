@@ -68,6 +68,8 @@ export function createDomainServices(base: BaseServices) {
     contradictions,
     insights,
     notifications,
+    pool,
+    appState,
     entityDuplicates,
     lastRun: appState.lastRunStore('consistency.lastRunAt'),
   });
