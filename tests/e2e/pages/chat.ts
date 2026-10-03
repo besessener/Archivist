@@ -16,6 +16,8 @@ export function initChat(page: Page) {
     /** „Archivist denkt nach …“ while a request is running. */
     thinking: root.getByTestId('chat-loading'),
     sources: root.getByTestId('chat-source'),
+    /** In-app links in an answer (weekly review, agent answers). */
+    appLinks: root.getByTestId('app-link'),
     conversationSelect: root.getByTestId('conversation-select'),
     /** Agent mode (#300): live steps of a running run, its summary below the answer and the mode switch. */
     agent: {
