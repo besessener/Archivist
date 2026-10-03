@@ -211,6 +211,13 @@
       "when": 1791051414756,
       "tag": "0029_contradiction_resolved_by_supersede",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791060567253,
+      "tag": "0030_llm_usage_accounting",
+      "breakpoints": true
     }
   ]
 }
