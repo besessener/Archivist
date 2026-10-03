@@ -28,7 +28,7 @@ Ein gelöschtes Dokument landet im Papierkorb und lässt sich wiederherstellen, 
 
 ## Widersprüche sind Hinweise
 
-Die Widerspruchserkennung ist zurückhaltend: lexikalische Gegensätze (z. B. weiterführen vs. pausieren, unterschiedliche Auswahl „für X/Y“) plus optionale LLM-Bestätigung. Das Ergebnis sind **Hinweise**, keine festgestellten Wahrheiten.
+Die Widerspruchserkennung ist zurückhaltend: Ohne LLM erkennt sie nur lexikalische Gegensätze (z. B. weiterführen vs. nicht weiterführen oder pausieren, unterschiedliche Auswahl „für X/Y“); Verneinungen wie „nicht weiter“, „nicht fortsetzen“ oder „nicht starten“ lesen die Regeln als Stopp, „nicht pausieren, sondern weitermachen“ als Weiter. Stellen die Entscheidungen Mitarbeiter ein oder geben eine Bestellung auf, zählt das nicht als Stopp. Beträge, Daten und viele fachliche Entscheidungen prüft nur das LLM (Datenschutzmodus „automatisch“). Verglichen werden aktive Entscheidungen desselben Themas oder desselben Projekts, auch über Themen hinweg; Dokumente vergleicht die Prüfung nicht. Das Ergebnis sind **Hinweise**, keine festgestellten Wahrheiten.
 
 ## Nur Windows, nur Deutsch
 

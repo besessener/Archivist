@@ -3,7 +3,7 @@ import { and, eq, isNull, ne } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { insights as insightsTable, notifications as notificationsTable } from '../db/schema';
 import { newId } from '../util/ids';
-import { checkIncompleteDecisions, checkSuperseded } from './archive-check/decisions';
+import { checkExpiredDecisions, checkIncompleteDecisions, checkSuperseded } from './archive-check/decisions';
 import { checkAssignments, checkDuplicates, checkedDocuments } from './archive-check/documents';
 import { Findings, yieldToEventLoop, type CheckDeps, type CheckRun } from './archive-check/findings';
 import { checkExternalFiles, checkLowConfidenceRelations } from './archive-check/knowledge';
@@ -113,10 +113,10 @@ export class ConsistencyService {
     await checkIncompleteDecisions(check, allDecisions);
     // contradictions first: a pair with a contradiction gets no additional "possibly superseded" hint
     await step(0.7, 'Prüfe Widersprüche');
-    const found = await this.deps.contradictions.scanAll();
-    check.signal?.throwIfAborted();
+    const found = await this.deps.contradictions.scanAll(check.signal);
     check.findings.count('contradiction', found.length);
     checkSuperseded(check, allDecisions);
+    checkExpiredDecisions(check, { decisions: allDecisions, today: localToday() });
     return found.length;
   }
 

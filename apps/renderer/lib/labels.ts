@@ -26,6 +26,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   missing_metadata: 'Fehlende Angaben',
   external_file: 'Dateien außerhalb des Archivs',
   possibly_superseded: 'Möglicherweise überholt',
+  decision_expired: 'Gültigkeit abgelaufen',
   misplaced_file: 'Falsch abgelegte Dateien',
   scattered_documents: 'Verstreut abgelegte Dokumente',
   low_confidence_relation: 'Unsichere Verknüpfungen',

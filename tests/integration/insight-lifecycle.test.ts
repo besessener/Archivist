@@ -284,7 +284,7 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
   it('a contradiction detected later replaces the „möglicherweise überholt“ hint of the pair', async () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
-    const b = await decision('Das Protokoll schreibt Anna.', '2026-03-01');
+    const b = await decision('Das Meeting findet donnerstags statt.', '2026-03-01');
     await app.services.consistency.run({ trigger: 'test' });
     const superseded = openInsights('possibly_superseded')[0]!;
     expect(superseded).toBeDefined();
@@ -302,7 +302,7 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
   it('supersede() is idempotent: a second replace changes and records nothing', async () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
-    const b = await decision('Das Protokoll schreibt Anna.', '2026-03-01');
+    const b = await decision('Das Meeting findet donnerstags statt.', '2026-03-01');
     app.services.decisions.supersede({ oldId: a.id, newId: b.id, confirmed: true });
     const audits = () => app.services.audit.list({ limit: 100 }).filter((e) => e.action === 'decision.supersede').length;
     const before = audits();
@@ -407,7 +407,7 @@ describe('Outdated proposals are re-checked before execution', () => {
   it('if the older decision has since been revoked, it is no longer replaced', async () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
-    await decision('Das Protokoll schreibt Anna.', '2026-03-01');
+    await decision('Das Meeting findet donnerstags statt.', '2026-03-01');
     await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('possibly_superseded')[0]!;
 

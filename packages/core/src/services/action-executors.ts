@@ -65,9 +65,9 @@ function createOpenItem(d: ActionDeps, p: Params): string {
   return 'Offener Punkt angelegt.';
 }
 
-function recordDecision(d: ActionDeps, p: Params): string {
+async function recordDecision(d: ActionDeps, p: Params): Promise<string> {
   const params = ActionParamSchemas.record_decision.parse(p);
-  d.decisions.create(
+  const decision = d.decisions.create(
     {
       decisionText: params.decisionText,
       title: params.title,
@@ -85,6 +85,7 @@ function recordDecision(d: ActionDeps, p: Params): string {
     },
     { actor: 'agent', trigger: TRIGGER },
   );
+  await d.contradictions.checkDecision(decision.id); // only a hint, like for every new decision
   return 'Entscheidung erfasst (ggf. als Entwurf mit offenen Pflichtfeldern).';
 }
 
