@@ -39,7 +39,10 @@ export class CoOriginLinks {
     for (const [a, b] of request.pairs) {
       if (a === b || isLinked(this.sqlite, { a, b })) continue;
       const { evidence, sourceIds } = request;
-      const result = this.deps.graph.link(a, b, 'related_to', { status: 'proposed', confidence: 0.7, method: 'co_origin', evidence, sourceIds });
+      const result = this.deps.graph.link(
+        { sourceId: a, targetId: b, relationType: 'related_to' },
+        { status: 'proposed', confidence: 0.7, method: 'co_origin', evidence, sourceIds },
+      );
       if (result?.created) created += 1;
     }
     return created;
@@ -121,7 +124,10 @@ export class CoOriginLinks {
       const confidence = Math.min(0.8, DATE_PERSON_BASE + 0.1 * (shared.length - 1));
       if (!shared.length || confidence < bar) continue;
       const evidence = `Am ${germanDay(day)} mit ${shared.join(', ')}`;
-      const result = this.deps.graph.link(id, otherId, 'related_to', { status: 'proposed', confidence, method: 'date_person', evidence });
+      const result = this.deps.graph.link(
+        { sourceId: id, targetId: otherId, relationType: 'related_to' },
+        { status: 'proposed', confidence, method: 'date_person', evidence },
+      );
       if (result?.created) created += 1;
     }
     return created;

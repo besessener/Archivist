@@ -100,7 +100,7 @@ describe('Entries created together are linked (#272)', () => {
     const a = mk('Punkt A');
     const b = mk('Punkt B');
     const r = app.services.graph.relationsOf(a.id).find((x) => x.method === 'co_origin')!;
-    app.services.graph.decideRelation(r.id, 'rejected');
+    app.services.graph.decideRelation(r.id, { status: 'rejected' });
     const c = mk('Punkt C');
     // C is proposed with A and B; A–B stays rejected
     expect(pairs()).toEqual(new Set([pairKey(a.id, b.id), pairKey(c.id, a.id), pairKey(c.id, b.id)]));

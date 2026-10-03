@@ -11,24 +11,27 @@ afterEach(async () => {
 
 const graph = () => app.services.graph;
 const note = async (name: string) => (await app.services.notes.create({ title: name, content: `${name} – Inhalt` })).id;
-const assign = (entry: string, hub: string) => graph().link(entry, hub, 'relates_to', { status: 'confirmed' });
+const assign = (entry: string, hub: string) => graph().link({ sourceId: entry, targetId: hub, relationType: 'relates_to' }, { status: 'confirmed' });
 
 describe('Related entries – direct and over shared nodes, strongest first (#276)', () => {
   it('ranks by kind and number of shared nodes and names the reason; rejected pairs and the own person do not count', async () => {
     const [a, b, c, d, e, f] = [await note('A'), await note('B'), await note('C'), await note('D'), await note('E'), await note('F')];
-    const project = graph().ensureEntity('project', 'Hausbau').id;
-    const anna = graph().ensureEntity('person', 'Anna').id;
-    const tag = graph().ensureEntity('tag', 'kredit').id;
+    const project = graph().ensureEntity({ type: 'project', name: 'Hausbau' }).id;
+    const anna = graph().ensureEntity({ type: 'person', name: 'Anna' }).id;
+    const tag = graph().ensureEntity({ type: 'tag', name: 'kredit' }).id;
     app.services.self.ensure();
     const me = app.services.self.get()!.id;
     for (const x of [a, b, e]) assign(x, project);
     for (const x of [a, b, c]) assign(x, anna);
     for (const x of [a, c, d]) assign(x, tag);
     for (const x of [a, f]) assign(x, me);
-    graph().link(a, d, 'related_to', { status: 'proposed', method: 'similarity', evidence: 'gleiche Stelle', confidence: 0.7 });
+    graph().link(
+      { sourceId: a, targetId: d, relationType: 'related_to' },
+      { status: 'proposed', method: 'similarity', evidence: 'gleiche Stelle', confidence: 0.7 },
+    );
     // the user said A and E do not belong together
-    const r = graph().link(a, e, 'related_to', { status: 'proposed', method: 'similarity' })!;
-    graph().decideRelation(r.id, 'rejected');
+    const r = graph().link({ sourceId: a, targetId: e, relationType: 'related_to' }, { status: 'proposed', method: 'similarity' })!;
+    graph().decideRelation(r.id, { status: 'rejected' });
 
     const res = await app.ok('knowledge:related', { id: a });
     expect(res.total).toBe(3);
@@ -44,7 +47,7 @@ describe('Related entries – direct and over shared nodes, strongest first (#27
 
   it('pages with the total', async () => {
     const a = await note('A');
-    const topic = graph().ensureEntity('topic', 'Haus').id;
+    const topic = graph().ensureEntity({ type: 'topic', name: 'Haus' }).id;
     assign(a, topic);
     for (let i = 0; i < 12; i += 1) assign(await note(`N${String(i).padStart(2, '0')}`), topic);
     const p1 = await app.ok('knowledge:related', { id: a, limit: 5, offset: 0 });
@@ -56,7 +59,7 @@ describe('Related entries – direct and over shared nodes, strongest first (#27
 
   it('a proposal shown there is confirmed in place and undoable', async () => {
     const [a, b] = [await note('A'), await note('B')];
-    const r = graph().link(a, b, 'related_to', { status: 'proposed', method: 'co_origin' })!;
+    const r = graph().link({ sourceId: a, targetId: b, relationType: 'related_to' }, { status: 'proposed', method: 'co_origin' })!;
     await app.ok('knowledge:resolveRelation', { relationId: r.id, status: 'confirmed', confirmed: true });
     const [item] = (await app.ok('knowledge:related', { id: a })).items;
     expect(item!.relation).toMatchObject({ status: 'confirmed', resolvedByUser: true });

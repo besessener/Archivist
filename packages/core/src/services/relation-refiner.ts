@@ -163,7 +163,10 @@ export class RelationRefiner {
       });
       return true;
     }
-    const created = this.graph.link(src.id, tgt.id, hint.kind, { status: 'proposed', confidence: 0.6, method: 'refinement', evidence: reason });
+    const created = this.graph.link(
+      { sourceId: src.id, targetId: tgt.id, relationType: hint.kind },
+      { status: 'proposed', confidence: 0.6, method: 'refinement', evidence: reason },
+    );
     return Boolean(created?.created);
   }
 }

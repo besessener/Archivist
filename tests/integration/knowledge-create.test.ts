@@ -123,7 +123,7 @@ describe('NoteService (single note-creation path)', () => {
   });
 
   it('create() always adds a new note and links it', async () => {
-    const topic = app.services.graph.ensureEntity('topic', 'Garten');
+    const topic = app.services.graph.ensureEntity({ type: 'topic', name: 'Garten' });
     const n1 = await app.services.notes.create({ content: 'Rasen mähen', links: [{ targetId: topic.id, relationType: 'relates_to' }] });
     const n2 = await app.services.notes.create({ content: 'Rasen mähen' });
     expect(n1.id).not.toBe(n2.id);

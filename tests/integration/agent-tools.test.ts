@@ -258,7 +258,12 @@ describe('Links and cases (#306, #277, #286)', () => {
     // the user rejects the proposal → the agent may not propose it again
     const proposed = [rel(vertrag, nebenkosten), rel(vertrag, other), rel(nebenkosten, other)].find((r) => r?.status === 'proposed')!;
     await app.ok('knowledge:resolveRelation', { relationId: proposed.id, status: 'rejected', confirmed: true });
-    expect(() => app.services.graph.linkEntries(proposed.sourceEntityId, proposed.targetEntityId, 'relates_to', { status: 'proposed' })).toThrow(/abgelehnt/);
+    expect(() =>
+      app.services.graph.linkEntries(
+        { sourceId: proposed.sourceEntityId, targetId: proposed.targetEntityId, relationType: 'relates_to' },
+        { status: 'proposed' },
+      ),
+    ).toThrow(/abgelehnt/);
   });
 
   it('cases: create with entries, add more, close and undo the closing', async () => {

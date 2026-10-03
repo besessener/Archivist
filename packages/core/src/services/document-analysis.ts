@@ -226,7 +226,7 @@ export class DocumentAnalyzer {
       this.deps.ctx.logger.info('documents', 'Analysis result discarded: document status changed in the meantime', { documentId: row.id });
       return { usedLlm, warning, skipped: true };
     }
-    this.deps.graph.registerNode('document', row.id, title, c.summary);
+    this.deps.graph.registerNode({ type: 'document', id: row.id, name: title, description: c.summary });
     this.deps.notifications.create({
       title: 'Klassifikation bereit',
       description: `„${c.title}“ → ${c.categoryPath} (${Math.round(c.confidence * 100)} % sicher)`,

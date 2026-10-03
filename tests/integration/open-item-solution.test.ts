@@ -84,7 +84,7 @@ describe('Solution proposal for open items (#46)', () => {
       sourceIds: [dec],
     });
     // note that is only found via the hybrid search
-    const note = app.services.graph.ensureEntity('note', 'Dachdecker Meier', 'Dachdecker Meier bietet Holzfaser-Dämmung an.');
+    const note = app.services.graph.ensureEntity({ type: 'note', name: 'Dachdecker Meier', description: 'Dachdecker Meier bietet Holzfaser-Dämmung an.' });
     await app.services.search.index({ type: 'note', id: note.id, title: note.name, content: 'Dachdecker Meier bietet Holzfaser Dämmung und Angebot an.' });
     app.llm.on('SolutionProposal', () => PROPOSAL);
 

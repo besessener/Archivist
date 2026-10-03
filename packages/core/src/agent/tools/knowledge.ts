@@ -21,7 +21,7 @@ async function recordNote(
   if (created) {
     deps.audit.log({ action: 'note.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [created.id], after: { title: created.name } });
     for (const target of ctx.refs.resolveMany(args.links ?? []).ids)
-      deps.graph.link(created.id, target, 'relates_to', { confidence: 0.9, status: 'confirmed' });
+      deps.graph.link({ sourceId: created.id, targetId: target, relationType: 'relates_to' }, { confidence: 0.9, status: 'confirmed' });
   }
   return {
     content: `${created ? ctx.refs.entry(created.id) : ''} ${result.content}${wikiNote(deps, { text: args.content, id: created?.id })}${await linkHint(scope, created?.id ?? null)}`,
@@ -35,7 +35,7 @@ async function updateNote({ deps, ctx }: ToolScope, args: { note: string; title:
   const note = id ? deps.graph.getEntity(id) : undefined;
   if (!id || note?.type !== 'note') return { content: `„${args.note}“ ist keine Notiz.`, isError: true };
   if (!args.title && !args.content) return { content: 'Gib title oder content an.', isError: true };
-  const after = await deps.notes.update(id, { title: args.title ?? null, content: args.content ?? null }, { trigger: 'agent', actor: 'agent' });
+  const after = await deps.notes.update(id, { patch: { title: args.title ?? null, content: args.content ?? null }, trigger: 'agent', actor: 'agent' });
   return {
     content: `${ctx.refs.entry(id)} Notiz „${truncate(after.name, 60)}“ gespeichert.${wikiNote(deps, { text: after.description ?? '', id })}`,
     summary: 'gespeichert',

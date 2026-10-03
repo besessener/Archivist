@@ -50,9 +50,9 @@ async function importedDoc(title: string): Promise<string> {
 async function monikaArchive() {
   const spellings = ['Monika Lor-Zade', 'Monika Lor-Zade (chefin)', 'Monika Lor-Zade (Führungskraft)', 'Lor-Zade, Monika', 'Dr. Monika Lor-Zade'];
   // legacy data: the entries were created before mentions were resolved centrally
-  const ids = Object.fromEntries(spellings.map((n) => [n, graph().ensureEntity('person', n).id]));
-  const monika = graph().ensureEntity('person', 'Monika');
-  const ich = graph().ensureEntity('person', 'ich');
+  const ids = Object.fromEntries(spellings.map((n) => [n, graph().ensureEntity({ type: 'person', name: n }).id]));
+  const monika = graph().ensureEntity({ type: 'person', name: 'Monika' });
+  const ich = graph().ensureEntity({ type: 'person', name: 'ich' });
   const dec = await app.ok('decisions:create', {
     decisionText: 'Wir verschieben den Launch.',
     title: 'Launch verschoben',
@@ -67,7 +67,7 @@ async function monikaArchive() {
   sqlite()
     .prepare('UPDATE decisions SET participants = ? WHERE id = ?')
     .run(JSON.stringify(['Monika Lor-Zade (chefin)', 'Lor-Zade, Monika', 'Anna']), dec.id);
-  graph().link(ids['Lor-Zade, Monika']!, dec.id, 'participated_in', { status: 'confirmed', confidence: 0.9 });
+  graph().link({ sourceId: ids['Lor-Zade, Monika']!, targetId: dec.id, relationType: 'participated_in' }, { status: 'confirmed', confidence: 0.9 });
   const item = await app.ok('openItems:create', { title: 'Budget klären', priority: 'normal', sourceIds: [], confidence: 0.9 });
   sqlite().prepare('UPDATE open_items SET responsible_person_id = ? WHERE id = ?').run(ids['Dr. Monika Lor-Zade'], item.id);
   const doc = await importedDoc('Protokoll');
@@ -149,8 +149,8 @@ describe('Automatically merging person duplicates (#26)', () => {
   });
 
   it('picks the cleanest spelling as the name, even when no entry carries it', async () => {
-    const a = graph().ensureEntity('person', 'monika lor zade (chefin)');
-    const b = graph().ensureEntity('person', 'Lor-Zade, Monika');
+    const a = graph().ensureEntity({ type: 'person', name: 'monika lor zade (chefin)' });
+    const b = graph().ensureEntity({ type: 'person', name: 'Lor-Zade, Monika' });
     await app.services.consistency.run('manual');
     const left = persons();
     expect(left).toHaveLength(1);

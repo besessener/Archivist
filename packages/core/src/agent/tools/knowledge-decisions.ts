@@ -112,7 +112,7 @@ function decisionPatch(args: z.output<typeof AmendArgs>, current: Decision) {
 async function amendDecision({ deps, ctx }: ToolScope, args: z.output<typeof AmendArgs>): Promise<ToolOutput> {
   const id = ctx.refs.resolve(args.id);
   if (!id) return { content: `Unbekannte ID „${args.id}“ – list_entries kind=decision zeigt die Entscheidungen.`, isError: true };
-  const d = deps.decisions.update(id, decisionPatch(args, deps.decisions.get(id)), { trigger: 'agent' });
+  const d = deps.decisions.update(id, { patch: decisionPatch(args, deps.decisions.get(id)), trigger: 'agent' });
   const missing = deps.decisions.missingLabels(d);
   return {
     content: `${ctx.refs.entry(d.id)} ergänzt.\n${deps.decisions.format(d)}${missing.length ? `\nEs fehlt noch: ${missing.join(', ')} – frag nach oder speichere „unbekannt“.` : ''}`,

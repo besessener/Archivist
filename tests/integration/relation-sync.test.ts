@@ -13,9 +13,9 @@ afterEach(async () => {
 });
 
 const graph = () => app.services.graph;
-const topicId = (name: string) => graph().ensureEntity('topic', name).id;
-const projectId = (name: string) => graph().ensureEntity('project', name).id;
-const personId = (name: string) => graph().ensureEntity('person', name).id;
+const topicId = (name: string) => graph().ensureEntity({ type: 'topic', name }).id;
+const projectId = (name: string) => graph().ensureEntity({ type: 'project', name }).id;
+const personId = (name: string) => graph().ensureEntity({ type: 'person', name }).id;
 
 /** The relation between two nodes with the given type (any direction), regardless of status. */
 function relation(a: string, b: string, type: RelationType): GraphRelation | undefined {
@@ -82,9 +82,9 @@ describe('field changes remove outdated relations', () => {
     const item = await app.ok('openItems:create', { title: 'Angebot einholen', topic: 'Dach' });
     const alt = topicId('Fassade');
     // a proposed relation to another topic that the user confirms, and one the user rejects
-    const confirmed = graph().link(item.id, alt, 'relates_to', { status: 'proposed' })!;
+    const confirmed = graph().link({ sourceId: item.id, targetId: alt, relationType: 'relates_to' }, { status: 'proposed' })!;
     await app.ok('knowledge:resolveRelation', { relationId: confirmed.id, status: 'confirmed', confirmed: true });
-    const rejected = graph().link(item.id, topicId('Keller'), 'relates_to', { status: 'proposed' })!;
+    const rejected = graph().link({ sourceId: item.id, targetId: topicId('Keller'), relationType: 'relates_to' }, { status: 'proposed' })!;
     await app.ok('knowledge:resolveRelation', { relationId: rejected.id, status: 'rejected', confirmed: true });
 
     await app.ok('openItems:update', { id: item.id, patch: { title: 'Angebot einholen', topic: 'Heizung' } });
@@ -118,8 +118,8 @@ describe('field changes remove outdated relations', () => {
     await app.services.jobs.whenIdle();
     const id = imp.imported[0]!.id;
     await app.ok('documents:updateMetadata', { id, topic: 'Budget', confirmed: true });
-    const tag = graph().ensureEntity('tag', 'finanzen').id;
-    graph().link(id, tag, 'relates_to', { status: 'confirmed', confidence: 0.6 });
+    const tag = graph().ensureEntity({ type: 'tag', name: 'finanzen' }).id;
+    graph().link({ sourceId: id, targetId: tag, relationType: 'relates_to' }, { status: 'confirmed', confidence: 0.6 });
 
     await app.ok('documents:updateMetadata', { id, topic: 'Planung', confirmed: true });
     expect(relation(id, topicId('Budget'), 'relates_to')?.status).toBe('outdated');
@@ -155,7 +155,7 @@ describe('field changes remove outdated relations', () => {
 
   it('migration backfill marks relations the user resolved before the column existed', async () => {
     const item = await app.ok('openItems:create', { title: 'Punkt', topic: 'Altthema' });
-    const rel = graph().link(item.id, topicId('Nebenthema'), 'relates_to', { status: 'proposed' })!;
+    const rel = graph().link({ sourceId: item.id, targetId: topicId('Nebenthema'), relationType: 'relates_to' }, { status: 'proposed' })!;
     await app.ok('knowledge:resolveRelation', { relationId: rel.id, status: 'confirmed', confirmed: true });
     const sqlite = app.services.database.sqlite;
     sqlite.prepare('UPDATE relations SET resolved_by_user = 0').run();
@@ -171,13 +171,13 @@ describe('field changes remove outdated relations', () => {
     const reject = async (relationId: string) => app.ok('knowledge:resolveRelation', { relationId, status: 'rejected', confirmed: true });
     // moved in place: only a rejected relation to the source
     const moved = await app.ok('openItems:create', { title: 'Punkt eins' });
-    const movedRel = graph().link(moved.id, source, 'relates_to', { status: 'proposed' })!;
+    const movedRel = graph().link({ sourceId: moved.id, targetId: source, relationType: 'relates_to' }, { status: 'proposed' })!;
     await reject(movedRel.id);
     // combined: a rejected relation to the source and a system-confirmed one to the target
     const combined = await app.ok('openItems:create', { title: 'Punkt zwei' });
-    const rejectedRel = graph().link(combined.id, source, 'relates_to', { status: 'proposed' })!;
+    const rejectedRel = graph().link({ sourceId: combined.id, targetId: source, relationType: 'relates_to' }, { status: 'proposed' })!;
     await reject(rejectedRel.id);
-    graph().link(combined.id, target, 'relates_to', { status: 'confirmed' });
+    graph().link({ sourceId: combined.id, targetId: target, relationType: 'relates_to' }, { status: 'confirmed' });
     const rows = () => app.services.database.sqlite.prepare('SELECT * FROM relations ORDER BY id').all();
     const before = rows();
 

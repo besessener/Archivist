@@ -7,7 +7,8 @@ afterEach(async () => {
 });
 
 const note = async (name: string, description: string) => (await app.ok('knowledge:createEntity', { type: 'note', name, description })).entity.id;
-const relate = (a: string, b: string) => app.services.graph.linkEntries(a, b, 'related_to', { status: 'confirmed' }).relation;
+const relate = (a: string, b: string) =>
+  app.services.graph.linkEntries({ sourceId: a, targetId: b, relationType: 'related_to' }, { status: 'confirmed' }).relation;
 const hintCalls = () => app.llm.calls.filter((c) => c.schema === 'RelationKindHint');
 
 describe('The kind of a link per LLM (#284)', () => {

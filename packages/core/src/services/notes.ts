@@ -67,7 +67,7 @@ export class NoteService {
 
   private async revertUpdate(undoData: NoteUpdateUndo): Promise<string> {
     const { id, before } = undoData;
-    this.graph.registerNode('note', id, before.name, before.description);
+    this.graph.registerNode({ type: 'note', id, name: before.name, description: before.description });
     this.wiki.sync(id, before.description ?? before.name);
     await this.reindex(id);
     // the analysis runs again on the former text: its relations come back, the newer ones become outdated
@@ -79,8 +79,7 @@ export class NoteService {
   /** Changes title and/or text of a note (#273), with undo; afterwards it is indexed and analysed again (`entry:updated`). */
   async update(
     id: string,
-    patch: { title?: string | null; content?: string | null },
-    opts: { trigger?: string; actor?: 'user' | 'agent' } = {},
+    { patch, ...opts }: { patch: { title?: string | null; content?: string | null }; trigger?: string; actor?: 'user' | 'agent' },
   ): Promise<GraphEntity> {
     const note = this.graph.getEntity(id);
     if (note?.type !== 'note') throw new AppError('validation_error', 'Notiz nicht gefunden.');
@@ -88,7 +87,7 @@ export class NoteService {
     const content = patch.content?.trim() || note.description || note.name;
     const title = collapse(patch.title ?? '') || (patch.content !== undefined ? truncate(collapse(content), 70) : note.name);
     if (title === note.name && content === (note.description ?? note.name)) return note;
-    this.graph.registerNode('note', id, title, content);
+    this.graph.registerNode({ type: 'note', id, name: title, description: content });
     this.wiki.sync(id, content);
     const after = this.graph.getEntity(id)!;
     this.audit?.log({
@@ -133,7 +132,7 @@ export class NoteService {
   async create(input: NoteInput): Promise<GraphEntity> {
     const { title, content } = this.resolve(input);
     const id = newId();
-    this.graph.registerNode('note', id, title, content);
+    this.graph.registerNode({ type: 'note', id, name: title, description: content });
     this.applyLinks(id, input);
     this.wiki.sync(id, content);
     this.ctx.events.created({ id, type: 'note' });
@@ -167,6 +166,9 @@ export class NoteService {
 
   private applyLinks(noteId: string, input: NoteInput): void {
     for (const link of input.links ?? [])
-      this.graph.link(noteId, link.targetId, link.relationType, { confidence: link.confidence ?? 0.9, status: 'confirmed' });
+      this.graph.link(
+        { sourceId: noteId, targetId: link.targetId, relationType: link.relationType },
+        { confidence: link.confidence ?? 0.9, status: 'confirmed' },
+      );
   }
 }

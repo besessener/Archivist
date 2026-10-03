@@ -206,8 +206,12 @@ export class ArchiveExecutor {
     if (categoryPath) this.deps.categories.create(categoryPath, { confirmed: true });
     // a name taken over unchanged from the document's analysis stays unconfirmed until the user uses it (#199)
     const fromDocument = (name: string, proposed: string | null | undefined) => normalizeName(name) === normalizeName(proposed ?? '');
-    const topic = topicName ? graph.ensureEntity('topic', topicName, null, { fromDocument: fromDocument(topicName, proposal?.topic) }) : null;
-    const project = projectName ? graph.ensureEntity('project', projectName, null, { fromDocument: fromDocument(projectName, proposal?.project) }) : null;
+    const topic = topicName
+      ? graph.ensureEntity({ type: 'topic', name: topicName, description: null, fromDocument: fromDocument(topicName, proposal?.topic) })
+      : null;
+    const project = projectName
+      ? graph.ensureEntity({ type: 'project', name: projectName, description: null, fromDocument: fromDocument(projectName, proposal?.project) })
+      : null;
     // persons: every mention becomes a person (#274), the stored list uses canonical names
     const people = this.deps.persons.resolveNames(proposal?.persons ?? row.persons, { context: 'document' });
     const claimed = this.db
@@ -237,15 +241,27 @@ export class ArchiveExecutor {
   ): void {
     const { graph } = this.deps;
     const confidence = row.confidence ?? 0.8;
-    if (links.topicId) graph.link(row.id, links.topicId, 'relates_to', { confidence, status: 'confirmed', sourceIds: [row.id] });
-    if (links.projectId) graph.link(row.id, links.projectId, 'belongs_to', { confidence, status: 'confirmed', sourceIds: [row.id] });
+    if (links.topicId)
+      graph.link({ sourceId: row.id, targetId: links.topicId, relationType: 'relates_to' }, { confidence, status: 'confirmed', sourceIds: [row.id] });
+    if (links.projectId)
+      graph.link({ sourceId: row.id, targetId: links.projectId, relationType: 'belongs_to' }, { confidence, status: 'confirmed', sourceIds: [row.id] });
     if (links.categoryPath)
-      graph.link(row.id, graph.ensureEntity('category', links.categoryPath).id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] });
-    for (const personId of links.personIds) graph.link(personId, row.id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
+      graph.link(
+        { sourceId: row.id, targetId: graph.ensureEntity({ type: 'category', name: links.categoryPath }).id, relationType: 'belongs_to' },
+        { confidence: 1, status: 'confirmed', sourceIds: [row.id] },
+      );
+    for (const personId of links.personIds)
+      graph.link({ sourceId: personId, targetId: row.id, relationType: 'produced' }, { confidence: 0.5, status: 'proposed', sourceIds: [row.id] });
     for (const tag of row.tags)
-      graph.link(row.id, graph.ensureEntity('tag', tag).id, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] });
+      graph.link(
+        { sourceId: row.id, targetId: graph.ensureEntity({ type: 'tag', name: tag }).id, relationType: 'relates_to' },
+        { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] },
+      );
     if (links.proposal?.duplicateOfDocumentId)
-      graph.link(row.id, links.proposal.duplicateOfDocumentId, 'duplicate_of', { confidence: 0.8, status: 'proposed', sourceIds: [row.id] });
+      graph.link(
+        { sourceId: row.id, targetId: links.proposal.duplicateOfDocumentId, relationType: 'duplicate_of' },
+        { confidence: 0.8, status: 'proposed', sourceIds: [row.id] },
+      );
   }
 
   /** Removes our own inbox copy and, for a confirmed move, the unchanged original – only after a successful commit. */

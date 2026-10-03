@@ -68,7 +68,7 @@ describe('Same day and same person (#278)', () => {
     const b = decision('Termin verschoben', '2026-07-02', ['Anna Berger']);
     await app.services.jobs.whenIdle();
     const r = app.services.graph.relationsOf(a.id).find((x) => x.method === 'date_person')!;
-    app.services.graph.decideRelation(r.id, 'rejected');
+    app.services.graph.decideRelation(r.id, { status: 'rejected' });
     await app.ok('decisions:update', { id: b.id, patch: { title: 'Termin verschoben (neu)' } });
     await app.services.jobs.whenIdle();
     expect(dayPerson().map((x) => x.status)).toEqual(['rejected']);

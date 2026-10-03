@@ -50,12 +50,15 @@ export class CapturedSuggestions {
     const found: CapturedSuggestion[] = [];
     for (const candidate of await this.candidates.candidates(entry.id, { limit: request.limit })) {
       if (own.has(candidate.id)) continue;
-      const relation = this.deps.graph.link(entry.id, candidate.id, relationTypeFor(candidate), {
-        status: 'proposed',
-        confidence: candidate.score,
-        method: candidate.method,
-        evidence: candidate.reason,
-      });
+      const relation = this.deps.graph.link(
+        { sourceId: entry.id, targetId: candidate.id, relationType: relationTypeFor(candidate) },
+        {
+          status: 'proposed',
+          confidence: candidate.score,
+          method: candidate.method,
+          evidence: candidate.reason,
+        },
+      );
       if (relation?.status === 'proposed')
         found.push({ relation, entry: endOf(entry), target: { id: candidate.id, type: candidate.type, name: candidate.name }, score: candidate.score });
     }

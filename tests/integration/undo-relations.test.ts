@@ -26,8 +26,8 @@ afterEach(async () => {
 });
 
 const graph = () => app.services.graph;
-const topicId = (name: string) => graph().ensureEntity('topic', name).id;
-const projectId = (name: string) => graph().ensureEntity('project', name).id;
+const topicId = (name: string) => graph().ensureEntity({ type: 'topic', name }).id;
+const projectId = (name: string) => graph().ensureEntity({ type: 'project', name }).id;
 
 function relation(a: string, b: string, type: RelationType): GraphRelation | undefined {
   return graph()
@@ -54,11 +54,11 @@ describe('link reports whether it created the relation', () => {
   it('created is true only for a new relation', () => {
     const a = topicId('A');
     const b = topicId('B');
-    expect(graph().link(a, b, 'relates_to', { status: 'proposed' })?.created).toBe(true);
-    expect(graph().link(a, b, 'relates_to', { status: 'confirmed' })?.created).toBe(false);
+    expect(graph().link({ sourceId: a, targetId: b, relationType: 'relates_to' }, { status: 'proposed' })?.created).toBe(true);
+    expect(graph().link({ sourceId: a, targetId: b, relationType: 'relates_to' }, { status: 'confirmed' })?.created).toBe(false);
     const rel = relation(a, b, 'relates_to')!;
-    graph().setRelationStatus(rel.id, 'rejected');
-    const again = graph().link(a, b, 'relates_to', { status: 'confirmed' });
+    graph().setRelationStatus(rel.id, { status: 'rejected' });
+    const again = graph().link({ sourceId: a, targetId: b, relationType: 'relates_to' }, { status: 'confirmed' });
     expect(again?.created).toBe(false);
     expect(again?.status).toBe('rejected');
   });
@@ -105,7 +105,7 @@ describe('undo only removes relations the action created', () => {
 
   it('archive undo keeps a relation the user rejected before and removes only the created ones', async () => {
     const id = await importDoc();
-    const rejected = graph().link(id, topicId('Steuern'), 'relates_to', { status: 'proposed' })!;
+    const rejected = graph().link({ sourceId: id, targetId: topicId('Steuern'), relationType: 'relates_to' }, { status: 'proposed' })!;
     await app.ok('knowledge:resolveRelation', { relationId: rejected.id, status: 'rejected', confirmed: true });
 
     expect((await archive(id)).success).toBe(1);
@@ -122,7 +122,7 @@ describe('undo only removes relations the action created', () => {
 
   it('archive undo restores the previous status of a relation the archiving confirmed', async () => {
     const id = await importDoc();
-    const proposed = graph().link(id, topicId('Steuern'), 'relates_to', { status: 'proposed', confidence: 0.4 })!;
+    const proposed = graph().link({ sourceId: id, targetId: topicId('Steuern'), relationType: 'relates_to' }, { status: 'proposed', confidence: 0.4 })!;
     await archive(id);
     expect(graph().getRelation(proposed.id)?.status).toBe('confirmed');
 
@@ -146,7 +146,7 @@ describe('undo only removes relations the action created', () => {
 
   it('metadata undo keeps a relation the user rejected before', async () => {
     const id = await importDoc();
-    const rejected = graph().link(id, topicId('Planung'), 'relates_to', { status: 'proposed' })!;
+    const rejected = graph().link({ sourceId: id, targetId: topicId('Planung'), relationType: 'relates_to' }, { status: 'proposed' })!;
     await app.ok('knowledge:resolveRelation', { relationId: rejected.id, status: 'rejected', confirmed: true });
 
     await app.ok('documents:updateMetadata', { id, topic: 'Planung', confirmed: true });
@@ -163,15 +163,15 @@ describe('undo only removes relations the action created', () => {
     const c = await app.ok('decisions:create', mk('Wir wechseln zu Server C.', '2026-04-01'));
 
     // b → a: the user rejected this relation before
-    const rejected = graph().link(b.id, a.id, 'supersedes', { status: 'proposed' })!;
+    const rejected = graph().link({ sourceId: b.id, targetId: a.id, relationType: 'supersedes' }, { status: 'proposed' })!;
     await app.ok('knowledge:resolveRelation', { relationId: rejected.id, status: 'rejected', confirmed: true });
-    app.services.decisions.supersede(a.id, b.id, { confirmed: true });
+    app.services.decisions.supersede({ oldId: a.id, newId: b.id, confirmed: true });
     expect((await undoLatest('decision.supersede')).undone).toBe(true);
     expect(graph().getRelation(rejected.id)?.status).toBe('rejected');
     expect((await app.ok('decisions:get', { id: a.id })).status).not.toBe('superseded');
 
     // c → b: created by the supersede, removed by its undo
-    app.services.decisions.supersede(b.id, c.id, { confirmed: true });
+    app.services.decisions.supersede({ oldId: b.id, newId: c.id, confirmed: true });
     const created = relation(c.id, b.id, 'supersedes')!;
     expect(created.status).toBe('confirmed');
     expect((await undoLatest('decision.supersede')).undone).toBe(true);

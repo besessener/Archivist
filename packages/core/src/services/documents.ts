@@ -141,7 +141,7 @@ export class DocumentService {
   insertDocument(input: NewDocument): DocumentRecord {
     const row = newDocumentRow(input, { id: newId(), at: nowIso() });
     this.db.insert(documents).values(row).run();
-    this.graph.registerNode('document', row.id, row.title, null);
+    this.graph.registerNode({ type: 'document', id: row.id, name: row.title, description: null });
     this.ctx.events.changed('documents', 'knowledge');
     return this.toRecord(row);
   }
@@ -201,8 +201,8 @@ export class DocumentService {
   }
 
   /** Sets or removes metadata of several documents at once (#291, #305); the whole batch is ONE undo step. */
-  bulkUpdate(ids: string[], patch: BulkPatch, opts: { trigger?: string } = {}): { updated: DocumentRecord[]; auditId: string | null } {
-    return this.metadata.bulkUpdate(ids, { patch, trigger: opts.trigger });
+  bulkUpdate(ids: string[], change: { patch: BulkPatch; trigger?: string }): { updated: DocumentRecord[]; auditId: string | null } {
+    return this.metadata.bulkUpdate(ids, change);
   }
 
   ignore(id: string): DocumentRecord {

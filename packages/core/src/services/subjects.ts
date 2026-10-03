@@ -138,7 +138,7 @@ export class SubjectService {
   }
 
   private resolve(kind: SubjectKind | 'tag', name: string): string {
-    return (this.graph.findByNameOrAlias(kind, name) ?? this.graph.ensureEntity(kind, name)).id;
+    return (this.graph.findByNameOrAlias(kind, name) ?? this.graph.ensureEntity({ type: kind, name })).id;
   }
 
   /** Ids of the confirmed relations from an entry to a topic or project. */
@@ -150,7 +150,7 @@ export class SubjectService {
   }
 
   /** Sets the further topics/projects by name (new names are created, unnamed ones removed) in ONE undo step. */
-  setExtras(id: string, patch: SubjectPatch, opts: { trigger?: string } = {}): EntrySubjects {
+  setExtras(id: string, { patch, ...opts }: { patch: SubjectPatch; trigger?: string }): EntrySubjects {
     const entry = this.graph.getEntity(id);
     if (!entry || !SUBJECT_TABLE[entry.type]) throw new AppError('validation_error', 'Diesem Eintrag lassen sich keine Themen oder Projekte zuordnen.');
     const current = this.of(id);
@@ -189,7 +189,7 @@ export class SubjectService {
   }
 
   /** Removes further topics/projects (#287) by name from several entries in ONE undo step; returns how many were removed. */
-  removeFurther(ids: string[], patch: SubjectPatch, opts: { trigger?: string } = {}): number {
+  removeFurther(ids: string[], { patch, ...opts }: { patch: SubjectPatch; trigger?: string }): number {
     const remove: string[] = [];
     for (const [id, subjects] of Object.entries(this.ofMany(ids)))
       for (const kind of SUBJECT_KINDS) {
@@ -205,8 +205,7 @@ export class SubjectService {
   /** Bulk assignment of a list's selection (#291) in ONE undo step: main value where missing, else a further one (#287). */
   async bulkAssign(
     ids: string[],
-    patch: SubjectPatch & { tags?: string[]; caseId?: string | null },
-    opts: { trigger?: string } = {},
+    { patch, ...opts }: { patch: SubjectPatch & { tags?: string[]; caseId?: string | null }; trigger?: string },
   ): Promise<{ updated: number; auditId: string | null }> {
     const entries = [...new Set(ids)].flatMap((id) => {
       const entry = this.graph.getEntity(id);
@@ -263,7 +262,10 @@ export class SubjectService {
     return mirrors.flatMap((mirror) => {
       const before = this.relationRow(mirror);
       if (before?.status === 'confirmed') return [];
-      this.graph.link(mirror.sourceId, mirror.targetId, mirror.relationType, { status: 'confirmed', confidence: 0.9, method: 'field' });
+      this.graph.link(
+        { sourceId: mirror.sourceId, targetId: mirror.targetId, relationType: mirror.relationType },
+        { status: 'confirmed', confidence: 0.9, method: 'field' },
+      );
       return [{ before, after: this.relationRow(mirror) }];
     });
   }

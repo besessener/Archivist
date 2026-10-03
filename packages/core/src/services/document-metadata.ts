@@ -102,7 +102,12 @@ export class DocumentMetadataEditor {
         .where(eq(documents.id, d.id))
         .run();
       if (graph.getEntity(d.id))
-        graph.registerNode('document', d.id, d.before.title, this.db.select().from(documents).where(eq(documents.id, d.id)).get()?.summary ?? null);
+        graph.registerNode({
+          type: 'document',
+          id: d.id,
+          name: d.before.title,
+          description: this.db.select().from(documents).where(eq(documents.id, d.id)).get()?.summary ?? null,
+        });
       if (d.relations) graph.revertRelationChanges(d.relations);
       // undo data written before relation tracking existed only lists the created relations
       else for (const relationId of d.relationIds ?? []) graph.deleteRelation(relationId);
@@ -115,8 +120,8 @@ export class DocumentMetadataEditor {
   assign(id: string, request: { topic?: string; project?: string; trigger?: string }): DocumentRecord {
     const row = this.deps.documents.getRow(id);
     const set: Partial<DocRow> = { updatedAt: nowIso() };
-    if (request.topic?.trim()) set.topicId = this.deps.graph.ensureEntity('topic', request.topic).id;
-    if (request.project?.trim()) set.projectId = this.deps.graph.ensureEntity('project', request.project).id;
+    if (request.topic?.trim()) set.topicId = this.deps.graph.ensureEntity({ type: 'topic', name: request.topic }).id;
+    if (request.project?.trim()) set.projectId = this.deps.graph.ensureEntity({ type: 'project', name: request.project }).id;
     const { changes } = this.deps.graph.trackRelationChanges(id, () =>
       this.deps.ctx.database.transaction(() => {
         this.db.update(documents).set(set).where(eq(documents.id, id)).run();
@@ -144,7 +149,7 @@ export class DocumentMetadataEditor {
     const { changes } = this.deps.graph.trackRelationChanges(id, () =>
       this.deps.ctx.database.transaction(() => {
         this.db.update(documents).set(set).where(eq(documents.id, id)).run();
-        if (set.title) this.deps.graph.registerNode('document', id, set.title, row.summary);
+        if (set.title) this.deps.graph.registerNode({ type: 'document', id, name: set.title, description: row.summary });
         this.syncAssignment(id, set);
         if (inGraph) this.syncPersonsAndTags(id, set);
       }),
@@ -168,8 +173,8 @@ export class DocumentMetadataEditor {
     if (patch.title !== undefined && patch.title.trim()) set.title = patch.title.trim().slice(0, 200);
     if (patch.tags) set.tags = [...new Set(patch.tags.map((t) => t.trim()).filter(Boolean))];
     if (patch.persons) set.persons = this.deps.persons.resolveNames(patch.persons, { context: 'document', create: persons.createPersons }).names;
-    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? graph.ensureEntity('topic', patch.topic).id : null;
-    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? graph.ensureEntity('project', patch.project).id : null;
+    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? graph.ensureEntity({ type: 'topic', name: patch.topic }).id : null;
+    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? graph.ensureEntity({ type: 'project', name: patch.project }).id : null;
     return set;
   }
 
@@ -198,9 +203,9 @@ export class DocumentMetadataEditor {
   private bulkTargets(patch: BulkPatch): BulkTargets {
     const { graph } = this.deps;
     const mainSubject = (kind: 'topic' | 'project', name: string | null | undefined) =>
-      name === undefined ? undefined : name?.trim() ? graph.ensureEntity(kind, name).id : null;
+      name === undefined ? undefined : name?.trim() ? graph.ensureEntity({ type: kind, name }).id : null;
     const addedSubject = (kind: 'topic' | 'project', name: string | undefined) =>
-      name?.trim() ? (graph.findByNameOrAlias(kind, name.trim()) ?? graph.ensureEntity(kind, name.trim())).id : undefined;
+      name?.trim() ? (graph.findByNameOrAlias(kind, name.trim()) ?? graph.ensureEntity({ type: kind, name: name.trim() })).id : undefined;
     const lowerSet = (names: string[] | undefined) => new Set((names ?? []).map((x) => x.toLowerCase()));
     const topicId = mainSubject('topic', patch.topic);
     const projectId = mainSubject('project', patch.project);
@@ -225,10 +230,13 @@ export class DocumentMetadataEditor {
     const tracked = this.deps.graph.trackRelationChanges(id, () =>
       this.deps.ctx.database.transaction(() => {
         this.db.update(documents).set(set).where(eq(documents.id, id)).run();
-        if (set.title) this.deps.graph.registerNode('document', id, set.title, row.summary);
+        if (set.title) this.deps.graph.registerNode({ type: 'document', id, name: set.title, description: row.summary });
         this.syncAssignment(id, set);
         for (const [target, type] of changes.extra)
-          this.deps.graph.link(id, target, type, { status: 'confirmed', resolvedByUser: true, origin: 'user', method: 'manual', confidence: 1 });
+          this.deps.graph.link(
+            { sourceId: id, targetId: target, relationType: type },
+            { status: 'confirmed', resolvedByUser: true, origin: 'user', method: 'manual', confidence: 1 },
+          );
       }),
     );
     return metadataUndo(row, { set, relations: tracked.changes });
@@ -243,10 +251,13 @@ export class DocumentMetadataEditor {
   /** Links the document to its (changed) topic/project; relations to the previous ones become outdated. */
   private syncAssignment(id: string, set: Partial<DocRow>): void {
     const { graph } = this.deps;
-    if (set.topicId) graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
-    if (set.projectId) graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
-    if (set.topicId !== undefined) graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
-    if (set.projectId !== undefined) graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+    if (set.topicId) graph.link({ sourceId: id, targetId: set.topicId, relationType: 'relates_to' }, { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
+    if (set.projectId)
+      graph.link({ sourceId: id, targetId: set.projectId, relationType: 'belongs_to' }, { confidence: 0.9, status: 'confirmed', sourceIds: [id] });
+    if (set.topicId !== undefined)
+      graph.unlinkSystemRelations({ entityId: id, relationType: 'relates_to', keepIds: set.topicId ? [set.topicId] : [], otherType: 'topic' });
+    if (set.projectId !== undefined)
+      graph.unlinkSystemRelations({ entityId: id, relationType: 'belongs_to', keepIds: set.projectId ? [set.projectId] : [], otherType: 'project' });
   }
 
   /** Links an archived document to its (changed) persons and tags; automatic relations to removed ones become outdated. */
@@ -254,18 +265,14 @@ export class DocumentMetadataEditor {
     const { graph } = this.deps;
     if (set.persons) {
       const people = this.deps.persons.resolveNames(set.persons, { context: 'document', create: false }).entities;
-      for (const p of people) graph.link(p.id, id, 'produced', { confidence: 0.5, status: 'proposed', sourceIds: [id] });
-      graph.unlinkSystemRelations(
-        id,
-        'produced',
-        people.map((p) => p.id),
-        { direction: 'in', otherType: 'person' },
-      );
+      for (const p of people) graph.link({ sourceId: p.id, targetId: id, relationType: 'produced' }, { confidence: 0.5, status: 'proposed', sourceIds: [id] });
+      graph.unlinkSystemRelations({ entityId: id, relationType: 'produced', keepIds: people.map((p) => p.id), direction: 'in', otherType: 'person' });
     }
     if (set.tags) {
-      const tagIds = set.tags.map((t) => graph.ensureEntity('tag', t).id);
-      for (const tagId of tagIds) graph.link(id, tagId, 'relates_to', { confidence: 0.6, status: 'confirmed', sourceIds: [id] });
-      graph.unlinkSystemRelations(id, 'relates_to', tagIds, { otherType: 'tag' });
+      const tagIds = set.tags.map((t) => graph.ensureEntity({ type: 'tag', name: t }).id);
+      for (const tagId of tagIds)
+        graph.link({ sourceId: id, targetId: tagId, relationType: 'relates_to' }, { confidence: 0.6, status: 'confirmed', sourceIds: [id] });
+      graph.unlinkSystemRelations({ entityId: id, relationType: 'relates_to', keepIds: tagIds, otherType: 'tag' });
     }
   }
 }

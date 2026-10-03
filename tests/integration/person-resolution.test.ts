@@ -89,8 +89,8 @@ describe('central person resolution (#28)', () => {
   });
 
   it('prefers the clean, oldest entity when legacy duplicates share a key', () => {
-    const legacy = graph().ensureEntity('person', 'Monika Lor-Zade (chefin)');
-    const clean = graph().ensureEntity('person', 'Monika Lor-Zade');
+    const legacy = graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade (chefin)' });
+    const clean = graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade' });
     expect(persons().resolve('Dr. Monika Lor-Zade').entity!.id).toBe(clean.id);
     expect(persons().resolve('Monika Lor-Zade (chefin)').entity!.id).toBe(legacy.id); // exact name wins
   });
@@ -146,7 +146,7 @@ describe('central person resolution (#28)', () => {
   });
 
   it('consults the self resolver for self references and as the last step', () => {
-    const me = graph().ensureEntity('person', 'Matthias Beispiel');
+    const me = graph().ensureEntity({ type: 'person', name: 'Matthias Beispiel' });
     const contexts: string[] = [];
     persons().setSelfResolver(({ parsed, selfReference, context }) => {
       contexts.push(`${parsed.cleanName}:${context}`);
@@ -199,7 +199,7 @@ describe('call sites use the central resolution (#28)', () => {
   });
 
   it('open items: responsible resolved; answer words neither create a person nor clear the responsible person', async () => {
-    graph().ensureEntity('person', 'Monika Lor-Zade');
+    graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade' });
     const item = await app.ok('openItems:create', { title: 'Budget klären', responsible: 'Lor-Zade, Monika (Chefin)' });
     expect(item.responsibleName).toBe('Monika Lor-Zade');
     const after = await app.ok('openItems:update', { id: item.id, patch: { responsible: 'ja' } });
@@ -211,7 +211,7 @@ describe('call sites use the central resolution (#28)', () => {
   });
 
   it('documents: persons stored and linked with canonical names', async () => {
-    graph().ensureEntity('person', 'Monika Lor-Zade');
+    graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade' });
     const id = await archivedDoc('Protokoll', ['Dr. Monika Lor-Zade (Führungskraft)', 'ich', 'Anna Schmidt', 'Lor-Zade, Monika']);
     const doc = await app.ok('documents:get', { id });
     expect(doc.persons).toEqual(['Monika Lor-Zade', 'Anna Schmidt']);
@@ -230,8 +230,8 @@ describe('call sites use the central resolution (#28)', () => {
   });
 
   it('a merge collects the roles of the merged persons', async () => {
-    const a = graph().ensureEntity('person', 'Monika Lor-Zade');
-    const b = graph().ensureEntity('person', 'Monika L.');
+    const a = graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade' });
+    const b = graph().ensureEntity({ type: 'person', name: 'Monika L.' });
     graph().addRoles(a.id, ['Chefin']);
     graph().addRoles(b.id, ['chefin', 'Führungskraft']);
     await graph().merge({ sourceIds: [b.id], targetId: a.id });

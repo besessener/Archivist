@@ -162,7 +162,7 @@ export class ContradictionService {
   async checkDecision(decisionId: string): Promise<Contradiction[]> {
     const d = this.decisions.get(decisionId);
     if (!ACTIVE_DECISION_STATUSES.includes(d.status)) return [];
-    const others = this.decisions.activeFor(d.topicId, d.projectId, d.id);
+    const others = this.decisions.activeFor({ topicId: d.topicId, projectId: d.projectId, excludeId: d.id });
     const created: Contradiction[] = [];
     for (const o of others) {
       const found = await this.evaluate(d, o);
@@ -178,7 +178,7 @@ export class ContradictionService {
     const created: Contradiction[] = [];
     const seen = new Set<string>();
     for (const d of active) {
-      for (const o of this.decisions.activeFor(d.topicId, d.projectId, d.id)) {
+      for (const o of this.decisions.activeFor({ topicId: d.topicId, projectId: d.projectId, excludeId: d.id })) {
         const key = ContradictionService.pairKey(d.id, o.id);
         if (seen.has(key)) continue;
         seen.add(key);
@@ -260,7 +260,7 @@ export class ContradictionService {
     // one proposal per pair: the contradiction replaces a "possibly superseded" hint of the archive check
     for (const key of [`superseded:${older.id}:${newer.id}`, `superseded:${newer.id}:${older.id}`])
       this.insights.retire(key, 'Für diese Entscheidungen wurde ein Widerspruch erkannt; er ersetzt den Hinweis.');
-    this.graph.link(newer.id, older.id, 'contradicts', { confidence, status: 'proposed' });
+    this.graph.link({ sourceId: newer.id, targetId: older.id, relationType: 'contradicts' }, { confidence, status: 'proposed' });
     // without a known order there is no direction to propose: the user decides on the decision page
     const action = ordered ? this.proposeSupersede(order, confidence) : null;
     this.announce(row, { older, newer, action });
@@ -338,7 +338,7 @@ export class ContradictionService {
     if (!opts.confirmed) throw new AppError('permission_error', 'Widersprüche dürfen nur nach ausdrücklicher Bestätigung aufgelöst werden.');
     const c = this.get(id);
     if (opts.supersedeOldDecisionId && opts.supersedeNewDecisionId) {
-      this.decisions.supersede(opts.supersedeOldDecisionId, opts.supersedeNewDecisionId, { confirmed: true, trigger: 'contradiction' });
+      this.decisions.supersede({ oldId: opts.supersedeOldDecisionId, newId: opts.supersedeNewDecisionId, confirmed: true, trigger: 'contradiction' });
     }
     if (resolution === 'acknowledged') {
       this.db.update(contradictions).set({ status: resolution, resolvedAt: null }).where(eq(contradictions.id, id)).run();

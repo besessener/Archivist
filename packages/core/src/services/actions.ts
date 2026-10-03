@@ -177,7 +177,7 @@ export class ActionService {
     // a relation card has confirm and reject: rejecting discards the proposed relation, logged with undo (#283)
     if (action.actionType === 'confirm_relation') {
       const params = ActionParamSchemas.confirm_relation.parse(action.proposedParameters);
-      this.deps.graph.decideRelation(params.relationId, 'rejected', { trigger: 'confirmation' });
+      this.deps.graph.decideRelation(params.relationId, { status: 'rejected', trigger: 'confirmation' });
     }
     this.deps.audit.log({
       action: `action.reject:${action.actionType}`,

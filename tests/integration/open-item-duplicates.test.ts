@@ -254,7 +254,7 @@ describe('Duplicate check when creating in the chat (#35)', () => {
   });
 
   it('recognizes the responsible person via an alias too', async () => {
-    const anna = app.services.graph.ensureEntity('person', 'Anna Schmidt');
+    const anna = app.services.graph.ensureEntity({ type: 'person', name: 'Anna Schmidt' });
     app.services.graph.addAlias(anna.id, 'Anna');
     await item({ title: 'Präsentation vorbereiten', responsible: 'Anna Schmidt' }, '2026-01-01T00:00:00.000Z');
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Präsentation vorbereiten', responsible: 'Anna' } }));

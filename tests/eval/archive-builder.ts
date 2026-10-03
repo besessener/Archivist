@@ -105,7 +105,7 @@ export async function buildArchive(target: BuildTarget, docs: EvalDoc[]): Promis
     await archiveIntoFolders(services, { docs, ids, mains });
     for (const doc of docs) {
       const id = ids[doc.key]!;
-      services.documents.bulkUpdate([id], metadataPatch(doc), { trigger: 'eval-setup' });
+      services.documents.bulkUpdate([id], { patch: metadataPatch(doc), trigger: 'eval-setup' });
       if (doc.excluded) services.documents.setLlmExcluded(id, { excluded: true });
     }
     await Promise.all(Object.values(ids).map((id) => services.documents.indexDocument(id)));

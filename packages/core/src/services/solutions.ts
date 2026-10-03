@@ -268,7 +268,7 @@ export class SolutionService {
     if (!solution) throw new AppError('validation_error', 'Zu diesem Punkt gibt es noch keinen Lösungsvorschlag.');
     if (input.target === 'description') {
       const description = [item.description?.trim(), formatSolution(solution)].filter(Boolean).join('\n\n');
-      return { item: this.openItems.update(item.id, { description }), created: [], noteId: null };
+      return { item: this.openItems.update(item.id, { patch: { description } }), created: [], noteId: null };
     }
     if (input.target === 'items') return this.createSteps(item, { ...input, solution });
     return this.createNote(item, solution);
@@ -292,7 +292,7 @@ export class SolutionService {
         },
         { actor: 'user', trigger: 'ui' },
       );
-      this.graph.link(child.id, item.id, 'results_from', { confidence: 0.9, status: 'confirmed', sourceIds: [item.id] });
+      this.graph.link({ sourceId: child.id, targetId: item.id, relationType: 'results_from' }, { confidence: 0.9, status: 'confirmed', sourceIds: [item.id] });
       return child;
     });
     return { item: this.openItems.get(item.id), created, noteId: null };

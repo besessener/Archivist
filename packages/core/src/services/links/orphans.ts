@@ -97,12 +97,15 @@ export class OrphanLinks {
 
   /** Stores the candidate as a proposal; true if it is new. */
   private propose(id: string, candidate: LinkCandidate): boolean {
-    const result = this.deps.graph.link(id, candidate.id, relationTypeFor(candidate), {
-      status: 'proposed',
-      confidence: candidate.score,
-      method: candidate.method,
-      evidence: candidate.reason,
-    });
+    const result = this.deps.graph.link(
+      { sourceId: id, targetId: candidate.id, relationType: relationTypeFor(candidate) },
+      {
+        status: 'proposed',
+        confidence: candidate.score,
+        method: candidate.method,
+        evidence: candidate.reason,
+      },
+    );
     return result?.created ?? false;
   }
 

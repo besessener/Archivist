@@ -143,28 +143,35 @@ export class NoteAnalysisService {
     const evidence = (label: string, name: string) => (f.via === 'llm' ? `Analyse der Notiz: ${label} „${name}“` : `„${name}“ steht in der Notiz`);
     const targets: Array<{ id: string; type: 'topic' | 'project' | 'person' | 'tag'; evidence: string }> = [];
     if (f.topic)
-      targets.push({ id: this.graph.ensureEntity('topic', f.topic, null, { fromDocument: true }).id, type: 'topic', evidence: evidence('Thema', f.topic) });
+      targets.push({
+        id: this.graph.ensureEntity({ type: 'topic', name: f.topic, description: null, fromDocument: true }).id,
+        type: 'topic',
+        evidence: evidence('Thema', f.topic),
+      });
     if (f.project)
       targets.push({
-        id: this.graph.ensureEntity('project', f.project, null, { fromDocument: true }).id,
+        id: this.graph.ensureEntity({ type: 'project', name: f.project, description: null, fromDocument: true }).id,
         type: 'project',
         evidence: evidence('Projekt', f.project),
       });
     // a note is the user's own words, so „ich“ is the user; unknown names are created only from the language model's findings
     const resolved = this.persons.resolveNames(f.persons, { context: 'chat', create: f.via === 'llm' });
     for (const p of resolved.entities) targets.push({ id: p.id, type: 'person', evidence: evidence('Person', p.name) });
-    for (const t of f.tags) targets.push({ id: this.graph.ensureEntity('tag', t).id, type: 'tag', evidence: evidence('Tag', t) });
+    for (const t of f.tags) targets.push({ id: this.graph.ensureEntity({ type: 'tag', name: t }).id, type: 'tag', evidence: evidence('Tag', t) });
 
     let proposed = 0;
     const keep = new Set<string>();
     for (const t of targets) {
       keep.add(`${t.id}|${RELATION_OF[t.type]}`);
-      const r = this.graph.link(noteId, t.id, RELATION_OF[t.type], {
-        status: 'proposed',
-        confidence: f.via === 'llm' ? 0.7 : 0.6,
-        method: 'analysis',
-        evidence: t.evidence,
-      });
+      const r = this.graph.link(
+        { sourceId: noteId, targetId: t.id, relationType: RELATION_OF[t.type] },
+        {
+          status: 'proposed',
+          confidence: f.via === 'llm' ? 0.7 : 0.6,
+          method: 'analysis',
+          evidence: t.evidence,
+        },
+      );
       if (r?.created) proposed += 1;
     }
     // what an earlier analysis proposed and this one no longer finds is outdated – decisions of the user stay
@@ -172,7 +179,7 @@ export class NoteAnalysisService {
       .relationsOf(noteId, { statuses: ['proposed', 'confirmed'] })
       .filter((r) => r.sourceEntityId === noteId && r.method === 'analysis' && !r.resolvedByUser && !keep.has(`${r.targetEntityId}|${r.relationType}`))
       .filter((r) => ANALYSED_TYPES.has(this.graph.getEntity(r.targetEntityId)?.type ?? 'note'));
-    for (const r of stale) this.graph.setRelationStatus(r.id, 'outdated', 'system');
+    for (const r of stale) this.graph.setRelationStatus(r.id, { status: 'outdated', by: 'system' });
     if (proposed || stale.length) this.ctx.events.changed('knowledge');
     return { proposed, outdated: stale.length };
   }

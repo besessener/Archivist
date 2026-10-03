@@ -125,7 +125,7 @@ export class TopicClusters {
     for (const member of pool) {
       if (signal?.aborted) break;
       for (const hit of await this.candidates.similar({ id: member.id, types: TOPIC_ENTRY_TYPES, limit: 8, learned: false })) {
-        if (!ids.has(hit.id) || this.deps.graph.rejectedBetween(member.id, hit.id)) continue;
+        if (!ids.has(hit.id) || this.deps.graph.rejectedBetween({ a: member.id, b: hit.id })) continue;
         groups.join(hit.id, member.id);
       }
     }

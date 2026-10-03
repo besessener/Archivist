@@ -130,14 +130,17 @@ export class WikiLinks {
         else unknown.push(name);
         continue;
       }
-      const result = this.graph.link(noteId, target.id, 'relates_to', {
-        status: 'confirmed',
-        confidence: 1,
-        resolvedByUser: true,
-        origin: 'user',
-        method: 'wikilink',
-        evidence: evidenceOf(name),
-      });
+      const result = this.graph.link(
+        { sourceId: noteId, targetId: target.id, relationType: 'relates_to' },
+        {
+          status: 'confirmed',
+          confidence: 1,
+          resolvedByUser: true,
+          origin: 'user',
+          method: 'wikilink',
+          evidence: evidenceOf(name),
+        },
+      );
       if (!result) continue;
       keep.add(result.id);
       if (result.created) linked += 1;

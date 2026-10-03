@@ -98,7 +98,7 @@ export class ArchiveRenamer {
     // database, graph and audit entry together – if they fail, the file goes back to its old name (#221)
     const auditId = await this.deps.files.commitOrPutBack({ moved: dest, original: current, sha256: row.sha256, caseOnly }, () => {
       this.db.update(documents).set({ archiveRelPath: toRel, title, updatedAt }).where(eq(documents.id, row.id)).run();
-      if (title !== row.title) this.deps.graph.registerNode('document', row.id, title, row.summary);
+      if (title !== row.title) this.deps.graph.registerNode({ type: 'document', id: row.id, name: title, description: row.summary });
       const undoData: RenameUndoData = {
         documentId: row.id,
         fromRel,
@@ -152,7 +152,7 @@ export class ArchiveRenamer {
         .set({ archiveRelPath: d.fromRel, title: d.beforeTitle, updatedAt: d.beforeUpdatedAt })
         .where(eq(documents.id, d.documentId))
         .run();
-      this.deps.graph.registerNode('document', d.documentId, d.beforeTitle, null);
+      this.deps.graph.registerNode({ type: 'document', id: d.documentId, name: d.beforeTitle, description: null });
     });
     this.deps.ctx.events.changed('documents', 'knowledge');
     return 'Umbenennen rückgängig gemacht.';

@@ -85,13 +85,13 @@ async function markDuplicates(scope: ToolScope, mark: { treatment: Treatment; ar
   const { keep, keepRef, refs, targets, unknown } = treatment;
   const tag = args.as === 'duplicate' ? 'Duplikat' : 'ältere Version';
   for (const d of targets) {
-    if (args.as === 'duplicate') deps.graph.linkEntries(d.id, keep.id, 'duplicate_of', { status: 'confirmed', trigger: 'agent' });
-    else deps.graph.linkEntries(keep.id, d.id, 'supersedes', { status: 'confirmed', trigger: 'agent' });
+    if (args.as === 'duplicate')
+      deps.graph.linkEntries({ sourceId: d.id, targetId: keep.id, relationType: 'duplicate_of' }, { status: 'confirmed', trigger: 'agent' });
+    else deps.graph.linkEntries({ sourceId: keep.id, targetId: d.id, relationType: 'supersedes' }, { status: 'confirmed', trigger: 'agent' });
   }
   const { auditId } = deps.docs.bulkUpdate(
     targets.map((d) => d.id),
-    { addTags: [tag] },
-    { trigger: 'agent' },
+    { patch: { addTags: [tag] }, trigger: 'agent' },
   );
   const lines = [`${targets.length} Dokument(e) als ${tag} von ${keepRef} markiert (${refs}), Schlagwort „${tag}“ gesetzt.`];
   let change = `${targets.length} Dokument(e) als ${tag} markiert`;
@@ -130,10 +130,11 @@ async function markDifferent({ deps, ctx }: ToolScope, args: { a: string; b: str
   const existing = graph.relationsOf(a, { types: ['duplicate_of'] }).filter((r) => r.sourceEntityId === b || r.targetEntityId === b);
   let relationId: string | null = null;
   for (const r of existing) {
-    if (r.status !== 'rejected') graph.setRelationStatus(r.id, 'rejected', 'user');
+    if (r.status !== 'rejected') graph.setRelationStatus(r.id, { status: 'rejected', by: 'user' });
     relationId = r.id;
   }
-  relationId ??= graph.link(a, b, 'duplicate_of', { status: 'rejected', resolvedByUser: true, origin: 'user' })?.id ?? null;
+  relationId ??=
+    graph.link({ sourceId: a, targetId: b, relationType: 'duplicate_of' }, { status: 'rejected', resolvedByUser: true, origin: 'user' })?.id ?? null;
   deps.audit.log({
     action: 'relation.markDifferent',
     actor: 'user',

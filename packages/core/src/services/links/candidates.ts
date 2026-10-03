@@ -102,12 +102,15 @@ export class LinkCandidates {
     for (const candidate of await this.candidates(id, { limit: max * 2 })) {
       if (room <= 0) break;
       if (candidate.method !== 'similarity' || this.openSimilarityProposals(candidate.id) >= max) continue;
-      const result = this.deps.graph.link(id, candidate.id, 'related_to', {
-        status: 'proposed',
-        confidence: candidate.score,
-        method: 'similarity',
-        evidence: candidate.reason,
-      });
+      const result = this.deps.graph.link(
+        { sourceId: id, targetId: candidate.id, relationType: 'related_to' },
+        {
+          status: 'proposed',
+          confidence: candidate.score,
+          method: 'similarity',
+          evidence: candidate.reason,
+        },
+      );
       if (result?.created) {
         created += 1;
         room -= 1;
@@ -123,12 +126,15 @@ export class LinkCandidates {
     for (const [caseId, best] of await this.similarCases(id)) {
       if (isConnected(this.sqlite, { a: id, b: caseId })) continue;
       const found = this.deps.graph.getEntity(caseId)!;
-      const result = this.deps.graph.link(id, caseId, 'belongs_to', {
-        status: 'proposed',
-        confidence: best.score,
-        method: 'similarity',
-        evidence: `ähnlich wie „${truncate(best.via, 80)}“ aus dem Vorgang „${truncate(found.name, 60)}“`,
-      });
+      const result = this.deps.graph.link(
+        { sourceId: id, targetId: caseId, relationType: 'belongs_to' },
+        {
+          status: 'proposed',
+          confidence: best.score,
+          method: 'similarity',
+          evidence: `ähnlich wie „${truncate(best.via, 80)}“ aus dem Vorgang „${truncate(found.name, 60)}“`,
+        },
+      );
       if (result?.created) created += 1;
     }
     return created;

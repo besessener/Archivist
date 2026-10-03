@@ -121,12 +121,12 @@ export class CaseService {
   }
 
   /** A new case (or the existing one of that name or alias); creating is undoable. */
-  create(name: string, description?: string | null, opts: { trigger?: string } = {}): { case: GraphEntity; created: boolean } {
+  create({ name, description, ...opts }: { name: string; description?: string | null; trigger?: string }): { case: GraphEntity; created: boolean } {
     const clean = name.trim().replace(/\s+/g, ' ');
     if (!clean) throw new AppError('validation_error', 'Ein Vorgang braucht einen Namen.');
     const existing = this.graph.findByNameOrAlias('case', clean);
     if (existing) return { case: existing, created: false };
-    const created = this.graph.ensureEntity('case', clean, description?.trim() || null);
+    const created = this.graph.ensureEntity({ type: 'case', name: clean, description: description?.trim() || null });
     this.audit.log({
       action: 'case.create',
       actor: 'user',
@@ -140,13 +140,13 @@ export class CaseService {
   }
 
   /** Puts entries into a case – ONE undo step for all of them (#286, #291). */
-  assign(entryIds: string[], caseId: string, opts: { trigger?: string } = {}): number {
+  assign({ entryIds, caseId, ...opts }: { entryIds: string[]; caseId: string; trigger?: string }): number {
     const target = this.caseOf(caseId);
     const ids = entryIds.filter((id) => {
       const entry = this.graph.getEntity(id);
       return entry && CASE_ENTRY_TYPES.includes(entry.type);
     });
     if (!ids.length) throw new AppError('validation_error', 'Keine passenden Einträge für einen Vorgang ausgewählt.');
-    return this.graph.linkMany(ids, target.id, 'belongs_to', { trigger: opts.trigger, action: 'case.assign' });
+    return this.graph.linkMany({ sourceIds: ids, targetId: target.id, relationType: 'belongs_to' }, { trigger: opts.trigger, action: 'case.assign' });
   }
 }

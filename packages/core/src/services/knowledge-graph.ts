@@ -1,13 +1,14 @@
 import type { EntityDetail, EntityType, GraphEntity, GraphRelation, RelationMethod, RelationStatus, RelationType } from '@archivist/shared';
 import type { AppContext } from '../context';
 import type { AuditService } from './audit';
-import { GraphEntities, type EntityQuery, type NodeSnapshot } from './graph/entities';
+import { GraphEntities, type EntityQuery, type NewEntity, type NodeSnapshot } from './graph/entities';
 import { subtopicPairs, subtreeOf } from './graph/hierarchy';
 import { LinkUndo, type LinkUndoData } from './graph/link-undo';
 import { EntityMerges } from './graph/merge';
 import type { MergeBatchResult, MergeOptions, MergeReindexer, MergeRequest, MergeResult } from './graph/merge-types';
 import type { NeighborhoodGraph, NeighborhoodOptions } from './graph/neighborhood';
-import { GraphRelations, type LinkOptions, type LinkResult, type RelationChangeSet } from './graph/relations';
+import { GraphRelations, type LinkOptions, type LinkResult, type RelationChangeSet, type SystemUnlink } from './graph/relations';
+import type { RelationKey } from './graph/rows';
 import { UserLinks, type LinkChange, type LinkChangeOptions, type LinkEntriesOptions } from './graph/user-links';
 import { GraphViews, type RelatedEntry, type RelatedQuery } from './graph/views';
 import type { UndoService } from './undo';
@@ -50,8 +51,8 @@ export class KnowledgeGraphService {
   }
 
   /** The entity of this type and name, created if missing; `fromDocument` keeps a new topic/project unconfirmed (#199). */
-  ensureEntity(type: EntityType, name: string, description?: string | null, opts: { fromDocument?: boolean } = {}): GraphEntity {
-    return this.entities.ensure({ type, name, description, fromDocument: opts.fromDocument });
+  ensureEntity(entity: NewEntity): GraphEntity {
+    return this.entities.ensure(entity);
   }
 
   /** The user accepts a topic/project taken from a document: from now on it is listed in LLM prompts. */
@@ -69,8 +70,8 @@ export class KnowledgeGraphService {
   }
 
   /** Registers documents/decisions/open items as nodes with their own (given) id. */
-  registerNode(type: EntityType, id: string, name: string, description?: string | null): void {
-    this.entities.register({ type, id, name, description });
+  registerNode(node: { type: EntityType; id: string; name: string; description?: string | null }): void {
+    this.entities.register(node);
   }
 
   removeNode(id: string): void {
@@ -102,8 +103,8 @@ export class KnowledgeGraphService {
   }
 
   /** Creates a relation (rejected ones are not revived, confirmed ones never downgraded); `created` tells whether it is new. */
-  link(sourceId: string, targetId: string, relationType: RelationType, opts: LinkOptions = {}): LinkResult | null {
-    return this.relations.link({ sourceId, targetId, relationType }, opts);
+  link(key: RelationKey, opts: LinkOptions = {}): LinkResult | null {
+    return this.relations.link(key, opts);
   }
 
   getRelation(id: string): GraphRelation | undefined {
@@ -115,7 +116,7 @@ export class KnowledgeGraphService {
   }
 
   /** Sets the status as a user decision (`by: 'user'`), which field sync never overrides afterwards. */
-  setRelationStatus(id: string, status: RelationStatus, by: 'user' | 'system' = 'user'): GraphRelation {
+  setRelationStatus(id: string, { status, by = 'user' }: { status: RelationStatus; by?: 'user' | 'system' }): GraphRelation {
     return this.relations.setStatus(id, { status, by });
   }
 
@@ -124,18 +125,13 @@ export class KnowledgeGraphService {
   }
 
   /** A relation between the two that the user rejected (never proposed again, #270); a rejected duplicate only with `includeDuplicateOf`. */
-  rejectedBetween(a: string, b: string, opts: { includeDuplicateOf?: boolean } = {}): GraphRelation | undefined {
-    return this.relations.rejectedBetween({ a, b, ...opts });
+  rejectedBetween(pair: { a: string; b: string; includeDuplicateOf?: boolean }): GraphRelation | undefined {
+    return this.relations.rejectedBetween(pair);
   }
 
   /** Marks the system's current relations of a changed field as outdated, except those to `keepIds`; returns their ids. */
-  unlinkSystemRelations(
-    entityId: string,
-    relationType: RelationType,
-    keepIds: readonly string[],
-    opts: { direction?: 'out' | 'in'; otherType?: EntityType } = {},
-  ): string[] {
-    return this.relations.unlinkSystemRelations({ entityId, relationType, keepIds, ...opts });
+  unlinkSystemRelations(unlink: SystemUnlink): string[] {
+    return this.relations.unlinkSystemRelations(unlink);
   }
 
   /** Runs `fn` and records how the relations touching `entityId` changed, for `revertRelationChanges`. */
@@ -188,18 +184,16 @@ export class KnowledgeGraphService {
   }
 
   /** Links two entries (#277): `confirmed` when the user asked for it, else a proposal; rejected pairs are refused. */
-  linkEntries(sourceId: string, targetId: string, relationType: RelationType, opts: LinkEntriesOptions): { relation: GraphRelation; created: boolean } {
-    return this.userLinks.linkEntries({ sourceId, targetId, relationType }, opts);
+  linkEntries(key: RelationKey, opts: LinkEntriesOptions): { relation: GraphRelation; created: boolean } {
+    return this.userLinks.linkEntries(key, opts);
   }
 
   /** Links entries with one target as the user's choice (#286, #291): one audit entry, one undo; returns the number changed. */
   linkMany(
-    sourceIds: string[],
-    targetId: string,
-    relationType: RelationType,
+    request: { sourceIds: string[]; targetId: string; relationType: RelationType },
     opts: { trigger?: string; action?: string; method?: RelationMethod } = {},
   ): number {
-    return this.userLinks.linkMany({ sourceIds, targetId, relationType }, opts);
+    return this.userLinks.linkMany(request, opts);
   }
 
   /** Adds confirmed links and removes others in ONE audited, undoable step (#287, #291); returns the number changed. */
@@ -218,18 +212,18 @@ export class KnowledgeGraphService {
   }
 
   /** Confirms or rejects a relation as the user's decision (#306); logged with undo. */
-  decideRelation(relationId: string, status: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): GraphRelation {
-    return this.userLinks.decideRelation(relationId, { status, trigger: opts.trigger });
+  decideRelation(relationId: string, decision: { status: 'confirmed' | 'rejected'; trigger?: string }): GraphRelation {
+    return this.userLinks.decideRelation(relationId, decision);
   }
 
   /** Decides several open proposals at once (#280): one audit entry, one undo; returns the number decided. */
-  decideRelations(ids: string[], status: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): number {
-    return this.userLinks.decideRelations(ids, { status, trigger: opts.trigger });
+  decideRelations(ids: string[], decision: { status: 'confirmed' | 'rejected'; trigger?: string }): number {
+    return this.userLinks.decideRelations(ids, decision);
   }
 
   /** Opens or closes a case („Vorgang“, #286); logged with undo. */
-  setCaseStatus(id: string, status: 'open' | 'closed', opts: { trigger?: string } = {}): GraphEntity {
-    return this.userLinks.setCaseStatus(id, { status, trigger: opts.trigger });
+  setCaseStatus(id: string, change: { status: 'open' | 'closed'; trigger?: string }): GraphEntity {
+    return this.userLinks.setCaseStatus(id, change);
   }
 
   /** Sets the callback that rebuilds search index entries of records touched by a merge or its undo. */
@@ -249,7 +243,7 @@ export class KnowledgeGraphService {
   }
 
   /** Renames an entity and the name lists mentioning it; `keepOldName` keeps the former name as an alias. */
-  async rename(id: string, name: string, opts: MergeOptions & { keepOldName?: boolean } = {}): Promise<{ auditId: string } | null> {
-    return this.merges.rename({ id, name }, opts);
+  async rename(request: { id: string; name: string }, opts: MergeOptions & { keepOldName?: boolean } = {}): Promise<{ auditId: string } | null> {
+    return this.merges.rename(request, opts);
   }
 }

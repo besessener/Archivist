@@ -57,11 +57,14 @@ export class RelocateUndo {
     for (const { id, ...rest } of d.relationsChanged ?? []) this.db.update(relations).set(rest).where(eq(relations.id, id)).run();
     if (d.relationsRemoved?.length) this.db.insert(relations).values(d.relationsRemoved).run();
     if (d.removedCategory)
-      graph.link(d.documentId, graph.ensureEntity('category', d.removedCategory).id, 'belongs_to', {
-        confidence: 1,
-        status: 'confirmed',
-        sourceIds: [d.documentId],
-      });
+      graph.link(
+        { sourceId: d.documentId, targetId: graph.ensureEntity({ type: 'category', name: d.removedCategory }).id, relationType: 'belongs_to' },
+        {
+          confidence: 1,
+          status: 'confirmed',
+          sourceIds: [d.documentId],
+        },
+      );
   }
 
   /** Category relations touched by relocating must still be as relocating left them, else undo would overwrite a newer decision. */

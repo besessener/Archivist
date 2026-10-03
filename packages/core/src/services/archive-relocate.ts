@@ -168,7 +168,7 @@ export class ArchiveRelocator {
       .set({ archiveRelPath: target.newRel, categoryPath: target.categoryPath, updatedAt: target.updatedAt })
       .where(eq(documents.id, row.id))
       .run();
-    const newEntity = graph.ensureEntity('category', target.categoryPath);
+    const newEntity = graph.ensureEntity({ type: 'category', name: target.categoryPath });
     const mine = this.db
       .select()
       .from(relations)
@@ -183,11 +183,13 @@ export class ArchiveRelocator {
     }
     const current = mine.find((r) => r.targetEntityId === newEntity.id);
     if (!current) {
-      edits.addedRelationId = graph.link(row.id, newEntity.id, 'belongs_to', { confidence: 1, status: 'confirmed', sourceIds: [row.id] })?.id ?? null;
+      edits.addedRelationId =
+        graph.link({ sourceId: row.id, targetId: newEntity.id, relationType: 'belongs_to' }, { confidence: 1, status: 'confirmed', sourceIds: [row.id] })?.id ??
+        null;
     } else if (current.status !== 'confirmed') {
       // Relocating is an explicit user decision for the target category, even over an earlier rejection.
       edits.relationsChanged.push({ ...current });
-      graph.setRelationStatus(current.id, 'confirmed');
+      graph.setRelationStatus(current.id, { status: 'confirmed' });
     }
     return edits;
   }

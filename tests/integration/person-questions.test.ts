@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 const graph = () => app.services.graph;
-const person = (name: string) => graph().ensureEntity('person', name);
+const person = (name: string) => graph().ensureEntity({ type: 'person', name });
 const questions = (status: 'open' | 'rejected' | 'accepted' = 'open') => app.services.insights.list(status).filter((i) => i.kind === 'unclear_person');
 const choose = (id: string, choiceId: string) => app.ok('insights:respond', { response: 'choose', id, choiceId, confirmed: true, strongConfirmed: false });
 const hintCalls = () => app.llm.calls.filter((c) => c.schema === 'PersonHints');
@@ -41,7 +41,7 @@ describe('Asking about unclear person assignments (#27)', () => {
     await start();
     const monika = person('Monika');
     const full = person('Monika Lor-Zade');
-    const topic = graph().ensureEntity('topic', 'Budget 2027');
+    const topic = graph().ensureEntity({ type: 'topic', name: 'Budget 2027' });
     const dec = await app.ok('decisions:create', {
       decisionText: 'Budget freigegeben',
       title: 'Budget freigegeben',
@@ -54,8 +54,8 @@ describe('Asking about unclear person assignments (#27)', () => {
       asDraft: false,
     });
     for (const p of [monika, full]) {
-      graph().link(p.id, dec.id, 'participated_in', { status: 'confirmed' });
-      graph().link(p.id, topic.id, 'relates_to', { status: 'confirmed' });
+      graph().link({ sourceId: p.id, targetId: dec.id, relationType: 'participated_in' }, { status: 'confirmed' });
+      graph().link({ sourceId: p.id, targetId: topic.id, relationType: 'relates_to' }, { status: 'confirmed' });
     }
     await app.services.consistency.run('manual');
     const [q] = questions();

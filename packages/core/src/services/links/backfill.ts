@@ -113,16 +113,19 @@ export class LinkBackfill {
   private async proposeSimilarLinks(id: string): Promise<number> {
     let proposed = 0;
     for (const candidate of await this.methods.candidates.candidates(id, { limit: 3, types: LINK_ENTRY_TYPES })) {
-      if (candidate.method !== 'similarity' || this.deps.graph.rejectedBetween(id, candidate.id)) continue;
+      if (candidate.method !== 'similarity' || this.deps.graph.rejectedBetween({ a: id, b: candidate.id })) continue;
       try {
-        const result = this.deps.graph.linkEntries(id, candidate.id, 'related_to', {
-          status: 'proposed',
-          trigger: 'link_backfill',
-          confidence: candidate.score,
-          origin: 'system',
-          method: 'similarity',
-          evidence: candidate.reason,
-        });
+        const result = this.deps.graph.linkEntries(
+          { sourceId: id, targetId: candidate.id, relationType: 'related_to' },
+          {
+            status: 'proposed',
+            trigger: 'link_backfill',
+            confidence: candidate.score,
+            origin: 'system',
+            method: 'similarity',
+            evidence: candidate.reason,
+          },
+        );
         if (result.created) proposed += 1;
       } catch (err) {
         // e.g. an entry removed meanwhile: this pair is skipped, the run goes on

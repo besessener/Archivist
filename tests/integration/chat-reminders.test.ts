@@ -47,7 +47,7 @@ describe('Reliable reminders and follow-up questions for open items (#49)', () =
     app.services.reminders.create({ targetType: 'open_item', targetId: poc.id, title: 'PoC', remindAt: '2026-11-10' });
     expect((await getItem(poc.id)).reminderAt).toBe('2026-11-10');
 
-    app.services.openItems.close(poc.id, 'resolved', { confirmed: true });
+    app.services.openItems.close(poc.id, { status: 'resolved', confirmed: true });
     expect((await app.ok('reminders:list', {})).every((r) => r.status === 'dismissed')).toBe(true);
     expect((await getItem(poc.id)).reminderAt).toBeNull();
 

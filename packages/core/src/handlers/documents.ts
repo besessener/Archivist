@@ -38,7 +38,7 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
     'documents:bulkUpdate': (input) => {
       const { ids, confirmed: _confirmed, ...patch } = input;
       void _confirmed;
-      const result = services.documents.bulkUpdate(ids, patch, { trigger: UI_TRIGGER });
+      const result = services.documents.bulkUpdate(ids, { patch, trigger: UI_TRIGGER });
       return { updated: result.updated.length, auditId: result.auditId };
     },
     'documents:relocate': (input) =>

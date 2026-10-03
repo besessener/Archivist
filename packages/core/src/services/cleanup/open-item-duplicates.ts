@@ -226,7 +226,10 @@ export class OpenItemDuplicateService {
       .from(relations)
       .where(and(eq(relations.sourceEntityId, link.from), eq(relations.targetEntityId, link.to), eq(relations.relationType, link.type)))
       .get();
-    const relation = this.graph.link(link.from, link.to, link.type, { confidence: opts.confidence, status: 'confirmed', sourceIds: opts.sourceIds });
+    const relation = this.graph.link(
+      { sourceId: link.from, targetId: link.to, relationType: link.type },
+      { confidence: opts.confidence, status: 'confirmed', sourceIds: opts.sourceIds },
+    );
     return !exists && relation ? [relation.id] : [];
   }
 
@@ -287,7 +290,7 @@ export class OpenItemDuplicateService {
     if (moved.length) this.db.update(reminders).set({ targetId: keep.id }).where(inArray(reminders.id, moved)).run();
     syncReminderAt(this.db, keep.id);
     syncReminderAt(this.db, duplicate.id);
-    if (patch.description !== undefined) this.graph.registerNode('task', keep.id, keep.title, patch.description);
+    if (patch.description !== undefined) this.graph.registerNode({ type: 'task', id: keep.id, name: keep.title, description: patch.description });
     const data: MergeUndoData = {
       keepId: keep.id,
       duplicateId: duplicate.id,
@@ -349,7 +352,8 @@ export class OpenItemDuplicateService {
       if (undoData.movedReminderIds.length)
         this.db.update(reminders).set({ targetId: undoData.duplicateId }).where(inArray(reminders.id, undoData.movedReminderIds)).run();
       if (undoData.createdRelationIds.length) this.db.delete(relations).where(inArray(relations.id, undoData.createdRelationIds)).run();
-      if ('description' in undoData.keepBefore) this.graph.registerNode('task', undoData.keepId, keep.title, undoData.keepBefore.description ?? null);
+      if ('description' in undoData.keepBefore)
+        this.graph.registerNode({ type: 'task', id: undoData.keepId, name: keep.title, description: undoData.keepBefore.description ?? null });
       syncReminderAt(this.db, undoData.keepId);
       syncReminderAt(this.db, undoData.duplicateId);
     });

@@ -59,7 +59,7 @@ export class SelfService {
     if (existing) return existing;
     const name = this.settings.get().profile.name.trim();
     const candidate = name ? this.personWithKey(parsePersonName(name).comparisonKey) : undefined;
-    const entity = candidate ?? this.graph.ensureEntity('person', name || SELF_PLACEHOLDER);
+    const entity = candidate ?? this.graph.ensureEntity({ type: 'person', name: name || SELF_PLACEHOLDER });
     this.db.update(entities).set({ isSelf: true }).where(eq(entities.id, entity.id)).run();
     this.ctx.events.changed('knowledge');
     return this.graph.getEntity(entity.id)!;
@@ -81,7 +81,7 @@ export class SelfService {
     if (other) {
       await this.graph.merge({ sourceIds: [other.id], targetId: self.id, targetName: name }, { actor: 'user', trigger: 'profile', action: SELF_MERGE_ACTION });
     } else {
-      await this.graph.rename(self.id, name, { actor: 'user', trigger: 'profile', keepOldName: self.name !== SELF_PLACEHOLDER });
+      await this.graph.rename({ id: self.id, name }, { actor: 'user', trigger: 'profile', keepOldName: self.name !== SELF_PLACEHOLDER });
     }
     this.ctx.logger.info('persons', 'Own person adjusted to the profile name', { from: self.name, to: name, merged: Boolean(other) });
   }

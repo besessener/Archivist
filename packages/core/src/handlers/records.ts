@@ -52,7 +52,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       return decision;
     },
     'decisions:update': async (input) => {
-      const decision = services.decisions.update(input.id, input.patch, { trigger: UI_TRIGGER });
+      const decision = services.decisions.update(input.id, { patch: input.patch, trigger: UI_TRIGGER });
       if (decision.status === 'active') await services.contradictions.checkDecision(decision.id);
       return decision;
     },
@@ -61,7 +61,12 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'decisions:search': (input) => services.decisions.searchDecisions(input.query, input.limit),
     'decisions:proposeSupersede': (input) => proposeSupersede(services, input),
     'decisions:supersede': (input) => {
-      const superseded = services.decisions.supersede(input.oldDecisionId, input.newDecisionId, { confirmed: input.confirmed, trigger: UI_TRIGGER });
+      const superseded = services.decisions.supersede({
+        oldId: input.oldDecisionId,
+        newId: input.newDecisionId,
+        confirmed: input.confirmed,
+        trigger: UI_TRIGGER,
+      });
       // replacing by hand settles the pair's contradiction just like the confirmed proposal (#168)
       services.contradictions.settlePair(input.oldDecisionId, input.newDecisionId);
       return superseded;
@@ -111,9 +116,9 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
 
     'openItems:list': (input) => services.openItems.list(input),
     'openItems:create': (input) => services.openItems.create(input, { actor: 'user', trigger: UI_TRIGGER }),
-    'openItems:update': (input) => services.openItems.update(input.id, input.patch),
+    'openItems:update': (input) => services.openItems.update(input.id, { patch: input.patch }),
     'openItems:close': (input) =>
-      services.openItems.close(input.id, input.status, { confirmed: input.confirmed, trigger: UI_TRIGGER, resolutionNote: input.resolutionNote }),
+      services.openItems.close(input.id, { status: input.status, confirmed: input.confirmed, trigger: UI_TRIGGER, resolutionNote: input.resolutionNote }),
     'openItems:solutionPreview': (input) => services.solutions.preview(input.id),
     'openItems:generateSolution': (input) => services.solutions.generate(input.id, { confirmed: input.confirmed }),
     'openItems:cancelSolution': (input) => ({ cancelled: services.solutions.cancel(input.id) }),
@@ -121,7 +126,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
 
     'events:list': (input) => services.eventRecords.list(input),
     'events:create': (input) => services.eventRecords.create(input),
-    'events:update': (input) => services.eventRecords.update(input.id, input.patch),
+    'events:update': (input) => services.eventRecords.update(input.id, { patch: input.patch }),
     'events:delete': (input) => {
       services.eventRecords.delete(input.id, { confirmed: input.confirmed });
       return { ok: true as const };

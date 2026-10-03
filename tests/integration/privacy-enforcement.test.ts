@@ -207,7 +207,7 @@ describe('mode „vorher fragen“ (confirm): no unconfirmed transfer (#56)', ()
 describe('search does not wait for a hanging embedding endpoint (#56)', () => {
   it('returns the local hits when the remote query embedding takes too long', async () => {
     await setup('auto', { embeddings: true });
-    const note = app.services.graph.ensureEntity('note', 'Notiz Leuchtturm', 'Leuchtturm am Hafen');
+    const note = app.services.graph.ensureEntity({ type: 'note', name: 'Notiz Leuchtturm', description: 'Leuchtturm am Hafen' });
     await app.services.search.index({ type: 'note', id: note.id, title: note.name, content: 'Leuchtturm am Hafen' });
     let release: () => void = () => undefined;
     app.llm.embed = (texts) =>

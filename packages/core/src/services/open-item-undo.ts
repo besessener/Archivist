@@ -73,7 +73,7 @@ function undoUpdate({ ctx, graph, reindex }: OpenItemUndoDeps, undoData: OpenIte
       .where(eq(openItems.id, undoData.id))
       .run();
     const row = db.select().from(openItems).where(eq(openItems.id, undoData.id)).get();
-    if (row) graph.registerNode('task', row.id, row.title, row.description);
+    if (row) graph.registerNode({ type: 'task', id: row.id, name: row.title, description: row.description });
     graph.revertRelationChanges(undoData.relations);
   });
   void reindex(undoData.id);

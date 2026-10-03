@@ -81,7 +81,7 @@ export class MergeLinks {
   /** Creates a link that does not exist yet and returns it for the undo (existing links are never touched). */
   linkNew(link: Link, opts: { confidence: number; status: 'proposed' | 'confirmed'; sourceIds: string[] }): CreatedRelation[] {
     if (this.exists(link)) return [];
-    const relation = this.graph.link(link.source, link.target, link.type, opts);
+    const relation = this.graph.link({ sourceId: link.source, targetId: link.target, relationType: link.type }, opts);
     return relation ? [{ id: relation.id, updatedAt: relation.updatedAt }] : [];
   }
 

@@ -193,7 +193,7 @@ export class NoteEventMerger {
       .set({ ...patch, updatedAt: now })
       .where(eq(events.id, keep.id))
       .run();
-    if (patch.description !== undefined) this.deps.graph.registerNode('event', keep.id, keep.title, patch.description);
+    if (patch.description !== undefined) this.deps.graph.registerNode({ type: 'event', id: keep.id, name: keep.title, description: patch.description });
     const sourceIds = patch.sourceIds ?? keep.sourceIds;
     const link = { confidence: 0.9, status: 'confirmed' as const, sourceIds };
     const createdRelations: CreatedRelation[] = [
@@ -248,7 +248,7 @@ export class NoteEventMerger {
       this.db.update(entities).set({ duplicateOfId: null, updatedAt: now }).where(eq(entities.id, undoData.duplicateId)).run();
       if ('description' in undoData.keepBefore) {
         const keep = this.event(undoData.keepId)!;
-        this.deps.graph.registerNode('event', keep.id, keep.title, keep.description);
+        this.deps.graph.registerNode({ type: 'event', id: keep.id, name: keep.title, description: keep.description });
       }
       this.deps.links.removeCreated(undoData.createdRelations);
     });

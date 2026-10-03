@@ -53,8 +53,8 @@ describe('Link methods as tools of their own (#313)', () => {
       await app.ok('knowledge:createEntity', { type: 'note', name: 'Termin', description: 'Termin mit dem Vermieter zum Projekt Hauptstraße am Freitag.' })
     ).entity;
     // the user rejected „Mietvertrag – Kündigung“ before: never proposed again
-    const r = app.services.graph.linkEntries(d.lease, d.notice, 'related_to', { status: 'proposed' });
-    app.services.graph.decideRelation(r.relation.id, 'rejected');
+    const r = app.services.graph.linkEntries({ sourceId: d.lease, targetId: d.notice, relationType: 'related_to' }, { status: 'proposed' });
+    app.services.graph.decideRelation(r.relation.id, { status: 'rejected' });
 
     const ui = await app.ok('links:suggestions', { id: d.lease, limit: 3 });
     expect(ui.map((c) => c.id)).toEqual([d.costs]);
@@ -191,8 +191,8 @@ describe('Link methods as tools of their own (#313)', () => {
 
   it('backfill_links: proposes (never confirms) in steps and continues where it stopped; rejected pairs never again; undone with the run', async () => {
     const d = await flat();
-    const r = app.services.graph.linkEntries(d.costs, d.notice, 'related_to', { status: 'proposed' });
-    app.services.graph.decideRelation(r.relation.id, 'rejected');
+    const r = app.services.graph.linkEntries({ sourceId: d.costs, targetId: d.notice, relationType: 'related_to' }, { status: 'proposed' });
+    app.services.graph.decideRelation(r.relation.id, { status: 'rejected' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'backfill_links', args: { maxEntries: 2 } }] },
       () => {
@@ -238,8 +238,8 @@ describe('Link methods as tools of their own (#313)', () => {
 describe('Background link run with the link-method tools (#313)', () => {
   it('works through the methods, only proposes, never repeats a rejected pair and sends ONE notification', async () => {
     const d = await flat();
-    const r = app.services.graph.linkEntries(d.lease, d.costs, 'related_to', { status: 'proposed' });
-    app.services.graph.decideRelation(r.relation.id, 'rejected');
+    const r = app.services.graph.linkEntries({ sourceId: d.lease, targetId: d.costs, relationType: 'related_to' }, { status: 'proposed' });
+    app.services.graph.decideRelation(r.relation.id, { status: 'rejected' });
     app.llm.agent = scriptedTurns(
       ({ body, tools }) => {
         const task = JSON.stringify(body.input);
