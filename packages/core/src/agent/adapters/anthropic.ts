@@ -307,17 +307,27 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   /** Plain text request (classification, summaries) for the rest of Archivist when Claude is configured. */
-  async completeText(input: { system: string; text: string; maxOutputTokens: number; signal?: AbortSignal }): Promise<string> {
+  async completeText(input: {
+    system: string;
+    text: string;
+    maxOutputTokens: number;
+    signal?: AbortSignal;
+  }): Promise<{ text: string; usage: Pick<TurnResult['usage'], 'inputTokens' | 'outputTokens' | 'cacheReadTokens'> }> {
     try {
       const message = await this.client.messages.create(
         { model: this.model, max_tokens: input.maxOutputTokens, system: input.system, messages: [{ role: 'user', content: input.text }] },
         { signal: input.signal },
       );
       if (message.stop_reason === 'refusal') throw new AppError('llm_error', 'Claude hat die Anfrage abgelehnt.');
-      return message.content
+      const text = message.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
         .join('');
+      const usage = message.usage;
+      return {
+        text,
+        usage: { inputTokens: usage.input_tokens ?? 0, outputTokens: usage.output_tokens ?? 0, cacheReadTokens: usage.cache_read_input_tokens ?? 0 },
+      };
     } catch (err) {
       throw mapError(err, input.signal);
     }

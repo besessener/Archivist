@@ -63,7 +63,7 @@ Einstellungen → Datenschutz. Bedienung: [Datenschutz einstellen](../how-to/dat
 - **„KI-Analyse erlaubt“ eines Scan-Verzeichnisses** wird am Dokument gespeichert (auch für Dateien, die aus diesem Ordner hochgeladen werden) und gilt für Analyse, „Erneut verarbeiten“, Chat-Quellen, Lösungsvorschläge und Embeddings. Wird die Freigabe später entzogen, gilt das sofort für bereits erfasste Dokumente.
 - **Im Modus `confirm`** fragt auch „Erneut verarbeiten“ vor der Übertragung nach. Chat-Antworten senden nur Dokumente, die zur externen Analyse freigegeben wurden; andere passende Dokumente werden nur lokal als Quelle aufgeführt. Suchindex und Suchanfragen nutzen ausschließlich lokale Vektoren.
 - **Maskierung**: Vor jeder Übertragung werden Zugangsdaten und Geheimnisse maskiert – Passwörter (auch in Anführungszeichen mit Leerzeichen), API-Keys inkl. Google-Keys, Tokens, JWTs, private Schlüssel, Zugangsdaten in URLs sowie Schlüssel und Passwörter in Verbindungsstrings wie `AccountKey=…;`, `SharedAccessKey=…;` oder `Password=…;`.
-- **Übertragungsprotokoll**: Jede Übertragung wird mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und gekürzter, maskierter Vorschau protokolliert (Einstellungen → Datenschutz → „An die KI übertragene Inhalte“).
+- **Übertragungsprotokoll**: Jede Übertragung wird mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen, gekürzter, maskierter Vorschau sowie den gemeldeten Tokens, der Zahl der Anfragen und gegebenenfalls einem Hinweis auf eine mildere Anfrage (z. B. JSON-Modus statt Structured Outputs) protokolliert (Einstellungen → Datenschutz → „An die KI übertragene Inhalte“).
 - Gesendet wird mit `store: false`, siehe [LLM-Schnittstelle](llm-schnittstelle.md#anfragen).
 
 ## Electron

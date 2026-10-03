@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { checkLlmBaseUrl, type IpcOutput } from '@archivist/shared';
+import { checkLlmBaseUrl, type IpcOutput, type ReasoningEffort } from '@archivist/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useApp } from '@/lib/app-context';
@@ -10,7 +10,7 @@ import { call } from '@/lib/ipc';
 import { loadSettings } from '@/lib/use-settings';
 import { useRun } from '@/lib/use-run';
 import { cn } from '@/lib/utils';
-import { DoneStep, LlmStep, PrivacyStep, ScanStep, WelcomeStep, type ConnectionTest, type Effort, type LlmForm, type Mode } from './setup-steps';
+import { DoneStep, LlmStep, PrivacyStep, ScanStep, WelcomeStep, type ConnectionTest, type LlmForm, type Mode } from './setup-steps';
 
 type Step = 'welcome' | 'llm' | 'scan' | 'privacy' | 'done';
 const STEPS: Step[] = ['welcome', 'llm', 'scan', 'privacy', 'done'];
@@ -30,7 +30,7 @@ export function SetupWizard() {
   const [apiKey, setApiKey] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [model, setModel] = useState('');
-  const [effort, setEffort] = useState<Effort | ''>('');
+  const [effort, setEffort] = useState<ReasoningEffort | ''>('');
   const [test, setTest] = useState<ConnectionTest | null>(null);
   const [testing, setTesting] = useState(false);
   const [directories, setDirectories] = useState<IpcOutput<'scanner:listDirectories'>>([]);

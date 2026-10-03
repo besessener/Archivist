@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
-import { formatBytes, formatDateTime } from '@/lib/format';
+import { formatBytes, formatDateTime, formatNumber } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { cn, parseList } from '@/lib/utils';
 import { Section, useSaveSettings, type TabProps } from './shared';
+import { UsageSection } from './usage-section';
 
 type Mode = 'auto' | 'confirm' | 'local_only';
 const MODES: Array<{ id: Mode; title: string; text: string }> = [
@@ -40,6 +41,7 @@ export function PrivacyTab({ settings, reload }: TabProps) {
       {/* Separate keys: saving the mode must not discard unsaved edits in "Nie analysieren" and vice versa. */}
       <ModeSection key={llmMode} active={llmMode} reload={reload} />
       <NeverAnalyzeSection key={JSON.stringify([neverAnalyzeDirs, neverAnalyzeExtensions, neverAnalyzeFiles])} settings={settings} reload={reload} />
+      <UsageSection key={settings.llm.dailyTokenCap ?? 'none'} settings={settings} reload={reload} />
 
       <Section
         title="An die KI übertragene Inhalte"
@@ -89,6 +91,17 @@ export function PrivacyTab({ settings, reload }: TabProps) {
                           {t.preview || '(keine Vorschau)'}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">Betroffene Dokumente: {t.documentIds.length}</p>
+                        {t.inputTokens != null && (
+                          <p className="mt-1 text-xs text-muted-foreground" data-testid="transmission-tokens">
+                            Tokens: Eingabe {formatNumber(t.inputTokens + (t.cacheReadTokens ?? 0))}, Ausgabe {formatNumber(t.outputTokens ?? 0)},{' '}
+                            {t.requests ?? 1} {t.requests === 1 || t.requests === undefined ? 'Anfrage' : 'Anfragen'}
+                          </p>
+                        )}
+                        {t.note && (
+                          <p className="mt-1 text-xs text-warning" data-testid="transmission-note">
+                            Hinweis: {t.note}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   )}

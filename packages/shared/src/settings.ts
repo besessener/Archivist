@@ -4,7 +4,8 @@ import { LOCAL_TIME } from './dates';
 import { SUPPORTED_EXTENSIONS } from './documents';
 import { AgentSettings, BackgroundAgentSettings } from './agent';
 
-export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high']);
+export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+export type ReasoningEffort = z.infer<typeof ReasoningEffort>;
 
 export const LlmSettings = z.object({
   baseUrl: z.string().default(''),
@@ -14,6 +15,8 @@ export const LlmSettings = z.object({
   maxInputChars: z.number().int().min(500).max(2000000).default(24000),
   /** optional embedding model (/embeddings). Empty = local vectors. */
   embeddingModel: z.string().default(''),
+  /** Daily token limit (input + output); null = no limit. Background jobs pause when it is reached, the chat asks first. */
+  dailyTokenCap: z.number().int().min(1000).max(10_000_000_000).nullable().default(null),
 });
 
 export const ScanSettings = z.object({

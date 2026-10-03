@@ -47,8 +47,14 @@ Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `dia
 
 Das Änderungsprotokoll (Einstellungen → Änderungsprotokoll) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert.
 
+## Tokenverbrauch im Blick behalten und begrenzen
+
+Unter **Einstellungen → Datenschutz → Tokenverbrauch** siehst du, wie viele Tokens die KI heute und in diesem Monat verbraucht hat (laut Antwort deines Dienstes, Wiederholungen eingerechnet) und wie viele Anfragen das waren. Trage ein **Tageslimit (Tokens)** ein, wenn du die Kosten deckeln willst, und speichere es; leer lassen heißt kein Limit.
+
+Ist das Limit erreicht, geht nichts mehr an die KI: Analysen im Hintergrund pausieren bis morgen und laufen sofort weiter, wenn du das Limit erhöhst oder entfernst. Im Chat fragt Archivist vorher; mit „Trotzdem fortfahren“ geht deine Nachricht hinaus und der Rest des Tages ist für diese Unterhaltung frei. Details: [LLM-Schnittstelle](../reference/llm-schnittstelle.md#tokenverbrauch-und-tageslimit).
+
 ## Prüfen, was gesendet wurde
 
-Unter **Einstellungen → Datenschutz → An die KI übertragene Inhalte** steht jede Übertragung mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und einer gekürzten, maskierten Vorschau. Ein langes Dokument erscheint mit einem Eintrag je gelesenem Teil („Teil 2 von 4“), jeder maskiert und mit der Dokument-ID. Bei Agentenläufen zählt die Anzahl alle bis dahin im Lauf maskierten Stellen – in deiner Nachricht, in der Systemanweisung (Gelerntes, Profil) und in Werkzeugergebnissen.
+Unter **Einstellungen → Datenschutz → An die KI übertragene Inhalte** steht jede Übertragung mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und einer gekürzten, maskierten Vorschau. Ein langes Dokument erscheint mit einem Eintrag je gelesenem Teil („Teil 2 von 4“), jeder maskiert und mit der Dokument-ID. Die Vorschau eines Eintrags nennt auch die Tokens und die Zahl der Anfragen und, wenn die Anfrage vom Gewünschten abwich (z. B. JSON-Modus statt Structured Outputs oder eine niedrigere Denktiefe), den Hinweis dazu. Bei Agentenläufen zählt die Anzahl alle bis dahin im Lauf maskierten Stellen – in deiner Nachricht, in der Systemanweisung (Gelerntes, Profil) und in Werkzeugergebnissen.
 
 Hintergrund: [Sicherheits- und Datenschutzmodell](../explanation/sicherheitsmodell.md).

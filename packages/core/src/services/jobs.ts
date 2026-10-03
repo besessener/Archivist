@@ -154,6 +154,13 @@ export class JobQueueService {
     return mapJob(row);
   }
 
+  /** Lets the jobs paused by the daily token limit run again (the limit was raised or switched off). */
+  resumeTokenCapPaused(): void {
+    this.outcomes.pausedForTokenCap.forEach((id) => this.retryWaits.delete(id));
+    this.outcomes.pausedForTokenCap.clear();
+    this.kick();
+  }
+
   /** Cancels waiting jobs (also those waiting for a retry) at once, running ones cooperatively via their `signal`. */
   cancel(id: string): Job {
     const current = this.existingRow(id);
