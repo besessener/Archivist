@@ -90,7 +90,9 @@ export class RuleBasedIntents {
 function lookupIntent(text: string): RuleIntent {
   if (/\bwiderspr/i.test(text)) return { intent: 'contradiction_check', query: text };
   if (/(dokumente?|dateien?)/i.test(text) && /(such|zeige|finde|gehören|liste)/i.test(text)) return { intent: 'document_search', query: text };
-  if (QUESTION_END.test(text) || /^(wann|warum|wer|was|welche|wie|haben|gab|gibt|hat)\b/i.test(text)) return { intent: 'knowledge_question', query: text };
+  // imperative lookups without „Dokument“ are searches too, not notes (#248)
+  if (/^(bitte\s+)?(zeig|finde?|such|öffne)\w*\b/i.test(text.trim())) return { intent: 'document_search', query: text };
+  if (QUESTION_END.test(text) || /^(wann|warum|wer|was|welche|wie|wo|wieviel\w*|haben|gab|gibt|hat)\b/i.test(text)) return { intent: 'knowledge_question', query: text };
   return { intent: 'note_capture', note: text };
 }
 

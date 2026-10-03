@@ -18,6 +18,8 @@ export interface Classification {
   analysis: ChatAnalysis;
   viaLlm: boolean;
   llmError: string | null;
+  /** The LLM was tried and failed; false when it is switched off or not configured (no error to show). */
+  llmFailed: boolean;
 }
 
 type ClassifierDeps = Pick<ChatDeps, 'llm' | 'graph' | 'settings' | 'openItems' | 'decisions' | 'capture'>;
@@ -40,7 +42,7 @@ export class IntentClassifier {
 
   async classify(turn: ChatTurn): Promise<Classification> {
     const ruleBased = () => ({ intents: [this.helpers.rules.classify(turn.text, turn.state)] });
-    if (!this.deps.llm.canUse()) return { analysis: ruleBased(), viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.' };
+    if (!this.deps.llm.canUse()) return { analysis: ruleBased(), viaLlm: false, llmError: 'Das LLM ist nicht konfiguriert.', llmFailed: false };
     try {
       const refs = this.promptContext(turn);
       const analysis = await this.deps.llm.completeJson(ChatAnalysis, {
@@ -50,10 +52,10 @@ export class IntentClassifier {
         input: this.promptInput(turn, refs),
       });
       resolveRefs(analysis, refs);
-      return { analysis, viaLlm: true, llmError: null };
+      return { analysis, viaLlm: true, llmError: null, llmFailed: false };
     } catch (err) {
       throwIfCancelled();
-      return { analysis: ruleBased(), viaLlm: false, llmError: toErrorInfo(err).message };
+      return { analysis: ruleBased(), viaLlm: false, llmError: toErrorInfo(err).message, llmFailed: true };
     }
   }
 

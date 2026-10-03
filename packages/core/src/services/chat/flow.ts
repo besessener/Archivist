@@ -46,7 +46,7 @@ export class ChatFlow {
     return {
       ...reply,
       content: `${reply.content}\n\n_Hinweis: ${classified.llmError} Ich habe die Nachricht regelbasiert ausgewertet – Ergebnisse können ungenauer sein._`,
-      errorMessage: classified.llmError,
+      ...(classified.llmFailed ? { errorMessage: classified.llmError } : {}),
       uncertainties: [...(reply.uncertainties ?? []), 'Ohne LLM nur regelbasierte Auswertung.'],
     };
   }
