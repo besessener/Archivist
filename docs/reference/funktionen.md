@@ -51,6 +51,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Papierkorb**: „In den Papierkorb …“ im Dokument-Dialog legt ein Dokument mit Archivdatei und eigener Eingangskopie in den Papierkorb; das Original bleibt. Unter Einstellungen → Archiv → Papierkorb lässt es sich mit allen Verknüpfungen wiederherstellen; „Papierkorb leeren …“ löscht endgültig, nach zweiter Bestätigung. Siehe [Aktionsstufen](aktionsstufen.md#stufen).
 - **Quarantäne**: Dateien, deren Inhalt nicht zur Endung passt, landen in `quarantine/` und erscheinen in der Inbox unter „Quarantäne“ („Ordner öffnen“ oder nach Bestätigung „Trotzdem importieren“).
 - Bei reinen HTML-E-Mails fällt für den Leser unsichtbarer Text (`display:none`, `font-size:0`, …) aus dem Dokumenttext heraus.
+- Von E-Mails speichert der Parser lokal in den technischen Metadaten auch `Message-ID`, `In-Reply-To` und `References`; sie verlassen den Rechner nicht und dienen dem Agenten, Verläufe zu erkennen ([Spezialaufgaben](agentenmodus.md#spezialaufgaben)).
 
 ## Wissensgraph
 

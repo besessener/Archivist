@@ -4,7 +4,7 @@ import { folderLabel, folderOf } from '../../../services/archive-structure';
 import type { ToolOutput } from '../../registry';
 import { allDocs, docLine, lower, resolveDocs, unknownNote, type ToolDeps, type ToolScope } from '../common';
 import { archivedDocs, businessDate, documentText, skippedNote } from './access';
-import { mailThreads } from './mail';
+import { mailHeadersOf, mailThreads } from './mail';
 import { problemReasons } from './problems';
 import { scanSecrets } from './secrets';
 
@@ -93,7 +93,9 @@ export async function storageReport(scope: ToolScope): Promise<ToolOutput> {
       ...duplicates
         .slice(0, 15)
         .map((g) => `- ${g.length}× ${megabytes(g[0]!.size)}: ${g.map((d) => ctx.refs.doc(d.id)).join(', ')} – „${truncate(g[0]!.title, 60)}“`),
-      lonely.length ? 'Lange nicht genutzt (älteste archivierte Dokumente ohne Thema, Projekt oder Verknüpfung):' : null,
+      lonely.length
+        ? 'Vermutlich lange nicht genutzt (Näherung: Archivist erfasst nicht, wann ein Dokument zuletzt geöffnet wurde – gezeigt werden die ältesten archivierten Dokumente ohne Thema, Projekt oder Verknüpfung):'
+        : null,
       ...lonely.map((d) => `- ${docLine(scope, d)}`),
       'Nur Hinweise – gelöscht oder verschoben wird nichts ohne ausdrücklichen Auftrag (find_duplicates / mark_duplicates).',
     ]
@@ -111,13 +113,14 @@ export async function mailThreadsReport(scope: ToolScope, refs: readonly string[
     : { docs: allDocs(deps).filter((d) => lower(d.ext) === 'eml' && d.status !== 'ignored'), unknown: [] as string[] };
   const mails = source.docs.filter((d) => lower(d.ext) === 'eml');
   const shareable = mails.filter((d) => deps.privacy.mayShareDocument(d));
-  const threads = mailThreads(shareable);
+  const threads = mailThreads(shareable.map((doc) => ({ doc, headers: mailHeadersOf(deps.docs.findRow(doc.id)?.technicalMeta) })));
   const notes = skippedNote(mails.length - shareable.length) + unknownNote(source.unknown);
   if (!threads.length)
     return { content: `Keine Verläufe mit mehreren Nachrichten gefunden (${shareable.length} E-Mails geprüft).${notes}`, summary: 'keine Verläufe' };
-  const lines = threads.slice(0, 40).map(([subject, group]) => {
+  const basis = { headers: 'nach Message-ID und Antwort-Kopfzeilen', subject: 'nur nach Betreff, keine Kopfzeilen gespeichert – eine Vermutung' };
+  const lines = threads.slice(0, 40).map(({ label, mails: group, basis: how }) => {
     const sorted = group.toSorted((x, y) => businessDate(x).localeCompare(businessDate(y)));
-    return `Verlauf „${truncate(subject, 80)}“ (${group.length} Nachrichten, Ergebnismenge ${ctx.refs.set(sorted.map((d) => d.id))}):\n${sorted.map((d) => `  - ${docLine(scope, d)}`).join('\n')}`;
+    return `Verlauf „${truncate(label, 80)}“ (${group.length} Nachrichten, zugeordnet ${basis[how]}, Ergebnismenge ${ctx.refs.set(sorted.map((d) => d.id))}):\n${sorted.map((d) => `  - ${docLine(scope, d)}`).join('\n')}`;
   });
   return { content: lines.join('\n') + notes, summary: `${threads.length} Verläufe` };
 }

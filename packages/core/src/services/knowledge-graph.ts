@@ -93,6 +93,11 @@ export class KnowledgeGraphService {
     return this.entities.addAlias(entityId, alias);
   }
 
+  /** Forgets an alias again (undo of {@link addAlias}). */
+  removeAlias(entityId: string, alias: string): GraphEntity {
+    return this.entities.removeAlias(entityId, alias);
+  }
+
   /** Stores roles as info on the entity ("Chefin"); roles already known (case/umlaut-insensitive) are skipped. */
   addRoles(entityId: string, roles: string[]): GraphEntity {
     return this.entities.addRoles(entityId, roles);

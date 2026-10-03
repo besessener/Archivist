@@ -31,6 +31,7 @@ import { linkTools } from './tools/links';
 import { metadataTools } from './tools/metadata';
 import { readTools } from './tools/read';
 import { researchTools } from './tools/research';
+import { registerSpecialUndo, specialTaskTools } from './tools/special-tasks';
 import { registerSettingUndo, systemTools } from './tools/system';
 import { registerToolUndo } from './tools/tool-undo';
 import { workflowTools } from './tools/workflows';
@@ -107,6 +108,7 @@ export class AgentService {
     this.memory = memory;
     registerSettingUndo(deps);
     registerToolUndo(deps);
+    registerSpecialUndo(deps);
     const tools = [
       ...readTools(deps),
       ...knowledgeTools(deps),
@@ -118,6 +120,7 @@ export class AgentService {
       ...workflowTools(deps),
       ...systemTools(deps),
       ...researchTools(deps),
+      ...specialTaskTools(deps),
       ...duplicateTools(deps),
       ...exportTools(deps),
       undoPreviousRunTool({ runs, undoRun: (runId) => this.undoRun(runId) }),
