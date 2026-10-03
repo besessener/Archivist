@@ -8,6 +8,7 @@ import { AttemptOutcomes, type Outcome } from './jobs/attempt-outcome';
 import { createJobContext } from './jobs/job-context';
 import { JobCancelledError, JobInterruptedError } from './jobs/job-errors';
 import { mapJob, newJobRow, type JobRow } from './jobs/job-rows';
+import { pollUntil } from './jobs/polling';
 import type { JobHandler, JobHooks, JobQueueOptions, Registration } from './jobs/job-types';
 import { RetryWaits } from './jobs/retry-waits';
 
@@ -250,24 +251,17 @@ export class JobQueueService {
 
   /** Waits for one job to end, at most `timeoutMs`; returns its latest state, which is still pending or running after a timeout. */
   async waitFor(id: string, timeoutMs: number): Promise<Job> {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-      const job = this.get(id);
-      if (job.status !== 'pending' && job.status !== 'running') return job;
-      if (Date.now() > deadline) return job;
-      await new Promise((resolve) => setTimeout(resolve, 15));
-    }
+    const ended = (job: Job) => job.status !== 'pending' && job.status !== 'running';
+    return (await pollUntil(() => this.get(id), { done: ended, timeoutMs })).value;
   }
 
   /** Waits until no pending/running jobs exist any more (mainly for tests and shutdown). */
   async whenIdle(timeoutMs = 30_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
+    const idle = () => {
       const counts = this.counts();
-      if (counts.pending === 0 && counts.running === 0 && this.active.size === 0) return;
-      if (Date.now() > deadline) throw new Error('Job-Queue wurde nicht rechtzeitig leer');
-      await new Promise((resolve) => setTimeout(resolve, 15));
-    }
+      return counts.pending === 0 && counts.running === 0 && this.active.size === 0;
+    };
+    if (!(await pollUntil(idle, { done: (isIdle) => isIdle, timeoutMs })).done) throw new Error('Job-Queue wurde nicht rechtzeitig leer');
   }
 
   private notify(row: JobRow): void {
