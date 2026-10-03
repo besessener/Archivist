@@ -113,11 +113,35 @@ function relatedPage(scope: ToolScope, query: { id: string; page: number }): Too
   };
 }
 
+const CASE_KIND_LABEL: Partial<Record<EntityType, string>> = { document: 'document', decision: 'decision', task: 'open_item', event: 'event', note: 'note' };
+
+/** The entries of a case (Vorgang) – documents, decisions, open items, events, notes – interleaved chronologically. */
+function caseTimeline(scope: ToolScope, args: { name: string; from: string | null; to: string | null; limit?: number | null }): ToolOutput {
+  const { deps, ctx } = scope;
+  const found = deps.graph.findByNameOrAlias('case', args.name);
+  if (!found) return { content: `Vorgang „${args.name}“ ist unbekannt – list_subjects mit type=case zeigt die bekannten.`, isError: true };
+  const entries = deps.cases
+    .entries(found.id)
+    .filter((e) => !e.proposed && e.date && (!args.from || e.date.slice(0, 10) >= args.from) && (!args.to || e.date.slice(0, 10) <= args.to))
+    .toSorted((a, b) => a.date!.localeCompare(b.date!))
+    .slice(0, args.limit ?? 200);
+  if (!entries.length) return { content: `Keine Einträge im Vorgang „${found.name}“ in diesem Zeitraum.` };
+  const lines = entries.map((e) => {
+    const day = e.date!.slice(0, 10);
+    const document = e.type === 'document' ? findDocument(deps, e.id) : undefined;
+    if (document && !deps.privacy.mayShareDocument(document)) return `- ${day}: Dokument ${ctx.refs.doc(e.id)} [nicht freigegeben]`;
+    const ref = e.type === 'document' ? ctx.refs.doc(e.id) : ctx.refs.entry(e.id);
+    return `- ${day} ${CASE_KIND_LABEL[e.type] ?? e.type}: ${ref} ${truncate(e.name, 90)}${e.status ? ` [${e.status}]` : ''}`;
+  });
+  return { content: `Vorgang „${found.name}“:\n${lines.join('\n')}`, summary: `${entries.length} Einträge` };
+}
+
 function timelineOf(
   scope: ToolScope,
-  args: { topic: string | null; project: string | null; from: string | null; to: string | null; limit?: number | null },
+  args: { topic: string | null; project: string | null; case?: string | null; from: string | null; to: string | null; limit?: number | null },
 ): ToolOutput {
   const { deps, ctx } = scope;
+  if (args.case) return caseTimeline(scope, { name: args.case, from: args.from, to: args.to, limit: args.limit });
   const topicId = args.topic ? deps.graph.findByNameOrAlias('topic', args.topic)?.id : undefined;
   const projectId = args.project ? deps.graph.findByNameOrAlias('project', args.project)?.id : undefined;
   if ((args.topic && !topicId) || (args.project && !projectId))
@@ -204,10 +228,18 @@ export function entryReadTools(deps: ToolDeps): AgentTool[] {
     }),
     defineTool({
       name: 'timeline',
-      description: 'Zeitlinie zu Thema, Projekt oder Zeitraum: Dokumente, Entscheidungen, offene Punkte, Ereignisse, Notizen – chronologisch.',
-      schema: z.object({ topic: optText, project: optText, from: optText, to: optText, limit: z.coerce.number().int().min(1).max(500).nullish() }),
+      description:
+        'Zeitlinie zu Thema, Projekt, Vorgang (case) oder Zeitraum: Dokumente, Entscheidungen, offene Punkte, Ereignisse, Notizen – chronologisch. Mit case werden die Einträge des Vorgangs zeitlich verschränkt.',
+      schema: z.object({
+        topic: optText,
+        project: optText,
+        case: optText,
+        from: optText,
+        to: optText,
+        limit: z.coerce.number().int().min(1).max(500).nullish(),
+      }),
       risk: 'read',
-      label: (a) => `Erstelle eine Zeitlinie${a.topic || a.project ? ` zu ${a.topic ?? a.project}` : ''}`,
+      label: (a) => `Erstelle eine Zeitlinie${a.topic || a.project || a.case ? ` zu ${a.topic ?? a.project ?? a.case}` : ''}`,
       run: async (a, ctx) => timelineOf({ deps, ctx }, a),
     }),
   ];

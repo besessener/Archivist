@@ -151,6 +151,42 @@ describe('Other read tools (#303)', () => {
     expect(timeline).toContain('Küche');
   });
 
+  it('timeline of a case interleaves its documents, decisions, open items and events chronologically', async () => {
+    const contract = await archived(app, { name: 'vertrag.txt', content: 'Vertrag Heizung', folder: 'private/haus', documentDate: '2026-02-10' });
+    const decision = await app.ok('decisions:create', {
+      decisionText: 'Wir nehmen die Wärmepumpe',
+      title: 'Wärmepumpe gewählt',
+      decidedAt: '2026-03-05',
+      participants: ['Anna'],
+      alternatives: [],
+      unknownFields: [],
+      sourceIds: [],
+      confidence: 0.9,
+    });
+    const item = await app.ok('openItems:create', { title: 'Förderung beantragen', dueAt: '2026-04-01' });
+    const event = await app.ok('events:create', { title: 'Einbau Wärmepumpe', occurredAt: '2026-02-20', sourceIds: [], confidence: 0.9 });
+    const other = await app.ok('decisions:create', {
+      decisionText: 'Anderes',
+      title: 'Nicht im Vorgang',
+      decidedAt: '2026-02-25',
+      participants: [],
+      alternatives: [],
+      unknownFields: [],
+      sourceIds: [],
+      confidence: 0.9,
+    });
+    const { case: heating } = app.services.cases.create({ name: 'Heizungstausch' });
+    app.services.cases.assign({ entryIds: [contract, decision.id, item.id, event.id], caseId: heating.id });
+
+    const [timeline, unknown] = await call({ name: 'timeline', args: { case: 'Heizungstausch' } }, { name: 'timeline', args: { case: 'Gibt es nicht' } });
+
+    const order = ['2026-02-10 document', '2026-02-20 event', '2026-03-05 decision', '2026-04-01 open_item'].map((prefix) => timeline.indexOf(prefix));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual(order.toSorted((a, b) => a - b));
+    expect(timeline).not.toContain(other.title);
+    expect(unknown).toContain('unbekannt');
+  });
+
   it('related uses the same list as „Verwandte Einträge“ in the user interface, with the reason', async () => {
     const a = await archived(app, { name: 'angebot.txt', content: 'Angebot Dach', folder: 'private/haus' });
     const b = await archived(app, { name: 'auftrag.txt', content: 'Auftrag Dach', folder: 'private/haus' });
