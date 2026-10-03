@@ -100,7 +100,7 @@ describe('Archiving: the inbox copy cannot be removed after the commit', () => {
     expect(row(id)).toMatchObject({ status: 'archived', stagedPath: staged });
     expect(fs.readFileSync(res.items[0]!.targetPath!, 'utf8')).toBe('Im Viewer geöffnetes Dokument');
     expect(fs.existsSync(staged)).toBe(true);
-    expect(app.services.audit.list(10, true).some((e) => e.id === res.items[0]!.auditId)).toBe(true);
+    expect(app.services.audit.list({ limit: 10, onlyUndoable: true }).some((e) => e.id === res.items[0]!.auditId)).toBe(true);
 
     // still locked: the cleanup leaves the copy and the mark in place
     expect(await app.services.archive.cleanupInbox()).toBe(0);

@@ -203,7 +203,7 @@ export class ArchiveExecutor {
     const { categoryPath, updatedAt } = state;
     const { graph } = this.deps;
     const { topicName, projectName } = assignmentNames(req, proposal);
-    if (categoryPath) this.deps.categories.create(categoryPath, true);
+    if (categoryPath) this.deps.categories.create(categoryPath, { confirmed: true });
     // a name taken over unchanged from the document's analysis stays unconfirmed until the user uses it (#199)
     const fromDocument = (name: string, proposed: string | null | undefined) => normalizeName(name) === normalizeName(proposed ?? '');
     const topic = topicName ? graph.ensureEntity('topic', topicName, null, { fromDocument: fromDocument(topicName, proposal?.topic) }) : null;

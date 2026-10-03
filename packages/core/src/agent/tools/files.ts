@@ -69,7 +69,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         const target = canonical(a.folder);
         const main = categories.needsApproval(target);
         // only reached after the user confirmed (critical) – then the new main category is created with that confirmation
-        if (main) categories.create(main, true);
+        if (main) categories.create(main, { confirmed: true });
         const inbox = docs.filter((d) => d.status !== 'archived');
         const movable = docs.filter((d) => d.status === 'archived' && d.archiveRelPath && normalizeFolder(folderOf(d)).toLowerCase() !== target.toLowerCase());
         const already = docs.length - inbox.length - movable.length;
@@ -120,7 +120,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
             return { content: `Ungültiger Zielordner „${g.folder}“: ${(error as Error).message}`, isError: true };
           }
           const main = categories.needsApproval(target);
-          if (main) categories.create(main, true);
+          if (main) categories.create(main, { confirmed: true });
           const { docs, unknown } = resolveDocs({ deps, ctx }, g.documents);
           unknownAll.push(...unknown);
           for (const d of docs)
@@ -188,7 +188,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         const existed = categories.list().some((c) => c.path === target);
         if (existed) return { content: `Der Ordner ${target} existiert bereits.`, summary: 'gab es schon' };
         const before = new Set(categories.list().map((x) => x.path));
-        const category = categories.create(target, true);
+        const category = categories.create(target, { confirmed: true });
         const added = categories
           .list()
           .map((x) => x.path)
@@ -233,7 +233,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
         });
         if (!docs.length) return { content: `Im Ordner ${from} liegen keine archivierten Dokumente.`, summary: 'leer' };
         const main = categories.needsApproval(to);
-        if (main) categories.create(main, true);
+        if (main) categories.create(main, { confirmed: true });
         const items = docs.map((d) => ({ documentId: d.id, categoryPath: `${to}${folderOf(d).slice(from.length)}` }));
         const result = await runFileJob({ deps, ctx }, { op: 'relocate', items, label: `Agent: Ordner ${from} nach ${to} umlegen` });
         const removed = result.success ? await archive.removeEmptyFolders() : [];

@@ -20,7 +20,7 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
     'documents:counts': () => services.reader.run('documentCounts', {}),
     'documents:count': (input) => services.reader.run('documentCount', input),
     'documents:get': (input) => services.documents.get(input.id),
-    'documents:classify': (input) => ({ jobId: services.documents.enqueueAnalysis(input.documentId, input.allowLlm) }),
+    'documents:classify': (input) => ({ jobId: services.documents.enqueueAnalysis(input.documentId, { allowLlm: input.allowLlm }) }),
     'documents:previewArchive': (input) => services.archive.preview(input.items),
     'documents:archive': (input) =>
       services.archive.execute(input.items, {
@@ -31,11 +31,10 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
       }),
     'documents:undoArchive': (input) => services.undo.undo(input.auditId),
     'documents:updateMetadata': (input) =>
-      services.documents.updateMetadata(
-        input.id,
-        { title: input.title, topic: input.topic, project: input.project, tags: input.tags, persons: input.persons },
-        input.confirmed,
-      ),
+      services.documents.updateMetadata(input.id, {
+        patch: { title: input.title, topic: input.topic, project: input.project, tags: input.tags, persons: input.persons },
+        confirmed: input.confirmed,
+      }),
     'documents:bulkUpdate': (input) => {
       const { ids, confirmed: _confirmed, ...patch } = input;
       void _confirmed;
@@ -54,13 +53,13 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
       const subject = services.graph.getEntity(input.topicId);
       return services.documents.list({ [subject?.type === 'project' ? 'projectId' : 'topicId']: input.topicId, limit: 500 });
     },
-    'documents:setLlmExcluded': (input) => services.documents.setLlmExcluded(input.id, input.excluded),
-    'documents:releaseQuarantine': (input) => services.documents.releaseFromQuarantine(input.id, input.confirmed),
+    'documents:setLlmExcluded': (input) => services.documents.setLlmExcluded(input.id, { excluded: input.excluded }),
+    'documents:releaseQuarantine': (input) => services.documents.releaseFromQuarantine(input.id, { confirmed: input.confirmed }),
     'documents:trash': (input) => services.documents.moveToTrash(input.id, { confirmed: input.confirmed, trigger: 'manual' }),
     'trash:list': () => services.documents.trashEntries(),
     'trash:empty': (input) => services.documents.emptyTrash(input),
 
-    'scanner:addDirectory': (input) => services.scanner.addDirectory(input.path, input.recursive),
+    'scanner:addDirectory': (input) => services.scanner.addDirectory(input.path, { recursive: input.recursive }),
     'scanner:removeDirectory': (input) => {
       services.scanner.removeDirectory(input.id);
       return { ok: true as const };
@@ -89,8 +88,8 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
     },
 
     'categories:list': () => services.categories.list(),
-    'categories:create': (input) => services.archive.createCategory(input.path, input.confirmed),
-    'backup:create': (input) => services.backup.create(input.includeArchive),
+    'categories:create': (input) => services.archive.createCategory(input.path, { confirmed: input.confirmed }),
+    'backup:create': (input) => services.backup.create({ includeArchive: input.includeArchive }),
     'backup:list': () => services.backup.list(),
     'archive:verify': () => services.archive.verify(),
     'archive:rootStatus': () => services.archiveRoot.status(),

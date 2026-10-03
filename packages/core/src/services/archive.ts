@@ -77,7 +77,7 @@ export class ArchiveService {
       check: async () => [],
       run: async (d) => {
         const { paths } = d as { paths: string[] };
-        for (const p of paths) this.deps.categories.create(p, true);
+        for (const p of paths) this.deps.categories.create(p, { confirmed: true });
         return `${paths.length} Ordner wiederhergestellt.`;
       },
     });
@@ -101,8 +101,8 @@ export class ArchiveService {
     return this.deps.locks.isRootChangeActive();
   }
 
-  createCategory(p: string, confirmed: boolean) {
-    const category = this.deps.categories.create(p, confirmed);
+  createCategory(p: string, { confirmed }: { confirmed: boolean }) {
+    const category = this.deps.categories.create(p, { confirmed });
     this.deps.audit.log({ action: 'category.create', actor: 'user', trigger: 'manual', confirmed, after: { path: category.path } });
     return category;
   }

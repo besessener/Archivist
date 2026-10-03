@@ -132,7 +132,7 @@ export class DocumentService {
   }
 
   /** "Import anyway" for a quarantined file; requires an explicit confirmation by the user. */
-  releaseFromQuarantine(id: string, confirmed: boolean): Promise<DocumentRecord> {
+  releaseFromQuarantine(id: string, { confirmed }: { confirmed: boolean }): Promise<DocumentRecord> {
     if (!confirmed) throw new AppError('permission_error', 'Das Importieren einer Datei aus der Quarantäne erfordert eine Bestätigung.');
     return this.importer.releaseFromQuarantine(id);
   }
@@ -149,7 +149,7 @@ export class DocumentService {
   /** File to read from (preferably our own copy in the inbox). */
   readablePath(r: DocRow): string {
     for (const p of [r.stagedPath, r.sourcePath]) if (p && fs.existsSync(p)) return p;
-    throw fsError('Die Quelldatei ist nicht mehr vorhanden.', undefined, false);
+    throw fsError('Die Quelldatei ist nicht mehr vorhanden.', { retryable: false });
   }
 
   /** Content analysis: extract locally, optionally classify via LLM, propose a target folder – the file is not touched. */
@@ -182,8 +182,8 @@ export class DocumentService {
     return this.jobs.enqueue(DOCUMENT_REREAD_JOB, `Lese ${ids.length} Dokument(e) neu`, { documentIds: ids }).id;
   }
 
-  /** Triggers (re)processing. `allowLlm=true` corresponds to the user's explicit permission. */
-  enqueueAnalysis(id: string, allowLlm: boolean): string {
+  /** Triggers (re)processing. `allowLlm: true` corresponds to the user's explicit permission. */
+  enqueueAnalysis(id: string, { allowLlm }: { allowLlm: boolean }): string {
     const doc = this.getRow(id);
     if (doc.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
     if (isArchivedStatus(doc.status)) throw new AppError('validation_error', 'Archivierte oder nur indexierte Dokumente werden nicht erneut analysiert.');
@@ -195,7 +195,7 @@ export class DocumentService {
     return this.metadata.assign(id, request);
   }
 
-  updateMetadata(id: string, patch: MetadataPatch, confirmed: boolean): DocumentRecord {
+  updateMetadata(id: string, { patch, confirmed }: { patch: MetadataPatch; confirmed: boolean }): DocumentRecord {
     if (!confirmed) throw new AppError('permission_error', 'Das Überschreiben von Metadaten erfordert eine Bestätigung.');
     return this.metadata.updateMetadata(id, patch);
   }
@@ -222,7 +222,7 @@ export class DocumentService {
     return this.get(id);
   }
 
-  setLlmExcluded(id: string, excluded: boolean): DocumentRecord {
+  setLlmExcluded(id: string, { excluded }: { excluded: boolean }): DocumentRecord {
     const row = this.getRow(id);
     const included = row.llmStatus === 'excluded' ? 'pending' : row.llmStatus;
     this.db

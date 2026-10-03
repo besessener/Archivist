@@ -21,7 +21,7 @@ const MIME: Record<string, string> = {
 };
 
 /** Restrictive Content Security Policy; inline scripts from Next.js are allowed by hash (no 'unsafe-inline' for scripts, no eval). */
-export function buildCsp(scriptHashes: string[], dev = false): string {
+export function buildCsp(scriptHashes: string[], { dev = false }: { dev?: boolean } = {}): string {
   const script = ["'self'", ...scriptHashes.map((h) => `'sha256-${h}'`), ...(dev ? ["'unsafe-eval'", "'unsafe-inline'"] : [])];
   return [
     "default-src 'none'",

@@ -91,7 +91,7 @@ describe('quarantine in the inbox', () => {
     // the content is still no real PDF – the parser reports that visibly, the document stays in the inbox
     expect(after.processingStatus).toBe('failed');
 
-    const audit = app.services.audit.list(50).find((a) => a.action === 'document.releaseQuarantine');
+    const audit = app.services.audit.list({ limit: 50 }).find((a) => a.action === 'document.releaseQuarantine');
     expect(audit?.confirmed).toBe(true);
 
     const twice = await app.call('documents:releaseQuarantine', { id: doc.id, confirmed: true });

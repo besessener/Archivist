@@ -61,7 +61,9 @@ function startAgent({ agent, jobs, chat }: LifecycleServices): void {
 
 function startupBackup({ settings, backup, logger }: WiredServices): void {
   if (!settings.get().backups.autoOnStartup) return;
-  void backup.create(settings.get().backups.includeArchive, 'startup').catch((err) => logger.warn('backup', 'Automatic backup failed', { error: err }));
+  void backup
+    .create({ includeArchive: settings.get().backups.includeArchive, trigger: 'startup' })
+    .catch((err) => logger.warn('backup', 'Automatic backup failed', { error: err }));
 }
 
 export function createLifecycle(services: LifecycleServices) {

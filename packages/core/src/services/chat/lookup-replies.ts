@@ -13,7 +13,7 @@ const SEARCH_DOCUMENT_LIMIT = 15;
 const ARCHIVED_STATUSES: DocumentStatus[] = ['archived', 'indexed_only'];
 
 /** A search returns the best hits, not every document that mentions the words: say so instead of „N gefunden“. */
-const searchHeading = (count: number, capped: boolean) =>
+const searchHeading = (count: number, { capped }: { capped: boolean }) =>
   capped ? `Hier sind die ${count} besten Treffer (es kann weitere passende Dokumente geben):` : `Ich habe ${count} passende(s) Dokument(e) gefunden:`;
 
 type TimelineEntries = ReturnType<ChatDeps['timeline']['get']>;
@@ -41,7 +41,7 @@ export class LookupReplies {
     const numbered = docs.map((d, i) => ({ ...d, title: `${i + 1}. ${d.title}` }));
     return {
       intent: 'document_search',
-      content: `${listed.heading ?? searchHeading(docs.length, searched.capped)}\n\n${docs.map((d, i) => `${i + 1}. **${d.title}** – ${d.snippet}`).join('\n')}`,
+      content: `${listed.heading ?? searchHeading(docs.length, { capped: searched.capped })}\n\n${docs.map((d, i) => `${i + 1}. **${d.title}** – ${d.snippet}`).join('\n')}`,
       sources: numbered,
       context: { documents: docs.map((d) => ({ type: 'document' as const, id: d.id, label: d.title })), ...this.deps.answers.contextFromSources(docs) },
       confidence: 0.7,

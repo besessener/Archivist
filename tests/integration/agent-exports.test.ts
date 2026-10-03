@@ -216,7 +216,7 @@ describe('agent export tools (#311)', () => {
 
   it('keeps titles of non-shareable documents out of the tool result (the local file is complete)', async () => {
     const { ids, ctx, refs } = await setup();
-    app.services.documents.setLlmExcluded(ids[0]!, true);
+    app.services.documents.setLlmExcluded(ids[0]!, { excluded: true });
     fs.rmSync(abs(ids[0]!));
     for (const p of [app.services.documents.getRow(ids[0]!).sourcePath, app.services.documents.getRow(ids[0]!).stagedPath])
       if (p) fs.rmSync(p, { force: true });

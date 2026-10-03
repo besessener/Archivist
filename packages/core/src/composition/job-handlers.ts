@@ -51,7 +51,7 @@ function registerScannerJobs(services: JobServices): void {
     return summaries;
   });
   jobs.register<{ fileIds: string[]; confirmLlm: boolean }>('scanner.analyze', async (job) => {
-    const analyzed = await scanner.analyzeFiles(job.payload.fileIds, job.payload.confirmLlm, job);
+    const analyzed = await scanner.analyzeFiles(job.payload.fileIds, { confirmLlm: job.payload.confirmLlm, job });
     agent.scheduleInbox();
     return analyzed;
   });

@@ -121,7 +121,7 @@ export class ScannerService {
   }
 
   // ---------- Directories ----------
-  async addDirectory(dir: string, recursive = true): Promise<ScanRoot> {
+  async addDirectory(dir: string, { recursive = true }: { recursive?: boolean } = {}): Promise<ScanRoot> {
     if (!path.isAbsolute(dir) || dir.includes('\0')) throw validationError('Bitte einen absoluten Verzeichnispfad angeben.');
     let real: string;
     try {
@@ -303,8 +303,8 @@ export class ScannerService {
 
   // ---------- Content analysis ----------
   /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
-  async analyzeFiles(fileIds: string[], confirmLlm: boolean, job?: JobContext): Promise<{ analyzed: string[]; skipped: string[] }> {
-    const result = await this.analysis.analyzeFiles(fileIds, { confirmLlm, job });
+  async analyzeFiles(fileIds: string[], options: { confirmLlm: boolean; job?: JobContext }): Promise<{ analyzed: string[]; skipped: string[] }> {
+    const result = await this.analysis.analyzeFiles(fileIds, options);
     this.buildProposals(result.analyzed);
     this.ctx.events.changed('scanner', 'documents', 'status');
     return result;

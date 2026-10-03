@@ -162,7 +162,7 @@ export class ArchiveRelocator {
   private writeRelocated(row: DocRow, target: { categoryPath: string; newRel: string; updatedAt: string }): RelationEdits {
     const { graph } = this.deps;
     const edits: RelationEdits = { addedRelationId: null, relationsRemoved: [], relationsChanged: [] };
-    this.deps.categories.create(target.categoryPath, false);
+    this.deps.categories.create(target.categoryPath, { confirmed: false });
     this.db
       .update(documents)
       .set({ archiveRelPath: target.newRel, categoryPath: target.categoryPath, updatedAt: target.updatedAt })

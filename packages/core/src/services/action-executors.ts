@@ -159,7 +159,7 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   },
   create_category: (d, p) => {
     const params = ActionParamSchemas.create_category.parse(p);
-    d.archive.createCategory(params.path, true);
+    d.archive.createCategory(params.path, { confirmed: true });
     return 'Kategorie angelegt.';
   },
   set_reminder: (d, p) => {

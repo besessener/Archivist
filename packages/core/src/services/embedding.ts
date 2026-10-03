@@ -52,14 +52,14 @@ export class EmbeddingService {
   ) {}
 
   /** Model that requests would currently use. */
-  currentModel(allowRemote: boolean): string {
+  currentModel({ allowRemote }: { allowRemote: boolean }): string {
     const llmSettings = this.settings.get().llm;
     return allowRemote && llmSettings.embeddingModel && this.llm.isConfigured() ? llmSettings.embeddingModel : LOCAL_MODEL;
   }
 
   /** `allowRemote=false` forces local vectors (e.g. for documents excluded from external analysis). */
   async embed(texts: string[], opts: { allowRemote: boolean; purpose: string; documentIds?: string[] }): Promise<EmbedResult> {
-    const model = this.currentModel(opts.allowRemote);
+    const model = this.currentModel({ allowRemote: opts.allowRemote });
     if (model !== LOCAL_MODEL) {
       try {
         const out: number[][] = [];

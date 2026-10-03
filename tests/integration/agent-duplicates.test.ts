@@ -114,7 +114,7 @@ async function archived(name: string, content: string, opts: { loc?: string; dat
 }
 
 const row = (id: string) => app.services.documents.findRow(id);
-const lastAudit = (action: string) => app.services.audit.list(50).find((e) => e.action === action);
+const lastAudit = (action: string) => app.services.audit.list({ limit: 50 }).find((e) => e.action === action);
 
 describe('agent duplicate tools', () => {
   it('finds exact duplicates, near duplicates and versions with reason and newest document', async () => {

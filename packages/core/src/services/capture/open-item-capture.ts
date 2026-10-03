@@ -170,7 +170,7 @@ export class OpenItemCapture {
       confidence: item.confidence,
       uncertainties: asked.map((field) => (field === 'responsible' ? 'Verantwortlicher unbekannt' : 'Fälligkeitsdatum unbekannt')),
       state: {
-        pending: openItemPending(asked.length ? [{ openItemId: item.id, asked }] : [], true),
+        pending: openItemPending(asked.length ? [{ openItemId: item.id, asked }] : [], { optional: true }),
         last: { ...(state.last ?? {}), openItemId: item.id },
       },
     };
@@ -250,7 +250,7 @@ export class OpenItemCapture {
       context: { openItems: updated.map((item) => ({ type: 'task' as const, id: item.id, label: item.title })) },
       confidence: 0.8,
       state: {
-        pending: openItemPending(remaining, pending?.optional),
+        pending: openItemPending(remaining, { optional: pending?.optional }),
         last: { ...(state.last ?? {}), openItemId: updated.at(-1)!.id },
       },
     };

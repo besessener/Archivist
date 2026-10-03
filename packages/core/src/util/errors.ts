@@ -18,7 +18,7 @@ export class AppError extends Error {
 
 export const validationError = (message: string, details?: string) => new AppError('validation_error', message, { details });
 export const permissionError = (message: string, details?: string) => new AppError('permission_error', message, { details });
-export const fsError = (message: string, cause?: unknown, retryable = true) =>
+export const fsError = (message: string, { cause, retryable = true }: { cause?: unknown; retryable?: boolean } = {}) =>
   new AppError('filesystem_error', message, { retryable, cause, details: cause instanceof Error ? cause.message : undefined });
 
 export function toErrorInfo(err: unknown): AppErrorInfo {

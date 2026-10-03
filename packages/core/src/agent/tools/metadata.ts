@@ -253,7 +253,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
       label: (a) => (a.excluded ? 'Schließe Dokumente von der LLM-Analyse aus' : 'Gebe Dokumente für die LLM-Analyse frei'),
       run: async (a, ctx) => {
         const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
-        for (const d of docs) deps.docs.setLlmExcluded(d.id, a.excluded);
+        for (const d of docs) deps.docs.setLlmExcluded(d.id, { excluded: a.excluded });
         return {
           content: `${docs.length} Dokument(e) ${a.excluded ? 'von der LLM-Analyse ausgeschlossen' : 'wieder freigegeben'}.${unknownNote(unknown)}`,
           summary: `${docs.length} geändert`,

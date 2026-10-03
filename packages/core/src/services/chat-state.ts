@@ -20,7 +20,7 @@ export function openItemAsks(p: OpenItemPending): OpenItemAsk[] {
 }
 
 /** Follow-up question about one or more open items; null if nothing is asked. */
-export function openItemPending(entries: OpenItemAsk[], optional?: boolean): OpenItemPending | null {
+export function openItemPending(entries: OpenItemAsk[], { optional }: { optional?: boolean } = {}): OpenItemPending | null {
   const [first, ...more] = entries;
   if (!first) return null;
   return { kind: 'open_item', ...first, optional, ...(more.length ? { more } : {}) };

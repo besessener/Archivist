@@ -64,7 +64,7 @@ async function moveToSubfolder(scope: ToolScope, move: { treatment: Treatment; a
   const target = deps.categories.canonical(`${folder ? `${folder}/` : ''}${move.as === 'duplicate' ? 'Duplikate' : 'Ältere Versionen'}`);
   const main = deps.categories.needsApproval(target);
   if (main) return { lines: [`Der Hauptordner „${main}“ existiert nicht – nicht verschoben. Neue Hauptordner legt nur der Benutzer an.`], change: '' };
-  deps.categories.create(target, true);
+  deps.categories.create(target, { confirmed: true });
   const result = await deps.archive.relocate(
     targets.map((d) => ({ documentId: d.id, categoryPath: target })),
     { confirmed: true, trigger: 'agent' },

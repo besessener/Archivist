@@ -168,11 +168,11 @@ describe('a batch analysis that runs again', () => {
         },
       };
       if (job.attempts === 1)
-        return scanner.analyzeFiles(job.payload.fileIds, true, ctx).catch(async (err: { simulatedCrash?: boolean }) => {
+        return scanner.analyzeFiles(job.payload.fileIds, { confirmLlm: true, job: ctx }).catch(async (err: { simulatedCrash?: boolean }) => {
           if (err.simulatedCrash) await blocked; // the process "dies" here: the job stays running
           throw err;
         });
-      return scanner.analyzeFiles(job.payload.fileIds, true, job);
+      return scanner.analyzeFiles(job.payload.fileIds, { confirmLlm: true, job });
     });
     q.start();
     const job = q.enqueue('scanner.analyze', 'Analysiere 3 Datei(en)', { fileIds: ids, confirmLlm: true }, { maxAttempts: 1 });
@@ -183,7 +183,7 @@ describe('a batch analysis that runs again', () => {
     // next start: the job continues with the remaining two files only
     const next = new JobQueueService(app.services.ctx, { concurrency: 1, retryBaseDelayMs: 0 });
     queues.push(next);
-    next.register<{ fileIds: string[] }>('scanner.analyze', (j) => scanner.analyzeFiles(j.payload.fileIds, true, j));
+    next.register<{ fileIds: string[] }>('scanner.analyze', (j) => scanner.analyzeFiles(j.payload.fileIds, { confirmLlm: true, job: j }));
     expect(next.start()).toBe(1);
     await next.whenIdle(5_000);
     expect(next.get(job.id).status).toBe('succeeded');

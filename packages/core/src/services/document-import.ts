@@ -233,7 +233,7 @@ export class DocumentImporter {
     if (row.status !== 'quarantined') throw new AppError('validation_error', 'Das Dokument liegt nicht in der Quarantäne.');
     const file = row.stagedPath;
     if (!file || !isInside(this.deps.ctx.paths.quarantine, file) || !fs.existsSync(file))
-      throw fsError('Die Datei in der Quarantäne ist nicht mehr vorhanden.', undefined, false);
+      throw fsError('Die Datei in der Quarantäne ist nicht mehr vorhanden.', { retryable: false });
     const sha = await sha256File(file);
     if (sha !== row.sha256) throw new AppError('validation_error', 'Die Datei in der Quarantäne wurde seither verändert und wird nicht importiert.');
     const duplicate = this.deps.documents.findDuplicates(sha, id)[0];

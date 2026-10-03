@@ -61,6 +61,6 @@ describe('serving the frontend (app://)', () => {
 
   it('hashes inline scripts only', () => {
     expect(inlineScriptHashes('<script src="a.js"></script><script>1+1</script><script> </script>')).toHaveLength(1);
-    expect(buildCsp([], true)).toContain("'unsafe-eval'");
+    expect(buildCsp([], { dev: true })).toContain("'unsafe-eval'");
   });
 });

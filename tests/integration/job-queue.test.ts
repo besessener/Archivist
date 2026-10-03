@@ -39,7 +39,7 @@ async function makeQueue(retryBaseDelayMs: number): Promise<JobQueueService> {
   return q;
 }
 
-const transient = () => fsError('Datei ist gesperrt.', undefined, true);
+const transient = () => fsError('Datei ist gesperrt.', { retryable: true });
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 const analyzeJob = () => app.services.jobs.list().find((j) => j.type === 'document.analyze')!;
 const analyzedDocId = () => app.services.jobs.activePayloads<{ documentId: string }>('document.analyze')[0]!.documentId;

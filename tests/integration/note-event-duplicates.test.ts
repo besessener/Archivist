@@ -18,7 +18,7 @@ const duplicateInsights = (status: 'open' | 'accepted' | 'rejected' = 'open') =>
 const insightFor = (id: string, status: 'open' | 'accepted' | 'rejected' = 'open') => duplicateInsights(status).find((i) => i.sourceIds.includes(id));
 const accept = (id: string) => app.ok('insights:respond', { response: 'accept', id, confirmed: true, strongConfirmed: false });
 const reject = (id: string) => app.ok('insights:respond', { response: 'reject', id });
-const lastAudit = (action: string) => app.services.audit.list(50).find((a) => a.action === action)!;
+const lastAudit = (action: string) => app.services.audit.list({ limit: 50 }).find((a) => a.action === action)!;
 const check = () => app.services.consistency.run('manual');
 
 /** Records created in the same millisecond have no order; the older one is kept. */

@@ -68,7 +68,7 @@ export class CategoryService {
   }
 
   /** Creates the path including intermediate levels. New main categories only with `confirmed`. */
-  create(rawPath: string, confirmed: boolean): Category {
+  create(rawPath: string, { confirmed }: { confirmed: boolean }): Category {
     const p = sanitizeCategoryPath(rawPath);
     const main = this.needsApproval(p);
     if (main && !confirmed) throw new AppError('permission_error', `Die neue Hauptkategorie „${main}“ muss ausdrücklich bestätigt werden.`);

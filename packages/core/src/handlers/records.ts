@@ -130,7 +130,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'timeline:get': (input) => services.reader.run('timeline', input),
     'search:global': (input) => services.search.search(input.query, { types: input.types, limit: input.limit }),
 
-    'audit:list': (input) => services.audit.list(input.limit, input.onlyUndoable),
+    'audit:list': (input) => services.audit.list({ limit: input.limit, onlyUndoable: input.onlyUndoable }),
     'audit:undo': (input) => services.undo.undo(input.auditId),
   };
 }

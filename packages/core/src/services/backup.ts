@@ -70,7 +70,7 @@ export class BackupService {
   }
 
   /** Creates a backup; the manifest is written last, so an interrupted backup never counts and never pushes a complete one out. */
-  async create(includeArchive: boolean, trigger: 'manual' | 'startup' = 'manual'): Promise<BackupInfo> {
+  async create({ includeArchive, trigger = 'manual' }: { includeArchive: boolean; trigger?: 'manual' | 'startup' }): Promise<BackupInfo> {
     const current = this.settings.get();
     if (includeArchive) await this.assertArchiveReachable(current.archiveRoot);
     // archive file operations are blocked while the archive is copied, so the database snapshot matches the files
@@ -120,7 +120,7 @@ export class BackupService {
       return archiveFiles;
     } catch (err) {
       await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
-      throw fsError('Das Backup ist fehlgeschlagen.', err);
+      throw fsError('Das Backup ist fehlgeschlagen.', { cause: err });
     }
   }
 
@@ -158,7 +158,7 @@ export class BackupService {
         await fsp.mkdir(dir);
         return { name, dir };
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || i >= 100) throw fsError('Das Backup ist fehlgeschlagen.', err);
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || i >= 100) throw fsError('Das Backup ist fehlgeschlagen.', { cause: err });
       }
     }
   }

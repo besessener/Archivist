@@ -110,10 +110,10 @@ export class ArchiveFileOps {
       await fsp.unlink(placement.source);
     } catch (err) {
       const what = withCode('Die ursprüngliche Datei konnte nicht entfernt werden', err);
-      if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
+      if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, { cause: err });
       throw fsError(
         `${what} Die Datei liegt weiterhin am bisherigen Ort; ${linked ? 'ein zusätzlicher Verweis (Hardlink) auf dieselbe Datei' : 'eine zusätzliche Kopie'} liegt noch unter „${dest}“ und muss von Hand entfernt werden.`,
-        err,
+        { cause: err },
       );
     }
     return dest;
@@ -182,7 +182,7 @@ export class ArchiveFileOps {
 
   private async failCopy(err: unknown, dest: string): Promise<never> {
     const what = withCode('Die Datei konnte nicht kopiert werden', err);
-    if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, err);
-    throw fsError(`${what} ${leftoverNote('Eine unvollständige Kopie', dest)}`, err);
+    if (await this.removeCreated(dest)) throw fsError(`${what} Es wurde nichts verändert.`, { cause: err });
+    throw fsError(`${what} ${leftoverNote('Eine unvollständige Kopie', dest)}`, { cause: err });
   }
 }

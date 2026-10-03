@@ -37,7 +37,7 @@ async function reanalyze(scope: ToolScope, refs: readonly string[]): Promise<Too
   const skipped = docs.filter((d) => d.status === 'quarantined');
   const inbox = docs.filter((d) => !archived.includes(d) && !skipped.includes(d));
   const allowLlm = deps.privacy.mode() !== 'local_only';
-  for (const d of inbox) deps.docs.enqueueAnalysis(d.id, allowLlm && deps.privacy.evaluateDocument(d).allowed);
+  for (const d of inbox) deps.docs.enqueueAnalysis(d.id, { allowLlm: allowLlm && deps.privacy.evaluateDocument(d).allowed });
   const rereadJob = archived.length ? deps.docs.enqueueReread(archived.map((d) => d.id)) : null;
   const lines = [
     inbox.length ? `${inbox.length} Dokument(e) im Eingang werden neu analysiert.` : null,

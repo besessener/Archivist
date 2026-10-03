@@ -317,7 +317,7 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
     const b = await decision('Das Protokoll schreibt Anna.', '2026-03-01');
     app.services.decisions.supersede(a.id, b.id, { confirmed: true });
-    const audits = () => app.services.audit.list(100).filter((e) => e.action === 'decision.supersede').length;
+    const audits = () => app.services.audit.list({ limit: 100 }).filter((e) => e.action === 'decision.supersede').length;
     const before = audits();
 
     const again = app.services.decisions.supersede(a.id, b.id, { confirmed: true });

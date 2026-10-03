@@ -114,7 +114,7 @@ export class AuditService {
     };
   }
 
-  list(limit = 200, onlyUndoable = false): AuditEntry[] {
+  list({ limit = 200, onlyUndoable = false }: { limit?: number; onlyUndoable?: boolean } = {}): AuditEntry[] {
     const rows = this.ctx.database.db
       .select()
       .from(auditLog)
