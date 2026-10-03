@@ -1,6 +1,6 @@
 import type { ToolRisk } from '@archivist/shared';
 import type { AgentTool, ToolContext } from './registry';
-import { userAsksForChange, userTeaches } from './security';
+import { userAgrees, userAsksForChange, userTeaches } from './security';
 
 export type GateDecision = { kind: 'run' } | { kind: 'propose'; reason: string } | { kind: 'block'; reason: string };
 
@@ -20,6 +20,12 @@ export function gateDecision({ tool, args, risk, ctx, massThreshold }: GateInput
     return {
       kind: 'block',
       reason: 'Gespeichert wird nur auf ausdrücklichen Wunsch des Benutzers. Frag zuerst mit ask_user nach, ob du dir das merken sollst.',
+    };
+  if (tool.needsConfirmedText?.(args) && !userAgrees(ctx.lastAnswer))
+    return {
+      kind: 'block',
+      reason:
+        'Regeln und Abläufe speicherst du erst nach seiner Bestätigung: Zeige dem Benutzer mit ask_user den genauen Wortlaut (Antworten „Ja“ und „Nein“) und speichere erst nach seinem Ja.',
     };
   // pages from the web are no more trustworthy than documents: without the user's own request nothing changes
   if (ctx.webContent && !ctx.tainted && !userAsked)

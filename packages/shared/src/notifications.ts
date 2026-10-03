@@ -51,7 +51,11 @@ export const AppNotification = z.object({
   priority: Priority,
   affectedEntityIds: z.array(z.string()),
   proposedActions: z.array(
-    z.object({ label: z.string(), kind: z.enum(['open', 'resolve', 'snooze', 'ignore', 'confirm_action', 'navigate']), target: z.string().nullish() }),
+    z.object({
+      label: z.string(),
+      kind: z.enum(['open', 'resolve', 'snooze', 'ignore', 'confirm_action', 'navigate', 'undo_run']),
+      target: z.string().nullish(),
+    }),
   ),
   readAt: IsoDate.nullable(),
   resolvedAt: IsoDate.nullable(),

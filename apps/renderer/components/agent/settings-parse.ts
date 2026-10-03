@@ -1,4 +1,4 @@
-import type { AgentSettings, SettingsPatch } from '@archivist/shared';
+import type { AgentSettings, BackgroundLimitKind, SettingsPatch } from '@archivist/shared';
 
 export type AgentPatch = NonNullable<SettingsPatch['agent']>;
 
@@ -61,4 +61,61 @@ export function parsePrices(rows: PriceRow[]): Parsed<NonNullable<AgentPatch['pr
     table[model] = { input, output, cacheRead, cacheWrite };
   }
   return { ok: true, value: table };
+}
+
+export const LIMIT_KINDS: Array<[BackgroundLimitKind, string]> = [
+  ['inbox', 'Neue Dateien einsortieren'],
+  ['archive_check', 'Archivprüfung auswerten'],
+  ['links', 'Verknüpfungen vorschlagen'],
+  ['workflow', 'Eigene Abläufe (geplant)'],
+];
+
+/** Own limits per background trigger; an empty field means „wie im Hintergrund allgemein“. */
+export type KindLimitsForm = Record<BackgroundLimitKind, LimitsForm>;
+
+export const toKindLimits = (limits: AgentSettings['backgroundKindLimits']): KindLimitsForm =>
+  Object.fromEntries(
+    LIMIT_KINDS.map(([kind]) => {
+      const own = limits[kind];
+      return [
+        kind,
+        {
+          rounds: own?.maxRounds?.toString() ?? '',
+          tokens: own?.maxTokens?.toString() ?? '',
+          minutes: own?.timeoutMs ? String(Math.round((own.timeoutMs / 60_000) * 10) / 10) : '',
+        },
+      ];
+    }),
+  ) as KindLimitsForm;
+
+/** An optional whole number: undefined when empty, null when out of bounds. */
+const optionalInt = (value: string, bounds: { min: number; max: number }) => (value.trim() ? intIn(value, bounds) : undefined);
+
+type OwnLimits = NonNullable<NonNullable<AgentPatch['backgroundKindLimits']>[BackgroundLimitKind]>;
+
+function parseOwnLimits(form: LimitsForm, label: string): Parsed<OwnLimits> {
+  const maxRounds = optionalInt(form.rounds, { min: 1, max: 1000 });
+  const maxTokens = optionalInt(form.tokens, { min: 5_000, max: 50_000_000 });
+  const minutes = optionalInt(form.minutes, { min: 1, max: 1440 });
+  if (maxRounds === null) return fail(`${label}: Runden zwischen 1 und 1000.`);
+  if (maxTokens === null) return fail(`${label}: Tokens zwischen 5.000 und 50.000.000.`);
+  if (minutes === null) return fail(`${label}: Zeitlimit zwischen 1 und 1440 Minuten.`);
+  return {
+    ok: true,
+    value: {
+      ...(maxRounds === undefined ? {} : { maxRounds }),
+      ...(maxTokens === undefined ? {} : { maxTokens }),
+      ...(minutes === undefined ? {} : { timeoutMs: minutes * 60_000 }),
+    },
+  };
+}
+
+export function parseKindLimits(form: KindLimitsForm): Parsed<NonNullable<AgentPatch['backgroundKindLimits']>> {
+  const limits: NonNullable<AgentPatch['backgroundKindLimits']> = {};
+  for (const [kind, label] of LIMIT_KINDS) {
+    const own = parseOwnLimits(form[kind], label);
+    if (!own.ok) return own;
+    if (Object.keys(own.value).length) limits[kind] = own.value;
+  }
+  return { ok: true, value: limits };
 }

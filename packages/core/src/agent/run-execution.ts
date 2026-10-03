@@ -3,6 +3,7 @@ import type { AppContext } from '../context';
 import type { LlmService } from '../services/llm';
 import { truncate } from '../util/text';
 import { createAdapter, detectAdapter } from './adapters';
+import { backgroundLimitsFor } from './background-tasks';
 import { historyWindow } from './history-window';
 import type { MemoryService } from './memory';
 import { costOf, emptyUsage, priceFor } from './pricing';
@@ -30,6 +31,8 @@ export interface ExecuteOptions {
   lastAnswer: string | null;
   signal?: AbortSignal;
   job?: NonNullable<ToolContext['job']>;
+  /** Called with the run's id as soon as it exists. */
+  onStart?: (runId: string) => void;
   /** Secrets masked in the user's message before the run. */
   redactions?: number;
 }
@@ -112,6 +115,7 @@ export class AgentRunExecutor {
       model: adapter.model,
       mode,
     });
+    options.onStart?.(runId);
     const controller = linkedController(options.signal);
     this.deps.progress.track(runId, controller);
     const kind = runKind(options.trigger);
@@ -158,7 +162,7 @@ export class AgentRunExecutor {
       redactions: system.count + (options.redactions ?? 0),
       history: historyWindow(options.history),
       onAppend: (message) => options.persist(ctx.runId, message),
-      limits: kind === 'background' ? agent.backgroundLimits : agent.chatLimits,
+      limits: kind === 'background' ? backgroundLimitsFor(agent, options.trigger) : agent.chatLimits,
       maxRetries: agent.maxRetries,
       retryDelayMs: this.deps.llm.retryDelay,
       effort: agent.effort,

@@ -4,7 +4,7 @@ import type { AppStateService } from '../services/app-state';
 import type { LlmOverrides, LlmService } from '../services/llm';
 import { askUserTool } from './ask-user';
 import { BackgroundSchedule, type EnqueueBackground } from './background-schedule';
-import { backgroundNotification, backgroundTask, type BackgroundKind } from './background-tasks';
+import { backgroundNotification, backgroundTask, handledInbox, type BackgroundKind } from './background-tasks';
 import { executeProposalBatch, type BatchParams } from './batch';
 import { AgentCapabilityService } from './capability';
 import { modeOverrideIn, quickReplies, replyContent } from './chat-reply';
@@ -33,11 +33,21 @@ import { readTools } from './tools/read';
 import { researchTools } from './tools/research';
 import { registerSettingUndo, systemTools } from './tools/system';
 import { registerToolUndo } from './tools/tool-undo';
+import { workflowTools } from './tools/workflows';
 import { undoPreviousRunTool } from './undo-run-tool';
 import type { AgentMessage } from './types';
 import type { PostToConversation } from './watcher';
 
 export type { BackgroundKind } from './background-tasks';
+
+export interface BackgroundOptions {
+  docIds?: string[];
+  signal?: AbortSignal;
+  report?: (progress: number, message: string) => void;
+  /** Run an interrupted attempt of the same job left behind. */
+  resumeFrom?: string | null;
+  onStart?: (runId: string) => void;
+}
 
 export interface AgentChatReply {
   content: string;
@@ -105,6 +115,7 @@ export class AgentService {
       ...linkTools(deps),
       ...linkMethodTools(deps),
       ...learningTools(deps),
+      ...workflowTools(deps),
       ...systemTools(deps),
       ...researchTools(deps),
       ...duplicateTools(deps),
@@ -120,7 +131,7 @@ export class AgentService {
     this.executor = new AgentRunExecutor({ ctx, tools: deps, llm, runs, memory, progress: this.progress, registries: { chat: this.registry, background } });
     this.humanizer = new RefHumanizer(deps);
     this.corrections = new CorrectionLearner({ memory, tools: deps });
-    this.corrections.watchRelocations();
+    this.corrections.watchUserChanges();
   }
 
   // ---------- schedules (#313, #314) ----------
@@ -246,18 +257,15 @@ export class AgentService {
 
   // ---------- background (#313) ----------
   /** Starts a background run; every trigger gets its own task, budget and emergency brake. Returns null if nothing to do. */
-  async runBackground(
-    kind: BackgroundKind,
-    options: { docIds?: string[]; signal?: AbortSignal; report?: (progress: number, message: string) => void } = {},
-  ): Promise<AgentRun | null> {
+  async runBackground(kind: BackgroundKind, options: BackgroundOptions = {}): Promise<AgentRun | null> {
     if (!this.isActive() || !this.llm.canUseInBackground()) return null;
     if (!(await this.ensureCapable())) return null;
     const refs = new RefStore();
-    // documents dealt with in an interrupted run are not paid for again
+    // documents archived in an interrupted run are not paid for again
     const docIds = kind === 'inbox' ? (options.docIds ?? []).filter((id) => this.deps.docs.findRow(id)?.status === 'proposed') : [];
-    const spec = backgroundTask(kind, { refs, docIds, findWorkflow: (id) => this.memory.list('workflow').find((e) => e.id === id && e.enabled) });
+    const alreadyDone = options.resumeFrom ? this.completedSteps(options.resumeFrom) : [];
+    const spec = backgroundTask(kind, { refs, docIds, alreadyDone, findWorkflow: (id) => this.memory.list('workflow').find((e) => e.id === id && e.enabled) });
     if (!spec) return null;
-    if (kind === 'inbox') this.markInboxSeen(docIds);
     const { outcome, ctx, run, proposals } = await this.executor.execute({
       conversationId: null,
       trigger: spec.trigger,
@@ -269,9 +277,12 @@ export class AgentService {
       userText: '',
       lastAnswer: null,
       signal: options.signal,
+      onStart: options.onStart,
       // the run is a job itself: longer steps report to it instead of starting jobs of their own (#304)
       job: { report: options.report ?? (() => undefined) },
     });
+    if (kind === 'inbox')
+      this.markInboxSeen(handledInbox({ docIds, status: outcome.status, stillProposed: (id) => this.deps.docs.findRow(id)?.status === 'proposed' }));
     // tool proposals (e.g. a new topic) count as well; with proposals, the first card is the run's own
     const waiting = proposals + ctx.actionIds.length - (proposals ? 1 : 0);
     if (!ctx.changes.length && !waiting && outcome.status !== 'error') return run;
@@ -280,6 +291,15 @@ export class AgentService {
       backgroundNotification({ runId: run.id, status: outcome.status, error: outcome.error, changes: ctx.changes, waiting, summary }),
     );
     return run;
+  }
+
+  /** What an interrupted run had already done, so the resumed one does not repeat it. */
+  private completedSteps(runId: string): string[] {
+    const steps = this.runs.find(runId)?.steps ?? [];
+    return steps
+      .filter((step) => step.outcome === 'ok')
+      .slice(0, 30)
+      .map((step) => `${step.label}${step.summary ? ` (${step.summary})` : ''}`);
   }
 
   // ---------- proposals (#298) ----------

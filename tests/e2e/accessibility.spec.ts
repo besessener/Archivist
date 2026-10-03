@@ -32,5 +32,31 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
 
       await expectNoSeriousA11yViolations(page, testInfo);
     });
+
+    test('what Archivist has learned (list and rule form) has no serious or critical violations', async ({ on, page }, testInfo) => {
+      const { settings } = on(page);
+      await on(page).navigation.do.open('settings');
+      await settings.do.openLearned();
+      await settings.do.addRule({
+        name: 'Stadtwerke',
+        content: 'Rechnungen nach energie',
+        when: { 'Absender enthält': 'Stadtwerke' },
+        then: { Ablageordner: 'private/energie' },
+      });
+      await expect(settings.locators.memory.entry('Stadtwerke')).toBeVisible();
+      await expectNoSeriousA11yViolations(page, testInfo);
+
+      await settings.locators.memory.edit('Stadtwerke').click();
+      await expect(settings.locators.memory.dialog.field('Absender enthält')).toHaveValue('Stadtwerke');
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
+
+    test('the agent settings with the limits per background task have no serious or critical violations', async ({ on, page }, testInfo) => {
+      await on(page).navigation.do.open('settings');
+      await on(page).settings.do.openAgent();
+      await expect(on(page).settings.locators.agent.kindLimits).toBeVisible();
+
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
   });
 });

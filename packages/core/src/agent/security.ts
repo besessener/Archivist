@@ -39,14 +39,20 @@ export function userAsksForChange(text: string): boolean {
   return USER_ACTION_RE.test(text);
 }
 
-/** Explicit learning instruction of the user („merk dir …“, „ab jetzt immer …“, „regel: …“). */
+/** Explicit teaching intent of the user („merk dir …“, „ab jetzt …“, „Regel: …“); a bare „immer“ is not enough. */
 const LEARN_RE =
-  /\b(?:merk|merke|merken|speicher\w*|notier\w*|regel|immer|künftig|zukünftig|ab\s+jetzt|ab\s+sofort|beibring\w*|bring\w*\s+dir|lern\w*|wenn\s+ich\s+.{1,40}sage)\b/i;
+  /\b(?:merk|merke|merken|speicher\w*|notier\w*|künftig|zukünftig|ab\s+jetzt|ab\s+sofort|beibring\w*|bring\w*\s+dir|lern\w*|wenn\s+ich\s+.{1,40}sage|neue\s+regel|als\s+regel)\b|\bregel\s*:/i;
+/** „… immer nach/in/unter …“ together with a filing verb states a rule; questions never do. */
+const ALWAYS_RE = /\bimmer\b[^.\n?]{0,60}\b(?:nach|in|unter|zu)\b/i;
+const FILING_VERB_RE =
+  /\b(?:abgelegt|ablegen|lege\w*|leg|sortier\w*|einsortier\w*|archivier\w*|verschieb\w*|gehör\w*|kommen?|ordne\w*|zuordn\w*|pack\w*|soll\w*|muss\w*|müssen)\b/i;
 const YES_RE = /^\s*(?:ja|jep|jo|klar|gern|gerne|genau|ok|okay|passt|richtig|bitte|mach\s+das|einverstanden|ja,?\s*bitte)\b/i;
 
 export function userTeaches(text: string, lastAnswer: string | null): boolean {
-  return LEARN_RE.test(text) || userAgrees(lastAnswer);
+  return LEARN_RE.test(text) || statesAlwaysRule(text) || userAgrees(lastAnswer);
 }
+
+const statesAlwaysRule = (text: string) => !text.includes('?') && ALWAYS_RE.test(text) && FILING_VERB_RE.test(text);
 
 /** A „ja“ to the agent's previous question. */
 export function userAgrees(lastAnswer: string | null): boolean {

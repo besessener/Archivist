@@ -182,6 +182,11 @@ export class AgentRunService {
     return this.map(row);
   }
 
+  find(id: string): AgentRun | undefined {
+    const row = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
+    return row ? this.map(row) : undefined;
+  }
+
   list(filter: { trigger?: 'chat' | 'background'; status?: AgentRunStatus; conversationId?: string; limit?: number } = {}): AgentRun[] {
     const conditions = [
       triggerCondition(filter.trigger),
