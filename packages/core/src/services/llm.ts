@@ -16,7 +16,6 @@ import { outputLimitFor } from './llm/output-limits';
 import { requestEmbeddings } from './llm/embeddings';
 import { runConnectionTest, runStructuredTest } from './llm/connection-tests';
 import { preparedInput, previewOf } from './llm/prompt-text';
-import type { StrictSchema } from './llm/responses';
 import { ResponsesRunner } from './llm/responses-runner';
 import { waitFor } from './llm/retry-wait';
 import { structuredAnswer } from './llm/structured';
@@ -25,36 +24,13 @@ import { TransmissionLog, type Transmission } from './llm/transmission-log';
 import { UsageTally } from './llm/usage';
 
 export type { FetchLike } from '../agent/adapters/common';
-
-export interface LlmRequest {
-  instructions: string;
-  input: string;
-  purpose: string;
-  documentIds?: string[];
-  json?: boolean;
-  /** What the log shows instead of the start of the prompt, e.g. the question and the source titles; masked like the request. */
-  preview?: string;
-  /** only for the explicit connection test (sends fixed text only) */
-  bypassPrivacy?: boolean;
-  maxOutputTokens?: number;
-  /** Structured Outputs: the strict schema sent as `text.format` (only with `json`). */
-  jsonSchema?: StrictSchema | null;
-  /** Appended after the input was cut to the size limit, so it always reaches the model (e.g. the correction note). */
-  appendix?: string;
-  /** Cancellation by the user: the running request is ended and not retried. */
-  signal?: AbortSignal;
-}
+export type { LlmOverrides, LlmRequest } from './llm/request-types';
+import type { LlmOverrides, LlmRequest } from './llm/request-types';
 
 export { abortedError } from '../util/llm-errors';
 
 /** Every LLM request inside `llmCancelScope.run(signal, …)` uses this signal unless it brings its own (also nested services). */
 export const llmCancelScope = new AsyncLocalStorage<AbortSignal>();
-
-export interface LlmOverrides {
-  baseUrl?: string;
-  model?: string;
-  apiKey?: string;
-}
 
 interface Connection {
   baseUrl: string;

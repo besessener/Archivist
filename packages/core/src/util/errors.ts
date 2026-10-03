@@ -1,5 +1,6 @@
 import type { AppErrorInfo, ErrorCategory } from '@archivist/shared';
 import { ZodError } from 'zod';
+import { MAX_RETRY_AFTER_MS } from './retry-after';
 
 export interface AppErrorOptions {
   retryable?: boolean;
@@ -24,8 +25,10 @@ export class AppError extends Error {
   get retryable(): boolean {
     return this.options.retryable ?? false;
   }
+  /** The wait a server asked for (Retry-After), at most 5 minutes; undefined if it named none. */
   get retryAfterMs(): number | undefined {
-    return this.options.retryAfterMs;
+    const { retryAfterMs } = this.options;
+    return retryAfterMs === undefined ? undefined : Math.min(Math.max(0, retryAfterMs), MAX_RETRY_AFTER_MS);
   }
 }
 
