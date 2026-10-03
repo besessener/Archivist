@@ -54,7 +54,7 @@ export function createBaseServices(options: CreateServicesOptions) {
 
   const logger = new Logger(paths.logs, settings.get().logs.level);
   const database = new DatabaseService(path.join(paths.database, 'archivist.db'), logger);
-  const migration: MigrationStatus = database.migrate(options.migrationsFolder);
+  const migration: MigrationStatus = database.migrate(options.migrationsFolder, paths.backups);
   logger.info('app', 'Database ready', { migrations: migration });
   const ctx: AppContext = { paths, database, logger, events };
 
