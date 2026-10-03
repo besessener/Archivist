@@ -134,7 +134,9 @@ export class ArchiveReplies {
     const insights = [...list.map((c) => this.deps.insights.byDedupeKey(`contradiction:${c.id}`)), ...outdated];
     const actions = insights.flatMap((insight) => (insight?.recommendedActionId ? [this.deps.actions.get(insight.recommendedActionId)] : []));
     const sections = [
-      list.length ? `Ich habe ${list.length} mögliche(n) Widerspruch/Widersprüche gefunden:\n\n${list.map((c) => `**${c.title}**\n${c.description}`).join('\n\n')}` : '',
+      list.length
+        ? `Ich habe ${list.length} mögliche(n) Widerspruch/Widersprüche gefunden:\n\n${list.map((c) => `**${c.title}**\n${c.description}`).join('\n\n')}`
+        : '',
       outdated.length
         ? `Möglicherweise überholte Entscheidungen (${outdated.length}):\n\n${outdated.map((i) => `**${i.title}**\n${i.explanation}`).join('\n\n')}`
         : '',
