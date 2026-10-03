@@ -179,6 +179,47 @@ describe('Archiving: the inbox copy cannot be removed after the commit', () => {
   });
 });
 
+describe('Undoing an archiving with partial failures', () => {
+  it('database error: the archive file stays and a second undo accepts the already restored inbox copy', async () => {
+    const { id } = await imported('z.txt', 'Dokument Z mit Inhalt');
+    const staged = row(id).stagedPath!;
+    const res = await archive(id);
+    const auditId = res.items[0]!.auditId!;
+    const revert = vi.spyOn(app.services.graph, 'revertRelationChanges').mockImplementationOnce(() => {
+      throw new Error('SQLITE_IOERR: disk I/O error');
+    });
+
+    const failed = await app.call('documents:undoArchive', { auditId });
+
+    expect(failed.ok).toBe(false);
+    expect(revert).toHaveBeenCalled();
+    expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(true);
+    expect(row(id).status).toBe('archived');
+
+    const retry = await app.ok('documents:undoArchive', { auditId });
+
+    expect(retry).toMatchObject({ undone: true, conflicts: [] });
+    expect(row(id)).toMatchObject({ status: 'proposed', stagedPath: staged });
+    expect(fs.readFileSync(staged, 'utf8')).toBe('Dokument Z mit Inhalt');
+    expect(fs.existsSync(res.items[0]!.targetPath!)).toBe(false);
+  });
+
+  it('archive file locked: the undo still counts and the message names the leftover file', async () => {
+    const { id } = await imported('w.txt', 'Dokument W mit Inhalt');
+    const res = await archive(id);
+    const target = res.items[0]!.targetPath!;
+    lockForUnlink((p) => p === target);
+
+    const undo = await app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
+
+    expect(undo).toMatchObject({ undone: true });
+    expect(undo.message).toContain(target);
+    expect(row(id).status).toBe('proposed');
+    expect(fs.existsSync(target)).toBe(true);
+    expect(fs.readFileSync(row(id).stagedPath!, 'utf8')).toBe('Dokument W mit Inhalt');
+  });
+});
+
 describe('Archiving: the copy aborts midway', () => {
   it('leaves no partial copy in the archive and reports „nichts verändert“', async () => {
     const { id } = await imported('gross.txt', 'Ein großes Dokument, das nicht ganz passt');

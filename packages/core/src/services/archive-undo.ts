@@ -6,7 +6,7 @@ import { documents } from '../db/schema';
 import { fsError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
-import { hasChecksum, pruneEmptyDirs } from './archive-files';
+import { hasChecksum, leftoverNote, pruneEmptyDirs } from './archive-files';
 import { archivePathOf, archiveRootOf, type ArchiveUndoData } from './archive-model';
 import type { ArchiveDeps } from './archive-deps';
 
@@ -62,8 +62,10 @@ export class ArchiveUndo {
     const abs = d.archiveRel ? archivePathOf(archiveRootOf(this.deps), d.archiveRel) : null;
     if (!abs || !fs.existsSync(abs)) conflicts.push('Die archivierte Datei fehlt am erwarteten Ort.');
     else if ((await sha256File(abs)) !== d.sha256) conflicts.push('Die archivierte Datei wurde seit der Archivierung verändert.');
-    if (d.removedStaged && d.stagedPath && fs.existsSync(d.stagedPath)) conflicts.push(`Am Eingangsort existiert bereits eine Datei: ${d.stagedPath}`);
-    if (d.removedSource && d.sourcePath) conflicts.push(...sourceConflicts(d.sourcePath));
+    // a copy with the archived checksum is a restore from an interrupted undo, not a foreign file
+    if (d.removedStaged && d.stagedPath && fs.existsSync(d.stagedPath) && !(await hasChecksum(d.stagedPath, d.sha256)))
+      conflicts.push(`Am Eingangsort existiert bereits eine Datei: ${d.stagedPath}`);
+    if (d.removedSource && d.sourcePath && !(await hasChecksum(d.sourcePath, d.sha256))) conflicts.push(...sourceConflicts(d.sourcePath));
     if (!(await otherCopyRemains(d))) conflicts.push(...originConflicts(d));
     return conflicts;
   }
@@ -91,12 +93,14 @@ export class ArchiveUndo {
     await this.deps.docs.indexDocument(d.documentId);
     this.deps.ctx.events.emit('document:unarchived', { documentId: d.documentId });
     this.deps.ctx.events.changed('documents', 'knowledge', 'status');
-    return undoneMessage(d, putBackPath);
+    const leftover = hasArchiveFile(d) && abs ? await this.removeArchiveFile(abs) : null;
+    return [undoneMessage(d, putBackPath), leftover].filter(Boolean).join(' ');
   }
 
-  /** Restores removed copies (or puts the only copy back to its origin), then removes the archive file; returns the put-back path. */
+  /** Restores removed copies (or puts the only copy back to its origin); the archive file stays until the database is committed. */
   private async restoreFiles(d: ArchiveUndoData, abs: string): Promise<string | null> {
     const restoreTo = async (dest: string) => {
+      if (await hasChecksum(dest, d.sha256)) return;
       await fsp.copyFile(abs, dest, fs.constants.COPYFILE_EXCL);
       await verifyRestored(dest, d.sha256);
     };
@@ -109,9 +113,19 @@ export class ArchiveUndo {
       putBackPath = await this.deps.files.copyExclusive({ source: abs, dir: path.dirname(origin), fileName: path.basename(origin) });
       await verifyRestored(putBackPath, d.sha256);
     }
-    await fsp.unlink(abs);
-    await pruneEmptyDirs(archiveRootOf(this.deps), path.dirname(abs));
     return putBackPath;
+  }
+
+  /** Removes the archive file after the commit; a file that cannot go is reported, since the document no longer refers to it. */
+  private async removeArchiveFile(abs: string): Promise<string | null> {
+    try {
+      await fsp.unlink(abs);
+    } catch (err) {
+      this.deps.ctx.logger.error('archive', 'Could not remove the archive file after undo', { path: abs, error: err });
+      return leftoverNote('Die Archivdatei', abs);
+    }
+    await pruneEmptyDirs(archiveRootOf(this.deps), path.dirname(abs));
+    return null;
   }
 }
 
