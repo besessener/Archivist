@@ -39,6 +39,7 @@ describe('LLM connection', () => {
     const r = await app.ok('llm:testConnection', {});
     expect(r.ok).toBe(true);
     expect(r.modelReply).toBe('OK');
+    expect(r.structured).toEqual({ ok: true, message: expect.any(String) });
     // the test also checks native tool calling with a result round trip (#296)
     expect(r.agent).toMatchObject({ adapter: 'openai', toolCalling: true });
     app.llm.toolCalling = false;
@@ -47,6 +48,13 @@ describe('LLM connection', () => {
     expect(without.agent?.message).toMatch(/kein Werkzeug/);
     const tx = await app.ok('llm:transmissions', { limit: 10 });
     expect(tx.map((t) => t.purpose)).toEqual(expect.arrayContaining(['Verbindungstest', 'Verbindungstest (Werkzeuge)']));
+  });
+
+  it('reports a failing structured answer separately from the working plain connection (#265)', async () => {
+    app.llm.on('ConnectionTest', () => ({ unexpected: true }));
+    const r = await app.ok('llm:testConnection', {});
+    expect(r.ok).toBe(true);
+    expect(r.structured).toMatchObject({ ok: false, message: expect.stringMatching(/Format/) });
   });
 
   it('reports an unreachable endpoint understandably', async () => {

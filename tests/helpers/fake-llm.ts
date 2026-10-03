@@ -246,9 +246,14 @@ export class FakeLlm {
     return typeof answer === 'string' ? answer : JSON.stringify(answer);
   }
 
+  private defaultAnswer(schema: string): unknown {
+    if (schema === 'ConnectionTest') return { ok: true };
+    return schema === 'plain' ? 'OK' : { error: `no responder for ${schema}` };
+  }
+
   private async responderAnswer(schema: string, input: string, body: Body): Promise<unknown> {
     const responder = this.responders.get(schema);
-    if (!responder) return schema === 'plain' ? 'OK' : { error: `no responder for ${schema}` };
+    if (!responder) return this.defaultAnswer(schema);
     const answer = await responder(schema, input.replace(/Bisheriger Verlauf[\s\S]*?\n\n(?=Nachricht des Benutzers:)/, ''), body);
     // tests may answer ChatIntent with a single intent; the analysis expects {intents: [...]}
     return schema === 'ChatIntent' && answer && typeof answer === 'object' && 'intent' in answer ? { intents: [answer] } : answer;

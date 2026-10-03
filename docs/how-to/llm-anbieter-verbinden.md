@@ -7,7 +7,7 @@ Archivist spricht zwei Schnittstellen: die OpenAI-kompatible **Responses API** (
 1. Öffne **Einstellungen → KI** (beim ersten Start: Einrichtungsdialog).
 2. Trag **Base URL**, **API-Key** und **Modell** ein. Der Modellname muss exakt dem Deployment-Namen entsprechen.
 3. Optional: **Denktiefe (Reasoning)**, Timeout, maximale Eingabegröße und ein **Embedding-Modell** (leer lassen für die lokale Ähnlichkeitssuche, siehe [Suche](../explanation/suche.md)).
-4. Klick auf **Verbindung testen**. Der Test prüft einen echten Werkzeugaufruf mit Rückgabe und Streaming.
+4. Klick auf **Verbindung testen**. Der Test prüft eine Textantwort, eine strukturierte Antwort und einen echten Werkzeugaufruf mit Rückgabe und Streaming. Scheitern nur die strukturierten Antworten, zeigt Archivist das getrennt an.
 
 Beispiele für die Base URL:
 

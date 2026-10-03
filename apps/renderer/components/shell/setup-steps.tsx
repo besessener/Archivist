@@ -1,6 +1,7 @@
 'use client';
 
 import { Archive, CheckCircle2, FolderPlus, Loader2, PlugZap, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
+import { connectionTitle, connectionTone } from '@/lib/labels';
 import type { IpcOutput } from '@archivist/shared';
 import { AgentCapabilityNote } from '@/components/agent/capability-note';
 import { Field, Notice } from '@/components/common/states';
@@ -178,10 +179,11 @@ export function LlmStep({ form, test, testing, onTest }: { form: LlmForm; test: 
 
 function ConnectionTestResult({ test, onApplyBaseUrl }: { test: ConnectionTest; onApplyBaseUrl: (baseUrl: string) => void }) {
   return (
-    <Notice tone={test.ok ? 'info' : 'danger'} title={test.ok ? 'Verbindung erfolgreich' : 'Verbindung fehlgeschlagen'} data-testid="setup-test-result">
+    <Notice tone={connectionTone(test)} title={connectionTitle(test)} data-testid="setup-test-result">
       <p>{test.message}</p>
       {test.ok && test.latencyMs !== null && <p className="mt-1 text-xs">Antwortzeit: {test.latencyMs} ms</p>}
       {!test.ok && test.error && <p className="mt-1 text-xs">{test.error.message}</p>}
+      {test.ok && test.structured && !test.structured.ok && <p className="mt-1 text-xs">{test.structured.message}</p>}
       {test.ok && test.agent && <AgentCapabilityNote capability={test.agent} onApplyBaseUrl={onApplyBaseUrl} testId="setup-agent-capability" />}
     </Notice>
   );
