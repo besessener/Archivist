@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { deadlineTitlePrefix, reminderDay } from '../../packages/core/src/agent/tools/research/deadline-coverage';
 import { DEADLINE_LABEL, findDeadlines, type DeadlineOptions } from '../../packages/core/src/agent/tools/research/deadlines';
 
 const TODAY = new Date(2026, 9, 2);
@@ -170,5 +171,19 @@ describe('the list of deadlines', () => {
       ['garantie', '2028-03-15'],
       ['kuendigung', null],
     ]);
+  });
+});
+
+describe('deadline reminders', () => {
+  const notice = { kind: 'kuendigung', date: '2026-12-31' } as const;
+
+  it('puts the reminder the lead time before the deadline, but not before today', () => {
+    expect(reminderDay({ deadline: notice, leadDays: 14, today: '2026-10-02' })).toBe('2026-12-17');
+    expect(reminderDay({ deadline: notice, leadDays: 365, today: '2026-10-02' })).toBe('2026-10-02');
+    expect(reminderDay({ deadline: notice, leadDays: 1, today: '2026-12-31' })).toBe('2026-12-31');
+  });
+
+  it('keys a deadline by its kind and German date', () => {
+    expect(deadlineTitlePrefix(notice)).toBe('Kündigungsfrist 31.12.2026');
   });
 });
