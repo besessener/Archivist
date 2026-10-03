@@ -30,6 +30,7 @@ export const RECONCILED_INSIGHTS = [
   'missing-category',
   'dup:',
   'missing-file:',
+  'changed-file:',
   'missing-source:',
   'misplaced:',
   'incomplete-decision:',

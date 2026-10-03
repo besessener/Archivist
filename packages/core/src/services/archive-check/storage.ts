@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { CheckedDocument } from './documents';
-import { fileSizes, filesExist } from './files';
+import { fileSizes } from './files';
 import { yieldPeriodically, type CheckRun } from './findings';
 
 /** Re-reads an index-only document whose original changed; true if it was refreshed. */
@@ -8,20 +8,20 @@ export type IndexRefresher = (id: string, signal?: AbortSignal) => Promise<boole
 
 const absolutePath = (root: string, relativePath: string) => path.join(root, ...relativePath.split('/'));
 
-/** Storage location vs. classification: archive files that are missing or lie outside their category's folder. */
+/** Storage location vs. classification: archive files that are missing, changed in size or outside their category's folder. */
 export async function checkStorage(run: CheckRun, archived: CheckedDocument[]): Promise<void> {
   const { deps, findings } = run;
   const root = deps.settings.get().archiveRoot;
   const placed = archived.filter((document) => document.archiveRelPath);
   // asynchronous checks in batches instead of one existsSync per document on the main thread (#215)
-  const exists = await filesExist(
+  const sizes = await fileSizes(
     placed.map((document) => absolutePath(root, document.archiveRelPath!)),
     run.signal,
   );
   for (const [i, document] of placed.entries()) {
     await yieldPeriodically(i);
     const relativePath = document.archiveRelPath!;
-    if (!exists[i]) {
+    if (sizes[i] === null) {
       findings.insightKeys.add(`missing-file:${document.id}`);
       deps.insights.upsert({
         kind: 'misplaced_file',
@@ -30,6 +30,17 @@ export async function checkStorage(run: CheckRun, archived: CheckedDocument[]): 
         confidence: 0.95,
         affected: [{ type: 'document', id: document.id, label: document.title }],
         dedupeKey: `missing-file:${document.id}`,
+      });
+      findings.count('misplaced_file');
+    } else if (document.status === 'archived' && sizes[i] !== document.size) {
+      findings.insightKeys.add(`changed-file:${document.id}`);
+      deps.insights.upsert({
+        kind: 'misplaced_file',
+        title: `Archivdatei verändert: ${document.title}`,
+        explanation: `Die Datei ${absolutePath(root, relativePath)} hat eine andere Größe als beim Archivieren (${sizes[i]} statt ${document.size} Byte). Sie wurde möglicherweise überschrieben oder beschädigt; „Archiv prüfen“ vergleicht die Prüfsumme.`,
+        confidence: 0.9,
+        affected: [{ type: 'document', id: document.id, label: document.title }],
+        dedupeKey: `changed-file:${document.id}`,
       });
       findings.count('misplaced_file');
     } else if (document.categoryPath && !path.dirname(relativePath).replace(/\\/g, '/').startsWith(document.categoryPath)) {

@@ -12,16 +12,6 @@ async function inBatches<T>(files: string[], request: { probe: (file: string) =>
   return out;
 }
 
-/** Whether the files exist. */
-export function filesExist(files: string[], signal?: AbortSignal): Promise<boolean[]> {
-  const probe = (file: string) =>
-    fs.promises.access(file).then(
-      () => true,
-      () => false,
-    );
-  return inBatches(files, { probe, signal });
-}
-
 /** Size of each file, or null if it does not exist. */
 export function fileSizes(files: string[], signal?: AbortSignal): Promise<(number | null)[]> {
   const probe = (file: string) =>
