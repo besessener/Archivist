@@ -6,7 +6,7 @@ import { newId } from '../util/ids';
 import { chunkText, normalizeName, searchStem, tokenize, truncate } from '../util/text';
 import type { WorkerPool } from '../workers/pool';
 import type { EmbeddingService, EmbedResult } from './embedding';
-import { LOCAL_MODEL } from './embedding';
+import { LOCAL_MODEL, localEmbed } from './embedding';
 import { fuse, mergeVectorHits, type Hit } from './search-fusion';
 import { keywordPass, termCoverage } from './search-keywords';
 import { VectorIndex } from './vector-index';
@@ -94,14 +94,17 @@ export class SearchService {
       { allowRemote: input.allowRemoteEmbedding ?? false, purpose: 'Suchindex', documentIds: input.type === 'document' ? [input.id] : [] },
     );
     const database = this.ctx.database;
-    const written: Array<{ id: string; vector: Float32Array | undefined }> = [];
+    const written: Array<{ id: string; vector: Float32Array | undefined; localVector?: Float32Array }> = [];
+    const remote = embedded.model !== LOCAL_MODEL;
     database.transaction(() => {
       this.deleteRows(input.id);
       const insertFts = this.sqlite.prepare('INSERT INTO search_fts (rowid, chunk_id, entity_id, entity_type, title, content) VALUES (?, ?, ?, ?, ?, ?)');
       parts.forEach((text, index) => {
         const chunkId = newId();
         const vector = embedded.vectors[index];
-        written.push({ id: chunkId, vector });
+        // a remote vector gets a local one next to it: without the endpoint the entry stays findable (#173)
+        const localVector = remote ? localEmbed(`${input.title}\n${text}`) : undefined;
+        written.push({ id: chunkId, vector, localVector });
         const { lastInsertRowid } = database.db
           .insert(chunks)
           .values({
@@ -112,6 +115,7 @@ export class SearchService {
             text,
             embedding: vector ? Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength) : null,
             embeddingModel: embedded.model,
+            localEmbedding: localVector ? Buffer.from(localVector.buffer, localVector.byteOffset, localVector.byteLength) : null,
           })
           .run();
         insertFts.run(lastInsertRowid, chunkId, input.id, input.type, input.title, text);
@@ -134,7 +138,7 @@ export class SearchService {
   }
 
   /**
-   * Entries whose vectors came from another model than `model` and that a re-index can move to it (#173): documents may change
+   * Entries whose vectors came from another model than `model` (or lack the local vector next to a remote one) and that a re-index can fix (#173): documents may change
    * between local and remote, every other type only leaves an outdated remote model (it is always embedded locally otherwise).
    */
   entriesWithOtherModel(model: string): Array<{ id: string; type: EntityType }> {
@@ -142,9 +146,13 @@ export class SearchService {
       .selectDistinct({ id: chunks.entityId, type: chunks.entityType })
       .from(chunks)
       .where(
-        and(
-          or(isNull(chunks.embeddingModel), ne(chunks.embeddingModel, model)),
-          or(eq(chunks.entityType, 'document'), and(isNotNull(chunks.embeddingModel), ne(chunks.embeddingModel, LOCAL_MODEL))),
+        or(
+          and(
+            or(isNull(chunks.embeddingModel), ne(chunks.embeddingModel, model)),
+            or(eq(chunks.entityType, 'document'), and(isNotNull(chunks.embeddingModel), ne(chunks.embeddingModel, LOCAL_MODEL))),
+          ),
+          // remote vectors from before local ones were kept next to them
+          and(isNotNull(chunks.embeddingModel), ne(chunks.embeddingModel, LOCAL_MODEL), isNull(chunks.localEmbedding)),
         ),
       )
       .all()
