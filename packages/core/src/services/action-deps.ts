@@ -4,6 +4,7 @@ import type { ArchiveService } from './archive';
 import type { AuditService } from './audit';
 import type { DecisionService } from './decisions';
 import type { DocumentService } from './documents';
+import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { OpenItemService } from './open-items';
 import type { ReminderService } from './reminders';
@@ -60,5 +61,6 @@ export interface ActionDeps {
   reminders: ReminderService;
   audit: AuditService;
   undo: UndoService;
+  jobs: Pick<JobQueueService, 'enqueue' | 'waitFor'>;
   agentBatch?: AgentBatchExecutor;
 }

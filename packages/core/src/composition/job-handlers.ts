@@ -1,5 +1,8 @@
+import { ACTION_EXECUTE_JOB } from '../services/actions';
+import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
 import { DOCUMENT_REREAD_JOB } from '../services/documents';
 import { isJobCancelled, type JobContext } from '../services/jobs';
+import { toErrorInfo } from '../util/errors';
 import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
 
@@ -86,7 +89,7 @@ async function rereadArchived({ documents, ctx }: JobServices, job: JobContext<{
 
 /** Job handlers for documents, the scanner, background agent runs (#313) and the archive check. */
 export function registerJobHandlers(services: JobServices): void {
-  const { jobs, agent, archive, consistency } = services;
+  const { jobs, agent, archive, consistency, contradictions, actions } = services;
   registerDocumentAnalysis(services);
   registerScannerJobs(services);
   jobs.register<{ documentIds: string[] }>(DOCUMENT_REREAD_JOB, { handler: (job) => rereadArchived(services, job) });
@@ -101,6 +104,23 @@ export function registerJobHandlers(services: JobServices): void {
         onStart: (runId) => job.saveCheckpoint({ runId }),
       });
       return { summary: run ? `${run.status}: ${run.steps.length} Schritt(e)` : 'nichts zu tun', runId: run?.id ?? null };
+    },
+  });
+  jobs.register<{ actionId: string; overrides: Record<string, unknown> }>(ACTION_EXECUTE_JOB, {
+    handler: async (job) => {
+      await actions.executeApproved(job.payload.actionId, job.payload.overrides);
+      return { summary: actions.get(job.payload.actionId).result ?? 'ausgeführt' };
+    },
+    hooks: {
+      onFailed: (job, error) => actions.markNotExecuted(job.payload.actionId, toErrorInfo(error).message),
+      onCancelled: (job) => actions.markNotExecuted(job.payload.actionId, 'Abgebrochen, bevor die Aktion ausgeführt wurde.'),
+    },
+  });
+  jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {
+    handler: async (job) => {
+      job.report(null, 'Prüfe Entscheidungen auf Widersprüche');
+      const found = await contradictions.scanAll(job.signal);
+      return { summary: found.length === 1 ? '1 möglicher Widerspruch' : `${found.length} mögliche Widersprüche` };
     },
   });
   jobs.register<{ trigger?: string }>('consistency.check', {

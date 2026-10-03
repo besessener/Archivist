@@ -56,7 +56,6 @@ export interface PendingLookup {
 /** The open follow-up question in the words of the intent prompt. */
 export function pendingHint(pending: Pending | null | undefined, lookup: PendingLookup): string {
   if (!pending) return 'keine';
-  const openItemTitle = (id: string) => lookup.capture.openItemOrNull(id)?.title ?? '?';
   switch (pending.kind) {
     case 'decision':
       return decisionHint(pending, lookup.decisions.get(pending.decisionId).title);
@@ -64,16 +63,13 @@ export function pendingHint(pending: Pending | null | undefined, lookup: Pending
       return `Der Agent hat gefragt, WANN er an „${pending.title}“ erinnern soll. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum wie „31.10.“ oder „nächsten Montag“ (dann intent=${pending.snooze ? 'reminder_snooze' : 'reminder_create'}, reminder.remindAt als ISO-Datum, ohne eigenen Titel).`;
     case 'event':
       return `Der Agent hat gefragt, AN WELCHEM DATUM das Ereignis „${pending.title}“ stattfand. ${PENDING_ONLY_IF_FITS} Eine Antwort ist meist nur ein Datum (dann intent=event_record, event.occurredAt als ISO-Datum, ohne eigenen Titel). Ein anderes Ereignis mit eigenem Titel ist keine Antwort.`;
+    // choices are answered before the classification (flow.ts), so they never reach the prompt
     case 'proposal_choice':
-      return 'keine';
     case 'subject_choice':
-      return `Der Agent hat gefragt, welches Thema gemeint ist (${pending.names.map((n) => `„${n}“`).join(', ')}); die Antwort wertet er selbst aus.`;
     case 'open_item_duplicate':
-      return `Der Agent hat gefragt, ob der bestehende offene Punkt „${openItemTitle(pending.existingId)}“ ergänzt oder ein neuer angelegt werden soll; die Antwort wertet er selbst aus.`;
     case 'open_item_choice':
-      return `Der Agent hat gefragt, welcher offene Punkt gemeint ist (${pending.candidateIds.map((id) => `„${openItemTitle(id)}“`).join(', ')}); die Antwort wertet er selbst aus.`;
     case 'supersede_choice':
-      return `Der Agent hat gefragt, welche ältere Entscheidung durch „${lookup.decisions.get(pending.newDecisionId).title}“ ersetzt wird; die Antwort wertet er selbst aus.`;
+      return 'keine';
     case 'confirm_save':
       return `Der Agent hat gefragt, ob „${truncate(pending.intent.segment ?? pending.text, 140)}“ als Entscheidung, als Ereignis, als Notiz oder gar nicht gespeichert werden soll. Beantwortet die Nachricht das (auch frei formuliert, z. B. „lieber als Termin“, „keine Entscheidung, nur merken“), setze saveAs (decision, event, note oder nothing) und liefere für die Antwort selbst keine weitere Absicht. Andere Anliegen in der Nachricht ordnest du wie gewohnt ein; passt die Nachricht nicht zur Rückfrage, setze saveAs=null.`;
     case 'open_item':

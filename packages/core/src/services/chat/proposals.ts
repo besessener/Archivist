@@ -94,6 +94,7 @@ function chosenIndex(text: string, open: StoredAgentAction[]): number {
 
 function approvedText(action: StoredAgentAction, resolved: StoredAgentAction): string {
   if (resolved.status === 'executed') return `Erledigt: ${action.label}. ${resolved.result ?? ''}`;
+  if (resolved.status === 'approved') return `Läuft im Hintergrund: ${action.label}. Den Stand siehst du unter Jobs, das Ergebnis erscheint an der Karte.`;
   if (resolved.status === 'withdrawn')
     return `${resolved.result ?? 'Der Vorschlag ist nicht mehr aktuell.'} Frag mich gern erneut, dann prüfe ich die aktuelle Lage.`;
   return `Die Aktion konnte nicht ausgeführt werden: ${resolved.result ?? 'unbekannter Fehler'}`;

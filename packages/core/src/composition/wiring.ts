@@ -20,6 +20,7 @@ export function wireServices(services: WiredServices & { agent: AgentService }, 
     reminders: services.reminders,
     audit: services.audit,
     undo: services.undo,
+    jobs: services.jobs,
   });
   insights.wire({ actions, reminders: services.reminders });
   contradictions.wire({ actions });
