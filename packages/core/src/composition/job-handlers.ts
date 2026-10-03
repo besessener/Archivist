@@ -4,7 +4,7 @@ import { ACTION_EXECUTE_JOB } from '../services/actions';
 import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
 import { DOCUMENT_REREAD_JOB } from '../services/documents';
 import { isJobCancelled, type JobContext } from '../services/jobs';
-import { toErrorInfo } from '../util/errors';
+import { AppError, toErrorInfo } from '../util/errors';
 import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
 
@@ -89,6 +89,14 @@ async function rereadArchived({ documents, ctx }: JobServices, job: JobContext<{
   return { reread: done - failed.length, failed };
 }
 
+/** A big action's job (#254) succeeds only for an executed action; a failed or no longer approved one fails it with its reason. */
+function executedAction({ actions, insights }: JobServices, actionId: string): { summary: string } {
+  const action = actions.get(actionId);
+  if (action.status !== 'executed') throw new AppError('validation_error', action.result ?? 'Die Aktion wurde nicht ausgeführt.');
+  insights.acceptExecuted(actionId);
+  return { summary: action.result ?? 'ausgeführt' };
+}
+
 /** Job handlers for documents, the scanner, background agent runs (#313) and the archive check. */
 export function registerJobHandlers(services: JobServices): void {
   const { jobs, agent, archive, consistency, contradictions, actions, search, embedding } = services;
@@ -119,7 +127,7 @@ export function registerJobHandlers(services: JobServices): void {
   jobs.register<{ actionId: string; overrides: Record<string, unknown> }>(ACTION_EXECUTE_JOB, {
     handler: async (job) => {
       await actions.executeApproved(job.payload.actionId, job.payload.overrides);
-      return { summary: actions.get(job.payload.actionId).result ?? 'ausgeführt' };
+      return executedAction(services, job.payload.actionId);
     },
     hooks: {
       onFailed: (job, error) => actions.markNotExecuted(job.payload.actionId, toErrorInfo(error).message),

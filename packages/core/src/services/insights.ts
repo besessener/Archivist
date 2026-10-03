@@ -1,5 +1,5 @@
 import type { EntityRef, Insight, InsightChoice, InsightKind } from '@archivist/shared';
-import { desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { insights } from '../db/schema';
 import { AppError } from '../util/errors';
@@ -247,6 +247,16 @@ export class InsightService {
   /** Accept: executes the recommended action (only with confirmation) and marks the insight as accepted. */
   async accept(id: string, opts: { strongConfirmed?: boolean }): Promise<Insight> {
     return this.answers.accept(id, opts);
+  }
+
+  /** The job of a big recommended action (#254) executed it: the insight still waiting for that outcome is accepted. */
+  acceptExecuted(actionId: string): void {
+    const accepted = this.db
+      .update(insights)
+      .set({ status: 'accepted', updatedAt: nowIso() })
+      .where(and(eq(insights.recommendedActionId, actionId), inArray(insights.status, ['open', 'snoozed'])))
+      .run().changes;
+    if (accepted) this.ctx.events.changed('insights', 'status');
   }
 
   async reject(id: string): Promise<Insight> {

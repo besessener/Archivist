@@ -242,6 +242,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Ein Scan desselben Ordners bzw. eine Archivprüfung wird nicht doppelt eingereiht.
 - Als Job laufen auch die Widerspruchsprüfung aus dem Chat, das Archivieren oder Umlagern ab 10 Dokumenten nach deiner Bestätigung (die Karte zeigt „Wird ausgeführt“, bis das Ergebnis da ist) und das Neu-Einbetten aller Einträge, wenn du das Embedding-Modell wechselst. Kurze Läufe antworten noch im selben Zug.
 - Abgeschlossene Jobs werden nach 30 Tagen entfernt.
+- Schlägt eine Aktion fehl, die als Job läuft, schlägt auch der Job mit ihrem Grund fehl, auch beim Wiederholen. Ein Hinweis, dessen Empfehlung so läuft, bleibt offen, bis sie ausgeführt ist; schlägt sie fehl, bleibt er offen.
 - Schwere Arbeit läuft in Worker-Threads.
 - Einsehbar unter Einstellungen → Verarbeitung.
 
