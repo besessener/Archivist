@@ -13,6 +13,7 @@ import { createToolContext, type RefStore, type ToolContext, type ToolRegistry }
 import { AgentRunner, type RunnerOptions, type RunOutcome } from './runner';
 import type { RunProgress } from './run-progress';
 import type { AgentRunService } from './runs';
+import { maskingOf } from '../util/redact';
 import { maskSecrets } from './security';
 import type { ToolDeps } from './tools/common';
 import type { AgentMessage, ProviderAdapter } from './types';
@@ -35,6 +36,8 @@ export interface ExecuteOptions {
   onStart?: (runId: string) => void;
   /** Secrets masked in the user's message before the run. */
   redactions?: number;
+  /** Of `redactions`: personal data. */
+  personalRedactions?: number;
 }
 
 export interface ExecutionResult {
@@ -146,6 +149,7 @@ export class AgentRunExecutor {
     const { options, kind, settings, ctx } = setup;
     const agent = settings.agent;
     // learned entries and the profile are the user's own words – secrets in them are masked like everything else (#301)
+    const masking = maskingOf(settings);
     const system = maskSecrets(
       systemPrompt({
         mode: options.mode,
@@ -154,12 +158,15 @@ export class AgentRunExecutor {
         background: kind === 'background',
         context: runContext({ settings, kind, now: new Date() }),
       }),
+      masking,
     );
     return new AgentRunner({
       adapter: setup.adapter,
       registry: this.deps.registries[kind],
       system: system.text,
       redactions: system.count + (options.redactions ?? 0),
+      personalRedactions: system.personalData + (options.personalRedactions ?? 0),
+      masking,
       history: historyWindow(options.history),
       onAppend: (message) => options.persist(ctx.runId, message),
       limits: kind === 'background' ? backgroundLimitsFor(agent, options.trigger) : agent.chatLimits,

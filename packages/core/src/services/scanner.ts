@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { Job, ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
-import { and, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
 import { AppError, permissionError, validationError } from '../util/errors';
@@ -18,6 +18,7 @@ import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
 import { IntervalSchedule } from './scheduler';
+import { BulkFileAnalysis } from './scanner/bulk-analysis';
 import { FileAnalysis } from './scanner/file-analysis';
 import { ScanProposals } from './scanner/proposals';
 import { mapFile, mapRoot, type RootRow } from './scanner/scan-files';
@@ -51,6 +52,8 @@ export class ScannerService {
   private readonly scans: ScanRun;
   private readonly analysis: FileAnalysis;
   private readonly scanProposals: ScanProposals;
+  /** „Alle neuen Dateien analysieren“: estimate and the run of its job. */
+  readonly bulk: BulkFileAnalysis;
   /** Upper bound of files collected per scan root (lowered in tests). */
   maxFilesPerRoot = SCAN_MAX_FILES;
 
@@ -58,8 +61,9 @@ export class ScannerService {
     const { ctx, settings, pool, docs, graph, privacy, notifications } = deps;
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
-    this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });
+    this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications, jobs: deps.jobs });
     this.scanProposals = new ScanProposals({ ctx, graph });
+    this.bulk = new BulkFileAnalysis({ ctx, analysis: this.analysis, privacy, settings, jobs: deps.jobs, buildProposals: (ids) => this.buildProposals(ids) });
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
       if (!event.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: event.documentId }).where(eq(scanFiles.path, event.sourcePath)).run();
@@ -115,7 +119,7 @@ export class ScannerService {
     if (!(await fsp.stat(real)).isDirectory()) throw validationError('Das ist kein Verzeichnis.');
     const forbidden = isForbiddenScanRoot(real);
     if (forbidden) throw permissionError(forbidden, real);
-    const ownRoots = [this.deps.ctx.paths.root, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
+    const ownRoots = [this.deps.ctx.paths.root, this.deps.ctx.paths.appData, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
     if (ownRoots.some((ownRoot) => isInside(ownRoot, real))) throw permissionError('Das Archivist-Datenverzeichnis selbst kann nicht gescannt werden.', real);
     if (this.db.select().from(scanRoots).where(eq(scanRoots.path, real)).get()) throw validationError('Dieses Verzeichnis ist bereits freigegeben.');
     const scan = this.deps.settings.get().scan;
@@ -256,19 +260,6 @@ export class ScannerService {
       .all()
       .find((root) => root.lastSummary);
     return { files, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
-  }
-
-  /** New or changed analysable files not queued yet, oldest first – unlike the result list, not always the same first ones (#222). */
-  filesAwaitingAnalysis(): string[] {
-    const queued = new Set(this.deps.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((payload) => payload.fileIds ?? []));
-    return this.db
-      .select({ id: scanFiles.id })
-      .from(scanFiles)
-      .where(and(inArray(scanFiles.status, ['new', 'changed']), ne(scanFiles.llmStatus, 'excluded')))
-      .orderBy(scanFiles.firstSeenAt, scanFiles.path)
-      .all()
-      .map((row) => row.id)
-      .filter((id) => !queued.has(id));
   }
 
   getFile(id: string): ScanFile {

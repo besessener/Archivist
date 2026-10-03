@@ -171,3 +171,68 @@ describe('Decision participants are optional (#198)', () => {
     ]);
   });
 });
+
+describe('Full-text index as external content over the chunks (#225)', () => {
+  const seedOldIndex = () => {
+    const first = open();
+    first.migrate(migrationsUpTo('0029'), backups);
+    const insertChunk = first.sqlite.prepare("insert into chunks (id, entity_type, entity_id, idx, text) values (?, 'document', ?, 0, ?)");
+    const insertFts = first.sqlite.prepare(
+      "insert into search_fts (rowid, chunk_id, entity_id, entity_type, title, content) values ((select rowid from chunks where id = ?), ?, ?, 'document', ?, ?)",
+    );
+    const rows = [
+      ['c1', 'd1', 'Mietvertrag Hauptstraße', 'Die Kaution beträgt drei Monatsmieten.'],
+      ['c2', 'd2', 'Rechnung', 'Heizung Wartung im Mietvertrag erwähnt.'],
+    ] as const;
+    for (const [chunk, entity, title, text] of rows) {
+      insertChunk.run(chunk, entity, text);
+      insertFts.run(chunk, chunk, entity, title, text);
+    }
+    first.close();
+  };
+
+  it('rebuilds the index of a populated database: titles carried over, search, weighting and snippets keep working', () => {
+    seedOldIndex();
+
+    const db = open();
+    db.migrate(MIGRATIONS, backups);
+
+    expect(db.sqlite.prepare('select id, title from chunks order by id').all()).toEqual([
+      { id: 'c1', title: 'Mietvertrag Hauptstraße' },
+      { id: 'c2', title: 'Rechnung' },
+    ]);
+    const ranked = db.sqlite
+      .prepare(
+        "select entity_id as e, snippet(search_fts, 4, '[', ']', '…', 8) as s from search_fts where search_fts match 'mietvertrag' order by bm25(search_fts, 0, 0, 0, 3.0, 1.0)",
+      )
+      .all();
+    expect(ranked).toEqual([
+      { e: 'd1', s: expect.any(String) },
+      { e: 'd2', s: expect.stringContaining('[Mietvertrag]') },
+    ]);
+    expect(db.sqlite.prepare("select chunk_id as c, title as t from search_fts where search_fts match 'kaution'").all()).toEqual([
+      { c: 'c1', t: 'Mietvertrag Hauptstraße' },
+    ]);
+    expect(db.sqlite.prepare("select rowid as r from search_fts where chunk_id = 'c2'").get()).toEqual(
+      db.sqlite.prepare("select rowid as r from chunks where id = 'c2'").get(),
+    );
+    expect(() => db.sqlite.prepare("insert into search_fts (search_fts) values ('integrity-check')").run()).not.toThrow();
+    db.close();
+  });
+
+  it('keeps no second copy of the text and still drops the rows of a re-indexed entry', () => {
+    seedOldIndex();
+    const db = open();
+    db.migrate(MIGRATIONS, backups);
+
+    const tables = (db.sqlite.prepare("select name from sqlite_master where name like 'search_fts%'").all() as Array<{ name: string }>).map((r) => r.name);
+    expect(tables).not.toContain('search_fts_content');
+
+    db.sqlite.prepare('delete from search_fts where rowid in (select rowid from chunks where entity_id = ?)').run('d1');
+    db.sqlite.prepare('delete from chunks where entity_id = ?').run('d1');
+    expect(db.sqlite.prepare("select count(*) as n from search_fts where search_fts match 'kaution'").get()).toEqual({ n: 0 });
+    expect(db.sqlite.prepare("select count(*) as n from search_fts where search_fts match 'heizung'").get()).toEqual({ n: 1 });
+    expect(() => db.sqlite.prepare("insert into search_fts (search_fts) values ('integrity-check')").run()).not.toThrow();
+    db.close();
+  });
+});

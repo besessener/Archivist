@@ -1,6 +1,8 @@
 import type { Job } from '@archivist/shared';
 import type { AgentService } from '../agent/service';
+import { NEAR_DUPLICATE_BACKFILL_JOB } from '../services/near-duplicates';
 import { enqueueReembedding } from '../services/reembedding';
+import { maskingOf } from '../util/redact';
 import type { WiredServices } from './domain-services';
 
 type LifecycleServices = WiredServices & {
@@ -8,6 +10,8 @@ type LifecycleServices = WiredServices & {
   enqueueConsistency: (trigger: string) => Job;
   enqueueLinkRun: (trigger: string) => Job;
 };
+
+const TRANSMISSION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** Longest wait on running archive file operations when quitting; stays below the desktop's 10 s quit deadline (QUIT_DEADLINE_MS). */
 const ARCHIVE_DRAIN_TIMEOUT_MS = 8_000;
@@ -24,6 +28,7 @@ export function reactToSettingsChanges(services: WiredServices): void {
   events.on('data:changed', (change: { scopes: string[] }) => {
     if (change.scopes.includes('settings')) {
       logger.setLevel(settings.get().logs.level);
+      logger.setMasking(maskingOf(settings.get()));
       consistency.applySettings();
       // a new profile name renames the own person or merges a person with that name into it
       syncOwnPerson(services);
@@ -62,6 +67,13 @@ function addMissingLocalVectors({ appState, search, jobs }: LifecycleServices): 
   if (search.hasRemoteVectorsWithoutLocal()) enqueueReembedding(jobs);
 }
 
+/** Documents from before the near-duplicate signatures get theirs once, in a resumable job (#230). */
+function signExistingDocuments({ appState, jobs }: LifecycleServices): void {
+  if (appState.get('documents.near-duplicates.v1')) return;
+  appState.set('documents.near-duplicates.v1', new Date().toISOString());
+  jobs.enqueue(NEAR_DUPLICATE_BACKFILL_JOB, { label: 'Dokumente auf ähnlichen Inhalt vergleichen', sameAs: () => true });
+}
+
 function startAgent({ agent, jobs, chat }: LifecycleServices): void {
   agent.start({
     enqueue: (kind, docIds) =>
@@ -78,11 +90,22 @@ function startupBackup({ settings, backup, logger }: WiredServices): void {
 }
 
 export function createLifecycle(services: LifecycleServices) {
-  const { logger, settings, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, reader, database } = services;
+  const { logger, settings, llm, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, reader, database } = services;
+  let pruneTimer: NodeJS.Timeout | null = null;
+  const pruneTransmissions = () => {
+    try {
+      llm.pruneTransmissions();
+    } catch (err) {
+      logger.warn('llm', 'Pruning the transmission log failed', { error: err });
+    }
+  };
   return {
     /** Starts background work (only while the application runs). */
     start(): void {
       logger.prune(settings.get().logs.retentionDays);
+      pruneTransmissions();
+      pruneTimer = setInterval(pruneTransmissions, TRANSMISSION_PRUNE_INTERVAL_MS);
+      pruneTimer.unref();
       // before the queue resumes: documents stuck in `analyzing` without a job become `failed` (reprocessable)
       documents.recoverInterruptedAnalyses();
       jobs.start();
@@ -97,12 +120,14 @@ export function createLifecycle(services: LifecycleServices) {
       scheduleArchiveChecks(services);
       startInitialLinkRun(services);
       addMissingLocalVectors(services);
+      signExistingDocuments(services);
       startAgent(services);
       startupBackup(services);
     },
 
     /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (8 s) were awaited. */
     async shutdown(options: { jobTimeoutMs?: number; archiveTimeoutMs?: number } = {}): Promise<void> {
+      if (pruneTimer) clearInterval(pruneTimer);
       reminders.stop();
       agent.stop();
       scanner.stop();

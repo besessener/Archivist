@@ -54,10 +54,15 @@ export class JobQueueService {
     this.outcomes = new AttemptOutcomes({
       ctx,
       retryWaits: this.retryWaits,
-      retryDelay: (failedAttempts) => retryDelayMs(failedAttempts, { baseMs: this.retryBaseDelayMs, maxMs: this.retryMaxDelayMs }),
+      retryDelay: (failedAttempts, err) => (err instanceof AppError ? err.retryAfterMs : undefined) ?? this.backoffMs(failedAttempts),
       runHook: (target, run) => this.runHook(target, run),
       notify: (row) => this.notify(row),
     });
+  }
+
+  /** The wait before the next attempt after `failedAttempts` failed ones – also for work a job retries inside itself. */
+  backoffMs(failedAttempts: number): number {
+    return retryDelayMs(failedAttempts, { baseMs: this.retryBaseDelayMs, maxMs: this.retryMaxDelayMs });
   }
 
   private get db() {
@@ -152,6 +157,13 @@ export class JobQueueService {
     this.notify(row);
     this.kick();
     return mapJob(row);
+  }
+
+  /** Lets the jobs paused by the daily token limit run again (the limit was raised or switched off). */
+  resumeTokenCapPaused(): void {
+    this.outcomes.pausedForTokenCap.forEach((id) => this.retryWaits.delete(id));
+    this.outcomes.pausedForTokenCap.clear();
+    this.kick();
   }
 
   /** Cancels waiting jobs (also those waiting for a retry) at once, running ones cooperatively via their `signal`. */

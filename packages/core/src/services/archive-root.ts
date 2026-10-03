@@ -6,6 +6,7 @@ import { auditLog, documents } from '../db/schema';
 import { AppError, permissionError, validationError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { isInside } from '../util/paths';
+import { detectSyncFolder } from '../util/sync-folders';
 import type { ArchiveService } from './archive';
 import { copyTree, removeCreatedByMove, type CreatedByMove } from './archive-root-migration';
 import {
@@ -153,6 +154,7 @@ export class ArchiveRootService {
     const plan = await this.migratePlan(route, 'request');
     return {
       ...route,
+      syncProvider: detectSyncFolder(route.to),
       atTarget: this.presence(route.to, docs),
       migrate: {
         files: plan.files.length,

@@ -188,7 +188,7 @@ Zwei Werkzeuge der Stufe **lesen** (keine Bestätigung, ändern nichts) lassen d
 **`read_logs`**
 
 - Geliefert werden die neuesten passenden Zeilen, älteste zuerst. Von einer sehr langen Tagesdatei wird nur das Ende (2 MB) gelesen, eine Zeile hat höchstens 500 Zeichen, das ganze Ergebnis höchstens etwa 10 000 Zeichen; das Ergebnis nennt, was dabei weggefallen ist.
-- Jede Zeile läuft noch einmal durch dieselbe Bereinigung wie beim Schreiben (Schlüssel, Passwörter und Token maskiert, Felder wie `content` oder `prompt` nur mit Länge). Zeilen, die nicht im Format des Protokolls stehen, werden verworfen und gezählt: Zurück kommt nie etwas, was der Logger nicht geschrieben hätte.
+- Jede Zeile läuft noch einmal durch dieselbe Bereinigung wie beim Schreiben (Schlüssel, Passwörter und Token sowie, nach Einstellung, IBAN, Kartennummern und Ausweiskennungen maskiert, Felder wie `content` oder `prompt` nur mit Länge). Zeilen, die nicht im Format des Protokolls stehen, werden verworfen und gezählt: Zurück kommt nie etwas, was der Logger nicht geschrieben hätte.
 - Zeilen, die eine ausgeschlossene Datei, einen ausgeschlossenen Ordner oder Dateityp nennen (Einstellungen → Datenschutz, KI-Freigabe eines Scan-Verzeichnisses, ausgeschlossene Dokumente), werden weggelassen und nur gezählt. Der Vergleich ist bewusst großzügig: Im Zweifel fehlt eine Zeile lieber.
 - Der Inhalt steht als markierte Daten im Ergebnis, nie als Anweisung. Liest sich eine Zeile wie eine Aufforderung an den Agenten, ändert der Lauf nichts ohne deine eigene Bitte (wie bei Dokumenten).
 
@@ -202,14 +202,15 @@ Zwei Werkzeuge der Stufe **lesen** (keine Bestätigung, ändern nichts) lassen d
 
 - Dokumentinhalte gehen nur als markierte Daten an das Modell, nie als Anweisungen. Enthält ein Dokument eine Aufforderung an den Agenten, ändert der Lauf nichts ohne eigene Bitte des Benutzers (im Hintergrund nur als Vorschlag).
 - Jedes Werkzeugergebnis läuft durch den Datenschutzfilter: Nicht freigegebene Dokumente erscheinen nur mit Endung, Ordner und Status.
-- Geheimnisse werden vor jeder Übertragung maskiert – in deiner Nachricht, in Werkzeugergebnissen und in der Systemanweisung (Gelerntes, Profil); welche Dokumente an das LLM gingen und wie viele Stellen maskiert wurden, steht im Übertragungsprotokoll.
+- Geheimnisse und, solange `privacy.maskPersonalData` an ist, persönliche Kennungen wie IBAN werden vor jeder Übertragung maskiert – in deiner Nachricht, in Werkzeugergebnissen und in der Systemanweisung (Gelerntes, Profil); welche Dokumente an das LLM gingen und wie viele Stellen maskiert wurden, steht im Übertragungsprotokoll.
 - Wird ein Dokument nach dem Lesen ausgeschlossen oder sein Ordner gesperrt, gehen frühere Werkzeugergebnisse und Antworten des Gesprächs, die es nennen, nicht erneut an das Modell (#202); Gedankenblöcke des Anbieters entfallen dann.
 - Alle Datei-Werkzeuge bleiben im Archiv (Exporte im Datenordner); Path-Traversal und Symlinks, die hinausführen, werden abgelehnt.
 
 ## Verbrauch
 
 - Tokens (Eingabe, Ausgabe, Cache) pro Anfrage und Lauf.
-- Kosten aus einer pflegbaren Preistabelle – nur zur Information, es gibt **keine Kostenobergrenze**.
+- Kosten aus einer pflegbaren Preistabelle – nur zur Information.
+- Die Tokens aller Anfragen, auch der Agentenläufe, stehen im Übertragungsprotokoll und zählen für das optionale **Tageslimit** (`llm.dailyTokenCap`, [LLM-Schnittstelle](llm-schnittstelle.md#tokenverbrauch-und-tageslimit)): Ist es erreicht, starten Hintergrundläufe nicht, und im Chat fragt Archivist vorher, ob er trotzdem fortfahren soll.
 - Übersicht pro Tag und Monat, getrennt nach Chat und Hintergrund.
 
 ## Hintergrund

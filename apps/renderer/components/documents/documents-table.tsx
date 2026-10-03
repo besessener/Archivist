@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { EntrySubjects, IpcOutput } from '@archivist/shared';
 import { ExtraSubjectsNote } from '@/components/common/extra-subjects';
+import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { formatDate } from '@/lib/format';
@@ -16,9 +17,11 @@ export interface DocumentsTableProps {
   selected: Set<string>;
   setSelected: Dispatch<SetStateAction<Set<string>>>;
   onOpen: (id: string) => void;
+  /** Documents with a pending proposal of new metadata (#220). */
+  withProposal: Set<string>;
 }
 
-export function DocumentsTable({ documents, subjects, selected, setSelected, onOpen }: DocumentsTableProps) {
+export function DocumentsTable({ documents, subjects, selected, setSelected, onOpen, withProposal }: DocumentsTableProps) {
   const selectedCount = documents.filter((doc) => selected.has(doc.id)).length;
   const allChecked = documents.length > 0 && selectedCount === documents.length;
   const toggle = (id: string, on: boolean) => setSelected((previous) => withMembership(previous, { value: id, present: on }));
@@ -63,6 +66,11 @@ export function DocumentsTable({ documents, subjects, selected, setSelected, onO
                 >
                   {doc.title}
                 </button>
+                {withProposal.has(doc.id) && (
+                  <Badge variant="info" className="ml-2" data-testid="document-has-proposal">
+                    Neue Metadaten vorgeschlagen
+                  </Badge>
+                )}
               </TD>
               <TD>{doc.docType ?? '–'}</TD>
               <TD>{doc.categoryPath ?? '–'}</TD>

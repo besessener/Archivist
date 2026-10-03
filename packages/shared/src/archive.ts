@@ -71,6 +71,14 @@ export const BackupInfo = z.object({
 });
 export type BackupInfo = z.infer<typeof BackupInfo>;
 
+export const BackupStorage = z.object({
+  /** Database file with its write-ahead log. */
+  databaseBytes: z.number(),
+  /** Everything in the backups folder. */
+  backupsBytes: z.number(),
+});
+export type BackupStorage = z.infer<typeof BackupStorage>;
+
 export const RelinkResult = z.object({
   relinked: z.array(z.object({ documentId: Id, title: z.string(), path: z.string() })),
   stillMissing: z.number(),
@@ -108,6 +116,8 @@ export type ArchiveRootPresence = z.infer<typeof ArchiveRootPresence>;
 export const ArchiveRootPreview = z.object({
   from: z.string(),
   to: z.string(),
+  /** Cloud-sync service whose folder the new archive root lies in (OneDrive, Dropbox …), if any. */
+  syncProvider: z.string().nullable(),
   /** Presence of the archived documents in the new folder as it is now. */
   atTarget: ArchiveRootPresence,
   migrate: z.object({

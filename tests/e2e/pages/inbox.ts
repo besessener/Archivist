@@ -7,6 +7,9 @@ export function initInbox(page: Page) {
     fileInput: page.getByTestId('file-input'),
     /** The import progress card bottom left; it covers what lies beneath until closed. */
     importCard: page.getByTestId('import-card'),
+    /** Folder import via the folder picker (in tests ARCHIVIST_TEST_PICK_DIR names the folder). */
+    folderPick: page.getByTestId('folder-pick'),
+    importFolders: page.getByTestId('import-folders'),
     closeImportCard: page.getByRole('button', { name: 'Import-Hinweis schließen' }),
     items: page.getByTestId('inbox-item'),
     proposals: page.getByTestId('inbox-proposal'),

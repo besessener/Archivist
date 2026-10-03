@@ -28,3 +28,20 @@ describe('Clearing all notifications', () => {
     expect(await app.ok('notifications:resolveAll', {})).toEqual({ resolved: 0 });
   });
 });
+
+describe('Marking all notifications as read', () => {
+  it('marks every open unread notification, also beyond the ones the bell shows, and keeps them open', async () => {
+    for (let n = 0; n < 60; n += 1) app.services.notifications.create({ title: `Nr. ${n}`, description: 'Test', type: 'system' });
+    const first = app.services.notifications.list({ limit: 1 })[0]!;
+    app.services.notifications.resolve(first.id);
+    expect(app.services.notifications.unreadCount()).toBe(59);
+
+    expect(await app.ok('notifications:markAllRead', {})).toEqual({ marked: 59 });
+
+    expect(app.services.notifications.unreadCount()).toBe(0);
+    const open = await app.ok('notifications:list', { limit: 500 });
+    expect(open).toHaveLength(59);
+    expect(open.every((n) => n.readAt && !n.resolvedAt)).toBe(true);
+    expect(await app.ok('notifications:markAllRead', {})).toEqual({ marked: 0 });
+  });
+});

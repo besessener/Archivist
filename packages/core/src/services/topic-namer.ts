@@ -6,7 +6,7 @@ import type { LlmService } from './llm';
 import type { TopicCluster } from './link-methods';
 import type { PrivacyService } from './privacy';
 
-const TopicName = z.object({ name: z.string().nullable() });
+export const TopicName = z.object({ name: z.string().nullable() });
 
 export type TopicNamerDeps = { ctx: AppContext; llm: LlmService; privacy: PrivacyService; docs: DocumentService };
 

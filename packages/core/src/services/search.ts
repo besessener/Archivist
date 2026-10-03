@@ -79,7 +79,7 @@ export class SearchService {
     this.vectors.remove(entityId);
   }
 
-  /** FTS rows share their chunk's rowid (migration 0016): deleting by entity_id on the UNINDEXED FTS column scanned the whole index (#212). */
+  /** FTS rows share their chunk's rowid (#212); the index is external content over the chunks (#225), so its rows go before the chunks they are read from. */
   private deleteRows(entityId: string): void {
     this.sqlite.prepare('DELETE FROM search_fts WHERE rowid IN (SELECT rowid FROM chunks WHERE entity_id = ?)').run(entityId);
     this.ctx.database.db.delete(chunks).where(eq(chunks.entityId, entityId)).run();
@@ -125,6 +125,7 @@ export class SearchService {
             entityType: input.type,
             entityId: input.id,
             idx: index,
+            title: input.title,
             text,
             embedding: vector ? Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength) : null,
             embeddingModel: embedded.model,

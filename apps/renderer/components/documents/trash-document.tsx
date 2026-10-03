@@ -24,7 +24,7 @@ export function TrashDocumentButton({ doc, onTrashed }: { doc: DocRecord; onTras
         description={
           <>
             „{doc.title}“ verschwindet aus Archiv, Suche und Wissen. Deine Originaldatei bleibt, wo sie ist. Du kannst das Dokument unter Einstellungen → Archiv
-            → Papierkorb wiederherstellen, bis du den Papierkorb leerst.
+            → Papierkorb wiederherstellen, bis du es unter Einstellungen → Archiv aus Archivist entfernst.
           </>
         }
         confirmLabel="In den Papierkorb legen"

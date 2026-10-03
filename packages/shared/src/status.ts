@@ -6,6 +6,8 @@ export const AppStatus = z.object({
   version: z.string(),
   dataRoot: z.string(),
   archiveRoot: z.string(),
+  /** Cloud-sync service whose folder holds the archive root (OneDrive, Dropbox …), if any. */
+  archiveSyncProvider: z.string().nullable(),
   platform: z.string(),
   setupCompleted: z.boolean(),
   llm: z.object({

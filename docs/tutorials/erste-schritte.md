@@ -26,7 +26,7 @@ Der API-Key wird verschlüsselt gespeichert, nie im Klartext.
 3. Öffne die **Inbox**. Dort steht dein Dokument mit vorgeschlagener Kategorie und einem lesbaren Zielpfad wie `work/projects/prod-plat/`.
 4. Prüf Quell- und Zielpfad und bestätige.
 
-Dein Dokument liegt jetzt als Kopie unter `~/Documents/Archivist/archive/…`. Das Original ist unverändert. Willst du es doch nicht archiviert haben, findest du die Aktion unter Einstellungen → Änderungsprotokoll mit **Rückgängig**.
+Dein Dokument liegt jetzt als Kopie unter `~/Documents/Archivist/archive/…` (unter Windows im Ordner „Dokumente“). Datenbank, Einstellungen und Backups liegen getrennt davon im Datenordner deines Benutzerprofils. Liegt „Dokumente“ bei dir in OneDrive oder einem anderen Sync-Ordner, zeigt Archivist schon im Willkommens-Schritt eine Warnung; den Archivordner kannst du unter Einstellungen → Archiv verlegen. Das Original ist unverändert. Willst du es doch nicht archiviert haben, findest du die Aktion unter Einstellungen → Änderungsprotokoll mit **Rückgängig**.
 
 ## 3. Eine Entscheidung festhalten
 

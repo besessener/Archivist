@@ -6,7 +6,10 @@ import type { Logger } from './util/logger';
 import { noteCreated, type CreatedEntry } from './util/origin-scope';
 
 export interface DataPaths {
+  /** Document store: archive, inbox, quarantine, trash, exports. */
   root: string;
+  /** Application state: database, index, config, logs, backups, restore marker; equals `root` with ARCHIVIST_DATA_DIR. */
+  appData: string;
   archive: string;
   database: string;
   index: string;
@@ -19,16 +22,26 @@ export interface DataPaths {
   trash: string;
 }
 
-export function resolveDataPaths(root: string, archiveOverride?: string): DataPaths {
+export interface DataLocations {
+  /** Folder of the document store (default: Documents/Archivist). */
+  root: string;
+  /** Folder of the application state (default: the OS per-user data folder); omitted = everything below `root`. */
+  appDataRoot?: string;
+  archiveOverride?: string;
+}
+
+export function resolveDataPaths({ root, appDataRoot, archiveOverride }: DataLocations): DataPaths {
   const resolvedRoot = path.resolve(root);
+  const appData = appDataRoot ? path.resolve(appDataRoot) : resolvedRoot;
   return {
     root: resolvedRoot,
+    appData,
     archive: archiveOverride ? path.resolve(archiveOverride) : path.join(resolvedRoot, 'archive'),
-    database: path.join(resolvedRoot, 'database'),
-    index: path.join(resolvedRoot, 'index'),
-    config: path.join(resolvedRoot, 'config'),
-    logs: path.join(resolvedRoot, 'logs'),
-    backups: path.join(resolvedRoot, 'backups'),
+    database: path.join(appData, 'database'),
+    index: path.join(appData, 'index'),
+    config: path.join(appData, 'config'),
+    logs: path.join(appData, 'logs'),
+    backups: path.join(appData, 'backups'),
     inbox: path.join(resolvedRoot, 'inbox'),
     quarantine: path.join(resolvedRoot, 'quarantine'),
     trash: path.join(resolvedRoot, 'trash'),

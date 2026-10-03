@@ -85,11 +85,11 @@ export class DiagnosticsService {
 
   private async storage(): Promise<DiagnosticsReport['storage']> {
     const { paths, database } = this.deps.ctx;
-    const size = await directorySize(paths.root);
-    const stats = await fsp.statfs(paths.root).catch(() => null);
+    const sizes = await Promise.all([...new Set([paths.root, paths.appData])].map((dir) => directorySize(dir)));
+    const stats = await fsp.statfs(paths.appData).catch(() => null);
     return {
-      dataDirectoryBytes: size.bytes,
-      dataDirectoryComplete: size.complete,
+      dataDirectoryBytes: sizes.reduce((sum, size) => sum + size.bytes, 0),
+      dataDirectoryComplete: sizes.every((size) => size.complete),
       freeDiskBytes: stats ? stats.bavail * stats.bsize : null,
       databaseBytes: [database.file, `${database.file}-wal`].reduce((sum, file) => sum + (fs.existsSync(file) ? fs.statSync(file).size : 0), 0),
     };
