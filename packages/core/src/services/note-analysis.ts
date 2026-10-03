@@ -51,13 +51,7 @@ function namesIn(text: string, entries: Array<Pick<GraphEntity, 'name' | 'aliase
     .map((e) => e.name);
 }
 
-export interface NoteAnalysisServiceDeps {
-  ctx: AppContext;
-  graph: KnowledgeGraphService;
-  persons: PersonService;
-  llm: LlmService;
-  privacy: PrivacyService;
-}
+export type NoteAnalysisServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; persons: PersonService; llm: LlmService; privacy: PrivacyService };
 
 /** Analyses notes like documents (#273) into PROPOSED relations; a rerun marks what it no longer finds `outdated`, the user's decisions stay. */
 export class NoteAnalysisService {

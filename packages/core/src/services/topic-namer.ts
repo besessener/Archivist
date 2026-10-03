@@ -8,12 +8,7 @@ import type { PrivacyService } from './privacy';
 
 const TopicName = z.object({ name: z.string().nullable() });
 
-export interface TopicNamerDeps {
-  ctx: AppContext;
-  llm: LlmService;
-  privacy: PrivacyService;
-  docs: DocumentService;
-}
+export type TopicNamerDeps = { ctx: AppContext; llm: LlmService; privacy: PrivacyService; docs: DocumentService };
 
 /** A topic name for a group of similar entries by the LLM (#281), only in mode „automatisch“ and from shareable names; null keeps the local one. */
 export class TopicNamer {

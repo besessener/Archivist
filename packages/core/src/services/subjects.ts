@@ -57,12 +57,7 @@ interface SubjectRow {
 const namesOf = (patch: SubjectPatch, kind: SubjectKind) => (kind === 'topic' ? patch.topics : patch.projects);
 const extrasOf = (subjects: EntrySubjects, kind: SubjectKind) => (kind === 'topic' ? subjects.extraTopics : subjects.extraProjects);
 
-export interface SubjectServiceDeps {
-  ctx: AppContext;
-  graph: KnowledgeGraphService;
-  audit: AuditService;
-  undo: UndoService;
-}
+export type SubjectServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; audit: AuditService; undo: UndoService };
 
 /** Several topics and projects per entry (#287): the column stays the main one, further ones are confirmed relations. */
 export class SubjectService {

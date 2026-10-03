@@ -19,11 +19,7 @@ export type { MergeRequest } from './graph/merge-types';
 export { relationReason } from './graph/relation-reason';
 export type { RelationChangeSet } from './graph/relations';
 
-export interface KnowledgeGraphServiceDeps {
-  ctx: AppContext;
-  audit: AuditService;
-  undo: UndoService;
-}
+export type KnowledgeGraphServiceDeps = { ctx: AppContext; audit: AuditService; undo: UndoService };
 
 /** Knowledge graph over entity and relation tables in SQLite. */
 export class KnowledgeGraphService {

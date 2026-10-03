@@ -43,11 +43,7 @@ function combineRelations(a: RelationRow, b: RelationRow): Pick<RelationRow, 'st
 
 const CHANGED_SCOPES = ['knowledge', 'documents', 'decisions', 'openItems', 'events'] as const;
 
-export interface EntityMergesDeps {
-  ctx: AppContext;
-  audit: AuditService;
-  undo: UndoService;
-}
+export type EntityMergesDeps = { ctx: AppContext; audit: AuditService; undo: UndoService };
 
 /** Merging and renaming named entities with exact, conflict-checked undo. */
 export class EntityMerges {

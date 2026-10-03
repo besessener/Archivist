@@ -51,13 +51,7 @@ export function duplicateKey(ids: string[]): string {
   return `${KEY_PREFIX}${[...ids].sort().join('|')}`;
 }
 
-export interface EntityDuplicateCheckDeps {
-  ctx: AppContext;
-  insights: InsightService;
-  actions: ActionService;
-  llm: LlmService;
-  privacy: PrivacyService;
-}
+export type EntityDuplicateCheckDeps = { ctx: AppContext; insights: InsightService; actions: ActionService; llm: LlmService; privacy: PrivacyService };
 
 /** Archive check: asks via an insight about topics, projects and tags that are probably the same; nothing merges by itself. */
 export class EntityDuplicateCheck {

@@ -33,11 +33,7 @@ export interface CaseEntry {
   relationId: string;
 }
 
-export interface CaseServiceDeps {
-  ctx: AppContext;
-  graph: KnowledgeGraphService;
-  audit: AuditService;
-}
+export type CaseServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; audit: AuditService };
 
 /** Cases („Vorgänge“, #286): graph nodes collecting the entries of one matter over `belongs_to`; every change is undoable. */
 export class CaseService {

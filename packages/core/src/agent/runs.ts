@@ -53,11 +53,7 @@ function triggerCondition(trigger: 'chat' | 'background' | undefined) {
 /** Shortened step for storage: results stay short, arguments are kept for the technical details. */
 const storedStep = (s: AgentStep): AgentStep => ({ ...s, result: s.result.slice(0, 600) });
 
-export interface AgentRunServiceDeps {
-  ctx: AppContext;
-  audit: AuditService;
-  undo: UndoService;
-}
+export type AgentRunServiceDeps = { ctx: AppContext; audit: AuditService; undo: UndoService };
 
 /** Agent runs (#299): log of each run, whose changes carry its id so the run or a single step can be undone in reverse order. */
 export class AgentRunService {

@@ -73,11 +73,7 @@ interface Waiting {
   fail: (err: unknown) => void;
 }
 
-export interface AgentFileJobsDeps {
-  jobs: JobQueueService;
-  archive: ArchiveService;
-  runs: AgentRunService;
-}
+export type AgentFileJobsDeps = { jobs: JobQueueService; archive: ArchiveService; runs: AgentRunService };
 
 /** Large file operations of the agent as jobs under the run id and step (#304): live progress, „Stopp“ between chunks, resume after restart. */
 export class AgentFileJobs {

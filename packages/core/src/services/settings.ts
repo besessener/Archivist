@@ -88,11 +88,7 @@ export function settingsLoadNotification(problem: SettingsLoadProblem): Notifica
   };
 }
 
-export interface SettingsServiceDeps {
-  file: string;
-  defaultArchiveRoot: string;
-  events?: EventBus;
-}
+export type SettingsServiceDeps = { file: string; defaultArchiveRoot: string; events?: EventBus };
 
 /** Non-secret application configuration (config/settings.json). API keys are NOT stored here. */
 export class SettingsService {

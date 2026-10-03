@@ -11,11 +11,7 @@ export interface SecretCipher {
   decrypt(data: Buffer): string;
 }
 
-export interface SecretServiceDeps {
-  file: string;
-  cipher: SecretCipher;
-  logger: Logger;
-}
+export type SecretServiceDeps = { file: string; cipher: SecretCipher; logger: Logger };
 
 /** Stores the LLM API key only encrypted (OS credential store via safeStorage); never in plain text in config or logs. */
 export class SecretService {

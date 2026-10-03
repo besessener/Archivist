@@ -46,11 +46,7 @@ export interface LinkChangeOptions {
 /** Topics and projects can be subtopics of each other (#282). */
 const SUBJECT_TYPES = new Set<string>(['topic', 'project']);
 
-export interface UserLinksDeps {
-  ctx: AppContext;
-  audit: AuditService;
-  graph: { entities: GraphEntities; relations: GraphRelations };
-}
+export type UserLinksDeps = { ctx: AppContext; audit: AuditService; graph: { entities: GraphEntities; relations: GraphRelations } };
 
 /** The user's link actions (knowledge page and agent alike): audited, each one undoable. */
 export class UserLinks {

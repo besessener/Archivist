@@ -116,11 +116,7 @@ class ModelIndex {
   }
 }
 
-export interface VectorIndexDeps {
-  sqlite: () => Database.Database;
-  pool: WorkerPool;
-  maxSegmentRows?: number;
-}
+export type VectorIndexDeps = { sqlite: () => Database.Database; pool: WorkerPool; maxSegmentRows?: number };
 
 /** In-memory vector index per embedding model (#163) in SharedArrayBuffers: a search only sends the query vector to the workers. */
 export class VectorIndex {

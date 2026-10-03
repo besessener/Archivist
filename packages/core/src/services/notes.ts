@@ -31,13 +31,7 @@ export interface NoteInput {
 const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
 const sameText = (a: string, b: string) => collapse(a).toLowerCase() === collapse(b).toLowerCase();
 
-export interface NoteServiceDeps {
-  ctx: AppContext;
-  graph: KnowledgeGraphService;
-  search: SearchService;
-  audit?: AuditService;
-  undo?: UndoService;
-}
+export type NoteServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; search: SearchService; audit?: AuditService; undo?: UndoService };
 
 /** The single place where notes are created: each is its own indexed graph node, never merged for a similar title. */
 export class NoteService {

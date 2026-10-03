@@ -51,12 +51,7 @@ async function realpathOrSelf(p: string): Promise<string> {
   return fsp.realpath(p).catch(() => path.resolve(p));
 }
 
-export interface BackupServiceDeps {
-  ctx: AppContext;
-  settings: SettingsService;
-  audit: AuditService;
-  archive: ArchiveService;
-}
+export type BackupServiceDeps = { ctx: AppContext; settings: SettingsService; audit: AuditService; archive: ArchiveService };
 
 /** Backups: SQLite snapshot via the online backup API plus settings (never the API key), optionally the archive; retention per kind. */
 export class BackupService {

@@ -46,11 +46,7 @@ export function syncReminderAt(db: Db, openItemId: string): void {
     .run();
 }
 
-export interface ReminderServiceDeps {
-  ctx: AppContext;
-  notifications: NotificationService;
-  settings: SettingsService;
-}
+export type ReminderServiceDeps = { ctx: AppContext; notifications: NotificationService; settings: SettingsService };
 
 /** Reminders are stored locally and fired on schedule while the app runs (no notification while it is closed). */
 export class ReminderService {

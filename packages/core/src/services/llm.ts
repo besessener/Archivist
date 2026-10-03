@@ -68,13 +68,7 @@ interface Transfer {
 
 const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
-export interface LlmServiceDeps {
-  ctx: AppContext;
-  settings: SettingsService;
-  secrets: SecretService;
-  fetchImpl?: FetchLike;
-  retryDelayMs?: number;
-}
+export type LlmServiceDeps = { ctx: AppContext; settings: SettingsService; secrets: SecretService; fetchImpl?: FetchLike; retryDelayMs?: number };
 
 /** OpenAI-compatible Responses API client: every transmission is logged masked, structured answers are validated with Zod. */
 export class LlmService {

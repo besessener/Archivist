@@ -67,13 +67,7 @@ const VERDICT_TEXT = { same: 'wahrscheinlich dieselbe Person', different: 'wahrs
 
 const counted = (n: number, [one, many]: [string, string]) => `${n} ${n === 1 ? one : many}`;
 
-export interface PersonQuestionServiceDeps {
-  ctx: AppContext;
-  graph: KnowledgeGraphService;
-  insights: InsightService;
-  llm: LlmService;
-  privacy: PrivacyService;
-}
+export type PersonQuestionServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; insights: InsightService; llm: LlmService; privacy: PrivacyService };
 
 /** Archive check step: asks instead of guessing when two person entries might be the same person; answers are remembered. */
 export class PersonQuestionService {
