@@ -192,7 +192,7 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
       title="Archivordner"
       description="In diesen Ordner legt Archivist deine Dokumente ab. Beim Ändern kannst du das Archiv umziehen lassen oder nur den Pfad umstellen, wenn die Dateien schon dort liegen."
     >
-      <SyncFolderNotice provider={appStatus?.archiveSyncProvider ?? null} data-testid="archive-root-sync" />
+      <SyncFolderNotice provider={appStatus?.archiveSyncProvider ?? null} dataProvider={appStatus?.dataSyncProvider ?? null} data-testid="archive-root-sync" />
       {rootStatus && unreachableOf(rootStatus.current) > 0 && (
         <Notice tone="danger" title={`${docs(unreachableOf(rootStatus.current))} nicht erreichbar`}>
           <span data-testid="archive-root-unreachable">

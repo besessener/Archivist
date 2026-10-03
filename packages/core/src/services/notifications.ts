@@ -88,13 +88,14 @@ export class NotificationService {
     return out;
   }
 
-  list(opts: { includeResolved?: boolean; limit?: number } = {}): AppNotification[] {
+  list(opts: { includeResolved?: boolean; limit?: number; offset?: number } = {}): AppNotification[] {
     const rows = this.db
       .select()
       .from(notifications)
       .where(opts.includeResolved ? undefined : isNull(notifications.resolvedAt))
-      .orderBy(desc(notifications.createdAt))
+      .orderBy(desc(notifications.createdAt), desc(notifications.id))
       .limit(opts.limit ?? 100)
+      .offset(opts.offset ?? 0)
       .all();
     return rows.map(toNotification);
   }

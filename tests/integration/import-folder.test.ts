@@ -58,7 +58,7 @@ describe('Dropping a folder imports it recursively (#228)', () => {
     const titles = notifications().map((n) => n.title);
     expect(titles).toEqual(['Ordner „Altarchiv“ importiert']);
     expect(notifications()[0]!.description).toContain('3 Dokumente analysiert, 0 Fehler');
-    expect(folderJob()).toMatchObject({ status: 'succeeded', summary: expect.stringContaining('3 Dokumente analysiert') });
+    expect(folderJob()).toMatchObject({ status: 'succeeded', summary: expect.stringContaining('3 Dokumente übernommen') });
   });
 
   it('shows the progress of the copying and of the analysis in the job', async () => {

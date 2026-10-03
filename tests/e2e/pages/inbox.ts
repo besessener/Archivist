@@ -39,6 +39,26 @@ export function initInbox(page: Page) {
       confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
       confirm: page.getByTestId('inbox-quarantine-release-confirm'),
     },
+    /** „Alle N Vorschläge archivieren“: one confirmation with the target structure, then one job (#228). */
+    archiveAll: {
+      open: page.getByTestId('inbox-archive-all-open'),
+      preview: page.getByTestId('archive-all-preview'),
+      folders: page.getByTestId('archive-all-folders'),
+      confirm: page.getByTestId('archive-all-confirm'),
+      progress: page.getByTestId('archive-all-progress'),
+    },
+    /** Paging of a long inbox. */
+    paging: {
+      info: page.getByTestId('inbox-more'),
+      loadMore: page.getByTestId('inbox-load-more'),
+    },
+    /** „Alle N mit KI analysieren“ after a folder import in mode „vorher fragen“. */
+    analyzeImport: {
+      estimate: page.getByTestId('bulk-consent-estimate'),
+      budget: page.getByTestId('bulk-consent-budget'),
+      allowLlm: page.getByTestId('analyze-import-llm'),
+      confirm: page.getByTestId('analyze-import-confirm'),
+    },
     archivePlan: {
       source: page.getByTestId('archive-plan-source'),
       target: page.getByTestId('archive-plan-target'),

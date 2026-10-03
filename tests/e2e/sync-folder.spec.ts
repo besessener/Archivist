@@ -9,6 +9,7 @@ test.describe('archive inside a cloud-synced folder (#207)', () => {
     test('warns in the setup and in the settings', async ({ llm, on, page }, testInfo) => {
       const app = on(page);
       await expect(app.setup.locators.texts.syncWarning).toContainText('OneDrive');
+      await expect(app.setup.locators.texts.syncWarning).toContainText('Datenordner');
       await expectNoSeriousA11yViolations(page, testInfo);
 
       await app.setup.do.complete(llm.url);
@@ -16,6 +17,7 @@ test.describe('archive inside a cloud-synced folder (#207)', () => {
       await app.settings.do.openArchive();
 
       await expect(app.settings.locators.archiveRoot.syncNotice).toContainText('OneDrive');
+      await expect(app.settings.locators.archiveRoot.syncNotice).toContainText('Datenordner');
       await expectNoSeriousA11yViolations(page, testInfo);
     });
   });

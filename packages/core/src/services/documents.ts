@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { DocumentRecord, DocumentStatus, TrashEntry } from '@archivist/shared';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents, scanFiles, scanRoots } from '../db/schema';
+import { documents } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { LLM_ANALYSIS_ATTEMPTS } from './analysis-retry';
@@ -12,6 +12,7 @@ import { DocumentAnalyzer, QUARANTINE_NOT_ANALYZED, type AnalysisResult, type An
 import type { BulkPatch } from './document-bulk';
 import { DocumentBatchAnalysis } from './document-batch';
 import { DocumentImporter, type ImportResult } from './document-import';
+import { FolderPermission } from './document-folder-permission';
 import { FolderImport } from './document-import-folder';
 import { DocumentIndexRepair } from './document-index';
 import { DocumentMetadataEditor, type MetadataPatch } from './document-metadata';
@@ -47,6 +48,7 @@ export class DocumentService {
   readonly batch: DocumentBatchAnalysis;
   readonly folderImport: FolderImport;
   readonly indexRepair: DocumentIndexRepair;
+  private readonly folderPermission: FolderPermission;
   private fileLock: FileOperationLock = { guardedFor: (_documentId, operation) => operation() };
 
   private readonly ctx: AppContext;
@@ -63,9 +65,16 @@ export class DocumentService {
     this.deps = { ...services, documents: this, nearDuplicates: this.nearDuplicates };
     this.importer = new DocumentImporter(this.deps);
     this.analyzer = new DocumentAnalyzer(this.deps);
-    this.batch = new DocumentBatchAnalysis({ ctx: services.ctx, documents: this, jobs: services.jobs, notifications: services.notifications });
-    this.folderImport = new FolderImport(this.deps, this.importer, this.batch);
+    this.batch = new DocumentBatchAnalysis({
+      ctx: services.ctx,
+      documents: this,
+      jobs: services.jobs,
+      notifications: services.notifications,
+      privacy: services.privacy,
+    });
+    this.folderImport = new FolderImport(this.deps, this.importer);
     this.indexRepair = new DocumentIndexRepair(services.ctx, this);
+    this.folderPermission = new FolderPermission({ ctx: services.ctx, privacy: services.privacy, reindex: (id) => this.indexDocument(id) });
     this.rereader = new DocumentRereader(this.deps);
     this.metadata = new DocumentMetadataEditor(this.deps);
     this.metadata.registerUndo(undo);
@@ -259,38 +268,12 @@ export class DocumentService {
 
   /** false if `p` lies inside a scan folder whose LLM permission is withdrawn. */
   folderLlmAllowedFor(p: string): boolean {
-    const locked = this.db.select({ path: scanRoots.path }).from(scanRoots).where(eq(scanRoots.llmAllowed, false)).all();
-    return !locked.some((r) => this.privacy.paths.inside(r.path, p));
+    return this.folderPermission.allowedFor(p);
   }
 
-  /** Stores a scan folder's LLM permission on the documents found in it (other locked folders still apply); returns how many changed. */
+  /** Stores a scan folder's LLM permission on the documents found in it; returns how many changed. */
   applyFolderPermission(rootId: string): number {
-    const root = this.db.select().from(scanRoots).where(eq(scanRoots.id, rootId)).get();
-    if (!root) return 0;
-    const linked = new Set(
-      this.db
-        .select({ documentId: scanFiles.documentId })
-        .from(scanFiles)
-        .where(eq(scanFiles.rootId, rootId))
-        .all()
-        .flatMap((f) => (f.documentId ? [f.documentId] : [])),
-    );
-    const rows = this.db
-      .select({ id: documents.id, sourcePath: documents.sourcePath, folderLlmAllowed: documents.folderLlmAllowed })
-      .from(documents)
-      .all()
-      .filter((d) => linked.has(d.id) || (d.sourcePath !== null && this.privacy.paths.inside(root.path, d.sourcePath)));
-    let changed = 0;
-    for (const d of rows) {
-      const allowed = root.llmAllowed && (d.sourcePath === null || this.folderLlmAllowedFor(d.sourcePath));
-      if (allowed === d.folderLlmAllowed) continue;
-      this.db.update(documents).set({ folderLlmAllowed: allowed }).where(eq(documents.id, d.id)).run();
-      // remote vectors of a newly locked document are replaced by local ones
-      if (!allowed) void this.indexDocument(d.id);
-      changed += 1;
-    }
-    if (changed) this.ctx.events.changed('documents');
-    return changed;
+    return this.folderPermission.apply(rootId);
   }
 
   /** Updates the search index for archived/indexed documents. */

@@ -3,6 +3,7 @@ import { inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
 import { validationError } from '../util/errors';
+import { isTokenCapError } from '../util/token-cap';
 import { estimateTokens } from '../util/estimate-tokens';
 import { progressLine, runSummary } from '../util/bulk-text';
 import { untilSettled } from './analysis-retry';
@@ -12,6 +13,7 @@ import type { LlmService } from './llm';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
 import type { SettingsService } from './settings';
+import { pausingOnTokenCap } from './token-cap-pause';
 
 /** Job type of „Auswahl neu verarbeiten“ (#220): re-read, propose new metadata, re-index – for archived documents. */
 export const DOCUMENT_REPROCESS_JOB = 'documents.reprocess';
@@ -90,19 +92,27 @@ export class DocumentReprocessing {
     const progress: ReprocessProgress = { next: saved.next ?? 0, done: saved.done ?? 0, failed: saved.failed ?? 0, proposals: saved.proposals ?? 0 };
     const started = Date.now();
     const resumedAt = progress.next;
-    for (; progress.next < ids.length; progress.next += 1) {
-      job.throwIfCancelled();
-      const outcome = await this.process(ids[progress.next]!, job);
-      if (outcome === 'failed') progress.failed += 1;
-      else progress.done += 1;
-      if (outcome === 'proposed') progress.proposals += 1;
-      job.saveCheckpoint({ ...progress, next: progress.next + 1 });
-      const handled = progress.next + 1;
-      job.report(
-        handled / ids.length,
-        progressLine({ done: handled, total: ids.length, elapsedMs: Date.now() - started, sampled: handled - resumedAt, verb: 'neu verarbeitet' }),
-      );
-    }
+    const loop = async () => {
+      for (; progress.next < ids.length; progress.next += 1) {
+        job.throwIfCancelled();
+        const outcome = await this.process(ids[progress.next]!, job);
+        if (outcome === 'failed') progress.failed += 1;
+        else progress.done += 1;
+        if (outcome === 'proposed') progress.proposals += 1;
+        job.saveCheckpoint({ ...progress, next: progress.next + 1 });
+        const handled = progress.next + 1;
+        job.report(
+          handled / ids.length,
+          progressLine({ done: handled, total: ids.length, elapsedMs: Date.now() - started, sampled: handled - resumedAt, verb: 'neu verarbeitet' }),
+        );
+      }
+    };
+    await pausingOnTokenCap(loop, {
+      notifications: this.deps.notifications,
+      jobId: job.id,
+      title: 'Neuverarbeitung pausiert',
+      progress: () => ({ done: progress.next, total: ids.length, verb: 'neu verarbeitet' }),
+    });
     return this.finish(progress);
   }
 
@@ -120,7 +130,7 @@ export class DocumentReprocessing {
       });
       return 'proposed';
     } catch (err) {
-      if (isJobCancelled(err)) throw err;
+      if (isJobCancelled(err) || isTokenCapError(err)) throw err;
       ctx.logger.warn('documents', 'Re-processing failed', { documentId: id, error: err });
       return 'failed';
     }

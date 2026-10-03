@@ -16,7 +16,7 @@ Die Auswahl wird sofort gespeichert; der aktive Modus steht darunter. Wechselst 
 
 ## Einwilligung bei großen Läufen
 
-Im Modus „vorher fragen“ fragt Archivist bei **Alle N neuen Dateien analysieren** (Scan) und bei **Neu verarbeiten** (Dokumente) **einmal** für den ganzen Lauf: Der Dialog nennt, wie viele Dateien oder Dokumente insgesamt anstehen, wie viele davon laut deinen Einstellungen (Ausschlüsse, Ordnerfreigabe, Dateityp) überhaupt an das LLM gehen dürfen, und eine grobe Token-Schätzung. Ohne Häkchen läuft der Lauf rein lokal. Im Modus „automatisch“ startet der Lauf ohne Dialog, in „nur lokal“ geht nichts hinaus. Ein per Drag-and-Drop importierter Ordner wird im Modus „vorher fragen“ nur lokal analysiert. Jede Anfrage eines Laufs steht einzeln im Übertragungsprotokoll.
+Im Modus „vorher fragen“ fragt Archivist bei **Alle N neuen Dateien analysieren** (Scan) und bei **Neu verarbeiten** (Dokumente) **einmal** für den ganzen Lauf: Der Dialog nennt, wie viele Dateien oder Dokumente insgesamt anstehen, wie viele davon laut deinen Einstellungen (Ausschlüsse, Ordnerfreigabe, Dateityp) überhaupt an das LLM gehen dürfen, und eine grobe Token-Schätzung. Ohne Häkchen läuft der Lauf rein lokal. Im Modus „automatisch“ startet der Lauf ohne Dialog, in „nur lokal“ geht nichts hinaus. Ein per Drag-and-Drop importierter Ordner wird im Modus „vorher fragen“ nur lokal analysiert; die Benachrichtigung dazu bietet **Alle N mit KI analysieren** an, das denselben Dialog öffnet (nur für die Dokumente dieses Imports). Der Dialog zeigt auch, was vom Tageslimit heute übrig ist. Ordner, Dateien und Dateitypen unter „Nie analysieren“ übernimmt ein Ordnerimport gar nicht erst. Jede Anfrage eines Laufs steht einzeln im Übertragungsprotokoll.
 
 ## Begrenzen, wie viel Text an das Embedding-Modell geht
 
@@ -50,7 +50,7 @@ Hatte eine ältere Version eine solche Adresse gespeichert, sendet Archivist nic
 
 Archivist hält Datenbank, Einstellungen, Protokolle und Backups im Datenordner deines Benutzerprofils (unter Windows `%APPDATA%\Archivist\`), nicht im Ordner „Dokumente“, den OneDrive, iCloud oder Dropbox oft abgleichen. Nur Archiv, Eingang, Quarantäne und Papierkorb liegen standardmäßig in `Dokumente\Archivist`. Die Dateien sind nicht zusätzlich verschlüsselt (nur der API-Key); schütze den Rechner mit Festplattenverschlüsselung (BitLocker).
 
-Liegt dein Archivordner trotzdem in einem Sync-Ordner (OneDrive, Dropbox, iCloud Drive oder Google Drive, erkannt am Ordnernamen), warnt Archivist in der Einrichtung, unter **Einstellungen → Archiv** und im Dialog „Archivordner ändern“. Willst du, dass deine Dokumente den Rechner nicht verlassen, wähle einen Ordner außerhalb der Synchronisierung ([Archivpfad ändern](archivpfad-aendern.md)) oder nimm den Ordner in der Sync-Software von der Synchronisierung aus.
+Dasselbe gilt für den **Datenordner**: Liegt er in einem Sync-Ordner, liegen Eingang, Quarantäne und Papierkorb (also Kopien deiner Dokumente), Datenbank und Backups dort ebenfalls beim Anbieter; die Warnung nennt dann auch den Datenordner. Liegt dein Archivordner trotzdem in einem Sync-Ordner (OneDrive, Dropbox, iCloud Drive oder Google Drive, erkannt am Ordnernamen), warnt Archivist in der Einrichtung, unter **Einstellungen → Archiv** und im Dialog „Archivordner ändern“. Willst du, dass deine Dokumente den Rechner nicht verlassen, wähle einen Ordner außerhalb der Synchronisierung ([Archivpfad ändern](archivpfad-aendern.md)) oder nimm den Ordner in der Sync-Software von der Synchronisierung aus.
 
 ## Protokoll und Diagnose für den Agenten
 
@@ -76,7 +76,7 @@ Das Änderungsprotokoll (Einstellungen → Änderungsprotokoll) bleibt lokal und
 
 ## Tokenverbrauch im Blick behalten und begrenzen
 
-Unter **Einstellungen → Datenschutz → Tokenverbrauch** siehst du, wie viele Tokens die KI heute und in diesem Monat verbraucht hat (laut Antwort deines Dienstes, Wiederholungen eingerechnet) und wie viele Anfragen das waren. Trage ein **Tageslimit (Tokens)** ein, wenn du die Kosten deckeln willst, und speichere es; leer lassen heißt kein Limit.
+Unter **Einstellungen → Datenschutz → Tokenverbrauch** siehst du, wie viele Tokens die KI heute und in diesem Monat verbraucht hat (laut Antwort deines Dienstes, Wiederholungen eingerechnet) und wie viele Anfragen das waren. Trage ein **Tageslimit (Tokens)** ein, wenn du die Kosten deckeln willst, und speichere es; leer lassen heißt kein Limit. Erreicht ein Massenlauf (Alle neuen Dateien analysieren, Import-Analyse, Neu verarbeiten) das Limit, hält er an und lässt alle übrigen Dokumente unverändert; er läuft morgen weiter, oder sofort, sobald du das Limit erhöhst oder löschst.
 
 Ist das Limit erreicht, geht nichts mehr an die KI: Analysen im Hintergrund pausieren bis morgen und laufen sofort weiter, wenn du das Limit erhöhst oder entfernst. Im Chat fragt Archivist vorher; mit „Trotzdem fortfahren“ geht deine Nachricht hinaus und der Rest des Tages ist für diese Unterhaltung frei. Details: [LLM-Schnittstelle](../reference/llm-schnittstelle.md#tokenverbrauch-und-tageslimit).
 

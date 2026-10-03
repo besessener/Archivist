@@ -1,5 +1,6 @@
 import type { EntityType } from '@archivist/shared';
-import { SCAN_ANALYZE_ALL_JOB } from '../services/scanner/bulk-analysis';
+import { SCAN_ANALYZE_ALL_JOB, type BulkPayload } from '../services/scanner/bulk-analysis';
+import { ARCHIVE_ALL_JOB, type ArchiveAllPayload } from '../services/archive-batch';
 import { REEMBED_JOB } from '../services/search';
 import { ACTION_EXECUTE_JOB } from '../services/actions';
 import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
@@ -50,9 +51,9 @@ function registerDocumentAnalysis({ jobs, documents, notifications, agent }: Job
 }
 
 /** Analyses new files automatically only if explicitly enabled and the privacy mode allows it. */
-function enqueueAutoAnalysis({ settings, privacy, jobs }: JobServices): void {
+function enqueueAutoAnalysis({ settings, privacy, scanner }: JobServices): void {
   if (!settings.get().scan.autoAnalyze || privacy.mode() !== 'auto') return;
-  jobs.enqueue(SCAN_ANALYZE_ALL_JOB, { label: 'Analysiere alle neuen Dateien', payload: { confirmLlm: false }, sameAs: () => true, maxAttempts: 1 });
+  scanner.bulk.enqueue({ confirmLlm: false });
 }
 
 function registerScannerJobs(services: JobServices): void {
@@ -64,16 +65,16 @@ function registerScannerJobs(services: JobServices): void {
       return summaries;
     },
   });
-  jobs.register<{ confirmLlm: boolean }>(SCAN_ANALYZE_ALL_JOB, {
+  jobs.register<BulkPayload>(SCAN_ANALYZE_ALL_JOB, {
     handler: async (job) => {
-      const analyzed = await scanner.bulk.run({ confirmLlm: job.payload.confirmLlm, job });
+      const analyzed = await scanner.bulk.run(job);
       agent.scheduleInbox();
       return analyzed;
     },
   });
-  jobs.register<{ fileIds: string[]; confirmLlm: boolean }>('scanner.analyze', {
+  jobs.register<{ fileIds: string[]; confirmLlm: boolean; reanalyze?: boolean }>('scanner.analyze', {
     handler: async (job) => {
-      const analyzed = await scanner.analyzeFiles(job.payload.fileIds, { confirmLlm: job.payload.confirmLlm, job });
+      const analyzed = await scanner.analyzeFiles(job.payload.fileIds, { confirmLlm: job.payload.confirmLlm, reanalyze: job.payload.reanalyze, job });
       agent.scheduleInbox();
       return analyzed;
     },
@@ -124,6 +125,7 @@ export function registerJobHandlers(services: JobServices): void {
   jobs.register<AnalyzeBatchPayload>(DOCUMENT_ANALYZE_BATCH_JOB, { handler: (job) => services.documents.batch.runImported(job) });
   jobs.register<ImportFolderPayload>(DOCUMENT_IMPORT_FOLDER_JOB, { handler: (job) => services.documents.folderImport.run(job) });
   jobs.register<Record<string, never>>(DOCUMENT_REINDEX_JOB, { handler: (job) => services.documents.indexRepair.rebuild(job) });
+  jobs.register<ArchiveAllPayload>(ARCHIVE_ALL_JOB, { handler: (job) => services.archiveAll.run(job) });
   jobs.register<ReprocessPayload>(DOCUMENT_REPROCESS_JOB, { handler: (job) => services.reprocessing.run(job) });
   jobs.register<{ documentIds: string[] }>(DOCUMENT_REREAD_JOB, { handler: (job) => rereadArchived(services, job) });
   // one job per trigger, cancellable, resumed after a restart

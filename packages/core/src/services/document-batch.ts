@@ -4,6 +4,8 @@ import type { AnalysisResult, AnalyzeOptions } from './document-analysis';
 import { isJobCancelled, type JobContext, type JobQueueService } from './jobs';
 import type { NotificationService } from './notifications';
 import type { AppContext } from '../context';
+import { isTokenCapError } from '../util/token-cap';
+import { pausingOnTokenCap } from './token-cap-pause';
 
 /** Job type that analyses several documents of one import and reports once (#228). */
 export const DOCUMENT_ANALYZE_BATCH_JOB = 'documents.analyzeBatch';
@@ -18,6 +20,13 @@ export interface AnalyzeBatchPayload {
   /** What the import skipped before the analysis, for the final notification. */
   duplicates: number;
   rejected: number;
+  /** Title and trailing note of the one notification (a folder import names its folder). */
+  title?: string;
+  note?: string;
+  /** In „vorher fragen“ the notification offers to analyse these documents with the LLM afterwards. */
+  offerLlm?: boolean;
+  /** The job that queued this one, so a resumed parent does not queue it twice. */
+  sourceJobId?: string;
 }
 
 /** Where a run takes its documents from: the next ids after a cursor (document ids, ascending). */
@@ -47,6 +56,7 @@ export interface BatchDeps {
   documents: BatchDocuments;
   jobs: JobQueueService;
   notifications: NotificationService;
+  privacy: { mode(): 'auto' | 'confirm' | 'local_only' };
 }
 
 /** Analyses documents one after the other without a notification per document; a rate limit waits (Retry-After) and retries. */
@@ -60,19 +70,28 @@ export class DocumentBatchAnalysis {
     const { job, state } = options;
     const started = Date.now();
     const handledBefore = state.analyzed + state.failed + state.skipped;
-    for (let ids = source.next(state.after); ids.length > 0; ids = source.next(state.after)) {
-      for (const id of ids) {
-        job.throwIfCancelled();
-        await this.analyzeOne(id, { allowLlm: options.allowLlm, job, state });
-        state.after = id;
-        options.onProgress(state);
-        const done = state.analyzed + state.failed + state.skipped;
-        job.report(
-          source.total === 0 ? null : done / source.total,
-          progressLine({ done, total: source.total, elapsedMs: Date.now() - started, sampled: done - handledBefore }),
-        );
+    const loop = async () => {
+      for (let ids = source.next(state.after); ids.length > 0; ids = source.next(state.after)) {
+        for (const id of ids) {
+          job.throwIfCancelled();
+          await this.analyzeOne(id, { allowLlm: options.allowLlm, job, state });
+          state.after = id;
+          options.onProgress(state);
+          const done = state.analyzed + state.failed + state.skipped;
+          job.report(
+            source.total === 0 ? null : done / source.total,
+            progressLine({ done, total: source.total, elapsedMs: Date.now() - started, sampled: done - handledBefore }),
+          );
+        }
       }
-    }
+    };
+    const handled = () => state.analyzed + state.failed + state.skipped;
+    await pausingOnTokenCap(loop, {
+      notifications: this.deps.notifications,
+      jobId: job.id,
+      title: 'Analyse pausiert',
+      progress: () => ({ done: handled(), total: Math.max(source.total, handled()) }),
+    });
     return state;
   }
 
@@ -88,7 +107,7 @@ export class DocumentBatchAnalysis {
       if (result.skipped) state.skipped += 1;
       else state.analyzed += 1;
     } catch (err) {
-      if (isJobCancelled(err)) throw err;
+      if (isJobCancelled(err) || isTokenCapError(err)) throw err;
       ctx.logger.warn('documents', 'Analysis in a batch failed', { documentId: id, error: err });
       state.failed += 1;
       if (state.failures.length < MAX_REPORTED_FAILURES) state.failures.push(err instanceof Error ? err.message : String(err));
@@ -96,7 +115,13 @@ export class DocumentBatchAnalysis {
   }
 
   /** The one notification of a run: how many were analysed, how many failed (with the first reasons) and what was skipped before. */
-  announce(summary: { title: string; state: BatchState; skippedBefore?: { duplicates: number; rejected: number }; note?: string }): string {
+  announce(summary: {
+    title: string;
+    state: BatchState;
+    skippedBefore?: { duplicates: number; rejected: number };
+    note?: string;
+    extraActions?: Array<{ label: string; kind: 'navigate'; target: string }>;
+  }): string {
     const { state, skippedBefore } = summary;
     const text = runSummary({ done: state.analyzed, failed: state.failed });
     const reasons = state.failures.length ? ` Grund: ${state.failures.join(' / ')}` : '';
@@ -109,7 +134,7 @@ export class DocumentBatchAnalysis {
       description: `${text}.${reasons}${skipped}${summary.note ?? ''}`,
       type: 'system',
       priority: state.failed > 0 ? 'normal' : 'low',
-      proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
+      proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }, ...(summary.extraActions ?? [])],
     });
     return text;
   }
@@ -124,7 +149,11 @@ export class DocumentBatchAnalysis {
       state: { ...emptyBatchState(), ...(job.checkpoint as Partial<BatchState> | null) },
       onProgress: (progress) => job.saveCheckpoint(progress),
     });
-    const { duplicates, rejected } = job.payload;
-    return { summary: this.announce({ title: 'Import abgeschlossen', state, skippedBefore: { duplicates, rejected } }) };
+    const { duplicates, rejected, title, note, offerLlm, allowLlm } = job.payload;
+    const offer = offerLlm && !allowLlm && this.deps.privacy.mode() === 'confirm' && state.analyzed > 0;
+    const extraActions = offer
+      ? [{ label: `Alle ${state.analyzed} mit KI analysieren`, kind: 'navigate' as const, target: `/inbox/?analyzeImport=${job.id}` }]
+      : [];
+    return { summary: this.announce({ title: title ?? 'Import abgeschlossen', state, skippedBefore: { duplicates, rejected }, note, extraActions }) };
   }
 }

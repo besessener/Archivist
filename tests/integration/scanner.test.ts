@@ -113,7 +113,7 @@ describe('Folder scan (default mode: local only, confirm)', () => {
     expect(doc.proposal?.possibleOpenItems.length).toBeGreaterThan(0);
 
     // analyse again with explicit approval
-    await app.ok('scanner:analyze', { fileIds: [file.id], confirmLlm: true });
+    await app.ok('scanner:analyze', { fileIds: [file.id], confirmLlm: true, reanalyze: true });
     await app.services.jobs.whenIdle();
     const calls = app.llm.calls.filter((c) => c.schema === 'DocumentClassification');
     expect(calls).toHaveLength(1);

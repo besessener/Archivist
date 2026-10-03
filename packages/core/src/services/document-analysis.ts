@@ -77,20 +77,27 @@ export class DocumentAnalyzer {
     try {
       return await this.runAnalysis(row, opts);
     } catch (err) {
-      if (err instanceof LlmAnalysisRetry) {
-        this.restoreStatus(row); // waits for the re-run as before, still `pending` for the LLM
-        throw err;
-      }
-      if (isJobCancelled(err)) {
-        // interrupted on quit: the document stays `analyzing`, its job runs again after the next start
-        if (!isJobInterrupted(err)) this.markAnalysisCancelled(id);
-        throw err;
-      }
-      // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
-      if (opts.deferFailure ? this.isAnalyzing(id) : this.markAnalysisFailed(id, err)) throw err;
-      this.deps.ctx.logger.info('documents', 'Analysis error ignored: document status has changed meanwhile', { documentId: id, error: err });
-      return skipped();
+      return this.afterFailure(row, { err, opts });
     }
+  }
+
+  /** What a failed analysis leaves behind: a retry waits, a paused or cancelled run keeps the document, any other error marks it failed. */
+  private afterFailure(row: DocRow, failure: { err: unknown; opts: AnalyzeOptions }): AnalysisResult {
+    const { err, opts } = failure;
+    const id = row.id;
+    if (err instanceof LlmAnalysisRetry || (isTokenCapError(err) && !opts.deferFailure)) {
+      this.restoreStatus(row); // a retry waits for the re-run, a bulk run paused by the token limit leaves the document untouched
+      throw err;
+    }
+    if (isJobCancelled(err)) {
+      // interrupted on quit: the document stays `analyzing`, its job runs again after the next start
+      if (!isJobInterrupted(err)) this.markAnalysisCancelled(id);
+      throw err;
+    }
+    // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
+    if (opts.deferFailure ? this.isAnalyzing(id) : this.markAnalysisFailed(id, err)) throw err;
+    this.deps.ctx.logger.info('documents', 'Analysis error ignored: document status has changed meanwhile', { documentId: id, error: err });
+    return skipped();
   }
 
   private restoreStatus(row: DocRow): void {

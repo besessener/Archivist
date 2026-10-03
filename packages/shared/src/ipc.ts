@@ -15,6 +15,8 @@ import {
   RelinkResult,
   VerifyReport,
 } from './archive';
+import { Confirmed, Empty, Ok, channel } from './ipc-channel';
+import { bulkChannels } from './ipc-bulk';
 import { BulkEstimate, ImportedFolder, IndexStatus, ReanalysisProposal, StartedJob } from './bulk';
 import { AuditEntry, AuditVerification, LlmTransmission, LlmUsage, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
@@ -52,13 +54,7 @@ import {
   MemoryInput,
 } from './agent';
 
-const Empty = z.object({});
-const Ok = z.object({ ok: z.literal(true) });
-
-const Confirmed = z.literal(true).describe('Ausdrückliche Bestätigung des Benutzers (Pflicht)');
 const NullableText = z.string().nullish();
-
-const channel = <Input extends z.ZodType, Output extends z.ZodType>(input: Input, output: Output) => ({ input, output });
 
 /** The IPC allowlist: every channel has an input and an output schema; dynamic channel names are not allowed. */
 export const ipcContract = {
@@ -206,6 +202,8 @@ export const ipcContract = {
       projectId: z.string().optional(),
       query: z.string().optional(),
       limit: z.number().int().min(1).max(1000).default(300),
+      /** Documents to skip, for paging through a long list (newest first). */
+      offset: z.number().int().min(0).default(0),
     }),
     z.array(DocumentRecord),
   ),
@@ -333,10 +331,19 @@ export const ipcContract = {
   'scanner:listDirectories': channel(Empty, z.array(ScanRoot)),
   'scanner:start': channel(z.object({ rootId: Id.optional() }), z.object({ jobId: Id })),
   'scanner:getResults': channel(
-    z.object({ rootId: Id.optional(), status: ScanFileStatus.optional(), limit: z.number().int().min(1).max(2000).default(500) }),
-    z.object({ files: z.array(ScanFile), lastSummary: ScanSummary.nullable() }),
+    z.object({
+      rootId: Id.optional(),
+      status: ScanFileStatus.optional(),
+      limit: z.number().int().min(1).max(2000).default(500),
+      offset: z.number().int().min(0).default(0),
+    }),
+    z.object({ files: z.array(ScanFile), lastSummary: ScanSummary.nullable(), total: z.number().int().min(0) }),
   ),
-  'scanner:analyze': channel(z.object({ fileIds: z.array(Id).min(1).max(500), confirmLlm: z.boolean().default(false) }), z.object({ jobId: Id })),
+  /** Files that are already `analyzed` are skipped unless `reanalyze` is set („erneut analysieren“). */
+  'scanner:analyze': channel(
+    z.object({ fileIds: z.array(Id).min(1).max(500), confirmLlm: z.boolean().default(false), reanalyze: z.boolean().default(false) }),
+    z.object({ jobId: Id }),
+  ),
   /** All new and changed files: how many, how many may go to the LLM, roughly how many tokens. */
   'scanner:analyzeAllPreview': channel(Empty, BulkEstimate),
   /** One job over all new and changed files, in batches of 500; `confirmLlm` is the one consent for the whole run. */
@@ -353,7 +360,7 @@ export const ipcContract = {
 
   // --- Notifications ---
   'notifications:list': channel(
-    z.object({ includeResolved: z.boolean().default(false), limit: z.number().int().min(1).max(500).default(100) }),
+    z.object({ includeResolved: z.boolean().default(false), limit: z.number().int().min(1).max(500).default(100), offset: z.number().int().min(0).default(0) }),
     z.array(AppNotification),
   ),
   'notifications:markRead': channel(z.object({ ids: z.array(Id).min(1) }), Ok),
@@ -613,6 +620,8 @@ export const ipcContract = {
     }),
     ArchiveRootChangeResult,
   ),
+
+  ...bulkChannels,
 } as const;
 
 export type IpcContract = typeof ipcContract;

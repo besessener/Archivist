@@ -1,11 +1,14 @@
 import type { BulkEstimate } from '@archivist/shared';
-import { and, asc, eq, gt, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, asc, inArray, ne, sql } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { scanFiles, scanRoots } from '../../db/schema';
 import { estimateTokens } from '../../util/estimate-tokens';
 import { progressLine, runSummary } from '../../util/bulk-text';
+import type { Job } from '@archivist/shared';
 import type { JobContext, JobQueueService } from '../jobs';
 import type { PrivacyService } from '../privacy';
+import type { NotificationService } from '../notifications';
+import { pausingOnTokenCap } from '../token-cap-pause';
 import type { SettingsService } from '../settings';
 import type { FileAnalysis, FileResult } from './file-analysis';
 
@@ -18,14 +21,14 @@ export const BULK_BATCH_SIZE = 500;
 const PROMPT_OVERHEAD_CHARS = 2_000;
 const MAX_REPORTED_FAILURES = 3;
 
-interface Cursor {
-  firstSeenAt: string;
-  path: string;
+/** What the user confirmed: the files that were waiting at that moment; files found later are left for the next run. */
+export interface BulkPayload {
+  confirmLlm: boolean;
+  fileIds: string[];
 }
 
 interface BulkCheckpoint {
-  cursor: Cursor | null;
-  total: number;
+  next: number;
   analyzed: number;
   failed: number;
   skipped: number;
@@ -38,6 +41,7 @@ export interface BulkAnalysisDeps {
   privacy: PrivacyService;
   settings: SettingsService;
   jobs: JobQueueService;
+  notifications: NotificationService;
   /** Assignment proposals for the documents of a finished batch. */
   buildProposals: (documentIds: string[]) => void;
 }
@@ -90,49 +94,75 @@ export class BulkFileAnalysis {
     return { total: rows.length, llmEligible: eligible.length, estimatedTokens: estimateTokens(chars) };
   }
 
-  private nextPage(cursor: Cursor | null) {
-    const after = cursor
-      ? or(gt(scanFiles.firstSeenAt, cursor.firstSeenAt), and(eq(scanFiles.firstSeenAt, cursor.firstSeenAt), gt(scanFiles.path, cursor.path)))
-      : undefined;
-    return this.db
-      .select({ id: scanFiles.id, firstSeenAt: scanFiles.firstSeenAt, path: scanFiles.path })
+  /** Queues the run over the files waiting now (frozen here, so the one consent covers exactly these). */
+  enqueue(request: { confirmLlm: boolean }): Job {
+    const fileIds = this.db
+      .select({ id: scanFiles.id })
       .from(scanFiles)
-      .where(and(this.awaiting(), after))
+      .where(this.awaiting())
       .orderBy(asc(scanFiles.firstSeenAt), asc(scanFiles.path))
-      .limit(BULK_BATCH_SIZE)
-      .all();
+      .all()
+      .map((row) => row.id);
+    const payload: BulkPayload = { confirmLlm: request.confirmLlm, fileIds };
+    return this.deps.jobs.enqueue(SCAN_ANALYZE_ALL_JOB, { label: 'Analysiere alle neuen Dateien', payload, sameAs: () => true, maxAttempts: 1 });
   }
 
-  /** Runs over the pages after the checkpoint's cursor; a file that fails stays `new`, but the cursor is past it. */
-  async run(options: { confirmLlm: boolean; job: JobContext }): Promise<{ summary: string }> {
-    const { job, confirmLlm } = options;
+  /** The ids of a page that still wait (a file may have been analysed, excluded or removed since the consent), in the page's order. */
+  private stillAwaiting(page: string[]): Set<string> {
+    const rows = this.db
+      .select({ id: scanFiles.id })
+      .from(scanFiles)
+      .where(and(inArray(scanFiles.id, page), this.awaiting()))
+      .all();
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /** Runs over the frozen ids after the checkpoint; a file that fails stays `new`, but the run is past it. */
+  async run(job: JobContext<BulkPayload>): Promise<{ summary: string }> {
+    const { confirmLlm, fileIds } = job.payload;
     const saved = (job.checkpoint ?? {}) as Partial<BulkCheckpoint>;
-    const state: BulkCheckpoint = { cursor: null, total: this.count(), analyzed: 0, failed: 0, skipped: 0, failures: [], ...saved };
+    const state: BulkCheckpoint = { next: 0, analyzed: 0, failed: 0, skipped: 0, failures: [], ...saved };
+    const handled = () => state.analyzed + state.failed + state.skipped;
+    await pausingOnTokenCap(() => this.analyzePages(fileIds, { state, confirmLlm, job }), {
+      notifications: this.deps.notifications,
+      jobId: job.id,
+      title: 'Analyse pausiert',
+      progress: () => ({ done: handled(), total: fileIds.length }),
+    });
+    this.deps.analysis.announce({ analyzed: state.analyzed, failed: state.failed, failures: state.failures });
+    return { summary: runSummary({ done: state.analyzed, failed: state.failed }) };
+  }
+
+  private async analyzePages(fileIds: string[], run: { state: BulkCheckpoint; confirmLlm: boolean; job: JobContext<BulkPayload> }): Promise<void> {
+    const { state, confirmLlm, job } = run;
     const mode = this.deps.privacy.mode();
     const queued = this.queuedElsewhere();
     const started = Date.now();
     const handledBefore = state.analyzed + state.failed + state.skipped;
-    for (let page = this.nextPage(state.cursor); page.length > 0; page = this.nextPage(state.cursor)) {
+    while (state.next < fileIds.length) {
+      const page = fileIds.slice(state.next, state.next + BULK_BATCH_SIZE);
+      const waiting = this.stillAwaiting(page);
       const documentIds: string[] = [];
-      for (const file of page) {
-        job.throwIfCancelled();
-        if (!queued.has(file.id)) {
-          const result = await this.deps.analysis.analyzeOne(file.id, { mode, confirmLlm, job, quiet: true });
-          this.tally(state, result);
-          if (result.kind === 'analyzed') documentIds.push(result.documentId);
+      try {
+        for (const id of page) {
+          job.throwIfCancelled();
+          if (waiting.has(id) && !queued.has(id)) {
+            const result = await this.deps.analysis.analyzeOne(id, { mode, confirmLlm, job, quiet: true });
+            this.tally(state, result);
+            if (result.kind === 'analyzed') documentIds.push(result.documentId);
+          }
+          state.next += 1;
+          job.saveCheckpoint(state);
+          const done = state.analyzed + state.failed + state.skipped;
+          job.report(
+            Math.min(1, state.next / fileIds.length),
+            progressLine({ done, total: Math.max(fileIds.length, done), elapsedMs: Date.now() - started, sampled: done - handledBefore }),
+          );
         }
-        state.cursor = { firstSeenAt: file.firstSeenAt, path: file.path };
-        job.saveCheckpoint(state);
-        const done = state.analyzed + state.failed + state.skipped;
-        job.report(
-          state.total ? Math.min(1, done / state.total) : null,
-          progressLine({ done, total: Math.max(state.total, done), elapsedMs: Date.now() - started, sampled: done - handledBefore }),
-        );
+      } finally {
+        this.deps.buildProposals(documentIds);
       }
-      this.deps.buildProposals(documentIds);
     }
-    this.deps.analysis.announce({ analyzed: state.analyzed, failed: state.failed, failures: state.failures });
-    return { summary: runSummary({ done: state.analyzed, failed: state.failed }) };
   }
 
   private tally(state: BulkCheckpoint, result: FileResult): void {

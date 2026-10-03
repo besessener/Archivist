@@ -8,12 +8,17 @@ const MOVED_ENTRIES = ['database', 'index', 'config', 'logs', 'backups', 'restor
 const MARKER_FILE = 'layout-migration.json';
 const STAGE_DIR = '.layout-migration';
 const HASH_BLOCK_BYTES = 1024 * 1024;
+/** Room kept free on top of the copies (new files written while the move runs, file system overhead). */
+const FREE_SPACE_MARGIN = 1.1;
+const FREE_SPACE_RESERVE_BYTES = 64 * 1024 * 1024;
 
 export interface LayoutMigrationPlaces {
   /** Folder where older versions kept everything (Documents/Archivist). */
   legacyRoot: string;
   /** Folder of the application state (the per-user data folder). */
   appDataRoot: string;
+  /** Called with a short English line for each step, so the (possibly long) move shows up in the log. */
+  onProgress?: (message: string) => void;
 }
 
 export type LayoutMigrationResult = { migrated: false } | { migrated: true; from: string; to: string; entries: string[] };
@@ -52,6 +57,34 @@ function fingerprint(entry: string): Map<string, string> {
   };
   walk(entry, '');
   return result;
+}
+
+function treeBytes(entry: string): number {
+  const stat = fs.lstatSync(entry);
+  if (!stat.isDirectory()) return stat.size;
+  return fs.readdirSync(entry).reduce((sum, name) => sum + treeBytes(path.join(entry, name)), 0);
+}
+
+const megabytes = (bytes: number): string => `${Math.ceil(bytes / (1024 * 1024)).toLocaleString('de-DE')} MB`;
+
+/** Stops before anything is copied when the target volume cannot hold the copies; the old data stays untouched. */
+function assertFreeSpace(places: LayoutMigrationPlaces, entries: string[]): void {
+  const needed =
+    Math.ceil(entries.reduce((sum, name) => sum + treeBytes(path.join(places.legacyRoot, name)), 0) * FREE_SPACE_MARGIN) + FREE_SPACE_RESERVE_BYTES;
+  let free: number;
+  try {
+    const stats = fs.statfsSync(places.appDataRoot);
+    free = stats.bavail * stats.bsize;
+  } catch {
+    return; // the platform cannot tell: the copy itself still fails safely
+  }
+  places.onProgress?.(`Layout migration needs ${needed} bytes, ${free} bytes are free`);
+  if (free >= needed) return;
+  throw new AppError(
+    'filesystem_error',
+    `Archivist verschiebt seine Datenbank und Einstellungen in den Datenordner deines Benutzerprofils (${places.appDataRoot}). Dafür werden etwa ${megabytes(needed)} freier Speicher benötigt, frei sind ${megabytes(free)}. Es wurde nichts verändert. Schaffe Platz auf diesem Laufwerk und starte Archivist neu.`,
+    { retryable: false },
+  );
 }
 
 function sameContent(a: string, b: string): boolean {
@@ -113,7 +146,9 @@ function stageCopies(places: LayoutMigrationPlaces, entries: string[]): void {
   try {
     for (const name of entries) {
       const copy = path.join(stage, name);
+      places.onProgress?.(`Layout migration: copying ${name}`);
       fs.cpSync(path.join(places.legacyRoot, name), copy, { recursive: true, errorOnExist: true, force: false });
+      places.onProgress?.(`Layout migration: verifying ${name}`);
       if (!sameContent(path.join(places.legacyRoot, name), copy)) throw new Error(`Verification of ${name} failed`);
     }
   } catch (err) {
@@ -149,8 +184,11 @@ export function migrateLegacyLayout(places: LayoutMigrationPlaces): LayoutMigrat
     writeMarker(markerFile, { ...pending, status: 'complete' });
     return { migrated: false };
   }
-  stageCopies(resolved, entries);
+  const withProgress = { ...resolved, onProgress: places.onProgress };
+  assertFreeSpace(withProgress, entries);
+  stageCopies(withProgress, entries);
   writeMarker(markerFile, pending);
+  places.onProgress?.('Layout migration: switching over');
   switchOver(resolved, pending, markerFile);
   return { migrated: true, from: legacyRoot, to: appDataRoot, entries };
 }

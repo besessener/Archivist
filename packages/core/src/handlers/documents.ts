@@ -2,7 +2,6 @@ import type { Services } from '../create-services';
 import { DOCUMENT_REINDEX_JOB } from '../services/document-index';
 import { enqueueReembedding } from '../services/reembedding';
 import { fillPattern } from '../services/rename-pattern';
-import { SCAN_ANALYZE_ALL_JOB } from '../services/scanner/bulk-analysis';
 import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
 /** Rename requests for a scheme: each document gets its own name from its metadata. */
@@ -23,6 +22,10 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'documents:counts': () => services.reader.run('documentCounts', {}),
     'documents:count': (input) => services.reader.run('documentCount', input),
     'documents:get': (input) => services.documents.get(input.id),
+    'documents:archiveAllPreview': (input) => services.archiveAll.preview(input.source),
+    'documents:archiveAll': (input) => ({ jobId: services.archiveAll.enqueue(input).id }),
+    'documents:analyzeImportEstimate': (input) => services.importAnalysis.estimate(input.jobId),
+    'documents:analyzeImport': (input) => ({ jobId: services.importAnalysis.enqueue(input.jobId).id }),
     'documents:classify': (input) => ({ jobId: services.documents.enqueueAnalysis(input.documentId, { allowLlm: input.allowLlm }) }),
     'documents:previewArchive': (input) => services.archive.preview(input.items),
     'documents:archive': (input) =>
@@ -91,19 +94,12 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'scanner:analyze': (input) => ({
       jobId: services.jobs.enqueue('scanner.analyze', {
         label: `Analysiere ${input.fileIds.length} Datei(en)`,
-        payload: { fileIds: input.fileIds, confirmLlm: input.confirmLlm },
+        payload: { fileIds: input.fileIds, confirmLlm: input.confirmLlm, reanalyze: input.reanalyze },
         maxAttempts: 1,
       }).id,
     }),
     'scanner:analyzeAllPreview': () => services.scanner.bulk.estimate(),
-    'scanner:analyzeAll': (input) => ({
-      jobId: services.jobs.enqueue(SCAN_ANALYZE_ALL_JOB, {
-        label: 'Analysiere alle neuen Dateien',
-        payload: { confirmLlm: input.confirmLlm },
-        sameAs: () => true,
-        maxAttempts: 1,
-      }).id,
-    }),
+    'scanner:analyzeAll': (input) => ({ jobId: services.scanner.bulk.enqueue({ confirmLlm: input.confirmLlm }).id }),
     'scanner:proposals': () => services.scanner.proposals(),
     'scanner:exclude': (input) => services.scanner.exclude(input.kind, input.path),
     'scanner:listExclusions': () => services.scanner.listExclusions(),
