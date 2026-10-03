@@ -62,7 +62,7 @@ describe('ignoring a document (#232)', () => {
   });
 
   it('refuses to ignore an archived or to take back a not ignored document', async () => {
-    const archivedId = await archived(app, { name: 'Alt.txt', content: 'Alt Dokument', folder: 'private/alt' });
+    const archivedId = await archived(app, { name: 'Alt.txt', content: 'Alt Dokument', folder: 'Privat/alt' });
     const inboxId = await inInbox(app, { name: 'Neu.txt', content: 'Neu Dokument' });
 
     expect((await app.call('documents:ignore', { id: archivedId })).ok).toBe(false);

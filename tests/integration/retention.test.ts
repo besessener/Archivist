@@ -77,7 +77,7 @@ describe('Retention of bookkeeping tables (#208)', () => {
 
 describe('Transmission purpose without file names (#208)', () => {
   it('names the document by its id, not by its file name', async () => {
-    app.llm.on('DocumentClassification', () => classification({ title: 'Vertrag', summary: 'Ein Vertrag', categoryPath: 'private/wohnen' }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Vertrag', summary: 'Ein Vertrag', categoryPath: 'Privat/wohnen' }));
     const imported = await app.ok('documents:import', { paths: [app.file('in/geheimer-mietvertrag-mueller.txt', 'Mietvertrag für die Wohnung.')] });
     await app.services.jobs.whenIdle();
     const id = imported.imported[0]!.id;

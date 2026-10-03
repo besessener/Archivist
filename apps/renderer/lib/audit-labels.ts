@@ -30,6 +30,7 @@ const ACTION_LABELS: Record<string, string> = {
   'archive.migrateRoot': 'Archiv in einen anderen Ordner übertragen',
   'category.create': 'Ordner im Archiv angelegt',
   'category.removeEmpty': 'Leeren Archivordner entfernt',
+  'category.migrate': 'Hauptkategorien auf Deutsch umgestellt',
   'backup.create': 'Sicherung erstellt',
   'backup.prune': 'Alte Sicherungen aufgeräumt',
   'backup.restore': 'Sicherung wiederhergestellt',

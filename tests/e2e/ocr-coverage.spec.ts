@@ -24,7 +24,7 @@ test.describe('text recognition (OCR)', () => {
     await app.navigation.do.open('inbox');
     // 40 blank pages are rendered and recognised one by one first
     await expect(app.inbox.locators.proposals.first()).toBeVisible({ timeout: 180_000 });
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
 
     await expect(app.inbox.locators.coverage).toContainText('Texterkennung nicht ausgeführt');
     await expect(app.inbox.locators.coverage).toContainText('4 gescannten Seiten');

@@ -35,7 +35,7 @@ const later = (ms: number) => {
 
 describe('Leftover partial copies in the archive', () => {
   it('removes an old one and then lets the empty folder go', async () => {
-    await app.ok('categories:create', { path: 'work/leer', confirmed: true });
+    await app.ok('categories:create', { path: 'Arbeit/leer', confirmed: true });
     const partial = leftover(partialName('rechnung.pdf'));
     expect(await app.services.archive.removeEmptyFolders(), 'the leftover makes the folder look occupied').toEqual([]);
     later(2 * HOUR_MS);
@@ -43,7 +43,7 @@ describe('Leftover partial copies in the archive', () => {
     await app.services.archive.cleanupInbox();
 
     expect(fs.existsSync(partial)).toBe(false);
-    expect(await app.services.archive.removeEmptyFolders()).toEqual(['work/leer']);
+    expect(await app.services.archive.removeEmptyFolders()).toEqual(['Arbeit/leer']);
   });
 
   it('keeps a fresh one (a copy may be running), also when it carries an old modification time', async () => {

@@ -19,8 +19,8 @@ describe('Re-indexing after a merge runs as a bounded job (#224)', () => {
   it('queues one job, indexes at most two documents at a time, and reaches every document', async () => {
     const ids: string[] = [];
     for (let index = 0; index < 6; index += 1)
-      ids.push(await archived(app, { name: `alt-${index}.txt`, content: `Inhalt ${index} des Altberichts`, folder: 'work/notes', topic: 'Altthema' }));
-    await archived(app, { name: 'neu.txt', content: 'Inhalt des Neuberichts', folder: 'work/notes', topic: 'Neuthema' });
+      ids.push(await archived(app, { name: `alt-${index}.txt`, content: `Inhalt ${index} des Altberichts`, folder: 'Arbeit/notes', topic: 'Altthema' }));
+    await archived(app, { name: 'neu.txt', content: 'Inhalt des Neuberichts', folder: 'Arbeit/notes', topic: 'Neuthema' });
     const graph = app.services.graph;
     const oldTopic = graph.findByName('topic', 'Altthema')!;
     const newTopic = graph.findByName('topic', 'Neuthema')!;
@@ -60,8 +60,8 @@ describe('Re-indexing after a merge runs as a bounded job (#224)', () => {
   it('a failing record does not stop the others', async () => {
     const ids: string[] = [];
     for (let index = 0; index < 3; index += 1)
-      ids.push(await archived(app, { name: `alt-${index}.txt`, content: `Inhalt ${index} des Altberichts`, folder: 'work/notes', topic: 'Altthema' }));
-    await archived(app, { name: 'neu.txt', content: 'Inhalt des Neuberichts', folder: 'work/notes', topic: 'Neuthema' });
+      ids.push(await archived(app, { name: `alt-${index}.txt`, content: `Inhalt ${index} des Altberichts`, folder: 'Arbeit/notes', topic: 'Altthema' }));
+    await archived(app, { name: 'neu.txt', content: 'Inhalt des Neuberichts', folder: 'Arbeit/notes', topic: 'Neuthema' });
     const graph = app.services.graph;
     const indexed: string[] = [];
     const original = app.services.documents.indexDocument.bind(app.services.documents);

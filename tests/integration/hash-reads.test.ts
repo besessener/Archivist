@@ -10,7 +10,7 @@ let hashed: string[];
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.services.settings.update({ scan: { enabled: true } });
-  app.llm.on('DocumentClassification', () => classification({ title: 'Notiz', summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Notiz', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes' }));
   hashed = [];
   const run = app.services.pool.run.bind(app.services.pool) as (task: string, payload: { path: string }) => Promise<unknown>;
   vi.spyOn(app.services.pool, 'run').mockImplementation(((task: string, payload: { path: string }) => {
