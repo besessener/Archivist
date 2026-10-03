@@ -25,26 +25,6 @@ on:
       - 'mutation-targets.mjs'
       - 'vitest.mutation.config.mts'
       - 'package-lock.json'
-  pull_request:
-    paths:
-      - 'packages/core/src/util/paths.ts'
-      - 'packages/core/src/util/redact.ts'
-      - 'packages/core/src/services/privacy.ts'
-      - 'packages/core/src/services/undo.ts'
-      - 'packages/core/src/agent/gate.ts'
-      - 'packages/core/src/agent/security.ts'
-      - 'packages/core/src/agent/history-privacy.ts'
-      - 'packages/core/src/services/rename-pattern.ts'
-      - 'packages/core/src/services/decision-fields.ts'
-      - 'packages/core/src/services/open-item-fields.ts'
-      - 'packages/core/src/agent/tools/research/deadlines.ts'
-      - 'packages/core/src/agent/tools/research/amounts.ts'
-      - 'packages/core/src/services/contradiction-rules.ts'
-      - 'tests/**'
-      - 'stryker.config.mjs'
-      - 'mutation-targets.mjs'
-      - 'vitest.mutation.config.mts'
-      - 'package-lock.json'
   workflow_dispatch:
 
 permissions: {}
@@ -63,18 +43,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Incremental: Stryker compares against the result of the last run and only mutates what changed. That misses changes to
-      # files that are neither mutated nor tests (e.g. configuration), so `main` always runs in full (--force) and provides the cache.
-      - name: Restore result of the last run
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: reports/stryker-incremental.json
-          key: mutation-incremental-${{ github.sha }}
-          restore-keys: mutation-incremental-
       - name: Mutation test (fails below the threshold in stryker.config.mjs)
-        env:
-          FULL_RUN: ${{ github.event_name != 'pull_request' && '--force' || '' }}
-        run: npx stryker run --concurrency 4 --incremental $FULL_RUN
+        run: npx stryker run --concurrency 4
       - name: Summary
         if: ${{ !cancelled() }}
         run: node scripts/mutation-summary.mjs >> "$GITHUB_STEP_SUMMARY"
