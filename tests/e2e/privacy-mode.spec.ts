@@ -1,11 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
 
-function savedMode(dataDir: string): string {
-  const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'settings.json'), 'utf8')) as { privacy: { llmMode: string } };
-  return settings.privacy.llmMode;
+function savedPrivacy(dataDir: string): { llmMode: string; maskPersonalData?: boolean } {
+  const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'settings.json'), 'utf8')) as {
+    privacy: { llmMode: string; maskPersonalData?: boolean };
+  };
+  return settings.privacy;
 }
+const savedMode = (dataDir: string): string => savedPrivacy(dataDir).llmMode;
 
 test.describe('privacy mode', () => {
   test('is saved immediately on selection and shown as active', async ({ llm, on, page, workspace }) => {
@@ -39,5 +43,22 @@ test.describe('privacy mode', () => {
 
     await expect(app.settings.locators.privacy.activeMode).toContainText('Vor jeder externen Analyse fragen');
     await expect(app.settings.locators.privacy.extensions).toHaveValue('xlsx, eml');
+  });
+
+  test('masks personal data by default, says what stays readable and can be switched off', async ({ llm, on, page, workspace }, testInfo) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openPrivacy();
+
+    await expect(app.settings.locators.privacy.maskPersonal).toBeChecked();
+    await expect(app.settings.locators.privacy.maskNote).toContainText('Gesundheitsdaten');
+    await expect(app.settings.locators.privacy.maskNote).toContainText('nicht maskiert');
+    await expectNoSeriousA11yViolations(page, testInfo);
+
+    await app.settings.locators.privacy.maskPersonal.click();
+
+    await expect(app.settings.locators.privacy.maskPersonal).not.toBeChecked();
+    await expect.poll(() => savedPrivacy(workspace.dataDir).maskPersonalData).toBe(false);
   });
 });

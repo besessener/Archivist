@@ -326,7 +326,7 @@ export class DocumentService {
   }
 
   /** Empties the trash for good (level 3: second explicit confirmation). */
-  emptyTrash(request: { confirmed: boolean; permanentlyConfirmed: boolean }): Promise<{ deletedFiles: number; documents: number }> {
+  emptyTrash(request: { confirmed: boolean; permanentlyConfirmed: boolean }): Promise<{ deletedFiles: number; documents: number; databaseCompacted: boolean }> {
     return this.trash.empty(request);
   }
 }

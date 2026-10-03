@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { checkLlmBaseUrl, type AgentAdapterId, type AppErrorInfo, type LlmTestResult, type LlmTransmission } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { AppError, toErrorInfo, validationError } from '../util/errors';
-import { redactSecrets } from '../util/redact';
+import { maskingOf, redactSecrets } from '../util/redact';
 import { abortedError, mapHttpError } from '../util/llm-errors';
 import type { SecretService } from './secret';
 import type { SettingsService } from './settings';
@@ -12,7 +12,7 @@ import type { FetchLike } from '../agent/adapters/common';
 import { EndpointHealth } from './llm/endpoint-health';
 import { endpointUrl, postJson, type PostRequest } from './llm/http';
 import { isUnsupportedParamError, paramsToDrop, presentParams, withoutParams, type OptionalParam } from './llm/optional-params';
-import { correctionInput, issuesText, parseJsonAnswer, preparedInput, structuredInstructions } from './llm/prompt-text';
+import { correctionInput, issuesText, parseJsonAnswer, preparedInput, previewOf, structuredInstructions } from './llm/prompt-text';
 import { responsesRequestBody, responsesText } from './llm/responses';
 import { TransmissionLog, type Transmission } from './llm/transmission-log';
 
@@ -24,6 +24,8 @@ export interface LlmRequest {
   purpose: string;
   documentIds?: string[];
   json?: boolean;
+  /** What the log shows instead of the start of the prompt, e.g. the question and the source titles; masked like the request. */
+  preview?: string;
   /** only for the explicit connection test (sends fixed text only) */
   bypassPrivacy?: boolean;
   maxOutputTokens?: number;
@@ -55,6 +57,8 @@ interface PreparedRequest {
   sent: string;
   instructions: string;
   redactions: number;
+  personalRedactions: number;
+  preview: string;
   signal?: AbortSignal;
 }
 
@@ -138,14 +142,17 @@ export class LlmService {
     if (signal?.aborted) throw abortedError();
     // the explicit connection test always goes through – it is how the user checks whether the endpoint is back
     if (!request.bypassPrivacy) this.health.assertCircuitClosed();
-    const input = redactSecrets(preparedInput(request, llm.maxInputChars));
-    const instructions = redactSecrets(request.instructions);
+    const masking = maskingOf(this.deps.settings.get());
+    const input = redactSecrets(preparedInput(request, llm.maxInputChars), masking);
+    const instructions = redactSecrets(request.instructions, masking);
     const prepared: PreparedRequest = {
       connection,
       request,
       sent: input.text,
       instructions: instructions.text,
       redactions: input.count + instructions.count,
+      personalRedactions: input.personalData + instructions.personalData,
+      preview: previewOf(request, { sent: input.text, masking }),
       signal,
     };
     if (this.adapterId(connection.baseUrl) === 'anthropic') return this.completeViaClaude(prepared);
@@ -159,8 +166,9 @@ export class LlmService {
       endpoint,
       bytes: Buffer.byteLength(prepared.sent, 'utf8') + Buffer.byteLength(prepared.instructions, 'utf8'),
       redactions: prepared.redactions,
+      personalRedactions: prepared.personalRedactions,
       documentIds: prepared.request.documentIds ?? [],
-      preview: prepared.sent.slice(0, 280),
+      preview: prepared.preview,
     };
   }
 
@@ -307,7 +315,8 @@ export class LlmService {
     const apiKey = this.deps.secrets.getApiKey();
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
     assertSecureBaseUrl(llm.baseUrl);
-    const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000)));
+    const masking = maskingOf(this.deps.settings.get());
+    const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000), masking));
     const url = endpointUrl(llm.baseUrl, 'embeddings');
     let success = false;
     try {
@@ -330,6 +339,7 @@ export class LlmService {
         endpoint: url,
         bytes: redacted.reduce((sum, entry) => sum + Buffer.byteLength(entry.text), 0),
         redactions: redacted.reduce((sum, entry) => sum + entry.count, 0),
+        personalRedactions: redacted.reduce((sum, entry) => sum + entry.personalData, 0),
         documentIds,
         preview: redacted[0]?.text.slice(0, 200) ?? '',
         success,
@@ -377,7 +387,12 @@ export class LlmService {
     }
   }
 
-  listTransmissions(limit = 100): LlmTransmission[] {
-    return this.transmissions.list(limit);
+  listTransmissions(limit = 100, offset = 0): LlmTransmission[] {
+    return this.transmissions.list({ limit, offset });
+  }
+
+  /** Deletes transmission log entries past the retention period; returns how many. */
+  pruneTransmissions(now = new Date()): number {
+    return this.transmissions.prune(now);
   }
 }

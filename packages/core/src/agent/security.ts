@@ -1,4 +1,4 @@
-import { redactSecrets } from '../util/redact';
+import { redactSecrets, type RedactionOptions, type RedactionResult } from '../util/redact';
 
 // agent security (#301): document contents are data, never instructions; instructions found in them taint the run
 const DATA_OPEN = '<<<DOKUMENTINHALT';
@@ -59,9 +59,9 @@ export function userAgrees(lastAnswer: string | null): boolean {
   return lastAnswer !== null && YES_RE.test(lastAnswer);
 }
 
-/** Masks secrets (API keys, passwords, IBAN …) in text that leaves the machine; returns the number of masked spots. */
-export function maskSecrets(text: string): { text: string; count: number } {
-  return redactSecrets(text);
+/** Masks secrets (API keys, passwords …) and, if chosen, personal identifiers (IBAN …) in text that leaves the machine. */
+export function maskSecrets(text: string, options?: RedactionOptions): RedactionResult {
+  return redactSecrets(text, options);
 }
 
 /** The part of the system instructions that is about security; part of the stable, cached prefix. */

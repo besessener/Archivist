@@ -33,7 +33,7 @@ export function TrashSection() {
   return (
     <Section
       title="Papierkorb"
-      description="Gelöschte Dokumente liegen hier, bis du den Papierkorb leerst. Bis dahin kannst du sie mit allen Verknüpfungen wiederherstellen."
+      description="Gelöschte Dokumente liegen hier, bis du sie aus Archivist entfernst. Bis dahin kannst du sie mit allen Verknüpfungen wiederherstellen."
     >
       {trash.error && !trash.data && <ErrorNote error={trash.error} onRetry={() => void trash.refetch()} />}
       {!trash.data && trash.loading && <Loading />}
@@ -65,22 +65,29 @@ export function TrashSection() {
       )}
       <div>
         <Button variant="outline" disabled={busy || entries.length === 0} onClick={() => setEmptying(true)} data-testid="trash-empty">
-          <Trash2 aria-hidden /> Papierkorb leeren …
+          <Trash2 aria-hidden /> Aus Archivist entfernen …
         </Button>
       </div>
       <ConfirmDialog
         open={emptying}
         onOpenChange={setEmptying}
-        title="Papierkorb endgültig leeren?"
-        description={`${entries.length === 1 ? 'Ein Dokument wird' : `${entries.length} Dokumente werden`} endgültig gelöscht. Das lässt sich nicht rückgängig machen.`}
-        requireCheckbox="Ich verstehe, dass diese Dateien endgültig gelöscht werden."
-        confirmLabel="Endgültig löschen"
+        title="Papierkorb leeren und aus Archivist entfernen?"
+        description={
+          <>
+            {entries.length === 1 ? 'Ein Dokument wird' : `${entries.length} Dokumente werden`} endgültig aus Archivist entfernt: die Dateien im Papierkorb, der
+            gespeicherte Text samt Zusammenfassung und die Vorschauen im Übertragungsprotokoll. Das lässt sich nicht rückgängig machen. Entscheidungen, offene
+            Punkte und Notizen, die aus den Dokumenten entstanden sind, bleiben erhalten. Deine Originale außerhalb von Archivist bleiben unberührt. Ältere
+            Backups enthalten den Text weiterhin.
+          </>
+        }
+        requireCheckbox="Ich verstehe, dass diese Dokumente nicht wiederhergestellt werden können und ältere Backups den Text weiterhin enthalten."
+        confirmLabel="Endgültig entfernen"
         destructive
         confirmTestId="trash-empty-confirm"
         onConfirm={async (checked) => {
           if (!checked) return;
           const result = await run(() => call('trash:empty', { confirmed: true, permanentlyConfirmed: true }), {
-            success: 'Papierkorb geleert',
+            success: 'Aus Archivist entfernt',
           });
           if (result) setEmptying(false);
         }}

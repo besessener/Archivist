@@ -216,6 +216,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         endpoint: this.url,
         bytes: sent.bytes,
         redactions: req.redactions ?? 0,
+        personalRedactions: req.personalRedactions ?? 0,
         documentIds: req.documentIds,
         preview: previewOf(req.messages),
         success,

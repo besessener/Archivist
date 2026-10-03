@@ -11,7 +11,7 @@ export interface AdapterConfig {
   timeoutMs: number;
   fetchImpl: FetchLike;
   /** Every transmission appears in the transmission log (#296, #301). */
-  log: (t: Omit<LlmTransmission, 'id' | 'at'>) => void;
+  log: (t: Omit<LlmTransmission, 'id' | 'at' | 'documents'>) => void;
   warn: (message: string, data?: Record<string, unknown>) => void;
 }
 

@@ -24,7 +24,8 @@
     "llmMode": "confirm",
     "neverAnalyzeDirs": [],
     "neverAnalyzeExtensions": [],
-    "neverAnalyzeFiles": []
+    "neverAnalyzeFiles": [],
+    "maskPersonalData": true
   },
   "notifications": {
     "desktop": false,

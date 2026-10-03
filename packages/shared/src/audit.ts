@@ -35,7 +35,11 @@ export const LlmTransmission = z.object({
   endpoint: z.string(),
   bytes: z.number(),
   redactions: z.number(),
+  /** Of `redactions`: masked personal data; the rest are secrets. */
+  personalRedactions: z.number(),
   documentIds: z.array(z.string()),
+  /** The documents of `documentIds` with their current title; null once the document is gone. */
+  documents: z.array(z.object({ id: z.string(), title: z.string().nullable() })),
   preview: z.string(),
   success: z.boolean(),
   /** Tokens per request (agent requests, #302). */
