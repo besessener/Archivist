@@ -195,7 +195,7 @@ export class DocumentMetadataEditor {
       after: patch,
       undo: { type: 'document_metadata_bulk', data: { items: undoItems } },
     });
-    for (const id of unique) void this.deps.documents.indexDocument(id);
+    this.deps.documents.indexDocumentsInBackground(unique);
     this.deps.ctx.events.changed('documents', 'knowledge');
     return { updated: this.deps.documents.list({ ids: unique, limit: unique.length }), auditId };
   }

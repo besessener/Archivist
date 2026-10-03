@@ -13,7 +13,7 @@ import {
   workflowToForm,
 } from '../../apps/renderer/components/agent/memory-forms';
 
-const rule = { when: { sender: 'Stadtwerke', docType: 'Rechnung' }, then: { folder: 'private/energie', tags: ['Strom', 'Energie'] } };
+const rule = { when: { sender: 'Stadtwerke', docType: 'Rechnung' }, then: { folder: 'Privat/energie', tags: ['Strom', 'Energie'] } };
 const workflow = {
   steps: ['Belege des Jahres {jahr} sammeln', 'auf Lücken prüfen'],
   parameters: [
@@ -26,13 +26,13 @@ const workflow = {
 describe('rule form fields', () => {
   it('turns a rule into fields and back without losing anything', () => {
     const form = ruleToForm(rule);
-    expect(form).toMatchObject({ sender: 'Stadtwerke', docType: 'Rechnung', folder: 'private/energie', tags: 'Strom, Energie' });
+    expect(form).toMatchObject({ sender: 'Stadtwerke', docType: 'Rechnung', folder: 'Privat/energie', tags: 'Strom, Energie' });
     expect(ruleFromForm(form)).toEqual({ ok: true, value: RuleDefinition.parse(rule) });
   });
 
   it('trims the fields and leaves empty ones out', () => {
-    const result = ruleFromForm({ ...emptyRuleForm(), sender: '  Telekom ', folder: ' private/telefon ', tags: ' a ;; b ,' });
-    expect(result).toEqual({ ok: true, value: { when: { sender: 'Telekom' }, then: { folder: 'private/telefon', tags: ['a', 'b'] } } });
+    const result = ruleFromForm({ ...emptyRuleForm(), sender: '  Telekom ', folder: ' Privat/telefon ', tags: ' a ;; b ,' });
+    expect(result).toEqual({ ok: true, value: { when: { sender: 'Telekom' }, then: { folder: 'Privat/telefon', tags: ['a', 'b'] } } });
   });
 
   it('names what is missing in German', () => {

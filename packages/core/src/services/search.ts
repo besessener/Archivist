@@ -8,6 +8,7 @@ import type { WorkerPool } from '../workers/pool';
 import type { EmbeddingService, EmbedResult } from './embedding';
 import { LOCAL_MODEL, localEmbed } from './embedding';
 import { fuse, mergeVectorHits, type Hit } from './search-fusion';
+import { embedChanged } from './search-reuse';
 import { keywordPass, termCoverage } from './search-keywords';
 import { VectorIndex } from './vector-index';
 
@@ -53,6 +54,7 @@ export interface SearchServiceDeps {
 export class SearchService {
   private readonly vectors: VectorIndex;
   private readonly indexedListeners: IndexedListener[] = [];
+  private fallbackListener: () => void = () => undefined;
 
   private readonly ctx: AppContext;
   private readonly embedding: EmbeddingService;
@@ -85,6 +87,11 @@ export class SearchService {
     this.ctx.database.db.delete(chunks).where(eq(chunks.entityId, entityId)).run();
   }
 
+  /** Called when an entry got local vectors because the remote embedding failed, so the mixed models can be healed later. */
+  onEmbeddingFallback(listener: () => void): void {
+    this.fallbackListener = listener;
+  }
+
   /** Called after every (re)indexed entry – e.g. to look for similar entries (#271). Errors of a listener are only logged. */
   onIndexed(listener: IndexedListener): void {
     this.indexedListeners.push(listener);
@@ -98,9 +105,11 @@ export class SearchService {
   async index(input: IndexInput): Promise<number> {
     const parts = chunkText(input.content);
     if (parts.length === 0) parts.push(input.title);
-    const embedded = await this.embedding.embed(
-      parts.map((p) => `${input.title}\n${p}`),
+    const embedded = await embedChanged(
+      { embedding: this.embedding, sqlite: this.sqlite },
       {
+        entityId: input.id,
+        texts: parts.map((p) => `${input.title}\n${p}`),
         allowRemote: input.allowRemoteEmbedding ?? this.remoteByDefault(input.type),
         purpose: 'Suchindex',
         documentIds: input.type === 'document' ? [input.id] : [],
@@ -137,6 +146,7 @@ export class SearchService {
     // only after the commit: a rolled-back transaction must not leave vectors in the index
     this.vectors.replace({ id: input.id, type: input.type }, { model: embedded.model, chunks: written });
     this.notifyIndexed(input);
+    if (embedded.fellBack) this.fallbackListener();
     return parts.length;
   }
 

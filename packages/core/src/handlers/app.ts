@@ -21,6 +21,7 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     setupCompleted: settings.setupCompleted,
     llm: {
       configured: services.llm.isConfigured(),
+      localOnly: settings.privacy.llmMode === 'local_only',
       hasApiKey: services.secrets.hasApiKey(),
       status: llm.state,
       lastError: llm.lastError,

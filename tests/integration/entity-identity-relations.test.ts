@@ -104,7 +104,7 @@ describe('merge proposals for every mergeable kind (#188)', () => {
 });
 
 async function archivedWithPerson(title: string, person: string): Promise<string> {
-  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'work/notes', persons: [person] }));
+  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', persons: [person] }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${title}.txt`, `${title}: ausreichend langer Inhalt für den Test`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -132,7 +132,7 @@ describe('relation semantics (#189)', () => {
     const b = graph().ensureEntity({ type: 'topic', name: 'Beta' });
     graph().link({ sourceId: a.id, targetId: b.id, relationType: 'related_to' }, { confidence: 0.5, status: 'proposed' });
     await app.services.consistency.run({ trigger: 'test' });
-    expect(app.services.insights.list('open').some((insight) => insight.kind === 'low_confidence_relation')).toBe(true);
+    expect(app.services.insights.list({ status: 'open' }).some((insight) => insight.kind === 'low_confidence_relation')).toBe(true);
   });
 
   it('a decision field mirror is shown as automatic until the user decides on it', async () => {

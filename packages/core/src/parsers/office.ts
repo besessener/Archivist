@@ -1,15 +1,7 @@
 import fsp from 'node:fs/promises';
 import { cleanText, type ParsedDocument } from './parsed-document';
-
-export async function readZipXml(buffer: Buffer, names: RegExp): Promise<Array<{ name: string; xml: string }>> {
-  const { default: JSZip } = await import('jszip');
-  const zip = await JSZip.loadAsync(buffer);
-  const parts: Array<{ name: string; xml: string }> = [];
-  for (const name of Object.keys(zip.files)) {
-    if (names.test(name) && !zip.files[name]!.dir) parts.push({ name, xml: await zip.files[name]!.async('string') });
-  }
-  return parts;
-}
+import { elements } from './xml-scan';
+import { assertZipWithinLimits, readZipXml } from './zip-read';
 
 export const decodeXml = (text: string) =>
   text
@@ -22,7 +14,10 @@ export const decodeXml = (text: string) =>
 /** Title, author and creation date from docProps/core.xml. */
 export function coreProps(xml: string): ParsedDocument['meta'] {
   const meta: ParsedDocument['meta'] = {};
-  const pick = (tag: string) => new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`).exec(xml)?.[1];
+  const pick = (tag: string): string | undefined => {
+    for (const element of elements(xml, tag)) return element.body;
+    return undefined;
+  };
   const title = pick('dc:title');
   const creator = pick('dc:creator');
   const created = pick('dcterms:created');
@@ -35,6 +30,7 @@ export function coreProps(xml: string): ParsedDocument['meta'] {
 export async function parseDocx(file: string): Promise<ParsedDocument> {
   const mammoth = (await import('mammoth')).default ?? (await import('mammoth'));
   const buffer = await fsp.readFile(file);
+  await assertZipWithinLimits(buffer);
   const result = await mammoth.extractRawText({ buffer });
   let meta: ParsedDocument['meta'] = {};
   try {
@@ -57,8 +53,8 @@ export async function parseDocx(file: string): Promise<ParsedDocument> {
 const slideNumber = (name: string) => Number(/(\d+)\.xml$/.exec(name)?.[1] ?? 0);
 
 const paragraphsOf = (xml: string) =>
-  [...xml.matchAll(/<a:p[ >][\s\S]*?<\/a:p>/g)]
-    .map((paragraph) => [...paragraph[0].matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)].map((run) => decodeXml(run[1] ?? '')).join(''))
+  [...elements(xml, 'a:p')]
+    .map((paragraph) => [...elements(paragraph.body, 'a:t')].map((run) => decodeXml(run.body)).join(''))
     .filter(Boolean)
     .join('\n');
 

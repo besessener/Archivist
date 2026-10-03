@@ -21,15 +21,15 @@ describe('Background agent (#313)', () => {
       ({ body }) => {
         expect(String(body.instructions)).toContain('HINTERGRUND');
         expect((body.tools as Array<{ name: string }>).some((t) => t.name === 'ask_user')).toBe(false);
-        return { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'copy', folder: 'private/rechnungen' } }] };
+        return { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'copy', folder: 'Privat/rechnungen' } }] };
       },
-      { text: 'Zwei Rechnungen nach private/rechnungen archiviert.' },
+      { text: 'Zwei Rechnungen nach Privat/rechnungen archiviert.' },
     );
     const run = await app.services.agent.runBackground('inbox', { docIds: [a, b] });
     expect(run?.status).toBe('done');
     expect(run?.trigger).toBe('background:inbox');
-    expect(folderOf(app, a)).toBe('private/rechnungen');
-    expect(folderOf(app, b)).toBe('private/rechnungen');
+    expect(folderOf(app, a)).toBe('Privat/rechnungen');
+    expect(folderOf(app, b)).toBe('Privat/rechnungen');
     const notes = (await app.ok('notifications:list', {})).filter((n) => n.type === 'agent_run');
     expect(notes).toHaveLength(1);
     expect(notes[0]!.proposedActions[0]?.target).toContain(run!.id);
@@ -42,7 +42,7 @@ describe('Background agent (#313)', () => {
     app.services.settings.update({ agent: { mode: 'ask' } });
     const a = await inInbox(app, { name: 'rechnung.txt', content: 'Rechnung' });
     app.llm.agent = scriptedTurns(
-      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: 'private/rechnungen' } }] },
+      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: 'Privat/rechnungen' } }] },
       { text: 'Vorschlag gemacht.' },
     );
     await app.services.agent.runBackground('inbox', { docIds: [a] });
@@ -72,7 +72,7 @@ describe('Background agent (#313)', () => {
   });
 
   it('agentic archive check and links run with their own task; links stay proposals', async () => {
-    const doc = await archived(app, { name: 'mietvertrag.txt', content: 'Mietvertrag', folder: 'private/wohnen' });
+    const doc = await archived(app, { name: 'mietvertrag.txt', content: 'Mietvertrag', folder: 'Privat/wohnen' });
     const topic = await app.ok('knowledge:createEntity', { type: 'topic', name: 'Wohnung' });
     app.llm.agent = scriptedTurns(
       ({ body }) => {

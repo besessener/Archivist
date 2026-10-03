@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { OCR_LANGUAGE_CODE } from '@archivist/shared';
+import type { Worker as TesseractWorker } from 'tesseract.js';
 
 // Offline OCR with tesseract.js: worker and WASM ship in npm packages, language data is copied from @tesseract.js-data/*.
 
@@ -90,21 +91,47 @@ interface OcrResult {
   confidence: number;
 }
 
-/** Recognizes text in several images with one shared worker. */
-export async function recognizeImages(images: Array<string | Buffer>, options: OcrOptions): Promise<OcrResult[]> {
+interface SharedWorker {
+  key: string;
+  worker: Promise<TesseractWorker>;
+}
+
+/** One tesseract worker per thread, kept for the next document (creating it costs about 0.8 s). */
+let shared: SharedWorker | null = null;
+
+const terminateQuietly = (worker: Promise<TesseractWorker>) => worker.then((ready) => ready.terminate()).catch(() => undefined);
+
+/** Stops the shared tesseract worker; the next recognition creates a new one. */
+export async function releaseOcrWorker(): Promise<void> {
+  const current = shared;
+  shared = null;
+  if (current) await terminateQuietly(current.worker);
+}
+
+async function sharedWorker(options: OcrOptions): Promise<SharedWorker> {
   const codes = await ensureTessdata(options.tessdataDir, options.languages);
+  const key = `${options.tessdataDir}|${codes.join('+')}`;
+  if (shared && shared.key !== key) await releaseOcrWorker();
+  if (shared) return shared;
   const tesseract = await import('tesseract.js');
   const createWorker = tesseract.createWorker ?? (tesseract as unknown as { default: typeof tesseract }).default.createWorker;
-  const worker = await createWorker(codes, 1, { langPath: options.tessdataDir, gzip: true, cacheMethod: 'none' });
+  // the data is read from the local langPath; a cache would only copy it into the working directory
+  const created: SharedWorker = { key, worker: createWorker(codes, 1, { langPath: options.tessdataDir, gzip: true, cacheMethod: 'none' }) };
+  shared = created;
+  created.worker.catch(() => {
+    if (shared === created) shared = null;
+  });
+  return created;
+}
+
+/** Recognizes the text of one image; a failing worker is discarded so the next call starts fresh. */
+export async function recognizeImage(image: string | Buffer, options: OcrOptions): Promise<OcrResult> {
+  const { worker, key } = await sharedWorker(options);
   try {
-    const results: OcrResult[] = [];
-    for (const image of images) {
-      const png = await prepareForOcr(image);
-      const recognized = await worker.recognize(png);
-      results.push({ text: recognized.data.text ?? '', confidence: recognized.data.confidence ?? 0 });
-    }
-    return results;
-  } finally {
-    await worker.terminate();
+    const recognized = await (await worker).recognize(await prepareForOcr(image));
+    return { text: recognized.data.text ?? '', confidence: recognized.data.confidence ?? 0 };
+  } catch (err) {
+    if (shared?.key === key) await releaseOcrWorker();
+    throw err;
   }
 }

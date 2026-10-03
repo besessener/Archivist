@@ -15,7 +15,7 @@ export function checkLowConfidenceRelations(run: CheckRun): void {
   run.findings.insightKeys.add('low-rel');
   run.deps.insights.upsert({
     kind: 'low_confidence_relation',
-    title: `${ids.length} ungeklärte Beziehung(en) mit niedriger Confidence`,
+    title: `${ids.length} ungeklärte Beziehung(en) mit geringer Sicherheit`,
     explanation: 'Diese vorgeschlagenen Beziehungen wurden noch nicht bestätigt oder abgelehnt. Prüfe sie im Bereich „Wissen“.',
     confidence: 0.5,
     sourceIds: ids,

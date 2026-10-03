@@ -9,13 +9,13 @@ test.describe('chat: agent mode', () => {
     llm.agentTurns = [
       { calls: [{ name: 'find_documents', args: { name: 'notiz' } }] },
       // a slow second round: the live view stays visible long enough to look at it
-      { calls: [{ name: 'create_folder', args: { path: 'work/notizen' } }], delayMs: 2_500 },
-      { text: 'Ich habe den Ordner work/notizen angelegt.' },
+      { calls: [{ name: 'create_folder', args: { path: 'Arbeit/notizen' } }], delayMs: 2_500 },
+      { text: 'Ich habe den Ordner Arbeit/notizen angelegt.' },
     ];
     await on(page).setup.do.complete(llm.url);
     const app = on(page);
 
-    await app.chat.do.send('Leg mir einen Ordner work/notizen an');
+    await app.chat.do.send('Leg mir einen Ordner Arbeit/notizen an');
     await expect(app.chat.locators.agent.steps.first()).toContainText('Suche Dokumente „notiz“');
     await expect(app.chat.locators.agent.steps.first()).toContainText('keine gefunden');
     await expect(app.chat.locators.agent.announcement).toBeAttached();
@@ -25,38 +25,38 @@ test.describe('chat: agent mode', () => {
     await expectNoSeriousA11yViolations(page, testInfo);
 
     await expect(app.chat.locators.agent.summary).toBeVisible({ timeout: 15_000 });
-    await expect(app.chat.do.lastReply()).toContainText('work/notizen angelegt');
-    await expect(app.chat.locators.agent.summary).toContainText('Lege den Ordner work/notizen an');
+    await expect(app.chat.do.lastReply()).toContainText('Arbeit/notizen angelegt');
+    await expect(app.chat.locators.agent.summary).toContainText('Lege den Ordner Arbeit/notizen an');
     await expectNoSeriousA11yViolations(page, testInfo);
 
     await app.chat.do.undoLastRun();
     await expect(app.chat.locators.agent.undoResult).toContainText('1');
-    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'work', 'notizen'))).toBe(false);
+    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'Arbeit', 'notizen'))).toBe(false);
   });
 
   test('„Stopp“ ends the run; what is done stays and is named', async ({ llm, on, page }) => {
-    llm.agentTurns = [{ calls: [{ name: 'create_folder', args: { path: 'work/stopp' } }] }, { text: 'Weiter.', delayMs: 20_000 }];
+    llm.agentTurns = [{ calls: [{ name: 'create_folder', args: { path: 'Arbeit/stopp' } }] }, { text: 'Weiter.', delayMs: 20_000 }];
     await on(page).setup.do.complete(llm.url);
     const app = on(page);
 
-    await app.chat.do.send('Leg work/stopp an und mach dann weiter');
+    await app.chat.do.send('Leg Arbeit/stopp an und mach dann weiter');
     await expect(app.chat.locators.agent.steps.first()).toContainText('angelegt');
     await app.chat.locators.agent.stop.click();
     await expect(app.chat.locators.thinking).toBeHidden({ timeout: 10_000 });
-    await expect(app.chat.do.lastReply()).toContainText('Ordner work/stopp angelegt');
-    await expect(app.chat.locators.agent.summary).toContainText('Lege den Ordner work/stopp an');
+    await expect(app.chat.do.lastReply()).toContainText('Ordner Arbeit/stopp angelegt');
+    await expect(app.chat.locators.agent.summary).toContainText('Lege den Ordner Arbeit/stopp an');
   });
 
   test('a question of the agent comes with answer buttons; the answer continues the run', async ({ llm, on, page }) => {
     llm.agentTurns = [
-      { calls: [{ name: 'ask_user', args: { question: 'Soll ich den Ordner work/fragen anlegen?', options: ['Ja', 'Nein'] } }] },
+      { calls: [{ name: 'ask_user', args: { question: 'Soll ich den Ordner Arbeit/fragen anlegen?', options: ['Ja', 'Nein'] } }] },
       { text: 'Gut, dann lasse ich es.' },
     ];
     await on(page).setup.do.complete(llm.url);
     const app = on(page);
 
     await app.chat.do.send('Brauche ich einen Ordner für Fragen?');
-    await expect(app.chat.do.lastReply()).toContainText('Soll ich den Ordner work/fragen anlegen?');
+    await expect(app.chat.do.lastReply()).toContainText('Soll ich den Ordner Arbeit/fragen anlegen?');
     await expect(app.chat.locators.agent.quickReplies).toHaveCount(2);
     await app.chat.locators.agent.quickReplies.filter({ hasText: 'Nein' }).click();
     await expect(app.chat.do.lastReply()).toContainText('dann lasse ich es');

@@ -1,5 +1,5 @@
 import type { ChatContext, ChatMessage, Conversation, SourceReference, StoredAgentAction } from '@archivist/shared';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { conversations, messages } from '../../db/schema';
 import { AppError } from '../../util/errors';
@@ -107,17 +107,27 @@ export class ConversationStore {
       .map((r) => this.toMessage(r));
   }
 
-  /** The newest `count` messages, oldest first – without loading the whole conversation (#253). */
-  recent(conversationId: string, count: number): ChatMessage[] {
+  /** The newest `newest` messages, oldest first – without loading the whole conversation (#253). */
+  recent(conversationId: string, newest: number): ChatMessage[] {
+    return this.page(conversationId, { limit: newest, offset: 0 });
+  }
+
+  /** A window counted from the newest message (`offset` newer ones are skipped), oldest first. */
+  page(conversationId: string, window: { limit: number; offset: number }): ChatMessage[] {
     return this.db
       .select()
       .from(messages)
       .where(eq(messages.conversationId, conversationId))
-      .orderBy(desc(messages.createdAt))
-      .limit(count)
+      .orderBy(desc(messages.createdAt), sql`rowid desc`)
+      .limit(window.limit)
+      .offset(window.offset)
       .all()
       .reverse()
       .map((r) => this.toMessage(r));
+  }
+
+  count(conversationId: string): number {
+    return this.db.select({ n: count() }).from(messages).where(eq(messages.conversationId, conversationId)).get()?.n ?? 0;
   }
 
   saveUserMessage(conversationId: string, text: string): ChatMessage {

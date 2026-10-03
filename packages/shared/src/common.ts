@@ -60,6 +60,7 @@ export const ErrorCategory = z.enum([
   'scan_error',
   'archive_conflict',
   'native_module_error',
+  'internal_error',
 ]);
 export type ErrorCategory = z.infer<typeof ErrorCategory>;
 

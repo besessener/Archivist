@@ -18,13 +18,13 @@ const knownTopicsLine = (input: string) => /Bekannte Themen: (.*)/.exec(input)?.
 
 async function archiveWithTopic(name: string, proposedTopic: string, chosenTopic = proposedTopic): Promise<string> {
   app.llm.on('DocumentClassification', () =>
-    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'private/notizen', mainTopic: proposedTopic }),
+    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'Privat/notizen', mainTopic: proposedTopic }),
   );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, `Inhalt von ${name}`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'private/notizen', topic: chosenTopic }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/notizen', topic: chosenTopic }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

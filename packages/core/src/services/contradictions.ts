@@ -1,5 +1,5 @@
 import type { Contradiction, Decision } from '@archivist/shared';
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { contradictions } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
@@ -9,6 +9,7 @@ import { truncate } from '../util/text';
 import type { ActionService } from './actions';
 import { announce, proposeSupersede, type ContradictionRow } from './contradiction-notices';
 import { ContradictionReviewer, MAX_REVIEWS_PER_CHECK, MAX_REVIEWS_PER_SCAN, type ReviewBudget } from './contradiction-review';
+import { countContradictions, listContradictions, toContradiction, type ContradictionFilter } from './contradiction-list';
 import { compareLexically, relatedPairs, sharesScope } from './contradiction-rules';
 import { DocumentContradictionScanner } from './document-contradictions';
 import type { DecisionService } from './decisions';
@@ -26,20 +27,6 @@ interface Finding {
   reason: string;
   confidence: number;
 }
-
-const map = (r: ContradictionRow): Contradiction => ({
-  id: r.id,
-  title: r.title,
-  description: r.description,
-  affectedEntityIds: r.affectedEntityIds,
-  excerpts: r.excerpts as Contradiction['excerpts'],
-  sourceIds: r.sourceIds,
-  timestamps: r.timestamps,
-  confidence: r.confidence,
-  status: r.status as Contradiction['status'],
-  createdAt: r.createdAt,
-  resolvedAt: r.resolvedAt,
-});
 
 export interface ContradictionServiceDeps {
   ctx: AppContext;
@@ -90,20 +77,18 @@ export class ContradictionService {
     return this.deps.ctx.database.db;
   }
 
-  list(status?: Contradiction['status']): Contradiction[] {
-    return this.db
-      .select()
-      .from(contradictions)
-      .where(status ? eq(contradictions.status, status) : undefined)
-      .orderBy(desc(contradictions.createdAt))
-      .all()
-      .map(map);
+  list(filter: ContradictionFilter = {}, page?: { limit: number; offset: number }): Contradiction[] {
+    return listContradictions(this.db, filter, page);
+  }
+
+  count(filter: ContradictionFilter = {}): number {
+    return countContradictions(this.db, filter);
   }
 
   get(id: string): Contradiction {
     const r = this.db.select().from(contradictions).where(eq(contradictions.id, id)).get();
     if (!r) throw new AppError('validation_error', 'Widerspruch nicht gefunden.');
-    return map(r);
+    return toContradiction(r);
   }
 
   private static pairKey(a: string, b: string): string {
@@ -117,7 +102,7 @@ export class ContradictionService {
       .from(contradictions)
       .where(eq(contradictions.dedupeKey, ContradictionService.pairKey(a, b)))
       .get();
-    return r ? map(r) : undefined;
+    return r ? toContradiction(r) : undefined;
   }
 
   /** The (possibly LLM-confirmed) finding for two decisions, or null: a stored or fresh LLM verdict decides, offline the lexical check does. */
@@ -164,7 +149,7 @@ export class ContradictionService {
       const found = await this.evaluate([d, o], budget, signal);
       if (found) created.push(await this.record([d, o], found));
     }
-    return [...created, ...(await this.documentScanner.scan(signal)).map(map)];
+    return [...created, ...(await this.documentScanner.scan(signal)).map(toContradiction)];
   }
 
   /** Contradictions found without the LLM (offline) are put to it once it is available; a veto closes them as false alarms. */
@@ -276,7 +261,7 @@ export class ContradictionService {
   private async record([a, b]: [Decision, Decision], { reason, confidence }: Finding): Promise<Contradiction> {
     const dedupeKey = ContradictionService.pairKey(a.id, b.id);
     const existing = this.db.select().from(contradictions).where(eq(contradictions.dedupeKey, dedupeKey)).get();
-    if (existing) return map(existing);
+    if (existing) return toContradiction(existing);
     const order = orderDecisions(this.db, [a, b]);
     const { older, newer, ordered, label } = order;
     const topic = a.topicName ?? b.topicName ?? a.projectName ?? 'diesem Thema';
@@ -310,7 +295,7 @@ export class ContradictionService {
     const action = ordered ? proposeSupersede(this.actions, order, confidence) : null;
     announce(this.deps, row, { older, newer, action });
     this.deps.ctx.events.changed('contradictions', 'insights', 'knowledge');
-    return map(row);
+    return toContradiction(row);
   }
 
   resolve(

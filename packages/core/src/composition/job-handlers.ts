@@ -8,6 +8,7 @@ import { AppError, toErrorInfo } from '../util/errors';
 import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
 import { reembedEntries } from '../services/reembedding';
+import { REINDEX_REFS_JOB, reindexRefs, type ReindexRefs } from '../services/reindex-refs';
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -140,6 +141,21 @@ export function registerJobHandlers(services: JobServices): void {
       const documentGoesRemote = (id: string) => services.documents.embedsRemotely(id);
       return reembedEntries({ search, embedding, documentGoesRemote, reindex: async (entry) => reindexers[entry.type]?.(entry.id) }, job);
     },
+  });
+  jobs.register<ReindexRefs>(REINDEX_REFS_JOB, {
+    handler: (job) =>
+      reindexRefs(
+        {
+          reindexers: {
+            documents: (id) => services.documents.indexDocument(id),
+            decisions: (id) => services.decisions.reindex(id),
+            openItems: (id) => services.openItems.reindex(id),
+            events: (id) => services.eventRecords.reindex(id),
+          },
+          logger: services.ctx.logger,
+        },
+        job,
+      ),
   });
   jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {
     handler: async (job) => {

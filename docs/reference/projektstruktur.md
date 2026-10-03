@@ -53,6 +53,7 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`; die Schritte l
 | `PersonService` | `services/persons.ts` | zentrale Auflösung von Personen-Erwähnungen |
 | `SelfService` | `services/self.ts` | die eigene Person („Du“) |
 | `CategoryService` | `services/categories.ts` | Kategorien und Hauptkategorien |
+| `CategoryMigrationService` | `services/category-migration.ts` | Einmaliges Umbenennen von `work`/`private` in `Arbeit`/`Privat` (Vorschau, Bestätigung, Umlagern) |
 | `DocumentService` | `services/documents.ts` | Import, Parser, Klassifikator |
 | `ArchiveService` | `services/archive.ts` | Archivieren und Umlagern |
 | `ArchiveRootService` | `services/archive-root.ts` | Archivpfad ändern bzw. Archiv umziehen |

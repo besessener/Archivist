@@ -34,7 +34,7 @@ const mail = (subject: string, date: string, headers: string[]) =>
   ].join('\n');
 
 async function archiveThread(): Promise<[string, string, string, string]> {
-  const eml = { docType: 'E-Mail', loc: 'private/post' };
+  const eml = { docType: 'E-Mail', loc: 'Privat/post' };
   return [
     await archiveFile(app, {
       ...eml,
@@ -75,7 +75,7 @@ describe('file_mail_thread (#312)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'email_threads', args: {} }] },
       ({ body }) => ({
-        calls: [{ name: 'file_mail_thread', args: { documents: [firstMatch(body, /Ergebnismenge (S\d+)/)[1]], folder: 'private/post/angebot-kueche' } }],
+        calls: [{ name: 'file_mail_thread', args: { documents: [firstMatch(body, /Ergebnismenge (S\d+)/)[1]], folder: 'Privat/post/angebot-kueche' } }],
       }),
       { text: 'Der Verlauf liegt jetzt zusammen.' },
     );
@@ -83,8 +83,8 @@ describe('file_mail_thread (#312)', () => {
     const res = await app.ok('chat:send', { text: 'Leg den Verlauf zum Angebot Küche zusammen ab' });
 
     expect(res.assistantMessage.content).toContain('zusammen');
-    for (const id of [first, second, third]) expect(folderOf(app, id)).toBe('private/post/angebot-kueche');
-    expect(folderOf(app, unrelated)).toBe('private/post');
+    for (const id of [first, second, third]) expect(folderOf(app, id)).toBe('Privat/post/angebot-kueche');
+    expect(folderOf(app, unrelated)).toBe('Privat/post');
     expect(relatedTo(first).toSorted()).toEqual([second, third].toSorted());
     expect(relatedTo(unrelated)).toEqual([]);
     const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
@@ -93,7 +93,7 @@ describe('file_mail_thread (#312)', () => {
 
     const undo = await app.ok('agent:undoRun', { runId: run.id });
     expect(undo.undone).toBe(4);
-    for (const id of [first, second, third]) expect(folderOf(app, id)).toBe('private/post');
+    for (const id of [first, second, third]) expect(folderOf(app, id)).toBe('Privat/post');
     expect(relatedTo(first)).toEqual([]);
   });
 
@@ -109,7 +109,7 @@ describe('file_mail_thread (#312)', () => {
 
     const res = await app.ok('chat:send', { text: 'Leg den Verlauf in verlaeufe/angebot ab' });
 
-    expect(folderOf(app, first)).toBe('private/post');
+    expect(folderOf(app, first)).toBe('Privat/post');
     expect(relatedTo(first)).toEqual([]);
     const card = res.assistantMessage.actions.find((a) => a.actionType === 'agent_batch')!;
     expect(card).toBeTruthy();
@@ -123,14 +123,14 @@ describe('file_mail_thread (#312)', () => {
     const [first] = await archiveThread();
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: ['eml'] } }] },
-      () => ({ calls: [{ name: 'file_mail_thread', args: { documents: ['D1'], folder: 'private/post/x' } }] }),
+      () => ({ calls: [{ name: 'file_mail_thread', args: { documents: ['D1'], folder: 'Privat/post/x' } }] }),
       {
         text: 'Nicht möglich.',
       },
     );
     await app.ok('chat:send', { text: 'Leg die Mail ab' });
     expect(lastToolOutput(app)).toContain('mindestens zwei E-Mails');
-    expect(folderOf(app, first)).toBe('private/post');
+    expect(folderOf(app, first)).toBe('Privat/post');
   });
 });
 
@@ -166,15 +166,15 @@ describe('capture_device (#312)', () => {
 
 describe('family members: „alles von meiner Tochter“ (#312)', () => {
   it('registers the relationship name for a person (undoable), then resolves, finds and assigns', async () => {
-    const own = await archiveFile(app, { name: 'zeugnis.txt', content: 'Zeugnis', persons: ['Lena Muster'], docType: 'Zeugnis', loc: 'private/schule' });
+    const own = await archiveFile(app, { name: 'zeugnis.txt', content: 'Zeugnis', persons: ['Lena Muster'], docType: 'Zeugnis', loc: 'Privat/schule' });
     const second = await archiveFile(app, {
       name: 'elternbrief.txt',
       content: 'Elternbrief',
       persons: ['Lena Muster'],
       docType: 'Brief',
-      loc: 'private/schule',
+      loc: 'Privat/schule',
     });
-    const other = await archiveFile(app, { name: 'rechnung.txt', content: 'Rechnung', persons: ['Tom Muster'], docType: 'Rechnung', loc: 'private/schule' });
+    const other = await archiveFile(app, { name: 'rechnung.txt', content: 'Rechnung', persons: ['Tom Muster'], docType: 'Rechnung', loc: 'Privat/schule' });
     const lena = app.services.graph.findByName('person', 'Lena Muster')!;
 
     app.llm.agent = scriptedTurns(
@@ -257,7 +257,7 @@ describe('receipt photo journey (#312)', () => {
 
 describe('confirmed privacy proposals (#312)', () => {
   it('a confirmed exclude_from_llm proposal really excludes the document', async () => {
-    const id = await archiveFile(app, { name: 'pw.txt', content: 'Passwort', docType: 'Notiz', loc: 'private/misc' });
+    const id = await archiveFile(app, { name: 'pw.txt', content: 'Passwort', docType: 'Notiz', loc: 'Privat/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'pw' } }] },
       { calls: [{ name: 'exclude_from_llm', args: { documents: ['D1'] } }] },

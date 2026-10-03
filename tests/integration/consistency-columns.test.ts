@@ -13,9 +13,9 @@ describe('Archive check reads no full texts (#213)', () => {
       await app.services.jobs.whenIdle();
       const id = imp.imported[0]!.id;
       await app.ok('documents:archive', {
-        items: [{ documentId: id, mode: 'copy', categoryPath: 'private/rechnungen' }],
+        items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/rechnungen' }],
         confirmed: true,
-        approveNewCategories: ['private'],
+        approveNewCategories: ['Privat'],
         confirmMove: false,
       } as never);
     }
@@ -46,7 +46,7 @@ describe('Archive check yields to the event loop (#215)', () => {
     await app.services.jobs.whenIdle();
     const id = imp.imported[0]!.id;
     app.services.ctx.database.sqlite
-      .prepare("UPDATE documents SET status = 'archived', archive_rel_path = 'private/fehlt/x.txt', category_path = 'private/fehlt' WHERE id = ?")
+      .prepare("UPDATE documents SET status = 'archived', archive_rel_path = 'Privat/fehlt/x.txt', category_path = 'Privat/fehlt' WHERE id = ?")
       .run(id);
 
     const reports: string[] = [];

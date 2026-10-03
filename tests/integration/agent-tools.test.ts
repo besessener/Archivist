@@ -21,7 +21,7 @@ describe('File and folder tools (#304)', () => {
     const a = await archived(app, {
       name: 'scan001.txt',
       content: 'Rechnung A',
-      folder: 'work/misc',
+      folder: 'Arbeit/misc',
       docType: 'Rechnung',
       documentDate: '2026-03-01',
       persons: ['Müller'],
@@ -29,7 +29,7 @@ describe('File and folder tools (#304)', () => {
     const b = await archived(app, {
       name: 'scan002.txt',
       content: 'Rechnung B',
-      folder: 'work/misc',
+      folder: 'Arbeit/misc',
       docType: 'Rechnung',
       documentDate: '2026-03-01',
       persons: ['Müller'],
@@ -54,7 +54,7 @@ describe('File and folder tools (#304)', () => {
   });
 
   it('refuses hash- and UUID-like names', async () => {
-    const a = await archived(app, { name: 'x.txt', content: 'X', folder: 'work/misc' });
+    const a = await archived(app, { name: 'x.txt', content: 'X', folder: 'Arbeit/misc' });
     const plan = await app.services.archive.previewRename([{ documentId: a, fileName: '8f14e45fceea167a5a36dedd4bea2543' }]);
     expect(plan[0]!.conflicts[0]).toMatch(/kein sprechender Name/);
   });
@@ -76,22 +76,22 @@ describe('File and folder tools (#304)', () => {
   });
 
   it('folders: create, merge one folder into another with structure, remove empty ones; upper/lower case of existing folders is kept (#244)', async () => {
-    const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'work/Projekte/alt' });
-    const b = await archived(app, { name: 'b.txt', content: 'B', folder: 'work/Projekte/alt/2025' });
+    const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'Arbeit/Projekte/alt' });
+    const b = await archived(app, { name: 'b.txt', content: 'B', folder: 'Arbeit/Projekte/alt/2025' });
     app.llm.agent = scriptedTurns(
-      { calls: [{ name: 'rename_folder', args: { from: 'work/projekte/alt', to: 'work/projekte/archiv' } }] },
-      { calls: [{ name: 'create_folder', args: { path: 'WORK/neu' } }] },
+      { calls: [{ name: 'rename_folder', args: { from: 'arbeit/projekte/alt', to: 'arbeit/projekte/archiv' } }] },
+      { calls: [{ name: 'create_folder', args: { path: 'ARBEIT/neu' } }] },
       { text: 'Fertig.' },
     );
-    await app.ok('chat:send', { text: 'Leg den Ordner alt nach archiv um und leg work/neu an' });
-    expect(folderOf(app, a)).toBe('work/Projekte/archiv');
-    expect(folderOf(app, b)).toBe('work/Projekte/archiv/2025');
-    expect(app.services.categories.list().some((c) => c.path === 'work/neu')).toBe(true);
-    expect(app.services.categories.list().some((c) => c.path === 'work/Projekte/alt')).toBe(false);
+    await app.ok('chat:send', { text: 'Leg den Ordner alt nach archiv um und leg Arbeit/neu an' });
+    expect(folderOf(app, a)).toBe('Arbeit/Projekte/archiv');
+    expect(folderOf(app, b)).toBe('Arbeit/Projekte/archiv/2025');
+    expect(app.services.categories.list().some((c) => c.path === 'Arbeit/neu')).toBe(true);
+    expect(app.services.categories.list().some((c) => c.path === 'Arbeit/Projekte/alt')).toBe(false);
   });
 
   it('path limits: traversal and absolute paths are refused', async () => {
-    const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       () => ({ calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: '../../etc' } }] }),
@@ -102,7 +102,7 @@ describe('File and folder tools (#304)', () => {
       { text: 'Nicht möglich.' },
     );
     await app.ok('chat:send', { text: 'Finde a.txt und verschiebe sie nach ../../etc' });
-    expect(folderOf(app, a)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
     expect(fs.existsSync('/tmp/evil')).toBe(false);
   });
 });
@@ -120,8 +120,8 @@ describe('Metadata tools (#305, #291)', () => {
     app.services.settings.update({ profile: { name: 'Erika Muster' } });
     app.services.self.ensure();
     const ids = [
-      await archived(app, { name: 'beleg1.txt', content: 'Autokauf Beleg', folder: 'private/auto' }),
-      await archived(app, { name: 'beleg2.txt', content: 'Autokauf Beleg 2', folder: 'private/auto' }),
+      await archived(app, { name: 'beleg1.txt', content: 'Autokauf Beleg', folder: 'Privat/auto' }),
+      await archived(app, { name: 'beleg2.txt', content: 'Autokauf Beleg 2', folder: 'Privat/auto' }),
     ];
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'beleg' } }] },
@@ -175,7 +175,7 @@ describe('Metadata tools (#305, #291)', () => {
   it('unclear persons are asked about, not guessed', async () => {
     await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Schmidt' });
     await app.ok('knowledge:createEntity', { type: 'person', name: 'Anna Meier' });
-    const id = await archived(app, { name: 'brief.txt', content: 'Brief', folder: 'private/post' });
+    const id = await archived(app, { name: 'brief.txt', content: 'Brief', folder: 'Privat/post' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'brief' } }] },
       { calls: [{ name: 'set_metadata', args: { targets: ['D1'], addPersons: ['Anna'] } }] },
@@ -189,7 +189,7 @@ describe('Metadata tools (#305, #291)', () => {
   });
 
   it('re-analysis: archived documents are read again in ONE job and keep their assignments (#220)', async () => {
-    const id = await archived(app, { name: 'scan.txt', content: 'alter Text', folder: 'private/post', topic: 'Post' });
+    const id = await archived(app, { name: 'scan.txt', content: 'alter Text', folder: 'Privat/post', topic: 'Post' });
     const file = app.services.documents.get(id).archivePath!;
     fs.writeFileSync(file, 'neuer Text nach besserer Texterkennung');
     app.llm.agent = scriptedTurns(
@@ -211,7 +211,7 @@ describe('Metadata tools (#305, #291)', () => {
   });
 
   it('privacy exclusion per document is critical: always a proposal', async () => {
-    const id = await archived(app, { name: 'pw.txt', content: 'Passwort', folder: 'private/misc' });
+    const id = await archived(app, { name: 'pw.txt', content: 'Passwort', folder: 'Privat/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'pw' } }] },
       { calls: [{ name: 'exclude_from_llm', args: { documents: ['D1'] } }] },
@@ -225,9 +225,9 @@ describe('Metadata tools (#305, #291)', () => {
 
 describe('Links and cases (#306, #277, #286)', () => {
   it('explicit request → confirmed (origin agent, run id); own accord → proposed; rejected pairs are never proposed again', async () => {
-    const vertrag = await archived(app, { name: 'mietvertrag.txt', content: 'Mietvertrag', folder: 'private/wohnen' });
-    const nebenkosten = await archived(app, { name: 'nebenkosten.txt', content: 'Nebenkosten', folder: 'private/wohnen' });
-    const other = await archived(app, { name: 'urlaub.txt', content: 'Urlaub', folder: 'private/urlaub' });
+    const vertrag = await archived(app, { name: 'mietvertrag.txt', content: 'Mietvertrag', folder: 'Privat/wohnen' });
+    const nebenkosten = await archived(app, { name: 'nebenkosten.txt', content: 'Nebenkosten', folder: 'Privat/wohnen' });
+    const other = await archived(app, { name: 'urlaub.txt', content: 'Urlaub', folder: 'Privat/urlaub' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: {} }] },
       {
@@ -264,8 +264,8 @@ describe('Links and cases (#306, #277, #286)', () => {
   });
 
   it('cases: create with entries, add more, close and undo the closing', async () => {
-    const a = await archived(app, { name: 'kaufvertrag.txt', content: 'Kaufvertrag Auto', folder: 'private/auto' });
-    const b = await archived(app, { name: 'versicherung.txt', content: 'Versicherung Auto', folder: 'private/auto' });
+    const a = await archived(app, { name: 'kaufvertrag.txt', content: 'Kaufvertrag Auto', folder: 'Privat/auto' });
+    const b = await archived(app, { name: 'versicherung.txt', content: 'Versicherung Auto', folder: 'Privat/auto' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'kaufvertrag' } }] },
       { calls: [{ name: 'create_case', args: { name: 'Autokauf 2026', entries: ['D1'] } }] },
@@ -289,8 +289,8 @@ describe('Links and cases (#306, #277, #286)', () => {
   });
 
   it('related entries come with a reason (#276)', async () => {
-    const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'private/x', topic: 'Wohnung' });
-    const b = await archived(app, { name: 'b.txt', content: 'B', folder: 'private/x', topic: 'Wohnung' });
+    const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'Privat/x', topic: 'Wohnung' });
+    const b = await archived(app, { name: 'b.txt', content: 'B', folder: 'Privat/x', topic: 'Wohnung' });
     const rel = await app.ok('knowledge:related', { id: a });
     expect(rel.items.find((r) => r.entity.id === b)?.reason).toBe('gleiches Thema „Wohnung“');
   });
@@ -315,7 +315,7 @@ describe('Settings per chat (#312)', () => {
     const a = await archived(app, {
       name: 'scan010.txt',
       content: 'Rechnung A',
-      folder: 'work/misc',
+      folder: 'Arbeit/misc',
       docType: 'Rechnung',
       documentDate: '2026-03-01',
       persons: ['Müller'],
@@ -323,7 +323,7 @@ describe('Settings per chat (#312)', () => {
     const b = await archived(app, {
       name: 'scan011.txt',
       content: 'Rechnung B',
-      folder: 'work/misc',
+      folder: 'Arbeit/misc',
       docType: 'Rechnung',
       documentDate: '2026-03-01',
       persons: ['Müller'],
@@ -370,20 +370,20 @@ describe('Settings per chat (#312)', () => {
   });
 
   it('created folders and removed empty folders can be undone', async () => {
-    await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_folder', args: { path: 'work/neu/tief' } }] }, { text: 'ok' });
-    const res = await app.ok('chat:send', { text: 'Leg work/neu/tief an' });
+    await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_folder', args: { path: 'Arbeit/neu/tief' } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Leg Arbeit/neu/tief an' });
     const paths = async () => (await app.ok('categories:list', {})).map((c) => c.path);
-    expect(await paths()).toEqual(expect.arrayContaining(['work/neu', 'work/neu/tief']));
+    expect(await paths()).toEqual(expect.arrayContaining(['Arbeit/neu', 'Arbeit/neu/tief']));
     await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
-    expect(await paths()).not.toContain('work/neu');
-    expect(await paths()).toContain('work/misc');
+    expect(await paths()).not.toContain('Arbeit/neu');
+    expect(await paths()).toContain('Arbeit/misc');
 
-    await app.ok('categories:create', { path: 'work/leer', confirmed: true });
+    await app.ok('categories:create', { path: 'Arbeit/leer', confirmed: true });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'remove_empty_folders', args: {} }] }, { text: 'ok' });
     const removed = await app.ok('chat:send', { text: 'Räum leere Ordner auf' });
-    expect(await paths()).not.toContain('work/leer');
+    expect(await paths()).not.toContain('Arbeit/leer');
     await app.ok('agent:undoRun', { runId: removed.assistantMessage.runId! });
-    expect(await paths()).toContain('work/leer');
+    expect(await paths()).toContain('Arbeit/leer');
   });
 });

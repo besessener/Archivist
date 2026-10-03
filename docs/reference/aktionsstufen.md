@@ -7,7 +7,7 @@ Was Archivist ohne Rückfrage darf, was eine Bestätigung braucht und wie Dateie
 | Stufe | Beispiele | Verhalten |
 | --- | --- | --- |
 | 1 – automatisch | Dateien in freigegebenen Ordnern auflisten, Metadaten/Prüfsummen, Textextraktion, Suchindex, Vorschläge, Insights, Benachrichtigungen | läuft ohne Rückfrage |
-| 2 – Bestätigung | **Verschobene Archivdateien neu verknüpfen** (nur der hinterlegte Ort ändert sich, rückgängig machbar), **Backup wiederherstellen** (ersetzt die Datenbank beim nächsten Start; die bisherige bleibt erhalten), Kopieren/Verschieben ins Archiv, **Dokument in den Papierkorb legen** (rückgängig machbar), **bereits archivierte Dokumente in einen anderen Archivordner verschieben**, Umbenennen, neue Hauptkategorie, Entscheidung als überholt markieren, Widerspruch lösen, offenen Punkt schließen, Metadaten überschreiben, Themen/Einträge zusammenführen (rückgängig machbar) | Aktionskarte bzw. Dialog mit Quell- und Zielpfad, Begründung, Confidence; ohne `confirmed: true` abgelehnt |
+| 2 – Bestätigung | **Hauptkategorien `work`/`private` auf `Arbeit`/`Privat` umbenennen** (einmalig, nur auf Klick mit Vorschau, nie automatisch beim Start; die Dateien wandern über das Umlagern, jeder Schritt steht im Änderungsprotokoll und ist rückgängig machbar, Namenskonflikte werden gemeldet statt überschrieben), **Verschobene Archivdateien neu verknüpfen** (nur der hinterlegte Ort ändert sich, rückgängig machbar), **Backup wiederherstellen** (ersetzt die Datenbank beim nächsten Start; die bisherige bleibt erhalten und lässt sich in der App als „Stand vor der Wiederherstellung“ wiederherstellen), Kopieren/Verschieben ins Archiv, **Dokument in den Papierkorb legen** (rückgängig machbar), **bereits archivierte Dokumente in einen anderen Archivordner verschieben**, Umbenennen, neue Hauptkategorie, Entscheidung als überholt markieren, Widerspruch lösen, offenen Punkt schließen, Metadaten überschreiben, Themen/Einträge zusammenführen (rückgängig machbar) | Aktionskarte bzw. Dialog mit Quell- und Zielpfad, Begründung, Confidence; ohne `confirmed: true` abgelehnt |
 | 3 – besonders | Umlagern von 20 oder mehr archivierten Dokumenten auf einmal; **Papierkorb leeren** (endgültiges Löschen); Überschreiben, automatisches Umsortieren des ganzen Archivs | siehe unten |
 
 Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen selbst aus und macht sie rückgängig machbar; die dort genannten Ausnahmen werden immer nachgefragt.
@@ -26,7 +26,7 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 ## Dateien
 
 - Originale werden nie ohne ausdrückliche Bestätigung verändert. Standard ist *Kopieren*.
-- Zieldateien werden mit `COPYFILE_EXCL` angelegt (kein Überschreiben, bei Namenskollision `Name (2).ext`) und per SHA-256 verifiziert. Erst danach werden – nur bei „Verschieben“ und zusätzlicher Bestätigung – Quellen entfernt.
+- Zieldateien werden mit `COPYFILE_EXCL` angelegt (kein Überschreiben, bei Namenskollision `Name (2).ext`) und per SHA-256 verifiziert (Quelle und Archivkopie werden im Hintergrund-Worker gelesen, nie im Hauptprozess). Erst danach werden – nur bei „Verschieben“ und zusätzlicher Bestätigung – Quellen entfernt.
 - Pfade werden abgesichert gegen Traversal (`..`, absolute Pfade, Nullbytes), Symlink-Ausbruch (realpath-Prüfung) und ungültige Dateinamen (Windows-reservierte Namen, Sonderzeichen).
 - Dateien, die sich seit der Analyse geändert haben, werden nicht archiviert.
 - Vorgeschlagene Pfade werden bereinigt. Unterkategorien darf der Agent vorschlagen, **neue Hauptkategorien** (erstes Pfadsegment) nur nach Bestätigung.
@@ -37,16 +37,17 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 - Scheitert beim Umlagern das Entfernen der alten Datei (z. B. weil sie geöffnet ist), wird der neue Eintrag zurückgenommen. Bleibt er übrig (zusätzlicher Hardlink oder Kopie), steht das in der Meldung statt „nichts wurde verändert“.
 - Der Eintrag im Änderungsprotokoll samt Undo-Daten wird in derselben Datenbank-Transaktion wie die Archivierung geschrieben, also vor dem Entfernen von Original oder Eingangskopie; scheitert er, wird alles zurückgenommen und keine Datei verändert; ein Abbruch dazwischen lässt die Dateien an Ort und Stelle und die Archivierung rückgängig machbar.
 - Lässt sich nach dem Archivieren die eigene Kopie im Eingang nicht löschen, bleibt die Archivierung gültig und rückgängig machbar. Die Eingangskopie wird vorgemerkt und beim nächsten Archivieren, bei der Archivprüfung oder beim nächsten Start entfernt – nur, wenn sie unverändert ist und die Archivdatei intakt. Dateien im Eingang, auf die kein Dokument mehr verweist (z. B. nach einem Absturz beim Import), entfernt dieselbe Aufräumroutine beim Start und bei der Archivprüfung nur, wenn gerade keine andere Dateiaktion läuft, sie seit mehr als einer Stunde im Eingang liegen (gemessen am jüngsten Zeitstempel der Datei, denn eine Kopie behält unter Windows das Änderungsdatum des Originals) und eine intakte Archivdatei mit gleichem Inhalt existiert; alle anderen bleiben liegen und werden im Protokoll gezählt. Dateiaktionen, die währenddessen starten, warten, bis die Aufräumroutine fertig ist.
+- Bleibt nach einem Absturz mitten im Kopieren eine temporäre Archivkopie `<Ziel>.<uuid>.partial` zurück, entfernt dieselbe Aufräumroutine sie aus dem Archivordner, wenn gerade keine Dateiaktion läuft und sie älter als eine Stunde ist (jüngster Zeitstempel); nur Namen genau dieses Musters, die Anzahl steht im Protokoll. Ohne Aufräumen hielte sie den Ordner für belegt.
 - Ein Umlager-Vorschlag, bei dem nichts verschoben wurde, gilt als fehlgeschlagen: Der Hinweis bleibt offen und erhält bei der nächsten Archivprüfung einen neuen Vorschlag.
 
 ## Scans
 
 - Nur ausdrücklich freigegebene Verzeichnisse. Wurzeln, Systemverzeichnisse und Verzeichnisse anderer Benutzer werden abgelehnt; das Archivist-Datenverzeichnis wird nie gescannt.
 - Symlinks werden nur verfolgt, wenn ihr Ziel im freigegebenen Bereich liegt. Versteckte Einträge und `node_modules` werden übersprungen.
-- Bekannte, unveränderte Dateien (Größe + Änderungszeit) werden weder neu gehasht noch analysiert.
+- Bekannte, unveränderte Dateien (Größe + Änderungszeit) werden weder neu gehasht noch analysiert; die Analyse übernimmt den Hash des Scans, solange Größe und Änderungszeit unverändert sind.
 - Dateien, deren Inhalt bereits als Dokument im Eingang oder im Archiv liegt (auch als Upload, in einer anderen Wurzel oder als „x (1).pdf“), werden als Duplikat markiert statt erneut angelegt.
 - Ändert sich eine gescannte Datei, deren Dokument noch im Eingang liegt, aktualisiert die nächste Analyse diesen Eintrag.
-- Pro Wurzel werden höchstens 20.000 Dateien erfasst. Wird das Limit erreicht, erscheint ein Hinweis; Dateien hinter dem Limit oder in (vorübergehend) nicht lesbaren Ordnern gelten nicht als verschwunden.
+- Der Scan hat keine Obergrenze: Er durchläuft jede Wurzel seitenweise (500 Dateien) und schreibt jede Seite in einer Transaktion. Nicht mehr gesehene, noch unbearbeitete Dateien gelten als verschwunden; Dateien in (vorübergehend) nicht lesbaren Ordnern nicht.
 
 ## LLM-Datenschutz
 

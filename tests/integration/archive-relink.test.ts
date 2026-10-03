@@ -17,15 +17,15 @@ afterEach(async () => {
 
 async function archived(name: string, content: string): Promise<{ id: string; file: string }> {
   app.llm.on('DocumentClassification', () =>
-    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'private/belege', mainTopic: null }),
+    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'Privat/belege', mainTopic: null }),
   );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   const res = await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'private/belege' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/belege' }],
     confirmed: true,
-    approveNewCategories: ['private'],
+    approveNewCategories: ['Privat'],
     confirmMove: false,
   } as never);
   expect(res.success).toBe(1);
@@ -52,14 +52,14 @@ describe('Relinking moved archive files', () => {
 
     expect(result).toEqual({ relinked: [{ documentId: id, title: 'miete.txt', path: moved }], stillMissing: 0 });
     expect(fs.readFileSync(moved, 'utf8')).toBe('Mietvertrag Wohnung 4');
-    expect(app.services.documents.getRow(id).archiveRelPath).toBe('private/belege/umbenannt/Vertrag Miete.txt');
+    expect(app.services.documents.getRow(id).archiveRelPath).toBe('Privat/belege/umbenannt/Vertrag Miete.txt');
     expect((await app.ok('archive:verify', {})).ok).toBe(true);
     const entry = app.services.audit.list({ limit: 5, onlyUndoable: true }).find((e) => e.action === 'archive.relink');
     expect(entry).toBeTruthy();
 
     const undo = await app.ok('audit:undo', { auditId: entry!.id });
     expect(undo).toMatchObject({ undone: true, conflicts: [] });
-    expect(app.services.documents.getRow(id).archiveRelPath).toBe('private/belege/miete.txt');
+    expect(app.services.documents.getRow(id).archiveRelPath).toBe('Privat/belege/miete.txt');
     expect(fs.existsSync(moved)).toBe(true);
   });
 
@@ -89,7 +89,7 @@ describe('Relinking moved archive files', () => {
     const lost = await archived('quittung.txt', 'Quittung Bäckerei');
     const other = await archived('anderes.txt', 'Anderes Dokument');
     const moved = moveOutside(lost.file, 'quittung-kopie.txt');
-    const claimedRel = 'private/belege/quittung-kopie.txt';
+    const claimedRel = 'Privat/belege/quittung-kopie.txt';
     const pool = app.services.pool;
     const realRun = pool.run.bind(pool);
     vi.spyOn(pool, 'run').mockImplementation((task: string, input: unknown) => {
@@ -101,7 +101,7 @@ describe('Relinking moved archive files', () => {
     const result = await app.ok('archive:relink', { confirmed: true });
 
     expect(result).toEqual({ relinked: [], stillMissing: 1 });
-    expect(app.services.documents.getRow(lost.id).archiveRelPath).toBe('private/belege/quittung.txt');
+    expect(app.services.documents.getRow(lost.id).archiveRelPath).toBe('Privat/belege/quittung.txt');
     expect(fs.existsSync(moved)).toBe(true);
   });
 

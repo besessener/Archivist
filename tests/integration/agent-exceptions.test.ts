@@ -16,8 +16,8 @@ const stepOutcome = async (runId: string | null | undefined, tool: string) =>
 
 describe('Exceptions that ask in every mode (#298)', () => {
   it('moving duplicates to the trash is only ever a proposal with the strong confirmation, even in „Auto“', async () => {
-    const keep = await archived(app, { name: 'rechnung.txt', content: 'Rechnung 17', folder: 'private/finanzen' });
-    const copy = await archived(app, { name: 'rechnung-kopie.txt', content: 'Rechnung 17 Kopie', folder: 'private/finanzen' });
+    const keep = await archived(app, { name: 'rechnung.txt', content: 'Rechnung 17', folder: 'Privat/finanzen' });
+    const copy = await archived(app, { name: 'rechnung-kopie.txt', content: 'Rechnung 17 Kopie', folder: 'Privat/finanzen' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'rechnung' } }] },
       { calls: [{ name: 'mark_duplicates', args: { keep: 'D1', duplicates: ['D2'], action: 'delete' } }] },
@@ -35,7 +35,7 @@ describe('Exceptions that ask in every mode (#298)', () => {
     const source = app.services.documents.getRow(id).sourcePath!;
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { status: 'inbox' } }] },
-      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'move', folder: 'private/post' } }] },
+      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'move', folder: 'Privat/post' } }] },
       { text: 'Bitte bestätigen.' },
     );
     const res = await app.ok('chat:send', { text: 'Verschieb den Brief ins Archiv' });
@@ -46,25 +46,25 @@ describe('Exceptions that ask in every mode (#298)', () => {
 
   it('the threshold set in the settings counts; learned rules applied to the whole archive cannot get around it', async () => {
     await app.ok('settings:update', { agent: { massActionThreshold: 1 } });
-    const a = await archived(app, { name: 'strom-1.txt', content: 'Stadtwerke Strom Januar', folder: 'private/misc' });
-    const b = await archived(app, { name: 'strom-2.txt', content: 'Stadtwerke Strom Februar', folder: 'private/misc' });
+    const a = await archived(app, { name: 'strom-1.txt', content: 'Stadtwerke Strom Januar', folder: 'Privat/misc' });
+    const b = await archived(app, { name: 'strom-2.txt', content: 'Stadtwerke Strom Februar', folder: 'Privat/misc' });
     app.services.memory.save({
       kind: 'rule',
       name: 'Stadtwerke',
-      content: 'Rechnungen der Stadtwerke nach private/energie',
-      data: { when: { textContains: 'Stadtwerke' }, then: { folder: 'private/energie' } },
+      content: 'Rechnungen der Stadtwerke nach Privat/energie',
+      data: { when: { textContains: 'Stadtwerke' }, then: { folder: 'Privat/energie' } },
     });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'apply_rules', args: { preview: false } }] }, { text: 'Bitte bestätigen.' });
     const res = await app.ok('chat:send', { text: 'Wende meine Regeln auf alles an' });
     expect(await stepOutcome(res.assistantMessage.runId, 'apply_rules')).toBe('proposed');
-    expect(folderOf(app, a)).toBe('private/misc');
-    expect(folderOf(app, b)).toBe('private/misc');
+    expect(folderOf(app, a)).toBe('Privat/misc');
+    expect(folderOf(app, b)).toBe('Privat/misc');
   });
 
   it('background runs follow the same exceptions: a critical change becomes a proposal', async () => {
     const id = await inInbox(app, { name: 'brief.txt', content: 'Ein Brief' });
     app.llm.agent = scriptedTurns(
-      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'move', folder: 'private/post' } }] },
+      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'move', folder: 'Privat/post' } }] },
       { text: 'Vorgeschlagen.' },
     );
     const run = await app.services.agent.runBackground('inbox', { docIds: [id] });

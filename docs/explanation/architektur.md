@@ -35,7 +35,7 @@ Ein blockierter Main-Prozess friert in Electron das ganze Fenster ein. Deshalb:
 
 - Datenbankzugriffe sind kurz (synchrones better-sqlite3).
 - Lange Lesezugriffe (Timeline, Dokumentliste, Zähler) laufen in einem eigenen Lese-Worker mit eigener schreibgeschützter Verbindung (WAL).
-- Hashing, Verzeichnisscans, Textextraktion und Vektorsuche laufen im Worker-Pool.
+- Hashing, Verzeichnisscans und Textextraktion laufen im Worker-Pool, die Vektorsuche in einem eigenen Pool mit einem Worker. Jede Aufgabe hat ein Zeitlimit und lässt sich über das Signal des Jobs abbrechen; dann wird der Worker beendet und beim nächsten Bedarf neu gestartet.
 - Die Archivprüfung gibt den Main-Thread zwischen ihren Schritten und in langen Schleifen frei.
 - Langlaufende Abläufe sind Jobs in der persistenten [Job-Queue](../reference/funktionen.md#job-queue).
 

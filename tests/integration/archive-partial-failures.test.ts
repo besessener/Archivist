@@ -50,7 +50,7 @@ function classifyAs(name: string, loc: string, topic: string | null) {
   app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc, mainTopic: topic }));
 }
 
-async function imported(name: string, content: string, loc = 'work/notes', topic: string | null = TOPIC) {
+async function imported(name: string, content: string, loc = 'Arbeit/notes', topic: string | null = TOPIC) {
   classifyAs(name, loc, topic);
   const src = app.file(`in/${name}`, content);
   const imp = await app.ok('documents:import', { paths: [src] });
@@ -58,7 +58,7 @@ async function imported(name: string, content: string, loc = 'work/notes', topic
   return { src, id: imp.imported[0]!.id };
 }
 
-const archive = (documentId: string, categoryPath = 'work/notes', topic: string | null = TOPIC) =>
+const archive = (documentId: string, categoryPath = 'Arbeit/notes', topic: string | null = TOPIC) =>
   app.ok('documents:archive', {
     items: [{ documentId, mode: 'copy', categoryPath, topic }],
     confirmed: true,
@@ -188,7 +188,7 @@ describe('Archiving: the audit entry is part of the commit', () => {
     });
 
     const res = await app.call('documents:archive', {
-      items: [{ documentId: id, mode: 'copy', categoryPath: 'work/notes', topic: TOPIC }],
+      items: [{ documentId: id, mode: 'copy', categoryPath: 'Arbeit/notes', topic: TOPIC }],
       confirmed: true,
       approveNewCategories: [],
       confirmMove: false,
@@ -216,7 +216,7 @@ describe('Archiving: the audit entry exists before any source is deleted', () =>
     });
 
     const res = await app.ok('documents:archive', {
-      items: [{ documentId: id, mode: 'move', categoryPath: 'work/notes', topic: TOPIC }],
+      items: [{ documentId: id, mode: 'move', categoryPath: 'Arbeit/notes', topic: TOPIC }],
       confirmed: true,
       approveNewCategories: [],
       confirmMove: true,
@@ -305,7 +305,7 @@ describe('Archiving: the copy is written under a temporary name', () => {
 
   it('a taken name is never overwritten: the copy gets the next free name', async () => {
     const { id } = await imported('belegt.txt', 'Neues Dokument');
-    const taken = path.join(archiveRoot(), 'work', 'notes', 'belegt.txt');
+    const taken = path.join(archiveRoot(), 'Arbeit', 'notes', 'belegt.txt');
     fs.mkdirSync(path.dirname(taken), { recursive: true });
     fs.writeFileSync(taken, 'Fremde Datei');
 
@@ -352,84 +352,84 @@ describe('Archiving: the copy aborts midway', () => {
 
 describe('Relocating with partial failures', () => {
   it('hardlink created, original locked: the new entry is rolled back, nothing is changed', async () => {
-    const id = await archived('antrag.txt', 'Antrag', 'work/hr');
+    const id = await archived('antrag.txt', 'Antrag', 'Arbeit/hr');
     const original = abs(id);
     lockForUnlink((p) => p === original);
 
-    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'work/neu' }], { confirmed: true });
+    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'Arbeit/neu' }], { confirmed: true });
 
     expect(res).toMatchObject({ success: 0, failed: 1 });
     expect(res.items[0]!.message).toMatch(/EBUSY.*nichts verändert/);
     expect(filesIn(archiveRoot())).toEqual([original]);
-    expect(row(id).archiveRelPath).toBe('work/hr/antrag.txt');
+    expect(row(id).archiveRelPath).toBe('Arbeit/hr/antrag.txt');
   });
 
   it('hardlink remains because the rollback fails too: the message names the additional entry', async () => {
-    const id = await archived('antrag.txt', 'Antrag', 'work/hr');
+    const id = await archived('antrag.txt', 'Antrag', 'Arbeit/hr');
     const original = abs(id);
     lockForUnlink((p) => p.startsWith(archiveRoot()));
 
-    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'work/neu' }], { confirmed: true });
+    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'Arbeit/neu' }], { confirmed: true });
 
     expect(res.failed).toBe(1);
-    const extra = path.join(archiveRoot(), 'work', 'neu', 'antrag.txt');
+    const extra = path.join(archiveRoot(), 'Arbeit', 'neu', 'antrag.txt');
     expect(fs.existsSync(extra)).toBe(true);
     expect(fs.existsSync(original)).toBe(true);
     expect(res.items[0]!.message).toContain('Hardlink');
     expect(res.items[0]!.message).toContain(extra);
     expect(res.items[0]!.message).not.toMatch(/nichts verändert/);
-    expect(row(id).archiveRelPath, 'the database still points to the original, which still exists').toBe('work/hr/antrag.txt');
+    expect(row(id).archiveRelPath, 'the database still points to the original, which still exists').toBe('Arbeit/hr/antrag.txt');
   });
 
   it('without hardlinks: an aborted copy is removed', async () => {
-    const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'work/hr');
+    const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'Arbeit/hr');
     const original = abs(id);
     vi.spyOn(fsp, 'link').mockRejectedValue(errno('EXDEV'));
     diskFullDuringCopy();
 
-    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'work/neu' }], { confirmed: true });
+    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'Arbeit/neu' }], { confirmed: true });
 
     expect(res.failed).toBe(1);
     expect(res.items[0]!.message).toMatch(/ENOSPC.*nichts verändert/);
     expect(filesIn(archiveRoot())).toEqual([original]);
-    expect(row(id).archiveRelPath).toBe('work/hr/antrag.txt');
+    expect(row(id).archiveRelPath).toBe('Arbeit/hr/antrag.txt');
   });
 
   it('without hardlinks: copy succeeds, original locked – the copy is removed again', async () => {
-    const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'work/hr');
+    const id = await archived('antrag.txt', 'Antrag auf Bildungsurlaub', 'Arbeit/hr');
     const original = abs(id);
     vi.spyOn(fsp, 'link').mockRejectedValue(errno('EXDEV'));
     vi.spyOn(fsp, 'copyFile').mockImplementation((s, d, m) => realCopyFile(s, d, m));
     lockForUnlink((p) => p === original);
 
-    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'work/neu' }], { confirmed: true });
+    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'Arbeit/neu' }], { confirmed: true });
 
     expect(res.failed).toBe(1);
     expect(filesIn(archiveRoot())).toEqual([original]);
   });
 
   it('database error after moving: the file is back at its old location, with no leftovers', async () => {
-    const id = await archived('antrag.txt', 'Antrag', 'work/hr');
+    const id = await archived('antrag.txt', 'Antrag', 'Arbeit/hr');
     const original = abs(id);
     vi.spyOn(app.services.categories, 'create').mockImplementation(() => {
       throw new Error('SQLITE_BUSY: database is locked');
     });
 
-    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'work/neu' }], { confirmed: true });
+    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'Arbeit/neu' }], { confirmed: true });
 
     expect(res.failed).toBe(1);
     expect(filesIn(archiveRoot())).toEqual([original]);
-    expect(row(id).archiveRelPath).toBe('work/hr/antrag.txt');
+    expect(row(id).archiveRelPath).toBe('Arbeit/hr/antrag.txt');
   });
 });
 
 describe('Relocation proposal: „0 verschoben“ is not a success', () => {
   async function scatteredInsight() {
-    await archived('a.txt', 'Inhalt A', 'work/a');
-    await archived('b.txt', 'Inhalt B', 'work/a');
-    const c = await archived('c.txt', 'Inhalt C', 'work/c');
+    await archived('a.txt', 'Inhalt A', 'Arbeit/a');
+    await archived('b.txt', 'Inhalt B', 'Arbeit/a');
+    const c = await archived('c.txt', 'Inhalt C', 'Arbeit/c');
     await app.services.consistency.run({ trigger: 'test' });
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'scattered_documents')!;
     expect(insight.recommendedActionId).toBeTruthy();
     return { c, insight };
   }
@@ -444,7 +444,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     const failed = app.services.actions.get(insight.recommendedActionId!);
     expect(failed.status).toBe('failed');
     expect(failed.result).toMatch(/0 verschoben.*1 Konflikte.*verändert/);
-    expect(row(c).archiveRelPath).toBe('work/c/c.txt');
+    expect(row(c).archiveRelPath).toBe('Arbeit/c/c.txt');
 
     // the cause is gone; the next archive check offers a fresh proposal on the same hint
     fs.writeFileSync(abs(c), 'Inhalt C');
@@ -456,16 +456,16 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     await app.services.insights.accept(insight.id, {});
 
     expect(app.services.insights.get(insight.id).status).toBe('accepted');
-    expect(row(c).archiveRelPath).toBe('work/a/c.txt');
+    expect(row(c).archiveRelPath).toBe('Arbeit/a/c.txt');
   });
 
   it('partially moved counts as executed', async () => {
-    await archived('a.txt', 'Inhalt A', 'work/a');
-    await archived('b.txt', 'Inhalt B', 'work/a');
-    await archived('c.txt', 'Inhalt C', 'work/c');
-    const d = await archived('d.txt', 'Inhalt D', 'work/d');
+    await archived('a.txt', 'Inhalt A', 'Arbeit/a');
+    await archived('b.txt', 'Inhalt B', 'Arbeit/a');
+    await archived('c.txt', 'Inhalt C', 'Arbeit/c');
+    const d = await archived('d.txt', 'Inhalt D', 'Arbeit/d');
     await app.services.consistency.run({ trigger: 'test' });
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'scattered_documents')!;
     fs.appendFileSync(abs(d), ' – bearbeitet');
 
     await app.services.insights.accept(insight.id, {});

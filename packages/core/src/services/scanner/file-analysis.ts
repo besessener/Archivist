@@ -106,18 +106,20 @@ export class FileAnalysis {
     }
   }
 
-  private async readContent(file: FileRow): Promise<{ root: RootRow; content: FileContent }> {
+  private async readContent(file: FileRow, signal?: AbortSignal): Promise<{ root: RootRow; content: FileContent }> {
     const root = this.db.select().from(scanRoots).where(eq(scanRoots.id, file.rootId)).get();
     if (!root || !isInside(root.path, file.path)) throw permissionError('Datei liegt nicht in einem freigegebenen Verzeichnis.');
     const realPath = await fsp.realpath(file.path);
     if (!isInside(await fsp.realpath(root.path), realPath)) throw permissionError('Symbolischer Link führt aus dem freigegebenen Verzeichnis heraus.');
     const stats = await fsp.stat(realPath);
-    const sha = await this.deps.pool.run('hashFile', { path: realPath });
+    // size and mtime unchanged since the scan hashed it: the scan's hash still describes the content
+    const unchangedSinceScan = file.sha256 !== null && file.size === stats.size && file.mtimeMs === stats.mtimeMs;
+    const sha = unchangedSinceScan ? file.sha256! : await this.deps.pool.run('hashFile', { path: realPath }, { signal });
     return { root, content: { realPath, sha, size: stats.size, mtimeMs: stats.mtimeMs } };
   }
 
   private async analyzeContent(file: FileRow, options: AnalysisOptions): Promise<FileResult> {
-    const { root, content } = await this.readContent(file);
+    const { root, content } = await this.readContent(file, options.job?.signal);
     const { realPath, sha, size, mtimeMs } = content;
     const duplicate = duplicateOf(this.deps.docs, { sha256: sha, documentId: file.documentId });
     if (duplicate) {

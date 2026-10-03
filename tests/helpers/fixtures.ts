@@ -94,6 +94,31 @@ export function makePdf(file: string, lines: string[]): void {
   fs.writeFileSync(file, out, 'latin1');
 }
 
+/** Source of a text PDF with one page per entry of `pages`; a page without lines has no text layer (blank). */
+export function multiPagePdfSource(pages: string[][]): string {
+  const esc = (s: string) => s.replace(/[\\()]/g, '\\$&');
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  pages.forEach((lines, i) => {
+    const content = lines.length ? `BT /F1 12 Tf 50 750 Td 14 TL ${lines.map((l) => `(${esc(l)}) Tj T*`).join(' ')} ET` : '';
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${5 + i * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`);
+    objs.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objs.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return out;
+}
+
 export function writeFile(dir: string, name: string, content: string | Buffer): string {
   const p = path.join(dir, name);
   fs.mkdirSync(path.dirname(p), { recursive: true });

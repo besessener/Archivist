@@ -11,14 +11,14 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-const stadtwerkeRule = { when: { sender: 'Stadtwerke' }, then: { folder: 'private/finanzen/energie' } };
+const stadtwerkeRule = { when: { sender: 'Stadtwerke' }, then: { folder: 'Privat/finanzen/energie' } };
 
 describe('Learning: rules, workflows, corrections, memory (#315)', () => {
   it('stores a rule on the explicit instruction, gives it to every run and applies it retroactively', async () => {
     const doc = await archived(app, {
       name: 'stadtwerke-rechnung.txt',
       content: 'Stadtwerke München Rechnung Strom',
-      folder: 'private/misc',
+      folder: 'Privat/misc',
       docType: 'Rechnung',
       persons: ['Stadtwerke München'],
     });
@@ -27,7 +27,7 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
         calls: [
           {
             name: 'ask_user',
-            args: { question: 'Soll ich mir die Regel „Rechnungen der Stadtwerke immer nach private/finanzen/energie“ merken?', options: ['Ja', 'Nein'] },
+            args: { question: 'Soll ich mir die Regel „Rechnungen der Stadtwerke immer nach Privat/finanzen/energie“ merken?', options: ['Ja', 'Nein'] },
           },
         ],
       },
@@ -38,7 +38,7 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
             args: {
               kind: 'rule',
               name: 'Stadtwerke → Energie',
-              content: 'Rechnungen der Stadtwerke immer nach private/finanzen/energie',
+              content: 'Rechnungen der Stadtwerke immer nach Privat/finanzen/energie',
               rule: stadtwerkeRule,
             },
           },
@@ -46,7 +46,7 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       },
       { text: 'Gemerkt.' },
     );
-    const asked = await app.ok('chat:send', { text: 'Merk dir: Rechnungen der Stadtwerke immer nach private/finanzen/energie' });
+    const asked = await app.ok('chat:send', { text: 'Merk dir: Rechnungen der Stadtwerke immer nach Privat/finanzen/energie' });
     expect(await app.ok('agent:memory', { kind: 'rule' })).toHaveLength(0);
     await app.ok('chat:send', { conversationId: asked.conversationId, text: 'Ja' });
     const rules = await app.ok('agent:memory', { kind: 'rule' });
@@ -65,7 +65,7 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       { text: `Regel [${rules[0]!.id}] angewendet.` },
     );
     const res = await app.ok('chat:send', { text: 'Wende meine Regeln auf das Archiv an' });
-    expect(folderOf(app, doc)).toBe('private/finanzen/energie');
+    expect(folderOf(app, doc)).toBe('Privat/finanzen/energie');
     const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
     expect((run.applied ?? []).map((a) => a.id)).toContain(rules[0]!.id);
     expect((await app.ok('agent:memory', { kind: 'rule' }))[0]!.timesApplied).toBeGreaterThanOrEqual(1);
@@ -97,13 +97,13 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       kind: 'rule',
       name: 'A',
       content: 'Stadtwerke nach a',
-      data: { when: { sender: 'Stadtwerke' }, then: { folder: 'private/a' } },
+      data: { when: { sender: 'Stadtwerke' }, then: { folder: 'Privat/a' } },
     });
-    app.services.memory.save({ kind: 'rule', name: 'B', content: 'Strom nach b', data: { when: { textContains: 'Strom' }, then: { folder: 'private/b' } } });
-    const doc = await archived(app, { name: 'rechnung.txt', content: 'Stadtwerke Strom', folder: 'private/misc', persons: ['Stadtwerke'] });
+    app.services.memory.save({ kind: 'rule', name: 'B', content: 'Strom nach b', data: { when: { textContains: 'Strom' }, then: { folder: 'Privat/b' } } });
+    const doc = await archived(app, { name: 'rechnung.txt', content: 'Stadtwerke Strom', folder: 'Privat/misc', persons: ['Stadtwerke'] });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'apply_rules', args: { preview: false } }] }, { text: 'Widerspruch – welche Regel soll gelten?' });
     await app.ok('chat:send', { text: 'Wende die Regeln an' });
-    expect(folderOf(app, doc)).toBe('private/misc');
+    expect(folderOf(app, doc)).toBe('Privat/misc');
     expect(lastToolOutput(app)).toContain('verschiedene Ordner');
   });
 
@@ -164,27 +164,27 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
   it('repeated corrections of the agent lead to a rule PROPOSAL; the rule is stored only after confirmation', async () => {
     const docs = [];
     for (const n of [1, 2, 3])
-      docs.push(await archived(app, { name: `arzt-${n}.txt`, content: `Arztrechnung ${n}`, folder: 'private/misc', docType: 'Arztrechnung' }));
+      docs.push(await archived(app, { name: `arzt-${n}.txt`, content: `Arztrechnung ${n}`, folder: 'Privat/misc', docType: 'Arztrechnung' }));
     // the agent filed them (inside a run) …
     for (const id of docs) {
       app.llm.agent = scriptedTurns(
         { calls: [{ name: 'find_documents', args: { name: app.services.documents.getRow(id).title } }] },
-        { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'private/rechnungen' } }] },
+        { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'Privat/rechnungen' } }] },
         { text: 'verschoben' },
       );
       await app.ok('chat:send', { text: 'Leg die Arztrechnung ab' });
     }
     // … and the user moves them somewhere else
-    for (const id of docs) await app.services.archive.relocate([{ documentId: id, categoryPath: 'private/gesundheit' }], { confirmed: true });
+    for (const id of docs) await app.services.archive.relocate([{ documentId: id, categoryPath: 'Privat/gesundheit' }], { confirmed: true });
     const corrections = await app.ok('agent:memory', { kind: 'correction' });
     expect(corrections.length).toBe(3);
     expect(await app.ok('agent:memory', { kind: 'rule' })).toHaveLength(0);
     const insight = (await app.ok('insights:list', { status: 'open' })).find((i) => i.kind === 'learned_rule')!;
-    expect(insight.title).toContain('private/gesundheit');
+    expect(insight.title).toContain('Privat/gesundheit');
     await app.ok('insights:respond', { response: 'accept', id: insight.id, confirmed: true });
     const rules = await app.ok('agent:memory', { kind: 'rule' });
     expect(rules).toHaveLength(1);
-    expect(rules[0]!.data).toMatchObject({ when: { docType: 'Arztrechnung' }, then: { folder: 'private/gesundheit' } });
+    expect(rules[0]!.data).toMatchObject({ when: { docType: 'Arztrechnung' }, then: { folder: 'Privat/gesundheit' } });
   });
 
   it('everything learned is visible, can be switched off and deleted', async () => {

@@ -5,7 +5,7 @@ import { classification } from '../helpers/document-classifications';
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.on('DocumentClassification', () => classification({ title: 'Mietvertrag', summary: 'Mietvertrag Hauptstraße', categoryPath: 'private/wohnen' }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Mietvertrag', summary: 'Mietvertrag Hauptstraße', categoryPath: 'Privat/wohnen' }));
   app.llm.embed = (texts) => texts.map(() => [1, 0, 0]);
 });
 afterEach(async () => {

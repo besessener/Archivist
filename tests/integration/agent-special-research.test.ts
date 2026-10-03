@@ -135,7 +135,7 @@ describe('email_threads with headers (#312)', () => {
     ].join('\n');
 
   it('keeps equal subjects of different threads apart and marks the basis', async () => {
-    const eml = { docType: 'E-Mail', loc: 'private/post' };
+    const eml = { docType: 'E-Mail', loc: 'Privat/post' };
     const on = (date: string) => ({ ...eml, date });
     const a1 = await archived('a1.eml', mail('Angebot Küche', 'Mon, 02 Mar 2026 10:00:00 +0000', ['Message-ID: <k1@x.test>']), {
       ...on('2026-03-02'),

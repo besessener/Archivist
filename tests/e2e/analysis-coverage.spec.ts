@@ -14,7 +14,7 @@ test.describe('coverage of long documents', () => {
 
     await app.inbox.do.importFile(file);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
 
     await expect(app.inbox.locators.coverage).toContainText('länger als die Grenze beim Einlesen');
     await expect(app.inbox.locators.coverage).toContainText('Die KI hat nur die ersten');
@@ -26,7 +26,7 @@ test.describe('coverage of long documents', () => {
 
     await app.inbox.do.importFile(workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.'));
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
 
     await expect(app.inbox.locators.coverage).toHaveCount(0);
   });

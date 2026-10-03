@@ -9,7 +9,7 @@ const result = (fields: Partial<DocumentClassification>): DocumentClassification
   persons: [],
   dates: [],
   tags: [],
-  location: { categoryPath: 'work/x', fileName: null, newMainCategory: false, rationale: '', confidence: 0.7 },
+  location: { categoryPath: 'Arbeit/x', fileName: null, newMainCategory: false, rationale: '', confidence: 0.7 },
   decisions: [],
   openItems: [],
   confidence: 0.7,

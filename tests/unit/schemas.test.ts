@@ -30,7 +30,13 @@ describe('Zod schemas for structured LLM output', () => {
   });
 
   it('DocumentClassification requires a filing proposal with confidence', () => {
-    const ok = { docType: 'Vertrag', title: 'T', summary: 's', location: { categoryPath: 'work/contracts', rationale: 'r', confidence: 0.7 }, confidence: 0.7 };
+    const ok = {
+      docType: 'Vertrag',
+      title: 'T',
+      summary: 's',
+      location: { categoryPath: 'Arbeit/contracts', rationale: 'r', confidence: 0.7 },
+      confidence: 0.7,
+    };
     expect(DocumentClassification.safeParse(ok).success).toBe(true);
     expect(DocumentClassification.safeParse({ ...ok, location: undefined }).success).toBe(false);
     expect(ArchiveLocationProposal.safeParse({ categoryPath: '', confidence: 0.5 }).success).toBe(false);

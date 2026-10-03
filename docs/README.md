@@ -19,6 +19,7 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [LLM-Anbieter verbinden](how-to/llm-anbieter-verbinden.md)
 - [Verzeichnisse scannen](how-to/verzeichnisse-scannen.md)
 - [Ablage prüfen und Dokumente umlagern](how-to/dokumente-umlagern.md)
+- [Hauptkategorien auf Deutsch umstellen](how-to/hauptkategorien-umbenennen.md)
 - [Verknüpfungsvorschläge prüfen](how-to/verknuepfungen-pruefen.md)
 - [Datenschutz einstellen](how-to/datenschutz-einstellen.md)
 - [Archivpfad ändern](how-to/archivpfad-aendern.md)

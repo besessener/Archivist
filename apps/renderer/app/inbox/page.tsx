@@ -25,6 +25,7 @@ const FILTERS: Array<{ id: DocumentStatus | 'all'; label: string }> = [
   { id: 'proposed', label: 'Vorschlag bereit' },
   { id: 'failed', label: 'Fehlgeschlagen' },
   { id: 'quarantined', label: 'Quarantäne' },
+  { id: 'ignored', label: 'Ignoriert' },
 ];
 
 export default function InboxPage() {
@@ -33,13 +34,15 @@ export default function InboxPage() {
   const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
   const inboxTotal = INBOX_STATUSES.reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
   const [filter, setFilter] = useState<DocumentStatus | 'all'>('all');
+  // ignored documents are not part of the inbox count; they load only for their filter
+  const ignoredList = useQuery('documents:list', { status: 'ignored', limit: 1000 }, { scopes: ['documents'], enabled: filter === 'ignored' });
   const [edits, setEdits] = useState<Record<string, ArchiveEdit>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogItems, setDialogItems] = useState<ArchiveItemRequest[] | null>(null);
   const { settings } = useSettings();
 
   const docs = useMemo(() => (data ?? []).filter((d) => INBOX_STATUSES.includes(d.status)), [data]);
-  const shown = docs.filter((d) => filter === 'all' || d.status === filter);
+  const shown = filter === 'ignored' ? (ignoredList.data ?? []) : docs.filter((d) => filter === 'all' || d.status === filter);
   const archivable = shown.filter((d) => d.status === 'staged' || d.status === 'proposed');
   const getEdit = (d: DocRecord): ArchiveEdit => edits[d.id] ?? defaultEdit(d);
   const selectedDocs = archivable.filter((d) => selected.has(d.id));

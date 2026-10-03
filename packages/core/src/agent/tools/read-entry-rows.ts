@@ -98,7 +98,7 @@ const proposalRows = (deps: ToolDeps, { matches }: EntryFilter): SourcedRow[] =>
 
 const insightRows = (deps: ToolDeps, { args, matches }: EntryFilter): SourcedRow[] =>
   deps.insights
-    .list((args.status as 'open') ?? 'open')
+    .list({ status: (args.status as 'open') ?? 'open' })
     .filter((i) => matches(i.title, i.explanation))
     .map((i) => ({ id: i.id, date: i.createdAt, text: `Hinweis „${truncate(i.title, 100)}“ (${i.kind}) – ${truncate(i.explanation, 160)}` }));
 

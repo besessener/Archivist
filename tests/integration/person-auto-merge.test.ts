@@ -27,7 +27,7 @@ function state() {
 }
 
 async function importedDoc(title: string): Promise<string> {
-  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
+  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes' }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${title}.txt`, `${title}: ausreichend langer Inhalt für den Test`)] });
   await app.services.jobs.whenIdle();
   return imp.imported[0]!.id;
@@ -95,7 +95,7 @@ describe('Automatically merging person duplicates (#26)', () => {
         .some((r) => r.sourceEntityId === target.id && r.relationType === 'participated_in'),
     ).toBe(true);
 
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'persons_merged')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'persons_merged')!;
     expect(insight.title).toBe('5 Einträge zu „Monika Lor-Zade“ zusammengeführt');
     expect(insight.recommendedActionLabel).toBe('Rückgängig');
     expect(report.byKind.persons_merged).toBe(5);
@@ -107,7 +107,7 @@ describe('Automatically merging person duplicates (#26)', () => {
     await app.services.consistency.run({ trigger: 'manual' });
     expect(state()).not.toEqual(before);
 
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'persons_merged')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'persons_merged')!;
     await app.ok('insights:respond', { response: 'accept', id: insight.id, confirmed: true, strongConfirmed: false });
 
     expect(state()).toEqual(before);
@@ -117,13 +117,13 @@ describe('Automatically merging person duplicates (#26)', () => {
 
     await app.services.consistency.run({ trigger: 'manual' });
     expect(state()).toEqual(before);
-    expect(app.services.insights.list('open').filter((i) => i.kind === 'persons_merged')).toHaveLength(0);
+    expect(app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'persons_merged')).toHaveLength(0);
   });
 
   it('„Behalten“ keeps the merge; later runs find nothing more', async () => {
     await monikaArchive();
     await app.services.consistency.run({ trigger: 'manual' });
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'persons_merged')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'persons_merged')!;
     await app.ok('insights:respond', { response: 'reject', id: insight.id });
 
     const again = await app.services.consistency.run({ trigger: 'manual' });

@@ -9,7 +9,7 @@ beforeEach(async () => {
     classification({
       title: 'Protokoll',
       summary: 'Zusammenfassung',
-      categoryPath: 'work/notes',
+      categoryPath: 'Arbeit/notes',
       mainTopic: 'Vorgeschlagenes Thema',
       project: 'Falsches Projekt',
     }),

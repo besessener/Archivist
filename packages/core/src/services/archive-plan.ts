@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ArchiveItemRequest, ArchivePlan, ArchivePlanItem, DocumentProposal } from '@archivist/shared';
 import { AppError } from '../util/errors';
-import { assertRealInside, resolveInside, sanitizeCategoryPath, sanitizeFileName, uniquePath } from '../util/paths';
+import { assertRealInside, resolveInside, sanitizeFileName, uniquePath } from '../util/paths';
 import { archivePathOf, archiveRootOf, toPosix } from './archive-model';
 import type { DocRow } from './documents';
 import type { ArchiveDeps } from './archive-deps';
@@ -121,7 +121,7 @@ export class ArchivePlanner {
     const root = archiveRootOf(this.deps);
     let categoryPath: string;
     try {
-      categoryPath = sanitizeCategoryPath(req.categoryPath ?? proposal?.location.categoryPath ?? row.categoryPath ?? '');
+      categoryPath = this.deps.categories.canonical(req.categoryPath ?? proposal?.location.categoryPath ?? row.categoryPath ?? '');
     } catch (err) {
       return blocked(base, errorText(err, 'Ungültiger Zielordner.'));
     }

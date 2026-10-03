@@ -36,6 +36,9 @@ export function initDecisions(page: Page) {
     },
     confirmDialog: page.getByTestId('confirm-dialog'),
     rows: page.getByTestId('decision-row'),
+    /** „N von M“ note with „Mehr laden“ while the list holds only the newest decisions (#223). */
+    capped: page.getByTestId('decisions-capped'),
+    loadMore: page.getByTestId('decisions-load-more'),
     /** „Vorgeschlagene Entscheidungen“: the page of decisions found in documents, reached from the decisions page. */
     proposed: {
       open: page.getByTestId('decisions-proposed'),

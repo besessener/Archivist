@@ -101,7 +101,7 @@ export class SolutionService {
           'Im Datenschutzmodus „nur lokal“ werden keine Inhalte an das LLM gesendet. Ändere den Modus in den Einstellungen, um Lösungsvorschläge zu erzeugen.',
       };
     if (!this.llm.isConfigured())
-      return { category: 'llm_error', message: 'Das LLM ist nicht konfiguriert. Bitte Base URL, Modell und API-Key in den Einstellungen hinterlegen.' };
+      return { category: 'llm_error', message: 'Die KI ist nicht konfiguriert. Bitte Base URL, Modell und API-Key in den Einstellungen hinterlegen.' };
     return null;
   }
 

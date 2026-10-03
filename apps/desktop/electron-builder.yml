@@ -21,6 +21,13 @@ asarUnpack:
   - '**/node_modules/tesseract.js/**'
   - '**/node_modules/tesseract.js-core/**'
   - '**/node_modules/@tesseract.js-data/**'
+# Fuses are flipped at packaging time (no ELECTRON_RUN_AS_NODE, NODE_OPTIONS or --inspect in an installed app); the app is served via app://, not file://.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
 # Archivist is only packaged for Windows. better-sqlite3 (>= 13) and sharp ship N-API prebuilds → no rebuild needed
 # (editing resources/signing the .exe still requires Windows or Wine, so CI builds on windows-latest).
 npmRebuild: false

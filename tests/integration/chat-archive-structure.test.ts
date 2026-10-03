@@ -36,14 +36,14 @@ async function archived(name: string, loc: string, topic: string | null = TOPIC,
 /** Six Bildungsurlaub documents in four directories, plus one unrelated document. */
 async function scatteredArchive() {
   const ids = [
-    await archived('Antrag', 'work/hr/abwesenheiten'),
-    await archived('Antrag-Screenshot', 'work/hr/abwesenheiten'),
-    await archived('Bescheid', 'private/bildungsurlaub/2026'),
-    await archived('Teilnahmebescheinigung', 'private/bildungsurlaub/2026'),
-    await archived('Teilnahmebescheinigung-Kopie', 'private/bildungsurlaub/2026'),
-    await archived('Ticket', 'work/tickets'),
+    await archived('Antrag', 'Arbeit/hr/abwesenheiten'),
+    await archived('Antrag-Screenshot', 'Arbeit/hr/abwesenheiten'),
+    await archived('Bescheid', 'Privat/bildungsurlaub/2026'),
+    await archived('Teilnahmebescheinigung', 'Privat/bildungsurlaub/2026'),
+    await archived('Teilnahmebescheinigung-Kopie', 'Privat/bildungsurlaub/2026'),
+    await archived('Ticket', 'Arbeit/tickets'),
   ];
-  const other = await archived('Steuerbescheid', 'private/steuer', 'Steuer');
+  const other = await archived('Steuerbescheid', 'Privat/steuer', 'Steuer');
   return { ids, other };
 }
 
@@ -59,10 +59,10 @@ describe('Chat: checking the filing and putting documents into one directory', (
     const m = r.assistantMessage;
     expect(m.intent).toBe('archive_structure');
     expect(m.content).toContain(`Die ${ids.length} Dokument(e) zu „${TOPIC}“ liegen in 3 verschiedenen Verzeichnissen`);
-    expect(m.content).toContain('**private/bildungsurlaub/2026** (3)');
-    expect(m.content).toContain('**work/hr/abwesenheiten** (2)');
-    expect(m.content).toContain('**work/tickets** (1)');
-    expect(m.content).toContain('„private/bildungsurlaub/2026“ vorschlagen');
+    expect(m.content).toContain('**Privat/bildungsurlaub/2026** (3)');
+    expect(m.content).toContain('**Arbeit/hr/abwesenheiten** (2)');
+    expect(m.content).toContain('**Arbeit/tickets** (1)');
+    expect(m.content).toContain('„Privat/bildungsurlaub/2026“ vorschlagen');
     expect(m.content).not.toContain('Archivstatus');
     expect(m.context?.documents).toHaveLength(ids.length);
   });
@@ -78,8 +78,8 @@ describe('Chat: checking the filing and putting documents into one directory', (
   });
 
   it('reports a cleanly filed archive as fine', async () => {
-    await archived('A', 'work/a');
-    await archived('B', 'work/a');
+    await archived('A', 'Arbeit/a');
+    await archived('B', 'Arbeit/a');
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_structure' }));
 
     const r = await send('ist die ablage konsistent?');
@@ -114,15 +114,15 @@ describe('Chat: checking the filing and putting documents into one directory', (
     const action = proposal.assistantMessage.actions[0]!;
     expect(proposal.assistantMessage.intent).toBe('archive_reorganize');
     expect(action).toMatchObject({ actionType: 'relocate_documents', status: 'proposed', requiredConfirmation: 'confirm' });
-    expect(action.label).toBe('3 Dokument(e) nach „private/bildungsurlaub/2026“ verschieben');
+    expect(action.label).toBe('3 Dokument(e) nach „Privat/bildungsurlaub/2026“ verschieben');
     expect(proposal.assistantMessage.content).toContain('Vorher ändert sich nichts');
     for (const id of ids) expect(folderOf(id), 'everything stays in place before the confirmation').toBe(before.get(id));
 
     const done = await send('ja', conv);
 
-    expect(done.assistantMessage.content).toContain('Erledigt: 3 Dokument(e) nach „private/bildungsurlaub/2026“ verschieben');
-    for (const id of ids) expect(folderOf(id)).toBe('private/bildungsurlaub/2026');
-    expect(folderOf(other), 'unrelated documents stay untouched').toBe('private/steuer');
+    expect(done.assistantMessage.content).toContain('Erledigt: 3 Dokument(e) nach „Privat/bildungsurlaub/2026“ verschieben');
+    for (const id of ids) expect(folderOf(id)).toBe('Privat/bildungsurlaub/2026');
+    expect(folderOf(other), 'unrelated documents stay untouched').toBe('Privat/steuer');
     for (const id of ids) expect(fs.existsSync(path.join(archiveRoot(), app.services.documents.getRow(id).archiveRelPath!))).toBe(true);
   });
 
@@ -130,7 +130,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
     const { ids } = await scatteredArchive();
     app.llm.on('ChatIntent', (_s, input) => {
       const text = userText(input);
-      if (/anderen ordner/.test(text)) return intent({ intent: 'archive_reorganize', topic: TOPIC, path: 'work/hr/bildungsurlaub' });
+      if (/anderen ordner/.test(text)) return intent({ intent: 'archive_reorganize', topic: TOPIC, path: 'Arbeit/hr/bildungsurlaub' });
       return intent({ intent: 'archive_reorganize', topic: TOPIC });
     });
 
@@ -140,7 +140,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
     const proposed = app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents');
     expect(proposed).toHaveLength(1);
     expect(proposed[0]!.id).toBe(second.assistantMessage.actions[0]!.id);
-    expect(proposed[0]!.label).toBe(`${ids.length} Dokument(e) nach „work/hr/bildungsurlaub“ verschieben`);
+    expect(proposed[0]!.label).toBe(`${ids.length} Dokument(e) nach „Arbeit/hr/bildungsurlaub“ verschieben`);
     expect(app.services.actions.list('withdrawn').some((a) => a.id === first.assistantMessage.actions[0]!.id)).toBe(true);
   });
 
@@ -171,13 +171,27 @@ describe('Chat: checking the filing and putting documents into one directory', (
   });
 
   it('says so when everything is already in the same directory', async () => {
-    await archived('A', 'work/a');
-    await archived('B', 'work/a');
+    await archived('A', 'Arbeit/a');
+    await archived('B', 'Arbeit/a');
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: TOPIC }));
 
     const r = await send('leg alle in einen ordner');
 
-    expect(r.assistantMessage.content).toContain('liegen schon in „work/a“');
+    expect(r.assistantMessage.content).toContain('liegen schon in „Arbeit/a“');
+    expect(app.services.actions.list('proposed')).toHaveLength(0);
+  });
+
+  it('on a 1:1 tie suggests no folder, names both and asks the user to choose (#200)', async () => {
+    await archived('A', 'Arbeit/a');
+    await archived('B', 'Privat/b/deep');
+    app.llm.on('ChatIntent', () => intent({ intent: 'archive_structure', topic: TOPIC }));
+    const structure = await send('wie ist die ablage?');
+    expect(structure.assistantMessage.content).toContain('„Arbeit/a“ oder „Privat/b/deep“');
+    expect(structure.assistantMessage.content).not.toContain('vorschlagen, dort liegen schon die meisten');
+
+    app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: TOPIC }));
+    const reorganize = await send('leg alle in einen ordner');
+    expect(reorganize.assistantMessage.content).toContain('gleich viele Dokumente');
     expect(app.services.actions.list('proposed')).toHaveLength(0);
   });
 
@@ -194,7 +208,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
   });
 
   describe('Archive check („Archivprüfung jetzt starten“)', () => {
-    const scattered = () => app.services.insights.list('open').filter((i) => i.kind === 'scattered_documents');
+    const scattered = () => app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'scattered_documents');
 
     it('detects scattered documents and proposes a folder without moving anything', async () => {
       const { ids, other } = await scatteredArchive();
@@ -205,14 +219,26 @@ describe('Chat: checking the filing and putting documents into one directory', (
       expect(report.byKind.scattered_documents).toBe(1);
       const [insight] = scattered();
       expect(insight!.title).toBe(`Thema „${TOPIC}“: Dokumente liegen in 3 Verzeichnissen`);
-      expect(insight!.explanation).toContain('private/bildungsurlaub/2026 (3)');
-      expect(insight!.explanation).toContain('work/hr/abwesenheiten (2)');
+      expect(insight!.explanation).toContain('Privat/bildungsurlaub/2026 (3)');
+      expect(insight!.explanation).toContain('Arbeit/hr/abwesenheiten (2)');
       expect(insight!.sourceIds.toSorted()).toEqual(ids.toSorted());
       expect(insight!.sourceIds).not.toContain(other);
       const action = app.services.actions.get(insight!.recommendedActionId!);
       expect(action).toMatchObject({ actionType: 'relocate_documents', status: 'proposed', requiredConfirmation: 'confirm' });
-      expect(action.label).toBe(`3 Dokument(e) zu „${TOPIC}“ nach „private/bildungsurlaub/2026“ verschieben`);
+      expect(action.label).toBe(`3 Dokument(e) zu „${TOPIC}“ nach „Privat/bildungsurlaub/2026“ verschieben`);
       expect(ids.map(folderOf), 'the check changes nothing').toEqual(before);
+    });
+
+    it('on a 1:1 tie names both folders and proposes no relocation (#200)', async () => {
+      await archived('A', 'Arbeit/a');
+      await archived('B', 'Privat/b/deep');
+
+      await app.services.consistency.run({ trigger: 'test' });
+
+      const [insight] = scattered();
+      expect(insight!.explanation).toContain('„Arbeit/a“ oder „Privat/b/deep“');
+      expect(insight!.recommendedActionId).toBeNull();
+      expect(app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents')).toHaveLength(0);
     });
 
     it('creates no duplicates on further runs', async () => {
@@ -234,14 +260,14 @@ describe('Chat: checking the filing and putting documents into one directory', (
       await app.services.consistency.run({ trigger: 'test' });
 
       expect(done.status).toBe('executed');
-      expect(new Set(ids.map(folderOf))).toEqual(new Set(['private/bildungsurlaub/2026']));
+      expect(new Set(ids.map(folderOf))).toEqual(new Set(['Privat/bildungsurlaub/2026']));
       expect(scattered()).toHaveLength(0);
     });
 
     it('reports nothing when the documents of a topic are together', async () => {
-      await archived('A', 'work/a');
-      await archived('B', 'work/a');
-      await archived('C', 'work/b', 'Anderes Thema');
+      await archived('A', 'Arbeit/a');
+      await archived('B', 'Arbeit/a');
+      await archived('C', 'Arbeit/b', 'Anderes Thema');
 
       const report = await app.services.consistency.run({ trigger: 'test' });
 
@@ -257,7 +283,7 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
 
   it('a named topic beats the most recently shown documents (LLM only returns query)', async () => {
     const { ids, other } = await scatteredArchive();
-    await archived('Steuer-Beleg', 'private/steuer-2', 'Steuer');
+    await archived('Steuer-Beleg', 'Privat/steuer-2', 'Steuer');
     app.llm.on('ChatIntent', (_s, input) => {
       const text = userText(input);
       if (/Steuer/.test(text)) return intent({ intent: 'archive_structure', topic: 'Steuer' });
@@ -276,8 +302,8 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
 
   it('several partially matching topics: asks back instead of silently choosing; the answer performs the relocation', async () => {
     await scatteredArchive();
-    const old = await archived('Antrag 2025', 'private/bu-2025', 'Bildungsurlaub 2025');
-    await archived('Bescheid 2025', 'work/hr/2025', 'Bildungsurlaub 2025');
+    const old = await archived('Antrag 2025', 'Privat/bu-2025', 'Bildungsurlaub 2025');
+    await archived('Bescheid 2025', 'Arbeit/hr/2025', 'Bildungsurlaub 2025');
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: 'Bildungsurlaub' }));
 
     const r1 = await send('leg alle Dokumente zu Bildungsurlaub in einen Ordner');
@@ -288,13 +314,13 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
     app.llm.on('ChatIntent', () => intent({ intent: 'unknown' }));
     const r2 = await send('Bildungsurlaub 2026', r1.conversationId);
 
-    expect(r2.assistantMessage.actions[0]?.label).toBe('3 Dokument(e) nach „private/bildungsurlaub/2026“ verschieben');
+    expect(r2.assistantMessage.actions[0]?.label).toBe('3 Dokument(e) nach „Privat/bildungsurlaub/2026“ verschieben');
     expect(proposedIds(r2)).not.toContain(old);
   });
 
   it('no silent full-text fallback when moving: an unrelated document containing the word stays out', async () => {
     const { ids } = await scatteredArchive();
-    const payslip = await archived('Gehaltsabrechnung', 'work/gehalt', 'Gehalt', 'Gehaltsabrechnung Oktober, Abzug Bildungsurlaub 2026');
+    const payslip = await archived('Gehaltsabrechnung', 'Arbeit/gehalt', 'Gehalt', 'Gehaltsabrechnung Oktober, Abzug Bildungsurlaub 2026');
     app.llm.on('ChatIntent', () => intent({ intent: 'archive_reorganize', topic: 'Bildungsurlaub' }));
 
     const r = await send('leg alle Bildungsurlaub-Dokumente zusammen');
@@ -323,7 +349,7 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
   it('„archivieren“ uses inbox documents even when recently archived ones were shown', async () => {
     await scatteredArchive();
     app.llm.on('DocumentClassification', () =>
-      classification({ title: 'Neue Rechnung', summary: 'Rechnung', categoryPath: 'private/rechnungen', docType: 'Rechnung', mainTopic: 'Rechnungen' }),
+      classification({ title: 'Neue Rechnung', summary: 'Rechnung', categoryPath: 'Privat/rechnungen', docType: 'Rechnung', mainTopic: 'Rechnungen' }),
     );
     const imp = await app.ok('documents:import', { paths: [app.file('in/rechnung.txt', 'Rechnung Nr. 1')] });
     await app.services.jobs.whenIdle();
@@ -339,8 +365,8 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
     // source path and final file name are in the message and on the card (#189)
     const line = /• Neue Rechnung: (.+) → (.+)/.exec(r.assistantMessage.content);
     expect(line?.[1]).toMatch(/in[\\/]rechnung\.txt$/);
-    expect(line?.[2]).toBe('private/rechnungen/rechnung.txt');
-    expect(r.assistantMessage.actions[0]?.rationale).toContain('private/rechnungen/rechnung.txt');
+    expect(line?.[2]).toBe('Privat/rechnungen/rechnung.txt');
+    expect(r.assistantMessage.actions[0]?.rationale).toContain('Privat/rechnungen/rechnung.txt');
   });
 });
 

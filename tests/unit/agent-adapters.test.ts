@@ -68,9 +68,9 @@ describe.each(PROVIDERS)('agent scenario find → move → done via $name', ({ i
 
   it('finds the md files, moves them and reports', async () => {
     app = await agentApp(opts);
-    const a = await archived(app, { name: 'folien-q1.md', content: '# Q1', folder: 'work/misc' });
-    const b = await archived(app, { name: 'folien-q2.md', content: '# Q2', folder: 'work/misc' });
-    const other = await archived(app, { name: 'notiz.txt', content: 'Notiz', folder: 'work/misc' });
+    const a = await archived(app, { name: 'folien-q1.md', content: '# Q1', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'folien-q2.md', content: '# Q2', folder: 'Arbeit/misc' });
+    const other = await archived(app, { name: 'notiz.txt', content: 'Notiz', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       ({ provider }) => {
         expect(provider).toBe(id);
@@ -78,18 +78,18 @@ describe.each(PROVIDERS)('agent scenario find → move → done via $name', ({ i
       },
       () => {
         expect(lastResults(app, id).join('\n')).toContain('Ergebnismenge S1');
-        return { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'work/presentations' } }] };
+        return { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'Arbeit/presentations' } }] };
       },
       () => {
-        expect(lastResults(app, id).join('\n')).toContain('Verschoben nach work/presentations: 2 erfolgreich');
-        return { text: 'Ich habe 2 Dateien nach work/presentations verschoben.' };
+        expect(lastResults(app, id).join('\n')).toContain('Verschoben nach Arbeit/presentations: 2 erfolgreich');
+        return { text: 'Ich habe 2 Dateien nach Arbeit/presentations verschoben.' };
       },
     );
     const res = await app.ok('chat:send', { text: 'Verschiebe alle md nach presentations' });
-    expect(res.assistantMessage.content).toBe('Ich habe 2 Dateien nach work/presentations verschoben.');
-    expect(folderOf(app, a)).toBe('work/presentations');
-    expect(folderOf(app, b)).toBe('work/presentations');
-    expect(folderOf(app, other)).toBe('work/misc');
+    expect(res.assistantMessage.content).toBe('Ich habe 2 Dateien nach Arbeit/presentations verschoben.');
+    expect(folderOf(app, a)).toBe('Arbeit/presentations');
+    expect(folderOf(app, b)).toBe('Arbeit/presentations');
+    expect(folderOf(app, other)).toBe('Arbeit/misc');
     const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
     expect(run).toMatchObject({ status: 'done', provider: id, undoable: 2 });
     expect(run.steps.map((s) => [s.tool, s.outcome])).toEqual([
@@ -145,7 +145,7 @@ describe('switching the provider within a conversation (#297)', () => {
 
   it('keeps the neutral history: the other provider gets text and tool calls instead of foreign raw blocks', async () => {
     app = await agentApp();
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: { ext: 'md' } }], text: 'Ich suche.' }, { text: 'Gefunden: D1.' });
     const first = await app.ok('chat:send', { text: 'Welche md-Dateien gibt es?' });
     expect(first.assistantMessage.content).toBe('Gefunden: „a“.');
@@ -154,10 +154,10 @@ describe('switching the provider within a conversation (#297)', () => {
 
     app.services.settings.update({ llm: { baseUrl: 'https://api.anthropic.com', model: 'claude-opus-5-5' } });
     const before = app.llm.agentRequests.length;
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: 'work/slides' } }] }, { text: 'Verschoben.' });
-    const second = await app.ok('chat:send', { conversationId: first.conversationId, text: 'Verschieb sie nach work/slides' });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: 'Arbeit/slides' } }] }, { text: 'Verschoben.' });
+    const second = await app.ok('chat:send', { conversationId: first.conversationId, text: 'Verschieb sie nach Arbeit/slides' });
     expect(second.assistantMessage.content).toBe('Verschoben.');
-    expect(folderOf(app, a)).toBe('work/slides');
+    expect(folderOf(app, a)).toBe('Arbeit/slides');
 
     const claudeReqs = app.llm.agentRequests.slice(before).filter((b) => Array.isArray(b.messages) && (b.tools as unknown[]).length > 1);
     const firstClaude = claudeReqs[0]!;

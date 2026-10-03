@@ -20,7 +20,7 @@ function conversationState(services: Services, conversationId?: string) {
 
 function runBackground(services: Services, kind: 'inbox' | 'archive_check' | 'links') {
   if (!services.agent.isActive() || !services.llm.canUseInBackground())
-    return { jobId: null, message: 'Hintergrund-Läufe brauchen den Agentenmodus, ein LLM mit Werkzeugaufrufen und den Datenschutzmodus „automatisch“.' };
+    return { jobId: null, message: 'Hintergrund-Läufe brauchen den Agentenmodus, eine KI mit Werkzeugaufrufen und den Datenschutzmodus „automatisch“.' };
   const docIds = kind === 'inbox' ? services.documents.list({ statuses: ['proposed'], limit: 500 }).map((document) => document.id) : [];
   if (kind === 'inbox' && !docIds.length) return { jobId: null, message: 'Im Eingang liegt nichts zum Einsortieren.' };
   const job = services.jobs.enqueue('agent.background', { label: 'Hintergrund-Agent (manuell)', payload: { kind, docIds }, maxAttempts: 1 });
@@ -67,7 +67,8 @@ export function agentHandlers(services: Services, host: HostApi): HandlerGroup<'
 
     'chat:send': (input) => services.chat.send(input.conversationId, input.text),
     'chat:cancel': (input) => ({ cancelled: services.chat.cancel(input.conversationId) }),
-    'chat:history': (input) => services.chat.history(input.conversationId),
+    'chat:history': (input) => services.chat.history(input.conversationId, { limit: input.limit, offset: input.offset }),
+    'chat:historyCount': (input) => services.chat.historyCount(input.conversationId),
     'chat:conversations': () => services.chat.listConversations(),
     'chat:newConversation': () => services.chat.newConversation(),
     'chat:renameConversation': (input) => services.chat.renameConversation(input.id, input.title),

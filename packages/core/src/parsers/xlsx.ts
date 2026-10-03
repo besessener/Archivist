@@ -1,22 +1,24 @@
 import fsp from 'node:fs/promises';
-import { coreProps, decodeXml, readZipXml } from './office';
+import { coreProps, decodeXml } from './office';
 import { cleanText, type ParsedDocument } from './parsed-document';
+import { elements, startTags } from './xml-scan';
+import { readZipXml } from './zip-read';
 
 const MAX_LINES_PER_SHEET = 3000;
 
 /** Column letters ("AB") → 0-based index. */
 const columnIndex = (ref: string): number => [...ref.replace(/[^A-Z]/gi, '').toUpperCase()].reduce((n, letter) => n * 26 + letter.charCodeAt(0) - 64, 0) - 1;
 
-const textRuns = (xml: string) => [...xml.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((match) => decodeXml(match[1] ?? '')).join('');
+const textRuns = (xml: string) => [...elements(xml, 't')].map((run) => decodeXml(run.body)).join('');
 
 const attribute = (tag: string, name: RegExp) => name.exec(tag)?.[1];
 
 /** Relationship id → worksheet part name, from xl/_rels/workbook.xml.rels. */
 function relationships(xml: string): Map<string, string> {
   return new Map(
-    [...xml.matchAll(/<Relationship\b[^>]*>/g)].flatMap((match) => {
-      const id = attribute(match[0], /\bId="([^"]+)"/);
-      const target = attribute(match[0], /\bTarget="([^"]+)"/);
+    [...startTags(xml, 'Relationship')].flatMap((tag) => {
+      const id = attribute(tag, /\bId="([^"]+)"/);
+      const target = attribute(tag, /\bTarget="([^"]+)"/);
       return id && target ? [[id, target.replace(/^\/?(xl\/)?/, 'xl/')] as const] : [];
     }),
   );
@@ -24,9 +26,9 @@ function relationships(xml: string): Map<string, string> {
 
 function worksheets(parts: Map<string, string>): Array<{ name: string; xml: string }> {
   const targets = relationships(parts.get('xl/_rels/workbook.xml.rels') ?? '');
-  return [...(parts.get('xl/workbook.xml') ?? '').matchAll(/<sheet\b[^>]*>/g)].flatMap((match) => {
-    const name = attribute(match[0], /\bname="([^"]*)"/);
-    const relationshipId = attribute(match[0], /\br:id="([^"]+)"/);
+  return [...startTags(parts.get('xl/workbook.xml') ?? '', 'sheet')].flatMap((tag) => {
+    const name = attribute(tag, /\bname="([^"]*)"/);
+    const relationshipId = attribute(tag, /\br:id="([^"]+)"/);
     const target = relationshipId ? targets.get(relationshipId) : undefined;
     return name && target ? [{ name: decodeXml(name), xml: parts.get(target) ?? '' }] : [];
   });
@@ -43,10 +45,9 @@ function cellValue(attributes: string, body: string, shared: string[]): string {
 /** Cells of one row by column (gaps stay empty); date cells appear as Excel serial numbers. */
 function rowCells(rowXml: string, shared: string[]): string[] {
   const cells: string[] = [];
-  for (const cell of rowXml.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-    const attributes = cell[1] ?? '';
-    const ref = attribute(attributes, /\br="([A-Z]+)\d+"/) ?? '';
-    const value = cellValue(attributes, cell[2] ?? '', shared);
+  for (const cell of elements(rowXml, 'c')) {
+    const ref = attribute(cell.attributes, /\br="([A-Z]+)\d+"/) ?? '';
+    const value = cellValue(cell.attributes, cell.body, shared);
     if (ref && value !== '') cells[columnIndex(ref)] = value;
   }
   return cells;
@@ -54,8 +55,8 @@ function rowCells(rowXml: string, shared: string[]): string[] {
 
 function sheetLines(sheetXml: string, shared: string[]): string[] {
   const lines: string[] = [];
-  for (const row of sheetXml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
-    const cells = rowCells(row[1] ?? '', shared);
+  for (const row of elements(sheetXml, 'row')) {
+    const cells = rowCells(row.body, shared);
     if (cells.length) lines.push(Array.from(cells, (value) => value ?? '').join(' | '));
     if (lines.length >= MAX_LINES_PER_SHEET) break;
   }
@@ -67,7 +68,7 @@ export async function parseXlsx(file: string): Promise<ParsedDocument> {
   const buffer = await fsp.readFile(file);
   const files = await readZipXml(buffer, /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$|^docProps\/core\.xml$/);
   const parts = new Map(files.map((part) => [part.name, part.xml]));
-  const shared = [...(parts.get('xl/sharedStrings.xml') ?? '').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((match) => textRuns(match[1] ?? ''));
+  const shared = [...elements(parts.get('xl/sharedStrings.xml') ?? '', 'si')].map((item) => textRuns(item.body));
   const sheets = worksheets(parts);
   const sections = sheets.map((sheet) => `Tabellenblatt „${sheet.name}“:\n${sheetLines(sheet.xml, shared).join('\n')}`);
   const core = parts.get('docProps/core.xml');

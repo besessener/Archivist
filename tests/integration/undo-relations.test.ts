@@ -10,7 +10,7 @@ beforeEach(async () => {
     classification({
       title: 'Steuerbescheid 2025',
       summary: 'Bescheid des Finanzamts',
-      categoryPath: 'work/notes',
+      categoryPath: 'Arbeit/notes',
       docType: 'Bescheid',
       mainTopic: 'Steuern',
       project: 'Hausbau',

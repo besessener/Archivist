@@ -38,6 +38,7 @@ async function archiveLongDocument(): Promise<string> {
   expect(result.success).toBe(1);
   app.llm.embeddingRequests.length = 0;
   loggedBefore = new Set((await app.ok('llm:transmissions', { limit: 100 })).map((entry) => entry.id));
+  app.services.search.remove(documentId); // an unchanged entry would keep its stored vectors and send nothing
   await app.services.documents.indexDocument(documentId);
   return documentId;
 }

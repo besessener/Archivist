@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { Job, ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
-import { and, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
+import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, permissionError, validationError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { isForbiddenScanRoot, isInside, normalizeFsPath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
-import { SCAN_MAX_FILES } from '../workers/tasks';
+import { SCAN_PAGE_SIZE } from '../workers/tasks';
 import type { AuditService } from './audit';
 import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
@@ -19,17 +19,11 @@ import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
 import { IntervalSchedule } from './scheduler';
 import { FileAnalysis } from './scanner/file-analysis';
+import { ScanExclusions } from './scanner/exclusions';
 import { ScanProposals } from './scanner/proposals';
 import { mapFile, mapRoot, type RootRow } from './scanner/scan-files';
 import { ScanRun } from './scanner/scan-run';
 import type { SettingsService } from './settings';
-
-const mapExclusion = (row: typeof scanExclusions.$inferSelect): ScanExclusion => ({
-  id: row.id,
-  kind: row.kind as 'file' | 'dir',
-  path: row.path,
-  createdAt: row.createdAt,
-});
 
 export interface ScannerServiceDeps {
   ctx: AppContext;
@@ -51,13 +45,15 @@ export class ScannerService {
   private readonly scans: ScanRun;
   private readonly analysis: FileAnalysis;
   private readonly scanProposals: ScanProposals;
-  /** Upper bound of files collected per scan root (lowered in tests). */
-  maxFilesPerRoot = SCAN_MAX_FILES;
+  private readonly exclusions: ScanExclusions;
+  /** Files per scan page and batch (lowered in tests). */
+  pageSize = SCAN_PAGE_SIZE;
 
   constructor(private readonly deps: ScannerServiceDeps) {
     const { ctx, settings, pool, docs, graph, privacy, notifications } = deps;
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
-    this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
+    this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, pageSize: () => this.pageSize });
+    this.exclusions = new ScanExclusions({ ctx, audit: deps.audit });
     this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });
     this.scanProposals = new ScanProposals({ ctx, graph });
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
@@ -171,50 +167,15 @@ export class ScannerService {
 
   // ---------- Exclusions ----------
   exclude(kind: 'file' | 'dir', target: string): ScanExclusion {
-    if (!path.isAbsolute(target)) throw validationError('Bitte einen absoluten Pfad angeben.');
-    const absolute = normalizeFsPath(target);
-    const existing = this.db
-      .select()
-      .from(scanExclusions)
-      .where(and(eq(scanExclusions.kind, kind), eq(scanExclusions.path, absolute)))
-      .get();
-    const row = existing ?? { id: newId(), kind, path: absolute, createdAt: nowIso() };
-    if (!existing) this.db.insert(scanExclusions).values(row).run();
-    const below = `${absolute}${path.sep}%`;
-    const files = this.db
-      .select()
-      .from(scanFiles)
-      .where(kind === 'file' ? eq(scanFiles.path, absolute) : like(scanFiles.path, below))
-      .all();
-    for (const file of files) this.db.update(scanFiles).set({ status: 'excluded' }).where(eq(scanFiles.id, file.id)).run();
-    // remove not yet archived documents from this location from the inbox
-    const inboxDocs = this.db
-      .select()
-      .from(documents)
-      .where(and(inArray(documents.status, ['staged', 'proposed']), kind === 'file' ? eq(documents.sourcePath, absolute) : like(documents.sourcePath, below)))
-      .all();
-    for (const doc of inboxDocs)
-      if (!doc.stagedPath) this.db.update(documents).set({ status: 'ignored', updatedAt: nowIso() }).where(eq(documents.id, doc.id)).run();
-    this.deps.audit.log({ action: `scanner.exclude.${kind}`, actor: 'user', trigger: 'manual', confirmed: true, paths: [absolute] });
-    this.deps.ctx.events.changed('scanner', 'documents');
-    return mapExclusion(row);
+    return this.exclusions.exclude(kind, target);
   }
 
   listExclusions(): ScanExclusion[] {
-    return this.db.select().from(scanExclusions).orderBy(desc(scanExclusions.createdAt)).all().map(mapExclusion);
+    return this.exclusions.list();
   }
 
   removeExclusion(id: string): void {
-    const row = this.db.select().from(scanExclusions).where(eq(scanExclusions.id, id)).get();
-    if (!row) return;
-    this.db.delete(scanExclusions).where(eq(scanExclusions.id, id)).run();
-    // the files are picked up again on the next scan
-    this.db
-      .delete(scanFiles)
-      .where(and(eq(scanFiles.status, 'excluded'), or(eq(scanFiles.path, row.path), like(scanFiles.path, `${row.path}${path.sep}%`))))
-      .run();
-    this.deps.audit.log({ action: 'scanner.removeExclusion', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
-    this.deps.ctx.events.changed('scanner');
+    this.exclusions.remove(id);
   }
 
   // ---------- Scan ----------
@@ -237,25 +198,32 @@ export class ScannerService {
     return this.scans.run(rootId, job);
   }
 
-  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number } = {}): { files: ScanFile[]; lastSummary: ScanSummary | null } {
+  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number; offset?: number } = {}): {
+    files: ScanFile[];
+    total: number;
+    lastSummary: ScanSummary | null;
+  } {
     const conditions = [];
     if (options.rootId) conditions.push(eq(scanFiles.rootId, options.rootId));
     if (options.status) conditions.push(eq(scanFiles.status, options.status));
+    const where = conditions.length ? and(...conditions) : undefined;
     const files = this.db
       .select()
       .from(scanFiles)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(scanFiles.lastSeenAt), scanFiles.name)
+      .where(where)
+      .orderBy(desc(scanFiles.lastSeenAt), scanFiles.name, scanFiles.path)
       .limit(options.limit ?? 500)
+      .offset(options.offset ?? 0)
       .all()
       .map(mapFile);
+    const total = this.db.select({ total: count() }).from(scanFiles).where(where).get()?.total ?? 0;
     const latest = this.db
       .select()
       .from(scanRoots)
       .orderBy(desc(scanRoots.lastScanAt))
       .all()
       .find((root) => root.lastSummary);
-    return { files, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
+    return { files, total, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
   }
 
   /** New or changed analysable files not queued yet, oldest first – unlike the result list, not always the same first ones (#222). */

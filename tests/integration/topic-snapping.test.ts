@@ -16,7 +16,7 @@ const addTopics = (names: string[]) => names.forEach((name) => app.services.grap
 const fillerTopics = () => Array.from({ length: 600 }, (_, i) => `Aktenthema ${String(i).padStart(4, '0')}`);
 
 async function analyze(text: string, llmTopic: string | null) {
-  app.llm.on('DocumentClassification', () => classification({ title: 'Notiz', summary: 'x', categoryPath: 'private/garten', mainTopic: llmTopic }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Notiz', summary: 'x', categoryPath: 'Privat/garten', mainTopic: llmTopic }));
   const imported = await app.ok('documents:import', { paths: [app.file('in/notiz.txt', text)] });
   await app.services.jobs.whenIdle();
   return app.ok('documents:get', { id: imported.imported[0]!.id });
