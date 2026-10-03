@@ -27,6 +27,8 @@ export class ArchiveLocks {
   private backupActive = false;
   private shuttingDown = false;
   private idleWaiters: Array<() => void> = [];
+  /** The operation running alone right now; file operations started meanwhile wait for it. */
+  private exclusiveRun: Promise<void> | null = null;
 
   /** Blocks archive file operations while the archive root is changed; returns the function that lifts the block. */
   beginRootChange(): () => void {
@@ -56,6 +58,7 @@ export class ArchiveLocks {
 
   /** Runs an archive file operation unless the archive root is being changed or backed up right now. */
   async guarded<T>(operation: () => Promise<T>): Promise<T> {
+    while (this.exclusiveRun) await this.exclusiveRun;
     if (this.rootChangeActive) throw new AppError('archive_conflict', ROOT_CHANGE_RUNNING, { retryable: true });
     if (this.backupActive) throw new AppError('archive_conflict', BACKUP_RUNNING, { retryable: true });
     if (this.shuttingDown) throw new AppError('archive_conflict', SHUTTING_DOWN, { retryable: true });
@@ -65,6 +68,22 @@ export class ArchiveLocks {
     } finally {
       this.inFlight -= 1;
       if (this.inFlight === 0) this.idleWaiters.splice(0).forEach((resolve) => resolve());
+    }
+  }
+
+  /** Runs `operation` as the only file operation (later ones wait for it); false when it was skipped because others run. */
+  async exclusive(operation: () => Promise<void>): Promise<boolean> {
+    if (this.inFlight > 0 || this.exclusiveRun || this.rootChangeActive || this.backupActive || this.shuttingDown) return false;
+    const run = this.guarded(operation); // counts as running synchronously, so drain() waits for it too
+    this.exclusiveRun = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      await run;
+      return true;
+    } finally {
+      this.exclusiveRun = null;
     }
   }
 

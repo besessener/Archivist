@@ -77,6 +77,7 @@ describe('IPC contract: outputs from real data match the schemas', () => {
     const decision = (await app.ok('decisions:list', {}))[0]!;
     const doc = (await app.ok('documents:list', {}))[0]!;
     const conv = (await app.ok('chat:conversations', {}))[0]!;
+    const action = (await app.ok('actions:list', {}))[0]!;
     const calls: Array<[string, unknown]> = [
       ['app:getStatus', {}],
       ['settings:get', {}],
@@ -84,6 +85,7 @@ describe('IPC contract: outputs from real data match the schemas', () => {
       ['chat:history', { conversationId: conv.id }],
       ['chat:conversations', {}],
       ['actions:list', {}],
+      ['actions:get', { id: action.id }],
       ['decisions:list', {}],
       ['decisions:get', { id: decision.id }],
       ['decisions:search', { query: 'Nordlicht' }],

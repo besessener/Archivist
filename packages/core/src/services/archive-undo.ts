@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { documents } from '../db/schema';
-import { fsError } from '../util/errors';
+import { AppError, fsError, toErrorInfo } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
 import { hasChecksum, leftoverNote, pruneEmptyDirs } from './archive-files';
@@ -74,6 +74,26 @@ export class ArchiveUndo {
     const root = archiveRootOf(this.deps);
     const abs = d.archiveRel ? archivePathOf(root, d.archiveRel) : null;
     const putBackPath = hasArchiveFile(d) && abs ? await this.restoreFiles(d, abs) : null;
+    await this.commitOrTakeBack(d, putBackPath);
+    await this.deps.docs.indexDocument(d.documentId);
+    this.deps.ctx.events.emit('document:unarchived', { documentId: d.documentId });
+    this.deps.ctx.events.changed('documents', 'knowledge', 'status');
+    const leftover = hasArchiveFile(d) && abs ? await this.removeArchiveFile(abs) : null;
+    return [undoneMessage(d, putBackPath), leftover].filter(Boolean).join(' ');
+  }
+
+  /** A failed commit takes the put-back copy away again, so a retry does not leave „Name (3).ext“ next to it. */
+  private async commitOrTakeBack(d: ArchiveUndoData, putBackPath: string | null): Promise<void> {
+    try {
+      this.commitUndo(d, putBackPath);
+    } catch (err) {
+      if (!putBackPath || (await this.deps.files.removeCreated(putBackPath))) throw err;
+      const info = toErrorInfo(err);
+      throw new AppError(info.category, `${info.message} ${leftoverNote('Die zurückgelegte Kopie', putBackPath)}`, { details: info.details, cause: err });
+    }
+  }
+
+  private commitUndo(d: ArchiveUndoData, putBackPath: string | null): void {
     this.deps.ctx.database.transaction(() => {
       this.db
         .update(documents)
@@ -90,11 +110,6 @@ export class ArchiveUndo {
       // undo data written before relation tracking existed only lists the linked relations
       else for (const relationId of d.relationIds ?? []) this.deps.graph.deleteRelation(relationId);
     });
-    await this.deps.docs.indexDocument(d.documentId);
-    this.deps.ctx.events.emit('document:unarchived', { documentId: d.documentId });
-    this.deps.ctx.events.changed('documents', 'knowledge', 'status');
-    const leftover = hasArchiveFile(d) && abs ? await this.removeArchiveFile(abs) : null;
-    return [undoneMessage(d, putBackPath), leftover].filter(Boolean).join(' ');
   }
 
   /** Restores removed copies (or puts the only copy back to its origin); the archive file stays until the database is committed. */

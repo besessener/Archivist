@@ -1,5 +1,6 @@
 import type { Job } from '@archivist/shared';
 import type { AgentService } from '../agent/service';
+import { enqueueReembedding } from '../services/reembedding';
 import type { WiredServices } from './domain-services';
 
 type LifecycleServices = WiredServices & {
@@ -8,8 +9,8 @@ type LifecycleServices = WiredServices & {
   enqueueLinkRun: (trigger: string) => Job;
 };
 
-/** Longest wait on running archive file operations when quitting. */
-const ARCHIVE_DRAIN_TIMEOUT_MS = 15_000;
+/** Longest wait on running archive file operations when quitting; stays below the desktop's 10 s quit deadline (QUIT_DEADLINE_MS). */
+const ARCHIVE_DRAIN_TIMEOUT_MS = 8_000;
 
 const BACKGROUND_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
 
@@ -54,6 +55,13 @@ function startInitialLinkRun({ appState, links, enqueueLinkRun }: LifecycleServi
   enqueueLinkRun('update');
 }
 
+/** Remote vectors from before local ones were kept next to them get theirs once after the update (#173). */
+function addMissingLocalVectors({ appState, search, jobs }: LifecycleServices): void {
+  if (appState.get('search.local-vectors.v1')) return;
+  appState.set('search.local-vectors.v1', new Date().toISOString());
+  if (search.hasRemoteVectorsWithoutLocal()) enqueueReembedding(jobs);
+}
+
 function startAgent({ agent, jobs, chat }: LifecycleServices): void {
   agent.start({
     enqueue: (kind, docIds) =>
@@ -88,11 +96,12 @@ export function createLifecycle(services: LifecycleServices) {
       void archive.cleanupInbox();
       scheduleArchiveChecks(services);
       startInitialLinkRun(services);
+      addMissingLocalVectors(services);
       startAgent(services);
       startupBackup(services);
     },
 
-    /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (15 s) were awaited. */
+    /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (8 s) were awaited. */
     async shutdown(options: { jobTimeoutMs?: number; archiveTimeoutMs?: number } = {}): Promise<void> {
       reminders.stop();
       agent.stop();

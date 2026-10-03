@@ -150,15 +150,12 @@ export class ArchiveExecutor {
       updatedAt,
       entry: { source, removed: planned },
     });
-    const entry = { source, copy, relations: relationChanges };
+    const entry = { source, copy, relations: relationChanges, afterUpdatedAt: updatedAt };
     const removed = req.mode === 'index_only' ? NOTHING_REMOVED : await this.removeSources(row, req.mode);
-    let finalUpdatedAt = updatedAt;
-    if (removed.removedStaged) {
-      finalUpdatedAt = nowIso();
-      this.db.update(documents).set({ stagedPath: null, updatedAt: finalUpdatedAt }).where(eq(documents.id, row.id)).run();
-    }
-    if (removed.removedStaged !== planned.removedStaged || removed.removedSource !== planned.removedSource || finalUpdatedAt !== updatedAt)
-      this.deps.audit.amend(auditId, archivedEntry(archiving, { ...entry, removed, afterUpdatedAt: finalUpdatedAt }));
+    // like cleanupInbox: clearing the inbox reference keeps updatedAt, so the undo data written with the commit stays valid
+    if (removed.removedStaged) this.db.update(documents).set({ stagedPath: null }).where(eq(documents.id, row.id)).run();
+    if (removed.removedStaged !== planned.removedStaged || removed.removedSource !== planned.removedSource)
+      this.deps.audit.amend(auditId, archivedEntry(archiving, { ...entry, removed }));
     // From here on the archiving is committed and undoable: follow-up steps may only add warnings.
     await this.reindexAfterCommit(row.id, removed.warnings);
     this.deps.ctx.events.emit('document:archived', { documentId: row.id, sourcePath: row.sourcePath });

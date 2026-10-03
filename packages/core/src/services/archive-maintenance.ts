@@ -47,7 +47,10 @@ export class ArchiveMaintenance {
         this.db.update(documents).set({ stagedPath: null }).where(eq(documents.id, row.id)).run();
         cleaned += 1;
       }
-      cleaned += await sweepOrphanInboxCopies(this.deps);
+      // a restore of a running undo looks like an orphan until its commit: sweep only while no file operation runs
+      await this.deps.locks.exclusive(async () => {
+        cleaned += await sweepOrphanInboxCopies(this.deps);
+      });
     } catch (err) {
       this.deps.ctx.logger.error('archive', 'Inbox cleanup failed', { error: err });
     }

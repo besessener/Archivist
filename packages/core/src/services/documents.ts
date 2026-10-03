@@ -18,7 +18,7 @@ import { DocumentRereader } from './document-reread';
 import { DocumentTrash, type FileOperationLock } from './document-trash';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
-import type { PrivacyService } from './privacy';
+import type { DocumentPrivacyFields, PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
@@ -288,12 +288,26 @@ export class DocumentService {
         id,
         title: r.title,
         content: searchContent(r, names),
-        // Remote vectors only in mode „automatisch“; in „vorher fragen“ the index stays local (no unconfirmed transfer).
-        allowRemoteEmbedding: this.privacy.mode() === 'auto' && r.llmStatus === 'analyzed' && this.privacy.evaluateDocument(r).allowed,
+        allowRemoteEmbedding: this.remoteEmbeddingAllowed(r),
       });
     } catch (err) {
       this.ctx.logger.warn('documents', 'Indexing failed', { documentId: id, error: err });
     }
+  }
+
+  /** Whether indexing would give the document remote vectors now (#173); false for an unknown id. */
+  embedsRemotely(id: string): boolean {
+    const row = this.db
+      .select({ sourcePath: documents.sourcePath, ext: documents.ext, llmStatus: documents.llmStatus, folderLlmAllowed: documents.folderLlmAllowed })
+      .from(documents)
+      .where(eq(documents.id, id))
+      .get();
+    return row !== undefined && this.remoteEmbeddingAllowed(row);
+  }
+
+  /** Remote vectors only in mode „automatisch“; in „vorher fragen“ the index stays local (no unconfirmed transfer). */
+  private remoteEmbeddingAllowed(row: DocumentPrivacyFields): boolean {
+    return this.privacy.mode() === 'auto' && row.llmStatus === 'analyzed' && this.privacy.evaluateDocument(row).allowed;
   }
 
   /** The archive's file locks, set by the archive service, so trash moves never run into archive operations. */

@@ -6,7 +6,8 @@ import {
   createIpcDispatcher,
   createServices,
   resolveDataPaths,
-  scheduleNewestRestore,
+  newestIntactSource,
+  scheduleRestore,
   type HostApi,
   type SecretCipher,
   type Services,
@@ -46,7 +47,8 @@ const quitter = new QuitController({
 
 const recoveryDeps = (): RecoveryDeps => ({
   paths: resolveDataPaths(dataRoot()),
-  scheduleNewestRestore,
+  findNewestRestore: newestIntactSource,
+  scheduleRestore,
   askToRestore: ({ message }) =>
     dialog.showMessageBoxSync({
       type: 'error',

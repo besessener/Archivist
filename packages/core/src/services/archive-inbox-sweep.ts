@@ -28,10 +28,11 @@ export async function untrackedFiles(dir: string, known: Set<string>): Promise<s
 /** A fresh inbox file may belong to an import that has not recorded its document yet. */
 const ORPHAN_GRACE_MS = 60 * 60 * 1000;
 
-/** True when the file is old enough to be no part of a running import. */
+/** True when the file is old enough to be no part of a running import; a copy keeps the original's mtime on Windows. */
 async function isSettled(file: string): Promise<boolean> {
   try {
-    return Date.now() - (await fsp.stat(file)).mtimeMs > ORPHAN_GRACE_MS;
+    const { mtimeMs, ctimeMs, birthtimeMs } = await fsp.stat(file);
+    return Date.now() - Math.max(mtimeMs, ctimeMs, birthtimeMs) > ORPHAN_GRACE_MS;
   } catch {
     return false;
   }
