@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { findAmounts, formatEuro, invoiceTotal, parseAmount, sumAmounts } from '../../packages/core/src/agent/tools/research/amounts';
 import { addPeriod } from '../../packages/core/src/agent/tools/research/dates';
 import { findDeadlines } from '../../packages/core/src/agent/tools/research/deadlines';
-import { diffLines } from '../../packages/core/src/agent/tools/research/diff';
+import { changeLabel, diffLines } from '../../packages/core/src/agent/tools/research/diff';
 import { monthGaps, numberGaps, sequenceNumber } from '../../packages/core/src/agent/tools/research/gaps';
 import { normalizeSubject } from '../../packages/core/src/agent/tools/research/mail';
 import { invoiceNumber, matchPayments, parseStatement } from '../../packages/core/src/agent/tools/research/payments';
@@ -62,13 +62,19 @@ describe('research helpers of the agent', () => {
   });
 
   describe('diff', () => {
-    it('lists lines only in A and only in B', () => {
+    it('pairs adjacent removed and added lines as changes and keeps the rest as only in A or B', () => {
       const a = 'Vertrag\nLaufzeit 12 Monate\nPreis 10 €\nGerichtsstand Berlin';
       const b = 'Vertrag\nLaufzeit 24 Monate\nPreis 10 €\nGerichtsstand Berlin\nNeue Klausel';
       const r = diffLines(a, b);
-      expect(r.onlyA).toEqual(['Laufzeit 12 Monate']);
-      expect(r.onlyB).toEqual(['Laufzeit 24 Monate', 'Neue Klausel']);
+      expect(r.changed).toEqual([{ from: 'Laufzeit 12 Monate', to: 'Laufzeit 24 Monate' }]);
+      expect(r.onlyA).toEqual([]);
+      expect(r.onlyB).toEqual(['Neue Klausel']);
       expect(r.common).toBe(3);
+    });
+
+    it('names the shared start of a changed line once', () => {
+      expect(changeLabel({ from: 'Miete 800 €', to: 'Miete 850 €' })).toBe('Miete 800 € → 850 €');
+      expect(changeLabel({ from: 'Kaltmiete', to: 'Warmmiete' })).toBe('Kaltmiete → Warmmiete');
     });
 
     it('ignores whitespace and case differences', () => {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { DocumentRecord, DocumentStatus } from '@archivist/shared';
 import { folderOf } from '../../services/archive-structure';
 import { list, optText } from '../registry';
+import { personFilter } from './person-filter';
 import { ARCHIVED, INBOX, allDocs, docDay, docLine, lower, normalizeExtension, normalizeFolder, type ToolDeps, type ToolScope } from './common';
 
 export const PAGE_SIZE = 50;
@@ -65,13 +66,13 @@ function matchesDates(d: DocumentRecord, args: FindFilter): boolean {
   );
 }
 
-function matchesMetadata(d: DocumentRecord, args: FindFilter): boolean {
+function matchesMetadata(d: DocumentRecord, args: FindFilter, hasPerson: (d: DocumentRecord) => boolean): boolean {
   return (
     (!args.name || contains(d.title, args.name) || contains(d.originalName, args.name)) &&
     contains(d.topicName, args.topic) &&
     contains(d.projectName, args.project) &&
     contains(d.docType, args.docType) &&
-    (!args.person || d.persons.some((p) => contains(p, args.person))) &&
+    hasPerson(d) &&
     (!args.tag || d.tags.some((t) => contains(t, args.tag)))
   );
 }
@@ -84,13 +85,14 @@ export function filterDocuments({ deps, ctx }: ToolScope, args: FindFilter): Doc
   const statusMatches = STATUS_FILTER[args.status ?? 'archived'];
   const folder = args.folder ? normalizeFolder(args.folder).toLowerCase() : null;
   const within = args.within ? new Set(ctx.refs.resolveMany([args.within]).ids) : null;
+  const hasPerson = personFilter(deps, args.person);
   const hits = allDocs(deps).filter(
     (d) =>
       (!within || within.has(d.id)) &&
       statusMatches(d.status) &&
       (!extensions.size || extensions.has(normalizeExtension(d.ext))) &&
       inFolder(d, folder) &&
-      matchesMetadata(d, args) &&
+      matchesMetadata(d, args, hasPerson) &&
       matchesDates(d, args) &&
       matchesSize(d, args),
   );

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentTool, ToolContext, ToolOutput } from '../../packages/core/src/agent/registry';
 import type { ToolDeps } from '../../packages/core/src/agent/tools/common';
 import { researchTools } from '../../packages/core/src/agent/tools/research';
@@ -58,6 +58,7 @@ beforeEach(async () => {
   ctx = emptyToolContext();
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await app.cleanup();
 });
 
@@ -148,29 +149,61 @@ describe('agent research tools', () => {
     const byMonth = await call('find_gaps', { documents: [set], by: 'month' });
     expect(byMonth.content).toContain('Fehlende Monate: 2026-03');
     expect(byMonth.summary).toBe('1 Monat(e) fehlen');
+    expect(byMonth.content).toMatch(new RegExp(`Fundstelle <<<DOKUMENTINHALT quelle="${ctx.refs.doc(ids[0]!)}"\\nKontoauszug 1 vom 2026-01`));
+    expect(byMonth.content).toContain(`quelle="${ctx.refs.doc(ids.at(-1)!)}"`);
 
     const byNumber = await call('find_gaps', { documents: [set], by: 'number' });
     expect(byNumber.content).toContain('fehlend 3');
+    expect(byNumber.content).toMatch(new RegExp(`Fundstelle <<<DOKUMENTINHALT quelle="${ctx.refs.doc(ids[0]!)}"\\nKontoauszug Nr. 1\\n`));
   });
 
-  it('compares two contract versions line by line', async () => {
-    const a = await archived('vertrag-alt.txt', 'Mietvertrag\nMiete 800 €\nLaufzeit unbefristet', { docType: 'Vertrag' });
+  it('compares contract versions as a table of changed lines', async () => {
+    const a = await archived('vertrag-alt.txt', 'Mietvertrag\nMiete 800 €\nLaufzeit unbefristet\nKaution 2400 €', { docType: 'Vertrag' });
     const b = await archived('vertrag-neu.txt', 'Mietvertrag\nMiete 850 €\nLaufzeit unbefristet\nHaustiere erlaubt', { docType: 'Vertrag' });
 
     const out = await call('compare_documents', { a: ctx.refs.doc(a), b: ctx.refs.doc(b) });
 
-    expect(out.summary).toBe('1 nur in A, 2 nur in B');
-    expect(out.content).toMatch(/Nur in A:\n<<<DOKUMENTINHALT[^\n]*\nMiete 800 €/);
-    expect(out.content).toContain('Haustiere erlaubt');
+    expect(out.summary).toBe('2 geändert, 0 nur in A, 0 nur in B');
+    expect(out.content).toContain('| In A (alt) | In B (neu) | Änderung |');
+    expect(out.content).toContain('| Miete 800 € | Miete 850 € | Miete 800 € → 850 € |');
+    expect(out.content).toContain('| Kaution 2400 € | Haustiere erlaubt |');
+    expect(out.content).toContain(`quelle="${ctx.refs.doc(a)}-${ctx.refs.doc(b)}-geändert"`);
+  });
+
+  it('lists lines without a counterpart and compares the first document with each further one', async () => {
+    const a = await archived('v1.txt', 'Vertrag\nMiete 800 €\nAlte Klausel', { docType: 'Vertrag' });
+    const b = await archived('v2.txt', 'Vertrag\nMiete 850 €', { docType: 'Vertrag' });
+    const c = await archived('v3.txt', 'Vertrag\nMiete 800 €\nAlte Klausel\nNeue Klausel', { docType: 'Vertrag' });
+
+    const out = await call('compare_documents', { a: ctx.refs.doc(a), b: ctx.refs.doc(b), weitere: [ctx.refs.doc(c)] });
+
+    expect(out.content).toContain('B1 = ');
+    expect(out.content).toContain('B2 = ');
+    expect(out.content).toMatch(/Nur in A:\n<<<DOKUMENTINHALT[^\n]*\nAlte Klausel/);
+    expect(out.content).toMatch(/Nur in B2:\n<<<DOKUMENTINHALT[^\n]*\nNeue Klausel/);
+    expect(out.summary).toBe('1 geändert, 1 nur in A, 1 nur in B');
+  });
+
+  it('refuses to compare when one of the documents is not released', async () => {
+    const a = await archived('offen.txt', 'Text A', { docType: 'Vertrag' });
+    const b = await archived('gesperrt.txt', 'Text B', { docType: 'Vertrag' });
+    lockDocument(b);
+
+    const out = await call('compare_documents', { a: ctx.refs.doc(a), b: ctx.refs.doc(b) });
+
+    expect(out.isError).toBe(true);
+    expect(out.content).toContain('nicht zur Übertragung freigegeben');
   });
 
   it('finds deadlines with computation path and notices an existing reminder', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-01T10:00:00'));
     const contract = await archived('handyvertrag.txt', 'Mobilfunkvertrag\nVertragsende: 31.12.2026\nKündigungsfrist 3 Monate zum Vertragsende.', {
       date: '2024-12-01',
       docType: 'Vertrag',
     });
     const id = await archived('ausweis.txt', 'Personalausweis\nGültig bis 14.02.2031', { docType: 'Ausweis', title: 'Ausweis Kopie Max' });
-    app.services.reminders.create({ targetType: 'document', targetId: contract, title: 'Handy kündigen', remindAt: '2026-09-15T09:00:00.000Z' });
+    app.services.reminders.create({ targetType: 'document', targetId: contract, title: 'Handy kündigen', remindAt: '2026-09-30T09:00:00.000Z' });
     lockDocument(id);
     app.services.database.db.update(documents).set({ llmStatus: 'analyzed' }).where(eq(documents.id, contract)).run();
 
@@ -178,10 +211,9 @@ describe('agent research tools', () => {
 
     expect(out.content).toContain('Kündigungsfrist: 2026-09-30');
     expect(out.content).toContain('Rechenweg: Vertragsende 31.12.2026 − 3 Monate = 30.09.2026');
-    expect(out.content).toContain('Erinnerung vorhanden (2026-09-15)');
-    expect(out.content).toContain(`${ctx.refs.doc(id)} [nicht freigegeben]: Frist am 2031-02-14 (Art: Ausweis/Dokument läuft ab)`);
-    expect(out.content).not.toContain('Ausweis Kopie Max');
-    expect(out.content).not.toContain('Gültig bis');
+    expect(out.content).toMatch(/Kündigungsfrist: 2026-09-30 \(Art: kuendigung\) \| Erinnerung vorhanden \(2026-09-30\)/);
+    expect(out.content).toContain(`1 nicht freigegebene Dokumente übersprungen (nicht geprüft): ${ctx.refs.doc(id)}.`);
+    for (const leak of ['Ausweis Kopie Max', 'Gültig bis', '2031']) expect(out.content).not.toContain(leak);
   });
 
   it('reports secrets only by kind and count', async () => {

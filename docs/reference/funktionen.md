@@ -27,7 +27,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Rückfrage statt Raten** bei unklarer Absicht und **bevor eine unsichere „Entscheidung“ gespeichert wird** (Entscheidung / Ereignis / Notiz / nichts speichern).
 - **Ereignisse** („am 01.10.2026 eingereicht“) landen mit Datum in der Timeline.
 - **Antworten** mit Quellen, getrennten Fakten/Interpretation und sichtbaren Unsicherheiten. Wie Quellen geprüft werden: [LLM-Schnittstelle](llm-schnittstelle.md#antworten-auf-wissensfragen).
-- **Wissensgraph in Antworten**: Bestätigte Verknüpfungen der besten Treffer bringen weitere Quellen mit (z. B. die Entscheidung, die ein gefundenes Dokument stützt); unter der Quelle steht, über welche Verknüpfung sie dazukam.
+- **Wissensgraph in Antworten**: Bestätigte Verknüpfungen der besten Treffer bringen weitere Quellen mit (z. B. die Entscheidung, die ein gefundenes Dokument stützt); unter der Quelle steht, über welche Verknüpfung sie dazukam. Doppelte Dokumente (gleiche Datei, gleicher Text oder bestätigte Duplikat-Verknüpfung) belegen nur einen Antwortplatz.
 - **Abbrechen**: Eine laufende Anfrage lässt sich abbrechen; Erledigtes bleibt, der Rest entfällt.
 - **Ausfall-Schutz**: Nach einer Zeitüberschreitung oder einem unerreichbaren Endpunkt scheitern LLM-Anfragen 60 s lang sofort, statt erneut zu warten (der Verbindungstest geht immer durch).
 - **Bestätigen per „ja“**: bestätigt nur Vorschläge, die **in diesem Gespräch** als Karte angezeigt werden und noch offen sind; sind es mehrere, fragt Archivist nach.
@@ -51,6 +51,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Papierkorb**: „In den Papierkorb …“ im Dokument-Dialog legt ein Dokument mit Archivdatei und eigener Eingangskopie in den Papierkorb; das Original bleibt. Unter Einstellungen → Archiv → Papierkorb lässt es sich mit allen Verknüpfungen wiederherstellen; „Papierkorb leeren …“ löscht endgültig, nach zweiter Bestätigung. Siehe [Aktionsstufen](aktionsstufen.md#stufen).
 - **Quarantäne**: Dateien, deren Inhalt nicht zur Endung passt, landen in `quarantine/` und erscheinen in der Inbox unter „Quarantäne“ („Ordner öffnen“ oder nach Bestätigung „Trotzdem importieren“).
 - Bei reinen HTML-E-Mails fällt für den Leser unsichtbarer Text (`display:none`, `font-size:0`, …) aus dem Dokumenttext heraus.
+- Von E-Mails speichert der Parser lokal in den technischen Metadaten auch `Message-ID`, `In-Reply-To` und `References`; sie verlassen den Rechner nicht und dienen dem Agenten, Verläufe zu erkennen ([Spezialaufgaben](agentenmodus.md#spezialaufgaben)).
 
 ## Wissensgraph
 
@@ -200,7 +201,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - **Genauere Art von Verknüpfungen** (nur im Datenschutzmodus „automatisch“, je Lauf bis zu 10 Paare, jedes nur einmal): Für bestätigte „verwandt“-Paare schlägt das LLM „ersetzt“, „blockiert“, „folgt aus“, „widerspricht“ oder „stützt“ vor – mit Begründung als Beleg, die Antwort Zod-geprüft. Gesendet werden nur Titel und kurze Texte (bei Dokumenten die Zusammenfassung, nur wenn sie geteilt werden dürfen), als Daten gekennzeichnet; sie erscheinen im Übertragungsprotokoll. Der Vorschlag steht in den Verknüpfungsvorschlägen; bestätigt ersetzt er das allgemeine „verwandt“ (beides ein Rückgängig-Schritt). Bei zwei Entscheidungen laufen „widerspricht“ und „ersetzt“ über die Widerspruchsprüfung bzw. den Vorschlag „Als überholt markieren“.
 - **Einträge ohne Verknüpfung** (Dokumente, Notizen, Entscheidungen, offene Punkte, Ereignisse ohne bestätigte oder vorgeschlagene Beziehung; ein Ordner allein zählt nicht): Je Lauf schlägt die Prüfung für bis zu 50 davon je zwei Ziele vor (ähnliche Einträge, genannte Themen und Projekte) – beim nächsten Lauf geht es mit den nächsten weiter. Ein gebündelter Hinweis führt in die Verknüpfungsvorschläge und schließt sich, sobald jeder dieser Einträge eine bestätigte Verknüpfung hat. Mit ausgeschalteten automatischen Vorschlägen meldet sie nur.
 
-**Doppelte offene Punkte, Notizen und Ereignisse** folgen demselben Muster: Ein Eintrag wird behalten, fehlende Angaben, Quellen, Erinnerungen und Verknüpfungen werden übernommen, der andere wird als „verworfen (Duplikat)“ markiert. Nichts wird gelöscht, alles ist rückgängig machbar, „Verschieden“ wird gemerkt. Auch der Chat fragt vor dem Anlegen eines offenen Punkts nach, wenn es schon einen ähnlichen gibt.
+**Doppelte offene Punkte, Notizen und Ereignisse** folgen demselben Muster: Ein Eintrag wird behalten, fehlende Angaben, Quellen, Erinnerungen und Verknüpfungen werden übernommen, der andere wird als „verworfen (Duplikat)“ markiert. Nichts wird gelöscht, alles ist rückgängig machbar, „Verschieden“ wird gemerkt. Das gilt ebenso für doppelte Dokumente: Ein als „verschieden“ markiertes Paar schlägt die Archivprüfung nicht wieder vor. Auch der Chat fragt vor dem Anlegen eines offenen Punkts nach, wenn es schon einen ähnlichen gibt.
 
 **Dubletten bei Themen, Projekten und Tags** und **Thema ↔ Projekt** werden mit Belegen gefragt. Einen optionalen LLM-Hinweis gibt es nur im Datenschutzmodus `auto`. Zusammenführen ist rückgängig machbar, „Verschieden“ wird dauerhaft gemerkt.
 

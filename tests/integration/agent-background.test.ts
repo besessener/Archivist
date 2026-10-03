@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DeadlineWatcher } from '../../packages/core/src/agent/watcher';
 import type { TestApp } from '../helpers/harness';
 import { agentApp, archived, folderOf, inInbox, scriptedTurns } from '../helpers/agent';
+import { deadlineWatcher } from '../helpers/watcher';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -11,22 +11,7 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-const watcher = () =>
-  new DeadlineWatcher({
-    settings: app.services.settings,
-    appState: app.services.appState,
-    notifications: app.services.notifications,
-    runs: app.services.agentRuns,
-    tools: {
-      openItems: app.services.openItems,
-      reminders: app.services.reminders,
-      decisions: app.services.decisions,
-      docs: app.services.documents,
-      actions: app.services.actions,
-      insights: app.services.insights,
-    },
-    post: (message) => app.services.chat.postAssistant(message),
-  });
+const watcher = () => deadlineWatcher(app);
 
 describe('Background agent (#313)', () => {
   it('sorts new inbox files in mode „Auto“ and sends ONE bundled notification with the run', async () => {
@@ -123,8 +108,8 @@ describe('Deadline watcher and weekly review (#314)', () => {
     expect(w.checkDeadlines(now)).toBe(0); // once per day
     // next day: everything was reported yesterday → bundled, not repeated
     expect(w.checkDeadlines(new Date('2026-10-06T09:00:00'))).toBe(0);
-    // later: what is urgent now (Steuer due in two days, the overdue item) is reported again – once
-    expect(w.checkDeadlines(new Date('2026-10-10T09:00:00'))).toBe(2);
+    // later: what is urgent now (Steuer due in two days, the two overdue ones) is reported again – once
+    expect(w.checkDeadlines(new Date('2026-10-10T09:00:00'))).toBe(3);
   });
 
   it('switched off: no notification', () => {

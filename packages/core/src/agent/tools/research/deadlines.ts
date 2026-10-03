@@ -14,6 +14,8 @@ export const DEADLINE_LABEL: Record<DeadlineKind, string> = {
   faelligkeit: 'Fälligkeit',
 };
 
+export const DEADLINE_KINDS = Object.keys(DEADLINE_LABEL) as [DeadlineKind, ...DeadlineKind[]];
+
 export interface Deadline {
   kind: DeadlineKind;
   /** YYYY-MM-DD; null when the reference date is missing */

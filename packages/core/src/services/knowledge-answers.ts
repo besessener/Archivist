@@ -63,7 +63,7 @@ export class KnowledgeAnswerService {
     ({ llm: this.llm, graph: this.graph } = deps);
     const { settings, decisions, openItems, search, graph, docs, privacy, events } = deps;
     const reader = new SourceReader({ settings, decisions, openItems, search, docs, privacy, events });
-    this.gatherer = new SourceGatherer({ search, graph }, reader);
+    this.gatherer = new SourceGatherer({ search, graph, docs }, reader);
   }
 
   /** The verified answer to a question of the agent (its text only; the tool result goes through the privacy and secret filters). */

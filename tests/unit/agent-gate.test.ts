@@ -107,6 +107,19 @@ describe('agent gate (#298, #301, #315)', () => {
     expect(decide({ ctx: context({ webContent: false, tainted: null }) })).toEqual(run);
   });
 
+  it('lets a rule or workflow through only after the user said „ja“ to its wording', () => {
+    const rule = tool({ requiresUserInstruction: true, needsConfirmedText: () => true });
+    const explicit = { userText: 'Merk dir: Rechnungen immer nach finanzen' };
+
+    expect(decide({ tool: rule, ctx: context(explicit) })).toEqual({ kind: 'block', reason: expect.stringMatching(/genauen Wortlaut/) });
+    expect(decide({ tool: rule, ctx: context({ ...explicit, lastAnswer: 'Nein' }) })).toEqual({
+      kind: 'block',
+      reason: expect.stringMatching(/genauen Wortlaut/),
+    });
+    expect(decide({ tool: rule, ctx: context({ ...explicit, lastAnswer: 'Ja' }) })).toEqual(run);
+    expect(decide({ tool: tool({ requiresUserInstruction: true, needsConfirmedText: () => false }), ctx: context(explicit) })).toEqual(run);
+  });
+
   it('stores learned rules only on an explicit chat instruction or a „ja“ to the question', () => {
     const learning = tool({ requiresUserInstruction: true });
 

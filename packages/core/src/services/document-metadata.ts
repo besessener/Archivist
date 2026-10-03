@@ -160,7 +160,7 @@ export class DocumentMetadataEditor {
       trigger: 'manual',
       confirmed: true,
       entityIds: [id],
-      before: { title: row.title, topicId: row.topicId, projectId: row.projectId },
+      before: { title: row.title, topicId: row.topicId, projectId: row.projectId, tags: row.tags },
       after: patch,
       undo: { type: 'document_metadata', data: metadataUndo(row, { set, relations: changes }) },
     });

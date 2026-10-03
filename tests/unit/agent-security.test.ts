@@ -106,6 +106,26 @@ describe('what the user asks for himself', () => {
   });
 
   it.each([
+    'Rechnungen der Stadtwerke gehören immer nach finanzen',
+    'Leg Rechnungen immer unter finanzen ab',
+    'Neue Regel: Verträge nach wohnen',
+    'Nimm das künftig mit',
+  ])('reads „%s“ as a rule the user states', (text) => {
+    expect(userTeaches(text, null)).toBe(true);
+  });
+
+  it.each([
+    'Die Rechnung kommt immer zu spät',
+    'Ich bin immer müde',
+    'Warum landen Rechnungen immer in diesem Ordner?',
+    'Was liegt immer noch in der Inbox?',
+    'Zeig mir die Regeln',
+    'Das ist die Regel',
+  ])('does not read „%s“ as a learning instruction', (text) => {
+    expect(userTeaches(text, null)).toBe(false);
+  });
+
+  it.each([
     'Speicher das',
     'Speichere das',
     'Notier das',

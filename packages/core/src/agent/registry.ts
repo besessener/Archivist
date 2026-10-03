@@ -144,6 +144,8 @@ export interface AgentTool<A = unknown> {
   count?: (args: A, ctx: ToolContext) => number;
   /** Learning tools may only store what the user explicitly asked for (#315). */
   requiresUserInstruction?: boolean;
+  /** The user must confirm the exact wording first (a „Ja“ to the agent's question) before the call runs. */
+  needsConfirmedText?: (args: A) => boolean;
   run: (args: A, ctx: ToolContext) => Promise<ToolOutput>;
 }
 

@@ -18,7 +18,7 @@ interface FileJob {
 }
 
 /** Moves and renames go through the file jobs: larger amounts as a job of their own, in chunks either way (#304). */
-function runFileJob({ deps, ctx }: ToolScope, job: FileJob) {
+export function runFileJob({ deps, ctx }: ToolScope, job: FileJob) {
   return deps.fileJobs.run({
     op: job.op,
     items: job.items,

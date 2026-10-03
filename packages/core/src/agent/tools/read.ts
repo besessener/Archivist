@@ -11,10 +11,20 @@ import { entryReadTools } from './read-entries';
 const SEARCHABLE = new Set<EntityType>(['document', 'decision', 'note', 'event', 'question', 'task', 'topic', 'project', 'person', 'case']);
 const flatPassage = (passage: string, length: number) => truncate(passage.replace(/\s+/g, ' '), length);
 
-async function searchArchive(scope: ToolScope, args: { query: string; types?: string[] | null; limit?: number | null }): Promise<ToolOutput> {
+async function searchArchive(
+  scope: ToolScope,
+  args: { query: string; alsoTry?: string[] | null; types?: string[] | null; limit?: number | null },
+): Promise<ToolOutput> {
   const { deps, ctx } = scope;
   const types = (args.types ?? []).map((t) => (t === 'open_item' ? 'task' : t)).filter((t): t is EntityType => SEARCHABLE.has(t as EntityType));
-  const hits = await deps.search.search(args.query, { types: types.length ? types : undefined, limit: args.limit ?? 15 });
+  const hits: Awaited<ReturnType<typeof deps.search.search>> = [];
+  const seen = new Set<string>();
+  // alternative terms (translations) only add hits the earlier terms did not find
+  for (const query of [args.query, ...(args.alsoTry ?? [])]) {
+    const found = await deps.search.search(query, { types: types.length ? types : undefined, limit: args.limit ?? 15 });
+    hits.push(...found.filter((h) => !seen.has(h.id)));
+    for (const h of found) seen.add(h.id);
+  }
   if (!hits.length) return { content: 'Keine Treffer.', summary: 'keine Treffer' };
   const lines = hits
     .map((h) => {
@@ -116,6 +126,7 @@ export function readTools(deps: ToolDeps): AgentTool[] {
         'Volltext- und Ähnlichkeitssuche über Inhalte (Dokumente, Entscheidungen, Notizen, Ereignisse, offene Punkte, Themen, Personen). Liefert die Fundstelle. Für Dateiname/Endung find_documents verwenden.',
       schema: z.object({
         query: z.string().min(1),
+        alsoTry: z.array(z.string().min(1)).max(4).nullish().describe('Übersetzungen oder Synonyme des Suchbegriffs, z. B. für fremdsprachige Dokumente'),
         types: list.nullish().describe('z. B. ["document"] oder ["decision","note","event"]'),
         limit: z.coerce.number().int().min(1).max(40).nullish(),
       }),

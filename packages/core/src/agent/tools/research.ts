@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { defineTool, list, type AgentTool } from '../registry';
 import type { ToolDeps } from './common';
 import { mailThreadsReport, problemFilesReport, secretsReport, similarFilingsReport, storageReport } from './research/archive-reports';
-import { compareReport, deadlinesReport, gapsReport, paymentsReport, sumAmountsReport } from './research/document-reports';
+import { compareReport } from './research/compare';
+import { deadlinesReport, gapsReport, paymentsReport, sumAmountsReport } from './research/document-reports';
 
 const docsArg = list.describe('Dokument-IDs (D…) oder Ergebnismengen (S…)');
 
@@ -29,17 +30,18 @@ export function researchTools(deps: ToolDeps): AgentTool[] {
     }),
     defineTool({
       name: 'compare_documents',
-      description: 'Vergleicht zwei Dokumente zeilenweise: was steht nur in A, was nur in B (z. B. zwei Vertragsfassungen). Beide müssen freigegeben sein.',
-      schema: z.object({ a: z.string().min(1), b: z.string().min(1) }),
+      description:
+        'Vergleicht Dokumente zeilenweise (z. B. Vertragsfassungen): Tabelle der geänderten Zeilen („alt → neu“ mit Fundstelle), dazu was nur in A und nur in B steht. Mit „weitere“ wird A mit jedem weiteren Dokument verglichen. Alle müssen freigegeben sein.',
+      schema: z.object({ a: z.string().min(1), b: z.string().min(1), weitere: list.nullish().describe('weitere D…, jeweils mit A verglichen') }),
       risk: 'read',
-      label: () => 'Vergleiche zwei Dokumente',
+      label: (a) => `Vergleiche ${2 + (a.weitere?.length ?? 0)} Dokumente`,
       run: (a, ctx) => compareReport({ deps, ctx }, a),
     }),
     defineTool({
       name: 'find_deadlines',
       description:
-        'Erkennt Fristen und Ablaufdaten (Kündigung, Garantie, Ausweis, Versicherung, TÜV/HU, Widerspruch, Ablauf, Fälligkeit) mit Fundstelle und Rechenweg. Nennt, ob für das Dokument schon eine Erinnerung besteht („Erinnerung vorhanden“ – dann keine zweite anlegen).',
-      schema: z.object({ documents: docsArg }),
+        'Erkennt Fristen und Ablaufdaten (Kündigung, Garantie, Ausweis, Versicherung, TÜV/HU, Widerspruch, Ablauf, Fälligkeit) mit Fundstelle und Rechenweg. Ohne Angabe: alle archivierten Dokumente (die neuesten 1000, vorbeigegangene Fristen ausgelassen, höchstens 60 Fristen). Nennt je Frist, ob schon eine Erinnerung oder ein offener Punkt besteht; nicht freigegebene Dokumente werden nur gezählt. Für eine Frist „keine Erinnerung“ legst du mit create_reminder (target = D-ID, deadline = Art und Datum) eine an – bei „vorhanden“ nichts.',
+      schema: z.object({ documents: list.nullish().describe('D…/S…; leer = alle archivierten') }),
       risk: 'read',
       label: () => 'Suche Fristen und Ablaufdaten',
       run: (a, ctx) => deadlinesReport({ deps, ctx }, a.documents),

@@ -1,4 +1,4 @@
-import type { AgentRunStatus, MemoryEntry } from '@archivist/shared';
+import type { AgentLimits, AgentRunStatus, AgentSettings, BackgroundLimitKind, MemoryEntry } from '@archivist/shared';
 import type { NotificationInput } from '../services/notifications';
 import { truncate } from '../util/text';
 import type { RefStore } from './registry';
@@ -10,11 +10,19 @@ export interface BackgroundTask {
   trigger: `background:${string}`;
 }
 
+/** Limits of one background trigger: its own values over the general background limits (#313). */
+export function backgroundLimitsFor(agent: AgentSettings, trigger: string): AgentLimits {
+  const kind = trigger.replace(/^background:/, '') as BackgroundLimitKind;
+  return { ...agent.backgroundLimits, ...agent.backgroundKindLimits[kind] };
+}
+
 export interface BackgroundTaskInput {
   refs: RefStore;
   /** Inbox documents still waiting to be sorted. */
   docIds: string[];
   findWorkflow: (id: string) => MemoryEntry | undefined;
+  /** Steps an interrupted earlier attempt of this job finished; the resumed run does not repeat them. */
+  alreadyDone: string[];
 }
 
 const ARCHIVE_CHECK_TASK =
@@ -24,6 +32,15 @@ const LINKS_TASK =
 
 /** Task and trigger of a background run (#313); null when there is nothing to do. */
 export function backgroundTask(kind: BackgroundKind, input: BackgroundTaskInput): BackgroundTask | null {
+  const spec = taskOf(kind, input);
+  if (!spec || !input.alreadyDone.length) return spec;
+  return {
+    ...spec,
+    task: `${spec.task}\nEin früherer Versuch wurde unterbrochen und hat schon erledigt (nicht wiederholen):\n${input.alreadyDone.map((step) => `- ${step}`).join('\n')}`,
+  };
+}
+
+function taskOf(kind: BackgroundKind, input: BackgroundTaskInput): BackgroundTask | null {
   if (kind === 'inbox') return inboxTask(input);
   if (kind === 'archive_check') return { trigger: 'background:archive_check', task: ARCHIVE_CHECK_TASK };
   if (kind === 'links') return { trigger: 'background:links', task: LINKS_TASK };
@@ -32,7 +49,7 @@ export function backgroundTask(kind: BackgroundKind, input: BackgroundTaskInput)
   const steps = (workflow.data as { steps?: string[] } | null)?.steps ?? [];
   return {
     trigger: `background:workflow`,
-    task: `Führe den Ablauf „${workflow.name}“ [${workflow.id}] aus: ${workflow.content}\nSchritte: ${steps.map((step, i) => `${i + 1}. ${step}`).join(' ')}`,
+    task: `Starte den Ablauf „${workflow.name}“ [${workflow.id}] mit run_workflow und führe seine Schritte aus: ${workflow.content}\nSchritte: ${steps.map((step, i) => `${i + 1}. ${step}`).join(' ')}`,
   };
 }
 
@@ -41,8 +58,20 @@ function inboxTask({ refs, docIds }: BackgroundTaskInput): BackgroundTask | null
   const set = refs.set(docIds);
   return {
     trigger: 'background:inbox',
-    task: `Neue Dateien im Eingang: ${set} (${docIds.length} Dokument(e)). Sortiere sie ein: Prüfe zuerst gelernte Regeln (apply_rules mit preview), dann den Vorschlag der Analyse (document_details) und ähnliche frühere Ablagen (similar_filings). Archiviere eindeutige Fälle mit archive_inbox (mode copy) in den passenden Ordner und setze Thema/Projekt. Unsichere Fälle lässt du im Eingang (der Vorschlag der Analyse bleibt). Zum Schluss eine kurze Zusammenfassung.`,
+    task: `Neue Dateien im Eingang: ${set} (${docIds.length} Dokument(e)). Sortiere sie ein: Wende zuerst gelernte Regeln an (apply_rules mit preview=false auf diese Dokumente; was eine Ordner-Regel trifft, wird dabei archiviert und ist erledigt), dann prüfe für den Rest den Vorschlag der Analyse (document_details) und ähnliche frühere Ablagen (similar_filings). Archiviere eindeutige Fälle mit archive_inbox (mode copy) in den passenden Ordner und setze Thema/Projekt. Unsichere Fälle lässt du im Eingang (der Vorschlag der Analyse bleibt). Zum Schluss eine kurze Zusammenfassung.`,
   };
+}
+
+export interface HandledInbox {
+  docIds: string[];
+  status: AgentRunStatus;
+  stillProposed: (id: string) => boolean;
+}
+
+/** Inbox documents a run dealt with: a finished run decided on all of them, an interrupted one only on those it archived. */
+export function handledInbox({ docIds, status, stillProposed }: HandledInbox): string[] {
+  if (status === 'done' || status === 'ask_user') return docIds;
+  return docIds.filter((id) => !stillProposed(id));
 }
 
 export interface BackgroundReport {
@@ -72,7 +101,10 @@ export function backgroundNotification(report: BackgroundReport): NotificationIn
       .join(' '),
     type: 'agent_run',
     priority: waiting ? 'normal' : 'low',
-    proposedActions: [{ label: 'Lauf ansehen', kind: 'navigate', target: `/settings/?tab=agent&run=${report.runId}` }],
+    proposedActions: [
+      { label: 'Lauf ansehen', kind: 'navigate', target: `/settings/?tab=agent&run=${report.runId}` },
+      ...(changes.length ? [{ label: 'Rückgängig', kind: 'undo_run' as const, target: report.runId }] : []),
+    ],
     dedupeKey: `agent-run:${report.runId}`,
   };
 }

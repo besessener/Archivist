@@ -9,9 +9,13 @@ const AUTO_ANALYZE_BATCH = 500;
 type JobServices = WiredServices & { agent: AgentService };
 
 /** A failed attempt keeps the document `analyzing` while a retry follows; only the last one marks it `failed` and notifies. */
-function registerDocumentAnalysis({ jobs, documents, notifications }: JobServices): void {
+function registerDocumentAnalysis({ jobs, documents, notifications, agent }: JobServices): void {
   jobs.register<{ documentId: string; allowLlm: boolean }>('document.analyze', {
-    handler: (job) => documents.analyze(job.payload.documentId, { allowLlm: job.payload.allowLlm, signal: job.signal, deferFailure: true }),
+    handler: async (job) => {
+      const analyzed = await documents.analyze(job.payload.documentId, { allowLlm: job.payload.allowLlm, signal: job.signal, deferFailure: true });
+      agent.scheduleInbox();
+      return analyzed;
+    },
     hooks: {
       onFailed: (job, err) => {
         if (!documents.markAnalysisFailed(job.payload.documentId, err)) return;
@@ -89,7 +93,13 @@ export function registerJobHandlers(services: JobServices): void {
   // one job per trigger, cancellable, resumed after a restart
   jobs.register<{ kind: BackgroundKind; docIds?: string[] }>('agent.background', {
     handler: async (job) => {
-      const run = await agent.runBackground(job.payload.kind, { docIds: job.payload.docIds, signal: job.signal, report: (p, m) => job.report(p, m) });
+      const run = await agent.runBackground(job.payload.kind, {
+        docIds: job.payload.docIds,
+        signal: job.signal,
+        report: (p, m) => job.report(p, m),
+        resumeFrom: (job.checkpoint as { runId?: string } | null)?.runId ?? null,
+        onStart: (runId) => job.saveCheckpoint({ runId }),
+      });
       return { summary: run ? `${run.status}: ${run.steps.length} Schritt(e)` : 'nichts zu tun', runId: run?.id ?? null };
     },
   });

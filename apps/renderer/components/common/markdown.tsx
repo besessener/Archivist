@@ -8,10 +8,17 @@ export type WikiResolver = (name: string) => { href: string; title: string } | n
 /** Hint shown under text fields whose content is rendered with {@link Markdown}. */
 export const MARKDOWN_HINT = 'Markdown möglich: **fett**, *kursiv*, `Code`, Listen mit „-“ oder „1.“, Überschriften mit „#“.';
 
-/** Inline: **bold**, *italic*, `code`, [links](https://…), [[wiki links]]. React elements only, no HTML. */
+/** In-app pages a `[text](/documents/?id=…)` link may lead to (weekly review, agent answers). */
+const APP_PAGE = String.raw`\/(?:documents|decisions|open-items|knowledge)\/(?:\?id=[\w-]{1,64})?`;
+const APP_LINK = new RegExp(String.raw`^\[([^\]]+)\]\((${APP_PAGE})\)$`);
+
+/** Inline: **bold**, *italic*, `code`, [links](https://…), [in-app links](/documents/?id=…), [[wiki links]]. React elements only, no HTML. */
 function renderInline({ text, keyPrefix, wiki }: { text: string; keyPrefix: string; wiki?: WikiResolver }): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  const pattern = /(\[\[[^[\]\n]{1,401}\]\]|\[[^\]\n]{1,300}\]\(https?:\/\/[^\s)]{1,2000}\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
+  const pattern = new RegExp(
+    String.raw`(\[\[[^[\]\n]{1,401}\]\]|\[[^\]\n]{1,300}\]\((?:https?:\/\/[^\s)]{1,2000}|${APP_PAGE})\)|\*\*[^*]+\*\*|\x60[^\x60]+\x60|\*[^*\s][^*]*\*|_[^_\s][^_]*_)`,
+    'g',
+  );
   let last = 0;
   let i = 0;
   for (const match of text.matchAll(pattern)) {
@@ -34,6 +41,13 @@ function renderToken({ token, key, wiki }: { token: string; key: string; wiki?: 
       <a key={key} href={link[2]} target="_blank" rel="noreferrer noopener" className="text-primary underline underline-offset-2 hover:opacity-80">
         {link[1]}
       </a>
+    );
+  const appLink = APP_LINK.exec(token);
+  if (appLink)
+    return (
+      <Link key={key} href={appLink[2] ?? '/'} className="text-primary underline underline-offset-2 hover:opacity-80" data-testid="app-link">
+        {appLink[1]}
+      </Link>
     );
   if (token.startsWith('**')) return <strong key={key}>{token.slice(2, -2)}</strong>;
   if (token.startsWith('`'))

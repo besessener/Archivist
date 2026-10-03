@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, BellOff, Check, CheckCheck, Clock } from 'lucide-react';
+import { Bell, BellOff, Check, CheckCheck, Clock, Undo2 } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
@@ -60,6 +60,15 @@ export function NotificationBell() {
       case 'snooze':
         setSnoozeFor((cur) => (cur === n.id ? null : n.id));
         break;
+      case 'undo_run': {
+        if (!a.target) break;
+        const result = await run(() => call('agent:undoRun', { runId: a.target! }));
+        if (!result) break;
+        toast({ variant: 'success', title: result.undone ? `${result.undone} Änderung(en) rückgängig gemacht.` : 'Es gab nichts rückgängig zu machen.' });
+        await run(() => call('notifications:resolve', { id: n.id }));
+        void refetch();
+        break;
+      }
       case 'confirm_action': {
         if (!a.target) break;
         const actions = await run(() => call('actions:list', { status: 'proposed' }));
@@ -147,6 +156,7 @@ export function NotificationBell() {
                           onClick={() => void handle(n, a)}
                         >
                           {a.kind === 'snooze' && <Clock aria-hidden />}
+                          {a.kind === 'undo_run' && <Undo2 aria-hidden />}
                           {(a.kind === 'resolve' || a.kind === 'ignore') && <Check aria-hidden />}
                           {a.label}
                         </Button>
