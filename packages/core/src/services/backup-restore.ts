@@ -98,11 +98,6 @@ export function scheduleNewestRestore(paths: RestorePaths): RestoreSource | null
   return source;
 }
 
-/** True while a restore waits for the next start. */
-export function restorePending(paths: Pick<RestorePaths, 'root'>): boolean {
-  return fs.existsSync(path.join(paths.root, MARKER_FILE));
-}
-
 function readMarker(file: string): string | null {
   try {
     const marker = JSON.parse(fs.readFileSync(file, 'utf8')) as { name?: unknown };
