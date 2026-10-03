@@ -65,6 +65,8 @@ export const chunks = sqliteTable(
     entityType: text('entity_type').notNull(),
     entityId: text('entity_id').notNull(),
     idx: integer('idx').notNull(),
+    /** Title of the entry at indexing time: weighted column of the full-text index, which reads chunk text and title from here. */
+    title: text('title').notNull().default(''),
     text: text('text').notNull(),
     embedding: blob('embedding', { mode: 'buffer' }),
     embeddingModel: text('embedding_model'),
