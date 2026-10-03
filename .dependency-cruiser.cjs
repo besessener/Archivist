@@ -16,6 +16,14 @@ module.exports = {
       to: { circular: true, dependencyTypesNot: ['type-only'] },
     },
     {
+      name: 'no-type-only-service-cycles',
+      severity: 'warn',
+      comment:
+        'Type-only cycles between services are resolved at runtime via wire() (see create-services.ts); calling a wired service before wire() throws. The known cycles are frozen in scripts/type-only-cycles.baseline.json (npm run depcruise:cycles); new ones fail there.',
+      from: { path: '^packages/core/src/services/' },
+      to: { path: '^packages/core/src/services/', circular: true, dependencyTypes: ['type-only'] },
+    },
+    {
       name: 'not-to-unresolvable',
       severity: 'error',
       comment: 'An import that dependency-cruiser cannot resolve is usually a typo or a missing dependency.',
