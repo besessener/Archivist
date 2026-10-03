@@ -250,6 +250,50 @@ describe('Undoing an archiving with partial failures', () => {
   });
 });
 
+describe('Archiving: the copy is written under a temporary name', () => {
+  it('nothing sits under the final name while the copy is written, and no temporary file remains', async () => {
+    const { id } = await imported('temp.txt', 'Dokument mit temporärer Kopie');
+    const seenWhileCopying: string[][] = [];
+    vi.spyOn(fsp, 'copyFile').mockImplementation(async (src, dest, mode) => {
+      await realCopyFile(src, dest, mode);
+      if (String(dest).includes(archiveRoot())) seenWhileCopying.push(fs.readdirSync(path.dirname(String(dest))));
+    });
+
+    const res = await archive(id);
+
+    expect(res.success).toBe(1);
+    expect(seenWhileCopying).toHaveLength(1);
+    expect(seenWhileCopying[0]!.some((f) => f === 'temp.txt')).toBe(false);
+    expect(seenWhileCopying[0]!.some((f) => f.endsWith('.partial'))).toBe(true);
+    expect(filesIn(archiveRoot()).map((f) => path.basename(f))).toEqual(['temp.txt']);
+  });
+
+  it('without hard links the file is still copied exclusively', async () => {
+    const { id } = await imported('ohnelink.txt', 'Dokument ohne Hardlinks');
+    vi.spyOn(fsp, 'link').mockRejectedValue(errno('EPERM'));
+
+    const res = await archive(id);
+
+    expect(res.success).toBe(1);
+    expect(fs.readFileSync(res.items[0]!.targetPath!, 'utf8')).toBe('Dokument ohne Hardlinks');
+    expect(filesIn(archiveRoot()).map((f) => path.basename(f))).toEqual(['ohnelink.txt']);
+  });
+
+  it('a taken name is never overwritten: the copy gets the next free name', async () => {
+    const { id } = await imported('belegt.txt', 'Neues Dokument');
+    const taken = path.join(archiveRoot(), 'work', 'notes', 'belegt.txt');
+    fs.mkdirSync(path.dirname(taken), { recursive: true });
+    fs.writeFileSync(taken, 'Fremde Datei');
+
+    const res = await archive(id);
+
+    expect(res.success).toBe(1);
+    expect(fs.readFileSync(taken, 'utf8')).toBe('Fremde Datei');
+    expect(path.basename(res.items[0]!.targetPath!)).toBe('belegt (2).txt');
+    expect(filesIn(archiveRoot()).some((f) => f.endsWith('.partial'))).toBe(false);
+  });
+});
+
 describe('Archiving: the copy aborts midway', () => {
   it('leaves no partial copy in the archive and reports „nichts verändert“', async () => {
     const { id } = await imported('gross.txt', 'Ein großes Dokument, das nicht ganz passt');

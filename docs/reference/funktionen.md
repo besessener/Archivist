@@ -48,6 +48,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000).
 - **Archivierung** per Kopieren (Standard), Verschieben, nur Indexieren oder Ignorieren; Undo.
 - **Nur indexierte Dokumente**: Ändert sich das Original, wird es beim nächsten Scan bzw. bei der Archivprüfung (andere Dateigröße) lokal neu eingelesen und neu indexiert – kein zweites Dokument, kein veralteter Inhalt in der Suche. Fehlt das Original, meldet die Archivprüfung „Original fehlt“.
+- **Archivdateien**: Die regelmäßige Archivprüfung meldet „Archivdatei fehlt“ und „Archivdatei verändert“ (andere Größe als beim Archivieren, z. B. überschrieben oder abgeschnitten); die Prüfsumme vergleicht „Archiv prüfen“ in den Einstellungen.
 - **Archivierte Dokumente**: Wird das Original geändert und neu analysiert, wird das neue Dokument als Ersatz („ersetzt“, Vorschlag) des archivierten verknüpft.
 - **Einschätzungen** (Analyse, Vorschläge, Entscheidungen) stehen in Worten – „eher sicher“, „unsicher“, „sehr unsicher“ –, nie als Prozentwert: Die Werte sind Selbstauskünfte der KI oder Regel-Vorgaben, keine gemessenen Wahrscheinlichkeiten. Chat-Antworten und vom Agenten vorbereitete Änderungen zeigen keine Einschätzung; unsichere Chat-Antworten tragen den Hinweis „Bitte prüfe diese Antwort“.
 - **Gleichzeitige Dateiaktionen**: Archivieren, Umlagern und Umbenennen sperren das Dokument, solange sie laufen; eine zweite Aktion für dasselbe Dokument meldet einen Konflikt statt eine zweite Kopie anzulegen. Schlägt beim Umbenennen oder beim Rückgängigmachen das Speichern in der Datenbank fehl, kommt die Datei an ihren vorherigen Ort zurück – Datenbank und Dateisystem bleiben im Gleichklang, die Aktion lässt sich einfach wiederholen.
@@ -235,7 +236,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Persistent in SQLite, überlebt Neustarts; Fortschritt und Wiederholen.
 - Vorübergehende Fehler werden mit zunehmender Wartezeit erneut versucht; Fehlermeldungen erst nach dem letzten Versuch.
 - Abbrechen wirkt auch bei Analyse und Archivprüfung (Status „abgebrochen“).
-- Beim Beenden werden laufende Jobs unterbrochen und nach dem nächsten Start fortgesetzt. Das Beenden dauert höchstens etwa 10 Sekunden; ein erneuter Start währenddessen öffnet die Anwendung danach wieder.
+- Beim Beenden werden laufende Jobs unterbrochen und nach dem nächsten Start fortgesetzt. Läuft gerade eine Archivierung, Umlagerung oder ein Rückgängigmachen, wartet Archivist bis zu 15 Sekunden darauf, bevor die Datenbank geschlossen wird; neue Dateiaktionen werden dann abgelehnt. Das Beenden dauert sonst höchstens etwa 10 Sekunden; ein erneuter Start währenddessen öffnet die Anwendung danach wieder.
 - Nach einem Absturz läuft ein Job höchstens noch einmal; ohne verbleibende Versuche schlägt er fehl, statt bei jedem Start erneut abzustürzen.
 - Stapel-Analysen setzen nach Absturz oder Beenden hinter den bereits erledigten Dateien fort.
 - Ein Scan desselben Ordners bzw. eine Archivprüfung wird nicht doppelt eingereiht.

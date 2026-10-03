@@ -8,6 +8,9 @@ type LifecycleServices = WiredServices & {
   enqueueLinkRun: (trigger: string) => Job;
 };
 
+/** Longest wait on running archive file operations when quitting. */
+const ARCHIVE_DRAIN_TIMEOUT_MS = 15_000;
+
 const BACKGROUND_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
 
 function syncOwnPerson({ self, logger }: WiredServices): void {
@@ -89,13 +92,15 @@ export function createLifecycle(services: LifecycleServices) {
       startupBackup(services);
     },
 
-    /** Stops background work and closes the database; waits at most `jobTimeoutMs` (default 5 s) for interrupted jobs. */
-    async shutdown(options: { jobTimeoutMs?: number } = {}): Promise<void> {
+    /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (15 s) were awaited. */
+    async shutdown(options: { jobTimeoutMs?: number; archiveTimeoutMs?: number } = {}): Promise<void> {
       reminders.stop();
       agent.stop();
       scanner.stop();
       consistency.stopTimer();
+      const drained = archive.drain(options.archiveTimeoutMs ?? ARCHIVE_DRAIN_TIMEOUT_MS);
       await jobs.interrupt(options.jobTimeoutMs);
+      if (!(await drained)) logger.warn('archive', 'Quit while archive file operations were still running');
       await pool.close();
       await reader.close();
       database.close();

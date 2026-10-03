@@ -8,6 +8,7 @@ import { isInside, resolveInside } from '../util/paths';
 import { hasChecksum } from './archive-files';
 import { archivePathOf, archiveRootOf } from './archive-model';
 import type { ArchiveDeps } from './archive-deps';
+import { sweepOrphanInboxCopies, untrackedFiles } from './archive-inbox-sweep';
 
 export const FOLDERS_RESTORE_UNDO = 'category_restore';
 
@@ -21,23 +22,6 @@ function usedFolders(rels: string[]): Set<string> {
       return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
     }),
   );
-}
-
-/** Regular files below `dir` that `known` does not contain (unreadable folders are skipped). */
-async function untrackedFiles(dir: string, known: Set<string>): Promise<string[]> {
-  let entries: fs.Dirent[];
-  try {
-    entries = await fsp.readdir(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const found: string[] = [];
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) found.push(...(await untrackedFiles(full, known)));
-    else if (entry.isFile() && !known.has(path.resolve(full))) found.push(full);
-  }
-  return found;
 }
 
 /** Keeping the archive tidy and consistent: pending inbox copies, empty folders, database against file system. */
@@ -63,6 +47,7 @@ export class ArchiveMaintenance {
         this.db.update(documents).set({ stagedPath: null }).where(eq(documents.id, row.id)).run();
         cleaned += 1;
       }
+      cleaned += await sweepOrphanInboxCopies(this.deps);
     } catch (err) {
       this.deps.ctx.logger.error('archive', 'Inbox cleanup failed', { error: err });
     }

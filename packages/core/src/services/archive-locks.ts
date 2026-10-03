@@ -3,6 +3,7 @@ import { outcomeWithoutChange, type ArchiveOutcome } from './archive-model';
 
 const ROOT_CHANGE_RUNNING = 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.';
 const BACKUP_RUNNING = 'Gerade läuft ein vollständiges Backup. Bitte versuche es gleich noch einmal.';
+const SHUTTING_DOWN = 'Archivist wird gerade beendet. Bitte versuche es nach dem Neustart noch einmal.';
 const OPERATIONS_RUNNING = 'Gerade werden Dokumente archiviert oder umgelagert. Bitte versuche es gleich noch einmal.';
 export const DOCUMENT_BUSY = 'Dieses Dokument wird gerade schon archiviert oder verschoben.';
 
@@ -24,6 +25,8 @@ export class ArchiveLocks {
   private readonly busy = new Set<string>();
   private rootChangeActive = false;
   private backupActive = false;
+  private shuttingDown = false;
+  private idleWaiters: Array<() => void> = [];
 
   /** Blocks archive file operations while the archive root is changed; returns the function that lifts the block. */
   beginRootChange(): () => void {
@@ -55,12 +58,28 @@ export class ArchiveLocks {
   async guarded<T>(operation: () => Promise<T>): Promise<T> {
     if (this.rootChangeActive) throw new AppError('archive_conflict', ROOT_CHANGE_RUNNING, { retryable: true });
     if (this.backupActive) throw new AppError('archive_conflict', BACKUP_RUNNING, { retryable: true });
+    if (this.shuttingDown) throw new AppError('archive_conflict', SHUTTING_DOWN, { retryable: true });
     this.inFlight += 1;
     try {
       return await operation();
     } finally {
       this.inFlight -= 1;
+      if (this.inFlight === 0) this.idleWaiters.splice(0).forEach((resolve) => resolve());
     }
+  }
+
+  /** Refuses new file operations and waits at most `timeoutMs` for the running ones; false when some are still running. */
+  async drain(timeoutMs: number): Promise<boolean> {
+    this.shuttingDown = true;
+    if (this.inFlight === 0) return true;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, Math.max(0, timeoutMs));
+      timer.unref?.();
+    });
+    await Promise.race([new Promise<void>((resolve) => this.idleWaiters.push(resolve)), timeout]);
+    clearTimeout(timer);
+    return this.inFlight === 0;
   }
 
   /** Like `guarded`, and exclusive for one document: another operation on it right now is a conflict. */

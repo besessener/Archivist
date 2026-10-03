@@ -9,6 +9,11 @@ import * as schema from './schema';
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
+const PRE_MIGRATION_PREFIX = 'vor-migration-';
+const PRE_MIGRATION_KEEP = 3;
+const NEWER_DATABASE =
+  'Die Datenbank stammt von einer neueren Version von Archivist. Bitte installiere die aktuelle Version; die Daten wurden nicht verändert.';
+
 export interface MigrationStatus {
   applied: number;
   total: number;
@@ -40,8 +45,14 @@ export class DatabaseService {
     this.db = drizzle(this.sqlite, { schema });
   }
 
-  /** MigrationService task: applies the Drizzle migrations from the folder. */
-  migrate(migrationsFolder: string): MigrationStatus {
+  /**
+   * MigrationService task: applies the Drizzle migrations from the folder.
+   * A database from a newer app version is refused; with `backupDir`, pending migrations are preceded by a snapshot.
+   */
+  migrate(migrationsFolder: string, backupDir?: string): MigrationStatus {
+    const before = this.migrationStatus(migrationsFolder);
+    if (before.total > 0 && before.applied > before.total) throw new AppError('database_error', NEWER_DATABASE);
+    if (backupDir && before.applied > 0 && before.applied < before.total) this.backupBeforeMigration(backupDir);
     try {
       migrate(this.db, { migrationsFolder });
     } catch (err) {
@@ -52,6 +63,30 @@ export class DatabaseService {
       });
     }
     return this.migrationStatus(migrationsFolder);
+  }
+
+  /** Snapshot of the populated database (VACUUM INTO, synchronous) as the rollback point for the pending migrations; keeps the newest few. */
+  private backupBeforeMigration(backupDir: string): void {
+    try {
+      fs.mkdirSync(backupDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
+      this.sqlite.prepare('VACUUM INTO ?').run(path.join(backupDir, `${PRE_MIGRATION_PREFIX}${stamp}.db`));
+      const old = fs
+        .readdirSync(backupDir)
+        .filter((f) => f.startsWith(PRE_MIGRATION_PREFIX))
+        .toSorted();
+      for (const file of old.slice(0, -PRE_MIGRATION_KEEP)) fs.rmSync(path.join(backupDir, file), { force: true });
+    } catch (err) {
+      this.logger.error('migration', 'Backup before migration failed', { error: err });
+      throw new AppError(
+        'database_error',
+        'Vor der Datenbankmigration konnte keine Sicherung angelegt werden; Archivist startet nicht, damit nichts verloren geht.',
+        {
+          cause: err,
+          details: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
   }
 
   migrationStatus(migrationsFolder: string): MigrationStatus {
