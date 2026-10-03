@@ -1,5 +1,6 @@
 import type { GraphEntity } from '@archivist/shared';
 import { normalizeName, truncate } from '../util/text';
+import type { DocumentService } from './documents';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { GatheredSource, SourceReader } from './knowledge-sources';
 import type { SearchHit, SearchService } from './search';
@@ -36,7 +37,7 @@ interface RelatedSpec {
 /** Gathers the sources of a knowledge answer: search hits of several wordings, then cases and confirmed links of the best hits. */
 export class SourceGatherer {
   constructor(
-    private readonly deps: { search: SearchService; graph: KnowledgeGraphService },
+    private readonly deps: { search: SearchService; graph: KnowledgeGraphService; docs: DocumentService },
     private readonly reader: SourceReader,
   ) {}
 
@@ -44,10 +45,14 @@ export class SourceGatherer {
     const hits = await this.fusedHits(queries);
     const out: GatheredSource[] = [];
     const supporting: GatheredSource[] = [];
+    const chosenDocuments: string[] = [];
     for (const hit of hits) {
       if (out.length >= SOURCE_LIMIT) break;
+      if (hit.type === 'document' && this.duplicatesChosen(hit.id, chosenDocuments)) continue;
       const source = this.reader.sourceOf(hit, supporting);
-      if (source) out.push(source);
+      if (!source) continue;
+      out.push(source);
+      if (hit.type === 'document') chosenDocuments.push(hit.id);
     }
     // up to 3 supporting documents of retrieved decisions, after the hits
     const ids = new Set(out.map((o) => o.id));
@@ -57,6 +62,24 @@ export class SourceGatherer {
     const cases = this.caseSources(queries, { taken: ids, query: queries[0] ?? '', score: out[0]?.score ?? 0.02 });
     // entries the user linked with the best hits (#289): confirmed relations only, weighted lower, with the path
     return [...out, ...support, ...cases, ...this.linkedSources(out.slice(0, 3), { taken: ids, query: queries[0] ?? '' })];
+  }
+
+  /** A document with the same file, the same text or a confirmed duplicate link to one already chosen must not take another answer slot. */
+  private duplicatesChosen(id: string, chosen: string[]): boolean {
+    if (chosen.length === 0) return false;
+    const row = this.deps.docs.getRow(id);
+    const linked = new Set(
+      this.deps.graph
+        .relationsOf(id, { statuses: ['confirmed'], types: ['duplicate_of'] })
+        .flatMap((relation) => [relation.sourceEntityId, relation.targetEntityId]),
+    );
+    const discardedFor = this.deps.graph.getEntity(id)?.duplicateOfId;
+    if (discardedFor) linked.add(discardedFor);
+    return chosen.some((otherId) => {
+      const other = this.deps.docs.getRow(otherId);
+      const sameText = Boolean(row.textHash) && row.textHash === other.textHash;
+      return row.sha256 === other.sha256 || sameText || linked.has(otherId);
+    });
   }
 
   /** Each wording is searched and the hits are merged by reciprocal rank (#164), so a miss of one wording is not final. */

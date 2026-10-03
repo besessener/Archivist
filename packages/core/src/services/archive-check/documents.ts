@@ -78,10 +78,25 @@ function groupBy(archived: CheckedDocument[], keyOf: (document: CheckedDocument)
   return [...groups.values()];
 }
 
+/** Splits a group so that no two documents the user marked as different (rejected duplicate_of) stay together. */
+function withoutDifferentPairs(group: CheckedDocument[], differ: (a: string, b: string) => boolean): CheckedDocument[][] {
+  const clusters: CheckedDocument[][] = [];
+  for (const document of group) {
+    const cluster = clusters.find((members) => members.every((member) => !differ(member.id, document.id)));
+    if (cluster) cluster.push(document);
+    else clusters.push([document]);
+  }
+  return clusters;
+}
+
 /** Documents with identical content (same file hash or same text hash): a hint and a notification per group. */
 export function checkDuplicates(run: CheckRun, archived: CheckedDocument[]): void {
   const { findings, deps } = run;
-  const groups = [...groupBy(archived, (document) => document.sha256), ...groupBy(archived, (document) => document.textHash || null)];
+  const markedDifferent = (a: string, b: string) =>
+    deps.graph.relationsOf(a, { statuses: ['rejected'], types: ['duplicate_of'] }).some((r) => r.sourceEntityId === b || r.targetEntityId === b);
+  const groups = [...groupBy(archived, (document) => document.sha256), ...groupBy(archived, (document) => document.textHash || null)].flatMap((group) =>
+    withoutDifferentPairs(group, markedDifferent),
+  );
   for (const group of groups) {
     if (group.length < 2) continue;
     const ids = group.map((document) => document.id);
