@@ -2,6 +2,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CRASHED_JOB_ERROR, JOB_RETENTION_DAYS, JobQueueService, type JobContext } from '../../packages/core/src/services/jobs';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 /** Issue #216: crash loops, re-runs that pay the LLM again, duplicate jobs and jobs that are never removed. */
 
@@ -10,21 +11,9 @@ let queues: JobQueueService[] = [];
 
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto', scanEnabled: true });
-  app.llm.on('DocumentClassification', (_s, input) => ({
-    docType: 'Notiz',
-    title: input.includes('Zweite') ? 'Zweite' : 'Datei',
-    summary: 'Zusammenfassung',
-    mainTopic: 'Scan',
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', (_s, input) =>
+    classification({ title: input.includes('Zweite') ? 'Zweite' : 'Datei', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Scan' }),
+  );
 });
 afterEach(async () => {
   vi.restoreAllMocks();

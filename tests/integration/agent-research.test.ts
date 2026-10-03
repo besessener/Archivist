@@ -1,32 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RefStore, type AgentTool, type ToolContext, type ToolOutput } from '../../packages/core/src/agent/registry';
+import type { AgentTool, ToolContext, ToolOutput } from '../../packages/core/src/agent/registry';
 import type { ToolDeps } from '../../packages/core/src/agent/tools/common';
 import { researchTools } from '../../packages/core/src/agent/tools/research';
 import { documents } from '../../packages/core/src/db/schema';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
+import { emptyToolContext } from '../helpers/agent';
 
 let app: TestApp;
 let tools: Map<string, AgentTool>;
 let ctx: ToolContext;
-
-const newCtx = (): ToolContext => ({
-  runId: 'r1',
-  conversationId: null,
-  trigger: 'chat',
-  mode: 'auto',
-  refs: new RefStore(),
-  shared: new Set(),
-  signal: new AbortController().signal,
-  userText: '',
-  lastAnswer: null,
-  files: [],
-  applied: [],
-  changes: [],
-  changedCount: 0,
-  tainted: null,
-  actionIds: [],
-});
 
 function depsOf(t: TestApp): ToolDeps {
   const s = t.services;
@@ -70,7 +54,7 @@ function depsOf(t: TestApp): ToolDeps {
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   tools = new Map(researchTools(depsOf(app)).map((t) => [t.name, t]));
-  ctx = newCtx();
+  ctx = emptyToolContext();
 });
 afterEach(async () => {
   await app.cleanup();
@@ -88,22 +72,16 @@ async function archived(
   opts: { loc?: string; date?: string | null; docType?: string; persons?: string[]; title?: string } = {},
 ): Promise<string> {
   const loc = opts.loc ?? 'private/finanzen';
-  app.llm.on('DocumentClassification', () => ({
-    docType: opts.docType ?? 'Rechnung',
-    title: opts.title ?? name.replace(/\.\w+$/, ''),
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: null,
-    project: null,
-    persons: opts.persons ?? [],
-    dates: [],
-    documentDate: opts.date ?? null,
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({
+      title: opts.title ?? name.replace(/\.\w+$/, ''),
+      summary: `Zusammenfassung ${name}`,
+      categoryPath: loc,
+      docType: opts.docType ?? 'Rechnung',
+      persons: opts.persons ?? [],
+      documentDate: opts.date ?? null,
+    }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;

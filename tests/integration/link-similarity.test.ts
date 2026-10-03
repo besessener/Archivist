@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { MIN_SIMILARITY } from '../../packages/core/src/services/link-methods';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { archived, inInbox } from '../helpers/agent';
+import { flatText } from '../helpers/link-texts';
 
 let app: TestApp;
 afterEach(async () => {
@@ -13,7 +14,6 @@ const relatedTo = () =>
     .prepare(`SELECT source_entity_id AS s, target_entity_id AS t, status, method, origin, evidence FROM relations WHERE relation_type = 'related_to'`)
     .all() as Array<{ s: string; t: string; status: string; method: string; origin: string; evidence: string | null }>;
 const between = (a: string, b: string) => relatedTo().filter((r) => (r.s === a && r.t === b) || (r.s === b && r.t === a));
-const flatText = (what: string) => `${what} für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.`;
 
 describe('Similar entries as `related_to` proposals after indexing (#271)', () => {
   it('archiving proposes similar documents with the passage as evidence – in a job, not on the archiving path', async () => {

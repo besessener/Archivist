@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
+import { intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -29,7 +28,7 @@ describe('Reliable reminders and follow-up questions for open items (#49)', () =
 
   it('„Anna, Termin unbekannt“ sets the responsible person and marks the due date as unknown', async () => {
     app.llm.on('ChatIntent', (_s, input) =>
-      /Termin unbekannt/.test(input.split('Nachricht des Benutzers:\n')[1] ?? '')
+      /Termin unbekannt/.test(userText(input))
         ? intent({ intent: 'open_item_update', openItem: { responsible: 'Anna' } })
         : intent({ intent: 'open_item_new', openItem: { title: 'Angebot prüfen' } }),
     );

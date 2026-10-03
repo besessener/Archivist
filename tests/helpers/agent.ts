@@ -1,5 +1,7 @@
+import { RefStore, type ToolContext } from '../../packages/core/src/agent/registry';
 import { scriptedTurns } from './fake-llm';
 import { createTestApp, type TestApp, type TestAppOptions } from './harness';
+import { classification } from './document-classifications';
 
 export { scriptedTurns };
 
@@ -22,22 +24,17 @@ export async function archived(
   file: TextFile & { folder: string; topic?: string | null; docType?: string; persons?: string[]; documentDate?: string | null },
 ): Promise<string> {
   const { name, folder, ...meta } = file;
-  app.llm.on('DocumentClassification', () => ({
-    docType: meta.docType ?? 'Notiz',
-    title: name.replace(/\.\w+$/, ''),
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: meta.topic ?? null,
-    project: null,
-    persons: meta.persons ?? [],
-    dates: [],
-    documentDate: meta.documentDate ?? null,
-    tags: [],
-    location: { categoryPath: folder, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({
+      title: name.replace(/\.\w+$/, ''),
+      summary: `Zusammenfassung ${name}`,
+      categoryPath: folder,
+      docType: meta.docType ?? 'Notiz',
+      mainTopic: meta.topic ?? null,
+      persons: meta.persons ?? [],
+      documentDate: meta.documentDate ?? null,
+    }),
+  );
   const id = await imported(app, file);
   await app.ok('documents:archive', {
     items: [{ documentId: id, mode: 'copy', categoryPath: folder, topic: meta.topic ?? null }],
@@ -51,21 +48,9 @@ export async function archived(
 /** Imports a text file and leaves it analyzed in the inbox. */
 export async function inInbox(app: TestApp, file: TextFile & { folder?: string }): Promise<string> {
   const { name, folder = 'private/eingang' } = file;
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Rechnung',
-    title: name.replace(/\.\w+$/, ''),
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: null,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: folder, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: name.replace(/\.\w+$/, ''), summary: `Zusammenfassung ${name}`, categoryPath: folder, docType: 'Rechnung' }),
+  );
   return imported(app, file);
 }
 
@@ -82,3 +67,31 @@ export const folderOf = (app: TestApp, id: string) => {
 
 /** All texts the agent sent to the model (tool results included) – for privacy and secret checks. */
 export const sentText = (app: TestApp) => JSON.stringify(app.llm.agentRequests);
+
+/** Outputs of the tool calls in the latest agent request (Responses API input), in call order. */
+export const toolOutputs = (app: TestApp) =>
+  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? [])
+    .filter((i) => i.type === 'function_call_output')
+    .map((i) => i.output ?? '');
+
+/** Output of the last tool call the model got back. */
+export const lastToolOutput = (app: TestApp) => toolOutputs(app).at(-1) ?? '';
+
+/** A fresh context for calling agent tools directly, outside of a run. */
+export const emptyToolContext = (): ToolContext => ({
+  runId: 'r1',
+  conversationId: null,
+  trigger: 'chat',
+  mode: 'auto',
+  refs: new RefStore(),
+  shared: new Set(),
+  signal: new AbortController().signal,
+  userText: '',
+  lastAnswer: null,
+  files: [],
+  applied: [],
+  changes: [],
+  changedCount: 0,
+  tainted: null,
+  actionIds: [],
+});

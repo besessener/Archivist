@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { flatText } from '../helpers/link-texts';
 
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();
 });
 
-const flatText = (what: string) => `${what} für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.`;
 async function threeItems() {
   for (const t of ['Mietvertrag prüfen', 'Nebenkosten zahlen', 'Kaution zurückfordern'])
     await app.ok('openItems:create', { title: t, description: flatText(t) });

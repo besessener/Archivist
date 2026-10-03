@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -35,21 +36,17 @@ function state() {
 }
 
 async function archivedDoc(title: string, meta: { topic?: string; project?: string; persons?: string[]; tags?: string[] }): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title,
-    summary: 'Zusammenfassung',
-    mainTopic: meta.topic ?? null,
-    project: meta.project ?? null,
-    persons: meta.persons ?? [],
-    dates: [],
-    tags: meta.tags ?? [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({
+      title,
+      summary: 'Zusammenfassung',
+      categoryPath: 'work/notes',
+      mainTopic: meta.topic ?? null,
+      project: meta.project ?? null,
+      persons: meta.persons ?? [],
+      tags: meta.tags ?? [],
+    }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${title}.txt`, `${title}: ausreichend langer Inhalt für den Test`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;

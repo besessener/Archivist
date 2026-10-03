@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { INTERRUPTED_JOB_MESSAGE, isJobCancelled, isJobInterrupted, JobQueueService } from '../../packages/core/src/services/jobs';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 const apps: TestApp[] = [];
 const queues: JobQueueService[] = [];
@@ -16,21 +17,9 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function newApp(dataRoot?: string): Promise<TestApp> {
   const app = await createTestApp({ privacy: 'auto', dataRoot });
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: 'Klassifiziert',
-    summary: 'Zusammenfassung',
-    mainTopic: 'Test',
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Test' }),
+  );
   return app;
 }
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fillPattern } from '../../packages/core/src/services/rename-pattern';
 import { SECTION_CHARS, locate } from '../../packages/core/src/agent/tools/read-documents';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, folderOf, scriptedTurns, sentText } from '../helpers/agent';
+import { agentApp, archived, folderOf, lastToolOutput, scriptedTurns, sentText } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -14,9 +14,6 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-const lastOutput = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ??
-  '';
 const fileName = (id: string) => path.posix.basename(app.services.documents.getRow(id).archiveRelPath!);
 
 describe('File and folder tools (#304)', () => {
@@ -42,8 +39,8 @@ describe('File and folder tools (#304)', () => {
       { calls: [{ name: 'find_documents', args: { name: 'scan' } }] },
       { calls: [{ name: 'rename_documents', args: { documents: ['S1'], pattern: '{datum} {typ} {absender}' } }] },
       () => {
-        expect(lastOutput()).toContain('Vorschau');
-        expect(lastOutput()).toContain('Konflikt');
+        expect(lastToolOutput(app)).toContain('Vorschau');
+        expect(lastToolOutput(app)).toContain('Konflikt');
         return { calls: [{ name: 'rename_documents', args: { documents: ['D1'], pattern: '{datum} {typ} {absender}', preview: false } }] };
       },
       { text: 'Umbenannt.' },
@@ -99,7 +96,7 @@ describe('File and folder tools (#304)', () => {
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       () => ({ calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: '../../etc' } }] }),
       () => {
-        expect(lastOutput()).toMatch(/Ungültig|relativ|nicht erlaubt|Fehler/i);
+        expect(lastToolOutput(app)).toMatch(/Ungültig|relativ|nicht erlaubt|Fehler/i);
         return { calls: [{ name: 'create_folder', args: { path: '/tmp/evil' } }] };
       },
       { text: 'Nicht möglich.' },
@@ -185,9 +182,9 @@ describe('Metadata tools (#305, #291)', () => {
       { text: '?' },
     );
     await app.ok('chat:send', { text: 'Ordne den Brief Anna zu' });
-    expect(lastOutput()).toContain('Unklare Person');
-    expect(lastOutput()).toContain('Anna Schmidt');
-    expect(lastOutput()).toContain('Anna Meier');
+    expect(lastToolOutput(app)).toContain('Unklare Person');
+    expect(lastToolOutput(app)).toContain('Anna Schmidt');
+    expect(lastToolOutput(app)).toContain('Anna Meier');
     expect((await app.ok('documents:get', { id })).persons).toEqual([]);
   });
 
@@ -202,7 +199,7 @@ describe('Metadata tools (#305, #291)', () => {
     );
     const before = app.services.jobs.list(500).length;
     await app.ok('chat:send', { text: 'Lies scan.txt bitte neu ein' });
-    expect(lastOutput()).toContain('neu gelesen');
+    expect(lastToolOutput(app)).toContain('neu gelesen');
     await app.services.jobs.whenIdle();
     const jobs = app.services.jobs.list(500);
     expect(jobs.length - before).toBe(1);

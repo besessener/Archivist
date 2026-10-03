@@ -1,24 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: 'Protokoll',
-    summary: 'Zusammenfassung',
-    mainTopic: 'Vorgeschlagenes Thema',
-    project: 'Falsches Projekt',
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({
+      title: 'Protokoll',
+      summary: 'Zusammenfassung',
+      categoryPath: 'work/notes',
+      mainTopic: 'Vorgeschlagenes Thema',
+      project: 'Falsches Projekt',
+    }),
+  );
 });
 afterEach(async () => {
   await app.cleanup();

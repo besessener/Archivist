@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, scriptedTurns } from '../helpers/agent';
+import { agentApp, lastToolOutput, scriptedTurns } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -10,10 +10,6 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-/** Output of the last tool call the model got back. */
-const lastOutput = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ??
-  '';
 const subjectsOf = async (id: string) => (await app.ok('subjects:of', { ids: [id] }))[id]!;
 /** The model's ref (K…) of a listed entry, from the tool results it got so far. */
 const refOf = (name: string) => {
@@ -33,7 +29,7 @@ const ask = (
     { calls: list },
     () => ({ calls: calls() }),
     () => {
-      check?.(lastOutput());
+      check?.(lastToolOutput(app));
       return { text: 'Erledigt.' };
     },
   );
@@ -130,20 +126,20 @@ describe('The agent controls the linking features of Epic #269', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'linkage_report', args: {} }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('davon ohne Verknüpfung');
         expect(out).toContain('Aus Ablehnungen gelernt');
         expect(out).toContain('ähnlicher Inhalt (Mindest-Ähnlichkeit): unverändert');
         return { calls: [{ name: 'case_overview', args: { case: 'Autokauf' } }] };
       },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('Vorgang „Autokauf“ – offen');
         expect(out).toMatch(/2026-11-05 K\d+ offener Punkt „Probefahrt vereinbaren“ \[open\]/);
         return { calls: [{ name: 'list_subjects', args: { type: 'topic' } }] };
       },
       () => {
-        expect(lastOutput()).toContain('Urlaub 2026 (Unterthema von „Urlaub“)');
+        expect(lastToolOutput(app)).toContain('Urlaub 2026 (Unterthema von „Urlaub“)');
         return { calls: [{ name: 'reset_learned_thresholds', args: {} }] };
       },
       { text: 'Fertig.' },

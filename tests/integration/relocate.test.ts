@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 const TOPIC = 'Bildungsurlaub 2026';
 
@@ -21,21 +22,7 @@ const relocate = (items: Array<{ documentId: string; categoryPath: string }>, co
 
 /** Imports a text file and archives it (copy) into `loc`; `topic` is assigned to the document. */
 async function archived(name: string, content: string, loc: string, topic: string | null = TOPIC, mode: 'copy' | 'move' = 'copy'): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: topic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc, mainTopic: topic }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -173,21 +160,7 @@ describe('Relocating archived documents', () => {
     });
 
     it('documents that are not archived yet, and missing files', async () => {
-      app.llm.on('DocumentClassification', () => ({
-        docType: 'Notiz',
-        title: 'offen',
-        summary: 's',
-        mainTopic: null,
-        project: null,
-        persons: [],
-        dates: [],
-        tags: [],
-        location: { categoryPath: 'work/x', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-        decisions: [],
-        openItems: [],
-        confidence: 0.7,
-        rationale: 'x',
-      }));
+      app.llm.on('DocumentClassification', () => classification({ title: 'offen', summary: 's', categoryPath: 'work/x' }));
       const imp = await app.ok('documents:import', { paths: [app.file('in/offen.txt', 'noch in der Inbox')] });
       await app.services.jobs.whenIdle();
       const inbox = imp.imported[0]!.id;

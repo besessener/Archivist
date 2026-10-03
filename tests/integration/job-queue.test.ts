@@ -2,27 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JobQueueService, retryDelayMs } from '../../packages/core/src/services/jobs';
 import { AppError, fsError } from '../../packages/core/src/util/errors';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 let queues: JobQueueService[] = [];
 
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: 'Klassifiziert',
-    summary: 'Zusammenfassung',
-    mainTopic: 'Test',
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Test' }),
+  );
 });
 afterEach(async () => {
   vi.restoreAllMocks();

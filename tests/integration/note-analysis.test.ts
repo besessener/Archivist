@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { intent } from '../helpers/chat-intents';
 
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();
 });
 
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 const graph = () => app.services.graph;
 /** Relations of the note to topics, projects, persons and tags: „<type>:<name> <relation> <status>“. */
 const assigned = (noteId: string) =>

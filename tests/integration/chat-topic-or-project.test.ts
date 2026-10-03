@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { extractedDecision, intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -9,9 +10,6 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const decisionEx = (over: Record<string, unknown> = {}) => ({ participants: [], alternatives: [], unknownFields: [], confidence: 0.85, ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
 
 /** complete decision on „prod-plat“ where it is unclear whether it is a topic or a project */
@@ -20,7 +18,7 @@ const complete = (over: Record<string, unknown> = {}) =>
     intent: 'decision_new',
     decisionCertainty: 'clear',
     segment: 'prod-plat pausiert',
-    decision: decisionEx({
+    decision: extractedDecision({
       decisionText: 'Wir machen mit prod-plat erstmal nicht weiter.',
       title: 'prod-plat pausiert',
       topic: 'prod-plat',
@@ -48,7 +46,7 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
 
   it('takes the answer „Projekt“ as a project and does not ask again afterwards', async () => {
     app.llm.on('ChatIntent', (_s, input) =>
-      /^Projekt$/.test(userText(input)) ? intent({ intent: 'decision_amend', decision: decisionEx({ topicIsProject: true }) }) : complete(),
+      /^Projekt$/.test(userText(input)) ? intent({ intent: 'decision_amend', decision: extractedDecision({ topicIsProject: true }) }) : complete(),
     );
     const r1 = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
     const r2 = await send('Projekt', r1.conversationId);
@@ -113,7 +111,7 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
     // next message with a different request: done immediately, the question stays open
     app.llm.on('ChatIntent', (_s, input) =>
       /^Projekt$/.test(userText(input))
-        ? intent({ intent: 'decision_amend', decision: decisionEx({ topicIsProject: true }) })
+        ? intent({ intent: 'decision_amend', decision: extractedDecision({ topicIsProject: true }) })
         : intent({ intent: 'note_capture', segment: 'Notiz', note: 'Stackit-PoC läuft seit Mai.' }),
     );
     const r2 = await send('Notiz: Stackit-PoC läuft seit Mai.', r1.conversationId);

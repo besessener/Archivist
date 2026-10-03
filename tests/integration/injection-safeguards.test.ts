@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 // #199: document text never becomes „known“ context for later prompts; far-reaching proposals need more than a plain yes.
 let app: TestApp;
@@ -16,21 +17,9 @@ const lastInput = (schema: string) => app.llm.calls.filter((c) => c.schema === s
 const knownTopicsLine = (input: string) => /Bekannte Themen: (.*)/.exec(input)?.[1] ?? '';
 
 async function archiveWithTopic(name: string, proposedTopic: string, chosenTopic = proposedTopic): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: proposedTopic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'private/notizen', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'private/notizen', mainTopic: proposedTopic }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, `Inhalt von ${name}`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
