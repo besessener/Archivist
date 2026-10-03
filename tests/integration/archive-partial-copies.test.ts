@@ -17,7 +17,7 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-const folder = () => path.join(app.services.settings.get().archiveRoot, 'work', 'leer');
+const folder = () => path.join(app.services.settings.get().archiveRoot, 'Arbeit', 'leer');
 const partialName = (target: string) => `${target}.${randomUUID()}.partial`;
 
 function leftover(name: string): string {
