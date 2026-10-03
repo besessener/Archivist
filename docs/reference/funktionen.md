@@ -45,7 +45,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Import** per Drag-and-Drop oder Dateiauswahl in einen sicheren Eingang (`inbox/`), mit Prüfsumme und Duplikaterkennung.
 - **Parser** für PDF, DOCX, PPTX, XLSX, EML, TXT/MD, PNG/JPG (Bilder und Scans per [OCR](#ocr)).
 - **Klassifikation** per LLM oder lokal, mit menschenlesbarem Zielpfad.
-- **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000).
+- **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen, irgendwo im Dokument); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000).
 - **Archivierung** per Kopieren (Standard), Verschieben, nur Indexieren oder Ignorieren; Undo.
 - **Nur indexierte Dokumente**: Ändert sich das Original, wird es beim nächsten Scan bzw. bei der Archivprüfung (andere Dateigröße) lokal neu eingelesen und neu indexiert – kein zweites Dokument, kein veralteter Inhalt in der Suche. Fehlt das Original, meldet die Archivprüfung „Original fehlt“.
 - **Archivdateien**: Die regelmäßige Archivprüfung meldet „Archivdatei fehlt“ und „Archivdatei verändert“ (andere Größe als beim Archivieren, z. B. überschrieben oder abgeschnitten); die Prüfsumme vergleicht „Archiv prüfen“ in den Einstellungen.

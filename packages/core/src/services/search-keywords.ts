@@ -45,10 +45,9 @@ function ftsQuery(terms: string[], operator: 'AND' | 'OR'): string {
   return terms.map(termMatch).join(` ${operator} `);
 }
 
-/** FTS MATCH expression finding entries that contain every search term of the query (as word prefixes); null without usable terms. */
-export function allTermsMatch(query: string): string | null {
-  const terms = queryTerms(query);
-  return terms.length ? ftsQuery(terms, 'AND') : null;
+/** One FTS MATCH expression per search term of the query (as a word prefix); empty without usable terms. */
+export function termMatches(query: string): string[] {
+  return queryTerms(query).map(termMatch);
 }
 
 /** How many distinct terms a chunk (with its title) contains, as word prefixes. */
