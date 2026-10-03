@@ -1,7 +1,8 @@
 import type { DocumentProposal } from '@archivist/shared';
-import { isExplicitDecision, isUndecidedWording } from '../util/decision-language';
+import { isExplicitDecision, isUndecidedWording, mentionsDecision } from '../util/decision-language';
 import { normalizeDateInput, parseGermanDate, toIsoDate } from '../util/dates';
 import { firstSentence, levenshtein, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
+import { personsInHeaderLines, topicFromFolder } from './local-extraction';
 import { detectOpenItemSentences } from './open-items';
 
 export interface LocalClassification {
@@ -184,6 +185,8 @@ export function classifyLocally(input: {
   text: string;
   knownTopics: string[];
   knownProjects: string[];
+  /** Name of the folder the file came from: a topic when no known one is found. */
+  folderName?: string;
   now?: Date;
 }): LocalClassification {
   const now = input.now ?? new Date();
@@ -192,7 +195,7 @@ export function classifyLocally(input: {
   const dates = extractDates(input.text, now);
   const year = (dates.find((d) => d.startsWith(String(now.getFullYear()))) ?? dates[0] ?? String(now.getFullYear())).slice(0, 4);
   const project = matchKnownNames(hay, input.knownProjects);
-  const topic = matchKnownNames(hay, input.knownTopics) ?? project;
+  const topic = matchKnownNames(hay, input.knownTopics) ?? project ?? topicFromFolder(input.folderName ?? '');
   const rule = RULES.find((r) => r.matches(hay));
   let categoryPath: string;
   let docType = docTypeFromExt(input.ext);
@@ -216,7 +219,7 @@ export function classifyLocally(input: {
   const openItems = detectOpenItemSentences(input.text).map((s) => ({ title: truncate(s, 100), description: s, dueAt: null as string | null }));
   const decisionSentences = input.text
     .split(/(?<=[.!?])\s+|\n+/)
-    .filter((s) => /(?:wir\s+haben\s+)?(?:beschlossen|entschieden)|beschluss:|entscheidung:/i.test(s) && s.length < 400 && !isUndecidedWording(s))
+    .filter((s) => mentionsDecision(s) && s.length < 400 && !isUndecidedWording(s))
     // explicit statements first, so the cap never keeps looser sentences over a „Beschluss:“ line
     .sort((a, b) => Number(isExplicitDecision(b)) - Number(isExplicitDecision(a)))
     .slice(0, 5)
@@ -234,7 +237,7 @@ export function classifyLocally(input: {
     categoryPath,
     topic,
     project,
-    persons: [],
+    persons: personsInHeaderLines(input.text),
     tags: keywordTags(input.text),
     dates,
     documentDate: dates.find((d) => pastOrToday(d, now)) ?? null,

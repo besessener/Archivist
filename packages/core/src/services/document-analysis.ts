@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { DocumentClassification, type DocumentProposal, type LlmStatus } from '@archivist/shared';
 import { and, eq, inArray, ne, notInArray } from 'drizzle-orm';
 import { documents, scanFiles } from '../db/schema';
@@ -144,7 +145,14 @@ export class DocumentAnalyzer {
     const canUseLlm = opts.allowLlm && decision.allowed && this.deps.llm.isConfigured() && text.trim().length > 0;
     const known: KnownSubjects = { topics: this.knownNames('topic'), projects: this.knownNames('project') };
     const local: Classification = {
-      ...classifyLocally({ fileName: row.originalName, ext: row.ext, text, knownTopics: known.topics, knownProjects: known.projects }),
+      ...classifyLocally({
+        fileName: row.originalName,
+        ext: row.ext,
+        text,
+        knownTopics: known.topics,
+        knownProjects: known.projects,
+        folderName: row.sourcePath ? path.basename(path.dirname(row.sourcePath)) : '',
+      }),
       fileNameHint: null,
     };
     const classified = canUseLlm ? await this.classifyWithLlm(row, { local, text, known, signal }) : { classification: local, usedLlm: false, warning: null };
