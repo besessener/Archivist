@@ -27,6 +27,7 @@ on:
       - 'vitest.mutation.config.mts'
       - 'package-lock.json'
   # Daily full run: incremental mode misses changes outside mutated and test files (imports, dependencies).
+  # Skipped by the fingerprint job when nothing relevant changed since the last passed full run.
   schedule:
     - cron: '23 2 * * *'
   workflow_dispatch:
@@ -39,7 +40,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A scheduled full run is skipped when one already passed on the same code, tests and dependencies.
+  fingerprint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+      tested: ${{ steps.marker.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: key
+        run: echo "key=mutation-full-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig*.json', 'stryker.config.mjs', 'mutation-targets.mjs', 'vitest.mutation.config.mts') }}" >> "$GITHUB_OUTPUT"
+      - id: marker
+        if: ${{ github.event_name == 'schedule' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: reports/mutation-full-run.txt
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+
   mutation:
+    needs: fingerprint
+    if: ${{ needs.fingerprint.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,6 +100,15 @@ jobs:
         with:
           path: reports/stryker-incremental.json
           key: stryker-incremental-${{ github.run_id }}
+      - name: Mark full run as passed
+        if: ${{ github.event_name != 'push' }}
+        run: echo "$GITHUB_SHA" > reports/mutation-full-run.txt
+      - name: Save full run marker
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: reports/mutation-full-run.txt
+          key: ${{ needs.fingerprint.outputs.key }}
       - name: Summary
         if: ${{ !cancelled() }}
         run: node scripts/mutation-summary.mjs >> "$GITHUB_STEP_SUMMARY"
