@@ -25,6 +25,7 @@ import { ArchiveRelocator } from './archive-relocate';
 import { RelocateUndo } from './archive-relocate-undo';
 import { ArchiveRenamer } from './archive-rename';
 import { ArchiveUndo } from './archive-undo';
+import type { DecisionService } from './decisions';
 import type { OpenItemService } from './open-items';
 import type { UndoService } from './undo';
 import type { ArchiveDeps } from './archive-deps';
@@ -90,7 +91,7 @@ export class ArchiveService {
     });
   }
 
-  wire(deps: { actions: ProposalSink; openItems: OpenItemService }): void {
+  wire(deps: { actions: ProposalSink; openItems: OpenItemService; decisions: DecisionService }): void {
     this.extractedItems.wire(deps);
   }
 

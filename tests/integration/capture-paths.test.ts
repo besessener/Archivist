@@ -59,12 +59,15 @@ describe('The capture module: one function, two callers (#307)', () => {
       text: 'Wir haben entschieden, das Angebot von Müller zu nehmen.',
       intent: intent({ intent: 'decision_new', decisionCertainty: 'clear', decision: ex }),
     });
-    const [a, b] = (await app.ok('decisions:list', {})).toSorted((x, y) => x.createdAt.localeCompare(y.createdAt));
-    for (const d of [a!, b!]) expect(d).toMatchObject({ status: 'draft', title: 'Angebot Müller', topicName: 'Dach', participants: ['Anna'] });
+    // the second request names the same decision: the draft goes on with its question instead of a second decision (#187)
+    const decisions = await app.ok('decisions:list', {});
+    expect(decisions).toHaveLength(1);
+    const [a] = decisions;
+    expect(a).toMatchObject({ status: 'draft', title: 'Angebot Müller', topicName: 'Dach', participants: ['Anna'] });
     // same text, same question (the agent asks it through ask_user, the chat keeps it as a follow-up question)
     expect(viaAgent.content).toBe(viaChat.assistantMessage.content.replace(/\n\n_Hinweis:[\s\S]*$/, ''));
     expect(viaAgent.question).toBe(viaAgent.content);
-    expect(viaAgent.decisionId).toBe(b!.id);
+    expect(viaAgent.decisionId).toBe(a!.id);
   });
 
   it('handles exactly the capture intents; anything else is no capture request', async () => {

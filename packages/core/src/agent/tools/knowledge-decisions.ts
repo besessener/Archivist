@@ -83,6 +83,8 @@ async function recordDecision(scope: ToolScope, args: z.output<typeof RecordArgs
     conversationId: ctx.conversationId,
     text: ctx.userText || args.text,
     intent: decisionIntent(args, supersedesId),
+    // nobody has looked at what a background run records
+    status: ctx.trigger === 'background' ? 'unclear' : undefined,
   });
   ctx.actionIds.push(...result.actionIds);
   const cards = result.actionIds.length ? `\n(${result.actionIds.length} Vorschlagskarte(n) zur Bestätigung angelegt)` : '';

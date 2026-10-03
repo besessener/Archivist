@@ -76,9 +76,10 @@ export class CaptureService {
     text: string;
     intent: ChatIntent;
     force?: boolean;
+    status?: 'unclear';
   }): Promise<CaptureResult> {
     const state: ConvState = { last: conversationId ? conversationState(this.ctx.database.db, conversationId).last : undefined };
-    const reply = await this.handle({ conv: conversationId ?? '', text, intent, state }, { viaLlm: true, force: options.force });
+    const reply = await this.handle({ conv: conversationId ?? '', text, intent, state }, { viaLlm: true, force: options.force, status: options.status });
     const pending = reply.state?.pending ?? null;
     return {
       content: reply.content,
@@ -101,13 +102,13 @@ export class CaptureService {
   }
 
   /** Runs a capture request; `state.pending` is set only when the request answers the open follow-up question. */
-  handle(request: CaptureRequest, options: { viaLlm: boolean; force?: boolean }): Promise<Reply> {
+  handle(request: CaptureRequest, options: { viaLlm: boolean; force?: boolean; status?: 'unclear' }): Promise<Reply> {
     const { intent } = request;
     switch (intent.intent) {
       case 'decision_new':
       case 'decision_amend':
       case 'decision_supersede':
-        return this.decisionCapture.flow(request, { viaLlm: options.viaLlm });
+        return this.decisionCapture.flow(request, { viaLlm: options.viaLlm, status: options.status });
       case 'event_record':
         return recordEvent(this.deps, request);
       case 'note_capture':

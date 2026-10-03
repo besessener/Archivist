@@ -1,4 +1,12 @@
-import { type ChatContext, type Decision, type DecisionField, type EntityRef, type SourceReference, type StoredAgentAction } from '@archivist/shared';
+import {
+  DECISION_STATUS_LABELS,
+  type ChatContext,
+  type Decision,
+  type DecisionField,
+  type EntityRef,
+  type SourceReference,
+  type StoredAgentAction,
+} from '@archivist/shared';
 import { eq } from 'drizzle-orm';
 import type { ChatIntent } from '@archivist/shared';
 import type { AppContext } from '../context';
@@ -231,6 +239,7 @@ export function decisionSource(d: Decision, score = 1): SourceReference {
     date: d.decidedAt,
     dateKind: d.decidedAt ? 'decided' : null,
     score,
+    statusNote: DECISION_STATUS_LABELS[d.status],
   };
 }
 

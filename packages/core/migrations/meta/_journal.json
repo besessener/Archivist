@@ -176,6 +176,13 @@
       "when": 1791031574688,
       "tag": "0024_local_vectors",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791046986974,
+      "tag": "0025_audit_hash_chain",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import type { Services } from '../create-services';
+import { AppError } from '../util/errors';
 import { UI_TRIGGER, type HandlerGroup } from './types';
 
 type RecordChannelPrefix =
@@ -48,13 +49,19 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
         : services.actions.resolve(input.actionId, { decision: 'reject' }),
 
     'decisions:create': async (input) => {
+      const duplicate = services.decisions.findDuplicate({ decisionText: input.decisionText, topic: input.topic });
+      if (duplicate)
+        throw new AppError(
+          'validation_error',
+          `Diese Entscheidung ist schon erfasst („${duplicate.title}“). Öffne sie unter „Entscheidungen“ und ergänze sie dort.`,
+        );
       const decision = services.decisions.create(input, { actor: 'user', trigger: UI_TRIGGER });
-      if (decision.status === 'active') await services.contradictions.checkDecision(decision.id); // contradictions only as a hint
+      await services.contradictions.checkDecision(decision.id); // only valid decisions are checked; contradictions are just a hint
       return decision;
     },
     'decisions:update': async (input) => {
       const decision = services.decisions.update(input.id, { patch: input.patch, trigger: UI_TRIGGER });
-      if (decision.status === 'active') await services.contradictions.checkDecision(decision.id);
+      await services.contradictions.checkDecision(decision.id);
       return decision;
     },
     'decisions:get': (input) => services.decisions.get(input.id),
@@ -73,6 +80,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       return superseded;
     },
     'decisions:revoke': (input) => services.decisions.revoke(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER }),
+    'decisions:delete': (input) => ({ auditId: services.decisions.delete(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER }) }),
 
     'jobs:list': (input) => services.jobs.list(input.limit),
     'jobs:retry': (input) => services.jobs.retry(input.id),
@@ -137,7 +145,8 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'timeline:get': (input) => services.reader.run('timeline', input),
     'search:global': (input) => services.search.search(input.query, { types: input.types, limit: input.limit }),
 
-    'audit:list': (input) => services.audit.list({ limit: input.limit, onlyUndoable: input.onlyUndoable }),
+    'audit:list': (input) => services.audit.list({ limit: input.limit, onlyUndoable: input.onlyUndoable, entityId: input.entityId }),
+    'audit:verify': () => services.audit.verify(),
     'audit:undo': (input) => services.undo.undo(input.auditId),
   };
 }

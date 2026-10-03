@@ -24,7 +24,7 @@ export function wireServices(services: WiredServices & { agent: AgentService }, 
   });
   insights.wire({ actions, reminders: services.reminders });
   contradictions.wire({ actions });
-  archive.wire({ actions, openItems });
+  archive.wire({ actions, openItems, decisions });
   chat.wire({ actions, archive, agent, ...chatLinkCallbacks(services, notifyLinkProposals) });
   capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));

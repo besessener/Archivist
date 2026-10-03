@@ -1,13 +1,25 @@
-import { DECISION_FIELD_LABELS, type Decision, type DecisionField, type DecisionInput, type DecisionPatch, type DecisionStatus } from '@archivist/shared';
+import {
+  ACTIVE_DECISION_STATUSES,
+  DECISION_FIELD_LABELS,
+  type Decision,
+  type DecisionField,
+  type DecisionInput,
+  type DecisionPatch,
+  type DecisionStatus,
+  type EditableDecisionStatus,
+} from '@archivist/shared';
 import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { decisions, entities } from '../db/schema';
 import { withSubject } from '../db/subject-filter';
+import { CREATED_UNDO_TYPE } from '../agent/created-undo';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput, toIsoDate } from '../util/dates';
 import { firstSentence } from '../util/text';
 import type { AuditService } from './audit';
+import { trackedChanges } from './decision-audit';
+import { findDecisionDuplicate } from './decision-duplicates';
 import {
   assertEditableStatusChange,
   checkedDecisionDate,
@@ -20,7 +32,9 @@ import {
   toDecision,
   type DecisionRow,
 } from './decision-fields';
-import { DECISION_STATUS_UNDO_TYPE, DECISION_UPDATE_UNDO_TYPE, registerDecisionUndo, type DecisionStatusUndo, type DecisionUpdateUndo } from './decision-undo';
+import { DecisionLifecycle } from './decision-lifecycle';
+import { successorsOf } from './decision-successors';
+import { DECISION_UPDATE_UNDO_TYPE, registerDecisionUndo, type DecisionUpdateUndo } from './decision-undo';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import { mentionContext, type PersonMentionContext, type PersonService } from './persons';
 import { previousValues } from './previous-values';
@@ -29,7 +43,7 @@ import type { UndoService } from './undo';
 
 export { computeMissingFields, questionFor } from './decision-fields';
 
-export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'];
+export { ACTIVE_DECISION_STATUSES };
 
 const today = () => toIsoDate(new Date());
 
@@ -48,11 +62,21 @@ export class DecisionService {
   private readonly persons: PersonService;
   private readonly search: SearchService;
   private readonly audit: AuditService;
+  private readonly lifecycle: DecisionLifecycle;
 
   constructor(deps: DecisionServiceDeps) {
     ({ ctx: this.ctx, graph: this.graph, persons: this.persons, search: this.search, audit: this.audit } = deps);
     const { ctx, graph, undo } = deps;
     registerDecisionUndo(undo, { ctx, graph, reindex: (id) => this.reindex(id) });
+    this.lifecycle = new DecisionLifecycle({
+      ctx,
+      graph,
+      search: this.search,
+      audit: this.audit,
+      get: (id) => this.get(id),
+      row: (id) => this.row(id),
+      reindex: (id) => this.reindex(id),
+    });
   }
 
   private get db() {
@@ -65,8 +89,9 @@ export class DecisionService {
     return row;
   }
 
-  private map(row: DecisionRow, names?: Map<string, string>): Decision {
-    return toDecision(row, (id) => (id ? (names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null));
+  private map(row: DecisionRow, lookups: { names?: Map<string, string>; successors?: Map<string, Decision['supersededBy']> } = {}): Decision {
+    const successors = lookups.successors ?? successorsOf(this.db, [row.id]);
+    return toDecision(row, (id) => (id ? (lookups.names?.get(id) ?? this.graph.getEntity(id)?.name ?? null) : null), successors.get(row.id) ?? []);
   }
 
   private mapMany(rows: DecisionRow[]): Decision[] {
@@ -81,7 +106,11 @@ export class DecisionService {
             .map((entity) => [entity.id, entity.name])
         : [],
     );
-    return rows.map((row) => this.map(row, names));
+    const successors = successorsOf(
+      this.db,
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => this.map(row, { names, successors }));
   }
 
   get(id: string): Decision {
@@ -129,9 +158,9 @@ export class DecisionService {
   }
 
   /** Creates a decision; with open required fields (not confirmed as unknown) it is saved as a draft. */
-  create(input: DecisionInput, opts: { actor?: 'user' | 'agent'; trigger?: string } = {}): Decision {
+  create(input: DecisionInput, opts: { actor?: 'user' | 'agent'; trigger?: string; status?: Exclude<EditableDecisionStatus, 'draft'> } = {}): Decision {
     const personContext = mentionContext(opts.trigger, 'decision');
-    const row = this.newRow(input, { personContext, trigger: opts.trigger });
+    const row = this.newRow(input, { personContext, trigger: opts.trigger, status: opts.status });
     this.db.transaction(() => {
       this.db.insert(decisions).values(row).run();
       this.syncGraph(row, personContext);
@@ -143,6 +172,7 @@ export class DecisionService {
       confirmed: row.status !== 'draft',
       entityIds: [row.id],
       after: { title: row.title, status: row.status, missing: row.missingFields },
+      undo: { type: CREATED_UNDO_TYPE, data: { action: 'decision.create', id: row.id } },
     });
     this.ctx.events.created({ id: row.id, type: 'decision' });
     void this.reindex(row.id);
@@ -150,7 +180,10 @@ export class DecisionService {
     return this.get(row.id);
   }
 
-  private newRow(input: DecisionInput, opts: { personContext: PersonMentionContext; trigger?: string }): DecisionRow {
+  private newRow(
+    input: DecisionInput,
+    opts: { personContext: PersonMentionContext; trigger?: string; status?: Exclude<EditableDecisionStatus, 'draft'> },
+  ): DecisionRow {
     const now = nowIso();
     const topic = input.topic?.trim() ? this.graph.ensureEntity({ type: 'topic', name: input.topic }) : null;
     const project = input.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: input.project }) : null;
@@ -168,7 +201,7 @@ export class DecisionService {
       rationale: input.rationale?.trim() || null,
       consequences: input.consequences?.trim() || null,
       alternatives: input.alternatives,
-      status: input.asDraft || missing.length > 0 ? 'draft' : 'active',
+      status: input.asDraft || missing.length > 0 ? 'draft' : (opts.status ?? 'active'),
       validFrom: normalizeDateInput(input.validFrom ?? null),
       validUntil: normalizeDateInput(input.validUntil ?? null),
       supersedesDecisionId: null,
@@ -184,7 +217,7 @@ export class DecisionService {
   }
 
   /** Partial update of the fields in `patch`; `unknownFields` is replaced, `sourceIds` are added (supersede/revoke have own actions). */
-  update(id: string, { patch, ...opts }: { patch: DecisionPatch; trigger?: string }): Decision {
+  update(id: string, { patch, ...opts }: { patch: DecisionPatch; trigger?: string; actor?: 'user' | 'agent' }): Decision {
     const current = this.row(id);
     // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
     assertEditableStatusChange(current.status as DecisionStatus, patch.status);
@@ -206,19 +239,31 @@ export class DecisionService {
       }),
     );
     const undoData: DecisionUpdateUndo = { id, before: previousValues(current, set), afterUpdatedAt: set.updatedAt!, relations: changes };
+    const changed = trackedChanges(current, set);
     this.audit.log({
       action: 'decision.update',
-      actor: 'user',
+      actor: opts.actor ?? 'user',
       trigger: opts.trigger ?? 'manual',
       confirmed: true,
       entityIds: [id],
-      before: { status: current.status, decidedAt: current.decidedAt },
-      after: { status: set.status ?? current.status, missing },
+      before: { title: current.title, status: current.status, decidedAt: current.decidedAt, ...changed.before },
+      after: { status: set.status ?? current.status, missing, ...changed.after },
       undo: { type: DECISION_UPDATE_UNDO_TYPE, data: undoData },
     });
     void this.reindex(id);
     this.ctx.events.changed('decisions', 'knowledge', 'status');
     return this.get(id);
+  }
+
+  /** Adds a document as a further source of the decision (instead of recording it twice); nothing changes when it already is one. */
+  addSource(id: string, { sourceId, ...origin }: { sourceId: string; actor?: 'user' | 'agent'; trigger?: string }): Decision {
+    if (this.row(id).sourceIds.includes(sourceId)) return this.get(id);
+    return this.update(id, { patch: { sourceIds: [sourceId] }, ...origin });
+  }
+
+  /** A still relevant decision with the same text on the same topic. */
+  findDuplicate(candidate: { decisionText: string; topic?: string | null }): Decision | undefined {
+    return findDecisionDuplicate(candidate, this.list());
   }
 
   /** The patch's columns; the date is checked before topics, projects and persons are created. */
@@ -264,66 +309,17 @@ export class DecisionService {
   }
 
   /** Stage 2: marks an older decision as superseded (only after confirmation by the user). */
-  supersede({ oldId, newId, ...opts }: { oldId: string; newId: string; confirmed: boolean; trigger?: string }): { old: Decision; new: Decision } {
-    if (!opts.confirmed) throw new AppError('permission_error', 'Eine Entscheidung darf nur nach ausdrücklicher Bestätigung als überholt markiert werden.');
-    if (oldId === newId) throw new AppError('validation_error', 'Eine Entscheidung kann sich nicht selbst ersetzen.');
-    const oldRow = this.db.select().from(decisions).where(eq(decisions.id, oldId)).get();
-    const newRow = this.db.select().from(decisions).where(eq(decisions.id, newId)).get();
-    if (!oldRow || !newRow) throw new AppError('validation_error', 'Entscheidung nicht gefunden.');
-    // idempotent: superseding the same pair twice changes nothing (and logs nothing)
-    if (oldRow.status === 'superseded' && newRow.supersedesDecisionId === oldId) return { old: this.get(oldId), new: this.get(newId) };
-    if (oldRow.status === 'superseded' || oldRow.status === 'revoked')
-      throw new AppError('validation_error', 'Die ältere Entscheidung ist bereits überholt oder widerrufen.');
-    const now = nowIso();
-    // an already existing (e.g. user-rejected) supersedes relation is not part of the undo data
-    const { changes: relations } = this.graph.trackRelationChanges(newId, () =>
-      this.db.transaction(() => {
-        this.db.update(decisions).set({ status: 'superseded', updatedAt: now }).where(eq(decisions.id, oldId)).run();
-        this.db.update(decisions).set({ supersedesDecisionId: oldId, updatedAt: now }).where(eq(decisions.id, newId)).run();
-        this.graph.link({ sourceId: newId, targetId: oldId, relationType: 'supersedes' }, { confidence: 0.95, status: 'confirmed' });
-      }),
-    );
-    const statusChange = (row: DecisionRow) => ({ id: row.id, status: row.status, supersedesDecisionId: row.supersedesDecisionId, afterUpdatedAt: now });
-    this.audit.log({
-      action: 'decision.supersede',
-      actor: 'user',
-      trigger: opts.trigger ?? 'manual',
-      confirmed: true,
-      entityIds: [oldId, newId],
-      before: { oldStatus: oldRow.status },
-      after: { oldStatus: 'superseded', newSupersedes: oldId },
-      undo: { type: DECISION_STATUS_UNDO_TYPE, data: { changes: [statusChange(oldRow), statusChange(newRow)], relations } satisfies DecisionStatusUndo },
-    });
-    void this.reindex(oldId);
-    void this.reindex(newId);
-    this.ctx.events.changed('decisions', 'knowledge', 'status');
-    return { old: this.get(oldId), new: this.get(newId) };
+  supersede(request: { oldId: string; newId: string; confirmed: boolean; trigger?: string }): { old: Decision; new: Decision } {
+    return this.lifecycle.supersede(request);
   }
 
   revoke(id: string, opts: { confirmed: boolean; trigger?: string }): Decision {
-    if (!opts.confirmed) throw new AppError('permission_error', 'Eine Entscheidung darf nur nach ausdrücklicher Bestätigung widerrufen werden.');
-    const current = this.row(id);
-    const now = nowIso();
-    this.db.update(decisions).set({ status: 'revoked', updatedAt: now }).where(eq(decisions.id, id)).run();
-    this.audit.log({
-      action: 'decision.revoke',
-      actor: 'user',
-      trigger: opts.trigger ?? 'manual',
-      confirmed: true,
-      entityIds: [id],
-      before: { status: current.status },
-      after: { status: 'revoked' },
-      undo: {
-        type: DECISION_STATUS_UNDO_TYPE,
-        data: {
-          changes: [{ id, status: current.status, supersedesDecisionId: current.supersedesDecisionId, afterUpdatedAt: now }],
-          relations: { created: [], changed: [] },
-        } satisfies DecisionStatusUndo,
-      },
-    });
-    void this.reindex(id);
-    this.ctx.events.changed('decisions', 'status');
-    return this.get(id);
+    return this.lifecycle.revoke(id, opts);
+  }
+
+  /** Deletes a draft or unclear decision (created in error); returns the audit entry whose undo brings it back. */
+  delete(id: string, opts: { confirmed: boolean; trigger?: string }): string {
+    return this.lifecycle.delete(id, opts);
   }
 
   /** Rebuilds the search index entry (e.g. after a merge changed names or references). */

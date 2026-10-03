@@ -14,7 +14,7 @@ import {
   RelinkResult,
   VerifyReport,
 } from './archive';
-import { AuditEntry, LlmTransmission, UndoRunResult } from './audit';
+import { AuditEntry, AuditVerification, LlmTransmission, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
 import { Decision, DecisionInput, DecisionPatch, DecisionStatus } from './decisions';
 import { DocumentRecord, DocumentStatus, TrashEntry } from './documents';
@@ -167,6 +167,8 @@ export const ipcContract = {
   'decisions:supersede': channel(z.object({ oldDecisionId: Id, newDecisionId: Id, confirmed: Confirmed }), z.object({ old: Decision, new: Decision })),
   /** Revoking is a stage-2 action: explicit confirmation required, with an undo entry. */
   'decisions:revoke': channel(z.object({ id: Id, confirmed: Confirmed }), Decision),
+  /** Deleting a draft or unclear decision (created in error): explicit confirmation required, undoable via `audit:undo`. */
+  'decisions:delete': channel(z.object({ id: Id, confirmed: Confirmed }), z.object({ auditId: Id })),
 
   // --- Documents ---
   'documents:import': channel(
@@ -536,7 +538,13 @@ export const ipcContract = {
   ),
 
   // --- Audit / Undo ---
-  'audit:list': channel(z.object({ limit: z.number().int().min(1).max(1000).default(200), onlyUndoable: z.boolean().default(false) }), z.array(AuditEntry)),
+  /** `entityId`: only entries that concern this entry (e.g. the history of one decision). */
+  'audit:list': channel(
+    z.object({ limit: z.number().int().min(1).max(5000).default(200), onlyUndoable: z.boolean().default(false), entityId: Id.optional() }),
+    z.array(AuditEntry),
+  ),
+  /** Checks that no audit entry was changed, removed or inserted since it was written (hash chain). */
+  'audit:verify': channel(z.object({}), AuditVerification),
   'audit:undo': channel(z.object({ auditId: Id }), z.object({ undone: z.boolean(), message: z.string(), conflicts: z.array(z.string()) })),
 
   // --- Categories, backup, archive check ---

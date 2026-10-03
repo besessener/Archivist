@@ -2,9 +2,10 @@ import path from 'node:path';
 import type { AppStatus } from '@archivist/shared';
 import type { Services } from '../create-services';
 import { REEMBED_JOB } from '../services/search';
+import { settingsChanges } from '../services/settings-changes';
 import { AppError, permissionError } from '../util/errors';
 import { isInside } from '../util/paths';
-import type { HandlerGroup, HostApi } from './types';
+import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
 function appStatus(services: Services, host: HostApi): AppStatus {
   const settings = services.settings.get();
@@ -92,7 +93,11 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
       const embeddingBefore = services.settings.get().llm.embeddingModel;
       if (input.archiveRoot !== undefined && services.archive.isRootChangeActive())
         throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
+      const previous = services.settings.get();
       const settings = services.settings.update(input);
+      const changes = settingsChanges(previous, settings);
+      if (Object.keys(changes.after).length > 0)
+        services.audit.log({ action: 'settings.change', actor: 'user', trigger: UI_TRIGGER, confirmed: true, before: changes.before, after: changes.after });
       // a direct path change (without moving the archive) warns when archived documents are not found there
       if (settings.archiveRoot !== before) services.archiveRoot.warnUnreachable(settings.archiveRoot);
       // vectors of another model are useless for the new one: move the entries over in the background (#173)

@@ -1,5 +1,6 @@
 import type { AgentActionProposal, DocumentProposal, EntityRef, StoredAgentAction } from '@archivist/shared';
 import { truncate } from '../util/text';
+import type { DecisionService } from './decisions';
 import type { DocRow } from './documents';
 import type { NotificationService } from './notifications';
 import { matchOpenItems, type OpenItemService } from './open-items';
@@ -27,12 +28,14 @@ interface Source {
 export class ExtractedItemProposer {
   private actions!: ProposalSink;
   private openItems!: OpenItemService;
+  private decisions!: DecisionService;
 
   constructor(private readonly notifications: NotificationService) {}
 
-  wire(deps: { actions: ProposalSink; openItems: OpenItemService }): void {
+  wire(deps: { actions: ProposalSink; openItems: OpenItemService; decisions: DecisionService }): void {
     this.actions = deps.actions;
     this.openItems = deps.openItems;
+    this.decisions = deps.decisions;
   }
 
   propose(row: DocRow, proposal: DocumentProposal | null): void {
@@ -52,7 +55,12 @@ export class ExtractedItemProposer {
       return [this.proposeAddedSource(source, { item, existing: match.item })];
     });
     // every decision found (the classification yields only a few per document), each with its own participants (#178)
-    const decisionActions = proposal.possibleDecisions.slice(0, MAX_DOCUMENT_DECISIONS).map((decision) => this.proposeDecision(source, decision));
+    const decisionActions = proposal.possibleDecisions.slice(0, MAX_DOCUMENT_DECISIONS).flatMap((decision) => {
+      const existing = this.decisions.findDuplicate({ decisionText: decision.decisionText, topic: source.proposal.topic });
+      if (!existing) return [this.proposeDecision(source, decision)];
+      // the document is already a source (e.g. archived again) – nothing to propose
+      return existing.sourceIds.includes(row.id) ? [] : [this.proposeAddedDecisionSource(source, existing)];
+    });
     this.notify(row, { kind: 'open', actions: openActions });
     this.notify(row, { kind: 'decision', actions: decisionActions });
   }
@@ -73,6 +81,18 @@ export class ExtractedItemProposer {
         dueAt: item.dueAt ?? null,
         responsible: item.responsible ?? null,
       },
+    });
+  }
+
+  private proposeAddedDecisionSource(source: Source, existing: { id: string; title: string }): StoredAgentAction {
+    return this.actions.propose({
+      actionType: 'add_decision_source',
+      label: `Entscheidung „${truncate(existing.title, 60)}“ um Quelle ergänzen`,
+      rationale: `${source.rationale} Die Entscheidung ist bereits erfasst.`,
+      confidence: 0.6,
+      affectedEntities: [{ type: 'decision', id: existing.id, label: existing.title }, source.docRef],
+      requiredConfirmation: 'confirm',
+      proposedParameters: { decisionId: existing.id, documentId: source.row.id },
     });
   }
 

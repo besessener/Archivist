@@ -8,8 +8,24 @@ export type DecisionKind = z.infer<typeof DecisionKind>;
 export const DecisionOrigin = z.enum(['chat', 'form', 'document']);
 export type DecisionOrigin = z.infer<typeof DecisionOrigin>;
 
+/**
+ * draft: required fields missing. active: asserted (dictated in chat, entered in the form, taken over by the agent on request).
+ * confirmed: the user checked and confirmed it (a completed draft, an approved document proposal). unclear: not reviewed or doubtful.
+ * superseded and revoked: no longer valid.
+ */
 export const DecisionStatus = z.enum(['draft', 'confirmed', 'active', 'superseded', 'revoked', 'unclear']);
 export type DecisionStatus = z.infer<typeof DecisionStatus>;
+/** Valid decisions: only these may replace another one and are checked for contradictions. */
+export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'];
+
+export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {
+  draft: 'Entwurf',
+  confirmed: 'Bestätigt',
+  active: 'Gültig',
+  superseded: 'Ersetzt',
+  revoked: 'Widerrufen',
+  unclear: 'Unklar',
+};
 export const DecisionField = z.enum(['decidedAt', 'topic', 'participants', 'decisionText']);
 export type DecisionField = z.infer<typeof DecisionField>;
 export const DECISION_FIELD_LABELS: Record<DecisionField, string> = {
@@ -36,6 +52,8 @@ export const Decision = z.object({
   validFrom: IsoDate.nullable(),
   validUntil: IsoDate.nullable(),
   supersedesDecisionId: z.string().nullable(),
+  /** The decisions that replace this one (reverse lookup of `supersedes`). */
+  supersededBy: z.array(z.object({ id: Id, title: z.string() })),
   sourceIds: z.array(z.string()),
   confidence: z.number(),
   missingFields: z.array(DecisionField),
