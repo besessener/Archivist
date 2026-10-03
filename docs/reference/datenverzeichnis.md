@@ -8,7 +8,7 @@ Archivist/
 ├── database/      archivist.db (SQLite, WAL)
 ├── index/         lokale Indexdaten (z. B. OCR-Sprachdaten unter tessdata/)
 ├── config/        settings.json (nicht geheim) und llm-api-key.enc (verschlüsselt)
-├── logs/          strukturierte JSON-Logs (ohne Schlüssel/Dokumentinhalte)
+├── logs/          strukturierte JSON-Logs (ohne Schlüssel/Dokumentinhalte); der Agent liest sie mit `read_logs`
 ├── backups/       Datenbank- und Metadaten-Backups
 ├── inbox/         Eingang: eigene Kopien hochgeladener Dateien bis zur Archivierung
 ├── quarantine/    Dateien, deren Inhalt nicht zur Endung passt

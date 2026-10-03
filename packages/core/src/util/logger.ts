@@ -37,6 +37,11 @@ export class Logger {
     return sanitized.length > max ? `${sanitized.slice(0, max)}…[+${sanitized.length - max} chars]` : sanitized;
   }
 
+  /** Context of a log line as the logger itself would have written it (lines read back from older files). */
+  sanitizeContext(context: Record<string, unknown>): unknown {
+    return this.sanitize(context);
+  }
+
   private sanitize(value: unknown, position: { depth: number; key?: string } = { depth: 0 }): unknown {
     const { depth, key = '' } = position;
     if (value == null) return value;

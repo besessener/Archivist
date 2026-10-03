@@ -176,6 +176,28 @@ Aufgaben für besondere Fälle (Story #312). Alles Rechnen und Erkennen läuft l
 | `set_setting` | schreiben; Datenschutz, Massenschwelle und automatische Analyse: kritisch | Einstellungen auf Wunsch ändern; rückgängig machbar |
 | `exclude_from_scan` | schreiben | Datei oder Verzeichnis vom Scan ausschließen (nur in freigegebenen Scan-Ordnern); rückgängig machbar |
 
+## Archivist untersuchen
+
+Zwei Werkzeuge der Stufe **lesen** (keine Bestätigung, ändern nichts) lassen den Agenten nachsehen, warum sich Archivist so verhält, wie es sich verhält – etwa warum die Suche nur lokale Treffer liefert. Es gibt bewusst kein Werkzeug, das Befehle oder eine Shell ausführt; beide Werkzeuge liefern nur fest umrissene Auskünfte.
+
+| Werkzeug | Stufe | Zweck |
+| --- | --- | --- |
+| `read_logs` | lesen | Das lokale Protokoll (`logs/archivist-JJJJ-MM-TT.log`). Argumente: `from`/`to` (Tage, UTC, höchstens 14 Tage, Standard heute), `minLevel` (`debug` bis `error`, Standard `warn`), `scope` (z. B. `search`, `llm`, `scanner`; Länge bis 40) und `limit` (1–200, Standard 50) |
+| `diagnose` | lesen | Ohne Argumente: Versionen (Archivist, Electron, Node), Größe des Datenordners und freier Speicher, Datenbankgröße und Zeilen je Haupttabelle, eingestelltes LLM- und Embedding-Modell, Textabschnitte je Embedding-Modell, Datenschutzmodus, Antwortzeit des Embedding-Endpunkts und die letzten fünf fehlgeschlagenen Aufträge |
+
+**`read_logs`**
+
+- Geliefert werden die neuesten passenden Zeilen, älteste zuerst. Von einer sehr langen Tagesdatei wird nur das Ende (2 MB) gelesen, eine Zeile hat höchstens 500 Zeichen, das ganze Ergebnis höchstens etwa 10 000 Zeichen; das Ergebnis nennt, was dabei weggefallen ist.
+- Jede Zeile läuft noch einmal durch dieselbe Bereinigung wie beim Schreiben (Schlüssel, Passwörter und Token maskiert, Felder wie `content` oder `prompt` nur mit Länge). Zeilen, die nicht im Format des Protokolls stehen, werden verworfen und gezählt: Zurück kommt nie etwas, was der Logger nicht geschrieben hätte.
+- Zeilen, die eine ausgeschlossene Datei, einen ausgeschlossenen Ordner oder Dateityp nennen (Einstellungen → Datenschutz, KI-Freigabe eines Scan-Verzeichnisses, ausgeschlossene Dokumente), werden weggelassen und nur gezählt. Der Vergleich ist bewusst großzügig: Im Zweifel fehlt eine Zeile lieber.
+- Der Inhalt steht als markierte Daten im Ergebnis, nie als Anweisung. Liest sich eine Zeile wie eine Aufforderung an den Agenten, ändert der Lauf nichts ohne deine eigene Bitte (wie bei Dokumenten).
+
+**`diagnose`**
+
+- Textabschnitte je Embedding-Modell zeigt, welche noch mit dem lokalen `local-hash-v1` (oder ohne Vektor) vorliegen, und wie viele nicht zum eingestellten Modell passen.
+- **Endpunkt-Messung:** Nur im Datenschutzmodus „automatisch“ und mit eingestelltem Embedding-Modell geht eine einzige feste Testanfrage (`Verbindungstest`, ohne Dokumentinhalt und ohne Dokument-IDs) über den normalen LLM-Client an den Endpunkt – maskiert und im Übertragungsprotokoll (Zweck „Diagnose: Embedding-Endpunkt“). In „vorher fragen“, „nur lokal“ und ohne LLM-Konfiguration geht nichts hinaus, und `diagnose` sagt, warum. Die Anfrage gilt das Zeitlimit der LLM-Einstellungen; zum Vergleich nennt der Befund das Limit der Suche (2,5 s).
+- Fehlgeschlagene Aufträge erscheinen als markierte Daten; nennt Label oder Fehler eine ausgeschlossene Datei, steht nur „nicht freigegeben“ da.
+
 ## Sicherheit
 
 - Dokumentinhalte gehen nur als markierte Daten an das Modell, nie als Anweisungen. Enthält ein Dokument eine Aufforderung an den Agenten, ändert der Lauf nichts ohne eigene Bitte des Benutzers (im Hintergrund nur als Vorschlag).

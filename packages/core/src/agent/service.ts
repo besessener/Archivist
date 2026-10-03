@@ -30,6 +30,7 @@ import { linkMethodTools } from './tools/link-methods';
 import { linkTools } from './tools/links';
 import { metadataTools } from './tools/metadata';
 import { readTools } from './tools/read';
+import { diagnosticTools } from './tools/diagnostics';
 import { researchTools } from './tools/research';
 import { registerSpecialUndo, specialTaskTools } from './tools/special-tasks';
 import { registerSettingUndo, systemTools } from './tools/system';
@@ -120,6 +121,7 @@ export class AgentService {
       ...workflowTools(deps),
       ...systemTools(deps),
       ...researchTools(deps),
+      ...diagnosticTools(deps),
       ...specialTaskTools(deps),
       ...duplicateTools(deps),
       ...exportTools(deps),
