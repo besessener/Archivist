@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ORPHAN_INSIGHT } from '../../packages/core/src/services/link-methods';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { flatText } from '../helpers/link-texts';
 
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();
 });
 
-const flatText = (what: string) => `${what} für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.`;
 const note = async (name: string, description: string) => (await app.ok('knowledge:createEntity', { type: 'note', name, description })).entity.id;
 const hint = () => app.services.insights.byDedupeKey(ORPHAN_INSIGHT);
 

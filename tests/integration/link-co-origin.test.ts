@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { agentApp, archived, scriptedTurns } from '../helpers/agent';
+import { intent } from '../helpers/chat-intents';
 
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();
 });
 
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 const coOrigin = () =>
   app.services.database.sqlite
     .prepare(`SELECT source_entity_id AS s, target_entity_id AS t, status, origin, evidence, source_ids AS src FROM relations WHERE method = 'co_origin'`)

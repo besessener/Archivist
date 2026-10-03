@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, scriptedTurns, sentText } from '../helpers/agent';
+import { agentApp, archived, lastToolOutput, scriptedTurns, sentText } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -9,11 +9,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await app.cleanup();
 });
-
-/** Output of the last tool call the model got back. */
-const lastOutput = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ??
-  '';
 
 /** Three documents about the same flat, one recipe. */
 async function flat() {
@@ -71,7 +66,7 @@ describe('Link methods as tools of their own (#313)', () => {
       { calls: [{ name: 'find_documents', args: { name: 'mietvertrag' } }] },
       { calls: [{ name: 'suggest_links', args: { entries: ['D1'] } }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('nebenkosten');
         expect(out).not.toContain('kuendigung');
         expect(out).not.toContain('rezept');
@@ -90,7 +85,7 @@ describe('Link methods as tools of their own (#313)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'record_note', args: { content: 'Der Vermieter will die Fenster im Projekt Hauptstraße tauschen.' } }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('Mögliche Verknüpfungen');
         expect(out).toMatch(/→ K\d+ Projekt „Hauptstraße“ \(90 %, nennt das Projekt „Hauptstraße“\)/);
         return { calls: [{ name: 'ask_user', args: { question: 'Das klingt nach Projekt Hauptstraße – verknüpfen?', options: ['Ja', 'Nein'] } }] };
@@ -135,7 +130,7 @@ describe('Link methods as tools of their own (#313)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_unlinked_entries', args: { limit: 1 } }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('2 verwaiste Einträge, hier 1–1');
         expect(out).toContain('rezept');
         expect(out).toContain('Weitere mit offset=1');
@@ -146,7 +141,7 @@ describe('Link methods as tools of their own (#313)', () => {
       { text: 'ok' },
     );
     await app.ok('chat:send', { text: 'Welche Einträge hängen allein herum?' });
-    const out = lastOutput();
+    const out = lastToolOutput(app);
     expect(out).toContain('2 verwaiste Einträge, hier 2–2');
     // the notice gets the lease and the costs as targets
     expect(out).toMatch(/kuendigung“\n\s+→ .*(mietvertrag|nebenkosten)/);
@@ -158,7 +153,7 @@ describe('Link methods as tools of their own (#313)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_topic_clusters', args: {} }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('Gruppe 1 (S1, 3 Einträge)');
         expect(out).not.toContain('rezept');
         return { calls: [{ name: 'propose_topic', args: { name: 'Wohnung Hauptstraße', entries: ['S1'] } }] };
@@ -196,12 +191,12 @@ describe('Link methods as tools of their own (#313)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'backfill_links', args: { maxEntries: 2 } }] },
       () => {
-        expect(lastOutput()).toMatch(/2 Einträge geprüft, \d+ Verknüpfungen vorgeschlagen\. Noch 2 Einträge/);
+        expect(lastToolOutput(app)).toMatch(/2 Einträge geprüft, \d+ Verknüpfungen vorgeschlagen\. Noch 2 Einträge/);
         return { calls: [{ name: 'backfill_links', args: { maxEntries: 50 } }] };
       },
       () => {
-        expect(lastOutput()).toContain('2 Einträge geprüft');
-        expect(lastOutput()).toContain('vollständig durchlaufen');
+        expect(lastToolOutput(app)).toContain('2 Einträge geprüft');
+        expect(lastToolOutput(app)).toContain('vollständig durchlaufen');
         return { text: 'Fertig.' };
       },
     );
@@ -252,14 +247,14 @@ describe('Background link run with the link-method tools (#313)', () => {
       { calls: [{ name: 'find_unlinked_entries', args: {} }] },
       // the recipe is unlinked; the model links it „on request“ with the notice – in the background only a proposal
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         const recipe = /(D\d+) Dokument „rezept“/.exec(out)?.[1];
         expect(recipe).toBeTruthy();
         return { calls: [{ name: 'find_documents', args: { name: 'kuendigung' } }], text: recipe };
       },
       ({ body }) => {
         const recipe = /(D\d+) Dokument „rezept“/.exec(JSON.stringify(body.input))![1]!;
-        const notice = /(D\d+): „kuendigung“/.exec(lastOutput())![1]!;
+        const notice = /(D\d+): „kuendigung“/.exec(lastToolOutput(app))![1]!;
         const lease = /(D\d+) Dokument „mietvertrag“/.exec(JSON.stringify(body.input))?.[1] ?? 'D1';
         return {
           calls: [
@@ -270,11 +265,11 @@ describe('Background link run with the link-method tools (#313)', () => {
         };
       },
       () => {
-        expect(lastOutput()).not.toContain('nebenkosten');
+        expect(lastToolOutput(app)).not.toContain('nebenkosten');
         return { calls: [{ name: 'find_topic_clusters', args: {} }] };
       },
       () => {
-        const group = /Gruppe 1 \((S\d+), 3 Einträge\)/.exec(lastOutput())?.[1];
+        const group = /Gruppe 1 \((S\d+), 3 Einträge\)/.exec(lastToolOutput(app))?.[1];
         expect(group).toBeTruthy();
         return { calls: [{ name: 'propose_topic', args: { name: 'Wohnung', entries: [group!] } }] };
       },

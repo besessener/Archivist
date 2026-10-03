@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { shortAnswer } from '../../packages/core/src/services/chat-state';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
+import { intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {

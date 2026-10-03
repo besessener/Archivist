@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, scriptedTurns } from '../helpers/agent';
+import { agentApp, archived, scriptedTurns, toolOutputs } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -9,12 +9,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await app.cleanup();
 });
-
-/** Text of the last tool results the model saw (Responses API input of the latest request). */
-const lastToolOutputs = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? [])
-    .filter((i) => i.type === 'function_call_output')
-    .map((i) => i.output ?? '');
 
 describe('Capturing knowledge as agent tools (#307)', () => {
   it('a decision date without a year („31.10.“) is the last such day, never a future one', async () => {
@@ -35,7 +29,7 @@ describe('Capturing knowledge as agent tools (#307)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'record_decision', args: { text: 'Wir nehmen das Angebot von Müller', topic: 'Dach', participants: ['Anna'] } }] },
       () => {
-        expect(lastToolOutputs().join('\n')).toContain('OFFENE RÜCKFRAGE');
+        expect(toolOutputs(app).join('\n')).toContain('OFFENE RÜCKFRAGE');
         return { calls: [{ name: 'ask_user', args: { question: 'Wann wurde das entschieden?' } }] };
       },
       { calls: [{ name: 'amend_decision', args: { id: 'K1', decidedAt: '15.09.2026' } }] },
@@ -59,7 +53,7 @@ describe('Capturing knowledge as agent tools (#307)', () => {
     );
     await app.ok('chat:send', { text: 'Vielleicht streichen wir die Küche' });
     expect(await app.ok('decisions:list', {})).toHaveLength(0);
-    expect(lastToolOutputs()[0]).toContain('NICHT GESPEICHERT');
+    expect(toolOutputs(app)[0]).toContain('NICHT GESPEICHERT');
   });
 
   it('open items: duplicate check reports an existing item; ifDuplicate=create creates it anyway; sources link documents', async () => {
@@ -69,7 +63,7 @@ describe('Capturing knowledge as agent tools (#307)', () => {
       { calls: [{ name: 'find_documents', args: { name: 'angebot' } }] },
       { calls: [{ name: 'create_open_item', args: { title: 'Angebot Müller prüfen', sources: ['D1'] } }] },
       () => {
-        expect(lastToolOutputs().at(-1)).toMatch(/gibt es schon|bereits|ergänzen/i);
+        expect(toolOutputs(app).at(-1)).toMatch(/gibt es schon|bereits|ergänzen/i);
         return {
           calls: [{ name: 'create_open_item', args: { title: 'Angebot Müller prüfen', description: 'zweiter Punkt', ifDuplicate: 'create', sources: ['D1'] } }],
         };
@@ -95,7 +89,7 @@ describe('Capturing knowledge as agent tools (#307)', () => {
     const reminders = (await app.ok('reminders:list', { status: 'pending' })).filter((r) => r.targetId === doc);
     expect(reminders).toHaveLength(1);
     expect(reminders[0]!.remindAt.slice(0, 10)).toBe('2026-11-30');
-    expect(lastToolOutputs().at(-1)).toContain('keine zweite');
+    expect(toolOutputs(app).at(-1)).toContain('keine zweite');
   });
 
   it('notes and events are created once; an event without a date is asked about', async () => {
@@ -107,7 +101,7 @@ describe('Capturing knowledge as agent tools (#307)', () => {
     );
     await app.ok('chat:send', { text: 'Notiz: Die Heizung macht Geräusche. Und die Heizung wurde gewartet.' });
     expect(app.services.graph.listEntities({ type: 'note' })).toHaveLength(1);
-    expect(lastToolOutputs().at(-1)).toContain('OFFENE RÜCKFRAGE');
+    expect(toolOutputs(app).at(-1)).toContain('OFFENE RÜCKFRAGE');
   });
 
   it('changes of a capture run are undone with the run: created open item, note and reminder disappear', async () => {

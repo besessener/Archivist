@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SECTION_CHARS } from '../../packages/core/src/agent/tools/read-documents';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, scriptedTurns } from '../helpers/agent';
+import { agentApp, archived, scriptedTurns, toolOutputs } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -11,17 +11,11 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-/** Tool results of the latest agent request, in call order. */
-const outputs = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? [])
-    .filter((i) => i.type === 'function_call_output')
-    .map((i) => i.output ?? '');
-
 /** Runs the given tool calls in one round and returns their results. */
 async function call(...calls: Array<{ name: string; args: Record<string, unknown> }>): Promise<string[]> {
   let seen: string[] = [];
   app.llm.agent = scriptedTurns({ calls }, () => {
-    seen = outputs();
+    seen = toolOutputs(app);
     return { text: 'Fertig.' };
   });
   await app.ok('chat:send', { text: 'Zeig mir das bitte' });

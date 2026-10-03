@@ -9,3 +9,6 @@ export const extractedDecision = (overrides: Record<string, unknown> = {}) => ({
   confidence: 0.85,
   ...overrides,
 });
+
+/** The user's own message in a ChatIntent prompt, without the conversation history before it. */
+export const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';

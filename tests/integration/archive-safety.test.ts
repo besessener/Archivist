@@ -3,47 +3,21 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { makePdf } from '../helpers/fixtures';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: 'Testdokument',
-    summary: 'Zusammenfassung',
-    mainTopic: 'Test',
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: 'Testdokument', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Test' }),
+  );
 });
 afterEach(async () => {
   await app.cleanup();
 });
 
 async function importOne(name: string, content: string, loc?: string) {
-  if (loc)
-    app.llm.on('DocumentClassification', () => ({
-      docType: 'Notiz',
-      title: name,
-      summary: 's',
-      mainTopic: null,
-      project: null,
-      persons: [],
-      dates: [],
-      tags: [],
-      location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-      decisions: [],
-      openItems: [],
-      confidence: 0.7,
-      rationale: 'x',
-    }));
+  if (loc) app.llm.on('DocumentClassification', () => classification({ title: name, summary: 's', categoryPath: loc }));
   const src = app.file(`in/${name}`, content);
   const imp = await app.ok('documents:import', { paths: [src] });
   await app.services.jobs.whenIdle();

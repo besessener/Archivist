@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const decisionEx = (over: Record<string, unknown> = {}) => ({ participants: [], alternatives: [], unknownFields: [], confidence: 0.85, ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
+import { extractedDecision, intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -35,13 +32,13 @@ describe('Never save uncertain decisions without asking (#44)', () => {
         return intent({
           intent: 'decision_new',
           decisionCertainty: 'clear',
-          decision: decisionEx({ decisionText: 'prod-plat pausiert', topic: 'prod-plat', topicIsProject: false }),
+          decision: extractedDecision({ decisionText: 'prod-plat pausiert', topic: 'prod-plat', topicIsProject: false }),
         });
       return intent({
         intent: 'decision_new',
         segment: 'vielleicht den Anbieter wechseln',
         decisionCertainty: 'unsure',
-        decision: decisionEx({ decisionText: 'Anbieter wechseln', title: 'Anbieter wechseln' }),
+        decision: extractedDecision({ decisionText: 'Anbieter wechseln', title: 'Anbieter wechseln' }),
       });
     });
     const r1 = await send('Wir haben entschieden, prod-plat zu pausieren.');
@@ -63,7 +60,13 @@ describe('„ersetzt“ without a topic does not hit an unrelated decision (#44)
     intent({
       intent: 'decision_supersede',
       decisionCertainty: 'clear',
-      decision: decisionEx({ decisionText: 'Urlaub im Juli', title: 'Urlaub', decidedAt: '2026-05-01', participants: ['Anna'], unknownFields: ['topic'] }),
+      decision: extractedDecision({
+        decisionText: 'Urlaub im Juli',
+        title: 'Urlaub',
+        decidedAt: '2026-05-01',
+        participants: ['Anna'],
+        unknownFields: ['topic'],
+      }),
     });
 
   it('proposes nothing without an unambiguous match but asks „Welche Entscheidung wird ersetzt?“', async () => {
@@ -106,7 +109,7 @@ describe('„ersetzt“ without a topic does not hit an unrelated decision (#44)
         intent: 'decision_supersede',
         topic: 'Urlaub',
         decisionCertainty: 'clear',
-        decision: decisionEx({ decisionText: 'Urlaub im Juli', title: 'Urlaub Juli', topic: 'Urlaub', decidedAt: '2026-05-01', participants: ['Anna'] }),
+        decision: extractedDecision({ decisionText: 'Urlaub im Juli', title: 'Urlaub Juli', topic: 'Urlaub', decidedAt: '2026-05-01', participants: ['Anna'] }),
       }),
     );
     const r = await send('Urlaub im Juli statt Juni, ersetzt die alte Entscheidung.');

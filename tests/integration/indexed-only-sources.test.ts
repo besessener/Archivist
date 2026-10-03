@@ -2,27 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 /** Issue #229: originals of „Nur indexieren“ documents that change or vanish must not stay searchable with stale content. */
 
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto', scanEnabled: true });
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: 'Reiseplanung',
-    summary: 'Zusammenfassung',
-    mainTopic: null,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Reiseplanung', summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
 });
 afterEach(async () => {
   await app.cleanup();

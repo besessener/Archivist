@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 // File system calls fail halfway (EBUSY, ENOSPC, EXDEV): the state stays unambiguous and the message matches it.
 
@@ -46,21 +47,7 @@ const diskFullDuringCopy = () =>
   });
 
 function classifyAs(name: string, loc: string, topic: string | null) {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: topic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc, mainTopic: topic }));
 }
 
 async function imported(name: string, content: string, loc = 'work/notes', topic: string | null = TOPIC) {

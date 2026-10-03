@@ -2,19 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatIntent } from '@archivist/shared';
 import { CaptureService } from '../../packages/core/src/services/capture';
 import { createTestApp, type TestApp } from '../helpers/harness';
-import { agentApp, archived, scriptedTurns } from '../helpers/agent';
+import { agentApp, archived, scriptedTurns, toolOutputs } from '../helpers/agent';
 
 // The capture module (#307) and its agent path; the rule-based chat path is tested in chat-*.test.ts.
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();
 });
-
-/** Text of the last tool results the model saw (Responses API input of the latest request). */
-const lastToolOutputs = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? [])
-    .filter((i) => i.type === 'function_call_output')
-    .map((i) => i.output ?? '');
 
 const intent = (over: Partial<ChatIntent>): ChatIntent => ({
   intent: 'unknown',
@@ -127,7 +121,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'list_entries', args: { kind: 'decision' } }] },
       () => {
-        const ref = /(K\d+)[^\n]*Urlaub im Juni/.exec(lastToolOutputs().join('\n'))![1]!;
+        const ref = /(K\d+)[^\n]*Urlaub im Juni/.exec(toolOutputs(app).join('\n'))![1]!;
         return {
           calls: [
             {
@@ -145,7 +139,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
         };
       },
       () => {
-        expect(lastToolOutputs().at(-1)).toContain('1 Vorschlagskarte(n) zur Bestätigung angelegt');
+        expect(toolOutputs(app).at(-1)).toContain('1 Vorschlagskarte(n) zur Bestätigung angelegt');
         return { text: 'Gespeichert – bitte bestätige, dass die alte Entscheidung überholt ist.' };
       },
     );
@@ -180,7 +174,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
         ],
       },
       () => {
-        const out = lastToolOutputs().at(-1)!;
+        const out = toolOutputs(app).at(-1)!;
         expect(out).toContain('Welche Entscheidung wird ersetzt?');
         candidates = /Kandidaten[^:]*: (.*)/.exec(out)![1]!.split(', ');
         expect(candidates).toHaveLength(2);
@@ -214,7 +208,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
         calls: [{ name: 'record_decision', args: { text: 'Wir pausieren prod-plat.', topic: 'prod-plat', decidedAt: '2026-03-01', participants: ['Anna'] } }],
       },
       () => {
-        expect(lastToolOutputs().at(-1)).toMatch(/⚠/);
+        expect(toolOutputs(app).at(-1)).toMatch(/⚠/);
         return { text: 'Achtung, das widerspricht einer älteren Entscheidung.' };
       },
     );
@@ -235,7 +229,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
         ],
       },
       () => {
-        const out = lastToolOutputs().at(-1)!;
+        const out = toolOutputs(app).at(-1)!;
         expect(out).toContain('OFFENE RÜCKFRAGE');
         expect(out).toContain('Ist „Gartenhaus“ das Thema oder der Name des Projekts?');
         return { calls: [{ name: 'ask_user', args: { question: 'Ist „Gartenhaus“ das Thema oder der Name des Projekts?', options: ['Thema', 'Projekt'] } }] };
@@ -255,7 +249,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'record_decision', args: { text: 'Wir kaufen ein E-Auto', topic: 'Auto' } }] },
       () => {
-        expect(lastToolOutputs().at(-1)).toContain('Wer war an der Entscheidung beteiligt?');
+        expect(toolOutputs(app).at(-1)).toContain('Wer war an der Entscheidung beteiligt?');
         return { calls: [{ name: 'ask_user', args: { question: 'Wer war beteiligt, und wann war das?' } }] };
       },
       { calls: [{ name: 'amend_decision', args: { id: 'K1', participants: 'Anna und Ben'.split(' und '), unknownFields: ['decidedAt'] } }] },
@@ -268,13 +262,13 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
     expect(d.unknownFields).toContain('decidedAt');
     expect(d.status).not.toBe('draft');
     expect(app.services.graph.findByNameOrAlias('person', 'Ben')).toBeTruthy();
-    expect(lastToolOutputs().at(-1)).not.toContain('Es fehlt noch');
+    expect(toolOutputs(app).at(-1)).not.toContain('Es fehlt noch');
   });
 
   it('open items: „ich“ is the user (with name or as the placeholder „Ich“ with a hint); a duplicate is completed instead', async () => {
     app = await agentApp();
     app.llm.agent = scriptedTurns({ calls: [{ name: 'create_open_item', args: { title: 'Zahnarzt anrufen', responsible: 'mir' } }] }, () => {
-      expect(lastToolOutputs().at(-1)).toContain('Einstellungen → Über dich');
+      expect(toolOutputs(app).at(-1)).toContain('Einstellungen → Über dich');
       return { text: 'ok' };
     });
     await app.ok('chat:send', { text: 'Zahnarzt anrufen bleibt an mir hängen' });
@@ -289,11 +283,11 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
       // the same once more: the duplicate check reports it, the agent completes the existing one instead
       { calls: [{ name: 'create_open_item', args: { title: 'Angebot Müller prüfen', description: 'bis Freitag Rückmeldung' } }] },
       () => {
-        expect(lastToolOutputs().at(-1)).toContain('Gibt es schon: ‚Angebot Müller prüfen‘');
+        expect(toolOutputs(app).at(-1)).toContain('Gibt es schon: ‚Angebot Müller prüfen‘');
         return { calls: [{ name: 'list_entries', args: { kind: 'open_item' } }] };
       },
       () => {
-        const ref = /(K\d+)[^\n]*Angebot Müller prüfen/.exec(lastToolOutputs().join('\n'))![1]!;
+        const ref = /(K\d+)[^\n]*Angebot Müller prüfen/.exec(toolOutputs(app).join('\n'))![1]!;
         return { calls: [{ name: 'update_open_item', args: { id: ref, description: 'bis Freitag Rückmeldung' } }] };
       },
       { text: 'Ergänzt.' },
@@ -345,7 +339,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
     const knowledgeInput = app.llm.calls.find((c) => c.schema === 'KnowledgeAnswer')?.input ?? '';
     expect(knowledgeInput).toContain('Textstelle:');
     expect(knowledgeInput).toContain('Frankfurt');
-    const out = lastToolOutputs().at(-1)!;
+    const out = toolOutputs(app).at(-1)!;
     expect(out).toContain('**Belegte Fakten**');
     expect(out).toContain('Die Plattform zieht nach Frankfurt. [1]');
   });

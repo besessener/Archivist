@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
+import { intent } from '../helpers/chat-intents';
 
 /** Issue #222: lists capped at a limit must not be presented as the total. */
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 
 let app: TestApp;
 beforeEach(async () => {
@@ -17,21 +17,7 @@ afterEach(async () => {
 const send = (text: string) => app.ok('chat:send', { text });
 
 async function archived(name: string, topic: string | null): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: topic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'work/notes', mainTopic: topic }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, `Inhalt von ${name}`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;

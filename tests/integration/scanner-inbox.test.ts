@@ -3,23 +3,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScanDirectoryInput, ScanDirectoryResult } from '../../packages/core/src/workers/tasks';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { topicNoteClassification } from '../helpers/document-classifications';
 
 let app: TestApp;
-const cls = (topic: string) => ({
-  docType: 'Notiz',
-  title: `Notiz ${topic}`,
-  summary: `Notiz zu ${topic}.`,
-  mainTopic: topic,
-  project: null,
-  persons: [],
-  dates: [],
-  tags: [topic.toLowerCase()],
-  location: { categoryPath: `work/projects/${topic}`, fileName: null, newMainCategory: false, rationale: `Bezug zu ${topic}`, confidence: 0.8 },
-  decisions: [],
-  openItems: [],
-  confidence: 0.8,
-  rationale: 'test',
-});
 
 async function scan() {
   await app.ok('scanner:start', {});
@@ -37,7 +23,7 @@ const fileNamed = async (name: string) => (await files()).find((f) => f.name ===
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.services.settings.update({ scan: { enabled: true } });
-  app.llm.on('DocumentClassification', () => cls('Hauskauf'));
+  app.llm.on('DocumentClassification', () => topicNoteClassification('Hauskauf'));
 });
 afterEach(async () => {
   vi.restoreAllMocks();

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Job } from '@archivist/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -18,21 +19,7 @@ const absIn = (root: string, id: string) => path.join(root, ...row(id).archiveRe
 const newRoot = () => path.join(app.root, 'NAS', 'Archiv');
 
 async function archived(name: string, content: string, loc = 'work/notes'): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: null,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;

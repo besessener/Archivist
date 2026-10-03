@@ -2,6 +2,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DecisionInput } from '@archivist/shared';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { topicNoteClassification } from '../helpers/document-classifications';
 
 let app: TestApp;
 afterEach(async () => {
@@ -9,21 +10,6 @@ afterEach(async () => {
 });
 
 const SECRET = 'Gehaltsliste';
-const cls = (topic: string) => ({
-  docType: 'Notiz',
-  title: `Notiz ${topic}`,
-  summary: `Notiz zu ${topic}.`,
-  mainTopic: topic,
-  project: null,
-  persons: [],
-  dates: [],
-  tags: [topic.toLowerCase()],
-  location: { categoryPath: `work/projects/${topic}`, fileName: null, newMainCategory: false, rationale: `Bezug zu ${topic}`, confidence: 0.8 },
-  decisions: [],
-  openItems: [],
-  confidence: 0.8,
-  rationale: 'test',
-});
 const answer = {
   answer: 'Antwort.',
   facts: [],
@@ -44,7 +30,7 @@ async function setup(mode: 'auto' | 'confirm', opts: { embeddings?: boolean } = 
     app.services.settings.update({ llm: { embeddingModel: 'test-embedding' } });
     app.llm.embed = (texts) => texts.map(() => [1, 0, 0]);
   }
-  app.llm.on('DocumentClassification', () => cls('Personal'));
+  app.llm.on('DocumentClassification', () => topicNoteClassification('Personal'));
   app.llm.on('KnowledgeAnswer', () => answer);
   app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: SECRET }));
 }

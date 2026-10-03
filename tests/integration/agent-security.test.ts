@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, folderOf, inInbox, scriptedTurns, sentText } from '../helpers/agent';
+import { agentApp, archived, folderOf, inInbox, scriptedTurns, sentText, toolOutputs } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -26,12 +26,6 @@ function onlyInsideData(text: string, needle: string): boolean {
     at = text.indexOf(needle, at + needle.length);
   }
   return true;
-}
-
-/** The tool results of the last agent request (Responses API format), in call order. */
-function toolOutputs(app: TestApp): string[] {
-  const input = (app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }> | undefined) ?? [];
-  return input.filter((i) => i.type === 'function_call_output').map((i) => i.output ?? '');
 }
 
 const runOf = (runId: string | null | undefined) => app.ok('agent:run', { id: runId! });

@@ -11,6 +11,7 @@ import { WorkerPool } from '../../packages/core/src/workers/pool';
 import { Logger } from '../../packages/core/src/util/logger';
 import { makePdf } from '../helpers/fixtures';
 import { createTestApp, MIGRATIONS, TestCipher } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 describe('Database migrations', () => {
   it('creates the schema incl. FTS5, is idempotent and reports the version', () => {
@@ -176,21 +177,7 @@ describe('Worker threads', () => {
 
   it('the complete application works with worker threads (import + search)', async () => {
     const app = await createTestApp({ privacy: 'auto', workerFile });
-    app.llm.on('DocumentClassification', () => ({
-      docType: 'Notiz',
-      title: 'Thread',
-      summary: 's',
-      mainTopic: null,
-      project: null,
-      persons: [],
-      dates: [],
-      tags: [],
-      location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-      decisions: [],
-      openItems: [],
-      confidence: 0.7,
-      rationale: 'x',
-    }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Thread', summary: 's', categoryPath: 'work/notes' }));
     const imp = await app.ok('documents:import', { paths: [app.file('t.txt', 'Dokument verarbeitet im Worker Thread Zebrastreifen')] });
     await app.services.jobs.whenIdle();
     await app.ok('documents:archive', {
@@ -295,21 +282,7 @@ describe('Secrets, backups, settings', () => {
 
   it('creates consistent backups (metadata vs. full) without the API key', async () => {
     const app = await createTestApp({ privacy: 'auto' });
-    app.llm.on('DocumentClassification', () => ({
-      docType: 'Notiz',
-      title: 'B',
-      summary: 's',
-      mainTopic: null,
-      project: null,
-      persons: [],
-      dates: [],
-      tags: [],
-      location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-      decisions: [],
-      openItems: [],
-      confidence: 0.7,
-      rationale: 'x',
-    }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'B', summary: 's', categoryPath: 'work/notes' }));
     const imp = await app.ok('documents:import', { paths: [app.file('b.txt', 'Backup Dokument Inhalt')] });
     await app.services.jobs.whenIdle();
     await app.ok('documents:archive', {

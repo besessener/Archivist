@@ -2,9 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntentClassifier } from '../../packages/core/src/services/chat/intent-classifier';
 import { PendingQuestions } from '../../packages/core/src/services/chat/pending-questions';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
+import { intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {

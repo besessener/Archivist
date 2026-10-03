@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { OpenItemInput } from '@archivist/shared';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { intent } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -11,7 +12,6 @@ afterEach(async () => {
 });
 
 const sqlite = () => app.services.database.sqlite;
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 
 /** Creates an open item; `createdAt` is set explicitly so the item kept by a merge is deterministic. */
 async function item(input: Partial<OpenItemInput> & { title: string }, createdAt: string) {

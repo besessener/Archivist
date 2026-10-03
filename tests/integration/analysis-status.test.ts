@@ -3,25 +3,14 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { documents } from '../../packages/core/src/db/schema';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: 'Neu klassifiziert',
-    summary: 'Zusammenfassung',
-    mainTopic: 'Test',
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/neu', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: 'Neu klassifiziert', summary: 'Zusammenfassung', categoryPath: 'work/neu', mainTopic: 'Test' }),
+  );
 });
 afterEach(async () => {
   vi.restoreAllMocks();
