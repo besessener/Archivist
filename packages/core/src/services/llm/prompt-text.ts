@@ -3,10 +3,16 @@ import type { z } from 'zod';
 /** JSON mode of the Responses API needs the word "json" in the input (instructions don't count), else HTTP 400. */
 const JSON_INPUT_HINT = 'Antworte als JSON.\n\n';
 
-/** The input as sent: cut to `maxInputChars` (with a note) and, in JSON mode, naming JSON. */
+/** Share of the limit kept from the end: the user's own message and the final instruction come last (#155). */
+const TAIL_SHARE = 0.25;
+
+/** The input as sent: cut in the middle to `maxInputChars` (with a note) and, in JSON mode, naming JSON. */
 export function preparedInput(request: { input: string; json?: boolean }, maxInputChars: number): string {
   let input = request.input;
-  if (input.length > maxInputChars) input = `${input.slice(0, maxInputChars)}\n[… Eingabe auf ${maxInputChars} Zeichen gekürzt]`;
+  if (input.length > maxInputChars) {
+    const tail = Math.floor(maxInputChars * TAIL_SHARE);
+    input = `${input.slice(0, maxInputChars - tail)}\n[… Eingabe auf ${maxInputChars} Zeichen gekürzt, der mittlere Teil fehlt …]\n${input.slice(input.length - tail)}`;
+  }
   if (request.json && !/json/i.test(input)) input = `${JSON_INPUT_HINT}${input}`;
   return input;
 }
