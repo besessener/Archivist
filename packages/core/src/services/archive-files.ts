@@ -4,10 +4,13 @@ import path from 'node:path';
 import type { AppContext } from '../context';
 import { AppError, fsError, toErrorInfo } from '../util/errors';
 import { sha256File } from '../util/hash';
+import { newId } from '../util/ids';
 import { uniquePath } from '../util/paths';
 
 /** Attempts to find a free target name before giving up. */
 const NAME_ATTEMPTS = 5;
+/** Marks a copy that is still being written; never a name the archive hands out. */
+const PARTIAL_SUFFIX = '.partial';
 const NO_FREE_NAME = 'Es konnte kein freier Zieldateiname gefunden werden.';
 
 export const errorCode = (err: unknown) => (err as NodeJS.ErrnoException | null)?.code;
@@ -95,21 +98,46 @@ export class ArchiveFileOps {
     }
   }
 
-  /** Copies `source` into `dir` without overwriting anything; a failed copy leaves no partial file unreported. */
+  /** Copies `source` into `dir` without overwriting anything; a failed or interrupted copy never sits under the final name. */
   async copyExclusive(target: { source: string; dir: string; fileName: string }): Promise<string> {
     await fsp.mkdir(target.dir, { recursive: true });
     for (let attempt = 0; attempt < NAME_ATTEMPTS; attempt += 1) {
       const dest = await uniquePath(target.dir, target.fileName);
-      try {
-        await fsp.copyFile(target.source, dest, fs.constants.COPYFILE_EXCL);
-        await syncToDisk(dest);
-        return dest;
-      } catch (err) {
-        if (errorCode(err) === 'EEXIST') continue; // someone else's file: never touch it, try the next free name
-        await this.failCopy(err, dest);
-      }
+      const published = await this.copyViaTemporary(target.source, dest);
+      if (published) return dest;
     }
     throw new AppError('archive_conflict', NO_FREE_NAME, { retryable: true });
+  }
+
+  /** False when `dest` is taken; the file appears under `dest` only complete (hard link from a flushed temporary copy). */
+  private async copyViaTemporary(source: string, dest: string): Promise<boolean> {
+    const temporary = `${dest}.${newId()}${PARTIAL_SUFFIX}`;
+    try {
+      await fsp.copyFile(source, temporary, fs.constants.COPYFILE_EXCL);
+      await syncToDisk(temporary);
+    } catch (err) {
+      return this.failCopy(err, temporary);
+    }
+    try {
+      await fsp.link(temporary, dest);
+    } catch (err) {
+      await this.removeCreated(temporary);
+      if (errorCode(err) === 'EEXIST') return false; // someone else's file: never touch it, try the next free name
+      return this.copyDirect(source, dest); // no hard links on this file system
+    }
+    await this.removeCreated(temporary);
+    return true;
+  }
+
+  private async copyDirect(source: string, dest: string): Promise<boolean> {
+    try {
+      await fsp.copyFile(source, dest, fs.constants.COPYFILE_EXCL);
+      await syncToDisk(dest);
+      return true;
+    } catch (err) {
+      if (errorCode(err) === 'EEXIST') return false;
+      return this.failCopy(err, dest);
+    }
   }
 
   /** Places a second, verified version of the source (hard link, else checked copy) without overwriting anything. */
