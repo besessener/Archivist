@@ -130,7 +130,7 @@ export class DocumentAnalyzer {
   }
 
   private knownNames(type: 'topic' | 'project', opts: { confirmedOnly?: boolean } = {}): string[] {
-    return this.deps.graph.listEntities({ type, limit: 500, ...opts }).map((e) => e.name);
+    return this.deps.graph.entityNames({ type, ...opts });
   }
 
   private async runAnalysis(row: DocRow, opts: AnalyzeOptions): Promise<AnalysisResult> {

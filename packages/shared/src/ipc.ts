@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { EntityType, Id, IsoDate, RelationMethod, RelationStatus, RelationType, type Result } from './common';
-import { AgentActionStatus, StoredAgentAction } from './actions';
+import { AgentActionStatus, AgentActionType, StoredAgentAction } from './actions';
 import {
   ArchiveItemRequest,
   ArchivePlan,
@@ -132,7 +132,16 @@ export const ipcContract = {
   'agent:revealFile': channel(z.object({ path: z.string().min(1) }), Ok),
 
   // --- Agent actions ---
-  'actions:list': channel(z.object({ status: AgentActionStatus.optional() }), z.array(StoredAgentAction)),
+  'actions:list': channel(
+    z.object({
+      status: AgentActionStatus.optional(),
+      actionType: AgentActionType.optional(),
+      limit: z.number().int().min(1).max(200).default(200),
+      offset: z.number().int().min(0).default(0),
+    }),
+    z.array(StoredAgentAction),
+  ),
+  'actions:get': channel(z.object({ id: Id }), StoredAgentAction),
   'actions:resolve': channel(
     z.discriminatedUnion('decision', [
       z.object({

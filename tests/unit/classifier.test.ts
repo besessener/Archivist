@@ -69,3 +69,21 @@ describe('LLM topic names must look like names (#199)', () => {
     expect(snapToKnown('hausrenovierung', ['Hausrenovierung'])).toBe('Hausrenovierung');
   });
 });
+
+describe('snapping LLM names to known ones (#195)', () => {
+  it('never merges names that differ in a number or year', () => {
+    expect(snapToKnown('Steuer 2022', ['Steuer 2021'])).toBe('Steuer 2022');
+    expect(snapToKnown('Kfz-Versicherung 2024', ['Kfz-Versicherung 2023'])).toBe('Kfz-Versicherung 2024');
+    expect(snapToKnown('Steuer 2021', ['Steuer 2021'])).toBe('Steuer 2021');
+  });
+
+  it('never merges names that differ in a whole word such as a place', () => {
+    expect(snapToKnown('Mietvertrag Bern', ['Mietvertrag Berlin'])).toBe('Mietvertrag Bern');
+  });
+
+  it('still snaps spelling variants', () => {
+    expect(snapToKnown('prod-plat', ['ProdPlat'])).toBe('ProdPlat');
+    expect(snapToKnown('Fassadensanierungen', ['Fassadensanierung'])).toBe('Fassadensanierung');
+    expect(snapToKnown('Hausrenovirung 2026', ['Hausrenovierung 2026'])).toBe('Hausrenovierung 2026');
+  });
+});

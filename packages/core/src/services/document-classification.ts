@@ -3,6 +3,7 @@ import { normalizeDateInput, normalizeDecisionDate, promptNow } from '../util/da
 import { sanitizeCategoryPath } from '../util/paths';
 import { humanizeCategoryPath, normalizeIsoDates, pastOrToday, snapToKnown, type LocalClassification } from './classifier';
 import type { DocRow } from './document-model';
+import { relevantNames } from './relevant-names';
 
 /** A classification result, local or merged with the LLM's; `fileNameHint` only comes from the LLM. */
 export type Classification = LocalClassification & { fileNameHint: string | null };
@@ -11,6 +12,9 @@ export interface KnownSubjects {
   topics: string[];
   projects: string[];
 }
+
+/** Topics and projects named in the prompt: the ones that fit the document, not all of them. */
+const MAX_LISTED_NAMES = 40;
 
 const INSTRUCTIONS =
   'Du bist Archivist, ein sorgfältiger persönlicher Archivar. Analysiere das Dokument: Dokumenttyp, Dokumentdatum (Datum des Dokuments selbst, nicht heute), Hauptthema, Projekt, Personen, Datumsangaben, Tags, mögliche Entscheidungen und offene Punkte. ' +
@@ -24,7 +28,7 @@ export function classificationRequest(
   row: DocRow,
   context: { text: string; mainCategories: string[]; confirmed: KnownSubjects },
 ): { schemaName: string; purpose: string; documentIds: string[]; instructions: string; input: string } {
-  const listed = (names: string[]) => names.slice(0, 40).join(', ') || '–';
+  const listed = (names: string[]) => relevantNames(names, `${row.originalName}\n${context.text}`, MAX_LISTED_NAMES).join(', ') || '–';
   return {
     schemaName: 'DocumentClassification',
     purpose: `Dokumentklassifikation (${row.originalName})`,

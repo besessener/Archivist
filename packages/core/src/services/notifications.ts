@@ -7,6 +7,9 @@ import { newId, nowIso } from '../util/ids';
 
 type Row = typeof notifications.$inferSelect;
 
+/** Dedupe prefix of the notifications about decisions and open items found in a document. */
+export const EXTRACTED_NOTIFICATION_PREFIX = 'extracted:';
+
 export interface NotificationInput {
   title: string;
   description: string;
@@ -94,6 +97,16 @@ export class NotificationService {
       .limit(opts.limit ?? 100)
       .all();
     return rows.map(toNotification);
+  }
+
+  /** Open notifications whose dedupe key starts with the prefix. */
+  openByDedupePrefix(prefix: string): AppNotification[] {
+    return this.db
+      .select()
+      .from(notifications)
+      .where(and(sql`${notifications.dedupeKey} LIKE ${`${prefix}%`}`, isNull(notifications.resolvedAt)))
+      .all()
+      .map(toNotification);
   }
 
   get(id: string): AppNotification {

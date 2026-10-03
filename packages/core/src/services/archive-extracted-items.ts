@@ -1,12 +1,13 @@
 import type { AgentActionProposal, DocumentProposal, EntityRef, StoredAgentAction } from '@archivist/shared';
 import { truncate } from '../util/text';
 import type { DocRow } from './documents';
-import type { NotificationService } from './notifications';
+import { EXTRACTED_NOTIFICATION_PREFIX, type NotificationService } from './notifications';
 import { matchOpenItems, type OpenItemService } from './open-items';
 
 /** Upper bound of decision proposals per document (protection against a runaway classification). */
 const MAX_DOCUMENT_DECISIONS = 10;
 const MAX_DOCUMENT_OPEN_ITEMS = 3;
+const PROPOSED_DECISIONS_PATH = '/decisions/proposed/';
 
 /** Where proposals go (the action service); typed by shape, since the action service module depends on the archive. */
 export interface ProposalSink {
@@ -128,8 +129,12 @@ export class ExtractedItemProposer {
       type: kind === 'open' ? 'file_has_open_item' : 'file_has_decision',
       priority: 'normal',
       affectedEntityIds: [row.id],
-      proposedActions: actions.map((a) => ({ label: a.label.slice(0, 60), kind: 'confirm_action' as const, target: a.id })),
-      dedupeKey: `extracted:${kind}:${row.id}`,
+      proposedActions: [
+        ...actions.map((a) => ({ label: a.label.slice(0, 60), kind: 'confirm_action' as const, target: a.id })),
+        ...(kind === 'decision' ? [{ label: 'Alle vorgeschlagenen Entscheidungen', kind: 'navigate' as const, target: PROPOSED_DECISIONS_PATH }] : []),
+        { label: 'Ausblenden', kind: 'ignore' as const },
+      ],
+      dedupeKey: `${EXTRACTED_NOTIFICATION_PREFIX}${kind}:${row.id}`,
     });
   }
 }

@@ -1,7 +1,7 @@
 import type { DocumentProposal } from '@archivist/shared';
 import { isExplicitDecision, isUndecidedWording } from '../util/decision-language';
 import { normalizeDateInput, parseGermanDate, toIsoDate } from '../util/dates';
-import { firstSentence, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
+import { firstSentence, levenshtein, nameSimilarity, normalizeName, tokenize, truncate } from '../util/text';
 import { detectOpenItemSentences } from './open-items';
 
 export interface LocalClassification {
@@ -247,14 +247,26 @@ export function classifyLocally(input: {
 
 const SNAP_THRESHOLD = 0.86;
 
-/** Maps a name returned by the LLM to a known name (prevents duplicates like „ProdPlat“/„prod-plat“). */
+const hasDigit = (token: string) => /\d/.test(token);
+
+/** Whether two similar names may be one subject: same numbers/years, and words that differ only by a typo-sized edit („Bern“ ≠ „Berlin“). */
+function mayBeSameSubject(a: string, b: string): boolean {
+  const tokensA = normalizeName(a).split(' ');
+  const tokensB = normalizeName(b).split(' ');
+  if (tokensA.filter(hasDigit).sort().join(' ') !== tokensB.filter(hasDigit).sort().join(' ')) return false;
+  const onlyA = tokensA.filter((t) => !tokensB.includes(t)).join('');
+  const onlyB = tokensB.filter((t) => !tokensA.includes(t)).join('');
+  return levenshtein(onlyA, onlyB) <= Math.max(1, Math.floor(Math.max(onlyA.length, onlyB.length) / 8));
+}
+
+/** Maps a name returned by the LLM to a known name (prevents duplicates like „ProdPlat“/„prod-plat“, but never merges „Steuer 2022“ into „Steuer 2021“). */
 export function snapToKnown(name: string | null | undefined, known: string[]): string | null {
   const clean = name?.trim();
   if (!clean) return null;
   let best: { n: string; s: number } | null = null;
   for (const k of known) {
     const s = nameSimilarity(clean, k);
-    if (s >= SNAP_THRESHOLD && (!best || s > best.s)) best = { n: k, s };
+    if (s >= SNAP_THRESHOLD && mayBeSameSubject(clean, k) && (!best || s > best.s)) best = { n: k, s };
   }
   return best?.n ?? (looksLikeName(clean) ? clean : null);
 }

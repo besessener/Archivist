@@ -39,12 +39,13 @@ Der Chat ist die zentrale Schnittstelle.
 - Pflichtfelder: *Wann, Thema, Entscheidung*. *Beteiligte* sind optional und werden nicht erfragt; wer sie nennt, bekommt sie gespeichert.
 - Gezielte Rückfragen nach den fehlenden Pflichtfeldern; die Entscheidung bleibt Entwurf, bis alles vollständig ist oder ausdrücklich als „unbekannt“ bestätigt wurde.
 - Ersetzen/Widerrufen nur nach Bestätigung (auch aus dem Formular) und rückgängig machbar.
+- **Vorgeschlagene Entscheidungen**: Entscheidungen, die in archivierten Dokumenten erkannt wurden, stehen auf der Seite „Vorgeschlagene Entscheidungen“ (Entscheidungen → Knopf oben, oder über die Benachrichtigung). Sie zeigt alle offenen Vorschläge, 20 auf einmal, „Weitere anzeigen“ holt die nächsten – nicht nur die der zuletzt archivierten Dokumente. Jede Karte braucht wie sonst deine ausdrückliche Bestätigung. Die Benachrichtigung „Dokument enthält … mögliche Entscheidung(en)“ schließt sich von selbst, sobald alle ihre Vorschläge bestätigt oder abgelehnt sind; mit „Ausblenden“ schließt du sie, ohne zu entscheiden – die Vorschläge bleiben auf der Seite.
 
 ## Dokumente
 
 - **Import** per Drag-and-Drop oder Dateiauswahl in einen sicheren Eingang (`inbox/`), mit Prüfsumme und Duplikaterkennung.
 - **Parser** für PDF, DOCX, PPTX, XLSX, EML, TXT/MD, PNG/JPG (Bilder und Scans per [OCR](#ocr)).
-- **Klassifikation** per LLM oder lokal, mit menschenlesbarem Zielpfad.
+- **Klassifikation** per LLM oder lokal, mit menschenlesbarem Zielpfad. Das LLM bekommt als „Bekannte Themen“ und „Bekannte Projekte“ höchstens je 40 Namen – die, die zum Dokument passen (gemeinsame Wörter mit Dateiname und Text). Ein Thema oder Projekt, das das LLM nennt, wird mit allen vorhandenen verglichen (nicht nur den ersten 500) und an ein ähnliches angeglichen („prod-plat“ → „ProdPlat“); Namen, die sich in einer Zahl oder Jahreszahl unterscheiden („Steuer 2022“ / „Steuer 2021“) oder in einem ganzen Wort („Mietvertrag Bern“ / „Mietvertrag Berlin“), werden nie zusammengelegt. Die lokale Erkennung kennt ebenfalls alle bekannten Themen und Projekte.
 - **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000).
 - **Archivierung** per Kopieren (Standard), Verschieben, nur Indexieren oder Ignorieren; Undo.
 - **Nur indexierte Dokumente**: Ändert sich das Original, wird es beim nächsten Scan bzw. bei der Archivprüfung (andere Dateigröße) lokal neu eingelesen und neu indexiert – kein zweites Dokument, kein veralteter Inhalt in der Suche. Fehlt das Original, meldet die Archivprüfung „Original fehlt“.
