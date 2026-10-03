@@ -92,11 +92,11 @@ describe('Relinking moved archive files', () => {
     const claimedRel = 'private/belege/quittung-kopie.txt';
     const pool = app.services.pool;
     const realRun = pool.run.bind(pool);
-    vi.spyOn(pool, 'run').mockImplementation(((task: string, input: unknown) => {
+    vi.spyOn(pool, 'run').mockImplementation((task: string, input: unknown) => {
       // an archiving that finished meanwhile now points at this very file
       app.services.ctx.database.sqlite.prepare('update documents set archive_rel_path = ? where id = ?').run(claimedRel, other.id);
       return realRun(task as never, input as never);
-    }));
+    });
 
     const result = await app.ok('archive:relink', { confirmed: true });
 
