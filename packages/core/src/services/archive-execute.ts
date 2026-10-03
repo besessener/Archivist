@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { ArchiveItemRequest, DocumentProposal } from '@archivist/shared';
@@ -15,6 +14,7 @@ import { assignmentNames, type ArchivePlanner, type ArchiveTarget, type PlannedA
 import type { DocRow } from './documents';
 import type { RelationChangeSet } from './knowledge-graph';
 import type { ArchiveDeps } from './archive-deps';
+import { archivedEntry, plannedRemovals, type ArchivedEntryInput } from './archive-entry';
 
 /** What one archiving needs once its plan has passed every check. */
 interface Archiving {
@@ -29,6 +29,8 @@ interface ArchivedCopy {
   targetAbs: string | null;
   archiveRel: string | null;
 }
+
+const NOTHING_REMOVED: RemovedSources = { removedStaged: false, removedSource: false, warnings: [] };
 
 interface RemovedSources {
   removedStaged: boolean;
@@ -141,13 +143,18 @@ export class ArchiveExecutor {
     const copy = req.mode === 'index_only' ? NO_COPY : await this.copyToArchive(source, { target: plan.target!, sha256: row.sha256 });
     const updatedAt = nowIso();
     const relationChanges = await this.commit(archiving, { copy, categoryPath: plan.target?.categoryPath ?? null, updatedAt });
-    const removed = req.mode === 'index_only' ? { removedStaged: false, removedSource: false, warnings: [] } : await this.removeSources(row, req.mode);
+    // logged before any source is deleted; an interrupted run leaves identical files that undo accepts as already restored
+    const planned = req.mode === 'index_only' ? NOTHING_REMOVED : plannedRemovals(row, req.mode);
+    const entry = { source, copy, relations: relationChanges };
+    const auditId = this.logArchived(archiving, { ...entry, removed: planned, afterUpdatedAt: updatedAt });
+    const removed = req.mode === 'index_only' ? NOTHING_REMOVED : await this.removeSources(row, req.mode);
     let finalUpdatedAt = updatedAt;
     if (removed.removedStaged) {
       finalUpdatedAt = nowIso();
       this.db.update(documents).set({ stagedPath: null, updatedAt: finalUpdatedAt }).where(eq(documents.id, row.id)).run();
     }
-    const auditId = this.logArchived(archiving, { source, copy, removed, relations: relationChanges, afterUpdatedAt: finalUpdatedAt });
+    if (removed.removedStaged !== planned.removedStaged || removed.removedSource !== planned.removedSource || finalUpdatedAt !== updatedAt)
+      this.deps.audit.amend(auditId, archivedEntry(archiving, { ...entry, removed, afterUpdatedAt: finalUpdatedAt }));
     // From here on the archiving is committed and undoable: follow-up steps may only add warnings.
     await this.reindexAfterCommit(row.id, removed.warnings);
     this.deps.ctx.events.emit('document:archived', { documentId: row.id, sourcePath: row.sourcePath });
@@ -267,8 +274,9 @@ export class ArchiveExecutor {
   /** Removes our own inbox copy and, for a confirmed move, the unchanged original – only after a successful commit. */
   private async removeSources(row: DocRow, mode: ArchiveItemRequest['mode']): Promise<RemovedSources> {
     const warnings: string[] = [];
-    const removedStaged = row.stagedPath && fs.existsSync(row.stagedPath) ? await this.removeInboxCopy(row, warnings) : false;
-    const removedSource = mode === 'move' && row.sourcePath && fs.existsSync(row.sourcePath) ? await this.removeOriginal(row, warnings) : false;
+    const planned = plannedRemovals(row, mode);
+    const removedStaged = planned.removedStaged ? await this.removeInboxCopy(row, warnings) : false;
+    const removedSource = planned.removedSource ? await this.removeOriginal(row, warnings) : false;
     return { removedStaged, removedSource, warnings };
   }
 
@@ -299,25 +307,8 @@ export class ArchiveExecutor {
     return false;
   }
 
-  private logArchived(
-    archiving: Archiving,
-    done: { source: string; copy: ArchivedCopy; removed: RemovedSources; relations: RelationChangeSet; afterUpdatedAt: string },
-  ): string {
-    const { req, row, trigger, before } = archiving;
-    const { removedStaged, removedSource } = done.removed;
-    const undoData: ArchiveUndoData = {
-      documentId: row.id,
-      mode: req.mode,
-      archiveRel: done.copy.archiveRel,
-      sha256: row.sha256,
-      sourcePath: row.sourcePath,
-      stagedPath: row.stagedPath,
-      removedStaged,
-      removedSource,
-      before,
-      relations: done.relations,
-      afterUpdatedAt: done.afterUpdatedAt,
-    };
+  private logArchived(archiving: Archiving, done: ArchivedEntryInput): string {
+    const { req, row, trigger } = archiving;
     return this.deps.audit.log({
       action: `archive.${req.mode}`,
       actor: trigger === 'agent_action' ? 'agent' : 'user',
@@ -326,8 +317,7 @@ export class ArchiveExecutor {
       entityIds: [row.id],
       paths: [done.source, done.copy.targetAbs ?? ''].filter(Boolean),
       before: { status: row.status, path: done.source },
-      after: { status: req.mode === 'index_only' ? 'indexed_only' : 'archived', path: done.copy.targetAbs, removedSource, removedStaged },
-      undo: { type: 'archive_file', data: undoData },
+      ...archivedEntry(archiving, done),
     });
   }
 

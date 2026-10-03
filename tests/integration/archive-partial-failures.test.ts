@@ -179,6 +179,36 @@ describe('Archiving: the inbox copy cannot be removed after the commit', () => {
   });
 });
 
+describe('Archiving: the audit entry exists before any source is deleted', () => {
+  it('moving logs the undoable entry first and corrects it when the original cannot be removed', async () => {
+    const { src, id } = await imported('move.txt', 'Zu verschiebendes Dokument');
+    const loggedWhenDeleted: boolean[] = [];
+    vi.spyOn(fsp, 'unlink').mockImplementation(async (p) => {
+      if (String(p) === src) {
+        loggedWhenDeleted.push(app.services.audit.list({ limit: 10, onlyUndoable: true }).some((e) => e.action === 'archive.move'));
+        throw errno('EBUSY');
+      }
+      return realUnlink(p);
+    });
+
+    const res = await app.ok('documents:archive', {
+      items: [{ documentId: id, mode: 'move', categoryPath: 'work/notes', topic: TOPIC }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: true,
+    } as never);
+
+    expect(loggedWhenDeleted).toEqual([true]);
+    expect(res.items[0]!.message).toMatch(/Original konnte nicht entfernt werden/);
+    const entry = app.services.audit.list({ limit: 10 }).find((e) => e.id === res.items[0]!.auditId)!;
+    expect(entry.after).toMatchObject({ removedSource: false, removedStaged: true });
+    vi.restoreAllMocks();
+    const undo = await app.ok('documents:undoArchive', { auditId: entry.id });
+    expect(undo).toMatchObject({ undone: true, conflicts: [] });
+    expect(fs.readFileSync(src, 'utf8')).toBe('Zu verschiebendes Dokument');
+  });
+});
+
 describe('Undoing an archiving with partial failures', () => {
   it('database error: the archive file stays and a second undo accepts the already restored inbox copy', async () => {
     const { id } = await imported('z.txt', 'Dokument Z mit Inhalt');

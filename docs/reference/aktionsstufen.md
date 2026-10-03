@@ -35,6 +35,7 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 
 - Bricht eine Kopie mittendrin ab (z. B. Datenträger voll), wird die Teilkopie entfernt; lässt sie sich nicht entfernen, nennt die Meldung ihren Pfad.
 - Scheitert beim Umlagern das Entfernen der alten Datei (z. B. weil sie geöffnet ist), wird der neue Eintrag zurückgenommen. Bleibt er übrig (zusätzlicher Hardlink oder Kopie), steht das in der Meldung statt „nichts wurde verändert“.
+- Der Eintrag im Änderungsprotokoll samt Undo-Daten wird geschrieben, bevor Original oder Eingangskopie entfernt werden; ein Abbruch dazwischen lässt die Dateien an Ort und Stelle und die Archivierung rückgängig machbar.
 - Lässt sich nach dem Archivieren die eigene Kopie im Eingang nicht löschen, bleibt die Archivierung gültig und rückgängig machbar. Die Eingangskopie wird vorgemerkt und beim nächsten Archivieren, bei der Archivprüfung oder beim nächsten Start entfernt – nur, wenn sie unverändert ist und die Archivdatei intakt.
 - Ein Umlager-Vorschlag, bei dem nichts verschoben wurde, gilt als fehlgeschlagen: Der Hinweis bleibt offen und erhält bei der nächsten Archivprüfung einen neuen Vorschlag.
 
