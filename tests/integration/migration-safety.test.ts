@@ -100,3 +100,28 @@ describe('Migration safety (#217)', () => {
     expect(snapshots()).not.toContain('vor-migration-2020-01-01.db');
   });
 });
+
+describe('Decision participants are optional (#198)', () => {
+  it('removes participants from the missing fields of existing decisions and keeps everything else', () => {
+    const first = open();
+    first.migrate(migrationsUpTo('0024'), backups);
+    const insert = first.sqlite.prepare(
+      "insert into decisions (id, title, decision_text, status, missing_fields, created_at, updated_at) values (?, 'Entscheidung', 'Text', ?, ?, 'now', 'now')",
+    );
+    insert.run('only-participants', 'active', '["participants"]');
+    insert.run('draft-with-date', 'draft', '["decidedAt","participants","topic"]');
+    insert.run('complete', 'active', '[]');
+    first.close();
+
+    const db = open();
+    db.migrate(MIGRATIONS, backups);
+    const rows = db.sqlite.prepare('select id, status, missing_fields as missing from decisions order by id').all();
+    db.close();
+
+    expect(rows).toEqual([
+      { id: 'complete', status: 'active', missing: '[]' },
+      { id: 'draft-with-date', status: 'draft', missing: '["decidedAt","topic"]' },
+      { id: 'only-participants', status: 'active', missing: '[]' },
+    ]);
+  });
+});
