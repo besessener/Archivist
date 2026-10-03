@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { TrashEntry } from '@archivist/shared';
 import { eq, inArray } from 'drizzle-orm';
-import { documents, scanFiles } from '../db/schema';
+import { documentReanalysis, documents, scanFiles } from '../db/schema';
 import { AppError, permissionError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { isInside } from '../util/paths';
@@ -74,6 +74,7 @@ export class DocumentTrash {
         ctx.database.db.delete(documents).where(eq(documents.id, row.id)).run();
         graph.removeNode(row.id);
         this.deps.nearDuplicates.remove(row.id);
+        ctx.database.db.delete(documentReanalysis).where(eq(documentReanalysis.documentId, row.id)).run();
       });
     } catch (err) {
       await this.putBackAll(trashed.map(trashMove));

@@ -14,6 +14,7 @@ import {
   RelinkResult,
   VerifyReport,
 } from './archive';
+import { BulkEstimate, ImportedFolder, IndexStatus, ReanalysisProposal, StartedJob } from './bulk';
 import { AuditEntry, AuditVerification, LlmTransmission, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
 import { Decision, DecisionInput, DecisionPatch, DecisionStatus } from './decisions';
@@ -186,6 +187,8 @@ export const ipcContract = {
       imported: z.array(DocumentRecord),
       duplicates: z.array(z.object({ path: z.string(), existingDocumentId: Id })),
       rejected: z.array(z.object({ path: z.string(), reason: z.string() })),
+      /** Dropped folders: imported recursively by a job, not through this call. */
+      folders: z.array(ImportedFolder),
     }),
   ),
   'documents:list': channel(
@@ -278,6 +281,28 @@ export const ipcContract = {
   'documents:releaseQuarantine': channel(z.object({ id: Id, confirmed: Confirmed }), DocumentRecord),
   /** Deleting with a safety net: into the trash, restorable via `audit:undo` until the trash is emptied */
   'documents:trash': channel(z.object({ id: Id, confirmed: Confirmed }), z.object({ auditId: Id })),
+  /** The pending metadata proposal of an archived document (#220), if any. */
+  'documents:reanalysis': channel(z.object({ id: Id }), ReanalysisProposal.nullable()),
+  'documents:reanalysisPending': channel(Empty, z.object({ documentIds: z.array(Id) })),
+  /** Level 2: applies the proposal to the metadata (not to file or location); undoable via `audit:undo`. */
+  'documents:applyReanalysis': channel(z.object({ id: Id, confirmed: Confirmed }), DocumentRecord),
+  'documents:discardReanalysis': channel(z.object({ id: Id }), Ok),
+  'documents:reprocessEstimate': channel(z.object({ ids: z.array(Id).min(1).max(5000) }), BulkEstimate),
+  /** One job for the selection: re-read the file, propose new metadata, rebuild the index entry. */
+  'documents:reprocess': channel(
+    z.object({
+      ids: z.array(Id).min(1).max(5000),
+      reread: z.boolean().default(true),
+      reanalyze: z.boolean().default(true),
+      confirmLlm: z.boolean().default(false),
+    }),
+    StartedJob,
+  ),
+  'documents:indexStatus': channel(Empty, IndexStatus),
+  /** Re-indexes the archived documents that are missing from the search index. */
+  'documents:rebuildIndex': channel(Empty, StartedJob),
+  /** Moves all entries onto the current embedding model. */
+  'documents:reembed': channel(Empty, StartedJob),
   'trash:list': channel(z.object({}), z.array(TrashEntry)),
   /** Level 3: deleting for good needs the second, explicit confirmation */
   'trash:empty': channel(
@@ -307,6 +332,10 @@ export const ipcContract = {
     z.object({ files: z.array(ScanFile), lastSummary: ScanSummary.nullable() }),
   ),
   'scanner:analyze': channel(z.object({ fileIds: z.array(Id).min(1).max(500), confirmLlm: z.boolean().default(false) }), z.object({ jobId: Id })),
+  /** All new and changed files: how many, how many may go to the LLM, roughly how many tokens. */
+  'scanner:analyzeAllPreview': channel(Empty, BulkEstimate),
+  /** One job over all new and changed files, in batches of 500; `confirmLlm` is the one consent for the whole run. */
+  'scanner:analyzeAll': channel(z.object({ confirmLlm: z.boolean().default(false) }), StartedJob),
   'scanner:proposals': channel(Empty, z.array(ScanProposalGroup)),
   'scanner:exclude': channel(z.object({ kind: z.enum(['file', 'dir']), path: z.string().min(1) }), ScanExclusion),
   'scanner:listExclusions': channel(Empty, z.array(ScanExclusion)),
@@ -323,6 +352,7 @@ export const ipcContract = {
     z.array(AppNotification),
   ),
   'notifications:markRead': channel(z.object({ ids: z.array(Id).min(1) }), Ok),
+  'notifications:markAllRead': channel(Empty, z.object({ marked: z.number().int() })),
   'notifications:resolve': channel(z.object({ id: Id }), AppNotification),
   'notifications:resolveAll': channel(Empty, z.object({ resolved: z.number().int() })),
   'notifications:snooze': channel(z.object({ id: Id, remindAt: IsoDate }), Reminder),

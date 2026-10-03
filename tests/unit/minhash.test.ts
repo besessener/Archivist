@@ -12,7 +12,8 @@ import {
 
 const WORDS = ['rechnung', 'wartung', 'heizung', 'vertrag', 'kunde', 'lieferung', 'angebot', 'frist', 'zahlung', 'projekt', 'termin', 'bericht'];
 /** Deterministic running text of `count` words where no three consecutive words repeat. */
-const textOf = (count: number, seed = 0): string => Array.from({ length: count }, (_, index) => `${WORDS[(index * 7 + seed) % WORDS.length]}${(index * 31 + seed) % 97}`).join(' ');
+const textOf = (count: number, seed = 0): string =>
+  Array.from({ length: count }, (_, index) => `${WORDS[(index * 7 + seed) % WORDS.length]}${(index * 31 + seed) % 97}`).join(' ');
 
 const signature = (text: string) => minhashSignature(text)!;
 

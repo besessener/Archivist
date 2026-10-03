@@ -52,7 +52,13 @@ describe('Near-duplicate detection (#230)', () => {
 
   it('does not report different texts or a pair the user marked as different', async () => {
     const first = await archived(app, { name: 'a.txt', content: letter(), folder: 'private/haus' });
-    await archived(app, { name: 'b.txt', content: SENTENCES.map((s) => s.replaceAll('Punkt', 'Posten').replaceAll('Kowalski', 'Meier')).join(' ').replaceAll(/\d+/g, (n) => `${Number(n) + 900}`), folder: 'private/haus' });
+    await archived(app, {
+      name: 'b.txt',
+      content: SENTENCES.map((s) => s.replaceAll('Punkt', 'Posten').replaceAll('Kowalski', 'Meier'))
+        .join(' ')
+        .replaceAll(/\d+/g, (n) => `${Number(n) + 900}`),
+      folder: 'private/haus',
+    });
     const similar = await archived(app, { name: 'c.txt', content: letter('Punkt 20: Etwas ganz anderes.'), folder: 'private/haus' });
     const relation = app.services.graph.link({ sourceId: similar, targetId: first, relationType: 'duplicate_of' }, { status: 'proposed', method: 'analysis' })!;
     app.services.graph.decideRelation(relation.id, { status: 'rejected' });
@@ -64,7 +70,11 @@ describe('Near-duplicate detection (#230)', () => {
 
   it('closes the hint when the similar document is trashed', async () => {
     await archived(app, { name: 'brief.txt', content: letter(), folder: 'private/haus' });
-    const draft = await archived(app, { name: 'entwurf.txt', content: letter('Punkt 20: Entwurf, noch nicht abgestimmt mit dem Kunden.'), folder: 'private/haus' });
+    const draft = await archived(app, {
+      name: 'entwurf.txt',
+      content: letter('Punkt 20: Entwurf, noch nicht abgestimmt mit dem Kunden.'),
+      folder: 'private/haus',
+    });
     await app.services.consistency.run();
     expect(await duplicateInsights()).toHaveLength(1);
 

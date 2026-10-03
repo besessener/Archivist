@@ -11,6 +11,7 @@ export * from './links';
 export * from './actions';
 export * from './chat';
 export * from './jobs';
+export * from './bulk';
 export * from './audit';
 export * from './scan';
 export * from './status';

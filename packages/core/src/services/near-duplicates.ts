@@ -30,7 +30,10 @@ export class NearDuplicateIndex {
     this.ctx.database.transaction(() => {
       this.remove(documentId);
       if (!signature) return;
-      this.db.insert(documentMinhash).values({ documentId, signature: signatureToBytes(signature) }).run();
+      this.db
+        .insert(documentMinhash)
+        .values({ documentId, signature: signatureToBytes(signature) })
+        .run();
       this.db
         .insert(documentLshBands)
         .values(bandBuckets(signature).map((bucket, band) => ({ documentId, band, bucket })))

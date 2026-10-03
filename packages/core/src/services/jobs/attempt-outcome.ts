@@ -26,7 +26,7 @@ export interface AttemptOutcomeDeps {
   ctx: AppContext;
   retryWaits: RetryWaits;
   /** Wait before the next attempt after `failedAttempts` failed ones. */
-  retryDelay: (failedAttempts: number) => number;
+  retryDelay: (failedAttempts: number, err: unknown) => number;
   runHook: (target: { type: string; hook: keyof JobHooks }, run: () => void) => void;
   notify: (row: JobRow) => void;
 }
@@ -77,7 +77,7 @@ export class AttemptOutcomes {
     const info = toErrorInfo(err);
     const error = `${info.message}${info.details ? ` – ${info.details}` : ''}`;
     if (info.retryable && attempts < job.maxAttempts) {
-      const delay = this.deps.retryDelay(attempts);
+      const delay = this.deps.retryDelay(attempts, err);
       this.deps.retryWaits.set(job.id, Date.now() + delay);
       this.deps.ctx.logger.warn('jobs', `Job failed, retrying: ${job.type}`, { jobId: job.id, error: err, attempts, delayMs: delay });
       this.db

@@ -1,18 +1,25 @@
 import type { AppErrorInfo, ErrorCategory } from '@archivist/shared';
 import { ZodError } from 'zod';
 
+const MAX_RETRY_AFTER_MS = 300_000;
+
 /** Uniform error type of the services; translated into AppErrorInfo at the IPC boundary. */
 export class AppError extends Error {
   constructor(
     public readonly category: ErrorCategory,
     message: string,
-    public readonly options: { retryable?: boolean; details?: string; cause?: unknown } = {},
+    public readonly options: { retryable?: boolean; details?: string; cause?: unknown; retryAfterMs?: number } = {},
   ) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
     this.name = 'AppError';
   }
   get retryable(): boolean {
     return this.options.retryable ?? false;
+  }
+  /** The wait a server asked for (Retry-After), at most 5 minutes; undefined if it named none. */
+  get retryAfterMs(): number | undefined {
+    const { retryAfterMs } = this.options;
+    return retryAfterMs === undefined ? undefined : Math.min(Math.max(0, retryAfterMs), MAX_RETRY_AFTER_MS);
   }
 }
 

@@ -92,6 +92,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       services.notifications.markRead(input.ids);
       return { ok: true as const };
     },
+    'notifications:markAllRead': () => ({ marked: services.notifications.markAllRead() }),
     'notifications:resolve': (input) => services.notifications.resolve(input.id),
     'notifications:resolveAll': () => ({ resolved: services.notifications.resolveAll() }),
     'notifications:snooze': (input) => {
