@@ -6,13 +6,13 @@ Ein Backup stellt die **Datenbank** wieder her (Entscheidungen, offene Punkte, W
 
 1. Öffne **Einstellungen → Backups → Vorhandene Backups** und klick beim gewünschten Backup auf **Wiederherstellen**.
 2. Bestätige den Dialog. Archivist bereitet die Wiederherstellung vor und startet neu.
-3. Beim Start ersetzt das Backup die Datenbank. Die bisherige Datenbank bleibt unter `database/vor-wiederherstellung-<Zeitstempel>/` im Datenordner erhalten; ein Fehlgriff lässt sich also korrigieren, indem du diese Dateien zurückkopierst.
+3. Beim Start ersetzt das Backup die Datenbank. Die bisherige Datenbank bleibt unter `database/vor-wiederherstellung-<Zeitstempel>/` im Datenordner erhalten; ein Fehlgriff lässt sich also korrigieren, indem du diese Dateien bei beendetem Archivist zurückkopierst. Das Änderungsprotokoll der wiederhergestellten Datenbank vermerkt die Wiederherstellung. Lässt sich die bisherige Datenbank nicht vollständig beiseitelegen (z. B. weil eine Datei gerade von einem anderen Programm geöffnet ist), wird nichts ersetzt; Archivist meldet das und startet beim nächsten Mal mit der bisherigen Datenbank.
 
 Änderungen seit dem Backup gehen in der Datenbank verloren. Dateien in deinem Archivordner werden nicht gelöscht.
 
 ## Wenn Archivist wegen einer beschädigten Datenbank nicht startet
 
-Findet Archivist beim Start eine beschädigte Datenbank, meldet es das und bietet das neueste unbeschädigte Backup an (auch die Sicherungen, die vor Datenbank-Migrationen entstehen). Mit **Backup wiederherstellen** startet Archivist neu und setzt es ein; die beschädigte Datenbank bleibt im Datenordner. Gibt es kein Backup, bleiben deine Dokumente im Archivordner trotzdem unverändert – schreib dann in die [Fehlerbehebung](fehlerbehebung.md).
+Findet Archivist beim Start eine beschädigte Datenbank, meldet es das und bietet das neueste unbeschädigte Backup an (auch die Sicherungen, die vor Datenbank-Migrationen entstehen). Erst mit **Backup wiederherstellen** wird es vorgemerkt; mit **Beenden** bleibt alles, wie es ist, etwa um die Datenbank erst selbst zu sichern. Mit **Backup wiederherstellen** startet Archivist neu und setzt es ein; die beschädigte Datenbank bleibt im Datenordner. Gibt es kein Backup, bleiben deine Dokumente im Archivordner trotzdem unverändert – schreib dann in die [Fehlerbehebung](fehlerbehebung.md).
 
 ## Sicherung vor Migrationen
 

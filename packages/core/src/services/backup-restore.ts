@@ -5,7 +5,10 @@ import { AppError, validationError } from '../util/errors';
 
 const MARKER_FILE = 'restore-pending.json';
 const DATABASE_FILE = 'archivist.db';
+const DATABASE_FILES = [DATABASE_FILE, `${DATABASE_FILE}-wal`, `${DATABASE_FILE}-shm`];
 const PRE_MIGRATION_PREFIX = 'vor-migration-';
+const NOT_SET_ASIDE =
+  'Die geplante Wiederherstellung wurde nicht ausgeführt: Die bisherige Datenbank ließ sich nicht beiseitelegen (z. B. weil eine Datei gerade geöffnet ist). Deine Daten sind unverändert.';
 
 export interface RestoreSource {
   name: string;
@@ -91,13 +94,6 @@ export function scheduleRestore(paths: RestorePaths, name: string): void {
   fs.writeFileSync(path.join(paths.root, MARKER_FILE), JSON.stringify({ name, requestedAt: new Date().toISOString() }), 'utf8');
 }
 
-/** Schedules the newest intact source (the recovery after a damaged database); null when there is none. */
-export function scheduleNewestRestore(paths: RestorePaths): RestoreSource | null {
-  const source = newestIntactSource(paths.backups);
-  if (source) scheduleRestore(paths, source.name);
-  return source;
-}
-
 function readMarker(file: string): string | null {
   try {
     const marker = JSON.parse(fs.readFileSync(file, 'utf8')) as { name?: unknown };
@@ -107,21 +103,29 @@ function readMarker(file: string): string | null {
   }
 }
 
-/** Moves the database files aside; returns the folder holding them. */
+/** Moves the database files aside, all or none of them; returns the folder holding them. */
 function moveDatabaseAside(databaseDir: string): string {
   const aside = path.join(databaseDir, `vor-wiederherstellung-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)}`);
   fs.mkdirSync(aside, { recursive: true });
-  for (const suffix of ['', '-wal', '-shm']) {
-    const file = path.join(databaseDir, DATABASE_FILE + suffix);
-    if (fs.existsSync(file)) fs.renameSync(file, path.join(aside, DATABASE_FILE + suffix));
+  const moved: string[] = [];
+  try {
+    for (const name of DATABASE_FILES) {
+      if (!fs.existsSync(path.join(databaseDir, name))) continue;
+      fs.renameSync(path.join(databaseDir, name), path.join(aside, name));
+      moved.push(name);
+    }
+  } catch (err) {
+    for (const name of moved) fs.renameSync(path.join(aside, name), path.join(databaseDir, name));
+    fs.rmSync(aside, { recursive: true, force: true });
+    throw new AppError('filesystem_error', NOT_SET_ASIDE, { cause: err });
   }
   return aside;
 }
 
 function moveDatabaseBack(databaseDir: string, aside: string): void {
-  for (const suffix of ['', '-wal', '-shm']) {
-    const file = path.join(aside, DATABASE_FILE + suffix);
-    if (fs.existsSync(file)) fs.renameSync(file, path.join(databaseDir, DATABASE_FILE + suffix));
+  for (const name of DATABASE_FILES) {
+    const file = path.join(aside, name);
+    if (fs.existsSync(file)) fs.renameSync(file, path.join(databaseDir, name));
   }
 }
 

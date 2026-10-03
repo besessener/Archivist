@@ -4,7 +4,7 @@ export { resolveDataPaths, ensureDataDirs, type DataPaths } from './context';
 export type { SecretCipher } from './services/secret';
 export type { FetchLike } from './services/llm';
 export { AppError, toErrorInfo } from './util/errors';
-export { scheduleNewestRestore, type RestorePaths, type RestoreSource } from './services/backup-restore';
+export { newestIntactSource, scheduleRestore, type RestorePaths, type RestoreSource } from './services/backup-restore';
 export { Logger } from './util/logger';
 export { redactSecrets } from './util/redact';
 export * as pathGuard from './util/paths';
