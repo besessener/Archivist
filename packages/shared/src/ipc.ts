@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { EntityType, Id, IsoDate, RelationMethod, RelationStatus, RelationType, type Result } from './common';
-import { AgentActionStatus, StoredAgentAction } from './actions';
+import { AgentActionStatus, AgentActionType, StoredAgentAction } from './actions';
 import {
   ArchiveItemRequest,
   ArchivePlan,
@@ -14,7 +14,7 @@ import {
   RelinkResult,
   VerifyReport,
 } from './archive';
-import { AuditEntry, LlmTransmission, UndoRunResult } from './audit';
+import { AuditEntry, AuditVerification, LlmTransmission, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
 import { Decision, DecisionInput, DecisionPatch, DecisionStatus } from './decisions';
 import { DocumentRecord, DocumentStatus, TrashEntry } from './documents';
@@ -132,7 +132,15 @@ export const ipcContract = {
   'agent:revealFile': channel(z.object({ path: z.string().min(1) }), Ok),
 
   // --- Agent actions ---
-  'actions:list': channel(z.object({ status: AgentActionStatus.optional() }), z.array(StoredAgentAction)),
+  'actions:list': channel(
+    z.object({
+      status: AgentActionStatus.optional(),
+      actionType: AgentActionType.optional(),
+      limit: z.number().int().min(1).max(200).default(200),
+      offset: z.number().int().min(0).default(0),
+    }),
+    z.array(StoredAgentAction),
+  ),
   'actions:get': channel(z.object({ id: Id }), StoredAgentAction),
   'actions:resolve': channel(
     z.discriminatedUnion('decision', [
@@ -168,6 +176,8 @@ export const ipcContract = {
   'decisions:supersede': channel(z.object({ oldDecisionId: Id, newDecisionId: Id, confirmed: Confirmed }), z.object({ old: Decision, new: Decision })),
   /** Revoking is a stage-2 action: explicit confirmation required, with an undo entry. */
   'decisions:revoke': channel(z.object({ id: Id, confirmed: Confirmed }), Decision),
+  /** Deleting a draft or unclear decision (created in error): explicit confirmation required, undoable via `audit:undo`. */
+  'decisions:delete': channel(z.object({ id: Id, confirmed: Confirmed }), z.object({ auditId: Id })),
 
   // --- Documents ---
   'documents:import': channel(
@@ -519,7 +529,8 @@ export const ipcContract = {
   /** Puts entries into a case – ONE undo step (#286, #291). */
   'cases:assign': channel(z.object({ entryIds: z.array(Id).min(1).max(500), caseId: Id }), z.object({ assigned: z.number().int() })),
   'cases:setStatus': channel(z.object({ id: Id, status: z.enum(['open', 'closed']) }), GraphEntity),
-  'knowledge:proposeMerge': channel(z.object({ sourceTopicId: Id, targetTopicId: Id }), StoredAgentAction),
+  /** Proposes merging two entries of the same kind (topic, project, person, tag); the user confirms the action card. */
+  'knowledge:proposeMerge': channel(z.object({ sourceId: Id, targetId: Id }), StoredAgentAction),
   /** Accepts a topic/project taken from a document; only confirmed ones are listed in LLM prompts. */
   'knowledge:confirmEntity': channel(z.object({ id: Id }), GraphEntity),
 
@@ -537,7 +548,13 @@ export const ipcContract = {
   ),
 
   // --- Audit / Undo ---
-  'audit:list': channel(z.object({ limit: z.number().int().min(1).max(1000).default(200), onlyUndoable: z.boolean().default(false) }), z.array(AuditEntry)),
+  /** `entityId`: only entries that concern this entry (e.g. the history of one decision). */
+  'audit:list': channel(
+    z.object({ limit: z.number().int().min(1).max(5000).default(200), onlyUndoable: z.boolean().default(false), entityId: Id.optional() }),
+    z.array(AuditEntry),
+  ),
+  /** Checks that no audit entry was changed, removed or inserted since it was written (hash chain). */
+  'audit:verify': channel(z.object({}), AuditVerification),
   'audit:undo': channel(z.object({ auditId: Id }), z.object({ undone: z.boolean(), message: z.string(), conflicts: z.array(z.string()) })),
 
   // --- Categories, backup, archive check ---

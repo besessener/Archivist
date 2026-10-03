@@ -37,7 +37,7 @@ function supersession(deps: ActionDeps, params: Params): Revalidation {
   const p = ActionParamSchemas.supersede_decision.parse(params);
   const older = deps.decisions.get(p.oldDecisionId);
   const newer = deps.decisions.get(p.newDecisionId);
-  if (older.status === 'superseded' && newer.supersedesDecisionId === older.id) return { params }; // already done: no-op
+  if (older.status === 'superseded' && older.supersededBy.some((successor) => successor.id === newer.id)) return { params }; // already done: no-op
   if (!ACTIVE_DECISION_STATUSES.includes(older.status) || !ACTIVE_DECISION_STATUSES.includes(newer.status))
     return { stale: 'Eine der beiden Entscheidungen ist inzwischen nicht mehr aktiv.' };
   return { params };
@@ -67,7 +67,13 @@ const noteOrEventMerge =
     );
   };
 
+function decisionSource(deps: ActionDeps, params: Params): Revalidation {
+  const p = ActionParamSchemas.add_decision_source.parse(params);
+  return deps.decisions.get(p.decisionId).sourceIds.includes(p.documentId) ? { stale: 'Das Dokument ist schon eine Quelle der Entscheidung.' } : { params };
+}
+
 const REVALIDATORS: Partial<Record<AgentActionType, Revalidator>> = {
+  add_decision_source: decisionSource,
   relocate_documents: relocation,
   supersede_decision: supersession,
   resolve_contradiction: contradiction,

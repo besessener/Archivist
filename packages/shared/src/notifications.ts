@@ -76,6 +76,8 @@ export const InsightKind = z.enum([
   'missing_metadata',
   'external_file',
   'possibly_superseded',
+  /** An active decision whose validity (`validUntil`) has ended. */
+  'decision_expired',
   'misplaced_file',
   'scattered_documents',
   'low_confidence_relation',

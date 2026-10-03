@@ -32,6 +32,8 @@ export const RelationType = z.enum([
   'blocks',
   'results_from',
   'produced',
+  /** A person named in a document's text: person → document (#189). */
+  'mentioned_in',
   'duplicate_of',
   'related_to',
   /** A topic or project below another one: „Urlaub 2026“ is a subtopic of „Urlaub“ (#282). */
@@ -99,5 +101,7 @@ export const SourceReference = z.object({
   score: z.number().default(0),
   /** The source came in over a confirmed relation of another hit, e.g. „„Angebot“ stützt diesen Eintrag“ (#289). */
   via: z.string().nullish(),
+  /** Status of a decision source („Widerrufen“, „Unklar“ …), so a source that is not valid is recognisable without the LLM. */
+  statusNote: z.string().nullish(),
 });
 export type SourceReference = z.infer<typeof SourceReference>;

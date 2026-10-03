@@ -80,7 +80,11 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           <Field label="Zeitlimit (Sekunden)" htmlFor="s-timeout" hint="1 bis 600">
             <Input id="s-timeout" type="number" min={1} max={600} value={timeoutS} onChange={(e) => setTimeoutS(e.target.value)} />
           </Field>
-          <Field label="Maximale Eingabegröße (Zeichen)" htmlFor="s-max" hint="Längere Texte werden gekürzt. 500 bis 2.000.000.">
+          <Field
+            label="Maximale Eingabegröße (Zeichen)"
+            htmlFor="s-max"
+            hint="Lange Dokumente liest die KI in mehreren Teilen (je Teil eine Anfrage), andere Texte werden gekürzt. 500 bis 2.000.000."
+          >
             <Input id="s-max" type="number" min={500} max={2000000} value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
           </Field>
           <Field label="Embedding-Modell (optional)" htmlFor="s-embed" hint="Leer lassen für die lokale Ähnlichkeitssuche." className="sm:col-span-2">

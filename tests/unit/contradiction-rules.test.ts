@@ -1,5 +1,6 @@
+import type { Decision } from '@archivist/shared';
 import { describe, expect, it } from 'vitest';
-import { chosenOption, compareLexically, polarity } from '../../packages/core/src/services/contradiction-rules';
+import { chosenOption, compareLexically, polarity, relatedPairs, sharesContent, sharesScope } from '../../packages/core/src/services/contradiction-rules';
 
 describe('polarity of a decision text', () => {
   it.each([
@@ -122,5 +123,77 @@ describe('lexical comparison of two decisions', () => {
     expect(compareLexically('Das Budget beträgt 5000 Euro.', 'Die Miete steigt.')).toBeNull();
     expect(compareLexically('Wir entscheiden uns für Postgres.', 'Die Miete steigt.')).toBeNull();
     expect(compareLexically('Die Miete steigt.', 'Wir entscheiden uns für Postgres.')).toBeNull();
+  });
+});
+
+describe('negations in the polarity (#179)', () => {
+  it.each([
+    'Wir führen das Projekt nicht weiter',
+    'Wir setzen das Projekt nicht fort',
+    'Wir starten das Projekt nicht',
+    'Wir verfolgen das Projekt nicht mehr weiter',
+    'Wir setzen den Plan nicht um',
+  ])('reads „%s“ as stop', (text) => {
+    expect(polarity(text)).toBe('stop');
+  });
+
+  it.each(['Nicht pausieren, sondern weitermachen', 'Wir stoppen das Projekt nicht', 'Wir beenden das Projekt nicht, sondern führen es weiter'])(
+    'reads „%s“ as go',
+    (text) => {
+      expect(polarity(text)).toBe('go');
+    },
+  );
+
+  it('lets the part after „sondern“ decide', () => {
+    expect(polarity('Nicht weitermachen, sondern pausieren')).toBe('stop');
+  });
+
+  it.each([
+    'Wir stellen einen neuen Entwickler ein',
+    'Wir stellen zwei Mitarbeiter ein',
+    'Wir geben die Bestellung für den Server auf',
+    'Wir geben eine Anzeige auf',
+    'Wir werden einen Entwickler einstellen',
+  ])('does not read hiring or ordering in „%s“ as stop', (text) => {
+    expect(polarity(text)).toBeNull();
+  });
+
+  it('finds the README case „weiterführen“ against „nicht weiterführen“ as a conflict', () => {
+    expect(compareLexically('Wir wollen das Projekt weiterführen', 'Wir wollen das Projekt nicht weiterführen')).toMatchObject({ conflict: true });
+    expect(compareLexically('Wir führen das Projekt weiter', 'Wir führen das Projekt nicht weiter')).toMatchObject({ conflict: true });
+  });
+});
+
+const decision = (fields: Partial<Decision> & { id: string }): Decision => ({ topicId: null, projectId: null, ...fields }) as Decision;
+
+describe('which decisions are compared', () => {
+  it('compares decisions of the same topic or project, also across the other scope', () => {
+    const a = decision({ id: 'a', topicId: 't1', projectId: 'p1' });
+    const b = decision({ id: 'b', topicId: 't2', projectId: 'p1' });
+    const c = decision({ id: 'c', topicId: 't1', projectId: null });
+    const d = decision({ id: 'd', topicId: 't3', projectId: 'p9' });
+    const e = decision({ id: 'e' });
+
+    expect(sharesScope(a, b)).toBe(true);
+    expect(sharesScope(a, c)).toBe(true);
+    expect(sharesScope(a, d)).toBe(false);
+    expect(sharesScope(e, decision({ id: 'f' }))).toBe(false);
+    expect(
+      relatedPairs([a, b, c, d, e])
+        .map(([x, y]) => [x.id, y.id].sort().join(''))
+        .sort(),
+    ).toEqual(['ab', 'ac']);
+  });
+
+  it('lists a pair that shares topic and project only once', () => {
+    const a = decision({ id: 'a', topicId: 't', projectId: 'p' });
+    const b = decision({ id: 'b', topicId: 't', projectId: 'p' });
+
+    expect(relatedPairs([a, b])).toHaveLength(1);
+  });
+
+  it('sees shared content words but ignores stop words and short words', () => {
+    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Meeting wird verschoben')).toBe(true);
+    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Protokoll schreibt Anna')).toBe(false);
   });
 });

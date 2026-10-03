@@ -3,6 +3,7 @@
 import type { useExtraSubjects } from '@/components/common/extra-subjects';
 import { ExtraSubjectFields } from '@/components/common/extra-subjects';
 import { Field } from '@/components/common/states';
+import { coverageNotes, DocCoverage } from '@/components/inbox/doc-coverage';
 import { Input } from '@/components/ui/input';
 import { formatDate, formatDateTime } from '@/lib/format';
 import type { DocRecord } from '@/lib/types';
@@ -39,6 +40,14 @@ export function DocumentMeta({ doc, extra }: { doc: DocRecord; extra: ExtraSubje
       <dd className="text-xs">
         <PathText path={doc.archivePath ?? '–'} />
       </dd>
+      {doc.proposal && coverageNotes(doc.proposal).length > 0 && (
+        <>
+          <dt className="text-muted-foreground">Analyse</dt>
+          <dd>
+            <DocCoverage proposal={doc.proposal} />
+          </dd>
+        </>
+      )}
       <dt className="text-muted-foreground">Prüfsumme</dt>
       <dd className="break-all font-mono text-xs">{doc.sha256}</dd>
     </dl>

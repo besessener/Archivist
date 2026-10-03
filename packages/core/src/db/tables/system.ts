@@ -44,6 +44,9 @@ export const auditLog = sqliteTable(
     undoneAt: text('undone_at'),
     /** Agent run during which the change was made (#299); null for changes outside of a run. */
     runId: text('run_id'),
+    /** Hash of the entry's fixed fields and `prevHash` (chain, #193); null for entries from before the chain. */
+    hash: text('hash'),
+    prevHash: text('prev_hash'),
   },
   (t) => [index('audit_at_idx').on(t.at), index('audit_run_idx').on(t.runId)],
 );

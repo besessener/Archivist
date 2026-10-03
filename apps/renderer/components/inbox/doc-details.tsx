@@ -7,6 +7,7 @@ import type { ArchiveEdit } from '@/components/common/archive-dialog';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { Field } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
+import { DocCoverage } from './doc-coverage';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { formatBytes, formatDate } from '@/lib/format';
@@ -205,6 +206,7 @@ export function DocProposal({ proposal }: { proposal: Proposal }) {
       </p>
       {proposal.location.rationale && <p className="mt-1 text-muted-foreground">{proposal.location.rationale}</p>}
       <p className="mt-1 text-muted-foreground">Analysiert {proposal.analyzedBy === 'llm' ? 'per KI' : 'lokal'}.</p>
+      <DocCoverage proposal={proposal} />
     </div>
   );
 }

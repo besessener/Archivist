@@ -20,6 +20,19 @@ export const ArchiveLocationProposal = z.object({
 });
 export type ArchiveLocationProposal = z.infer<typeof ArchiveLocationProposal>;
 
+/** How much of a long document the analysis actually saw (#190). */
+export const AnalysisCoverage = z.object({
+  /** Length of the extracted text. */
+  textChars: z.number().int().min(0),
+  /** Characters of it the LLM read in all its requests; 0 for a local analysis. */
+  llmChars: z.number().int().min(0),
+  /** Number of LLM requests (parts) the text was read in. */
+  llmParts: z.number().int().min(0),
+  /** The extraction itself stopped at its limit (400,000 characters or 300 PDF pages): the rest is neither analysed nor searchable. */
+  extractionTruncated: z.boolean(),
+});
+export type AnalysisCoverage = z.infer<typeof AnalysisCoverage>;
+
 export const DocumentProposal = z.object({
   location: ArchiveLocationProposal,
   topic: z.string().nullable(),
@@ -43,6 +56,7 @@ export const DocumentProposal = z.object({
   ),
   duplicateOfDocumentId: z.string().nullable(),
   analyzedBy: z.enum(['llm', 'local']),
+  coverage: AnalysisCoverage.optional(),
 });
 export type DocumentProposal = z.infer<typeof DocumentProposal>;
 

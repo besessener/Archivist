@@ -10,8 +10,8 @@ type Extracted = NonNullable<ChatIntent['decision']>;
 type DecisionPending = Extract<Pending, { kind: 'decision' }>;
 type DecisionPatch = Parameters<DecisionService['update']>[1]['patch'];
 
-/** A capture request plus whether the LLM understood it (then all missing fields are asked at once). */
-type DecisionRequest = CaptureRequest & { viaLlm: boolean };
+/** A capture request plus whether the LLM understood it (then all missing fields are asked at once) and the status of a new decision (unreviewed agent extractions are `unclear`). */
+type DecisionRequest = CaptureRequest & { viaLlm: boolean; status?: 'unclear' };
 
 /** Details of the request: fields confirmed as unknown, topic/project and the „Thema oder Projekt?“ question. */
 interface DecisionFields {
@@ -54,7 +54,7 @@ export class DecisionCapture {
     private readonly supersede: DecisionSupersede,
   ) {}
 
-  async flow(request: CaptureRequest, options: { viaLlm: boolean }): Promise<Reply> {
+  async flow(request: CaptureRequest, options: { viaLlm: boolean; status?: 'unclear' }): Promise<Reply> {
     const { intent, state } = request;
     const extracted = intent.decision ?? emptyExtraction();
     const pending = state.pending?.kind === 'decision' ? state.pending : null;
@@ -69,7 +69,7 @@ export class DecisionCapture {
         state,
       };
     const fields = this.fieldsOf(request, { extracted, pending, isNew });
-    const scope: DecisionRequest = { ...request, viaLlm: options.viaLlm };
+    const scope: DecisionRequest = { ...request, viaLlm: options.viaLlm, status: options.status };
     if (isNew) return this.create(scope, { extracted, fields });
     return this.amend(scope, { target: target!, extracted, pending, fields });
   }
@@ -106,36 +106,65 @@ export class DecisionCapture {
     return { topic, project, clarify: unclear };
   }
 
-  private create(request: DecisionRequest, scope: { extracted: Extracted; fields: DecisionFields }): Promise<Reply> {
+  /** A name confirmed as project is one entry: the topic of the same name moves into the project (undoable merge). */
+  private async moveTopicToProject(name: string): Promise<void> {
+    const { graph } = this.deps;
+    const topic = graph.findByName('topic', name);
+    const project = graph.findByName('project', name);
+    if (!topic || !project) return;
+    await graph.merge({ sourceIds: [topic.id], targetId: project.id, allowCrossType: true }, { trigger: 'chat' });
+  }
+
+  private async create(request: DecisionRequest, scope: { extracted: Extracted; fields: DecisionFields }): Promise<Reply> {
     const { text, intent } = request;
     const { extracted, fields } = scope;
-    const created = this.deps.decisions.create(
-      {
-        title: extracted.title?.trim() || undefined,
-        decisionText: extracted.decisionText?.trim() || text,
-        decidedAt: normalizeDecisionDate(extracted.decidedAt ?? null) ?? undefined,
-        topic: fields.topic,
-        project: fields.project,
-        participants: extracted.participants ?? [],
-        rationale: extracted.rationale,
-        consequences: extracted.consequences,
-        alternatives: extracted.alternatives ?? [],
-        validFrom: extracted.validFrom,
-        validUntil: extracted.validUntil,
-        unknownFields: [...fields.unknownFields],
-        sourceIds: [],
-        confidence: extracted.confidence ?? 0.8,
-        asDraft: false,
-      },
-      { actor: 'user', trigger: 'chat' },
-    );
+    const decisionText = extracted.decisionText?.trim() || text;
     const supersedes = intent.intent === 'decision_supersede';
+    const duplicate = this.deps.decisions.findDuplicate({ decisionText, topic: fields.topic });
+    // an incomplete draft continues with its follow-up question instead
+    if (duplicate && !supersedes && duplicate.missingFields.length === 0) return Promise.resolve(this.duplicateReply(request, duplicate));
+    const created =
+      duplicate ??
+      this.deps.decisions.create(
+        {
+          title: extracted.title?.trim() || undefined,
+          decisionText,
+          decidedAt: normalizeDecisionDate(extracted.decidedAt ?? null) ?? undefined,
+          topic: fields.topic,
+          project: fields.project,
+          participants: extracted.participants ?? [],
+          rationale: extracted.rationale,
+          consequences: extracted.consequences,
+          alternatives: extracted.alternatives ?? [],
+          validFrom: extracted.validFrom,
+          validUntil: extracted.validUntil,
+          unknownFields: [...fields.unknownFields],
+          sourceIds: [],
+          confidence: extracted.confidence ?? 0.8,
+          asDraft: false,
+        },
+        { actor: 'user', trigger: 'chat', status: request.status },
+      );
+    const movedToProject = extracted.topicIsProject === true && fields.topic && fields.project && normalizeName(fields.topic) === normalizeName(fields.project);
+    if (movedToProject) await this.moveTopicToProject(fields.project!);
     return this.afterChange(request, {
-      decision: created,
+      decision: movedToProject ? this.deps.decisions.get(created.id) : created,
       clarifyTopic: fields.clarify,
       supersedesHint: supersedes ? (intent.topic ?? fields.topic ?? intent.query ?? '') : null,
       supersedesId: supersedes ? (extracted.supersedesId ?? null) : null,
     });
+  }
+
+  /** The same decision (text and topic) is already stored: it is not recorded twice. */
+  private duplicateReply(request: DecisionRequest, existing: Decision): Reply {
+    return {
+      intent: 'decision_new',
+      content: `Diese Entscheidung habe ich schon erfasst, ich lege sie nicht noch einmal an.\n\n${this.deps.decisions.format(existing)}`,
+      sources: [decisionSource(existing)],
+      context: this.decisionContext(existing),
+      confidence: 0.9,
+      state: { pending: null, last: { ...(request.state.last ?? {}), decisionId: existing.id } },
+    };
   }
 
   private amendPatch(change: { target: Decision; extracted: Extracted; pending: DecisionPending | null; fields: DecisionFields }, text: string): DecisionPatch {
@@ -154,7 +183,7 @@ export class DecisionCapture {
     return { ...patch, ...detailPatch(target, { extracted, unknownFields: fields.unknownFields }) };
   }
 
-  private amend(
+  private async amend(
     request: DecisionRequest,
     change: { target: Decision; extracted: Extracted; pending: DecisionPending | null; fields: DecisionFields },
   ): Promise<Reply> {
@@ -162,14 +191,18 @@ export class DecisionCapture {
     const { target, extracted, pending, fields } = change;
     const patch = this.amendPatch(change, request.text);
     if (!pending && Object.keys(patch).length === 0)
-      return Promise.resolve({
+      return {
         intent: intent.intent,
         content: `Was soll ich an der Entscheidung „${target.title}“ ergänzen? Nenne bitte Datum, Beteiligte, Begründung, Thema oder Projekt.`,
         sources: [decisionSource(target)],
         confidence: 0.4,
         state: { ...state, last: { ...(state.last ?? {}), decisionId: target.id } },
-      });
-    const updated = this.deps.decisions.update(target.id, { patch, trigger: 'chat' });
+      };
+    let updated = this.deps.decisions.update(target.id, { patch, trigger: 'chat' });
+    if (extracted.topicIsProject === true && pending?.clarifyTopic) {
+      await this.moveTopicToProject(pending.clarifyTopic);
+      updated = this.deps.decisions.get(target.id);
+    }
     // „Thema oder Projekt?“ stays asked until it is answered (or another topic was named)
     const unanswered = extracted.topicIsProject === null || extracted.topicIsProject === undefined;
     const sameTopic = !fields.topic || normalizeName(fields.topic) === normalizeName(pending?.clarifyTopic ?? '');
@@ -261,6 +294,7 @@ export class DecisionCapture {
       lines.push(`Ist „${clarify}“ das Thema oder der Name des Projekts?`);
       next = { kind: 'decision', decisionId: decision.id, asked: [], clarifyTopic: clarify, optional: true };
     }
+    if (decision.status === 'unclear') lines.unshift('Ich habe sie als „unklar“ markiert, weil du sie noch nicht bestätigt hast.');
     return {
       intent: 'decision_new',
       content: `Die Entscheidung ist gespeichert.\n\n${this.deps.decisions.format(decision)}${lines.length ? `\n\n${lines.join('\n')}` : ''}`,

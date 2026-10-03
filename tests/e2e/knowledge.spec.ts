@@ -44,6 +44,26 @@ test.describe('knowledge: create new', () => {
     await expect(k().filter({ hasText: 'Mietvertrag Hauptstraße' })).toHaveCount(0);
   });
 
+  test('proposes merging persons and projects, not only topics (#188)', async ({ llm, on, page }, testInfo) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    for (const [type, source, target] of [
+      ['person', 'Anna Albers', 'Anne Albers'],
+      ['project', 'Umzug', 'Umzug 2026'],
+    ] as const) {
+      await k.do.create({ type, name: source });
+      await k.do.create({ type, name: target });
+      await k.locators.items.filter({ hasText: source }).first().click();
+      await expect(k.heading()).toHaveText(source);
+      await expect(k.locators.buttons.merge).toBeVisible();
+      if (type === 'person') await expectNoSeriousA11yViolations(page, testInfo);
+      await k.do.proposeMerge(target);
+      await expect(k.locators.mergeAction).toContainText(`„${source}“ in „${target}“ zusammenführen`);
+    }
+  });
+
   test('shows the own person with the badge „Du“ (name from the setup)', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.locators.inputs.profileName.fill('Monika Lor-Zade');

@@ -48,16 +48,12 @@ export class GraphEntities {
     return this.db.select().from(entities).where(inArray(entities.id, ids)).all().map(mapEntity);
   }
 
-  /** The entity of this type and name, created if missing; any use not taken from a document confirms it. */
+  /** The entity of this type with this name or unique alias, created if missing; any use not taken from a document confirms it. */
   ensure(request: NewEntity): GraphEntity {
     const clean = collapseWhitespace(request.name);
     if (!clean) throw new AppError('validation_error', 'Der Name darf nicht leer sein.');
     const normalizedName = normalizeName(clean);
-    const existing = this.db
-      .select()
-      .from(entities)
-      .where(and(eq(entities.type, request.type), eq(entities.normalizedName, normalizedName)))
-      .get();
+    const existing = this.rowByNameOrAlias(request.type, clean);
     if (existing) return existing.unconfirmed && !request.fromDocument ? this.confirm(existing.id) : mapEntity(existing);
     const now = nowIso();
     const row: EntityRow = {
@@ -90,17 +86,26 @@ export class GraphEntities {
   }
 
   findByName(type: EntityType, name: string): GraphEntity | undefined {
-    const row = this.db
-      .select()
-      .from(entities)
-      .where(and(eq(entities.type, type), eq(entities.normalizedName, normalizeName(name))))
-      .get();
+    const row = this.rowByName(type, name);
     return row ? mapEntity(row) : undefined;
   }
 
   /** Exact name first, otherwise a unique alias; an alias of several entities of the type is ambiguous. */
   findByNameOrAlias(type: EntityType, name: string): GraphEntity | undefined {
-    const exact = this.findByName(type, name);
+    const row = this.rowByNameOrAlias(type, name);
+    return row ? mapEntity(row) : undefined;
+  }
+
+  private rowByName(type: EntityType, name: string): EntityRow | undefined {
+    return this.db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.type, type), eq(entities.normalizedName, normalizeName(name))))
+      .get();
+  }
+
+  private rowByNameOrAlias(type: EntityType, name: string): EntityRow | undefined {
+    const exact = this.rowByName(type, name);
     if (exact) return exact;
     const normalized = normalizeName(name);
     if (!normalized) return undefined;
@@ -110,7 +115,7 @@ export class GraphEntities {
       .where(and(eq(entities.type, type), sql`${entities.aliases} != '[]'`))
       .all()
       .filter((row) => row.aliases.some((alias) => normalizeName(alias) === normalized));
-    return hits.length === 1 ? mapEntity(hits[0]!) : undefined;
+    return hits.length === 1 ? hits[0] : undefined;
   }
 
   register(node: { type: EntityType; id: string; name: string; description?: string | null }): void {
@@ -168,6 +173,18 @@ export class GraphEntities {
     if (rows.length === 0) return [];
     const counts = this.currentRelationCounts(rows.map((row) => row.id));
     return rows.map((row) => ({ ...mapEntity(row), relationCount: counts.get(row.id) ?? 0 }));
+  }
+
+  /** Every name of this type (no cap), served by the type/name index – for matching a document against all known topics. */
+  names(query: { type: EntityType; confirmedOnly?: boolean }): string[] {
+    const conditions = [eq(entities.type, query.type), ...(query.confirmedOnly ? [eq(entities.unconfirmed, false)] : [])];
+    return this.db
+      .select({ name: entities.name })
+      .from(entities)
+      .where(and(...conditions))
+      .orderBy(entities.normalizedName)
+      .all()
+      .map((row) => row.name);
   }
 
   private currentRelationCounts(ids: string[]): Map<string, number> {

@@ -13,7 +13,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 | Modellname | `llm.model` |
 | Reasoning effort (optional) | `llm.reasoningEffort` |
 | Timeout | `llm.timeoutMs` |
-| maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben; für Embeddings gilt sie als Obergrenze je Eintrag, siehe [Anfragen](#anfragen)) |
+| maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben; die Klassifikation eines Dokuments teilt lange Texte stattdessen in Teile, siehe [Lange Dokumente](#lange-dokumente); für Embeddings gilt sie als Obergrenze je Eintrag, siehe [Anfragen](#anfragen)) |
 | Embedding-Modell (optional) | `llm.embeddingModel` |
 
 ## Anfragen
@@ -28,6 +28,8 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Was ein Eintrag an `/embeddings` schickt, ist auf `llm.maxInputChars` Zeichen **insgesamt** begrenzt (Standard 24 000), gezählt vor der Maskierung. Ein Dokument wird in Abschnitte von rund 900 Zeichen geteilt, jeder Abschnitt mit dem Titel davor; gesendet werden die Abschnitte von vorn, solange sie vollständig in die Grenze passen. Alles dahinter – bei langen Dokumenten der größte Teil – geht nicht an den Endpunkt. Diese Abschnitte bekommen nur den lokalen Vektor, bleiben also über die Volltext- und die lokale Vektorsuche auffindbar. Ist schon der erste Abschnitt länger als die Grenze, wird er gekürzt. Im Übertragungsprotokoll steht die tatsächlich gesendete Größe.
 - Die Diagnose des Agenten (`diagnose`) schickt im Modus „automatisch“ einmal `POST {baseUrl}/embeddings` mit dem festen Text „Verbindungstest“ (ohne Dokument-IDs), um die Antwortzeit zu messen; sie steht im Übertragungsprotokoll mit Zweck „Diagnose: Embedding-Endpunkt“. Das Protokoll, das `read_logs` liest, geht als Werkzeugergebnis (maskiert, ohne ausgeschlossene Dateien) mit der Agentenanfrage hinaus ([Agentenmodus](agentenmodus.md#archivist-untersuchen)).
 
+- Die Widerspruchsprüfung (Zweck „Widerspruchsprüfung“) schickt im Modus „automatisch“ je Paar aktiver Entscheidungen desselben Themas oder Projekts beide Entscheidungstexte (je auf 800 Zeichen gekürzt, maskiert, als Daten gekennzeichnet; im Übertragungsprotokoll). Jedes Paar von Texten wird nur einmal gefragt: Das Urteil steht in der Tabelle `contradiction_reviews` (Hash beider Texte, Urteil, Zeitpunkt – kein Klartext). Je Archivprüfung gehen höchstens 60 Paare hinaus, bei der Sofortprüfung einer Entscheidung höchstens 10. Ist ein Quelldokument einer der beiden Entscheidungen ausgeschlossen oder nicht freigegeben (`mayShareDocument`, wie bei Themenvorschlägen und Verknüpfungsprüfung), geht das Paar nie hinaus; es gilt das lexikalische Ergebnis. In „vorher fragen“ und „nur lokal“ geht nichts hinaus.
+
 ## Strukturierte Ausgaben
 
 - Das JSON-Schema wird aus dem Zod-Schema erzeugt und im Prompt mitgegeben; angefordert wird `text.format = json_object`. Die Eingabe nennt dafür immer das Wort „JSON“, das die Responses API in der Eingabe – nicht in den Instructions – verlangt.
@@ -41,6 +43,13 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Nach einer Zeitüberschreitung oder einem unerreichbaren Endpunkt scheitern Anfragen 60 s lang sofort; der Verbindungstest geht immer durch.
 - Der Chat fällt auf eine regelbasierte Auswertung bzw. lokale Trefferlisten zurück und kennzeichnet das deutlich.
 
+## Lange Dokumente
+
+- Die Klassifikation (Schema `DocumentClassification`) sendet einen Text, der mit dem Prompt nicht in `llm.maxInputChars` passt, in bis zu 6 aufeinanderfolgenden Teilen. Jeder Teil nennt im Prompt „Teil i von n“, der Text bleibt als Daten markiert.
+- Jeder Teil ist eine eigene Anfrage: Er geht nur, wenn das Dokument zur externen Analyse freigegeben ist (Datenschutzmodus, Ausschlüsse, Ordnerfreigabe – einmal je Dokument geprüft), wird maskiert und steht mit dem Zweck „Dokumentklassifikation (Dateiname, Teil i von n)“ und der Dokument-ID im Übertragungsprotokoll.
+- Titel, Thema, Projekt, Ablageort und Einschätzung stammen aus dem ersten Teil; Entscheidungen (mit wörtlichem Beleg im Dokument), offene Punkte, Personen, Tags und Daten werden aus allen Teilen zusammengeführt.
+- Was gelesen wurde, speichert der Vorschlag als `coverage` (`textChars`, `llmChars`, `llmParts`, `extractionTruncated`) und zeigt es in der Oberfläche. Über 6 Teile hinaus liest die KI nichts mehr; der Rest ist im Hinweis ausgewiesen.
+
 ## Antworten auf Wissensfragen
 
 - Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen. Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen.
@@ -52,7 +61,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 ## Analyse von Notizen
 
 - Schema `NoteAnalysis`: Thema, Projekt, Personen, Tags. Nur im Modus „automatisch“; sonst lokal.
-- Der Notiztext ist im Prompt als Daten markiert; bekannte (bestätigte) Themen und Projekte gehen als Kontext mit.
+- Der Notiztext ist im Prompt als Daten markiert; bekannte (bestätigte) Themen und Projekte gehen als Kontext mit – höchstens 40 je Art, die zum Text passen. Das gilt auch für die Dokumentklassifikation.
 - Das Ergebnis wird nur ein Vorschlag (Methode `analysis`); neue Themen und Projekte daraus bleiben unbestätigt.
 
 ## Schutz vor Prompt-Injection

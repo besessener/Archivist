@@ -80,7 +80,7 @@ export function plainPatchColumns(current: DecisionRow, patch: DecisionPatch): P
   return set;
 }
 
-export function toDecision(row: DecisionRow, nameOf: (id: string | null) => string | null): Decision {
+export function toDecision(row: DecisionRow, nameOf: (id: string | null) => string | null, supersededBy: Decision['supersededBy'] = []): Decision {
   return {
     id: row.id,
     title: row.title,
@@ -98,6 +98,7 @@ export function toDecision(row: DecisionRow, nameOf: (id: string | null) => stri
     validFrom: row.validFrom,
     validUntil: row.validUntil,
     supersedesDecisionId: row.supersedesDecisionId,
+    supersededBy,
     sourceIds: row.sourceIds,
     confidence: row.confidence,
     missingFields: row.missingFields as DecisionField[],
@@ -115,10 +116,16 @@ function orUnknown(d: Decision, { field, value }: { field: DecisionField; value:
 }
 
 /** Human-readable rendering (when/topic/participants/…). */
+const validityLine = (d: Decision): string[] =>
+  d.validFrom || d.validUntil
+    ? [`**Gültig:** ${[d.validFrom && `ab ${d.validFrom.slice(0, 10)}`, d.validUntil && `bis ${d.validUntil.slice(0, 10)}`].filter(Boolean).join(' ')}`]
+    : [];
+
 export function formatDecision(d: Decision): string {
   const project = d.projectName && d.projectName !== d.topicName ? ` (Projekt: ${d.projectName})` : '';
   return [
     `**Wann:** ${orUnknown(d, { field: 'decidedAt', value: d.decidedAt ? d.decidedAt.slice(0, 10) : null })}`,
+    ...validityLine(d),
     `**Thema:** ${orUnknown(d, { field: 'topic', value: d.topicName })}${project}`,
     `**Beteiligte:** ${orUnknown(d, { field: 'participants', value: d.participants.length ? d.participants.join(', ') : null })}`,
     `**Entscheidung:** ${d.decisionText}`,
@@ -126,6 +133,7 @@ export function formatDecision(d: Decision): string {
     `**Auswirkungen:** ${d.consequences ?? '–'}`,
     `**Alternativen:** ${d.alternatives.length ? d.alternatives.join('; ') : '–'}`,
     `**Status:** ${d.status}`,
+    ...(d.supersededBy.length ? [`**Ersetzt durch:** ${d.supersededBy.map((successor) => successor.title).join('; ')}`] : []),
     `**Confidence:** ${Math.round(d.confidence * 100)} %`,
   ].join('\n');
 }

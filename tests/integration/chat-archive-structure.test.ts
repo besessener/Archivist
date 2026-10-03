@@ -336,6 +336,11 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
 
     expect(r.assistantMessage.actions[0]?.actionType).toBe('archive_documents');
     expect(r.assistantMessage.context?.documents?.map((d) => d.id)).toEqual([imp.imported[0]!.id]);
+    // source path and final file name are in the message and on the card (#189)
+    const line = /• Neue Rechnung: (.+) → (.+)/.exec(r.assistantMessage.content);
+    expect(line?.[1]).toMatch(/in[\\/]rechnung\.txt$/);
+    expect(line?.[2]).toBe('private/rechnungen/rechnung.txt');
+    expect(r.assistantMessage.actions[0]?.rationale).toContain('private/rechnungen/rechnung.txt');
   });
 });
 

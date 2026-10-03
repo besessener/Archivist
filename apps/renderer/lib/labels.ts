@@ -26,6 +26,7 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   missing_metadata: 'Fehlende Angaben',
   external_file: 'Dateien außerhalb des Archivs',
   possibly_superseded: 'Möglicherweise überholt',
+  decision_expired: 'Gültigkeit abgelaufen',
   misplaced_file: 'Falsch abgelegte Dateien',
   scattered_documents: 'Verstreut abgelegte Dokumente',
   low_confidence_relation: 'Unsichere Verknüpfungen',
@@ -37,13 +38,16 @@ export const INSIGHT_KIND_LABELS: Record<InsightKind, string> = {
   orphan_entries: 'Einträge ohne Verknüpfung',
 };
 
-export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {
-  draft: 'Entwurf',
-  confirmed: 'Bestätigt',
-  active: 'Gültig',
-  superseded: 'Ersetzt',
-  revoked: 'Widerrufen',
-  unclear: 'Unklar',
+export { DECISION_STATUS_LABELS } from '@archivist/shared';
+
+/** What a decision status means, in one sentence. */
+export const DECISION_STATUS_HINTS: Record<DecisionStatus, string> = {
+  draft: 'Es fehlen noch Angaben.',
+  active: 'So von dir angegeben, aber noch nicht eigens bestätigt.',
+  confirmed: 'Von dir geprüft und bestätigt.',
+  unclear: 'Noch nicht geprüft oder unsicher – gilt nicht als gültig.',
+  superseded: 'Eine neuere Entscheidung ersetzt sie.',
+  revoked: 'Du hast sie widerrufen.',
 };
 
 export const OPEN_ITEM_STATUS_LABELS: Record<OpenItemStatus, string> = {
@@ -113,6 +117,7 @@ export const RELATION_TYPE_LABELS: Record<RelationType, string> = {
   blocks: 'blockiert',
   results_from: 'ergibt sich aus',
   produced: 'hat erzeugt',
+  mentioned_in: 'erwähnt in',
   duplicate_of: 'Duplikat von',
   related_to: 'verwandt mit',
   subtopic_of: 'Unterthema von',

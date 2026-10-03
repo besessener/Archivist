@@ -23,6 +23,16 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
       });
     }
 
+    test('the page of proposed decisions has no serious or critical violations', async ({ on, page }, testInfo) => {
+      const { decisions, navigation } = on(page);
+      await navigation.do.open('decisions');
+      await decisions.locators.proposed.open.click();
+      await expect(page.getByRole('heading', { name: 'Vorgeschlagene Entscheidungen' })).toBeVisible();
+      await expect(decisions.locators.proposed.back).toBeVisible();
+
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
+
     test('the agent settings (runs, link run) have no serious or critical violations', async ({ on, page }, testInfo) => {
       await on(page).navigation.do.open('settings');
       await page.getByTestId('tab-agent').click();
@@ -48,6 +58,25 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
 
       await settings.locators.memory.edit('Stadtwerke').click();
       await expect(settings.locators.memory.dialog.field('Absender enthält')).toHaveValue('Stadtwerke');
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
+
+    test('a decision with its history and the change log have no serious or critical violations', async ({ on, page }, testInfo) => {
+      const { decisions, navigation, settings } = on(page);
+      await navigation.do.open('decisions');
+      await decisions.do.create({ text: 'Wir nutzen SQLite.', isoDate: '2026-10-01', topic: 'Datenbank', participants: 'Anna' });
+      await decisions.row('Wir nutzen SQLite.').click();
+      await expect(decisions()).toBeVisible();
+      await expectNoSeriousA11yViolations(page, testInfo);
+
+      await decisions.locators.tabs.history.click();
+      await expect(decisions.locators.history.entries.first()).toBeVisible();
+      await expectNoSeriousA11yViolations(page, testInfo);
+
+      await navigation.do.open('settings');
+      await settings.do.openAudit();
+      await expect(settings.locators.audit.rows.first()).toBeVisible();
+      await expect(settings.locators.audit.chainOk).toBeVisible();
       await expectNoSeriousA11yViolations(page, testInfo);
     });
 

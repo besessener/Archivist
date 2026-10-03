@@ -16,7 +16,7 @@ export interface ComposedAnswer {
 }
 
 export function localAnswer(sources: SourceReference[]): string {
-  return `Ich habe ${sources.length} passende Quelle(n) gefunden (lokale Trefferliste):\n\n${sources.map((s) => `• **${s.title}** (${s.type}, ${sourceDateLabel(s)}): ${s.snippet}`).join('\n')}`;
+  return `Ich habe ${sources.length} passende Quelle(n) gefunden (lokale Trefferliste):\n\n${sources.map((s) => `• **${s.title}** (${[s.type, sourceDateLabel(s), s.statusNote].filter(Boolean).join(', ')}): ${s.snippet}`).join('\n')}`;
 }
 
 /** The model's answer, checked against its evidence: statements without a valid source are dropped and named as uncertain. */

@@ -1,22 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Save, Undo2 } from 'lucide-react';
-import { ConfirmDialog } from '@/components/common/confirm-dialog';
-import { EmptyState, ErrorNote, Field, Loading, Notice } from '@/components/common/states';
-import { Badge } from '@/components/ui/badge';
+import { Save } from 'lucide-react';
+import { Field } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
-import { call } from '@/lib/ipc';
-import { formatDateTime } from '@/lib/format';
-import { useQuery } from '@/lib/use-query';
-import { useRun } from '@/lib/use-run';
-import { LOCAL_TIME, type AuditEntry } from '@archivist/shared';
+import { LOCAL_TIME } from '@archivist/shared';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
-import { PathText } from '@/components/common/path-text';
 
 export function ProfileTab({ settings, reload }: TabProps) {
   const { save, busy } = useSaveSettings(reload);
@@ -117,118 +109,6 @@ export function LogsTab({ settings, reload }: TabProps) {
           <Save aria-hidden /> Speichern
         </Button>
       </div>
-    </Section>
-  );
-}
-
-export function AuditTab() {
-  const { data, loading, error, refetch } = useQuery('audit:list', { limit: 200, onlyUndoable: false }, { scopes: ['audit', 'documents'] });
-  const { run } = useRun();
-  const [undoing, setUndoing] = useState<AuditEntry | null>(null);
-  const [results, setResults] = useState<Record<string, { message: string; conflicts: string[]; undone: boolean }>>({});
-
-  return (
-    <Section
-      title="Änderungsprotokoll"
-      description="Jede Änderung, die Archivist an deinen Daten oder Dateien vornimmt, wird hier festgehalten. Manche Änderungen lassen sich rückgängig machen."
-    >
-      {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
-      {!data && loading && <Loading />}
-      {data && data.length === 0 && <EmptyState title="Noch keine Einträge" />}
-      {data && data.length > 0 && (
-        <Table data-testid="audit-table">
-          <THead>
-            <tr>
-              <TH>Zeit</TH>
-              <TH>Aktion</TH>
-              <TH>Wer</TH>
-              <TH>Pfade</TH>
-              <TH>Ergebnis</TH>
-              <TH>
-                <span className="sr-only">Rückgängig</span>
-              </TH>
-            </tr>
-          </THead>
-          <TBody>
-            {data.map((a) => {
-              const r = results[a.id];
-              return (
-                <TR key={a.id} data-testid="audit-row">
-                  <TD className="whitespace-nowrap">{formatDateTime(a.at)}</TD>
-                  <TD>
-                    {a.action}
-                    {!a.confirmed && a.actor === 'agent' && <span className="block text-xs text-muted-foreground">ohne Rückfrage</span>}
-                  </TD>
-                  <TD>{a.actor === 'user' ? 'Du' : 'Archivist'}</TD>
-                  <TD className="max-w-xs">
-                    {a.paths.slice(0, 3).map((p) => (
-                      <code key={p} className="block text-xs">
-                        <PathText path={p} />
-                      </code>
-                    ))}
-                    {a.paths.length > 3 && <span className="text-xs text-muted-foreground">… und {a.paths.length - 3} weitere</span>}
-                  </TD>
-                  <TD>
-                    {a.success ? <Badge variant="success">Erfolgreich</Badge> : <Badge variant="danger">Fehler</Badge>}
-                    {a.error && <span className="mt-1 block max-w-48 break-words text-xs text-destructive">{a.error}</span>}
-                    {a.undoneAt && <span className="mt-1 block text-xs text-muted-foreground">Rückgängig gemacht am {formatDateTime(a.undoneAt)}</span>}
-                    {r && (
-                      <span className="mt-1 block text-xs">
-                        {r.message}
-                        {r.conflicts.length > 0 && (
-                          <ul className="list-disc pl-4 text-destructive" data-testid="audit-undo-conflicts">
-                            {r.conflicts.map((c) => (
-                              <li key={c}>{c}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </span>
-                    )}
-                  </TD>
-                  <TD>
-                    {a.undoable && !a.undoneAt && !r?.undone && (
-                      <Button size="sm" variant="outline" onClick={() => setUndoing(a)} data-testid="audit-undo">
-                        <Undo2 aria-hidden /> Rückgängig
-                      </Button>
-                    )}
-                  </TD>
-                </TR>
-              );
-            })}
-          </TBody>
-        </Table>
-      )}
-      <ConfirmDialog
-        open={undoing !== null}
-        onOpenChange={(o) => !o && setUndoing(null)}
-        title="Änderung rückgängig machen?"
-        description="Archivist versucht, den Zustand vor dieser Aktion wiederherzustellen. Falls sich Dateien inzwischen geändert haben, werden Konflikte angezeigt."
-        confirmLabel="Rückgängig machen"
-        confirmTestId="audit-undo-confirm"
-        onConfirm={async () => {
-          if (!undoing) return;
-          const result = await run(() => call('audit:undo', { auditId: undoing.id }));
-          if (result) {
-            setResults((prev) => ({ ...prev, [undoing.id]: result }));
-            setUndoing(null);
-            void refetch();
-          }
-        }}
-      >
-        {undoing && (
-          <div className="text-sm">
-            <p className="font-medium">{undoing.action}</p>
-            {undoing.paths.map((p) => (
-              <code key={p} className="block text-xs text-muted-foreground">
-                <PathText path={p} />
-              </code>
-            ))}
-          </div>
-        )}
-      </ConfirmDialog>
-      {data?.some((a) => !a.success) && (
-        <Notice tone="warning">Fehlgeschlagene Aktionen haben keine Änderungen hinterlassen, soweit nicht anders vermerkt.</Notice>
-      )}
     </Section>
   );
 }

@@ -1,4 +1,4 @@
-import { real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { ArchivistJson } from '../../util/json';
 import { jsonArr } from './columns';
 
@@ -60,6 +60,15 @@ export const contradictions = sqliteTable(
     dedupeKey: text('dedupe_key').notNull(),
     createdAt: text('created_at').notNull(),
     resolvedAt: text('resolved_at'),
+    /** Resolved by superseding one decision: only undoing that supersede raises the contradiction again. */
+    resolvedBySupersede: integer('resolved_by_supersede', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [uniqueIndex('contradictions_dedupe_idx').on(t.dedupeKey)],
 );
+
+/** The LLM's verdict on a pair of decision texts, keyed by the hash of both texts, so a pair is never asked about twice. */
+export const contradictionReviews = sqliteTable('contradiction_reviews', {
+  textHash: text('text_hash').primaryKey(),
+  isContradiction: integer('is_contradiction', { mode: 'boolean' }).notNull(),
+  reviewedAt: text('reviewed_at').notNull(),
+});

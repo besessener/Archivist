@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ACTIVE_DECISION_STATUSES } from '@archivist/shared';
 import { Field } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -30,13 +31,15 @@ export function SupersedeDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Wodurch wird diese Entscheidung ersetzt?</DialogTitle>
-          <DialogDescription>Wähle die neuere Entscheidung. Es wird ein Vorschlag erstellt, den du anschließend bestätigst.</DialogDescription>
+          <DialogDescription>
+            Wähle die neuere, gültige oder bestätigte Entscheidung. Es wird ein Vorschlag erstellt, den du anschließend bestätigst.
+          </DialogDescription>
         </DialogHeader>
         <Field label="Neuere Entscheidung" htmlFor="sup-target">
           <Select id="sup-target" value={target} onChange={(e) => setTarget(e.target.value)} data-testid="supersede-target">
             <option value="">Entscheidung wählen …</option>
             {(all.data ?? [])
-              .filter((decision) => decision.id !== oldId)
+              .filter((decision) => decision.id !== oldId && ACTIVE_DECISION_STATUSES.includes(decision.status))
               .map((decision) => (
                 <option key={decision.id} value={decision.id}>
                   {(decision.title || decision.decisionText).slice(0, 80)} ({formatLongDate(decision.decidedAt, 'ohne Datum')})

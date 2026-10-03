@@ -18,13 +18,14 @@ export function wireServices(services: WiredServices & { agent: AgentService }, 
     noteEventDuplicates: services.noteEventDuplicates,
     scanner: services.scanner,
     reminders: services.reminders,
+    notifications: services.notifications,
     audit: services.audit,
     undo: services.undo,
     jobs: services.jobs,
   });
   insights.wire({ actions, reminders: services.reminders });
   contradictions.wire({ actions });
-  archive.wire({ actions, openItems });
+  archive.wire({ actions, openItems, decisions });
   chat.wire({ actions, archive, agent, ...chatLinkCallbacks(services, notifyLinkProposals) });
   capture.wire({ actions });
   actions.setAgentBatchExecutor((params) => agent.executeBatch(params));

@@ -65,9 +65,14 @@ function createOpenItem(d: ActionDeps, p: Params): string {
   return 'Offener Punkt angelegt.';
 }
 
-function recordDecision(d: ActionDeps, p: Params): string {
+async function recordDecision(d: ActionDeps, p: Params): Promise<string> {
   const params = ActionParamSchemas.record_decision.parse(p);
-  d.decisions.create(
+  const existing = d.decisions.findDuplicate({ decisionText: params.decisionText, topic: params.topic });
+  if (existing) {
+    for (const sourceId of params.sourceIds) d.decisions.addSource(existing.id, { sourceId, actor: 'agent', trigger: TRIGGER });
+    return `Die Entscheidung „${existing.title}“ gab es schon; die Quelle wurde ergänzt.`;
+  }
+  const decision = d.decisions.create(
     {
       decisionText: params.decisionText,
       title: params.title,
@@ -83,8 +88,10 @@ function recordDecision(d: ActionDeps, p: Params): string {
       origin: 'document',
       evidence: params.evidence ?? null,
     },
-    { actor: 'agent', trigger: TRIGGER },
+    // the user approved the proposal after reading it
+    { actor: 'agent', trigger: TRIGGER, status: 'confirmed' },
   );
+  await d.contradictions.checkDecision(decision.id); // only a hint, like for every new decision
   return 'Entscheidung erfasst (ggf. als Entwurf mit offenen Pflichtfeldern).';
 }
 
@@ -191,6 +198,11 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
     return d.agentBatch(params);
   },
   record_decision: recordDecision,
+  add_decision_source: (d, p) => {
+    const params = ActionParamSchemas.add_decision_source.parse(p);
+    d.decisions.addSource(params.decisionId, { sourceId: params.documentId, actor: 'agent', trigger: TRIGGER });
+    return 'Entscheidung um Quelle ergänzt.';
+  },
 };
 
 /** Executes a confirmed proposal; only `ActionService.resolve` may call this. */

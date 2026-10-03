@@ -71,10 +71,9 @@ export function NotificationBell() {
       }
       case 'confirm_action': {
         if (!a.target) break;
-        const actions = await run(() => call('actions:list', { status: 'proposed' }));
-        const found = actions?.find((x) => x.id === a.target);
-        if (found) setConfirmAction(found);
-        else toast({ variant: 'info', title: 'Diese Aktion ist nicht mehr offen.' });
+        const found = await run(() => call('actions:get', { id: a.target! }));
+        if (found?.status === 'proposed') setConfirmAction(found);
+        else if (found) toast({ variant: 'info', title: 'Diese Aktion ist nicht mehr offen.' });
         break;
       }
     }

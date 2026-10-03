@@ -3,9 +3,10 @@ import type { AppStatus } from '@archivist/shared';
 import type { Services } from '../create-services';
 import type { DocRow } from '../services/document-model';
 import { enqueueReembedding } from '../services/reembedding';
+import { settingsChanges } from '../services/settings-changes';
 import { AppError, permissionError } from '../util/errors';
 import { isInside } from '../util/paths';
-import type { HandlerGroup, HostApi } from './types';
+import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
 function appStatus(services: Services, host: HostApi): AppStatus {
   const settings = services.settings.get();
@@ -110,7 +111,11 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
           throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
         services.archiveRoot.assertDirectChangeAllowed(input.archiveRoot);
       }
+      const previous = services.settings.get();
       const settings = services.settings.update(input);
+      const changes = settingsChanges(previous, settings);
+      if (Object.keys(changes.after).length > 0)
+        services.audit.log({ action: 'settings.change', actor: 'user', trigger: UI_TRIGGER, confirmed: true, before: changes.before, after: changes.after });
       // vectors of another model are useless for the new one: move the entries over in the background (#173)
       if (settings.llm.embeddingModel !== embeddingBefore) enqueueReembedding(services.jobs);
       return { settings };

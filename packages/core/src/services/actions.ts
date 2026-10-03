@@ -1,12 +1,5 @@
-import {
-  ActionParamSchemas,
-  type AgentActionProposal,
-  type AgentActionStatus,
-  type AgentActionType,
-  type EntityRef,
-  type StoredAgentAction,
-} from '@archivist/shared';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { ActionParamSchemas, type AgentActionProposal, type AgentActionStatus, type AgentActionType, type StoredAgentAction } from '@archivist/shared';
+import { eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { agentActions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
@@ -14,25 +7,8 @@ import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
 import type { ActionDeps, AgentBatchExecutor } from './action-deps';
 import { executeAction } from './action-executors';
+import { type ActionRow, MAX_PAGE_SIZE, pageOfActions, resolveSettledNotifications, toStoredAction } from './action-store';
 import { mergedIds, revalidate, type Revalidation } from './action-revalidation';
-
-type Row = typeof agentActions.$inferSelect;
-
-const toStoredAction = (r: Row): StoredAgentAction => ({
-  id: r.id,
-  conversationId: r.conversationId,
-  actionType: r.actionType as AgentActionType,
-  label: r.label,
-  rationale: r.rationale,
-  confidence: r.confidence,
-  affectedEntities: r.affectedEntities as EntityRef[],
-  requiredConfirmation: r.requiredConfirmation as StoredAgentAction['requiredConfirmation'],
-  proposedParameters: r.params as Record<string, unknown>,
-  status: r.status as AgentActionStatus,
-  result: r.result,
-  createdAt: r.createdAt,
-  resolvedAt: r.resolvedAt,
-});
 
 /** From this many documents a relocation counts as especially far-reaching („besonders folgenreich“). */
 const STRONG_RELOCATION_DOCUMENTS = 20;
@@ -89,7 +65,7 @@ export class ActionService {
     // relocating many documents at once needs the confirmation dialog; a typed „ja“ in the chat is not enough (#199)
     const items = input.actionType === 'relocate_documents' ? ((params.items as unknown[] | undefined)?.length ?? 0) : 0;
     const requiredConfirmation = items >= STRONG_RELOCATION_DOCUMENTS ? 'strong' : input.requiredConfirmation;
-    const row: Row = {
+    const row: ActionRow = {
       id: newId(),
       conversationId: input.conversationId ?? null,
       actionType: input.actionType,
@@ -132,14 +108,11 @@ export class ActionService {
   }
 
   list(status?: StoredAgentAction['status']): StoredAgentAction[] {
-    return this.db
-      .select()
-      .from(agentActions)
-      .where(status ? eq(agentActions.status, status) : undefined)
-      .orderBy(desc(agentActions.createdAt))
-      .limit(200)
-      .all()
-      .map(toStoredAction);
+    return this.page({ status, limit: MAX_PAGE_SIZE, offset: 0 });
+  }
+
+  page(query: { status?: AgentActionStatus; actionType?: AgentActionType; limit: number; offset: number }): StoredAgentAction[] {
+    return pageOfActions(this.db, query);
   }
 
   /** Open proposals shown as a card in this conversation and originating there, in the order they were shown. */
@@ -154,6 +127,7 @@ export class ActionService {
     this.db.update(agentActions).set({ status: 'withdrawn', result: reason, resolvedAt: nowIso() }).where(eq(agentActions.id, id)).run();
     const withdrawn = this.get(id);
     for (const listener of this.withdrawnListeners) listener(withdrawn);
+    this.resolveSettledNotifications();
     this.ctx.events.changed('status', 'insights');
     return true;
   }
@@ -188,8 +162,13 @@ export class ActionService {
   ): Promise<StoredAgentAction> {
     const action = this.get(id);
     if (action.status !== 'proposed') return action;
-    if (decision === 'reject') return this.reject(action);
-    return this.approve(action, opts);
+    const decided = decision === 'reject' ? this.reject(action) : await this.approve(action, opts);
+    this.resolveSettledNotifications();
+    return decided;
+  }
+
+  private resolveSettledNotifications(): void {
+    resolveSettledNotifications(this.deps.notifications, (id) => this.get(id).status);
   }
 
   private reject(action: StoredAgentAction): StoredAgentAction {

@@ -9,6 +9,8 @@ export const AuditEntry = z.object({
   trigger: z.string(),
   confirmed: z.boolean(),
   entityIds: z.array(z.string()),
+  /** Titles of the affected entries that still exist (or are named in the entry itself). */
+  entities: z.array(z.object({ id: Id, title: z.string() })),
   paths: z.array(z.string()),
   before: z.unknown().nullable(),
   after: z.unknown().nullable(),
@@ -20,6 +22,10 @@ export const AuditEntry = z.object({
   runId: z.string().nullish(),
 });
 export type AuditEntry = z.infer<typeof AuditEntry>;
+
+/** Result of checking the audit log's hash chain: `brokenEntryId` is the first entry that does not fit (null: intact). */
+export const AuditVerification = z.object({ checked: z.number().int(), brokenEntryId: z.string().nullable() });
+export type AuditVerification = z.infer<typeof AuditVerification>;
 
 export const LlmTransmission = z.object({
   id: Id,

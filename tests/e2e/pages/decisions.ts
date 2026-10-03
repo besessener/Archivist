@@ -9,7 +9,22 @@ export function initDecisions(page: Page) {
       edit: page.getByTestId('decision-edit'),
       save: page.getByTestId('decision-save'),
       confirmStatus: page.getByTestId('decision-status-confirm'),
+      delete: page.getByTestId('decision-delete'),
+      confirmDelete: page.getByTestId('decision-delete-confirm'),
     },
+    tabs: {
+      details: page.getByTestId('decision-tab-details'),
+      history: page.getByTestId('decision-tab-history'),
+    },
+    hints: {
+      root: page.getByTestId('decision-hints'),
+      contradiction: page.getByTestId('decision-hint-contradiction'),
+      superseded: page.getByTestId('decision-hint-superseded'),
+    },
+    history: {
+      entries: page.getByTestId('decision-history-entry'),
+    },
+    successor: page.getByTestId('decision-successor'),
     form,
     inputs: {
       text: page.getByTestId('decision-text'),
@@ -21,6 +36,13 @@ export function initDecisions(page: Page) {
     },
     confirmDialog: page.getByTestId('confirm-dialog'),
     rows: page.getByTestId('decision-row'),
+    /** „Vorgeschlagene Entscheidungen“: the page of decisions found in documents, reached from the decisions page. */
+    proposed: {
+      open: page.getByTestId('decisions-proposed'),
+      back: page.getByTestId('proposed-decisions-back'),
+      cards: page.getByTestId('proposed-decision'),
+      more: page.getByTestId('proposed-decisions-more'),
+    },
     detail: page.getByTestId('decision-detail'),
   };
   const row = (text: string) => locators.rows.filter({ hasText: text });
@@ -35,6 +57,20 @@ export function initDecisions(page: Page) {
       await locators.buttons.save.click();
       await expect(form).toBeHidden();
       await expect(row(decision.text)).toBeVisible();
+    },
+    /** Records an incomplete decision (only its text) as a draft. */
+    createDraft: async (text: string) => {
+      await locators.buttons.create.click();
+      await locators.inputs.text.fill(text);
+      await locators.buttons.save.click();
+      await expect(form).toBeHidden();
+      await expect(row(text)).toBeVisible();
+    },
+    /** Confirms the proposed decision whose card shows the text. */
+    confirmProposed: async (text: string) => {
+      const card = locators.proposed.cards.filter({ hasText: text });
+      await card.getByTestId('action-approve').click();
+      await expect(locators.proposed.cards.filter({ hasText: text })).toHaveCount(0);
     },
     /** Picks the newer decision in the „Ersetzt durch“ select by (part of) its text. */
     pickSupersededBy: async (text: string) => {

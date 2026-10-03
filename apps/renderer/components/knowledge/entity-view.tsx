@@ -13,7 +13,7 @@ import { CaseView } from '@/components/knowledge/case-view';
 import { EntityHeader, type EntityDialog } from '@/components/knowledge/entity-header';
 import { EntityRelations } from '@/components/knowledge/entity-relations';
 import { GraphView } from '@/components/knowledge/graph-view';
-import { MergeDialog } from '@/components/knowledge/merge-dialog';
+import { isMergeable, MergeDialog } from '@/components/knowledge/merge-dialog';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { NoteEditDialog } from '@/components/knowledge/note-edit-dialog';
 import { LinkDialog, LinkSuggestions, RelatedEntries } from '@/components/knowledge/related';
@@ -106,15 +106,16 @@ export function EntityView({ id }: { id: string }) {
 
       <LinkDialog {...dialogProps('link')} sourceId={entity.id} sourceName={entity.name} onLinked={closeAndRefetch} />
 
-      <MergeDialog
-        {...dialogProps('merge')}
-        sourceId={entity.id}
-        sourceName={entity.name}
-        onProposed={(action) => {
-          setMergeAction(action);
-          setDialog(null);
-        }}
-      />
+      {isMergeable(entity.type) && (
+        <MergeDialog
+          {...dialogProps('merge')}
+          source={{ id: entity.id, name: entity.name, type: entity.type }}
+          onProposed={(action) => {
+            setMergeAction(action);
+            setDialog(null);
+          }}
+        />
+      )}
     </div>
   );
 }

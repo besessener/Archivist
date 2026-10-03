@@ -14,6 +14,16 @@ export function initSettings(page: Page) {
       archive: page.getByTestId('tab-archive'),
       notifications: page.getByTestId('tab-notifications'),
       backups: page.getByTestId('tab-backups'),
+      audit: page.getByTestId('tab-audit'),
+    },
+    audit: {
+      rows: page.getByTestId('audit-row'),
+      row: (text: string) => page.getByTestId('audit-row').filter({ hasText: text }),
+      more: page.getByTestId('audit-more'),
+      chainOk: page.getByTestId('audit-chain-ok'),
+      chainBroken: page.getByTestId('audit-chain-broken'),
+      undo: page.getByTestId('audit-undo'),
+      confirmUndo: page.getByTestId('audit-undo-confirm'),
     },
     llm: {
       baseUrl: page.getByTestId('settings-baseurl'),
@@ -106,6 +116,9 @@ export function initSettings(page: Page) {
     },
     openPrivacy: async () => {
       await locators.tabs.privacy.click();
+    },
+    openAudit: async () => {
+      await locators.tabs.audit.click();
     },
     openArchive: async () => {
       await locators.tabs.archive.click();

@@ -11,6 +11,8 @@ export function initKnowledge(page: Page) {
       saveEvent: page.getByTestId('event-save'),
       deleteNote: page.getByTestId('note-delete'),
       confirmDelete: page.getByTestId('confirm-dialog-confirm'),
+      merge: page.getByTestId('knowledge-merge'),
+      proposeMerge: page.getByTestId('merge-propose'),
     },
     inputs: {
       type: page.getByTestId('knowledge-new-type'),
@@ -18,7 +20,9 @@ export function initKnowledge(page: Page) {
       description: page.getByTestId('knowledge-new-description'),
       eventTitle: page.getByTestId('event-title'),
       eventDate: page.getByTestId('event-date'),
+      mergeTarget: page.getByTestId('merge-target'),
     },
+    mergeAction: page.getByTestId('merge-action'),
     eventForm: page.getByTestId('event-form'),
     items: page.getByTestId('knowledge-item'),
     detail: page.getByTestId('entity-detail'),
@@ -31,6 +35,12 @@ export function initKnowledge(page: Page) {
       await locators.inputs.name.fill(entry.name);
       if (entry.description) await locators.inputs.description.fill(entry.description);
       await locators.buttons.save.click();
+    },
+    /** Opens the merge dialog of the shown entry and proposes merging it into the entry with this name. */
+    proposeMerge: async (targetName: string) => {
+      await locators.buttons.merge.click();
+      await locators.inputs.mergeTarget.selectOption({ label: targetName });
+      await locators.buttons.proposeMerge.click();
     },
     /** Picks "Ereignis" in the create dialog, which opens the timeline's event dialog. */
     createEvent: async (title: string, isoDate: string) => {

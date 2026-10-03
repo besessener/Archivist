@@ -3,7 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { DecisionStatus } from '@archivist/shared';
-import { Plus, Search } from 'lucide-react';
+import { Gavel, Plus, Search } from 'lucide-react';
 import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
 import { useSubjectsOf } from '@/components/common/extra-subjects';
 import { Page, PageHeader } from '@/components/common/page-header';
@@ -46,15 +46,20 @@ function DecisionsInner() {
         title="Entscheidungen"
         description="Was wurde wann, von wem und warum entschieden? Unvollständige Entwürfe sind hervorgehoben."
         actions={
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-            data-testid="decision-new"
-          >
-            <Plus aria-hidden /> Entscheidung festhalten
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => router.push('/decisions/proposed/')} data-testid="decisions-proposed">
+              <Gavel aria-hidden /> Vorgeschlagene Entscheidungen
+            </Button>
+            <Button
+              onClick={() => {
+                setEditing(null);
+                setFormOpen(true);
+              }}
+              data-testid="decision-new"
+            >
+              <Plus aria-hidden /> Entscheidung festhalten
+            </Button>
+          </>
         }
       />
       <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[22rem_1fr] lg:grid-rows-[minmax(0,1fr)]">
@@ -113,6 +118,10 @@ function DecisionsInner() {
               onEdit={(decision) => {
                 setEditing(decision);
                 setFormOpen(true);
+              }}
+              onDeleted={() => {
+                void active.refetch();
+                router.push('/decisions/');
               }}
             />
           ) : (
