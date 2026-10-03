@@ -1,4 +1,5 @@
 import type { ChatIntent } from '@archivist/shared';
+import { ordinalIndex } from '../../util/ordinals';
 import { parseGermanDate } from '../../util/dates';
 import { normalizeName, truncate } from '../../util/text';
 import { shortAnswer, type Pending } from '../chat-state';
@@ -122,8 +123,11 @@ export function chosenSubject(text: string, pending: Extract<Pending, { kind: 's
   const answer = normalizeName(text);
   const number = /^(\d+)$/.exec(answer)?.[1];
   const containing = pending.names.filter((name) => normalizeName(name).includes(answer));
+  const ordinal = ordinalIndex(answer);
   const chosen = number
     ? pending.names[Number(number) - 1]
-    : (pending.names.find((name) => normalizeName(name) === answer) ?? (answer.length >= 2 ? containing.at(0) : undefined));
+    : ordinal >= 0
+      ? pending.names[ordinal]
+      : (pending.names.find((name) => normalizeName(name) === answer) ?? (answer.length >= 2 ? containing.at(0) : undefined));
   return chosen && (number || containing.length <= 1) ? chosen : null;
 }

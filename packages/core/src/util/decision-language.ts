@@ -6,5 +6,4 @@ export const isUndecidedWording = (sentence: string): boolean => UNDECIDED.test(
 
 /** Explicit first-person statement – the only wording trusted without asking back. */
 export const isExplicitDecision = (sentence: string): boolean =>
-  !isUndecidedWording(sentence) &&
-  /\b(?:wir|ich)\s+haben\s+[^?!]{0,60}?(?:entschieden|beschlossen)|^beschluss:|^entscheidung:/i.test(sentence.trim());
+  !isUndecidedWording(sentence) && /\b(?:wir|ich)\s+haben\s+[^?!]{0,60}?(?:entschieden|beschlossen)|^beschluss:|^entscheidung:/i.test(sentence.trim());

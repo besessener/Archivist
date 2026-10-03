@@ -1,4 +1,5 @@
 import type { OpenItem } from '@archivist/shared';
+import { ordinalIndex } from '../../util/ordinals';
 import { normalizeName, truncate } from '../../util/text';
 import { openItemAsks, type ConvState, type OpenItemField, type OpenItemPending, type Pending, type Reply } from '../chat-state';
 import { ACTIVE_STATUSES, hintTokens, matchOpenItems, type OpenItemService } from '../open-items';
@@ -74,6 +75,8 @@ export class OpenItemLookup {
     const normalized = normalizeName(text);
     const number = NUMBER_ANSWER.exec(normalized)?.[1];
     if (number) return candidates[Number(number) - 1] ?? null;
+    const ordinal = ordinalIndex(normalized);
+    if (ordinal >= 0) return candidates[ordinal] ?? null;
     const exact = candidates.find((candidate) => normalizeName(candidate.title) === normalized);
     if (exact) return exact;
     const match = matchOpenItems({ hint: text, items: candidates });

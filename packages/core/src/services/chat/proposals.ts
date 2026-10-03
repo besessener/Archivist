@@ -1,4 +1,5 @@
 import type { StoredAgentAction } from '@archivist/shared';
+import { ordinalIndex } from '../../util/ordinals';
 import { normalizeName } from '../../util/text';
 import type { ActionService } from '../actions';
 import { shortAnswer, type ConvState, type Pending, type Reply } from '../chat-state';
@@ -9,8 +10,6 @@ export interface ProposalChoice {
   action: StoredAgentAction;
   confirm: boolean;
 }
-
-const ORDINALS = ['ersten', 'zweiten', 'dritten', 'vierten', 'funften'];
 
 /** Approving or refusing the proposal cards of a conversation by chat message. */
 export class ChatProposals {
@@ -85,7 +84,7 @@ export class ChatProposals {
 function chosenIndex(text: string, open: StoredAgentAction[]): number {
   const normalized = normalizeName(text);
   const number = /^(?:nummer\s+|nr\s+)?(\d+)\b/.exec(normalized)?.[1];
-  const index = number ? Number(number) - 1 : ORDINALS.findIndex((o) => new RegExp(`\\b${o}\\b`).test(normalized));
+  const index = number ? Number(number) - 1 : ordinalIndex(normalized);
   if (index >= 0) return index;
   const matches = open.filter((a) => normalized.length >= 4 && normalizeName(a.label).includes(normalized));
   if (matches.length === 1) return open.indexOf(matches[0]!);
