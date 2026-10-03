@@ -157,7 +157,7 @@ export class DocumentImporter {
       paths: [checked.real, staged],
       after: { sha256: sha, size: checked.size },
     });
-    this.deps.jobs.enqueue('document.analyze', `Analysiere ${doc.originalName}`, { documentId: doc.id, allowLlm: state.batch.autoLlm });
+    this.deps.jobs.enqueue('document.analyze', { label: `Analysiere ${doc.originalName}`, payload: { documentId: doc.id, allowLlm: state.batch.autoLlm } });
     out.imported.push(doc);
     state.staging.path = null;
   }
@@ -260,7 +260,10 @@ export class DocumentImporter {
       before: { status: 'quarantined' },
       after: { status: 'staged' },
     });
-    this.deps.jobs.enqueue('document.analyze', `Analysiere ${row.originalName}`, { documentId: id, allowLlm: this.deps.privacy.mode() === 'auto' });
+    this.deps.jobs.enqueue('document.analyze', {
+      label: `Analysiere ${row.originalName}`,
+      payload: { documentId: id, allowLlm: this.deps.privacy.mode() === 'auto' },
+    });
     this.deps.ctx.events.changed('documents', 'status');
     return this.deps.documents.get(id);
   }

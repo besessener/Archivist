@@ -63,7 +63,8 @@ export class EmbeddingService {
     if (model !== LOCAL_MODEL) {
       try {
         const out: number[][] = [];
-        for (let i = 0; i < texts.length; i += 32) out.push(...(await this.llm.embeddings(texts.slice(i, i + 32), opts.purpose, opts.documentIds)));
+        for (let i = 0; i < texts.length; i += 32)
+          out.push(...(await this.llm.embeddings(texts.slice(i, i + 32), { purpose: opts.purpose, documentIds: opts.documentIds })));
         const vectors = out.map((v) => {
           const f = Float32Array.from(v);
           let n = 0;

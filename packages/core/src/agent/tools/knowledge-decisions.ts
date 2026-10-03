@@ -79,7 +79,11 @@ async function recordDecision(scope: ToolScope, args: z.output<typeof RecordArgs
       summary: 'Rückfrage nötig',
     };
   const supersedesId = args.supersedes ? ctx.refs.resolve(args.supersedes) : null;
-  const result = await deps.capture.forAgent(ctx.conversationId, ctx.userText || args.text, decisionIntent(args, supersedesId));
+  const result = await deps.capture.forAgent({
+    conversationId: ctx.conversationId,
+    text: ctx.userText || args.text,
+    intent: decisionIntent(args, supersedesId),
+  });
   ctx.actionIds.push(...result.actionIds);
   const cards = result.actionIds.length ? `\n(${result.actionIds.length} Vorschlagskarte(n) zur Bestätigung angelegt)` : '';
   return {
@@ -144,7 +148,7 @@ export function decisionTools(deps: ToolDeps): AgentTool[] {
         const older = ctx.refs.resolve(a.older);
         const newer = ctx.refs.resolve(a.newer);
         if (!older || !newer) return { content: `Unbekannte ID(s).${unknownNote([a.older, a.newer].filter((r) => !ctx.refs.resolve(r)))}`, isError: true };
-        const action = deps.capture.proposeSupersedeOf(ctx.conversationId, older, newer);
+        const action = deps.capture.proposeSupersedeOf(ctx.conversationId, { olderId: older, newerId: newer });
         ctx.actionIds.push(action.id);
         return {
           content: `Vorschlagskarte angelegt: ${action.label}. Der Benutzer bestätigt sie unter deiner Antwort.`,

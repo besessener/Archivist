@@ -61,7 +61,7 @@ export class ArchiveRootService {
     ({ ctx: this.ctx, settings: this.settings, archive: this.archive, audit: this.audit, notifications: this.notifications, jobs: this.jobs } = deps);
     const { jobs, undo } = deps;
     undo.register(UNDO_TYPE, { check: (d) => this.undoCheck(d as RootChangeUndoData), run: (d) => this.undoRun(d as RootChangeUndoData) });
-    jobs.register<RootRoute>(MIGRATE_JOB, (job) => this.runMigration(job));
+    jobs.register<RootRoute>(MIGRATE_JOB, { handler: (job) => this.runMigration(job) });
   }
 
   private get db() {
@@ -154,7 +154,7 @@ export class ArchiveRootService {
     if (input.mode === 'migrate') {
       const plan = await this.migratePlan(route, 'request');
       if (plan.blockers.length) throw new AppError('archive_conflict', plan.blockers.join(' '));
-      const job = this.jobs.enqueue(MIGRATE_JOB, `Archiv umziehen nach „${route.to}“`, route satisfies RootRoute, { maxAttempts: 1 });
+      const job = this.jobs.enqueue(MIGRATE_JOB, { label: `Archiv umziehen nach „${route.to}“`, payload: route satisfies RootRoute, maxAttempts: 1 });
       return { mode: 'migrate', jobId: job.id, auditId: null, unreachable: 0 };
     }
     return this.switchPathOnly(route, input.acceptMissing);

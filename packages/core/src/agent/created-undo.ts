@@ -23,7 +23,17 @@ function kindOf(action: string): Kind | null {
 }
 
 /** Takes back entries the agent created, only while unchanged since – a later edit by the user is never thrown away. */
-export function registerCreatedUndo(ctx: AppContext, undo: UndoService, graph: KnowledgeGraphService, search: SearchService): void {
+export function registerCreatedUndo({
+  ctx,
+  undo,
+  graph,
+  search,
+}: {
+  ctx: AppContext;
+  undo: UndoService;
+  graph: KnowledgeGraphService;
+  search: SearchService;
+}): void {
   const db = () => ctx.database.db;
   const row = (kind: Kind, id: string): { createdAt: string; updatedAt: string; status?: string | null } | undefined => {
     switch (kind) {

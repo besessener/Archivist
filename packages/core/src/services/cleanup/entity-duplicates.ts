@@ -105,7 +105,7 @@ export class EntityDuplicateCheck {
   /** A „different“ answered in the former topic-only check is carried over to the new key. */
   private carryOverLegacyAnswer(found: Found): void {
     this.insights.upsert({ ...this.describe(found, null), action: undefined });
-    this.insights.settle(found.key, 'rejected', 'Bereits in der früheren Themen-Prüfung als verschieden markiert.');
+    this.insights.settle(found.key, { status: 'rejected', reason: 'Bereits in der früheren Themen-Prüfung als verschieden markiert.' });
   }
 
   private candidates(type: CheckedType): Found[] {

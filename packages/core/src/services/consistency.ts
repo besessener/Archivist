@@ -65,7 +65,7 @@ export class ConsistencyService {
   }
 
   /** `signal`: cancels the check between its sections (insights found so far are kept). */
-  async run(trigger = 'manual', report?: ProgressReport, signal?: AbortSignal): Promise<ConsistencyReport> {
+  async run({ trigger = 'manual', report, signal }: { trigger?: string; report?: ProgressReport; signal?: AbortSignal } = {}): Promise<ConsistencyReport> {
     // every section first yields to the event loop: IPC calls (chat, navigation) are answered in between (#215)
     const step = async (progress: number, message: string) => {
       await yieldToEventLoop();

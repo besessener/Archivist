@@ -43,7 +43,7 @@ describe('Archive check: schedule across restarts', () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
     const first = await startApp((app) => app.services.settings.update({ consistency: { onStartup: false, intervalHours: 24 } }));
     expect(first.services.appState.get(LAST_RUN_KEY)).toBeNull();
-    await first.services.consistency.run('manual');
+    await first.services.consistency.run({ trigger: 'manual' });
     const ran = lastRunAt(first);
     expect(Number.isFinite(ran)).toBe(true);
 
@@ -96,19 +96,19 @@ describe('Archive check: notification only for new findings', () => {
     const app = await startApp((a) => a.services.settings.update({ consistency: { onStartup: false } }));
     await app.ok('openItems:create', { title: 'Angebot prüfen', dueAt: '2026-01-05' });
 
-    const first = await app.services.consistency.run('interval');
+    const first = await app.services.consistency.run({ trigger: 'interval' });
     expect(first.newFindings).toBeGreaterThan(0);
     expect(completionNotices(app)).toHaveLength(1);
     expect(completionNotices(app)[0]!.title).toMatch(/^Archivprüfung: \d+ neue[rn]? Hinweis/);
 
-    const second = await app.services.consistency.run('interval');
+    const second = await app.services.consistency.run({ trigger: 'interval' });
     expect(second.newFindings).toBe(0);
     expect(second.summary).toMatch(/^Nichts Neues – /);
     expect(completionNotices(app)).toHaveLength(1);
 
     // a further finding is new again
     await app.ok('openItems:create', { title: 'Vertrag kündigen', dueAt: '2026-01-06' });
-    const third = await app.services.consistency.run('interval');
+    const third = await app.services.consistency.run({ trigger: 'interval' });
     expect(third.newFindings).toBeGreaterThan(0);
     expect(completionNotices(app)).toHaveLength(2);
   });

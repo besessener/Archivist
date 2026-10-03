@@ -50,7 +50,7 @@ describe('Archive check yields to the event loop (#215)', () => {
       .run(id);
 
     const reports: string[] = [];
-    const running = app.services.consistency.run('manual', (_p, m) => reports.push(m));
+    const running = app.services.consistency.run({ trigger: 'manual', report: (_p, m) => reports.push(m) });
     const seenByOtherCallback = await new Promise<string[]>((resolve) => setImmediate(() => resolve([...reports])));
     await running;
 

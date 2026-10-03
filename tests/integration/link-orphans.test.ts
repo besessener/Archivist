@@ -84,13 +84,13 @@ describe('Archive check: entries without any link (#290)', () => {
     await note('Mietvertrag', flatText('Mietvertrag'));
     await note('Nebenkosten', flatText('Nebenkostenabrechnung'));
     await app.services.jobs.whenIdle();
-    const report = await app.services.consistency.run('test');
+    const report = await app.services.consistency.run({ trigger: 'test' });
     expect(report.byKind.orphan_entries).toBe(1);
     expect(report.summary).toContain('Einträge ohne Verknüpfung');
     expect(app.services.links.proposals().total).toBe(0);
 
     app.services.settings.update({ links: { autoPropose: true } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(app.services.links.proposals().total).toBe(1);
   });
 });
@@ -108,7 +108,7 @@ describe('Linkage metrics (#292)', () => {
     expect(m.history).toEqual([]);
 
     app.services.settings.update({ links: { autoPropose: true } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     m = await app.ok('links:metrics', {});
     expect(m.current).toMatchObject({ orphans: 1, openProposals: 1 });
     expect(m.history).toHaveLength(1);
@@ -125,7 +125,7 @@ describe('Linkage metrics (#292)', () => {
     // a manual link is no proposal and does not count
     app.services.graph.linkEntries({ sourceId: recipe, targetId: lease, relationType: 'relates_to' }, { status: 'confirmed' });
 
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     m = await app.ok('links:metrics', {});
     expect(m.methods.find((x) => x.method === 'similarity')).toMatchObject({ confirmed: 1, rejected: 0, open: 0, rate: 1 });
     expect(m.methods.find((x) => x.method === 'mention')).toMatchObject({ confirmed: 0, rejected: 1, rate: 0 });

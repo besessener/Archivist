@@ -163,8 +163,7 @@ export class ActionService {
 
   async resolve(
     id: string,
-    decision: 'approve' | 'reject',
-    opts: { confirmed?: boolean; strongConfirmed?: boolean; overrides?: Record<string, unknown> },
+    { decision, ...opts }: { decision: 'approve' | 'reject'; confirmed?: boolean; strongConfirmed?: boolean; overrides?: Record<string, unknown> },
   ): Promise<StoredAgentAction> {
     const action = this.get(id);
     if (action.status !== 'proposed') return action;

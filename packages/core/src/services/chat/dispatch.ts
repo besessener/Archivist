@@ -31,7 +31,7 @@ export class ChatDispatcher {
   async dispatch(request: ChatRequest, options: { viaLlm: boolean }): Promise<Reply> {
     const { conversationId, text, intent, state } = request;
     // capturing is the capture module's – the agent tools use it too (#307)
-    if (CaptureService.handles(intent.intent)) return this.deps.capture.handle(conversationId, text, intent, state, { viaLlm: options.viaLlm });
+    if (CaptureService.handles(intent.intent)) return this.deps.capture.handle({ conv: conversationId, text, intent, state }, { viaLlm: options.viaLlm });
     switch (intent.intent) {
       case 'knowledge_question':
         return this.deps.answers.knowledgeQuestion(request);

@@ -158,7 +158,9 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
       return { ok: true as const };
     },
     'links:decide': (input) => ({ decided: services.graph.decideRelations(input.relationIds, { status: input.decision, trigger: UI_TRIGGER }) }),
-    'links:decideGroup': (input) => ({ decided: services.links.decideGroup(input.groupBy, input.key, input.decision, { trigger: UI_TRIGGER }) }),
+    'links:decideGroup': (input) => ({
+      decided: services.links.decideGroup({ groupBy: input.groupBy, key: input.key }, { status: input.decision, trigger: UI_TRIGGER }),
+    }),
 
     'subjects:of': (input) => services.subjects.ofMany(input.ids),
     'subjects:setExtras': (input) => services.subjects.setExtras(input.id, { patch: { topics: input.topics, projects: input.projects }, trigger: UI_TRIGGER }),

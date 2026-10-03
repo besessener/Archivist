@@ -34,8 +34,8 @@ function listFilter(opts: DocumentListQuery) {
   if (opts.statuses) conditions.push(inArray(documents.status, opts.statuses));
   if (opts.ids) conditions.push(inArray(documents.id, opts.ids));
   // the main topic/project or a further one (#287)
-  if (opts.topicId) conditions.push(withSubject(documents.id, documents.topicId, opts.topicId));
-  if (opts.projectId) conditions.push(withSubject(documents.id, documents.projectId, opts.projectId));
+  if (opts.topicId) conditions.push(withSubject({ idCol: documents.id, mainCol: documents.topicId, subjectId: opts.topicId }));
+  if (opts.projectId) conditions.push(withSubject({ idCol: documents.id, mainCol: documents.projectId, subjectId: opts.projectId }));
   if (opts.query?.trim()) {
     const pattern = `%${opts.query.trim()}%`;
     conditions.push(or(like(documents.title, pattern), like(documents.originalName, pattern), like(documents.summary, pattern)));

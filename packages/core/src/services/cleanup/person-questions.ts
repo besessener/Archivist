@@ -145,7 +145,7 @@ export class PersonQuestionService {
           sourceIds: [shortId, c],
           dedupeKey: key,
         });
-        this.insights.settle(key, 'rejected', 'Als verschiedene Personen beantwortet.');
+        this.insights.settle(key, { status: 'rejected', reason: 'Als verschiedene Personen beantwortet.' });
       }
     }
     for (const r of rejected(PERSON_PAIR_KEY_PREFIX)) if (r.sourceIds.length === 2 && r.sourceIds.every((id) => exists.has(id))) keys.add(r.dedupeKey);

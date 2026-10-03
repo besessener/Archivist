@@ -129,7 +129,7 @@ describe('automatic analysis after a scan', () => {
       expect(app2.services.scanner.filesAwaitingAnalysis()).toEqual([idOf('c.txt'), idOf('a.txt')]);
 
       await app2.services.jobs.stop();
-      app2.services.jobs.enqueue('scanner.analyze', 'Analysiere', { fileIds: [idOf('c.txt')], confirmLlm: false });
+      app2.services.jobs.enqueue('scanner.analyze', { label: 'Analysiere', payload: { fileIds: [idOf('c.txt')], confirmLlm: false } });
       expect(app2.services.scanner.filesAwaitingAnalysis()).toEqual([idOf('a.txt')]);
     } finally {
       await app2.cleanup();

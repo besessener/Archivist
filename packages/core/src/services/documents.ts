@@ -179,7 +179,7 @@ export class DocumentService {
 
   /** Re-reads archived documents in one job with progress (see `rereadArchived`). */
   enqueueReread(ids: string[]): string {
-    return this.jobs.enqueue(DOCUMENT_REREAD_JOB, `Lese ${ids.length} Dokument(e) neu`, { documentIds: ids }).id;
+    return this.jobs.enqueue(DOCUMENT_REREAD_JOB, { label: `Lese ${ids.length} Dokument(e) neu`, payload: { documentIds: ids } }).id;
   }
 
   /** Triggers (re)processing. `allowLlm: true` corresponds to the user's explicit permission. */
@@ -187,7 +187,7 @@ export class DocumentService {
     const doc = this.getRow(id);
     if (doc.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
     if (isArchivedStatus(doc.status)) throw new AppError('validation_error', 'Archivierte oder nur indexierte Dokumente werden nicht erneut analysiert.');
-    return this.jobs.enqueue('document.analyze', `Analysiere ${doc.originalName}`, { documentId: id, allowLlm }).id;
+    return this.jobs.enqueue('document.analyze', { label: `Analysiere ${doc.originalName}`, payload: { documentId: id, allowLlm } }).id;
   }
 
   /** Assigns the document to a topic/project (confirmed relations); without a file action. */

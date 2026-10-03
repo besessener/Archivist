@@ -101,7 +101,7 @@ describe('Own identity (#29)', () => {
     const role = graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade (Chefin)' });
     const other = graph().ensureEntity({ type: 'person', name: 'Anna Schmidt' });
 
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
 
     for (const e of [ich, moni, role]) expect(graph().getEntity(e.id)).toBeUndefined();
     expect(graph().getEntity(other.id)).toBeDefined();

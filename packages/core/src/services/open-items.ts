@@ -106,8 +106,8 @@ export class OpenItemService {
     if (opts.status) conditions.push(eq(openItems.status, opts.status));
     if (opts.onlyActive) conditions.push(inArray(openItems.status, ACTIVE_STATUSES));
     // the main topic/project or a further one (#287)
-    if (opts.topicId) conditions.push(withSubject(openItems.id, openItems.topicId, opts.topicId));
-    if (opts.projectId) conditions.push(withSubject(openItems.id, openItems.projectId, opts.projectId));
+    if (opts.topicId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.topicId, subjectId: opts.topicId }));
+    if (opts.projectId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.projectId, subjectId: opts.projectId }));
     const rows = this.db
       .select()
       .from(openItems)
@@ -125,7 +125,7 @@ export class OpenItemService {
 
   /** Hit, ambiguous (several close together) or none – see matchOpenItems. */
   matchByHint(hint: string): HintMatch {
-    return matchOpenItems(hint, this.list({ onlyActive: true }));
+    return matchOpenItems({ hint, items: this.list({ onlyActive: true }) });
   }
 
   /** The responsible person as a `responsible_for` relation; a relation to a former responsible person becomes outdated (#274). */

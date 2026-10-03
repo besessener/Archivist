@@ -33,10 +33,10 @@ const UpdateArgs = z.object({
 
 async function createOpenItem(scope: ToolScope, args: z.output<typeof CreateArgs>): Promise<ToolOutput> {
   const { deps, ctx } = scope;
-  const result = await deps.capture.forAgent(
-    ctx.conversationId,
-    [args.title, args.description].filter(Boolean).join(' – '),
-    {
+  const result = await deps.capture.forAgent({
+    conversationId: ctx.conversationId,
+    text: [args.title, args.description].filter(Boolean).join(' – '),
+    intent: {
       ...agentIntent('open_item_new', args.title),
       topic: args.topic,
       project: args.project,
@@ -52,8 +52,8 @@ async function createOpenItem(scope: ToolScope, args: z.output<typeof CreateArgs
         resolutionNote: null,
       },
     },
-    { force: args.ifDuplicate === 'create' },
-  );
+    force: args.ifDuplicate === 'create',
+  });
   if (result.openItemId)
     for (const docId of ctx.refs.resolveMany(args.sources ?? []).ids)
       deps.openItems.addSource(result.openItemId, { sourceId: docId, extra: {}, origin: { actor: 'agent', trigger: 'agent' } });

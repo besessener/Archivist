@@ -45,7 +45,7 @@ export class ExtractedItemProposer {
     };
     const active = proposal.possibleOpenItems.length ? this.openItems.list({ onlyActive: true }) : [];
     const openActions = proposal.possibleOpenItems.slice(0, MAX_DOCUMENT_OPEN_ITEMS).flatMap((item) => {
-      const match = matchOpenItems(item.title, active, { threshold: 0.75 });
+      const match = matchOpenItems({ hint: item.title, items: active, threshold: 0.75 });
       if (match.status !== 'match') return [this.proposeOpenItem(source, item)];
       // the document is already a source (e.g. archived again) – nothing to propose
       if (match.item.sourceIds.includes(row.id)) return [];

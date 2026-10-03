@@ -63,10 +63,10 @@ describe('Several topics and projects per entry (#287)', () => {
     expect(names((await app.ok('subjects:of', { ids: [item.id] }))[item.id]!.extraTopics)).toEqual(['Garten']);
 
     const doc = await archived(app, { name: 'brief.md', content: 'Ein Brief', folder: 'private/post' });
-    let report = await app.services.consistency.run('test');
+    let report = await app.services.consistency.run({ trigger: 'test' });
     expect(report.byKind.orphan_document).toBe(1);
     await app.ok('subjects:setExtras', { id: doc, projects: ['Post'] });
-    report = await app.services.consistency.run('test');
+    report = await app.services.consistency.run({ trigger: 'test' });
     expect(report.byKind.orphan_document).toBeUndefined();
   });
 

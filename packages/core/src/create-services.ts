@@ -17,7 +17,8 @@ export function createServices(options: CreateServicesOptions) {
   const wired = { ...base, ...domain, ...createLinkingServices({ ...base, ...domain }) };
   const notifyLinkProposals = createLinkProposalNotifier(wired);
   const enqueueLinkRun = linkRunEnqueuer(wired.jobs);
-  const enqueueConsistency = (trigger: string) => wired.jobs.enqueue('consistency.check', 'Archivprüfung', { trigger }, { maxAttempts: 1, sameAs: () => true });
+  const enqueueConsistency = (trigger: string) =>
+    wired.jobs.enqueue('consistency.check', { label: 'Archivprüfung', payload: { trigger }, maxAttempts: 1, sameAs: () => true });
   const { agent, agentFileJobs } = createAgent(wired, enqueueConsistency);
   const services = { ...wired, agent, agentFileJobs, enqueueLinkRun, enqueueConsistency };
 

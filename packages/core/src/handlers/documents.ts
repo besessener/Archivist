@@ -72,12 +72,11 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
     'scanner:start': (input) => ({ jobId: services.scanner.startScan(input.rootId).id }),
     'scanner:getResults': (input) => services.scanner.getResults(input),
     'scanner:analyze': (input) => ({
-      jobId: services.jobs.enqueue(
-        'scanner.analyze',
-        `Analysiere ${input.fileIds.length} Datei(en)`,
-        { fileIds: input.fileIds, confirmLlm: input.confirmLlm },
-        { maxAttempts: 1 },
-      ).id,
+      jobId: services.jobs.enqueue('scanner.analyze', {
+        label: `Analysiere ${input.fileIds.length} Datei(en)`,
+        payload: { fileIds: input.fileIds, confirmLlm: input.confirmLlm },
+        maxAttempts: 1,
+      }).id,
     }),
     'scanner:proposals': () => services.scanner.proposals(),
     'scanner:exclude': (input) => services.scanner.exclude(input.kind, input.path),

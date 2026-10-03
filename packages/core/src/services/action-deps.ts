@@ -20,21 +20,27 @@ interface ContradictionResolver {
   get(id: string): Pick<Contradiction, 'status'>;
   resolve(
     id: string,
-    resolution: 'acknowledged' | 'resolved' | 'false_positive',
-    opts: { confirmed: boolean; supersedeOldDecisionId?: string; supersedeNewDecisionId?: string },
+    request: {
+      resolution: 'acknowledged' | 'resolved' | 'false_positive';
+      confirmed: boolean;
+      supersedeOldDecisionId?: string;
+      supersedeNewDecisionId?: string;
+    },
   ): unknown;
   settlePair(oldId: string, newId: string): void;
 }
 
+type MergePair = { keepId: string; duplicateId: string };
+
 interface NoteEventMerger {
-  staleReason(kind: 'note' | 'event', keepId: string, duplicateId: string): string | null;
-  mergeNotes(keepId: string, duplicateId: string, opts?: MergeOptions): { keepTitle: string; duplicateTitle: string; takenOver: string[] };
-  mergeEvents(keepId: string, duplicateId: string, opts?: MergeOptions): { keepTitle: string; duplicateTitle: string; takenOver: string[] };
+  staleReason(kind: 'note' | 'event', pair: MergePair): string | null;
+  mergeNotes(pair: MergePair, opts?: MergeOptions): { keepTitle: string; duplicateTitle: string; takenOver: string[] };
+  mergeEvents(pair: MergePair, opts?: MergeOptions): { keepTitle: string; duplicateTitle: string; takenOver: string[] };
 }
 
 interface OpenItemMerger {
   staleReason(keepId: string, duplicateId: string): string | null;
-  merge(keepId: string, duplicateId: string, opts?: MergeOptions): { keep: { title: string }; duplicate: { title: string }; takenOver: string[] };
+  merge(pair: MergePair, opts?: MergeOptions): { keep: { title: string }; duplicate: { title: string }; takenOver: string[] };
 }
 
 interface PathExcluder {

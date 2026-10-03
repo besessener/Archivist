@@ -27,7 +27,7 @@ export interface AttemptOutcomeDeps {
   retryWaits: RetryWaits;
   /** Wait before the next attempt after `failedAttempts` failed ones. */
   retryDelay: (failedAttempts: number) => number;
-  runHook: (type: string, hook: keyof JobHooks, run: () => void) => void;
+  runHook: (target: { type: string; hook: keyof JobHooks }, run: () => void) => void;
   notify: (row: JobRow) => void;
 }
 
@@ -68,7 +68,7 @@ export class AttemptOutcomes {
     // whatever the handler threw after a cancel request (e.g. an aborted LLM request): the job was cancelled
     this.db.update(jobs).set({ status: 'cancelled', progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
     this.deps.ctx.logger.info('jobs', `Job cancelled: ${job.type}`, { jobId: job.id, attempts });
-    this.deps.runHook(job.type, 'onCancelled', () => registered?.hooks.onCancelled?.({ id: job.id, payload: job.payload as never }));
+    this.deps.runHook({ type: job.type, hook: 'onCancelled' }, () => registered?.hooks.onCancelled?.({ id: job.id, payload: job.payload as never }));
   }
 
   /** A failed attempt: retryable errors wait (exponential backoff) for the next attempt, otherwise the job fails. */
@@ -95,6 +95,6 @@ export class AttemptOutcomes {
     }
     this.deps.ctx.logger.error('jobs', `Job failed: ${job.type}`, { jobId: job.id, error: err, attempts });
     this.db.update(jobs).set({ status: 'failed', error, progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, job.id)).run();
-    this.deps.runHook(job.type, 'onFailed', () => registered?.hooks.onFailed?.({ id: job.id, payload: job.payload as never, attempts }, err));
+    this.deps.runHook({ type: job.type, hook: 'onFailed' }, () => registered?.hooks.onFailed?.({ id: job.id, payload: job.payload as never, attempts }, err));
   }
 }

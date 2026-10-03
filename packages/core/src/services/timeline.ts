@@ -117,8 +117,8 @@ function documentEntries({ db, refsOf }: TimelineReader, q: TimelineQuery): Unda
     .where(
       and(
         inArray(documents.status, ['archived', 'indexed_only']),
-        q.topicId ? withSubject(documents.id, documents.topicId, q.topicId) : undefined,
-        q.projectId ? withSubject(documents.id, documents.projectId, q.projectId) : undefined,
+        q.topicId ? withSubject({ idCol: documents.id, mainCol: documents.topicId, subjectId: q.topicId }) : undefined,
+        q.projectId ? withSubject({ idCol: documents.id, mainCol: documents.projectId, subjectId: q.projectId }) : undefined,
       ),
     )
     .all();

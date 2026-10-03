@@ -33,6 +33,7 @@ export interface EventDuplicatePair {
 }
 
 type Origin = { actor?: 'user' | 'agent'; trigger?: string };
+type MergePair = { keepId: string; duplicateId: string };
 
 function chooseKeptNote(a: EntityRow, b: EntityRow): { keep: EntityRow; duplicate: EntityRow } {
   const lengthA = words(noteText(a)).length;
@@ -170,15 +171,15 @@ export class NoteEventDuplicateService {
   }
 
   /** Why a proposed merge can no longer be executed (record gone or already discarded), or null. */
-  staleReason(kind: 'note' | 'event', keepId: string, duplicateId: string): string | null {
-    return this.merger.staleReason(kind, { keepId, duplicateId });
+  staleReason(kind: 'note' | 'event', pair: MergePair): string | null {
+    return this.merger.staleReason(kind, pair);
   }
 
-  mergeNotes(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
-    return this.merger.mergeNotes({ keepId, duplicateId }, origin);
+  mergeNotes(pair: MergePair, origin: Origin = {}): RecordMergeResult {
+    return this.merger.mergeNotes(pair, origin);
   }
 
-  mergeEvents(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
-    return this.merger.mergeEvents({ keepId, duplicateId }, origin);
+  mergeEvents(pair: MergePair, origin: Origin = {}): RecordMergeResult {
+    return this.merger.mergeEvents(pair, origin);
   }
 }

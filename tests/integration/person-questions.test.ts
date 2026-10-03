@@ -28,7 +28,7 @@ describe('Asking about unclear person assignments (#27)', () => {
     // the complete name is known first, the unclear mention comes later
     person(b);
     person(a);
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     const [q] = questions();
     expect(q).toBeDefined();
     expect(q!.title).toBe(`Ist „${a}“ dieselbe Person wie „${b}“?`);
@@ -57,7 +57,7 @@ describe('Asking about unclear person assignments (#27)', () => {
       graph().link({ sourceId: p.id, targetId: dec.id, relationType: 'participated_in' }, { status: 'confirmed' });
       graph().link({ sourceId: p.id, targetId: topic.id, relationType: 'relates_to' }, { status: 'confirmed' });
     }
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     const [q] = questions();
     expect(q!.explanation).toContain('Gemeinsam: 1 gemeinsame Entscheidung, gemeinsame Themen/Projekte: „Budget 2027“');
     expect(q!.explanation).toContain('• „Monika“: 0 Dokumente, 1 Entscheidung, Themen/Projekte: Budget 2027');
@@ -67,7 +67,7 @@ describe('Asking about unclear person assignments (#27)', () => {
     await start();
     const short = person('M. Lor-Zade');
     const full = person('Monika Lor-Zade');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     const [q] = questions();
     await choose(q!.id, 'same');
 
@@ -84,18 +84,18 @@ describe('Asking about unclear person assignments (#27)', () => {
     await start();
     const short = person('Monika');
     const full = person('Monika Lor-Zade');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     await choose(questions()[0]!.id, 'different');
     expect(questions()).toHaveLength(0);
 
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(questions()).toHaveLength(0);
 
     // renamed so that the names no longer look alike, then back: never asked again
     app.services.database.sqlite.prepare("UPDATE entities SET name = 'Moni', normalized_name = 'moni' WHERE id = ?").run(short.id);
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     app.services.database.sqlite.prepare("UPDATE entities SET name = 'Monika', normalized_name = 'monika' WHERE id = ?").run(short.id);
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(questions()).toHaveLength(0);
     expect(questions('rejected').some((q) => q.sourceIds.includes(short.id) && q.sourceIds.includes(full.id))).toBe(true);
   });
@@ -105,7 +105,7 @@ describe('Asking about unclear person assignments (#27)', () => {
     const short = person('Monika');
     const a = person('Monika Lor-Zade');
     const b = person('Monika Schmidt');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     const qs = questions();
     expect(qs).toHaveLength(1);
     expect(qs[0]!.title).toBe('Welche Monika ist gemeint?');
@@ -122,14 +122,14 @@ describe('Asking about unclear person assignments (#27)', () => {
     person('Monika');
     person('Monika Lor-Zade');
     person('Monika Schmidt');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     await choose(questions()[0]!.id, 'none');
-    await app.services.consistency.run('manual');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(questions()).toHaveLength(0);
     // a new candidate is asked about on its own
     person('Monika Weber');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(questions().map((q) => q.title)).toEqual(['Ist „Monika“ dieselbe Person wie „Monika Weber“?']);
   });
 
@@ -138,12 +138,12 @@ describe('Asking about unclear person assignments (#27)', () => {
     const short = person('Monika');
     const full = person('Monika Lor-Zade');
     const other = person('Monika L.');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     const pending = app.services.actions.list('proposed').filter((a) => a.actionType === 'merge_entities');
     expect(pending.length).toBeGreaterThan(0);
 
     await graph().merge({ sourceIds: [short.id], targetId: full.id });
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     for (const a of pending) expect(app.services.actions.get(a.id).status).toBe('withdrawn');
     expect(questions().every((q) => !q.sourceIds.includes(short.id))).toBe(true);
     expect(graph().getEntity(other.id)).toBeDefined();
@@ -154,7 +154,7 @@ describe('Asking about unclear person assignments (#27)', () => {
     app.llm.on('PersonHints', () => ({ questions: [{ nr: 1, verdict: 'same', reason: 'Initiale passt zum Vornamen.' }] }));
     person('M. Lor-Zade');
     person('Monika Lor-Zade');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(hintCalls()).toHaveLength(1);
     expect(hintCalls()[0]!.input).toBe('1. „M. Lor-Zade“ / „Monika Lor-Zade“');
     const [q] = questions();
@@ -162,7 +162,7 @@ describe('Asking about unclear person assignments (#27)', () => {
     expect(graph().listEntities({ type: 'person' })).toHaveLength(2);
 
     // known questions are not sent again, the hint stays
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(hintCalls()).toHaveLength(1);
     expect(questions()[0]!.explanation).toContain('Hinweis des Sprachmodells');
   });
@@ -171,7 +171,7 @@ describe('Asking about unclear person assignments (#27)', () => {
     await start({ privacy });
     person('M. Lor-Zade');
     person('Monika Lor-Zade');
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(hintCalls()).toHaveLength(0);
     expect(questions()).toHaveLength(1);
   });

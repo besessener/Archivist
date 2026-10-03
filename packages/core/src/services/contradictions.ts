@@ -220,7 +220,10 @@ export class ContradictionService {
   private close(id: string, { resolution, reason }: { resolution: 'resolved' | 'false_positive'; reason: string }): void {
     this.db.update(contradictions).set({ status: resolution, resolvedAt: nowIso() }).where(eq(contradictions.id, id)).run();
     this.notifications.resolveByDedupePrefix(`contradiction:${id}`);
-    this.insights.settle(`contradiction:${id}`, resolution === 'resolved' ? 'accepted' : 'rejected', `Der Widerspruch wurde bereits aufgelöst: ${reason}`);
+    this.insights.settle(`contradiction:${id}`, {
+      status: resolution === 'resolved' ? 'accepted' : 'rejected',
+      reason: `Der Widerspruch wurde bereits aufgelöst: ${reason}`,
+    });
     this.ctx.events.changed('contradictions', 'insights');
   }
 
@@ -332,8 +335,10 @@ export class ContradictionService {
 
   resolve(
     id: string,
-    resolution: 'acknowledged' | 'resolved' | 'false_positive',
-    opts: { confirmed: boolean; supersedeOldDecisionId?: string; supersedeNewDecisionId?: string },
+    {
+      resolution,
+      ...opts
+    }: { resolution: 'acknowledged' | 'resolved' | 'false_positive'; confirmed: boolean; supersedeOldDecisionId?: string; supersedeNewDecisionId?: string },
   ): Contradiction {
     if (!opts.confirmed) throw new AppError('permission_error', 'Widersprüche dürfen nur nach ausdrücklicher Bestätigung aufgelöst werden.');
     const c = this.get(id);

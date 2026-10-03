@@ -125,7 +125,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const { ids, unknown } = ctx.refs.resolveMany(a.entries);
         if (ids.length < 2) return { content: `Ein Thema braucht mindestens zwei Einträge.${unknownNote(unknown)}`, isError: true };
-        const proposal = links.proposeTopic(a.name.trim(), ids, { conversationId: ctx.conversationId });
+        const proposal = links.proposeTopic({ name: a.name.trim(), memberIds: ids }, { conversationId: ctx.conversationId });
         if (proposal.actionId) ctx.actionIds.push(proposal.actionId);
         return {
           content: proposal.actionId

@@ -284,7 +284,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     await archived('a.txt', 'Inhalt A', 'work/a');
     await archived('b.txt', 'Inhalt B', 'work/a');
     const c = await archived('c.txt', 'Inhalt C', 'work/c');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
     expect(insight.recommendedActionId).toBeTruthy();
     return { c, insight };
@@ -304,7 +304,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
 
     // the cause is gone; the next archive check offers a fresh proposal on the same hint
     fs.writeFileSync(abs(c), 'Inhalt C');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const again = app.services.insights.get(insight.id);
     expect(again.status).toBe('open');
     expect(again.recommendedActionId).not.toBe(insight.recommendedActionId);
@@ -320,7 +320,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     await archived('b.txt', 'Inhalt B', 'work/a');
     await archived('c.txt', 'Inhalt C', 'work/c');
     const d = await archived('d.txt', 'Inhalt D', 'work/d');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
     fs.appendFileSync(abs(d), ' – bearbeitet');
 

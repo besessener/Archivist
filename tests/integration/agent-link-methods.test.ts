@@ -181,10 +181,10 @@ describe('Link methods as tools of their own (#313)', () => {
     for (const id of [d.lease, d.costs, d.notice]) expect(app.services.documents.get(id).topicName).toBeNull();
 
     // „Nein“ to a group is remembered: the same group is not offered again
-    const again = app.services.links.proposeTopic('Andere', [d.lease, d.costs]);
+    const again = app.services.links.proposeTopic({ name: 'Andere', memberIds: [d.lease, d.costs] });
     const other = (await app.ok('insights:list', { status: 'open' })).find((i) => i.id === again.insightId)!;
     await app.ok('insights:respond', { response: 'reject', id: other.id });
-    expect(app.services.links.proposeTopic('Andere', [d.lease, d.costs]).actionId).toBeNull();
+    expect(app.services.links.proposeTopic({ name: 'Andere', memberIds: [d.lease, d.costs] }).actionId).toBeNull();
     const clusters = await app.services.links.clusters({ minSize: 2 });
     expect(clusters.some((c) => c.members.length === 2 && c.members.every((m) => [d.lease, d.costs].includes(m.id)))).toBe(false);
   });

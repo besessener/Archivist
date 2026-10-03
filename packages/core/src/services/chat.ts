@@ -88,7 +88,7 @@ export class ChatService {
   }
 
   /** Posts a message of Archivist into a conversation of its own (weekly review, #314); creates it when missing. */
-  postAssistant(title: string, content: string, existingId: string | null): string {
+  postAssistant({ title, content, existingId }: { title: string; content: string; existingId: string | null }): string {
     const conversationId = this.store.exists(existingId) ? existingId : this.store.create(title).id;
     this.store.saveAssistantMessage(conversationId, { intent: 'weekly_review', content });
     this.store.touch(conversationId);
@@ -189,7 +189,7 @@ export class ChatService {
   private async agentReply({ conversationId, text, state }: ChatTurn): Promise<Reply | null> {
     // an open question of the rule-based flow (from before the agent mode) is still answered by that flow
     if (!this.agent || state.pending || !(await this.agent.ensureCapable())) return null;
-    const result = await this.agent.chat(conversationId, text, state.agent ?? {});
+    const result = await this.agent.chat(conversationId, { text, state: state.agent ?? {} });
     return {
       intent: 'agent',
       content: result.content,

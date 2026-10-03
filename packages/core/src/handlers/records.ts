@@ -39,12 +39,13 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'actions:list': (input) => services.actions.list(input.status),
     'actions:resolve': (input) =>
       input.decision === 'approve'
-        ? services.actions.resolve(input.actionId, 'approve', {
+        ? services.actions.resolve(input.actionId, {
+            decision: 'approve',
             confirmed: input.confirmed,
             strongConfirmed: input.strongConfirmed,
             overrides: input.parameterOverrides,
           })
-        : services.actions.resolve(input.actionId, 'reject', {}),
+        : services.actions.resolve(input.actionId, { decision: 'reject' }),
 
     'decisions:create': async (input) => {
       const decision = services.decisions.create(input, { actor: 'user', trigger: UI_TRIGGER });
@@ -94,13 +95,14 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'insights:respond': async (input) => {
       if (input.response === 'accept') return services.insights.accept(input.id, { strongConfirmed: input.strongConfirmed });
       if (input.response === 'reject') return services.insights.reject(input.id);
-      if (input.response === 'choose') return services.insights.choose(input.id, input.choiceId, { strongConfirmed: input.strongConfirmed });
+      if (input.response === 'choose') return services.insights.choose(input.id, { choiceId: input.choiceId, strongConfirmed: input.strongConfirmed });
       return services.insights.remindLater(input.id, input.remindAt);
     },
     'consistency:run': () => ({ jobId: services.enqueueConsistency('manual').id }),
     'contradictions:list': (input) => services.contradictions.list(input.status),
     'contradictions:resolve': (input) =>
-      services.contradictions.resolve(input.id, input.resolution, {
+      services.contradictions.resolve(input.id, {
+        resolution: input.resolution,
         confirmed: input.confirmed,
         supersedeOldDecisionId: input.supersedeOldDecisionId,
         supersedeNewDecisionId: input.supersedeNewDecisionId,

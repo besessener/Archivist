@@ -261,7 +261,7 @@ export class OpenItemDuplicateService {
   }
 
   /** Keeps `keepId`, takes over what it lacks (reminders moved too) and dismisses the duplicate; one undoable audit entry. */
-  merge(keepId: string, duplicateId: string, origin: Origin = {}): OpenItemMergeResult {
+  merge({ keepId, duplicateId }: { keepId: string; duplicateId: string }, origin: Origin = {}): OpenItemMergeResult {
     const stale = this.staleReason(keepId, duplicateId);
     if (stale) throw new AppError('validation_error', stale);
     const keep = this.row(keepId)!;

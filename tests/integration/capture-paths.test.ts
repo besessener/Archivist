@@ -60,11 +60,11 @@ describe('The capture module: one function, two callers (#307)', () => {
     const ex = decision({ decisionText: 'Wir nehmen das Angebot von Müller', title: 'Angebot Müller', topic: 'Dach', participants: ['Anna'] });
     app.llm.on('ChatIntent', () => ({ intents: [intent({ intent: 'decision_new', decisionCertainty: 'clear', decision: ex })] }));
     const viaChat = await app.ok('chat:send', { text: 'Wir haben entschieden, das Angebot von Müller zu nehmen.' });
-    const viaAgent = await app.services.capture.forAgent(
-      null,
-      'Wir haben entschieden, das Angebot von Müller zu nehmen.',
-      intent({ intent: 'decision_new', decisionCertainty: 'clear', decision: ex }),
-    );
+    const viaAgent = await app.services.capture.forAgent({
+      conversationId: null,
+      text: 'Wir haben entschieden, das Angebot von Müller zu nehmen.',
+      intent: intent({ intent: 'decision_new', decisionCertainty: 'clear', decision: ex }),
+    });
     const [a, b] = (await app.ok('decisions:list', {})).toSorted((x, y) => x.createdAt.localeCompare(y.createdAt));
     for (const d of [a!, b!]) expect(d).toMatchObject({ status: 'draft', title: 'Angebot Müller', topicName: 'Dach', participants: ['Anna'] });
     // same text, same question (the agent asks it through ask_user, the chat keeps it as a follow-up question)
@@ -90,7 +90,9 @@ describe('The capture module: one function, two callers (#307)', () => {
       expect(CaptureService.handles(i)).toBe(true);
     for (const i of ['knowledge_question', 'document_search', 'archive_structure', 'proposal_confirm', 'unknown'] as const)
       expect(CaptureService.handles(i)).toBe(false);
-    await expect(app.services.capture.forAgent(null, 'x', intent({ intent: 'knowledge_question' }))).rejects.toThrow('Kein Erfassungs-Anliegen');
+    await expect(app.services.capture.forAgent({ conversationId: null, text: 'x', intent: intent({ intent: 'knowledge_question' }) })).rejects.toThrow(
+      'Kein Erfassungs-Anliegen',
+    );
   });
 
   it('a duplicate open item reports no id; ifDuplicate „create“ (force) creates it anyway', async () => {
@@ -106,14 +108,27 @@ describe('The capture module: one function, two callers (#307)', () => {
       newStatus: null,
       resolutionNote: null,
     };
-    const first = await app.services.capture.forAgent(null, 'Angebot Müller prüfen', intent({ intent: 'open_item_new', openItem: oi }));
+    const first = await app.services.capture.forAgent({
+      conversationId: null,
+      text: 'Angebot Müller prüfen',
+      intent: intent({ intent: 'open_item_new', openItem: oi }),
+    });
     expect(first.openItemId).toBeTruthy();
     // the optional „wer/bis wann?“ of a new item is no question the agent has to ask
     expect(first.question).toBeNull();
-    const dup = await app.services.capture.forAgent(null, 'Angebot Müller prüfen', intent({ intent: 'open_item_new', openItem: oi }));
+    const dup = await app.services.capture.forAgent({
+      conversationId: null,
+      text: 'Angebot Müller prüfen',
+      intent: intent({ intent: 'open_item_new', openItem: oi }),
+    });
     expect(dup).toMatchObject({ openItemId: null, content: 'Gibt es schon: ‚Angebot Müller prüfen‘ – ergänzen oder neu anlegen?' });
     expect(dup.question).toBe(dup.content);
-    const forced = await app.services.capture.forAgent(null, 'Angebot Müller prüfen', intent({ intent: 'open_item_new', openItem: oi }), { force: true });
+    const forced = await app.services.capture.forAgent({
+      conversationId: null,
+      text: 'Angebot Müller prüfen',
+      intent: intent({ intent: 'open_item_new', openItem: oi }),
+      force: true,
+    });
     expect(forced.openItemId).toBeTruthy();
     expect(await app.ok('openItems:list', {})).toHaveLength(2);
   });

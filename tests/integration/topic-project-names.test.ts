@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 const graph = () => app.services.graph;
-const check = () => app.services.consistency.run('manual');
+const check = () => app.services.consistency.run({ trigger: 'manual' });
 const questions = async (status?: Insight['status']) => (await app.ok('insights:list', { status })).filter((i) => i.kind === 'topic_project_name');
 
 /** Topic „prod-plat“ and project „Prod Plat“, each referenced by records. */

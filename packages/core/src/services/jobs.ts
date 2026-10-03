@@ -22,7 +22,7 @@ export const CRASHED_JOB_ERROR = 'Die App wurde während dieses Jobs unerwartet 
 export const JOB_RETENTION_DAYS = 30;
 
 /** Exponential backoff: the wait after `failedAttempts` failed attempts (1 → base, 2 → 2 × base, …), capped at `maxMs`. */
-export function retryDelayMs(failedAttempts: number, baseMs: number, maxMs: number): number {
+export function retryDelayMs(failedAttempts: number, { baseMs, maxMs }: { baseMs: number; maxMs: number }): number {
   return Math.min(maxMs, baseMs * 2 ** Math.max(0, failedAttempts - 1));
 }
 
@@ -53,8 +53,8 @@ export class JobQueueService {
     this.outcomes = new AttemptOutcomes({
       ctx,
       retryWaits: this.retryWaits,
-      retryDelay: (failedAttempts) => retryDelayMs(failedAttempts, this.retryBaseDelayMs, this.retryMaxDelayMs),
-      runHook: (type, hook, run) => this.runHook(type, hook, run),
+      retryDelay: (failedAttempts) => retryDelayMs(failedAttempts, { baseMs: this.retryBaseDelayMs, maxMs: this.retryMaxDelayMs }),
+      runHook: (target, run) => this.runHook(target, run),
       notify: (row) => this.notify(row),
     });
   }
@@ -63,16 +63,18 @@ export class JobQueueService {
     return this.ctx.database.db;
   }
 
-  register<P>(type: string, handler: JobHandler<P>, hooks: JobHooks<P> = {}): void {
+  register<P>(type: string, { handler, hooks = {} }: { handler: JobHandler<P>; hooks?: JobHooks<P> }): void {
     this.handlers.set(type, { handler, hooks });
   }
 
   /** Queues a job; with `sameAs`, a matching pending or running job of the type (payload, status) is returned instead. */
   enqueue<P = unknown>(
     type: string,
-    label: string,
-    payload: P = {} as P,
-    options: { maxAttempts?: number; sameAs?: (active: P, status: 'pending' | 'running') => boolean } = {},
+    {
+      label,
+      payload = {} as P,
+      ...options
+    }: { label: string; payload?: P; maxAttempts?: number; sameAs?: (active: P, status: 'pending' | 'running') => boolean },
   ): Job {
     const { sameAs } = options;
     if (sameAs) {
@@ -158,7 +160,7 @@ export class JobQueueService {
       this.db.update(jobs).set({ status: 'cancelled', finishedAt: nowIso(), cancelRequested: true, progressMessage: null }).where(eq(jobs.id, id)).run();
       this.retryWaits.delete(id);
       const hooks = this.handlers.get(current.type)?.hooks;
-      this.runHook(current.type, 'onCancelled', () => hooks?.onCancelled?.({ id, payload: current.payload as never }));
+      this.runHook({ type: current.type, hook: 'onCancelled' }, () => hooks?.onCancelled?.({ id, payload: current.payload as never }));
     } else if (current.status === 'pending' || current.status === 'running') {
       this.db.update(jobs).set({ cancelRequested: true }).where(eq(jobs.id, id)).run();
       this.controllers.get(id)?.abort(new JobCancelledError());
@@ -192,7 +194,7 @@ export class JobQueueService {
       this.ctx.logger.error('jobs', `Job crashed without attempts left: ${row.type}`, { jobId: row.id, attempts: row.attempts });
       this.db.update(jobs).set({ status: 'failed', error: CRASHED_JOB_ERROR, progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, row.id)).run();
       const hooks = this.handlers.get(row.type)?.hooks;
-      this.runHook(row.type, 'onFailed', () =>
+      this.runHook({ type: row.type, hook: 'onFailed' }, () =>
         hooks?.onFailed?.({ id: row.id, payload: row.payload as never, attempts: row.attempts }, new Error(CRASHED_JOB_ERROR)),
       );
     }
@@ -299,7 +301,7 @@ export class JobQueueService {
     this.retryWaits.schedule(now, () => this.kick());
   }
 
-  private runHook(type: string, hook: keyof JobHooks, run: () => void): void {
+  private runHook({ type, hook }: { type: string; hook: keyof JobHooks }, run: () => void): void {
     try {
       run();
     } catch (err) {

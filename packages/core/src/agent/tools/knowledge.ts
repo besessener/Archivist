@@ -12,10 +12,14 @@ async function recordNote(
   args: { content: string; title: string | null; topic: string | null; links?: string[] | null },
 ): Promise<ToolOutput> {
   const { deps, ctx } = scope;
-  const result = await deps.capture.forAgent(ctx.conversationId, args.content, {
-    ...agentIntent('note_capture', args.content),
-    note: args.content,
-    topic: args.topic,
+  const result = await deps.capture.forAgent({
+    conversationId: ctx.conversationId,
+    text: args.content,
+    intent: {
+      ...agentIntent('note_capture', args.content),
+      note: args.content,
+      topic: args.topic,
+    },
   });
   const created = deps.graph.listEntities({ type: 'note', limit: 2000 }).find((n) => (n.description ?? n.name).trim() === args.content.trim());
   if (created) {
@@ -73,11 +77,15 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       risk: 'write',
       label: (a) => `Trage das Ereignis „${truncate(a.title, 60)}“ ein`,
       run: async (a, ctx) => {
-        const result = await deps.capture.forAgent(ctx.conversationId, ctx.userText || a.title, {
-          ...agentIntent('event_record', a.title),
-          topic: a.topic,
-          project: a.project,
-          event: { title: a.title, description: a.description, occurredAt: a.occurredAt },
+        const result = await deps.capture.forAgent({
+          conversationId: ctx.conversationId,
+          text: ctx.userText || a.title,
+          intent: {
+            ...agentIntent('event_record', a.title),
+            topic: a.topic,
+            project: a.project,
+            event: { title: a.title, description: a.description, occurredAt: a.occurredAt },
+          },
         });
         return {
           content: `${result.content}${followUpQuestion(result)}`,
@@ -95,7 +103,7 @@ export function knowledgeTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const id = ctx.refs.resolve(a.id);
         if (!id) return { content: `Unbekannte ID „${a.id}“.`, isError: true };
-        const resolved = await deps.actions.resolve(id, a.decision === 'confirm' ? 'approve' : 'reject', { confirmed: true });
+        const resolved = await deps.actions.resolve(id, { decision: a.decision === 'confirm' ? 'approve' : 'reject', confirmed: true });
         return {
           content: `Vorschlag „${resolved.label}“: ${resolved.status}${resolved.result ? ` – ${resolved.result}` : ''}`,
           summary: resolved.status,

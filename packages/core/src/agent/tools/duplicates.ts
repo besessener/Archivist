@@ -162,9 +162,9 @@ async function mergeInto(
 ): Promise<{ takenOver: string[] } | { error: string }> {
   const { kind, keepId, duplicateId } = merge;
   const options = { actor: 'agent' as const, trigger: 'agent' };
-  if (kind === 'open_item') return deps.openItemDuplicates.merge(keepId, duplicateId, options);
-  if (kind === 'note') return deps.noteEventDuplicates.mergeNotes(keepId, duplicateId, options);
-  if (kind === 'event') return deps.noteEventDuplicates.mergeEvents(keepId, duplicateId, options);
+  if (kind === 'open_item') return deps.openItemDuplicates.merge({ keepId, duplicateId }, options);
+  if (kind === 'note') return deps.noteEventDuplicates.mergeNotes({ keepId, duplicateId }, options);
+  if (kind === 'event') return deps.noteEventDuplicates.mergeEvents({ keepId, duplicateId }, options);
   const type = SUBJECT_TYPE[kind];
   if (deps.graph.getEntity(keepId)?.type !== type || deps.graph.getEntity(duplicateId)?.type !== type)
     return { error: `Beide Einträge müssen vom Typ ${MERGE_LABEL[kind]} sein.` };

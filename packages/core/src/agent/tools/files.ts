@@ -12,14 +12,22 @@ import { scanTools } from './files-scan';
 
 interface FileJob {
   op: FileOp;
-  items: Parameters<ToolDeps['fileJobs']['run']>[1];
+  items: Parameters<ToolDeps['fileJobs']['run']>[0]['items'];
   label: string;
   consent?: ArchiveConsent;
 }
 
 /** Moves and renames go through the file jobs: larger amounts as a job of their own, in chunks either way (#304). */
 function runFileJob({ deps, ctx }: ToolScope, job: FileJob) {
-  return deps.fileJobs.run(job.op, job.items, { signal: ctx.signal, label: job.label, inJob: Boolean(ctx.job), report: ctx.job?.report, consent: job.consent });
+  return deps.fileJobs.run({
+    op: job.op,
+    items: job.items,
+    signal: ctx.signal,
+    label: job.label,
+    inJob: Boolean(ctx.job),
+    report: ctx.job?.report,
+    consent: job.consent,
+  });
 }
 
 function summarize(result: ArchiveResult & Partial<Pick<FileOpResult, 'stopped' | 'jobId' | 'resumes'>>): string {

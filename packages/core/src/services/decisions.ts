@@ -92,8 +92,8 @@ export class DecisionService {
     const conditions = [];
     if (opts.status) conditions.push(eq(decisions.status, opts.status));
     // the main topic/project or a further one (#287)
-    if (opts.topicId) conditions.push(withSubject(decisions.id, decisions.topicId, opts.topicId));
-    if (opts.projectId) conditions.push(withSubject(decisions.id, decisions.projectId, opts.projectId));
+    if (opts.topicId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.topicId, subjectId: opts.topicId }));
+    if (opts.projectId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.projectId, subjectId: opts.projectId }));
     return this.mapMany(
       this.db
         .select()

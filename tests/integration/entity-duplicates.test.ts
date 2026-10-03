@@ -11,7 +11,7 @@ afterEach(async () => {
 
 const graph = () => app.services.graph;
 const sqlite = () => app.services.database.sqlite;
-const check = () => app.services.consistency.run('test');
+const check = () => app.services.consistency.run({ trigger: 'test' });
 const duplicates = (status?: 'open' | 'accepted' | 'rejected' | 'snoozed') => app.services.insights.list(status).filter((i) => i.kind === 'similar_entities');
 const forPair = (a: string, b: string) => duplicates().filter((i) => [a, b].every((id) => i.sourceIds.includes(id)));
 const hintCalls = () => app.llm.calls.filter((c) => c.schema === 'DuplicateHints');

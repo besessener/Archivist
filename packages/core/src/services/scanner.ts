@@ -242,12 +242,12 @@ export class ScannerService {
     const roots = this.listDirectories().filter((root) => root.enabled && (!rootId || root.id === rootId));
     if (roots.length === 0) throw validationError('Es ist kein freigegebenes Scan-Verzeichnis vorhanden.');
     // a queued or running scan of the same folder (or of all) covers this one: two scans of a folder would collide on its rows
-    return this.jobs.enqueue<{ rootId: string | null; trigger: string }>(
-      'scanner.scan',
-      rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
-      { rootId: rootId ?? null, trigger },
-      { maxAttempts: 1, sameAs: (active) => active.rootId === null || active.rootId === (rootId ?? null) },
-    );
+    return this.jobs.enqueue<{ rootId: string | null; trigger: string }>('scanner.scan', {
+      label: rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
+      payload: { rootId: rootId ?? null, trigger },
+      maxAttempts: 1,
+      sameAs: (active) => active.rootId === null || active.rootId === (rootId ?? null),
+    });
   }
 
   runScan(rootId: string | null, job?: JobContext): Promise<ScanSummary[]> {

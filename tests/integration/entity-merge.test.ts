@@ -338,7 +338,7 @@ describe('Agent actions for merging (#33)', () => {
       requiredConfirmation: 'confirm',
       proposedParameters: { sourceIds: [topic.id, other.id], targetId: project.id, allowCrossType: true },
     });
-    const done = await app.services.actions.resolve(action.id, 'approve', { confirmed: true });
+    const done = await app.services.actions.resolve(action.id, { decision: 'approve', confirmed: true });
     expect(done.status).toBe('executed');
     expect(done.result).toContain('„prod-plat“, „Produktplattform“ mit „Prod Plat“ zusammengeführt');
     expect(graph().getEntity(project.id)!.aliases).toEqual(['Produktplattform']);

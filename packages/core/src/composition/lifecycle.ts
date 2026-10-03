@@ -54,8 +54,8 @@ function startInitialLinkRun({ appState, links, enqueueLinkRun }: LifecycleServi
 function startAgent({ agent, jobs, chat }: LifecycleServices): void {
   agent.start({
     enqueue: (kind, docIds) =>
-      jobs.enqueue('agent.background', `Hintergrund-Agent: ${BACKGROUND_LABEL[kind] ?? 'Ablauf'}`, { kind, docIds }, { maxAttempts: 2 }),
-    post: (title, content, existing) => chat.postAssistant(title, content, existing),
+      jobs.enqueue('agent.background', { label: `Hintergrund-Agent: ${BACKGROUND_LABEL[kind] ?? 'Ablauf'}`, payload: { kind, docIds }, maxAttempts: 2 }),
+    post: (message) => chat.postAssistant(message),
   });
 }
 

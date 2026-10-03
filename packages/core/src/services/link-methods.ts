@@ -70,8 +70,8 @@ export class LinkMethodsService {
   }
 
   /** Confirms or rejects every open proposal of a group („Alle bestätigen“, #280) – one undo step. */
-  decideGroup(groupBy: ProposalGrouping, key: string, decision: 'confirmed' | 'rejected', opts: { trigger?: string } = {}): number {
-    return this.proposalList.decideGroup({ groupBy, key }, { status: decision, trigger: opts.trigger });
+  decideGroup(group: { groupBy: ProposalGrouping; key: string }, decision: { status: 'confirmed' | 'rejected'; trigger?: string }): number {
+    return this.proposalList.decideGroup(group, decision);
   }
 
   /** Related entries (#276): direct relations and shared topics, projects, persons, tags and cases, by strength, paged. */
@@ -110,8 +110,8 @@ export class LinkMethodsService {
   }
 
   /** „Neues Thema ‚…‘ anlegen?“ (#281): nothing changes before the user agrees. */
-  proposeTopic(name: string, memberIds: string[], opts: { conversationId?: string | null } = {}): { insightId: string; actionId: string | null } {
-    return this.topicClusters.proposeTopic({ name, memberIds }, opts);
+  proposeTopic(topic: { name: string; memberIds: string[] }, opts: { conversationId?: string | null } = {}): { insightId: string; actionId: string | null } {
+    return this.topicClusters.proposeTopic(topic, opts);
   }
 
   /** Link suggestions right after capturing in the chat (#283), stored as proposals. */

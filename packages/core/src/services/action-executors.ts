@@ -41,8 +41,8 @@ const mergeNotesOrEvents =
     const opts = { actor: 'user' as const, trigger: TRIGGER };
     const result =
       type === 'merge_notes'
-        ? d.noteEventDuplicates.mergeNotes(params.keepId, params.duplicateId, opts)
-        : d.noteEventDuplicates.mergeEvents(params.keepId, params.duplicateId, opts);
+        ? d.noteEventDuplicates.mergeNotes({ keepId: params.keepId, duplicateId: params.duplicateId }, opts)
+        : d.noteEventDuplicates.mergeEvents({ keepId: params.keepId, duplicateId: params.duplicateId }, opts);
     return `„${result.duplicateTitle}“ als Duplikat von „${result.keepTitle}“ verworfen${takenOverNote(result.takenOver)}.`;
   };
 
@@ -109,7 +109,8 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   },
   resolve_contradiction: (d, p) => {
     const params = ActionParamSchemas.resolve_contradiction.parse(p);
-    d.contradictions.resolve(params.contradictionId, params.resolution, {
+    d.contradictions.resolve(params.contradictionId, {
+      resolution: params.resolution,
       confirmed: true,
       supersedeOldDecisionId: params.supersedeOldDecisionId,
       supersedeNewDecisionId: params.supersedeNewDecisionId,
@@ -175,7 +176,7 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   },
   merge_open_items: (d, p) => {
     const params = ActionParamSchemas.merge_open_items.parse(p);
-    const result = d.openItemDuplicates.merge(params.keepId, params.duplicateId, { trigger: TRIGGER });
+    const result = d.openItemDuplicates.merge({ keepId: params.keepId, duplicateId: params.duplicateId }, { trigger: TRIGGER });
     return `„${result.duplicate.title}“ als Duplikat von „${result.keep.title}“ verworfen${takenOverNote(result.takenOver)}.`;
   },
   undo_change: async (d, p) => {

@@ -49,7 +49,7 @@ export function createDomainServices(base: BaseServices) {
   const noteAnalysis = new NoteAnalysisService({ ctx, graph, persons, llm, privacy });
   const memory = new MemoryService(ctx);
   const agentRuns = new AgentRunService({ ctx, audit, undo });
-  registerCreatedUndo(ctx, undo, graph, search);
+  registerCreatedUndo({ ctx, undo, graph, search });
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService({ ctx, decisions, graph, insights, notifications, llm });

@@ -282,18 +282,14 @@ export class LlmService {
   }
 
   /** Structured answer validated with Zod: on invalid output exactly one correction request, then an error (nothing runs). */
-  async completeJson<T extends z.ZodType>(
-    schema: T,
-    request: Omit<LlmRequest, 'json'> & { schemaName: string },
-    overrides: LlmOverrides = {},
-  ): Promise<z.output<T>> {
+  async completeJson<T extends z.ZodType>(schema: T, request: Omit<LlmRequest, 'json'> & { schemaName: string }): Promise<z.output<T>> {
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }));
     const instructions = structuredInstructions(request, jsonSchema);
     let lastIssues = '';
     let lastRaw = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const input = attempt === 0 ? request.input : correctionInput(request.input, lastIssues);
-      const raw = await this.complete({ ...request, instructions, input, json: true }, overrides);
+      const raw = await this.complete({ ...request, instructions, input, json: true });
       lastRaw = raw;
       const parsed = parseJsonAnswer(raw);
       if (!parsed.ok) lastIssues = 'kein gültiges JSON';
@@ -310,7 +306,7 @@ export class LlmService {
   }
 
   /** Embeddings via /embeddings (only if an embedding model is configured). */
-  async embeddings(texts: string[], purpose: string, documentIds: string[] = []): Promise<number[][]> {
+  async embeddings(texts: string[], { purpose, documentIds = [] }: { purpose: string; documentIds?: string[] }): Promise<number[][]> {
     const llm = this.settings.get().llm;
     const apiKey = this.secrets.getApiKey();
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
