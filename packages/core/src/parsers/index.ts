@@ -79,6 +79,9 @@ async function parseEml(file: string): Promise<ParsedDocument> {
       from: addressText(mail.from) || null,
       date: mail.date ? mail.date.toISOString() : null,
       attachments: mail.attachments.length,
+      messageId: mail.messageId ?? null,
+      inReplyTo: mail.inReplyTo ?? null,
+      references: [mail.references ?? []].flat().join(' ') || null,
     },
     truncated: text.truncated,
   };
