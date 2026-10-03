@@ -1,6 +1,6 @@
 # Datenbankschema ändern
 
-1. Ändere das Drizzle-Schema in `packages/core/src/db/schema.ts`.
+1. Ändere die Tabellen in `packages/core/src/db/tables/`. Eine neue Datei dort exportierst du zusätzlich in `packages/core/src/db/schema.ts` – nur was dort exportiert ist, sieht drizzle-kit.
 2. Erzeuge die Migration:
 
    ```bash

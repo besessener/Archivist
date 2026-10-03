@@ -77,9 +77,9 @@ and say so; never work around it quietly. Reasoning lives in
 
 ## Database changes
 
-- Change `packages/core/src/db/schema.ts`, run `npm run db:generate`, and read
-  the generated SQL. What Drizzle can't express (e.g. FTS5) is a custom
-  migration.
+- Change the tables in `packages/core/src/db/tables/` (exported by
+  `schema.ts`), run `npm run db:generate`, and read the generated SQL. What
+  Drizzle can't express (e.g. FTS5) is a custom migration.
 - Roll forward only: never edit, rename or delete a migration on `main`; undo
   with a new one. Migrations run unattended at startup against real user
   archives, so they must apply to a populated database, not just an empty one.

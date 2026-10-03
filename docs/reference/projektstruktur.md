@@ -28,7 +28,7 @@ archivist/
 | Datei | Inhalt |
 | --- | --- |
 | `packages/shared/src/ipc.ts` | IPC-Vertrag: Input- und Output-Schema je Kanal |
-| `packages/core/src/db/schema.ts` | Drizzle-Schema der Datenbank |
+| `packages/core/src/db/schema.ts` | Drizzle-Schema der Datenbank; die Tabellen liegen nach Bereich in `db/tables/` (Wissen, Dokumente, Einträge, Hinweise, Agent, System) |
 | `packages/core/src/agent/runner.ts` | Agentenschleife |
 | `packages/core/src/agent/gate.ts` | Entscheidung je Werkzeugaufruf: ausführen, vorschlagen oder blockieren |
 | `apps/desktop/src/main.ts` | Electron-Main-Prozess |
