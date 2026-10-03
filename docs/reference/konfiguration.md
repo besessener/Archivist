@@ -8,7 +8,7 @@ Einstellungen liegen in `config/settings.json` im [Datenverzeichnis](datenverzei
 | --- | --- |
 | `profile` | `name`, `nicknames` – wer „ich“ ist |
 | `llm` | `baseUrl`, `model`, `reasoningEffort`, `timeoutMs`, `maxInputChars`, `embeddingModel` – siehe [LLM-Schnittstelle](llm-schnittstelle.md) |
-| `archiveRoot` | Archivordner, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md) |
+| `archiveRoot` | Archivordner; mit archivierten Dokumenten nur über „Archiv umziehen“ oder „Nur Pfad ändern“ änderbar, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md) |
 | `scan` | `enabled`, `onStartup`, `periodic`, `intervalMinutes`, `maxFileSizeMb`, `allowedExtensions`, `autoAnalyze` |
 | `privacy` | `llmMode` (`auto` / `confirm` / `local_only`), `neverAnalyzeDirs`, `neverAnalyzeExtensions`, `neverAnalyzeFiles` |
 | `notifications` | `desktop`, `reminderTime` (Standard `08:00`) |
