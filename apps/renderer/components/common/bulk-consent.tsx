@@ -2,6 +2,7 @@
 
 import type { BulkEstimate } from '@archivist/shared';
 import { Notice } from '@/components/common/states';
+import { TokenBudgetNote } from '@/components/common/token-budget-note';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { formatNumber, plural } from '@/lib/format';
 import { useSettings } from '@/lib/use-settings';
@@ -47,6 +48,7 @@ export function BulkConsent({
           {rest > 0 ? `; die übrigen ${formatNumber(rest)} werden nur lokal verarbeitet.` : '.'} Geschätzt sind das etwa{' '}
           <strong>{formatNumber(estimate.estimatedTokens)} Token</strong> (grobe Schätzung, rund 4 Zeichen je Token).
         </p>
+        <TokenBudgetNote estimatedTokens={estimate.estimatedTokens} />
         {mode === 'local_only' && (
           <p className="mt-1 font-medium text-foreground">Dein Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.</p>
         )}

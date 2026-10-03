@@ -8,6 +8,8 @@ export const AppStatus = z.object({
   archiveRoot: z.string(),
   /** Cloud-sync service whose folder holds the archive root (OneDrive, Dropbox …), if any. */
   archiveSyncProvider: z.string().nullable(),
+  /** Cloud-sync service whose folder holds the data root (inbox, quarantine, trash, database), if any. */
+  dataSyncProvider: z.string().nullable(),
   platform: z.string(),
   setupCompleted: z.boolean(),
   llm: z.object({

@@ -16,6 +16,12 @@ export function initScan(page: Page) {
     summary: page.getByTestId('scan-summary'),
     allowLlm: page.getByTestId('scan-llm-checkbox'),
     proposals: page.getByTestId('scan-proposal'),
+    /** Paging over all results and „erneut analysieren“. */
+    paging: {
+      info: page.getByTestId('scan-more'),
+      loadMore: page.getByTestId('scan-load-more'),
+    },
+    reanalyze: page.getByTestId('scan-reanalyze'),
     /** „Alle N neuen Dateien analysieren“: one consent, one job with a progress line (#228). */
     analyzeAll: {
       button: page.getByTestId('scan-analyze-all'),

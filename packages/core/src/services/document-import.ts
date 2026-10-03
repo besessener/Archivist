@@ -11,6 +11,7 @@ import { isInside, sanitizeFileName, uniquePath } from '../util/paths';
 import { LLM_ANALYSIS_ATTEMPTS } from './analysis-retry';
 import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from './document-batch';
 import { DOCUMENT_IMPORT_FOLDER_JOB, type ImportFolderPayload } from './document-import-folder';
+import { folderRefusal } from './document-import-guard';
 import type { DocumentDeps } from './document-model';
 
 const MAX_IMPORT_BYTES = 500 * 1024 * 1024;
@@ -217,7 +218,10 @@ export class DocumentImporter {
     if (!path.isAbsolute(input) || input.includes('\0')) return rejected('Ungültiger Dateipfad.');
     const real = await fsp.realpath(input);
     const stat = await fsp.stat(real);
-    if (stat.isDirectory()) return { kind: 'folder', real };
+    if (stat.isDirectory()) {
+      const refusal = folderRefusal(real, this.deps);
+      return refusal ? rejected(refusal) : { kind: 'folder', real };
+    }
     if (!stat.isFile()) return rejected('Keine reguläre Datei.');
     const ext = path.extname(real).slice(1).toLowerCase();
     if (!this.supported.has(ext)) return rejected(`Dateityp „.${ext || '?'}“ wird nicht unterstützt.`);

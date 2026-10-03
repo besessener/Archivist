@@ -150,6 +150,7 @@ export function SetupWizard() {
               nicknames={nicknames}
               onNicknamesChange={setNicknames}
               syncProvider={status?.archiveSyncProvider ?? null}
+              dataSyncProvider={status?.dataSyncProvider ?? null}
             />
           )}
           {step === 'llm' && <LlmStep form={llmForm} test={test} testing={testing} onTest={() => void runTest()} />}

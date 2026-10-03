@@ -32,12 +32,13 @@ Der Archivordner selbst lässt sich getrennt davon verlegen: [Archivpfad ändern
 
 Bis einschließlich der Vorversion lagen auch `database/`, `index/`, `config/`, `logs/` und `backups/` (und `restore-pending.json`) im Dokumentenordner. Beim ersten Start einer neuen Version zieht Archivist sie in den Datenordner der Anwendung um, **bevor** die Datenbank geöffnet wird:
 
+0. Vorab prüft Archivist, ob das Laufwerk des Datenordners genug freien Speicher für die Kopien hat (Größe der umzuziehenden Ordner plus 10 % und 64 MB). Reicht er nicht, bricht der Start mit einer Meldung ab, die den benötigten und den freien Platz nennt; es wurde nichts kopiert oder verändert, und nach dem Schaffen von Platz läuft der nächste Start normal weiter.
 1. Kopie in einen Zwischenordner `.layout-migration/` im Datenordner,
 2. Prüfung jeder Datei per Größe und SHA-256 gegen das Original,
 3. Marker `layout-migration.json` (Status `switching`), die geprüften Kopien werden an ihren Platz umbenannt,
 4. erst danach werden die alten Ordner im Dokumentenordner entfernt; der Marker bekommt den Status `complete`.
 
-Wird Archivist dazwischen beendet, setzt der nächste Start dort fort (ein unfertiger Zwischenordner wird neu angelegt). Archivist überschreibt dabei nie etwas: Liegt am Ziel schon eine Datenbank oder ein anderer Inhalt, bricht der Start mit einer Meldung ab und lässt alles unverändert. Archiv, Eingang, Quarantäne und Papierkorb bleiben, wo sie sind. Ist der Marker `complete`, passiert beim Start nichts mehr.
+Wird Archivist dazwischen beendet, setzt der nächste Start dort fort (ein unfertiger Zwischenordner wird neu angelegt). Archivist überschreibt dabei nie etwas: Liegt am Ziel schon eine Datenbank oder ein anderer Inhalt, bricht der Start mit einer Meldung ab und lässt alles unverändert. Archiv, Eingang, Quarantäne und Papierkorb bleiben, wo sie sind. Ist der Marker `complete`, passiert beim Start nichts mehr. Jeder Schritt (Platzprüfung, Kopieren, Prüfen, Umschalten) steht als Zeile „Layout migration …“ im Protokoll, damit ein langer Umzug dort sichtbar ist.
 
 ## Ablage im Archiv
 

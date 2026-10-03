@@ -1,6 +1,7 @@
 import { ActionParamSchemas, type AgentActionType } from '@archivist/shared';
 import { AppError } from '../util/errors';
 import type { ActionDeps } from './action-deps';
+import { archiveInBatches } from './archive-batch';
 
 type Params = Record<string, unknown>;
 type Executor = (deps: ActionDeps, params: Params) => Promise<string> | string;
@@ -11,12 +12,7 @@ const takenOverNote = (takenOver: string[]) => (takenOver.length ? `; übernomme
 
 async function archiveDocuments(d: ActionDeps, p: Params): Promise<string> {
   const params = ActionParamSchemas.archive_documents.parse(p);
-  const result = await d.archive.execute(params.items, {
-    confirmed: true,
-    approveNewCategories: params.approveNewCategories,
-    confirmMove: params.items.some((i) => i.mode === 'move'),
-    trigger: TRIGGER,
-  });
+  const result = await archiveInBatches(d.archive, params.items, { approveNewCategories: params.approveNewCategories, trigger: TRIGGER });
   return `${result.success} archiviert, ${result.skipped} übersprungen, ${result.failed} fehlgeschlagen, ${result.conflicts} Konflikte.`;
 }
 

@@ -40,8 +40,10 @@ export function WelcomeStep({
   nicknames,
   onNicknamesChange,
   syncProvider,
+  dataSyncProvider,
 }: {
   syncProvider: string | null;
+  dataSyncProvider: string | null;
   profileName: string;
   onProfileNameChange: (name: string) => void;
   nicknames: string;
@@ -68,7 +70,7 @@ export function WelcomeStep({
           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Die Einrichtung dauert etwa zwei Minuten.
         </li>
       </ul>
-      <SyncFolderNotice provider={syncProvider} data-testid="setup-sync-warning" />
+      <SyncFolderNotice provider={syncProvider} dataProvider={dataSyncProvider} data-testid="setup-sync-warning" />
       <Field
         label="Dein Name (optional)"
         htmlFor="setup-profile-name"

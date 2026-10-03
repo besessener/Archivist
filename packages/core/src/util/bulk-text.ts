@@ -24,3 +24,9 @@ export function runSummary(result: { done: number; failed: number; verb?: string
   const { done, failed, verb = 'analysiert' } = result;
   return `${number(done)} ${done === 1 ? 'Dokument' : 'Dokumente'} ${verb}, ${number(failed)} Fehler`;
 }
+
+/** The notification text of a bulk run that waits because the daily token limit is reached; the rest stays untouched. */
+export function tokenCapPauseText(progress: { done: number; total: number; verb?: string }): string {
+  const { done, total, verb = 'analysiert' } = progress;
+  return `Das Tageslimit für Tokens ist erreicht. ${number(done)} von ${number(total)} ${verb}; der Rest bleibt unverändert und wird morgen fortgesetzt, spätestens sobald du das Limit erhöhst.`;
+}

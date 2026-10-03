@@ -5,6 +5,7 @@ import { documents, scanFiles, scanRoots } from '../../db/schema';
 import { permissionError } from '../../util/errors';
 import { nowIso } from '../../util/ids';
 import { isInside } from '../../util/paths';
+import { isTokenCapError } from '../../util/token-cap';
 import type { WorkerPool } from '../../workers/pool';
 import type { DocRow, DocumentService } from '../documents';
 import { progressLine, runSummary } from '../../util/bulk-text';
@@ -13,6 +14,7 @@ import { isJobCancelled, type JobContext, type JobQueueService } from '../jobs';
 import type { KnowledgeGraphService } from '../knowledge-graph';
 import type { NotificationService } from '../notifications';
 import type { PrivacyService } from '../privacy';
+import { pausingOnTokenCap } from '../token-cap-pause';
 import { duplicateOf, type FileRow, type RootRow } from './scan-files';
 
 /** Document states in which a changed source file updates the existing inbox entry instead of creating a second one. */
@@ -49,6 +51,8 @@ export interface AnalysisOptions {
   progress?: number;
   /** Several files at once: the run reports once at its end instead of once per file. */
   quiet: boolean;
+  /** Analyse files again that are already `analyzed` (the user chose „erneut analysieren“). */
+  reanalyze?: boolean;
 }
 
 export type FileResult = { kind: 'analyzed'; documentId: string } | { kind: 'skipped' } | { kind: 'failed'; message: string };
@@ -73,28 +77,45 @@ export class FileAnalysis {
   /** Analyzes the files; a re-run after a crash or quit continues after the files already handled (and paid for). */
   async analyzeFiles(
     fileIds: string[],
-    options: { confirmLlm: boolean; job?: JobContext },
+    options: { confirmLlm: boolean; reanalyze?: boolean; job?: JobContext },
   ): Promise<{ analyzed: string[]; skipped: string[]; failed: number }> {
-    const { confirmLlm, job } = options;
+    const { confirmLlm, job, reanalyze } = options;
     const checkpoint = analyzeCheckpoint(job?.checkpoint);
     const quiet = fileIds.length > 1;
     const started = Date.now();
     const resumedAt = checkpoint.next;
     const mode = this.deps.privacy.mode();
-    for (; checkpoint.next < fileIds.length; checkpoint.next += 1) {
-      job?.throwIfCancelled();
-      const result = await this.analyzeOne(fileIds[checkpoint.next]!, { mode, confirmLlm, job, quiet, progress: checkpoint.next / fileIds.length });
-      if (result.kind === 'failed') {
-        checkpoint.failed += 1;
-        if (checkpoint.failures.length < MAX_REPORTED_FAILURES) checkpoint.failures.push(result.message);
+    const loop = async () => {
+      for (; checkpoint.next < fileIds.length; checkpoint.next += 1) {
+        job?.throwIfCancelled();
+        const result = await this.analyzeOne(fileIds[checkpoint.next]!, {
+          mode,
+          confirmLlm,
+          job,
+          quiet,
+          reanalyze,
+          progress: checkpoint.next / fileIds.length,
+        });
+        if (result.kind === 'failed') {
+          checkpoint.failed += 1;
+          if (checkpoint.failures.length < MAX_REPORTED_FAILURES) checkpoint.failures.push(result.message);
+        }
+        job?.saveCheckpoint({ ...checkpoint, next: checkpoint.next + 1 } satisfies AnalyzeCheckpoint);
+        if (quiet)
+          job?.report(
+            (checkpoint.next + 1) / fileIds.length,
+            progressLine({ done: checkpoint.next + 1, total: fileIds.length, elapsedMs: Date.now() - started, sampled: checkpoint.next + 1 - resumedAt }),
+          );
       }
-      job?.saveCheckpoint({ ...checkpoint, next: checkpoint.next + 1 } satisfies AnalyzeCheckpoint);
-      if (quiet)
-        job?.report(
-          (checkpoint.next + 1) / fileIds.length,
-          progressLine({ done: checkpoint.next + 1, total: fileIds.length, elapsedMs: Date.now() - started, sampled: checkpoint.next + 1 - resumedAt }),
-        );
-    }
+    };
+    if (job)
+      await pausingOnTokenCap(loop, {
+        notifications: this.deps.notifications,
+        jobId: job.id,
+        title: 'Analyse pausiert',
+        progress: () => ({ done: checkpoint.next, total: fileIds.length }),
+      });
+    else await loop();
     const handled = this.handledFiles(fileIds);
     if (quiet) this.announce({ analyzed: handled.analyzed.length, failed: checkpoint.failed, failures: checkpoint.failures });
     return { ...handled, failed: checkpoint.failed };
@@ -127,11 +148,12 @@ export class FileAnalysis {
   async analyzeOne(id: string, options: AnalysisOptions): Promise<FileResult> {
     const file = this.db.select().from(scanFiles).where(eq(scanFiles.id, id)).get();
     if (!file || file.status === 'excluded') return SKIPPED;
+    if (file.status === 'analyzed' && !options.reanalyze) return SKIPPED;
     if (!options.quiet) options.job?.report(options.progress ?? null, `Analysiere ${file.name}`);
     try {
       return await this.analyzeContent(file, options);
     } catch (err) {
-      if (isJobCancelled(err)) throw err; // the whole job was cancelled – no per-file failure
+      if (isJobCancelled(err) || isTokenCapError(err)) throw err; // cancelled or paused by the token limit – no per-file failure
       // analyze() has already set the document to `failed` (reprocessable from the inbox), so it is not stuck in `analyzing`
       this.deps.ctx.logger.warn('scanner', 'Analysis failed', { fileId: id, error: err });
       const message = `${file.name}: ${err instanceof Error ? err.message : String(err)}`;
@@ -170,6 +192,8 @@ export class FileAnalysis {
       return SKIPPED;
     }
     const { doc, replaced } = this.documentFor(file, { root, content });
+    // a run paused by the token limit continues with this document instead of finding it as a duplicate
+    if (file.documentId !== doc.id) this.db.update(scanFiles).set({ documentId: doc.id }).where(eq(scanFiles.id, file.id)).run();
     const decision = this.deps.privacy.evaluate({ path: realPath, ext: file.ext, rootLlmAllowed: root.llmAllowed });
     const allowLlm = decision.allowed && (options.mode === 'auto' || options.confirmLlm);
     const { job } = options;

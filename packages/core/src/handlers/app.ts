@@ -19,6 +19,7 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     dataRoot: services.paths.root,
     archiveRoot: settings.archiveRoot,
     archiveSyncProvider: detectSyncFolder(settings.archiveRoot),
+    dataSyncProvider: detectSyncFolder(services.paths.root),
     platform: host.platform,
     setupCompleted: settings.setupCompleted,
     llm: {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { Job, ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
+import type { Job, ScanExclusion, ScanFile, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
 import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
@@ -22,6 +22,7 @@ import { BulkFileAnalysis } from './scanner/bulk-analysis';
 import { FileAnalysis } from './scanner/file-analysis';
 import { ScanProposals } from './scanner/proposals';
 import { mapFile, mapRoot, type RootRow } from './scanner/scan-files';
+import { queryScanResults, type ScanResultsQuery } from './scanner/scan-results';
 import { ScanRun } from './scanner/scan-run';
 import type { LlmService } from './llm';
 import type { SettingsService } from './settings';
@@ -72,6 +73,7 @@ export class ScannerService {
       settings,
       llm: deps.llm,
       jobs: deps.jobs,
+      notifications,
       buildProposals: (ids) => this.buildProposals(ids),
     });
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
@@ -251,25 +253,8 @@ export class ScannerService {
     return this.scans.run(rootId, job);
   }
 
-  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number } = {}): { files: ScanFile[]; lastSummary: ScanSummary | null } {
-    const conditions = [];
-    if (options.rootId) conditions.push(eq(scanFiles.rootId, options.rootId));
-    if (options.status) conditions.push(eq(scanFiles.status, options.status));
-    const files = this.db
-      .select()
-      .from(scanFiles)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(scanFiles.lastSeenAt), scanFiles.name)
-      .limit(options.limit ?? 500)
-      .all()
-      .map(mapFile);
-    const latest = this.db
-      .select()
-      .from(scanRoots)
-      .orderBy(desc(scanRoots.lastScanAt))
-      .all()
-      .find((root) => root.lastSummary);
-    return { files, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
+  getResults(options: ScanResultsQuery = {}): ReturnType<typeof queryScanResults> {
+    return queryScanResults(this.db, options);
   }
 
   getFile(id: string): ScanFile {
@@ -287,7 +272,10 @@ export class ScannerService {
 
   // ---------- Content analysis ----------
   /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
-  async analyzeFiles(fileIds: string[], options: { confirmLlm: boolean; job?: JobContext }): Promise<{ analyzed: string[]; skipped: string[] }> {
+  async analyzeFiles(
+    fileIds: string[],
+    options: { confirmLlm: boolean; reanalyze?: boolean; job?: JobContext },
+  ): Promise<{ analyzed: string[]; skipped: string[] }> {
     const result = await this.analysis.analyzeFiles(fileIds, options);
     this.buildProposals(result.analyzed);
     this.deps.ctx.events.changed('scanner', 'documents', 'status');

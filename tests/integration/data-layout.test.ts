@@ -189,4 +189,28 @@ describe('Moving the old layout', () => {
     expect(fs.existsSync(path.join(legacy(), 'database'))).toBe(false);
     expect(JSON.parse(read(path.join(appData(), 'layout-migration.json')))).toMatchObject({ status: 'complete' });
   });
+
+  it('stops before copying when the target volume is too small, names the space and leaves everything untouched', () => {
+    seed();
+    vi.spyOn(fs, 'statfsSync').mockReturnValue({ bavail: 10, bsize: 4096 } as fs.StatsFs);
+
+    expect(() => migrateLegacyLayout(places())).toThrow(/freier Speicher benötigt, frei sind 1 MB\. Es wurde nichts verändert/);
+
+    expect(read(path.join(legacy(), 'database', 'archivist.db'))).toBe('datenbank');
+    expect(fs.existsSync(path.join(appData(), '.layout-migration'))).toBe(false);
+    expect(fs.existsSync(path.join(appData(), 'layout-migration.json'))).toBe(false);
+    vi.restoreAllMocks();
+    expect(migrateLegacyLayout(places())).toMatchObject({ migrated: true });
+  });
+
+  it('reports each step so a long move shows up in the log', () => {
+    seed();
+    const steps: string[] = [];
+
+    migrateLegacyLayout({ ...places(), onProgress: (message) => steps.push(message) });
+
+    expect(steps).toEqual(
+      expect.arrayContaining(['Layout migration: copying database', 'Layout migration: verifying database', 'Layout migration: switching over']),
+    );
+  });
 });

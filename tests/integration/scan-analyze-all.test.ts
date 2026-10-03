@@ -135,7 +135,7 @@ describe('„Alle neuen Dateien analysieren“ (#228)', () => {
     const { jobId } = await app.ok('scanner:analyzeAll', { confirmLlm: false });
     app.services.database.sqlite.prepare('UPDATE jobs SET result = ? WHERE id = ?').run(
       JSON.stringify({
-        checkpoint: { cursor: { firstSeenAt: first.firstSeenAt, path: first.path }, total: 3, analyzed: 1, failed: 0, skipped: 0, failures: [] },
+        checkpoint: { next: 1, analyzed: 1, failed: 0, skipped: 0, failures: [] },
       }),
       jobId,
     );
@@ -144,6 +144,23 @@ describe('„Alle neuen Dateien analysieren“ (#228)', () => {
 
     expect(analyzeAllJob().summary).toBe('3 Dokumente analysiert, 0 Fehler');
     expect(app.services.scanner.getFile(first.id).status).toBe('new');
+  });
+
+  it('processes only the files the user saw when confirming, not files found afterwards', async () => {
+    await scanned('auto', ['a.txt', 'b.txt']);
+    await app.services.jobs.stop();
+    await app.ok('scanner:analyzeAll', { confirmLlm: false });
+    app.file('Downloads/spaeter.txt', 'Später gefunden, mit ausreichend Text für die Analyse.');
+    await app.services.scanner.runScan(null);
+
+    expect(await app.ok('scanner:analyzeAllPreview', {})).toMatchObject({ total: 3 });
+    app.services.jobs.start();
+    await app.services.jobs.whenIdle();
+
+    expect(analyzeAllJob().summary).toBe('2 Dokumente analysiert, 0 Fehler');
+    const later = app.services.scanner.getResults({}).files.find((file) => file.name === 'spaeter.txt')!;
+    expect(later.status).toBe('new');
+    expect(await app.ok('scanner:analyzeAllPreview', {})).toMatchObject({ total: 1 });
   });
 
   it('shows how far it is: „2 von 5 analysiert“ with an estimate of the remaining time', async () => {
