@@ -5,6 +5,7 @@ import { connectionTitle, connectionTone } from '@/lib/labels';
 import { checkLlmBaseUrl, type IpcOutput } from '@archivist/shared';
 import { AgentCapabilityNote } from '@/components/agent/capability-note';
 import { Field, Notice } from '@/components/common/states';
+import { SyncFolderNotice } from '@/components/common/sync-folder-notice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -38,7 +39,9 @@ export function WelcomeStep({
   onProfileNameChange,
   nicknames,
   onNicknamesChange,
+  syncProvider,
 }: {
+  syncProvider: string | null;
   profileName: string;
   onProfileNameChange: (name: string) => void;
   nicknames: string;
@@ -65,6 +68,7 @@ export function WelcomeStep({
           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Die Einrichtung dauert etwa zwei Minuten.
         </li>
       </ul>
+      <SyncFolderNotice provider={syncProvider} data-testid="setup-sync-warning" />
       <Field
         label="Dein Name (optional)"
         htmlFor="setup-profile-name"

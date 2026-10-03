@@ -130,6 +130,7 @@ export class ScanRun {
         ...exclusions.filter((exclusion) => exclusion.kind === 'dir').map((exclusion) => exclusion.path),
         ...root.excludedSubdirs.map((dir) => (path.isAbsolute(dir) ? dir : path.join(realPath, dir))),
         this.deps.ctx.paths.root,
+        this.deps.ctx.paths.appData,
         this.deps.settings.get().archiveRoot,
       ],
       excludedFiles: exclusions.filter((exclusion) => exclusion.kind === 'file').map((exclusion) => exclusion.path),

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { recoverFromDamagedDatabase, type RecoveryDeps } from '../../apps/desktop/src/recovery';
 
-const paths = { root: '/data', database: '/data/database', backups: '/data/backups' };
+const paths = { appData: '/data', database: '/data/database', backups: '/data/backups' };
 const source = { name: 'metadaten-2026-10-01', databaseFile: '/data/backups/x/archivist.db', createdAt: '2026-10-01T08:00:00.000Z', archive: null };
 
 function setup(overrides: Partial<RecoveryDeps> = {}) {

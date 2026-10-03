@@ -159,7 +159,7 @@ describe('Restoring a backup', () => {
     const source = newestIntactSource(paths.backups);
 
     expect(source?.name).toBe(older.name);
-    expect(fs.existsSync(path.join(paths.root, 'restore-pending.json')), 'choosing schedules nothing').toBe(false);
+    expect(fs.existsSync(path.join(paths.appData, 'restore-pending.json')), 'choosing schedules nothing').toBe(false);
   });
 
   it('recovers from a damaged database: start refused, restore scheduled, next start works', async () => {
@@ -175,7 +175,7 @@ describe('Restoring a backup', () => {
     fs.rmSync(`${databaseFile}-shm`, { force: true });
 
     await expect(startApp()).rejects.toMatchObject({ category: 'database_corrupt' });
-    const paths = resolveDataPaths(dataRoot);
+    const paths = resolveDataPaths({ root: dataRoot });
     scheduleRestore(paths, newestIntactSource(paths.backups)!.name);
     const recovered = await startApp();
 

@@ -51,6 +51,8 @@ export interface TestAppOptions {
   /** bundled read worker (db-reader-entry); null = queries run inline */
   readerFile?: string | null;
   dataRoot?: string;
+  /** Database, config, logs and backups in their own folder next to the document store (the default layout of the installed app). */
+  separateAppData?: boolean;
 }
 
 /** Complete application (services + dispatcher) in a temporary directory. */
@@ -61,6 +63,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const llm = new FakeLlm();
   const services = createServices({
     dataRoot: path.join(root, 'Archivist'),
+    appDataRoot: options.separateAppData ? path.join(root, 'AppData') : undefined,
     migrationsFolder: MIGRATIONS,
     cipher: new TestCipher(),
     fetchImpl: llm.fetch,

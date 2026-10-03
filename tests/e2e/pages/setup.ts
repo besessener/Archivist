@@ -22,6 +22,7 @@ export function initSetupWizard(page: Page) {
     texts: {
       baseUrlError: root.getByTestId('setup-baseurl-error'),
       testResult: root.getByTestId('setup-test-result'),
+      syncWarning: root.getByTestId('setup-sync-warning'),
     },
   };
   const interactions = {

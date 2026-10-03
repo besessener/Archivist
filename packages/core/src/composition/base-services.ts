@@ -4,6 +4,7 @@ import { DatabaseService, type MigrationStatus } from '../db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from '../context';
 import { AuditService } from '../services/audit';
 import { applyPendingRestore } from '../services/backup-restore';
+import { migrateLegacyLayout } from '../services/data-layout-migration';
 import { CategoryService } from '../services/categories';
 import { EmbeddingService } from '../services/embedding';
 import { JobQueueService } from '../services/jobs';
@@ -25,8 +26,10 @@ import { WorkerPool } from '../workers/pool';
 export type BaseServices = ReturnType<typeof createBaseServices>;
 
 export interface CreateServicesOptions {
-  /** Root of the local data storage (default: ~/Documents/Archivist) */
+  /** Root of the document store: archive, inbox, quarantine, trash (default: ~/Documents/Archivist) */
   dataRoot: string;
+  /** Folder of database, index, config, logs and backups (default: the per-user data folder); omitted = below `dataRoot`. */
+  appDataRoot?: string;
   /** Folder with the Drizzle migrations */
   migrationsFolder: string;
   cipher: SecretCipher;
@@ -46,14 +49,16 @@ export interface CreateServicesOptions {
 
 /** Directory structure, settings, logging, database and the services every domain service builds on. */
 export function createBaseServices(options: CreateServicesOptions) {
-  const baseline = resolveDataPaths(options.dataRoot);
+  const layout = options.appDataRoot ? migrateLegacyLayout({ legacyRoot: options.dataRoot, appDataRoot: options.appDataRoot }) : { migrated: false as const };
+  const baseline = resolveDataPaths({ root: options.dataRoot, appDataRoot: options.appDataRoot });
   ensureDataDirs(baseline);
   const events = new EventBus();
   const settings = new SettingsService({ file: path.join(baseline.config, 'settings.json'), defaultArchiveRoot: baseline.archive, events });
-  const paths = resolveDataPaths(options.dataRoot, settings.get().archiveRoot);
+  const paths = resolveDataPaths({ root: options.dataRoot, appDataRoot: options.appDataRoot, archiveOverride: settings.get().archiveRoot });
   fs.mkdirSync(paths.archive, { recursive: true });
 
   const logger = new Logger(paths.logs, settings.get().logs.level);
+  if (layout.migrated) logger.info('app', 'Application data moved to the per-user data folder', { from: layout.from, to: layout.to, entries: layout.entries });
   const restore = applyPendingRestore(paths, paths.archive);
   if (restore) logger.info('backup', 'Database restored from a backup', { ...restore });
   const database = new DatabaseService(path.join(paths.database, 'archivist.db'), logger);

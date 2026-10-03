@@ -17,5 +17,6 @@ export * from './status';
 export * from './settings';
 export * from './llm';
 export * from './llm-base-url';
+export * from './backup-size';
 export * from './agent';
 export * from './ipc';

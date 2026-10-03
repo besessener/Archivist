@@ -6,6 +6,7 @@ import { enqueueReembedding } from '../services/reembedding';
 import { settingsChanges } from '../services/settings-changes';
 import { AppError, permissionError } from '../util/errors';
 import { isInside } from '../util/paths';
+import { detectSyncFolder } from '../util/sync-folders';
 import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
 function appStatus(services: Services, host: HostApi): AppStatus {
@@ -17,6 +18,7 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     version: host.version,
     dataRoot: services.paths.root,
     archiveRoot: settings.archiveRoot,
+    archiveSyncProvider: detectSyncFolder(settings.archiveRoot),
     platform: host.platform,
     setupCompleted: settings.setupCompleted,
     llm: {
