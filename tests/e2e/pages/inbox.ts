@@ -12,6 +12,8 @@ export function initInbox(page: Page) {
     proposals: page.getByTestId('inbox-proposal'),
     /** What the analysis did not see of a long document. */
     coverage: page.getByTestId('document-coverage'),
+    /** Badge for how far the text of the file was read („Text gelesen“, „Text teilweise gelesen“ …). */
+    processingStatus: page.getByTestId('inbox-processing-status'),
     llmStatus: page.getByTestId('inbox-llm-status'),
     folderLocked: page.getByTestId('inbox-folder-locked'),
     fields: {

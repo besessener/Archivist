@@ -37,6 +37,7 @@ interface EntryScope {
   previous: FileRow | undefined;
   summary: ScanSummary;
   now: string;
+  signal?: AbortSignal;
 }
 
 const emptySummary = (rootId: string): ScanSummary => ({
@@ -97,7 +98,7 @@ export class ScanRun {
     const realPath = await fsp.realpath(root.path); // the directory may have been removed/replaced in the meantime
     if (isForbiddenScanRoot(realPath)) throw permissionError('Verzeichnis ist nicht (mehr) für Scans zulässig.', realPath);
     job?.report(scope.progress, `Durchsuche ${root.path}`);
-    const walked = await this.deps.pool.run('scanDirectory', this.walkInput(root, { realPath, exclusions: scope.exclusions }));
+    const walked = await this.deps.pool.run('scanDirectory', this.walkInput(root, { realPath, exclusions: scope.exclusions }), { signal: job?.signal });
     summary.errors.push(...walked.errors.slice(0, 20));
     summary.skipped = walked.skipped.length;
     if (walked.limitReached) summary.limitReached = true;
@@ -113,7 +114,7 @@ export class ScanRun {
     for (const entry of walked.entries) {
       job?.throwIfCancelled();
       summary.scanned += 1;
-      await this.scanEntry({ root, entry, previous: known.get(entry.path), summary, now });
+      await this.scanEntry({ root, entry, previous: known.get(entry.path), summary, now, signal: job?.signal });
     }
     // beyond the file limit or in an unreadable area a file was merely not seen: it does not count as vanished
     if (!walked.limitReached) this.removeVanished(known, walked);
@@ -200,7 +201,7 @@ export class ScanRun {
     }
     let sha: string;
     try {
-      sha = await this.deps.pool.run('hashFile', { path: entry.path });
+      sha = await this.deps.pool.run('hashFile', { path: entry.path }, { signal: scope.signal });
     } catch (err) {
       summary.errors.push(`${entry.path}: ${(err as Error).message}`);
       return;

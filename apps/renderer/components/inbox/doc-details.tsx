@@ -7,7 +7,7 @@ import type { ArchiveEdit } from '@/components/common/archive-dialog';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { Field } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
-import { DocCoverage } from './doc-coverage';
+import { DocCoverage, isIncompletelyRead } from './doc-coverage';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { formatBytes, formatDate } from '@/lib/format';
@@ -35,7 +35,7 @@ function processingBadge(doc: DocRecord): { label: string; variant: 'secondary' 
     case 'pending':
       return { label: 'Wird verarbeitet', variant: 'info' };
     case 'extracted':
-      return { label: 'Text gelesen', variant: 'success' };
+      return isIncompletelyRead(doc.proposal) ? { label: 'Text teilweise gelesen', variant: 'warning' } : { label: 'Text gelesen', variant: 'success' };
     case 'partial':
       return { label: 'Nur teilweise lesbar', variant: 'warning' };
     case 'unsupported':

@@ -143,7 +143,7 @@ export class DocumentAnalyzer {
     const { signal } = opts;
     const file = this.deps.documents.readablePath(row);
     signal?.throwIfAborted();
-    const parsed = await extractFile(this.deps, file);
+    const parsed = await extractFile(this.deps, file, signal);
     signal?.throwIfAborted();
     const text = parsed.text;
     const decision = this.deps.privacy.evaluateDocument({ ...row, sourcePath: row.sourcePath ?? file });
@@ -244,7 +244,13 @@ export class DocumentAnalyzer {
       possibleOpenItems: c.possibleOpenItems,
       duplicateOfDocumentId: this.textDuplicateOf(row.id, columns.textHash),
       analyzedBy: usedLlm ? 'llm' : 'local',
-      coverage: { textChars: result.parsed.text.length, llmChars: read.chars, llmParts: read.parts, extractionTruncated: result.parsed.truncated },
+      coverage: {
+        textChars: result.parsed.text.length,
+        llmChars: read.chars,
+        llmParts: read.parts,
+        extractionTruncated: result.parsed.truncated,
+        ocrPagesSkipped: Number(result.parsed.meta.ocrPagesSkipped ?? 0),
+      },
     };
     const title = c.title.slice(0, 200);
     // document, graph node and notice change together: a failure in between leaves none of them

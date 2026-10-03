@@ -91,6 +91,10 @@ export function initSettings(page: Page) {
         save: page.getByTestId('memory-save'),
       },
     },
+    ocr: {
+      languages: page.getByTestId('settings-ocr-languages'),
+      language: (code: 'deu' | 'eng') => page.getByTestId(`settings-ocr-language-${code}`),
+    },
     archiveCheck: {
       verify: page.getByTestId('archive-verify'),
       report: page.getByTestId('verify-report'),
