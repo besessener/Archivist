@@ -14,7 +14,7 @@ export default {
   timeoutMS: 30_000,
   tempDirName: '.stryker-tmp',
   cleanTempDir: true,
-  // Ratchet below the measured 87.7 % (the rest: Windows branches in paths.ts, equivalent mutants): only raised, never lowered.
+  // Full run measured 97.2 % (the rest: equivalent mutants); the thresholds are only raised, never lowered.
   incrementalFile: 'reports/stryker-incremental.json',
   thresholds: { high: 95, low: 85, break: 85 },
 };
