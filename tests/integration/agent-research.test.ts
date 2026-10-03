@@ -148,9 +148,12 @@ describe('agent research tools', () => {
     const byMonth = await call('find_gaps', { documents: [set], by: 'month' });
     expect(byMonth.content).toContain('Fehlende Monate: 2026-03');
     expect(byMonth.summary).toBe('1 Monat(e) fehlen');
+    expect(byMonth.content).toMatch(new RegExp(`Fundstelle <<<DOKUMENTINHALT quelle="${ctx.refs.doc(ids[0]!)}"\\nKontoauszug 1 vom 2026-01`));
+    expect(byMonth.content).toContain(`quelle="${ctx.refs.doc(ids.at(-1)!)}"`);
 
     const byNumber = await call('find_gaps', { documents: [set], by: 'number' });
     expect(byNumber.content).toContain('fehlend 3');
+    expect(byNumber.content).toMatch(new RegExp(`Fundstelle <<<DOKUMENTINHALT quelle="${ctx.refs.doc(ids[0]!)}"\\nKontoauszug Nr. 1\\n`));
   });
 
   it('compares contract versions as a table of changed lines', async () => {

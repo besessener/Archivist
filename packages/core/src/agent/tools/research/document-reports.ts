@@ -39,7 +39,25 @@ export async function sumAmountsReport(scope: ToolScope, refs: readonly string[]
   };
 }
 
-function monthGapsOutput(found: DocumentRecord[]): ToolOutput {
+const DATE_LINE = /\b\d{4}-\d{2}(?:-\d{2})?\b|\b\d{1,2}\.\d{1,2}\.\d{2,4}\b|\b\d{1,2}\.\s?[A-Za-zä]+\s\d{4}\b/;
+
+/** First and last document of a series with the verbatim line the position was read from (marked as data, with the D-ref). */
+function boundaryEvidence(ctx: ToolContext, ends: Array<{ d: DocumentRecord; line: string }>): string {
+  const shown = ends.length > 1 ? [ends[0]!, ends.at(-1)!] : ends;
+  return shown.map((e) => `Fundstelle ${asData(ctx.refs.doc(e.d.id), truncate(e.line, 200))}`).join('\n');
+}
+
+function monthGapsOutput(scope: ToolScope, found: DocumentRecord[]): ToolOutput {
+  const { deps, ctx } = scope;
+  const ends = found
+    .toSorted((x, y) => businessDate(x).localeCompare(businessDate(y)))
+    .map((d) => ({
+      d,
+      line:
+        documentText(deps, d.id)
+          .split(/\r?\n/)
+          .find((l) => DATE_LINE.test(l)) ?? `${d.title} (${businessDate(d)})`,
+    }));
   const gaps = monthGaps(found.map(businessDate));
   const counts = new Map<string, number>();
   for (const d of found) counts.set(businessDate(d).slice(0, 7), (counts.get(businessDate(d).slice(0, 7)) ?? 0) + 1);
@@ -49,6 +67,7 @@ function monthGapsOutput(found: DocumentRecord[]): ToolOutput {
       `Zeitraum ${gaps.first} bis ${gaps.last}: ${gaps.present.length} Monate vorhanden, ${gaps.missing.length} fehlen.`,
       gaps.missing.length ? `Fehlende Monate: ${gaps.missing.join(', ')}` : 'Keine Lücke.',
       doubles.length ? `Mehrfach vorhanden: ${doubles.join(', ')}` : null,
+      boundaryEvidence(ctx, ends),
     ]
       .filter(Boolean)
       .join('\n'),
@@ -57,11 +76,18 @@ function monthGapsOutput(found: DocumentRecord[]): ToolOutput {
 }
 
 function numberGapsOutput(ctx: ToolContext, found: DocumentRecord[]): ToolOutput {
+  const named = (d: DocumentRecord) => (sequenceNumber(d.title) ? d.title : d.originalName);
   const sequence = found.map((d) => ({ d, number: sequenceNumber(d.title) ?? sequenceNumber(d.originalName) }));
   const months = sequence.flatMap((x) => (x.number?.kind === 'month' ? [x.number.month] : []));
   const numbers = sequence.flatMap((x) => (x.number?.kind === 'number' ? [x.number.n] : []));
   const without = sequence.filter((x) => !x.number).map((x) => ctx.refs.doc(x.d.id));
-  const withoutNote = without.length ? `\nOhne erkennbare Nummer: ${without.join(', ')}` : '';
+  const ends = sequence
+    .filter((x) => x.number)
+    .toSorted(
+      (x, y) => (x.number!.kind === 'number' ? x.number!.n : 0) - (y.number!.kind === 'number' ? y.number!.n : 0) || named(x.d).localeCompare(named(y.d)),
+    )
+    .map((x) => ({ d: x.d, line: named(x.d) }));
+  const withoutNote = `${without.length ? `\nOhne erkennbare Nummer: ${without.join(', ')}` : ''}${ends.length ? `\n${boundaryEvidence(ctx, ends)}` : ''}`;
   if (months.length > numbers.length) {
     const gaps = monthGaps(months.map((month) => `${month}-01`));
     return {
@@ -81,7 +107,7 @@ function numberGapsOutput(ctx: ToolContext, found: DocumentRecord[]): ToolOutput
 export async function gapsReport(scope: ToolScope, args: { documents: string[]; by: 'month' | 'number' }): Promise<ToolOutput> {
   const { docs: found, skipped, unknown } = shareableDocs(scope, args.documents);
   if (!found.length) return { content: `Keine auswertbaren Dokumente.${skippedNote(skipped)}${unknownNote(unknown)}`, isError: true };
-  const output = args.by === 'month' ? monthGapsOutput(found) : numberGapsOutput(scope.ctx, found);
+  const output = args.by === 'month' ? monthGapsOutput(scope, found) : numberGapsOutput(scope.ctx, found);
   return { ...output, content: output.content + skippedNote(skipped) + unknownNote(unknown) };
 }
 
