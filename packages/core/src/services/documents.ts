@@ -18,6 +18,7 @@ import { DocumentRereader } from './document-reread';
 import { DocumentTrash, type FileOperationLock } from './document-trash';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
+import { NearDuplicateIndex } from './near-duplicates';
 import type { DocumentPrivacyFields, PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
@@ -27,7 +28,7 @@ export type { DocRow } from './document-model';
 
 export const DOCUMENT_REREAD_JOB = 'documents.reread';
 
-export type DocumentServiceDeps = Omit<DocumentDeps, 'documents'> & { undo: UndoService };
+export type DocumentServiceDeps = Omit<DocumentDeps, 'documents' | 'nearDuplicates'> & { undo: UndoService };
 
 export class DocumentService {
   private readonly deps: DocumentDeps;
@@ -36,6 +37,7 @@ export class DocumentService {
   private readonly rereader: DocumentRereader;
   private readonly metadata: DocumentMetadataEditor;
   private readonly trash: DocumentTrash;
+  readonly nearDuplicates: NearDuplicateIndex;
   private fileLock: FileOperationLock = { guardedFor: (_documentId, operation) => operation() };
 
   private readonly ctx: AppContext;
@@ -48,7 +50,8 @@ export class DocumentService {
 
   constructor({ undo, ...services }: DocumentServiceDeps) {
     ({ ctx: this.ctx, settings: this.settings, graph: this.graph, search: this.search, privacy: this.privacy, audit: this.audit, jobs: this.jobs } = services);
-    this.deps = { ...services, documents: this };
+    this.nearDuplicates = new NearDuplicateIndex(services.ctx);
+    this.deps = { ...services, documents: this, nearDuplicates: this.nearDuplicates };
     this.importer = new DocumentImporter(this.deps);
     this.analyzer = new DocumentAnalyzer(this.deps);
     this.rereader = new DocumentRereader(this.deps);

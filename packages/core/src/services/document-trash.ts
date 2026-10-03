@@ -73,6 +73,7 @@ export class DocumentTrash {
         ctx.database.db.update(scanFiles).set({ documentId: null }).where(eq(scanFiles.documentId, row.id)).run();
         ctx.database.db.delete(documents).where(eq(documents.id, row.id)).run();
         graph.removeNode(row.id);
+        this.deps.nearDuplicates.remove(row.id);
       });
     } catch (err) {
       await this.putBackAll(trashed.map(trashMove));
@@ -194,6 +195,7 @@ export class DocumentTrash {
         ctx.database.db.insert(documents).values(row).run();
         if (undoData.scanFileIds.length) ctx.database.db.update(scanFiles).set({ documentId: row.id }).where(inArray(scanFiles.id, undoData.scanFileIds)).run();
         if (undoData.node) skipped = graph.restoreNode(undoData.node);
+        this.deps.nearDuplicates.record(row.id, row.extractedText);
       });
     } catch (err) {
       await this.putBackAll(restored);

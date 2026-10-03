@@ -271,6 +271,7 @@ export class DocumentAnalyzer {
         .where(and(eq(documents.id, row.id), eq(documents.status, 'analyzing')))
         .run();
       if (!written.changes) return false;
+      this.deps.nearDuplicates.record(row.id, result.parsed.text);
       this.deps.graph.registerNode({ type: 'document', id: row.id, name: title, description: c.summary });
       this.deps.notifications.create({
         title: 'Klassifikation bereit',

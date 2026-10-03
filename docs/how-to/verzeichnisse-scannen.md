@@ -15,7 +15,7 @@ Unter **Scan** schaltest du **Beim Start der App suchen** und **Regelmäßig suc
 ## Was beim Scannen passiert – und was nicht
 
 - Bekannte, unveränderte Dateien (Größe + Änderungszeit) werden weder neu gehasht noch analysiert.
-- Dateien, deren Inhalt bereits im Eingang oder Archiv liegt, werden als Duplikat markiert.
+- Dateien, deren Inhalt bereits im Eingang oder Archiv liegt, werden als Duplikat markiert. Dateien mit nur leicht geändertem Text (z. B. ein Entwurf) sind keine Duplikate; die Archivprüfung meldet sie als „Ähnlicher Inhalt“ und löscht nichts.
 - Versteckte Einträge, `node_modules` und das Archivist-Datenverzeichnis werden übersprungen; Symlinks nur verfolgt, wenn ihr Ziel im freigegebenen Bereich liegt.
 - Pro Freigabe werden höchstens 20.000 Dateien erfasst; ein Hinweis meldet, wenn das Limit erreicht ist.
 

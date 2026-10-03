@@ -8,6 +8,7 @@ import { AppError, toErrorInfo } from '../util/errors';
 import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
 import { reembedEntries } from '../services/reembedding';
+import { backfillNearDuplicates, NEAR_DUPLICATE_BACKFILL_JOB } from '../services/near-duplicates';
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -141,6 +142,7 @@ export function registerJobHandlers(services: JobServices): void {
       return reembedEntries({ search, embedding, documentGoesRemote, reindex: async (entry) => reindexers[entry.type]?.(entry.id) }, job);
     },
   });
+  jobs.register<Record<string, never>>(NEAR_DUPLICATE_BACKFILL_JOB, { handler: (job) => backfillNearDuplicates(services.documents.nearDuplicates, job) });
   jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {
     handler: async (job) => {
       job.report(null, 'Prüfe Entscheidungen auf Widersprüche');
