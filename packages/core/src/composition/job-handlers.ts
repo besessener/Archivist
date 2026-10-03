@@ -4,9 +4,10 @@ import { ACTION_EXECUTE_JOB } from '../services/actions';
 import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
 import { DOCUMENT_REREAD_JOB } from '../services/documents';
 import { isJobCancelled, type JobContext } from '../services/jobs';
-import { toErrorInfo } from '../util/errors';
+import { AppError, toErrorInfo } from '../util/errors';
 import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
+import { reembedEntries } from '../services/reembedding';
 
 /** Files per automatic analysis job after a scan (the same cap as a manual analysis). */
 const AUTO_ANALYZE_BATCH = 500;
@@ -89,6 +90,14 @@ async function rereadArchived({ documents, ctx }: JobServices, job: JobContext<{
   return { reread: done - failed.length, failed };
 }
 
+/** A big action's job (#254) succeeds only for an executed action; a failed or no longer approved one fails it with its reason. */
+function executedAction({ actions, insights }: JobServices, actionId: string): { summary: string } {
+  const action = actions.get(actionId);
+  if (action.status !== 'executed') throw new AppError('validation_error', action.result ?? 'Die Aktion wurde nicht ausgeführt.');
+  insights.acceptExecuted(actionId);
+  return { summary: action.result ?? 'ausgeführt' };
+}
+
 /** Job handlers for documents, the scanner, background agent runs (#313) and the archive check. */
 export function registerJobHandlers(services: JobServices): void {
   const { jobs, agent, archive, consistency, contradictions, actions, search, embedding } = services;
@@ -119,7 +128,7 @@ export function registerJobHandlers(services: JobServices): void {
   jobs.register<{ actionId: string; overrides: Record<string, unknown> }>(ACTION_EXECUTE_JOB, {
     handler: async (job) => {
       await actions.executeApproved(job.payload.actionId, job.payload.overrides);
-      return { summary: actions.get(job.payload.actionId).result ?? 'ausgeführt' };
+      return executedAction(services, job.payload.actionId);
     },
     hooks: {
       onFailed: (job, error) => actions.markNotExecuted(job.payload.actionId, toErrorInfo(error).message),
@@ -128,13 +137,8 @@ export function registerJobHandlers(services: JobServices): void {
   });
   jobs.register<Record<string, never>>(REEMBED_JOB, {
     handler: async (job) => {
-      const stale = search.entriesWithOtherModel(embedding.currentModel({ allowRemote: true }), { ownRecords: search.ownRecordsGoRemote() });
-      for (const [index, entry] of stale.entries()) {
-        job.signal.throwIfAborted();
-        job.report(index / stale.length, `${index} von ${stale.length} neu eingebettet`);
-        await reindexers[entry.type]?.(entry.id);
-      }
-      return { summary: stale.length === 1 ? '1 Eintrag neu eingebettet' : `${stale.length} Einträge neu eingebettet` };
+      const documentGoesRemote = (id: string) => services.documents.embedsRemotely(id);
+      return reembedEntries({ search, embedding, documentGoesRemote, reindex: async (entry) => reindexers[entry.type]?.(entry.id) }, job);
     },
   });
   jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {

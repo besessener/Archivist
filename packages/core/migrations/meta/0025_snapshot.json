@@ -1,8 +1,8 @@
 {
+  "id": "16ace2fb-b5dc-472e-9ef1-b871a0ab28b6",
+  "prevId": "60aaade9-0bfe-43d6-a6b7-187735d700b9",
   "version": "6",
   "dialect": "sqlite",
-  "id": "915fd4a9-298a-49a4-946e-f3447df4af4f",
-  "prevId": "60aaade9-0bfe-43d6-a6b7-187735d700b9",
   "tables": {
     "entities": {
       "name": "entities",
@@ -2775,9 +2775,9 @@
   "views": {},
   "enums": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
+    "tables": {}
   },
   "internal": {
     "indexes": {}

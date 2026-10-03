@@ -3,7 +3,9 @@ import type { RestorePaths, RestoreSource } from '@archivist/core';
 
 export interface RecoveryDeps {
   paths: RestorePaths;
-  scheduleNewestRestore: (paths: RestorePaths) => RestoreSource | null;
+  findNewestRestore: (backups: string) => RestoreSource | null;
+  /** Marks the restore for the next start; only called after the user agreed. */
+  scheduleRestore: (paths: RestorePaths, name: string) => void;
   /** Shows the offer; true when the user wants the restore. */
   askToRestore: (question: { message: string; backupName: string }) => boolean;
   showError: (title: string, message: string) => void;
@@ -12,12 +14,23 @@ export interface RecoveryDeps {
   exit: (code: number) => void;
 }
 
+const START_FAILED = 'Archivist konnte nicht gestartet werden';
+
 /** Handles a database found damaged at start: restore after the user's consent (the damaged file is kept), else quit. */
 export function recoverFromDamagedDatabase(deps: RecoveryDeps, problem: string): void {
-  const source = deps.scheduleNewestRestore(deps.paths);
+  try {
+    offerRestore(deps, problem);
+  } catch (err) {
+    deps.showError(START_FAILED, `${problem}\n\nDie Wiederherstellung konnte nicht vorbereitet werden: ${err instanceof Error ? err.message : String(err)}`);
+    deps.exit(1);
+  }
+}
+
+function offerRestore(deps: RecoveryDeps, problem: string): void {
+  const source = deps.findNewestRestore(deps.paths.backups);
   if (!source) {
     deps.showError(
-      'Archivist konnte nicht gestartet werden',
+      START_FAILED,
       `${problem}\n\nEs gibt kein Backup, aus dem die Datenbank wiederhergestellt werden könnte. Deine Dokumente im Archivordner sind unverändert.`,
     );
     deps.exit(1);
@@ -31,6 +44,7 @@ export function recoverFromDamagedDatabase(deps: RecoveryDeps, problem: string):
     deps.exit(1);
     return;
   }
+  deps.scheduleRestore(deps.paths, source.name);
   deps.relaunch();
   deps.exit(0);
 }

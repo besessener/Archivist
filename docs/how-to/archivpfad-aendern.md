@@ -18,3 +18,7 @@ Archivierte Dokumente verweisen auf ihren Platz *innerhalb* des Archivordners (`
 - Fehlen Dateien, stellt Archivist nur nach ausdrücklicher Bestätigung um und nennt die Anzahl betroffener Dokumente. Solange sie nicht erreichbar sind, warnt die Oberfläche weiter.
 
 Oder **Abbrechen**.
+
+## Warum es keinen direkten Weg gibt
+
+Sobald archivierte Dokumente existieren, lehnt Archivist jede andere Änderung des Archivordners ab, die nicht über „Archiv umziehen“ oder „Nur Pfad ändern“ läuft. Die Prüfung gilt im Hauptprozess und nicht nur in der Oberfläche: Die Einstellungen (`settings:update`) nehmen einen anderen `archiveRoot` dann nicht an und ändern dabei nichts, auch nicht die übrigen Felder derselben Änderung. So verlieren Dokumente nicht ihren Platz, und die Archivprüfung meldet nicht plötzlich alle Dateien als fehlend. Ohne archivierte Dokumente (etwa bei der Ersteinrichtung) lässt sich der Ordner weiterhin frei wählen; denselben Ordner erneut zu speichern ist immer möglich.

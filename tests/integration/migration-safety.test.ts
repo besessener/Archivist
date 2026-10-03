@@ -85,6 +85,19 @@ describe('Migration safety (#217)', () => {
     db.close();
   });
 
+  it('refuses to migrate when the snapshot cannot be written, and leaves the database as it was', () => {
+    const first = open();
+    first.migrate(migrationsUpTo('0010'), backups);
+    first.close();
+    fs.writeFileSync(backups, 'eine Datei, kein Ordner');
+
+    const db = open();
+
+    expect(() => db.migrate(MIGRATIONS, backups)).toThrow(/keine Sicherung/);
+    expect(db.migrationStatus(MIGRATIONS).applied).toBe(11);
+    db.close();
+  });
+
   it('keeps only the newest three snapshots', () => {
     fs.mkdirSync(backups, { recursive: true });
     for (const stamp of ['2020-01-01', '2020-01-02', '2020-01-03']) fs.writeFileSync(path.join(backups, `vor-migration-${stamp}.db`), '');
@@ -131,5 +144,30 @@ describe('Damaged database file (#217)', () => {
     first.close();
 
     expect(() => open().close()).not.toThrow();
+  });
+});
+
+describe('Decision participants are optional (#198)', () => {
+  it('removes participants from the missing fields of existing decisions and keeps everything else', () => {
+    const first = open();
+    first.migrate(migrationsUpTo('0024'), backups);
+    const insert = first.sqlite.prepare(
+      "insert into decisions (id, title, decision_text, status, missing_fields, created_at, updated_at) values (?, 'Entscheidung', 'Text', ?, ?, 'now', 'now')",
+    );
+    insert.run('only-participants', 'active', '["participants"]');
+    insert.run('draft-with-date', 'draft', '["decidedAt","participants","topic"]');
+    insert.run('complete', 'active', '[]');
+    first.close();
+
+    const db = open();
+    db.migrate(MIGRATIONS, backups);
+    const rows = db.sqlite.prepare('select id, status, missing_fields as missing from decisions order by id').all();
+    db.close();
+
+    expect(rows).toEqual([
+      { id: 'complete', status: 'active', missing: '[]' },
+      { id: 'draft-with-date', status: 'draft', missing: '["decidedAt","topic"]' },
+      { id: 'only-participants', status: 'active', missing: '[]' },
+    ]);
   });
 });

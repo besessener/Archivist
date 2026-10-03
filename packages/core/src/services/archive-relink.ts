@@ -14,6 +14,15 @@ export interface RelinkUndoData {
   sha256: string;
 }
 
+/** Size of a file found while listing; null when it vanished meanwhile. */
+function fileSize(file: string): number | null {
+  try {
+    return fs.statSync(file).size;
+  } catch {
+    return null;
+  }
+}
+
 type MissingDocument = Pick<typeof documents.$inferSelect, 'id' | 'title' | 'sha256' | 'size' | 'archiveRelPath'>;
 
 /** Re-attaches archive files that were renamed or moved outside Archivist: an unknown file with the checksum of a missing one. */
@@ -35,14 +44,18 @@ export class ArchiveRelinker {
     const missing = archived.filter((row) => !fs.existsSync(archivePathOf(root, row.archiveRelPath!)));
     if (missing.length === 0) return { relinked: [], stillMissing: 0 };
     const known = new Set(archived.map((row) => path.resolve(archivePathOf(root, row.archiveRelPath!))));
-    const candidates = (await untrackedFiles(root, known)).map((file) => ({ file, size: fs.statSync(file).size }));
+    const candidates = (await untrackedFiles(root, known)).flatMap((file) => {
+      const size = fileSize(file);
+      return size === null ? [] : [{ file, size }];
+    });
     const relinked: RelinkResult['relinked'] = [];
     const taken = new Set<string>();
     for (const row of missing) {
       const file = await this.findCopy(row, { candidates, taken });
       if (!file) continue;
       taken.add(file);
-      relinked.push(this.attach(row, toPosix(path.relative(root, file))));
+      const entry = this.attach(row, toPosix(path.relative(root, file)));
+      if (entry) relinked.push(entry);
     }
     if (relinked.length > 0) this.deps.ctx.events.changed('documents', 'audit', 'status');
     return { relinked, stillMissing: missing.length - relinked.length };
@@ -52,17 +65,23 @@ export class ArchiveRelinker {
   private async findCopy(row: MissingDocument, search: { candidates: Array<{ file: string; size: number }>; taken: Set<string> }): Promise<string | null> {
     for (const { file, size } of search.candidates) {
       if (search.taken.has(file) || size !== row.size) continue;
-      if ((await this.deps.pool.run('hashFile', { path: file })) === row.sha256) return file;
+      const hash = await this.deps.pool.run('hashFile', { path: file }).catch((err: unknown) => {
+        this.deps.ctx.logger.warn('archive', 'Relink candidate could not be hashed', { path: file, error: err });
+        return null;
+      });
+      if (hash === row.sha256) return file;
     }
     return null;
   }
 
-  /** Points the document at the found file and logs it with undo; the document's own timestamp stays. */
-  private attach(row: MissingDocument, toRel: string): RelinkResult['relinked'][number] {
+  /** Points the document at the found file and logs it with undo (its own timestamp stays); null when another document took the file meanwhile. */
+  private attach(row: MissingDocument, toRel: string): RelinkResult['relinked'][number] | null {
     const fromRel = row.archiveRelPath!;
     const undoData: RelinkUndoData = { documentId: row.id, fromRel, toRel, sha256: row.sha256 };
     const root = archiveRootOf(this.deps);
-    this.deps.ctx.database.transaction(() => {
+    const attached = this.deps.ctx.database.transaction(() => {
+      // e.g. an archiving that ran while the candidates were hashed
+      if (this.db.select({ id: documents.id }).from(documents).where(eq(documents.archiveRelPath, toRel)).get()) return false;
       this.db.update(documents).set({ archiveRelPath: toRel }).where(eq(documents.id, row.id)).run();
       this.deps.audit.log({
         action: 'archive.relink',
@@ -75,8 +94,9 @@ export class ArchiveRelinker {
         after: { archiveRelPath: toRel },
         undo: { type: 'archive_relink', data: undoData },
       });
+      return true;
     });
-    return { documentId: row.id, title: row.title, path: archivePathOf(root, toRel) };
+    return attached ? { documentId: row.id, title: row.title, path: archivePathOf(root, toRel) } : null;
   }
 
   async undoCheck(d: RelinkUndoData): Promise<string[]> {

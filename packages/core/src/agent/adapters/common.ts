@@ -15,6 +15,18 @@ export interface AdapterConfig {
   warn: (message: string, data?: Record<string, unknown>) => void;
 }
 
+const AZURE_HOST = /\.azure\.(com|us|cn)$/i;
+
+/** Azure endpoints take the key as `api-key`, every other OpenAI-compatible endpoint as `Authorization: Bearer`; never both. */
+export function authHeaders(url: string, apiKey: string): Record<string, string> {
+  try {
+    if (AZURE_HOST.test(new URL(url).hostname)) return { 'api-key': apiKey };
+  } catch {
+    // an unparsable URL never gets this far; Bearer is the safe default
+  }
+  return { Authorization: `Bearer ${apiKey}` };
+}
+
 /** Last user text of a request (preview in the transmission log). */
 export function previewOf(messages: AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i -= 1) {

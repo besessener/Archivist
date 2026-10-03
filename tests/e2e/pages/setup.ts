@@ -20,6 +20,7 @@ export function initSetupWizard(page: Page) {
       mode: (mode: PrivacyMode) => root.getByTestId(`setup-mode-${mode}`),
     },
     texts: {
+      baseUrlError: root.getByTestId('setup-baseurl-error'),
       testResult: root.getByTestId('setup-test-result'),
     },
   };

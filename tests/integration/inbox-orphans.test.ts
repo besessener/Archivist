@@ -1,6 +1,7 @@
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { classification } from '../helpers/document-classifications';
 
@@ -13,6 +14,8 @@ beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
 });
 afterEach(async () => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   await app.cleanup();
 });
 
@@ -32,18 +35,23 @@ async function archivedDocument(content: string) {
   return inbox;
 }
 
-function orphan(inbox: string, name: string, content: string, ageMs: number): string {
+/** Only Date is faked: the clock moves on while every file timestamp (also creation and change time) stays where it was. */
+const later = (ms: number) => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(Date.now() + ms);
+};
+
+function orphan(inbox: string, name: string, content: string): string {
   const file = path.join(inbox, name);
   fs.writeFileSync(file, content);
-  const when = new Date(Date.now() - ageMs);
-  fs.utimesSync(file, when, when);
   return file;
 }
 
 describe('Inbox orphans', () => {
   it('removes an old orphan whose content is archived intact', async () => {
     const inbox = await archivedDocument('Archivierter Inhalt');
-    const file = orphan(inbox, 'rest.txt', 'Archivierter Inhalt', 2 * HOUR_MS);
+    const file = orphan(inbox, 'rest.txt', 'Archivierter Inhalt');
+    later(2 * HOUR_MS);
 
     expect(await app.services.archive.cleanupInbox()).toBe(1);
 
@@ -52,7 +60,8 @@ describe('Inbox orphans', () => {
 
   it('keeps a fresh orphan (an import may still be running)', async () => {
     const inbox = await archivedDocument('Archivierter Inhalt');
-    const file = orphan(inbox, 'neu.txt', 'Archivierter Inhalt', 1_000);
+    const file = orphan(inbox, 'neu.txt', 'Archivierter Inhalt');
+    later(1_000);
 
     expect(await app.services.archive.cleanupInbox()).toBe(0);
 
@@ -61,7 +70,8 @@ describe('Inbox orphans', () => {
 
   it('keeps an old orphan whose content is not archived', async () => {
     const inbox = await archivedDocument('Archivierter Inhalt');
-    const file = orphan(inbox, 'einzig.txt', 'Nirgends sonst vorhanden', 2 * HOUR_MS);
+    const file = orphan(inbox, 'einzig.txt', 'Nirgends sonst vorhanden');
+    later(2 * HOUR_MS);
 
     expect(await app.services.archive.cleanupInbox()).toBe(0);
 
@@ -73,11 +83,57 @@ describe('Inbox orphans', () => {
     const imp = await app.ok('documents:import', { paths: [app.file('in/offen.txt', 'Noch im Eingang')] });
     await app.services.jobs.whenIdle();
     const staged = app.services.documents.getRow(imp.imported[0]!.id).stagedPath!;
-    const when = new Date(Date.now() - 2 * HOUR_MS);
-    fs.utimesSync(staged, when, when);
+    later(2 * HOUR_MS);
 
     expect(await app.services.archive.cleanupInbox()).toBe(0);
 
     expect(fs.existsSync(staged)).toBe(true);
+  });
+
+  it('keeps a fresh copy of an old file: it still carries the old modification time, as a copy does on Windows', async () => {
+    const inbox = await archivedDocument('Archivierter Inhalt');
+    const file = orphan(inbox, 'kopie.txt', 'Archivierter Inhalt');
+    const old = new Date(Date.now() - 2 * HOUR_MS);
+    fs.utimesSync(file, old, old);
+
+    expect(await app.services.archive.cleanupInbox()).toBe(0);
+
+    expect(fs.existsSync(file)).toBe(true);
+  });
+
+  it('leaves the copy a running undo has just restored, before the undo commits it to the document', async () => {
+    app.llm.on('DocumentClassification', () => classification({ title: 'Undo', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: null }));
+    const imp = await app.ok('documents:import', { paths: [app.file('in/undo.txt', 'Inhalt im Undo')] });
+    await app.services.jobs.whenIdle();
+    const id = imp.imported[0]!.id;
+    const staged = app.services.documents.getRow(id).stagedPath!;
+    const res = await app.ok('documents:archive', {
+      items: [{ documentId: id, mode: 'copy', categoryPath: 'work/notes', topic: null }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    } as never);
+    const realCopyFile = fsp.copyFile.bind(fsp);
+    let restored!: () => void;
+    const reached = new Promise<void>((resolve) => (restored = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    vi.spyOn(fsp, 'copyFile').mockImplementation(async (src, dest, mode) => {
+      await realCopyFile(src, dest, mode);
+      if (String(dest) !== staged) return;
+      later(2 * HOUR_MS);
+      restored();
+      await gate;
+    });
+
+    const undo = app.ok('documents:undoArchive', { auditId: res.items[0]!.auditId! });
+    await reached;
+    const swept = await app.services.archive.cleanupInbox();
+    release();
+
+    expect(swept).toBe(0);
+    expect(await undo).toMatchObject({ undone: true, conflicts: [] });
+    expect(fs.readFileSync(staged, 'utf8')).toBe('Inhalt im Undo');
+    expect(app.services.documents.getRow(id).stagedPath).toBe(staged);
   });
 });

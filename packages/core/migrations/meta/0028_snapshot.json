@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e160b811-a1a6-49c7-9886-061e9cf234a3",
-  "prevId": "c601d3da-2375-464d-9e3f-8c7accceeda8",
+  "id": "c601d3da-2375-464d-9e3f-8c7accceeda8",
+  "prevId": "2ff6ed97-0f1e-4e04-b343-4d0768411bb5",
   "tables": {
     "entities": {
       "name": "entities",
@@ -1559,14 +1559,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "resolved_by_supersede": {
-          "name": "resolved_by_supersede",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         }
       },
       "indexes": {

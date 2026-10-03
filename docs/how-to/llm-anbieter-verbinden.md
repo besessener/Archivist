@@ -17,6 +17,8 @@ Beispiele für die Base URL:
 | Claude auf Microsoft Foundry | `https://<resource>.services.ai.azure.com/anthropic` | Anthropic |
 | Claude API | `https://api.anthropic.com` | Anthropic |
 
+Die Base URL muss mit `https://` beginnen; `http://` ist nur für deinen eigenen Rechner (`localhost`, `127.0.0.1`, `[::1]`) erlaubt, siehe [Datenschutz einstellen](datenschutz-einstellen.md#verschlüsselte-verbindung-sicherstellen).
+
 Erkannt wird der Anthropic-Adapter an `api.anthropic.com` bzw. einer URL, die auf `…/anthropic` endet; alles andere gilt als Responses API.
 
 ## Claude auf Foundry mit Werkzeugen nutzen

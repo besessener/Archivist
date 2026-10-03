@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c601d3da-2375-464d-9e3f-8c7accceeda8",
-  "prevId": "2ff6ed97-0f1e-4e04-b343-4d0768411bb5",
+  "id": "2ff6ed97-0f1e-4e04-b343-4d0768411bb5",
+  "prevId": "915fd4a9-298a-49a4-946e-f3447df4af4f",
   "tables": {
     "entities": {
       "name": "entities",
@@ -2541,20 +2541,6 @@
         },
         "run_id": {
           "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "hash": {
-          "name": "hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "prev_hash": {
-          "name": "prev_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

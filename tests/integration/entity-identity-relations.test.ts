@@ -176,7 +176,7 @@ describe('relation semantics (#189)', () => {
     const third = graph().ensureEntity({ type: 'person', name: 'Dora Beispiel' });
     insert.run('old-other-method', third.id, document.id, 'proposed', 0, null, 'agent');
 
-    const migration = fs.readFileSync(path.resolve(__dirname, '../../packages/core/migrations/0025_mentions_not_produced.sql'), 'utf8');
+    const migration = fs.readFileSync(path.resolve(__dirname, '../../packages/core/migrations/0026_mentions_not_produced.sql'), 'utf8');
     sqlite.exec(migration);
 
     const rows = sqlite

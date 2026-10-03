@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { ArchivePlanItem, DocumentRecord, DocumentStatus, StoredAgentAction } from '@archivist/shared';
+import type { ArchivePlanItem, DocumentRecord, DocumentStatus, Job, StoredAgentAction } from '@archivist/shared';
 import { toErrorInfo } from '../../util/errors';
 import type { ConvState, Reply } from '../chat-state';
 import { RELATION_LABEL } from '../graph/relation-reason';
@@ -144,13 +144,7 @@ export class ArchiveReplies {
   async contradictionCheck(state: ConvState): Promise<Reply> {
     // a job of its own (visible and cancellable under Jobs); short scans still answer right away (#254)
     const queued = this.deps.jobs.enqueue(CONTRADICTION_SCAN_JOB, { label: 'Widersprüche prüfen', sameAs: () => true });
-    const scan = await this.deps.jobs.waitFor(queued.id, SCAN_WAIT_MS);
-    const stillRunning = scan.status === 'pending' || scan.status === 'running';
-    const scanNote = stillRunning
-      ? '\n\n_Die Prüfung läuft noch im Hintergrund (siehe Jobs). Neue Funde melde ich als Hinweis; frag später noch einmal nach._'
-      : scan.status === 'failed'
-        ? `\n\n_Die Prüfung ist fehlgeschlagen: ${scan.error ?? 'unbekannter Fehler'}_`
-        : '';
+    const scanNote = noteOnScan(await this.deps.jobs.waitFor(queued.id, SCAN_WAIT_MS));
     const list = this.deps.contradictions.list('detected');
     const outdated = this.deps.insights.list('open').filter((insight) => insight.kind === 'possibly_superseded');
     if (list.length === 0 && outdated.length === 0)
@@ -222,6 +216,16 @@ export class ArchiveReplies {
         return true;
       });
   }
+}
+
+/** The note below the reply when the scan job has not simply succeeded: then the reply covers only part of the decisions. */
+function noteOnScan(scan: Job): string {
+  if (scan.status === 'pending' || scan.status === 'running')
+    return '\n\n_Die Prüfung läuft noch im Hintergrund (siehe Jobs). Neue Funde melde ich als Hinweis; frag später noch einmal nach._';
+  if (scan.status === 'failed') return `\n\n_Die Prüfung ist fehlgeschlagen: ${scan.error ?? 'unbekannter Fehler'}_`;
+  if (scan.status === 'cancelled')
+    return '\n\n_Die Prüfung wurde abgebrochen, bevor alle Entscheidungen geprüft waren. Frag noch einmal nach, um sie neu zu starten._';
+  return '';
 }
 
 /** A path that cannot be read counts as a directory if it ends in a separator or has no file extension. */

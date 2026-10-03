@@ -90,7 +90,8 @@ function DocumentsInner() {
       {(total.data ?? 0) > docs.length && (
         <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground" data-testid="documents-capped">
           <p>
-            Angezeigt werden die neuesten {docs.length.toLocaleString('de-DE')} von {total.data!.toLocaleString('de-DE')} Dokumenten.
+            Angezeigt werden die neuesten {docs.length.toLocaleString('de-DE')} von {total.data!.toLocaleString('de-DE')} Dokumenten. Der Typfilter wirkt nur
+            auf die geladenen Dokumente.
             {limit >= MAX_LIMIT && ' Grenze die Liste mit der Suche oder einem Thema ein, um ältere zu finden.'}
           </p>
           {limit < MAX_LIMIT && (

@@ -1,4 +1,4 @@
-import type { FetchLike } from '../../agent/adapters/common';
+import { authHeaders, type FetchLike } from '../../agent/adapters/common';
 import { AppError } from '../../util/errors';
 import { abortedError } from '../../util/llm-errors';
 
@@ -25,7 +25,7 @@ function networkError(err: unknown): AppError {
   });
 }
 
-/** POST with both auth headers and a timeout; a user cancellation, a timeout and an unreachable endpoint become AppErrors. */
+/** POST with the one auth header the endpoint needs and a timeout; a user cancellation, a timeout and an unreachable endpoint become AppErrors. */
 export async function postJson(fetchImpl: FetchLike, request: PostRequest): Promise<{ status: number; text: string }> {
   const { url, apiKey, body, timeoutMs, signal } = request;
   if (signal?.aborted) throw abortedError();
@@ -36,7 +36,7 @@ export async function postJson(fetchImpl: FetchLike, request: PostRequest): Prom
   try {
     const response = await fetchImpl(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, 'api-key': apiKey },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(url, apiKey) },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
