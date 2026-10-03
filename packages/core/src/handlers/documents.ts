@@ -1,6 +1,6 @@
 import type { Services } from '../create-services';
 import { fillPattern } from '../services/rename-pattern';
-import { UI_TRIGGER, type HandlerGroup } from './types';
+import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
 /** Rename requests for a scheme: each document gets its own name from its metadata. */
 function renameByPattern(services: Services, request: { ids: string[]; pattern: string }) {
@@ -13,7 +13,7 @@ function renameByPattern(services: Services, request: { ids: string[]; pattern: 
 }
 
 /** Documents, the scanner, categories, backups and the archive folder. */
-export function documentHandlers(services: Services): HandlerGroup<'documents' | 'trash' | 'scanner' | 'categories' | 'backup' | 'archive'> {
+export function documentHandlers(services: Services, host: HostApi): HandlerGroup<'documents' | 'trash' | 'scanner' | 'categories' | 'backup' | 'archive'> {
   return {
     'documents:import': async (input) => services.documents.importPaths(input.paths),
     'documents:list': async (input) => services.documents.recordsFrom(await services.reader.run('documentList', input)),
@@ -90,6 +90,11 @@ export function documentHandlers(services: Services): HandlerGroup<'documents' |
     'categories:create': (input) => services.archive.createCategory(input.path, { confirmed: input.confirmed }),
     'backup:create': (input) => services.backup.create({ includeArchive: input.includeArchive }),
     'backup:list': () => services.backup.list(),
+    'backup:restore': (input) => {
+      services.backup.requestRestore(input.name);
+      host.restartApp?.();
+      return { restartRequired: true as const };
+    },
     'archive:verify': () => services.archive.verify(),
     'archive:rootStatus': () => services.archiveRoot.status(),
     'archive:previewRootChange': (input) => services.archiveRoot.preview(input.root),

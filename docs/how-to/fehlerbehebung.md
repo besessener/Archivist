@@ -10,4 +10,6 @@
 | Keine Desktop-Benachrichtigungen in der Entwicklung | Unter `npm run dev` gilt `electron.exe` als App: `node_modules\electron\dist\electron.exe` an „Start“ anheften. |
 | Benachrichtigung über ungültige Einstellungen | `config/settings.json` enthielt ungültige Werte; nur diese Felder wurden auf den Standard gesetzt. Das Original liegt als `settings.json.invalid-<Zeit>` bzw. `settings.json.corrupt-<Zeit>` daneben. |
 | Archivprüfung meldet „Original fehlt“ | Das Original eines nur indexierten Dokuments ist nicht mehr am bekannten Ort. |
+| „Die Datenbank von Archivist ist beschädigt“ beim Start | Archivist bietet das neueste unbeschädigte Backup an, siehe [Backup wiederherstellen](backup-wiederherstellen.md#wenn-archivist-wegen-einer-beschädigten-datenbank-nicht-startet). Deine Dokumente im Archivordner sind nicht betroffen. |
+| „Die Datenbank stammt von einer neueren Version“ | Die installierte Version ist älter als die, die die Datenbank zuletzt geöffnet hat. Die aktuelle Version installieren; die Daten wurden nicht verändert. |
 | SmartScreen warnt beim Installer | Das Paket ist unsigniert, siehe [Release veröffentlichen – Signieren](release-veroeffentlichen.md#signieren). |

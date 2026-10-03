@@ -100,3 +100,36 @@ describe('Migration safety (#217)', () => {
     expect(snapshots()).not.toContain('vor-migration-2020-01-01.db');
   });
 });
+
+describe('Damaged database file (#217)', () => {
+  const file = () => path.join(dir, 'a.db');
+
+  it('a file that is no database is reported as damaged, with the way out and no stack', () => {
+    fs.writeFileSync(file(), 'das ist keine SQLite-Datenbank '.repeat(200));
+
+    expect(() => open()).toThrow(
+      expect.objectContaining({ category: 'database_corrupt', message: expect.stringContaining('aus einem Backup wiederherstellen') }),
+    );
+  });
+
+  it('a populated database with overwritten pages is found by the startup check', () => {
+    const first = open();
+    first.migrate(MIGRATIONS);
+    first.sqlite.pragma('wal_checkpoint(TRUNCATE)');
+    first.close();
+    const bytes = fs.readFileSync(file());
+    const damaged = Buffer.from(bytes);
+    for (let i = 8192; i < Math.min(damaged.length, 40_000); i += 1) damaged[i] = (i * 31) % 251;
+    fs.writeFileSync(file(), damaged);
+
+    expect(() => open()).toThrow(expect.objectContaining({ category: 'database_corrupt' }));
+  });
+
+  it('an intact database opens as before', () => {
+    const first = open();
+    first.migrate(MIGRATIONS);
+    first.close();
+
+    expect(() => open().close()).not.toThrow();
+  });
+});

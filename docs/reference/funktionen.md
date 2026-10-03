@@ -260,7 +260,10 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Das Manifest (mit Dateizahl) wird zuletzt geschrieben; abgebrochene Backups zählen nie.
 - Nur nach einem erfolgreichen Backup werden die ältesten über „Anzahl aufbewahrter Backups“ hinaus entfernt (getrennt je Art).
 
-Bedienung: [Backups anlegen](../how-to/backups-anlegen.md).
+Bedienung: [Backups anlegen](../how-to/backups-anlegen.md), [Backup wiederherstellen](../how-to/backup-wiederherstellen.md).
+
+- **Wiederherstellen** (Einstellungen → Backups) merkt die Wiederherstellung vor und startet Archivist neu; beim Start wird die Datenbank ersetzt, die bisherige bleibt in `database/vor-wiederherstellung-…`. Ein vollständiges Backup bringt fehlende Archivdateien zurück (nur wenn der Archivordner derselbe ist, nie überschreibend). Ein beschädigtes Backup wird abgelehnt.
+- **Beschädigte Datenbank**: Der Start prüft die Datenbank (`quick_check`). Ist sie beschädigt, bietet Archivist das neueste unbeschädigte Backup an, statt mit einer Fehlermeldung abzubrechen.
 
 ## OCR
 

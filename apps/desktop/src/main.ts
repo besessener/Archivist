@@ -1,10 +1,21 @@
 import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
-import { createHandlers, createIpcDispatcher, createServices, type HostApi, type SecretCipher, type Services } from '@archivist/core';
+import {
+  AppError,
+  createHandlers,
+  createIpcDispatcher,
+  createServices,
+  resolveDataPaths,
+  scheduleNewestRestore,
+  type HostApi,
+  type SecretCipher,
+  type Services,
+} from '@archivist/core';
 import { IPC_CHANNELS, type AppNotification } from '@archivist/shared';
 import { appUserModelId } from './app-id';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { isExternalWebUrl } from './external-links';
+import { recoverFromDamagedDatabase, type RecoveryDeps } from './recovery';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
 // Electron main process: lifecycle, secure windows, IPC allowlist and OS access; the business logic lives in @archivist/core.
@@ -32,6 +43,27 @@ const quitter = new QuitController({
       `[archivist] ${message}${error === undefined ? '' : `: ${error instanceof Error ? (error.stack ?? error.message) : JSON.stringify(error)}`}\n`,
     ),
 });
+
+const recoveryDeps = (): RecoveryDeps => ({
+  paths: resolveDataPaths(dataRoot()),
+  scheduleNewestRestore,
+  askToRestore: ({ message }) =>
+    dialog.showMessageBoxSync({
+      type: 'error',
+      title: 'Datenbank beschädigt',
+      message: 'Die Datenbank von Archivist ist beschädigt.',
+      detail: message,
+      buttons: ['Backup wiederherstellen', 'Beenden'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    }) === 0,
+  showError: (title, message) => dialog.showErrorBox(title, message),
+  relaunch: () => app.relaunch(),
+  exit: (code) => app.exit(code),
+});
+
+const RESTART_DELAY_MS = 500;
 
 const dataRoot = () => process.env.ARCHIVIST_DATA_DIR ?? path.join(app.getPath('documents'), 'Archivist');
 const resource = (...segments: string[]) => path.join(__dirname, ...segments);
@@ -67,6 +99,11 @@ const host: HostApi = {
     const options: Electron.SaveDialogOptions = { title: 'Speichern unter', defaultPath: path.join(app.getPath('documents'), defaultName) };
     const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
     return result.canceled || !result.filePath ? null : result.filePath;
+  },
+  restartApp: () => {
+    if (testMode) return; // E2E: the test drives the application and must not lose it
+    quitter.requestRelaunch();
+    setTimeout(() => void quitter.quit(), RESTART_DELAY_MS); // the answer reaches the window first
   },
 };
 
@@ -235,6 +272,10 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(start)
     .catch((err: unknown) => {
+      if (err instanceof AppError && err.category === 'database_corrupt') {
+        recoverFromDamagedDatabase(recoveryDeps(), err.message);
+        return;
+      }
       process.stderr.write(`[archivist] Startup failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
       dialog.showErrorBox('Archivist konnte nicht gestartet werden', err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err));
       app.exit(1);

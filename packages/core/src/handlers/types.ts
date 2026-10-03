@@ -11,6 +11,8 @@ export interface HostApi {
   secretBackend?: () => { available: boolean; backend: string };
   /** Save dialog; returns the chosen path or null (exports of the agent, #311). */
   saveFile?(defaultName: string): Promise<string | null>;
+  /** Restarts the application shortly after the answer was sent (a restore takes effect on start). */
+  restartApp?(): void;
 }
 
 type Handler<C extends IpcChannel> = (input: IpcParsedInput<C>) => Promise<IpcOutput<C>> | IpcOutput<C>;

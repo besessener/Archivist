@@ -23,6 +23,7 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [Datenschutz einstellen](how-to/datenschutz-einstellen.md)
 - [Archivpfad ändern](how-to/archivpfad-aendern.md)
 - [Backups anlegen](how-to/backups-anlegen.md)
+- [Backup wiederherstellen](how-to/backup-wiederherstellen.md)
 - [Fehlerbehebung](how-to/fehlerbehebung.md)
 
 **Entwicklung**

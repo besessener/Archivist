@@ -12,6 +12,7 @@ export function initSettings(page: Page) {
       agent: page.getByTestId('tab-agent'),
       archive: page.getByTestId('tab-archive'),
       notifications: page.getByTestId('tab-notifications'),
+      backups: page.getByTestId('tab-backups'),
     },
     privacy: {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
@@ -73,6 +74,13 @@ export function initSettings(page: Page) {
         save: page.getByTestId('memory-save'),
       },
     },
+    backups: {
+      createMetadata: page.getByTestId('backup-metadata'),
+      rows: page.getByTestId('backup-row'),
+      restore: page.getByTestId('backup-restore'),
+      confirmRestore: page.getByTestId('backup-restore-confirm'),
+      restartNotice: page.getByTestId('backup-restart-notice'),
+    },
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),
       saveReminderTime: page.getByTestId('settings-reminder-time-save'),
@@ -133,6 +141,9 @@ export function initSettings(page: Page) {
       });
       await locators.memory.exportButton.click();
       return page.evaluate(() => (window as unknown as { exportedBlobs: Blob[] }).exportedBlobs.at(-1)!.text());
+    },
+    openBackups: async () => {
+      await locators.tabs.backups.click();
     },
     openNotifications: async () => {
       await locators.tabs.notifications.click();

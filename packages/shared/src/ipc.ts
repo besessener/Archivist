@@ -543,6 +543,7 @@ export const ipcContract = {
   'categories:create': channel(z.object({ path: z.string().min(1), confirmed: Confirmed }), Category),
   'backup:create': channel(z.object({ includeArchive: z.boolean().default(false) }), BackupInfo),
   'backup:list': channel(Empty, z.array(BackupInfo)),
+  'backup:restore': channel(z.object({ name: z.string().min(1).max(200), confirmed: Confirmed }), z.object({ restartRequired: z.literal(true) })),
   'archive:verify': channel(Empty, VerifyReport),
   'archive:rootStatus': channel(Empty, ArchiveRootStatus),
   'archive:previewRootChange': channel(z.object({ root: z.string().trim().min(1).max(4096) }), ArchiveRootPreview),
