@@ -154,8 +154,27 @@ describe('negations in the polarity (#179)', () => {
     'Wir geben die Bestellung für den Server auf',
     'Wir geben eine Anzeige auf',
     'Wir werden einen Entwickler einstellen',
+    'Wir wollen eine Bestellung aufgeben',
+    'Wir haben einen Auftrag aufgegeben',
+    'Wir haben die Bestellung aufgegeben',
+    'Wir haben zwei Entwickler eingestellt',
+    'Wir geben einen Auftrag für den Umbau auf',
   ])('does not read hiring or ordering in „%s“ as stop', (text) => {
     expect(polarity(text)).toBeNull();
+  });
+
+  it.each([
+    'Wir beenden den Auftrag',
+    'Wir stoppen die Bestellung',
+    'Wir beenden die Zusammenarbeit mit dem Entwickler',
+    'Wir pausieren eine Phase',
+    'Wir stellen die Zusammenarbeit mit dem Entwickler ein',
+    'Wir geben den Auftrag auf',
+    'Wir stellen die Anzeige ein',
+    'Wir stoppen die Bestellung und stellen einen Entwickler ein',
+    'Wir stellen einen Entwickler ein und beenden den Auftrag',
+  ])('keeps „%s“ as stop', (text) => {
+    expect(polarity(text)).toBe('stop');
   });
 
   it('finds the README case „weiterführen“ against „nicht weiterführen“ as a conflict', () => {
@@ -192,8 +211,21 @@ describe('which decisions are compared', () => {
     expect(relatedPairs([a, b])).toHaveLength(1);
   });
 
-  it('sees shared content words but ignores stop words and short words', () => {
-    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Meeting wird verschoben')).toBe(true);
+  it('needs two shared content words, so a single common word is not enough', () => {
+    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Meeting wird verschoben')).toBe(false);
+    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Meeting dienstags wird verschoben')).toBe(true);
+    expect(sharesContent('Das Budget für die Solaranlage beträgt 5000 Euro', 'Das Budget der Solaranlage steigt')).toBe(true);
+  });
+
+  it('ignores stop words, filler words and short words in German and English', () => {
+    expect(sharesContent('Wir haben beschlossen, dass wegen der Kosten', 'Wir haben entschieden, dass wegen des Wetters')).toBe(false);
+    expect(sharesContent('The project will have been delayed again', 'The project will have been cancelled')).toBe(false);
     expect(sharesContent('Das Meeting findet dienstags statt', 'Das Protokoll schreibt Anna')).toBe(false);
+  });
+
+  it('accepts one shared word when it is all a very short decision says', () => {
+    expect(sharesContent('Postgres', 'Die Datenbank der Plattform läuft künftig auf Postgres')).toBe(true);
+    expect(sharesContent('Postgres', 'Die Datenbank der Plattform läuft künftig auf MySQL')).toBe(false);
+    expect(sharesContent('', 'Die Datenbank der Plattform')).toBe(false);
   });
 });

@@ -152,8 +152,8 @@ describe('central person resolution (#28)', () => {
   it('resolves name lists to canonical names without duplicates', () => {
     persons().resolve('Monika Lor-Zade');
     const r = persons().resolveNames(['Lor-Zade, Monika', 'Monika Lor-Zade (chefin)', 'ja', 'ich', ' ', 'Anna Schmidt'], { context: 'decision' });
-    expect(r.names).toEqual(['Monika Lor-Zade', 'ich', 'Anna Schmidt']);
-    expect(r.entities.map((e) => e.name)).toEqual(['Monika Lor-Zade', 'Anna Schmidt']);
+    expect(r.names).toEqual(['Monika Lor-Zade', 'Ich', 'Anna Schmidt']);
+    expect(r.entities.map((e) => e.name)).toEqual(['Monika Lor-Zade', 'Ich', 'Anna Schmidt']);
     // in documents "ich" is the author, not the user
     expect(persons().resolveNames(['ich', 'Anna Schmidt'], { context: 'document' }).names).toEqual(['Anna Schmidt']);
     // a person created by the list is found by later spellings in the same list

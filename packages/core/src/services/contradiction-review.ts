@@ -1,5 +1,5 @@
 import { ContradictionProposal, type Decision } from '@archivist/shared';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { contradictionReviews } from '../db/schema';
 import { sha256Text } from '../util/hash';
@@ -14,6 +14,8 @@ export const MAX_REVIEWS_PER_SCAN = 60;
 
 /** Upper bound of LLM questions when one decision is checked right away, so a request never waits for a whole scan. */
 export const MAX_REVIEWS_PER_CHECK = 10;
+
+const HASH_CHUNK = 500;
 
 /** The LLM questions one run may still ask; each run owns its budget. */
 export interface ReviewBudget {
@@ -52,18 +54,33 @@ export class ContradictionReviewer {
 
   /** The stored verdict for these texts, if there is one. */
   stored(pair: DecisionPair): boolean | undefined {
-    return this.db
-      .select()
-      .from(contradictionReviews)
-      .where(eq(contradictionReviews.textHash, textHashOf(pair)))
-      .get()?.isContradiction;
+    return this.storedByHash(textHashOf(pair));
   }
 
   remember(pair: DecisionPair, isContradiction: boolean): void {
+    this.rememberByHash(textHashOf(pair), isContradiction);
+  }
+
+  storedByHash(textHash: string): boolean | undefined {
+    return this.db.select().from(contradictionReviews).where(eq(contradictionReviews.textHash, textHash)).get()?.isContradiction;
+  }
+
+  /** Stored verdicts of many text hashes at once (one query per chunk instead of one per pair). */
+  storedByHashes(textHashes: string[]): Map<string, boolean> {
+    const stored = new Map<string, boolean>();
+    for (let start = 0; start < textHashes.length; start += HASH_CHUNK) {
+      const chunk = textHashes.slice(start, start + HASH_CHUNK);
+      const rows = this.db.select().from(contradictionReviews).where(inArray(contradictionReviews.textHash, chunk)).all();
+      for (const row of rows) stored.set(row.textHash, row.isContradiction);
+    }
+    return stored;
+  }
+
+  rememberByHash(textHash: string, isContradiction: boolean): void {
     const reviewedAt = nowIso();
     this.db
       .insert(contradictionReviews)
-      .values({ textHash: textHashOf(pair), isContradiction, reviewedAt })
+      .values({ textHash, isContradiction, reviewedAt })
       .onConflictDoUpdate({ target: contradictionReviews.textHash, set: { isContradiction, reviewedAt } })
       .run();
   }

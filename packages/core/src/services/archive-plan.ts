@@ -111,7 +111,7 @@ export class ArchivePlanner {
       ['project', assigned.projectName],
     ] as const;
     return named.flatMap(([type, name]) => {
-      const entity = name ? this.deps.graph.findByName(type, name) : null;
+      const entity = name ? this.deps.graph.findByNameOrAlias(type, name) : null;
       return entity ? [{ type: entity.type, id: entity.id, label: entity.name }] : [];
     });
   }

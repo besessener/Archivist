@@ -152,7 +152,7 @@ export class ArchiveReplies {
         intent: 'contradiction_check',
         content: `Ich habe keine widersprüchlichen Aussagen gefunden.${this.scatterHint()}${scanNote}`,
         confidence: 0.6,
-        uncertainties: ['Die Prüfung erkennt nur eindeutige Gegensätze bei aktiven Entscheidungen zum gleichen Thema.'],
+        uncertainties: ['Die Prüfung vergleicht aktive Entscheidungen und, wenn eine KI eingerichtet ist, Dokumente zum gleichen Thema oder Projekt.'],
         state,
       };
     const insights = [...list.map((c) => this.deps.insights.byDedupeKey(`contradiction:${c.id}`)), ...outdated];
@@ -204,7 +204,7 @@ export class ArchiveReplies {
   /** Proposed relations of the named topic/project, otherwise of all entries (each relation once). */
   private proposedRelations(name: string | null | undefined): Relation[] {
     const { graph } = this.deps;
-    const subject = name ? (graph.findByName('topic', name) ?? graph.findByName('project', name)) : undefined;
+    const subject = name ? (graph.findByNameOrAlias('topic', name) ?? graph.findByNameOrAlias('project', name)) : undefined;
     if (subject) return graph.relationsOf(subject.id, { statuses: ['proposed'] });
     const seen = new Set<string>();
     return graph

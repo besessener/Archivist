@@ -61,6 +61,17 @@ describe('Wiki links [[Name]] in notes (#285)', () => {
     expect(targets(note2.id)).toEqual([other.id]);
   });
 
+  it("an exact name wins over another entry's alias, and an alias alone resolves", async () => {
+    app = await createTestApp();
+    const exact = await create('topic', 'Eigenheim');
+    const project = await create('project', 'Hausbau');
+    app.services.graph.addAlias(project.id, 'Eigenheim');
+    const alias = await create('project', 'Neubau');
+    app.services.graph.addAlias(alias.id, 'Rohbau');
+    const note = await create('note', 'Idee', 'Zu [[Eigenheim]] und [[Rohbau]].');
+    expect(targets(note.id).toSorted()).toEqual([exact.id, alias.id].toSorted());
+  });
+
   it('unknown names are reported; autocomplete finds names and aliases', async () => {
     app = await createTestApp();
     const project = await create('project', 'Hausbau');

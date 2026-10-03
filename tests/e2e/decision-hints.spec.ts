@@ -23,17 +23,17 @@ test.describe('decisions: hints on the detail view (#192)', () => {
   test('the older of two decisions on a topic shows „möglicherweise überholt“ after the archive check', async ({ on, page }) => {
     const app = on(page);
     const d = app.decisions;
-    await d.do.create({ text: 'Wir treffen uns montags.', isoDate: '2026-05-01', topic: 'Jour fixe', participants: 'Anna' });
-    await d.do.create({ text: 'Wir treffen uns dienstags.', isoDate: '2026-06-01', topic: 'Jour fixe', participants: 'Anna' });
+    await d.do.create({ text: 'Das Jour fixe findet montags um zehn Uhr statt.', isoDate: '2026-05-01', topic: 'Jour fixe', participants: 'Anna' });
+    await d.do.create({ text: 'Das Jour fixe findet dienstags um zehn Uhr statt.', isoDate: '2026-06-01', topic: 'Jour fixe', participants: 'Anna' });
 
     await app.navigation.do.open('insights');
     await app.insights.do.runCheck();
     await expect(app.insights.card('Möglicherweise überholt')).toBeVisible({ timeout: 30_000 });
 
     await app.navigation.do.open('decisions');
-    await d.row('Wir treffen uns dienstags.').click();
+    await d.row('Das Jour fixe findet dienstags um zehn Uhr statt.').click();
     await expect(d.locators.hints.superseded).toHaveCount(0);
-    await d.row('Wir treffen uns montags.').click();
-    await expect(d.locators.hints.superseded).toContainText('Wir treffen uns dienstags.');
+    await d.row('Das Jour fixe findet montags um zehn Uhr statt.').click();
+    await expect(d.locators.hints.superseded).toContainText('Das Jour fixe findet dienstags um zehn Uhr statt.');
   });
 });

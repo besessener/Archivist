@@ -10,6 +10,7 @@ import type { ActionService } from './actions';
 import { announce, proposeSupersede, type ContradictionRow } from './contradiction-notices';
 import { ContradictionReviewer, MAX_REVIEWS_PER_CHECK, MAX_REVIEWS_PER_SCAN, type ReviewBudget } from './contradiction-review';
 import { compareLexically, relatedPairs, sharesScope } from './contradiction-rules';
+import { DocumentContradictionScanner } from './document-contradictions';
 import type { DecisionService } from './decisions';
 import { ACTIVE_DECISION_STATUSES } from './decisions';
 import { orderDecisions } from './decision-dating';
@@ -51,6 +52,8 @@ export interface ContradictionServiceDeps {
   docs: Pick<DocumentService, 'findRow'>;
 }
 
+const DECISION_PAIR_PREFIX = 'decision:';
+
 /** Job type of the contradiction scan the chat starts (#254). */
 export const CONTRADICTION_SCAN_JOB = 'contradiction.scan';
 
@@ -58,9 +61,11 @@ export const CONTRADICTION_SCAN_JOB = 'contradiction.scan';
 export class ContradictionService {
   private actions!: ActionService;
   private readonly reviewer: ContradictionReviewer;
+  private readonly documentScanner: DocumentContradictionScanner;
 
   constructor(private readonly deps: ContradictionServiceDeps) {
     this.reviewer = new ContradictionReviewer(deps);
+    this.documentScanner = new DocumentContradictionScanner({ ...deps, reviewer: this.reviewer });
     this.deps.decisions.onStatusUndone((decisionIds) => this.reopenAfterUndo(decisionIds));
     // rejecting the insight closes the contradiction notice as well (seen, both decisions stay)
     this.deps.insights.onRejected((key) => {
@@ -102,7 +107,7 @@ export class ContradictionService {
   }
 
   private static pairKey(a: string, b: string): string {
-    return `decision:${[a, b].sort().join('|')}`;
+    return `${DECISION_PAIR_PREFIX}${[a, b].sort().join('|')}`;
   }
 
   /** The (latest) contradiction for this decision pair, whatever its status. */
@@ -147,7 +152,7 @@ export class ContradictionService {
     return created;
   }
 
-  /** Archive check: all active decisions pairwise per topic and project, pairs already recorded not again; outdated contradictions are resolved. */
+  /** Archive check: all active decisions, then the documents, pairwise per topic and project, pairs already recorded not again; outdated contradictions are resolved. */
   async scanAll(signal?: AbortSignal): Promise<Contradiction[]> {
     this.reconcile();
     const budget = { left: MAX_REVIEWS_PER_SCAN };
@@ -159,7 +164,7 @@ export class ContradictionService {
       const found = await this.evaluate([d, o], budget, signal);
       if (found) created.push(await this.record([d, o], found));
     }
-    return created;
+    return [...created, ...(await this.documentScanner.scan(signal)).map(map)];
   }
 
   /** Contradictions found without the LLM (offline) are put to it once it is available; a veto closes them as false alarms. */
@@ -168,7 +173,7 @@ export class ContradictionService {
       .select()
       .from(contradictions)
       .all()
-      .filter((c) => c.status === 'detected');
+      .filter((c) => c.status === 'detected' && c.dedupeKey.startsWith(DECISION_PAIR_PREFIX));
     for (const c of open) {
       const [a, b] = c.affectedEntityIds.map((id) => this.deps.decisions.get(id));
       if (!a || !b || this.reviewer.stored([a, b]) !== undefined) continue;
@@ -187,14 +192,21 @@ export class ContradictionService {
       .all()
       .filter((c) => c.status === 'detected' || c.status === 'acknowledged');
     for (const c of open) {
-      const stillActive = c.affectedEntityIds.every((id) => {
-        try {
-          return ACTIVE_DECISION_STATUSES.includes(this.deps.decisions.get(id).status);
-        } catch {
-          return false;
-        }
-      });
-      if (!stillActive) this.close(c.id, { resolution: 'resolved', by: 'system', reason: 'Eine der beiden Entscheidungen ist nicht mehr aktiv.' });
+      const ofDocuments = !c.dedupeKey.startsWith(DECISION_PAIR_PREFIX);
+      if (!c.affectedEntityIds.every((id) => (ofDocuments ? this.documentScanner.isCompared(id) : this.isActiveDecision(id))))
+        this.close(c.id, {
+          resolution: 'resolved',
+          by: 'system',
+          reason: ofDocuments ? 'Eines der beiden Dokumente gehört nicht mehr zum Archiv.' : 'Eine der beiden Entscheidungen ist nicht mehr aktiv.',
+        });
+    }
+  }
+
+  private isActiveDecision(id: string): boolean {
+    try {
+      return ACTIVE_DECISION_STATUSES.includes(this.deps.decisions.get(id).status);
+    } catch {
+      return false;
     }
   }
 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { chainHash, verifyChain, type ChainedFields, type ChainedRow } from '../../packages/core/src/services/audit-chain';
+import {
+  chainHash,
+  isTruncated,
+  parseAnchor,
+  verifyAuditLog,
+  verifyChain,
+  type ChainedFields,
+  type ChainedRow,
+} from '../../packages/core/src/services/audit-chain';
 
 const fields = (id: string, over: Partial<ChainedFields> = {}): ChainedFields => ({
   id,
@@ -64,5 +72,37 @@ describe('audit hash chain', () => {
     expect(verifyChain([a!, { ...b!, hash: null }, c!])).toEqual({ checked: 2, brokenEntryId: 'b' });
     expect(verifyChain([a!, { ...fields('x'), hash: null, prevHash: null }])).toEqual({ checked: 2, brokenEntryId: 'x' });
     expect(verifyChain([{ ...a!, hash: 'tampered' }])).toEqual({ checked: 1, brokenEntryId: 'a' });
+  });
+});
+
+describe('audit chain anchor', () => {
+  const rows = chain(fields('a'), fields('b'), fields('c'));
+  const anchor = { count: 3, hash: rows[2]!.hash! };
+
+  it('accepts the log the anchor describes, and any log while there is no anchor', () => {
+    expect(isTruncated(rows, anchor)).toBe(false);
+    expect(isTruncated([], null)).toBe(false);
+    expect(verifyAuditLog(rows, anchor)).toEqual({ checked: 3, brokenEntryId: null, truncated: false });
+  });
+
+  it('notices removed newest rows, removed oldest rows, and an emptied log', () => {
+    expect(isTruncated(rows.slice(0, 2), anchor)).toBe(true);
+    expect(isTruncated(rows.slice(1), anchor)).toBe(true);
+    expect(isTruncated([], anchor)).toBe(true);
+  });
+
+  it('notices removed rows even when later entries were chained on', () => {
+    const regrown = chain(fields('a'), fields('b'), fields('d'));
+    expect(verifyAuditLog(regrown, anchor).truncated).toBe(true);
+    expect(verifyAuditLog(regrown, { count: 4, hash: regrown[2]!.hash! }).truncated).toBe(true);
+  });
+
+  it('notices a nulled hash of the first chained row', () => {
+    expect(verifyAuditLog([{ ...rows[0]!, hash: null }, rows[1]!, rows[2]!], anchor)).toMatchObject({ truncated: true });
+  });
+
+  it('parses only a well-formed anchor', () => {
+    expect(parseAnchor(JSON.stringify(anchor))).toEqual(anchor);
+    for (const bad of [null, '', 'x', '{}', '{"count":1.5,"hash":"h"}', '{"count":1,"hash":2}']) expect(parseAnchor(bad)).toBeNull();
   });
 });

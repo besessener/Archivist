@@ -13,5 +13,6 @@ export const MUTATE_TARGETS = [
   'packages/core/src/agent/tools/research/deadlines.ts',
   'packages/core/src/agent/tools/research/amounts.ts',
   'packages/core/src/services/contradiction-rules.ts',
+  'packages/core/src/services/document-contradiction-rules.ts',
   'packages/shared/src/llm-base-url.ts',
 ];

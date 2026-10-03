@@ -229,7 +229,8 @@ describe('Merging persons (#33)', () => {
 describe('Topic ↔ project (#33)', () => {
   it('merges a topic into a project (target type wins) and undoes it exactly', async () => {
     const ev = await app.ok('events:create', { title: 'Kickoff', occurredAt: '2026-09-03', topic: 'prod-plat', sourceIds: [] });
-    const dec = await decision('prod-plat geht live', { topic: 'prod-plat', project: 'Prod Plat' });
+    const dec = await decision('prod-plat geht live', { topic: 'prod-plat' });
+    graph().ensureEntity({ type: 'project', name: 'Prod Plat' });
     const item = await app.ok('openItems:create', {
       title: 'Release',
       topic: 'prod-plat',

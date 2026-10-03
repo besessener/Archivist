@@ -1,4 +1,5 @@
 import { expect, test } from './fixture';
+import { cutOffNewestAuditEntry } from './helpers';
 
 test.describe('decisions: history, deleting and the change log', () => {
   test.beforeEach(async ({ llm, on, page }) => {
@@ -27,6 +28,21 @@ test.describe('decisions: history, deleting and the change log', () => {
 
     await navigation.do.open('decisions');
     await expect(d.row('Versehentlich angelegt')).toBeVisible();
+  });
+
+  test('warns in the change log when entries were cut off its end (#193)', async ({ on, page, workspace }) => {
+    const { decisions: d, navigation, settings } = on(page);
+    await d.do.createDraft('Wird protokolliert');
+    await navigation.do.open('settings');
+    await settings.do.openAudit();
+    await expect(settings.locators.audit.chainOk).toBeVisible();
+
+    cutOffNewestAuditEntry(workspace.dataDir);
+    await navigation.do.open('decisions');
+    await navigation.do.open('settings');
+    await settings.do.openAudit();
+
+    await expect(settings.locators.audit.chainBroken).toContainText('Es fehlen Einträge am Anfang oder Ende');
   });
 
   test('a valid decision can be revoked but not deleted', async ({ on, page }) => {

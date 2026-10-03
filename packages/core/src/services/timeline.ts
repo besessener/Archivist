@@ -210,7 +210,11 @@ function contradictionEntries({ db, entityName }: TimelineReader, affecting: Set
       description: truncate(row.description, 240),
       refs: [
         { type: 'contradiction', id: row.id, label: row.title },
-        ...row.affectedEntityIds.map((id) => ({ type: 'decision' as const, id, label: entityName(id) ?? id })),
+        ...row.affectedEntityIds.map((id) => ({
+          type: row.dedupeKey.startsWith('document:') ? ('document' as const) : ('decision' as const),
+          id,
+          label: entityName(id) ?? id,
+        })),
       ],
     }));
 }
