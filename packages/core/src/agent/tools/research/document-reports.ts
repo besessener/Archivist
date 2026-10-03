@@ -150,6 +150,9 @@ export async function deadlinesReport(scope: ToolScope, refs: readonly string[])
   return { content: lines.join('\n') + unknownNote(unknown), summary: `${count} Frist(en) erkannt` };
 }
 
+const UNREADABLE_STATEMENT_NOTE =
+  'Hinweis: In den Kontoauszügen wurde keine Buchung erkannt (erwartet: „TT.MM.JJJJ Text -Betrag“ oder CSV „TT.MM.JJJJ;Text;-Betrag“). Nichts raten – sag dem Benutzer, dass das Format nicht lesbar ist.';
+
 export async function paymentsReport(scope: ToolScope, args: { statements: string[]; invoices: string[] }): Promise<ToolOutput> {
   const { deps } = scope;
   const statements = shareableDocs(scope, args.statements);
@@ -167,6 +170,7 @@ export async function paymentsReport(scope: ToolScope, args: { statements: strin
   return {
     content: [
       `${payments.length} Buchungen aus ${statements.docs.length} Auszügen, ${infos.length} Rechnungen.`,
+      ...(statements.docs.length && !payments.length ? [UNREADABLE_STATEMENT_NOTE] : []),
       `Bezahlt (${result.matched.length}):`,
       ...result.matched.map(
         (m) => `- ${invoiceLine(m.invoice)}\n  Zahlung (${m.by === 'number' ? 'Rechnungsnummer im Text' : 'gleicher Betrag'}): ${paymentLine(m.payment)}`,

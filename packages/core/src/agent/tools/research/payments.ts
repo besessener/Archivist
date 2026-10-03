@@ -1,5 +1,5 @@
 import { parseNumber } from './amounts';
-import { fullYear, isoOf } from './dates';
+import { findDates, fullYear, isoOf } from './dates';
 
 export interface Payment {
   date: string;
@@ -31,18 +31,52 @@ function statementAmount(rest: string): { value: number; index: number } | null 
   return { value: negative ? -value : value, index: isMinus(sign) || sign === '+' ? start - 1 : last.index };
 }
 
-/** Statement lines „15.07.2026 Stadtwerke Abschlag -89,00“: date at the start, signed amount at the end. */
+const unquote = (field: string) =>
+  field
+    .trim()
+    .replace(/^"(.*)"$/, '$1')
+    .trim();
+const CURRENCY_FIELD_RE = /^(?:eur|€)?$/i;
+
+/** CSV export line „15.07.2026;Stadtwerke;-89,00“ (separator ; or tab; date first, amount last, optional currency column). */
+function parseCsvLine(line: string): Payment | null {
+  const separator = line.includes(';') ? ';' : line.includes('\t') ? '\t' : null;
+  if (!separator) return null;
+  const fields = line.split(separator).map(unquote);
+  while (fields.length > 3 && CURRENCY_FIELD_RE.test(fields.at(-1)!)) fields.pop();
+  const date = fields.length >= 3 ? findDates(fields[0]!)[0] : undefined;
+  const amount = parseNumber(
+    fields
+      .at(-1)!
+      .replace(/(?:€|eur)$/i, '')
+      .trim(),
+  );
+  if (!date || amount === null) return null;
+  return { date: date.iso, amount, text: fields.slice(1, -1).join(' ').trim(), line };
+}
+
+/** Free-text line „15.07.2026 Stadtwerke Abschlag -89,00“ or „2026-07-15 …“: date at the start, signed amount at the end. */
+function parseTextLine(line: string, fallbackYear: number): Payment | null {
+  const german = /^(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})?\s/.exec(line);
+  const isoDate = german ? null : /^(\d{4})-(\d{2})-(\d{2})\s/.exec(line);
+  const date = german ?? isoDate;
+  if (!date) return null;
+  const day = german
+    ? { year: german[3] ? fullYear(german[3]) : fallbackYear, month: Number(german[2]), day: Number(german[1]) }
+    : { year: Number(isoDate![1]), month: Number(isoDate![2]), day: Number(isoDate![3]) };
+  const iso = isoOf(day);
+  const rest = line.slice(date[0].length).replace(/^\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2})?\s/, '');
+  const amount = statementAmount(rest);
+  return iso && amount ? { date: iso, amount: amount.value, text: rest.slice(0, amount.index).trim(), line } : null;
+}
+
+/** Statement lines in free text or CSV form; lines in neither form are ignored. */
 export function parseStatement(text: string, fallbackYear: number): Payment[] {
   const payments: Payment[] = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
-    const date = /^(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})?\s/.exec(line);
-    if (!date) continue;
-    const iso = isoOf({ year: date[3] ? fullYear(date[3]) : fallbackYear, month: Number(date[2]), day: Number(date[1]) });
-    const rest = line.slice(date[0].length).replace(/^\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2})?\s/, '');
-    const amount = statementAmount(rest);
-    if (!iso || !amount) continue;
-    payments.push({ date: iso, amount: amount.value, text: rest.slice(0, amount.index).trim(), line });
+    const payment = parseCsvLine(line) ?? parseTextLine(line, fallbackYear);
+    if (payment) payments.push(payment);
   }
   return payments;
 }
