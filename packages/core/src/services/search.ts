@@ -30,7 +30,7 @@ export interface SearchHit extends SearchResult {
 const FTS_ENTITY_LIMIT = 60;
 
 /** How long a search waits for the remote query embedding before it answers with local results only. */
-const REMOTE_QUERY_EMBEDDING_TIMEOUT_MS = 2500;
+export const REMOTE_QUERY_EMBEDDING_TIMEOUT_MS = 2500;
 
 type IndexedListener = (entry: { id: string; type: EntityType }) => void;
 

@@ -37,6 +37,8 @@ export function toolDepsOf(app: TestApp): ToolDeps {
     linkThresholds: s.linkThresholds,
     capture: s.capture,
     answers: s.answers,
+    logs: s.logReader,
+    diagnostics: s.diagnostics,
     enqueueConsistency: () => undefined,
     logger: s.ctx.logger,
   };

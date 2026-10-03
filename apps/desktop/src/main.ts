@@ -199,6 +199,7 @@ async function start(): Promise<void> {
     dataRoot: dataRoot(),
     migrationsFolder: migrations,
     cipher,
+    appVersion: app.getVersion(),
     workerFile: resource('worker.cjs'),
     readerFile: resource('db-reader.cjs'),
   });

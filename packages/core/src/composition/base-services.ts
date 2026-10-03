@@ -29,6 +29,8 @@ export interface CreateServicesOptions {
   /** Folder with the Drizzle migrations */
   migrationsFolder: string;
   cipher: SecretCipher;
+  /** Version of the app, shown by the agent's diagnosis. */
+  appVersion?: string;
   /** Path to the bundled worker script; null/undefined = tasks run inline (tests) */
   workerFile?: string | null;
   /** Path to the bundled read worker (own read-only DB connection); null/undefined = queries run inline (tests) */
