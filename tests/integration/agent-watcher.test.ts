@@ -262,8 +262,23 @@ describe('background tick (#313, #314)', () => {
     expect(await notifications('weekly_review')).toHaveLength(1);
     expect(app.services.appState.get('agent.nightly.lastDay')).toBe('2026-10-05');
 
-    schedule(queued).tick(new Date('2026-10-06T02:00:00'));
+    const nextNight = schedule(queued);
+    nextNight.tick(new Date('2026-10-06T02:00:00'));
+    nextNight.stop();
     expect(queued).toEqual(['archive_check', 'links', 'archive_check', 'links']);
     expect(await notifications('weekly_review')).toHaveLength(1);
+  });
+
+  it('does a first check shortly after the start, unless it is stopped before', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });
+    vi.setSystemTime(MONDAY);
+    schedule([]).stop();
+    vi.advanceTimersByTime(60_000);
+    expect(app.services.appState.get('agent.deadlines.lastDay')).toBeNull();
+
+    const running = schedule([]);
+    vi.advanceTimersByTime(60_000);
+    running.stop();
+    expect(app.services.appState.get('agent.deadlines.lastDay')).toBe('2026-10-05');
   });
 });
