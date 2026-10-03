@@ -129,19 +129,39 @@ describe('symlink escape and scan scope limits', () => {
     expect(res.entries.map((e) => e.name)).toEqual(['a.txt']);
   });
 
-  it('reports the file limit only when a further matching file exists', async () => {
-    const root = fs.mkdtempSync(path.join(tmp, 'limit-'));
+  it('walks in pages that continue after the cursor, with no gap and no overlap', async () => {
+    const root = fs.mkdtempSync(path.join(tmp, 'pages-'));
+    for (const n of ['a.txt', 'b.txt', 'f.txt', 'c.md']) fs.writeFileSync(path.join(root, n), n);
+    fs.mkdirSync(path.join(root, 'd', 'deep'), { recursive: true });
+    for (const n of ['d/c.txt', 'd/deep/x.txt', 'd/deep/y.txt', 'd/z.txt']) fs.writeFileSync(path.join(root, n), n);
+    const base = { root, recursive: true, excludedDirs: [], excludedFiles: [], extensions: ['txt'], maxSizeBytes: 1e6, pageSize: 2 };
+    const names: string[] = [];
+    let page = await scanDirectory(base);
+    names.push(...page.entries.map((e) => path.relative(root, e.path)));
+    let pages = 1;
+    while (page.nextCursor !== null) {
+      page = await scanDirectory({ ...base, after: page.nextCursor, visited: page.visited });
+      names.push(...page.entries.map((e) => path.relative(root, e.path)));
+      pages += 1;
+    }
+    expect(names).toEqual([
+      'a.txt',
+      'b.txt',
+      path.join('d', 'c.txt'),
+      path.join('d', 'deep', 'x.txt'),
+      path.join('d', 'deep', 'y.txt'),
+      path.join('d', 'z.txt'),
+      'f.txt',
+    ]);
+    expect(pages).toBe(4);
+  });
+
+  it('needs no further page when the last page is exactly full', async () => {
+    const root = fs.mkdtempSync(path.join(tmp, 'exact-'));
     for (const n of ['a.txt', 'b.txt', 'c.md']) fs.writeFileSync(path.join(root, n), n);
-    const base = { root, recursive: true, excludedDirs: [], excludedFiles: [], maxSizeBytes: 1e6 };
-    // c.md does not match: exactly two matching files at a limit of two is complete
-    const exact = await scanDirectory({ ...base, extensions: ['txt'], maxFiles: 2 });
-    expect(exact.entries.map((e) => e.name)).toEqual(['a.txt', 'b.txt']);
-    expect(exact.limitReached).toBe(false);
-    fs.mkdirSync(path.join(root, 'sub'));
-    fs.writeFileSync(path.join(root, 'sub', 'd.txt'), 'd');
-    const truncated = await scanDirectory({ ...base, extensions: ['txt'], maxFiles: 2 });
-    expect(truncated.entries).toHaveLength(2);
-    expect(truncated.limitReached).toBe(true);
+    const res = await scanDirectory({ root, recursive: true, excludedDirs: [], excludedFiles: [], extensions: ['txt'], maxSizeBytes: 1e6, pageSize: 2 });
+    expect(res.entries.map((e) => e.name)).toEqual(['a.txt', 'b.txt']);
+    expect(res.nextCursor).toBeNull();
   });
 
   it('lists entries that could not be read as unreadable', async () => {
@@ -151,7 +171,7 @@ describe('symlink escape and scan scope limits', () => {
     const res = await scanDirectory({ root, recursive: true, excludedDirs: [], excludedFiles: [], extensions: ['txt'], maxSizeBytes: 1e6 });
     expect(res.entries.map((e) => e.name)).toEqual(['ok.txt']);
     expect(res.unreadable).toEqual([path.join(root, 'kaputt')]);
-    expect(res.limitReached).toBe(false);
+    expect(res.nextCursor).toBeNull();
   });
 });
 

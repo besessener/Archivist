@@ -50,7 +50,7 @@ Der Chat ist die zentrale Schnittstelle.
 
 ## Dokumente
 
-- **Import** per Drag-and-Drop oder Dateiauswahl in einen sicheren Eingang (`inbox/`), mit Prüfsumme und Duplikaterkennung.
+- **Import** per Drag-and-Drop oder Dateiauswahl in einen sicheren Eingang (`inbox/`), mit Prüfsumme (im Hintergrund-Worker berechnet) und Duplikaterkennung.
 - **Einlesen mit Grenze**: Aus einem Dokument werden höchstens 400.000 Zeichen gelesen, bei PDFs höchstens 300 Seiten und höchstens 40 Seiten mit Texterkennung. Ist es länger, steht im Posteingang und in den Dokumentdetails: „Das Dokument ist länger als die Grenze beim Einlesen … Der Rest wurde nicht erfasst und lässt sich nicht durchsuchen.“ (Der Hinweis steht auch in den technischen Metadaten als `truncated`.)
 - **Parser** für PDF, DOCX, PPTX, XLSX, EML, TXT/MD, PNG/JPG (Bilder und Scans per [OCR](#ocr)).
 - **Klassifikation** per LLM oder lokal, mit menschenlesbarem Zielpfad. Das LLM bekommt als „Bekannte Themen“ und „Bekannte Projekte“ höchstens je 40 Namen – die, die zum Dokument passen (gemeinsame Wörter mit Dateiname und Text). Ein Thema oder Projekt, das das LLM nennt, wird mit allen vorhandenen verglichen (nicht nur den ersten 500) und an ein ähnliches angeglichen („prod-plat“ → „ProdPlat“); Namen, die sich in einer Zahl oder Jahreszahl unterscheiden („Steuer 2022“ / „Steuer 2021“) oder in einem ganzen Wort („Mietvertrag Bern“ / „Mietvertrag Berlin“), werden nie zusammengelegt. Die lokale Erkennung kennt ebenfalls alle bekannten Themen und Projekte.

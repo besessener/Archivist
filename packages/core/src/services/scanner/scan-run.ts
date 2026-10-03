@@ -1,21 +1,21 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { ScanFileStatus, ScanSummary } from '@archivist/shared';
-import { eq } from 'drizzle-orm';
+import type { ScanSummary } from '@archivist/shared';
+import { and, eq, inArray, lt } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { scanExclusions, scanFiles, scanRoots } from '../../db/schema';
-import { MIME_BY_EXT } from '../../parsers';
 import { permissionError } from '../../util/errors';
-import { newId, nowIso } from '../../util/ids';
+import { nowIso } from '../../util/ids';
 import { isForbiddenScanRoot, isInside } from '../../util/paths';
 import type { WorkerPool } from '../../workers/pool';
-import type { ScanDirectoryInput, ScanDirectoryResult, ScanEntry } from '../../workers/tasks';
+import { SCAN_PAGE_SIZE, type ScanDirectoryInput, type ScanDirectoryResult } from '../../workers/tasks';
 import type { DocumentService } from '../documents';
 import { isJobCancelled, type JobContext } from '../jobs';
 import type { NotificationService } from '../notifications';
 import type { PrivacyService } from '../privacy';
 import type { SettingsService } from '../settings';
-import { duplicateOf, PENDING_FILE_STATUSES, type FileRow, type RootRow } from './scan-files';
+import { PENDING_FILE_STATUSES, type FileRow, type RootRow } from './scan-files';
+import { needsHash, ScanRecorder, scanResultsAction, type EntryOutcome } from './scan-record';
 
 export interface ScanRunDeps {
   ctx: AppContext;
@@ -24,21 +24,11 @@ export interface ScanRunDeps {
   docs: DocumentService;
   privacy: PrivacyService;
   notifications: NotificationService;
-  /** Upper bound of files collected per scan root (the scanner's setting, lowered in tests). */
-  maxFilesPerRoot: () => number;
+  /** Files per walk page and batch (lowered in tests). */
+  pageSize?: () => number;
 }
 
 type Exclusion = typeof scanExclusions.$inferSelect;
-
-/** One walked file of a scan root, with what the scan knew about it before. */
-interface EntryScope {
-  root: RootRow;
-  entry: ScanEntry;
-  previous: FileRow | undefined;
-  summary: ScanSummary;
-  now: string;
-  signal?: AbortSignal;
-}
 
 const emptySummary = (rootId: string): ScanSummary => ({
   rootId,
@@ -52,11 +42,13 @@ const emptySummary = (rootId: string): ScanSummary => ({
   errors: [],
 });
 
-const scanResultsAction = () => ({ label: 'Scan-Ergebnisse prüfen', kind: 'navigate' as const, target: '/scan/' });
-
 /** Directory scan of the approved roots: records new, changed and vanished files; never reads content for the LLM. */
 export class ScanRun {
-  constructor(private readonly deps: ScanRunDeps) {}
+  private readonly recorder: ScanRecorder;
+
+  constructor(private readonly deps: ScanRunDeps) {
+    this.recorder = new ScanRecorder(deps);
+  }
 
   private get db() {
     return this.deps.ctx.database.db;
@@ -98,32 +90,95 @@ export class ScanRun {
     const realPath = await fsp.realpath(root.path); // the directory may have been removed/replaced in the meantime
     if (isForbiddenScanRoot(realPath)) throw permissionError('Verzeichnis ist nicht (mehr) für Scans zulässig.', realPath);
     job?.report(scope.progress, `Durchsuche ${root.path}`);
-    const walked = await this.deps.pool.run('scanDirectory', this.walkInput(root, { realPath, exclusions: scope.exclusions }), { signal: job?.signal });
-    summary.errors.push(...walked.errors.slice(0, 20));
-    summary.skipped = walked.skipped.length;
-    if (walked.limitReached) summary.limitReached = true;
-    const known = new Map(
-      this.db
-        .select()
-        .from(scanFiles)
-        .where(eq(scanFiles.rootId, root.id))
-        .all()
-        .map((file) => [file.path, file]),
-    );
     const now = nowIso();
-    for (const entry of walked.entries) {
+    const unreadable: string[] = [];
+    let cursor: Pick<ScanDirectoryInput, 'after' | 'visited'> = {};
+    do {
       job?.throwIfCancelled();
-      summary.scanned += 1;
-      await this.scanEntry({ root, entry, previous: known.get(entry.path), summary, now, signal: job?.signal });
-    }
-    // beyond the file limit or in an unreadable area a file was merely not seen: it does not count as vanished
-    if (!walked.limitReached) this.removeVanished(known, walked);
+      const walked = await this.deps.pool.run('scanDirectory', this.walkInput(root, { realPath, exclusions: scope.exclusions, cursor }), { signal: job?.signal });
+      if (summary.errors.length < 20) summary.errors.push(...walked.errors.slice(0, 20 - summary.errors.length));
+      summary.skipped += walked.skipped.length;
+      unreadable.push(...walked.unreadable);
+      await this.scanBatch({ root, entries: walked.entries, summary, now, job });
+      cursor = walked.nextCursor === null ? {} : { after: walked.nextCursor, visited: walked.visited };
+    } while (cursor.after !== undefined);
+    this.removeVanished({ root, now, unreadable });
     this.db.update(scanRoots).set({ lastScanAt: now, lastSummary: summary }).where(eq(scanRoots.id, root.id)).run();
     this.notifyScan(root, summary);
   }
 
-  private walkInput(root: RootRow, scope: { realPath: string; exclusions: Exclusion[] }): ScanDirectoryInput {
-    const { realPath, exclusions } = scope;
+  /** One page of walked files: the content of new or changed ones is read first, then all rows are written in one transaction. */
+  private async scanBatch(batch: {
+    root: RootRow;
+    entries: ScanDirectoryResult['entries'];
+    summary: ScanSummary;
+    now: string;
+    job?: JobContext;
+  }): Promise<void> {
+    const { root, entries, summary, now, job } = batch;
+    if (entries.length === 0) return;
+    const known = new Map(
+      this.db
+        .select()
+        .from(scanFiles)
+        .where(
+          and(
+            eq(scanFiles.rootId, root.id),
+            inArray(
+              scanFiles.path,
+              entries.map((entry) => entry.path),
+            ),
+          ),
+        )
+        .all()
+        .map((file) => [file.path, file]),
+    );
+    const outcomes = await Promise.all(
+      entries.map(async (entry): Promise<EntryOutcome> => {
+        const previous = known.get(entry.path);
+        if (!needsHash(previous, entry)) return {};
+        job?.throwIfCancelled();
+        return this.readContent({ file: entry.path, previous, signal: job?.signal });
+      }),
+    );
+    job?.throwIfCancelled();
+    summary.scanned += entries.length;
+    this.deps.ctx.database.transaction(() => {
+      // every walked file counts as seen, whatever happens to it below: the rest of the root's rows are the vanished ones
+      this.db
+        .update(scanFiles)
+        .set({ lastSeenAt: now })
+        .where(
+          and(
+            eq(scanFiles.rootId, root.id),
+            inArray(
+              scanFiles.path,
+              entries.map((entry) => entry.path),
+            ),
+          ),
+        )
+        .run();
+      for (const [index, entry] of entries.entries()) this.recorder.apply({ root, entry, previous: known.get(entry.path), summary, now }, outcomes[index]!);
+    });
+  }
+
+  private async readContent(scope: { file: string; previous: FileRow | undefined; signal?: AbortSignal }): Promise<EntryOutcome> {
+    const { file, previous, signal } = scope;
+    let sha: string;
+    try {
+      sha = await this.deps.pool.run('hashFile', { path: file }, { signal });
+    } catch (err) {
+      return { error: (err as Error).message };
+    }
+    const changedContent = previous?.documentId && previous.sha256 !== sha;
+    return { sha, refreshed: previous && changedContent ? await this.recorder.refreshIndexedOnly(previous) : false };
+  }
+
+  private walkInput(
+    root: RootRow,
+    scope: { realPath: string; exclusions: Exclusion[]; cursor: Pick<ScanDirectoryInput, 'after' | 'visited'> },
+  ): ScanDirectoryInput {
+    const { realPath, exclusions, cursor } = scope;
     return {
       root: realPath,
       recursive: root.recursive,
@@ -136,152 +191,25 @@ export class ScanRun {
       excludedFiles: exclusions.filter((exclusion) => exclusion.kind === 'file').map((exclusion) => exclusion.path),
       extensions: root.extensions,
       maxSizeBytes: root.maxFileSizeMb * 1024 * 1024,
-      maxFiles: this.deps.maxFilesPerRoot(),
+      pageSize: this.deps.pageSize?.() ?? SCAN_PAGE_SIZE,
+      ...cursor,
     };
   }
 
-  /** Removes vanished, not yet processed files from the list. */
-  private removeVanished(known: Map<string, FileRow>, walked: ScanDirectoryResult): void {
-    const seen = new Set(walked.entries.map((entry) => entry.path));
-    for (const [filePath, file] of known) {
-      const pending = PENDING_FILE_STATUSES.includes(file.status as ScanFileStatus);
-      if (!seen.has(filePath) && pending && !walked.unreadable.some((unreadable) => isInside(unreadable, filePath)))
-        this.db.delete(scanFiles).where(eq(scanFiles.id, file.id)).run();
-    }
-  }
-
-  /** Re-evaluates the duplicate state of a not yet processed file whose content did not change. */
-  private recheckDuplicate(previous: FileRow): Pick<FileRow, 'status' | 'duplicateOfDocumentId'> | null {
-    if (!previous.sha256 || !PENDING_FILE_STATUSES.includes(previous.status as ScanFileStatus)) return null;
-    const duplicate = duplicateOf(this.deps.docs, { sha256: previous.sha256, documentId: previous.documentId });
-    if (duplicate)
-      return duplicate === previous.duplicateOfDocumentId && previous.status === 'duplicate' ? null : { status: 'duplicate', duplicateOfDocumentId: duplicate };
-    // the document it duplicated is gone (ignored, deleted): the file is open again
-    return previous.status === 'duplicate' ? { status: 'new', duplicateOfDocumentId: null } : null;
-  }
-
-  /** Content of a known file is unchanged: refresh it (and its duplicate state) without touching its status otherwise. */
-  private markUnchanged(file: { previous: FileRow; summary: ScanSummary }, set: Partial<FileRow>): void {
-    const duplicate = this.recheckDuplicate(file.previous);
-    this.db
-      .update(scanFiles)
-      .set({ ...set, ...duplicate })
-      .where(eq(scanFiles.id, file.previous.id))
-      .run();
-    if (duplicate?.status === 'duplicate') file.summary.duplicates += 1;
-    file.summary.unchanged += 1;
-  }
-
-  /** The original of an index-only document changed: re-read it in place, the scan file keeps its status (#229). */
-  private async refreshIndexedOnly(file: { previous: FileRow; entry: ScanEntry; sha: string; now: string }): Promise<boolean> {
-    const { previous, entry, sha, now } = file;
-    const doc = this.deps.docs.findRow(previous.documentId!);
-    if (doc?.status !== 'indexed_only') return false;
-    try {
-      await this.deps.docs.refreshIndexedOnly(doc.id);
-    } catch (err) {
-      this.deps.ctx.logger.warn('scanner', 'Index-only document not refreshed', { documentId: doc.id, error: err });
-      return false;
-    }
-    this.db.update(scanFiles).set({ size: entry.size, mtimeMs: entry.mtimeMs, sha256: sha, lastSeenAt: now }).where(eq(scanFiles.id, previous.id)).run();
-    return true;
-  }
-
-  /** Records one walked file: unchanged files are only refreshed, new or changed ones are hashed and checked for duplicates. */
-  private async scanEntry(scope: EntryScope): Promise<void> {
-    const { entry, previous, summary, now } = scope;
-    if (previous?.status === 'excluded') {
-      summary.excluded += 1;
-      return;
-    }
-    // known and unchanged → do not hash/analyze again
-    if (previous && previous.size === entry.size && previous.mtimeMs === entry.mtimeMs) {
-      this.markUnchanged({ previous, summary }, { lastSeenAt: now });
-      return;
-    }
-    let sha: string;
-    try {
-      sha = await this.deps.pool.run('hashFile', { path: entry.path }, { signal: scope.signal });
-    } catch (err) {
-      summary.errors.push(`${entry.path}: ${(err as Error).message}`);
-      return;
-    }
-    if (previous && previous.sha256 === sha) {
-      // only the timestamp changed (touched, or restored by an undo): same content, the status stays
-      this.markUnchanged({ previous, summary }, { size: entry.size, mtimeMs: entry.mtimeMs, lastSeenAt: now });
-      return;
-    }
-    if (previous?.documentId && (await this.refreshIndexedOnly({ previous, entry, sha, now }))) {
-      summary.changedFiles += 1;
-      return;
-    }
-    this.recordContent({ ...scope, sha });
-  }
-
-  /** New or changed content: privacy status and duplicate state are evaluated afresh. */
-  private recordContent(scope: EntryScope & { sha: string }): void {
-    const { root, entry, previous, summary } = scope;
-    const decision = this.deps.privacy.evaluate({ path: entry.path, ext: entry.ext, rootLlmAllowed: root.llmAllowed });
-    const llmStatus = decision.allowed ? 'local_only' : (decision.status ?? 'local_only');
-    const duplicate = duplicateOf(this.deps.docs, { sha256: scope.sha, documentId: previous?.documentId });
-    if (previous) this.recordChanged({ ...scope, previous }, { llmStatus, duplicate });
-    else this.recordNew(scope, { llmStatus, duplicate });
-    if (duplicate) summary.duplicates += 1;
-  }
-
-  private recordChanged(scope: EntryScope & { sha: string; previous: FileRow }, state: { llmStatus: string; duplicate: string | null }): void {
-    const { entry, previous, sha, now } = scope;
-    const wasArchived = previous.status === 'archived' || previous.status === 'analyzed';
-    const status: ScanFileStatus = state.duplicate ? 'duplicate' : 'changed';
-    this.db
-      .update(scanFiles)
-      .set({
-        size: entry.size,
-        mtimeMs: entry.mtimeMs,
-        sha256: sha,
-        status,
-        llmStatus: state.llmStatus,
-        duplicateOfDocumentId: state.duplicate,
-        lastSeenAt: now,
-      })
-      .where(eq(scanFiles.id, previous.id))
-      .run();
-    scope.summary.changedFiles += 1;
-    if (!wasArchived) return;
-    this.deps.notifications.create({
-      title: 'Datei seit Archivierung verändert',
-      description: `„${entry.name}“ in ${path.dirname(entry.path)} wurde nach der Archivierung geändert.`,
-      type: 'file_changed',
-      priority: 'normal',
-      affectedEntityIds: previous.documentId ? [previous.documentId] : [],
-      proposedActions: [scanResultsAction()],
-      dedupeKey: `file-changed:${previous.id}:${sha}`,
-    });
-  }
-
-  private recordNew(scope: EntryScope & { sha: string }, state: { llmStatus: string; duplicate: string | null }): void {
-    const { root, entry, sha, now } = scope;
-    this.db
-      .insert(scanFiles)
-      .values({
-        id: newId(),
-        rootId: root.id,
-        path: entry.path,
-        name: entry.name,
-        ext: entry.ext,
-        size: entry.size,
-        mtimeMs: entry.mtimeMs,
-        sha256: sha,
-        mime: MIME_BY_EXT[entry.ext] ?? entry.mime,
-        status: state.duplicate ? 'duplicate' : 'new',
-        llmStatus: state.llmStatus,
-        documentId: null,
-        duplicateOfDocumentId: state.duplicate,
-        firstSeenAt: now,
-        lastSeenAt: now,
-      })
-      .run();
-    scope.summary.newFiles += 1;
+  /** Pending rows of the root not seen in this scan are vanished, unless they lie in an area that could not be read. */
+  private removeVanished(scan: { root: RootRow; now: string; unreadable: string[] }): void {
+    const { root, now, unreadable } = scan;
+    const unseen = this.db
+      .select({ id: scanFiles.id, path: scanFiles.path })
+      .from(scanFiles)
+      .where(and(eq(scanFiles.rootId, root.id), lt(scanFiles.lastSeenAt, now), inArray(scanFiles.status, PENDING_FILE_STATUSES)))
+      .all();
+    const vanished = unseen.filter((file) => !unreadable.some((area) => isInside(area, file.path))).map((file) => file.id);
+    for (let start = 0; start < vanished.length; start += SCAN_PAGE_SIZE)
+      this.db
+        .delete(scanFiles)
+        .where(inArray(scanFiles.id, vanished.slice(start, start + SCAN_PAGE_SIZE)))
+        .run();
   }
 
   private notifyScan(root: RootRow, summary: ScanSummary): void {
@@ -295,16 +223,6 @@ export class ScanRun {
         priority: 'normal',
         proposedActions: [scanResultsAction()],
         dedupeKey: `scan-new:${root.id}:${summary.scanned}:${fresh}:${summary.duplicates}`,
-      });
-    }
-    if (summary.limitReached) {
-      this.deps.notifications.create({
-        title: 'Scan-Limit erreicht',
-        description: `${folder}: Es wurden nur die ersten ${this.deps.maxFilesPerRoot().toLocaleString('de-DE')} passenden Dateien geprüft; weitere Dateien wurden nicht erfasst. Bitte Unterordner ausschließen oder kleinere Verzeichnisse einzeln freigeben.`,
-        type: 'scan_partial',
-        priority: 'normal',
-        proposedActions: [{ label: 'Scan-Verzeichnis verwalten', kind: 'navigate', target: '/scan/' }],
-        dedupeKey: `scan-limit:${root.id}`,
       });
     }
     if (summary.duplicates > 0) {

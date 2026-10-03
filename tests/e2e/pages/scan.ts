@@ -9,10 +9,12 @@ export function initScan(page: Page) {
       start: page.getByTestId('scan-start'),
       analyze: page.getByTestId('scan-analyze'),
       confirmAnalysis: page.getByTestId('scan-analyze-confirm'),
+      loadMore: page.getByTestId('scan-load-more'),
     },
     directories: page.getByTestId('scan-dir'),
     fileRows: page.getByTestId('scan-file-row'),
     summary: page.getByTestId('scan-summary'),
+    resultsCount: page.getByTestId('scan-results-count'),
     allowLlm: page.getByTestId('scan-llm-checkbox'),
     proposals: page.getByTestId('scan-proposal'),
   };
