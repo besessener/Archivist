@@ -103,7 +103,11 @@ export class SearchService {
     if (parts.length === 0) parts.push(input.title);
     const embedded = await this.embedding.embed(
       parts.map((p) => `${input.title}\n${p}`),
-      { allowRemote: input.allowRemoteEmbedding ?? this.remoteByDefault(input.type), purpose: 'Suchindex', documentIds: input.type === 'document' ? [input.id] : [] },
+      {
+        allowRemote: input.allowRemoteEmbedding ?? this.remoteByDefault(input.type),
+        purpose: 'Suchindex',
+        documentIds: input.type === 'document' ? [input.id] : [],
+      },
     );
     const database = this.ctx.database;
     const written: Array<{ id: string; vector: Float32Array | undefined; localVector?: Float32Array }> = [];

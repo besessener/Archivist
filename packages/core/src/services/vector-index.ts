@@ -153,7 +153,7 @@ export class VectorIndex {
     const query =
       model === LOCAL_MODEL
         ? 'SELECT id, entity_id AS entityId, entity_type AS entityType, embedding FROM chunks WHERE embedding_model = @model AND embedding IS NOT NULL ' +
-          "UNION ALL SELECT id, entity_id, entity_type, local_embedding FROM chunks WHERE embedding_model != @model AND local_embedding IS NOT NULL"
+          'UNION ALL SELECT id, entity_id, entity_type, local_embedding FROM chunks WHERE embedding_model != @model AND local_embedding IS NOT NULL'
         : 'SELECT id, entity_id AS entityId, entity_type AS entityType, embedding FROM chunks WHERE embedding_model = @model AND embedding IS NOT NULL';
     const rows = this.sqlite().prepare(query).iterate({ model }) as IterableIterator<{ id: string; entityId: string; entityType: string; embedding: Buffer }>;
     for (const r of rows) {
