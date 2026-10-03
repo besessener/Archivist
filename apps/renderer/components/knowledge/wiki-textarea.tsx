@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { IpcOutput } from '@archivist/shared';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,6 +32,16 @@ export function WikiTextarea({
   const [link, setLink] = useState<{ start: number; query: string } | null>(null);
   const [items, setItems] = useState<Suggestion[]>([]);
   const [active, setActive] = useState(0);
+  const pendingCursor = useRef<number | null>(null);
+
+  // right after the inserted link is rendered, before the next key press: a later cursor move would scatter typed text
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (pendingCursor.current === null || !el) return;
+    el.focus();
+    el.setSelectionRange(pendingCursor.current, pendingCursor.current);
+    pendingCursor.current = null;
+  }, [value]);
 
   useEffect(() => {
     if (!link) {
@@ -62,13 +72,9 @@ export function WikiTextarea({
     const cursor = el.selectionStart;
     const rest = value.slice(cursor).replace(/^[^\]\n]*\]\]/, '');
     const next = `${value.slice(0, link.start)}[[${s.name}]]${rest}`;
+    pendingCursor.current = link.start + s.name.length + 4;
     onChange(next);
     setLink(null);
-    const pos = link.start + s.name.length + 4;
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(pos, pos);
-    });
   };
   const open = link !== null && items.length > 0;
 
