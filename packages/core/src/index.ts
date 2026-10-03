@@ -1,6 +1,6 @@
 export { createServices, type CreateServicesOptions, type Services } from './create-services';
 export { createHandlers, createIpcDispatcher, type HostApi, type IpcDispatcher } from './handlers';
-export { resolveDataPaths, ensureDataDirs, type DataPaths } from './context';
+export { resolveDataPaths, ensureDataDirs, type DataLocations, type DataPaths } from './context';
 export type { SecretCipher } from './services/secret';
 export type { FetchLike } from './services/llm';
 export { AppError, toErrorInfo } from './util/errors';

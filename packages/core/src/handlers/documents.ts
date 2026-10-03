@@ -90,6 +90,7 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'categories:create': (input) => services.archive.createCategory(input.path, { confirmed: input.confirmed }),
     'backup:create': (input) => services.backup.create({ includeArchive: input.includeArchive }),
     'backup:list': () => services.backup.list(),
+    'backup:storage': () => services.backup.storage(),
     'backup:restore': (input) => {
       services.backup.requestRestore(input.name);
       host.restartApp?.();

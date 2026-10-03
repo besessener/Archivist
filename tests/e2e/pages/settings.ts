@@ -40,6 +40,7 @@ export function initSettings(page: Page) {
       input: page.getByTestId('settings-archive-root'),
       change: page.getByTestId('settings-archive-change'),
       unreachable: page.getByTestId('archive-root-unreachable'),
+      syncNotice: page.getByTestId('archive-root-sync'),
       lastChange: page.getByTestId('archive-root-last-change'),
       undo: page.getByTestId('archive-root-undo'),
       dialog: {
@@ -49,6 +50,7 @@ export function initSettings(page: Page) {
         pathWarning: dialog.getByTestId('archive-root-path-warning'),
         accept: dialog.getByTestId('archive-root-accept'),
         cancel: dialog.getByTestId('archive-root-cancel'),
+        syncNotice: dialog.getByTestId('archive-root-dialog-sync'),
       },
     },
     trash: {
@@ -104,6 +106,8 @@ export function initSettings(page: Page) {
       restore: page.getByTestId('backup-restore'),
       confirmRestore: page.getByTestId('backup-restore-confirm'),
       restartNotice: page.getByTestId('backup-restart-notice'),
+      storage: page.getByTestId('backup-storage'),
+      sizeWarning: page.getByTestId('backup-size-warning'),
     },
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),

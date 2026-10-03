@@ -279,7 +279,8 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Zwei Arten: Metadaten-Backup und vollständiges Archiv-Backup.
 - Ein vollständiges Backup schlägt fehl, wenn der Archivordner nicht erreichbar oder trotz archivierter Dokumente leer ist, und sperrt Archiv-Dateioperationen während der Kopie.
 - Das Manifest (mit Dateizahl) wird zuletzt geschrieben; abgebrochene Backups zählen nie.
-- Nur nach einem erfolgreichen Backup werden die ältesten über „Anzahl aufbewahrter Backups“ hinaus entfernt (getrennt je Art).
+- Nur nach einem erfolgreichen Backup werden die ältesten über „Anzahl aufbewahrter Backups“ (Standard 3) hinaus entfernt (getrennt je Art).
+- Backups liegen im Datenordner der Anwendung. Einstellungen → Backups zeigt die Größe der Datenbank und aller Backups und warnt ab 2 GB, siehe [Backups anlegen](../how-to/backups-anlegen.md#speicherbedarf).
 
 Bedienung: [Backups anlegen](../how-to/backups-anlegen.md), [Backup wiederherstellen](../how-to/backup-wiederherstellen.md).
 

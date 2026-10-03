@@ -40,7 +40,7 @@ const LogSettings = z.object({
   retentionDays: z.number().int().min(1).default(30),
 });
 const BackupSettings = z.object({
-  keep: z.number().int().min(1).default(10),
+  keep: z.number().int().min(1).default(3),
   autoOnStartup: z.boolean().default(false),
   includeArchive: z.boolean().default(false),
 });

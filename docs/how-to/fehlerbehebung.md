@@ -3,7 +3,7 @@
 | Symptom | Ursache / Lösung |
 | --- | --- |
 | „Ein natives Modul passt nicht zur Laufzeitumgebung“ | `npm install` erneut ausführen und `npm run native:check` prüfen. |
-| LLM-Test: „nicht erreichbar“ | Base URL, Proxy und Firewall prüfen; Logs unter `…/Archivist/logs/`. |
+| LLM-Test: „nicht erreichbar“ | Base URL, Proxy und Firewall prüfen; Logs unter `logs/` im [Datenordner der Anwendung](../reference/datenverzeichnis.md) (unter Windows `%APPDATA%\Archivist\logs\`). |
 | „Unverschlüsseltes http:// ist nur für localhost erlaubt“ | Die Base URL unter Einstellungen → KI auf `https://` umstellen, siehe [Datenschutz einstellen](datenschutz-einstellen.md#verschlüsselte-verbindung-sicherstellen). |
 | LLM-Test: „Endpunkt oder Modell nicht gefunden“ | Die Base URL muss auf die API-Wurzel zeigen (z. B. `…/openai/v1`), der Modellname exakt dem Deployment entsprechen. |
 | Claude auf Foundry: Chat arbeitet nicht als Agent | Den Anthropic-Endpunkt `https://<resource>.services.ai.azure.com/anthropic` eintragen, siehe [LLM-Anbieter verbinden](llm-anbieter-verbinden.md#claude-auf-foundry-mit-werkzeugen-nutzen). |
@@ -16,4 +16,5 @@
 | Archivprüfung meldet „Original fehlt“ | Das Original eines nur indexierten Dokuments ist nicht mehr am bekannten Ort. |
 | „Die Datenbank von Archivist ist beschädigt“ beim Start | Archivist bietet das neueste unbeschädigte Backup an, siehe [Backup wiederherstellen](backup-wiederherstellen.md#wenn-archivist-wegen-einer-beschädigten-datenbank-nicht-startet). Deine Dokumente im Archivordner sind nicht betroffen. |
 | „Die Datenbank stammt von einer neueren Version“ | Die installierte Version ist älter als die, die die Datenbank zuletzt geöffnet hat. Die aktuelle Version installieren; die Daten wurden nicht verändert. |
+| Beim Start: „… verschiebt seine Datenbank und Einstellungen in den Datenordner …, dort liegt aber schon etwas“ | Eine neue Version zieht die Anwendungsdaten aus `Dokumente\Archivist` in den Datenordner deines Benutzerprofils um und überschreibt dabei nie etwas. Liegt dort schon eine Datenbank oder ein Ordner `config`, `backups` …, bricht der Start ab und lässt alles unverändert. Benenne den genannten Ordner um oder verschiebe ihn und starte neu, siehe [Datenverzeichnis](../reference/datenverzeichnis.md#umzug-aus-der-alten-ablage). |
 | SmartScreen warnt beim Installer | Das Paket ist unsigniert, siehe [Release veröffentlichen – Signieren](release-veroeffentlichen.md#signieren). |

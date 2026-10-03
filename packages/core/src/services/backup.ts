@@ -1,7 +1,7 @@
 import fsp from 'node:fs/promises';
 import { scheduleRestore } from './backup-restore';
 import path from 'node:path';
-import type { BackupInfo, Settings } from '@archivist/shared';
+import type { BackupInfo, BackupStorage, Settings } from '@archivist/shared';
 import { and, count, eq, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
@@ -159,12 +159,14 @@ export class BackupService {
     }
   }
 
-  /** Copies the archive into the backup, never the backups folder or (when the archive lies above it) the data directory. */
+  /** Copies the archive into the backup, never the backups folder or (when the archive lies above them) the data directories. */
   private async copyArchive(archiveRoot: string, dest: string): Promise<void> {
     const source = await realpathOrSelf(archiveRoot);
-    const dataRoot = await realpathOrSelf(this.ctx.paths.root);
     const excluded = [await realpathOrSelf(this.ctx.paths.backups)];
-    if (!isInside(dataRoot, source)) excluded.push(dataRoot);
+    for (const dataRoot of new Set([this.ctx.paths.root, this.ctx.paths.appData])) {
+      const real = await realpathOrSelf(dataRoot);
+      if (!isInside(real, source)) excluded.push(real);
+    }
     if (excluded.some((x) => isInside(source, x))) await copyTreeExcluding({ source, dest }, excluded);
     else await fsp.cp(source, dest, { recursive: true, errorOnExist: true, force: false });
   }
@@ -222,6 +224,16 @@ export class BackupService {
       paths: [path.join(this.ctx.paths.backups, name)],
       after: { name },
     });
+  }
+
+  /** Size of the database and of the whole backups folder, for the space warning. */
+  async storage(): Promise<BackupStorage> {
+    const databaseFile = this.ctx.database.file;
+    const sizeOf = async (file: string) => (await fsp.stat(file).catch(() => null))?.size ?? 0;
+    return {
+      databaseBytes: (await sizeOf(databaseFile)) + (await sizeOf(`${databaseFile}-wal`)),
+      backupsBytes: await dirSize(this.ctx.paths.backups).catch(() => 0),
+    };
   }
 
   /** All valid backups with their total (recursive) size, newest first. */

@@ -2,18 +2,18 @@
 
 ## `settings.json`
 
-Einstellungen liegen in `config/settings.json` im [Datenverzeichnis](datenverzeichnis.md) und werden über die Oberfläche (Einstellungen) gepflegt. Eine vollständige Beispieldatei ohne Zugangsdaten ist [`config.example.json`](../../config.example.json).
+Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (siehe [Datenverzeichnis](datenverzeichnis.md)) und werden über die Oberfläche (Einstellungen) gepflegt. Eine vollständige Beispieldatei ohne Zugangsdaten ist [`config.example.json`](../../config.example.json).
 
 | Bereich | Wichtige Felder |
 | --- | --- |
 | `profile` | `name`, `nicknames` – wer „ich“ ist |
 | `llm` | `baseUrl`, `model`, `reasoningEffort`, `timeoutMs`, `maxInputChars`, `embeddingModel` – siehe [LLM-Schnittstelle](llm-schnittstelle.md); `baseUrl`: `https://`, `http://` nur für `localhost`/`127.0.0.0/8`/`[::1]` |
-| `archiveRoot` | Archivordner; mit archivierten Dokumenten nur über „Archiv umziehen“ oder „Nur Pfad ändern“ änderbar, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md) |
+| `archiveRoot` | Archivordner (Standard `<Dokumentenordner>/archive`; Warnung, wenn er in einem Cloud-Sync-Ordner liegt); mit archivierten Dokumenten nur über „Archiv umziehen“ oder „Nur Pfad ändern“ änderbar, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md) |
 | `scan` | `enabled`, `onStartup`, `periodic`, `intervalMinutes`, `maxFileSizeMb`, `allowedExtensions`, `autoAnalyze` |
 | `privacy` | `llmMode` (`auto` / `confirm` / `local_only`), `neverAnalyzeDirs`, `neverAnalyzeExtensions`, `neverAnalyzeFiles` |
 | `notifications` | `desktop`, `reminderTime` (Standard `08:00`) |
 | `logs` | `level`, `retentionDays` |
-| `backups` | `keep`, `autoOnStartup`, `includeArchive` |
+| `backups` | `keep` (je Art, Standard 3; ein bereits gespeicherter Wert bleibt), `autoOnStartup`, `includeArchive` |
 | `consistency` | `onStartup`, `intervalHours` (0 = aus), `staleOpenItemDays` |
 | `ocr` | `enabled`, `languages` (z. B. `deu+eng`) |
 | `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3) |
@@ -30,7 +30,7 @@ Archivist liest **keine** `.env`-Dateien automatisch. Die Variablen werden vor d
 
 | Variable | Zweck |
 | --- | --- |
-| `ARCHIVIST_DATA_DIR` | Datenverzeichnis (Standard: `~/Documents/Archivist`) |
+| `ARCHIVIST_DATA_DIR` | Ein Ordner für **alles** (Dokumente und Anwendungsdaten). Ohne die Variable liegen Archiv, Eingang, Quarantäne und Papierkorb in `~/Documents/Archivist`, Datenbank, Einstellungen, Protokolle und Backups im Datenordner des Benutzerprofils, siehe [Datenverzeichnis](datenverzeichnis.md) |
 | `ARCHIVIST_LLM_API_KEY` | nur Entwicklung/CI: API-Key aus der Umgebung statt aus dem sicheren Speicher – nie committen |
 | `ARCHIVIST_DEV_URL` | nur Entwicklung: Next.js-Dev-Server statt gebündeltem Frontend (setzt `npm run dev` automatisch) |
 | `ARCHIVIST_TEST_MODE` | nur Tests: erlaubt unter Linux ohne Keyring den unsicheren `basic_text`-Fallback von `safeStorage` |

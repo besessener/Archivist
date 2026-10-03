@@ -23,7 +23,7 @@ const STEP_LABELS: Record<Step, string> = {
 };
 
 export function SetupWizard() {
-  const { refreshStatus } = useApp();
+  const { refreshStatus, status } = useApp();
   const { run, busy } = useRun();
   const [step, setStep] = useState<Step>('welcome');
   const [baseUrl, setBaseUrl] = useState('');
@@ -144,7 +144,13 @@ export function SetupWizard() {
           </ol>
 
           {step === 'welcome' && (
-            <WelcomeStep profileName={profileName} onProfileNameChange={setProfileName} nicknames={nicknames} onNicknamesChange={setNicknames} />
+            <WelcomeStep
+              profileName={profileName}
+              onProfileNameChange={setProfileName}
+              nicknames={nicknames}
+              onNicknamesChange={setNicknames}
+              syncProvider={status?.archiveSyncProvider ?? null}
+            />
           )}
           {step === 'llm' && <LlmStep form={llmForm} test={test} testing={testing} onTest={() => void runTest()} />}
           {step === 'scan' && <ScanStep directories={directories} busy={busy} onAdd={() => void addDirectory()} onRemove={(id) => void removeDirectory(id)} />}

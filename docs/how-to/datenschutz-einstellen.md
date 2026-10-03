@@ -36,6 +36,12 @@ Archivist sendet nur über `https://` an einen fremden Rechner. Eine `http://`-A
 
 Hatte eine ältere Version eine solche Adresse gespeichert, sendet Archivist nichts an sie und zeigt die Meldung, bis du sie korrigierst.
 
+## Keine Cloud-Synchronisierung für deine Daten
+
+Archivist hält Datenbank, Einstellungen, Protokolle und Backups im Datenordner deines Benutzerprofils (unter Windows `%APPDATA%\Archivist\`), nicht im Ordner „Dokumente“, den OneDrive, iCloud oder Dropbox oft abgleichen. Nur Archiv, Eingang, Quarantäne und Papierkorb liegen standardmäßig in `Dokumente\Archivist`. Die Dateien sind nicht zusätzlich verschlüsselt (nur der API-Key); schütze den Rechner mit Festplattenverschlüsselung (BitLocker).
+
+Liegt dein Archivordner trotzdem in einem Sync-Ordner (OneDrive, Dropbox, iCloud Drive oder Google Drive, erkannt am Ordnernamen), warnt Archivist in der Einrichtung, unter **Einstellungen → Archiv** und im Dialog „Archivordner ändern“. Willst du, dass deine Dokumente den Rechner nicht verlassen, wähle einen Ordner außerhalb der Synchronisierung ([Archivpfad ändern](archivpfad-aendern.md)) oder nimm den Ordner in der Sync-Software von der Synchronisierung aus.
+
 ## Protokoll und Diagnose für den Agenten
 
 Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `diagnose` den Zustand von Archivist lesen ([Archivist untersuchen](../reference/agentenmodus.md#archivist-untersuchen)). Was er dabei liest, ist Teil seiner Anfrage an das LLM – du steuerst es so:

@@ -21,6 +21,11 @@ export interface Workspace {
   addDownload(name: string, content: string): string;
 }
 
+interface Options {
+  /** Folder name the data directory is placed in (e.g. "OneDrive" to run inside a cloud-synced folder). */
+  dataParent: string;
+}
+
 interface Fixtures {
   llm: FakeLlmServer;
   workspace: Workspace;
@@ -46,19 +51,21 @@ async function launch(env: Record<string, string>): Promise<ElectronApplication>
   }
 }
 
-export const test = base.extend<Fixtures>({
+export const test = base.extend<Fixtures & Options>({
+  dataParent: ['', { option: true }],
+
   llm: async ({}, provide) => {
     const llm = await startFakeLlm();
     await provide(llm);
     await llm.close();
   },
 
-  workspace: async ({}, provide) => {
+  workspace: async ({ dataParent }, provide) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-e2e-'));
     const downloads = path.join(root, 'Downloads');
     fs.mkdirSync(downloads, { recursive: true });
     await provide({
-      dataDir: path.join(root, 'Archivist'),
+      dataDir: path.join(root, dataParent, 'Archivist'),
       downloads,
       addDownload: (name, content) => {
         const file = path.join(downloads, name);

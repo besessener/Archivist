@@ -27,4 +27,16 @@ test.describe('backups', () => {
     await expect(app.settings.locators.backups.restartNotice).toBeVisible();
     expect(fs.existsSync(path.join(workspace.dataDir, 'restore-pending.json'))).toBe(true);
   });
+
+  test('shows how much space the database and the backups take, without a warning for a small archive (#225)', async ({ on, page }, testInfo) => {
+    const app = on(page);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openBackups();
+    await app.settings.locators.backups.createMetadata.click();
+    await expect(app.settings.locators.backups.rows).toHaveCount(1);
+
+    await expect(app.settings.locators.backups.storage).toContainText('Datenbank:');
+    await expect(app.settings.locators.backups.sizeWarning).toBeHidden();
+    await expectNoSeriousA11yViolations(page, testInfo);
+  });
 });

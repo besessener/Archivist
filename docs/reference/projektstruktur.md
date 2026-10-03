@@ -43,6 +43,7 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`; die Schritte l
 | --- | --- | --- |
 | `DatabaseService` | `db/database.ts` | Verbindung und Migrationen |
 | `SettingsService` | `services/settings.ts` | Einstellungen lesen, validieren, speichern |
+| `migrateLegacyLayout` | `services/data-layout-migration.ts` | zieht die Anwendungsdaten der alten Ablage beim Start in den Datenordner um (kopieren, prüfen, umschalten) |
 | `SecretService` | `services/secret.ts` | API-Key über `SecretCipher` (safeStorage) |
 | `AppStateService` | `services/app-state.ts` | kleiner Schlüssel-Wert-Speicher, der Neustarts überlebt (`app_state`) |
 | `PrivacyService` | `services/privacy.ts` | Datenschutzmodus, Ausschlüsse, Maskierung |

@@ -115,7 +115,7 @@ export class ScannerService {
     if (!(await fsp.stat(real)).isDirectory()) throw validationError('Das ist kein Verzeichnis.');
     const forbidden = isForbiddenScanRoot(real);
     if (forbidden) throw permissionError(forbidden, real);
-    const ownRoots = [this.deps.ctx.paths.root, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
+    const ownRoots = [this.deps.ctx.paths.root, this.deps.ctx.paths.appData, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
     if (ownRoots.some((ownRoot) => isInside(ownRoot, real))) throw permissionError('Das Archivist-Datenverzeichnis selbst kann nicht gescannt werden.', real);
     if (this.db.select().from(scanRoots).where(eq(scanRoots.path, real)).get()) throw validationError('Dieses Verzeichnis ist bereits freigegeben.');
     const scan = this.deps.settings.get().scan;
