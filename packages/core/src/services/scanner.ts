@@ -54,24 +54,7 @@ export class ScannerService {
   /** Upper bound of files collected per scan root (lowered in tests). */
   maxFilesPerRoot = SCAN_MAX_FILES;
 
-  private readonly ctx: AppContext;
-  private readonly settings: SettingsService;
-  private readonly docs: DocumentService;
-  private readonly notifications: NotificationService;
-  private readonly insights: InsightService;
-  private readonly audit: AuditService;
-  private readonly jobs: JobQueueService;
-
-  constructor(deps: ScannerServiceDeps) {
-    ({
-      ctx: this.ctx,
-      settings: this.settings,
-      docs: this.docs,
-      notifications: this.notifications,
-      insights: this.insights,
-      audit: this.audit,
-      jobs: this.jobs,
-    } = deps);
+  constructor(private readonly deps: ScannerServiceDeps) {
     const { ctx, settings, pool, docs, graph, privacy, notifications } = deps;
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
@@ -80,7 +63,7 @@ export class ScannerService {
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
       if (!event.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: event.documentId }).where(eq(scanFiles.path, event.sourcePath)).run();
-      this.ctx.events.changed('scanner');
+      this.deps.ctx.events.changed('scanner');
     });
     ctx.events.on('document:unarchived', (event: { documentId: string }) => this.resetAfterUnarchive(event.documentId));
   }
@@ -107,11 +90,11 @@ export class ScannerService {
         .where(eq(scanFiles.id, file.id))
         .run();
     }
-    this.ctx.events.changed('scanner');
+    this.deps.ctx.events.changed('scanner');
   }
 
   private get db() {
-    return this.ctx.database.db;
+    return this.deps.ctx.database.db;
   }
 
   private rootRow(id: string): RootRow {
@@ -132,10 +115,10 @@ export class ScannerService {
     if (!(await fsp.stat(real)).isDirectory()) throw validationError('Das ist kein Verzeichnis.');
     const forbidden = isForbiddenScanRoot(real);
     if (forbidden) throw permissionError(forbidden, real);
-    const ownRoots = [this.ctx.paths.root, this.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
+    const ownRoots = [this.deps.ctx.paths.root, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
     if (ownRoots.some((ownRoot) => isInside(ownRoot, real))) throw permissionError('Das Archivist-Datenverzeichnis selbst kann nicht gescannt werden.', real);
     if (this.db.select().from(scanRoots).where(eq(scanRoots.path, real)).get()) throw validationError('Dieses Verzeichnis ist bereits freigegeben.');
-    const scan = this.settings.get().scan;
+    const scan = this.deps.settings.get().scan;
     const row: RootRow = {
       id: newId(),
       path: real,
@@ -150,8 +133,8 @@ export class ScannerService {
       createdAt: nowIso(),
     };
     this.db.insert(scanRoots).values(row).run();
-    this.audit.log({ action: 'scanner.addDirectory', actor: 'user', trigger: 'manual', confirmed: true, paths: [real] });
-    this.ctx.events.changed('scanner');
+    this.deps.audit.log({ action: 'scanner.addDirectory', actor: 'user', trigger: 'manual', confirmed: true, paths: [real] });
+    this.deps.ctx.events.changed('scanner');
     return mapRoot(row);
   }
 
@@ -159,8 +142,8 @@ export class ScannerService {
     const row = this.rootRow(id);
     this.db.delete(scanFiles).where(eq(scanFiles.rootId, id)).run();
     this.db.delete(scanRoots).where(eq(scanRoots.id, id)).run();
-    this.audit.log({ action: 'scanner.removeDirectory', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
-    this.ctx.events.changed('scanner');
+    this.deps.audit.log({ action: 'scanner.removeDirectory', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
+    this.deps.ctx.events.changed('scanner');
   }
 
   updateDirectory(
@@ -177,8 +160,8 @@ export class ScannerService {
     if (patch.llmAllowed !== undefined) set.llmAllowed = patch.llmAllowed;
     this.db.update(scanRoots).set(set).where(eq(scanRoots.id, id)).run();
     // the folder permission is stored on the documents, so every analysis, chat and search path honours it
-    if (patch.llmAllowed !== undefined && patch.llmAllowed !== row.llmAllowed) this.docs.applyFolderPermission(id);
-    this.ctx.events.changed('scanner');
+    if (patch.llmAllowed !== undefined && patch.llmAllowed !== row.llmAllowed) this.deps.docs.applyFolderPermission(id);
+    this.deps.ctx.events.changed('scanner');
     return mapRoot({ ...row, ...set });
   }
 
@@ -212,8 +195,8 @@ export class ScannerService {
       .all();
     for (const doc of inboxDocs)
       if (!doc.stagedPath) this.db.update(documents).set({ status: 'ignored', updatedAt: nowIso() }).where(eq(documents.id, doc.id)).run();
-    this.audit.log({ action: `scanner.exclude.${kind}`, actor: 'user', trigger: 'manual', confirmed: true, paths: [absolute] });
-    this.ctx.events.changed('scanner', 'documents');
+    this.deps.audit.log({ action: `scanner.exclude.${kind}`, actor: 'user', trigger: 'manual', confirmed: true, paths: [absolute] });
+    this.deps.ctx.events.changed('scanner', 'documents');
     return mapExclusion(row);
   }
 
@@ -230,19 +213,19 @@ export class ScannerService {
       .delete(scanFiles)
       .where(and(eq(scanFiles.status, 'excluded'), or(eq(scanFiles.path, row.path), like(scanFiles.path, `${row.path}${path.sep}%`))))
       .run();
-    this.audit.log({ action: 'scanner.removeExclusion', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
-    this.ctx.events.changed('scanner');
+    this.deps.audit.log({ action: 'scanner.removeExclusion', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
+    this.deps.ctx.events.changed('scanner');
   }
 
   // ---------- Scan ----------
   /** Master switch „Lokale Dokumentensuche“ (off by default). */
   startScan(rootId?: string, trigger = 'manual'): Job {
-    if (!this.settings.get().scan.enabled)
+    if (!this.deps.settings.get().scan.enabled)
       throw permissionError('Die lokale Dokumentensuche ist deaktiviert. Bitte zuerst in den Scan-Einstellungen aktivieren.');
     const roots = this.listDirectories().filter((root) => root.enabled && (!rootId || root.id === rootId));
     if (roots.length === 0) throw validationError('Es ist kein freigegebenes Scan-Verzeichnis vorhanden.');
     // a queued or running scan of the same folder (or of all) covers this one: two scans of a folder would collide on its rows
-    return this.jobs.enqueue<{ rootId: string | null; trigger: string }>('scanner.scan', {
+    return this.deps.jobs.enqueue<{ rootId: string | null; trigger: string }>('scanner.scan', {
       label: rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
       payload: { rootId: rootId ?? null, trigger },
       maxAttempts: 1,
@@ -277,7 +260,7 @@ export class ScannerService {
 
   /** New or changed analysable files not queued yet, oldest first – unlike the result list, not always the same first ones (#222). */
   filesAwaitingAnalysis(): string[] {
-    const queued = new Set(this.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((payload) => payload.fileIds ?? []));
+    const queued = new Set(this.deps.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((payload) => payload.fileIds ?? []));
     return this.db
       .select({ id: scanFiles.id })
       .from(scanFiles)
@@ -306,15 +289,15 @@ export class ScannerService {
   async analyzeFiles(fileIds: string[], options: { confirmLlm: boolean; job?: JobContext }): Promise<{ analyzed: string[]; skipped: string[] }> {
     const result = await this.analysis.analyzeFiles(fileIds, options);
     this.buildProposals(result.analyzed);
-    this.ctx.events.changed('scanner', 'documents', 'status');
+    this.deps.ctx.events.changed('scanner', 'documents', 'status');
     return result;
   }
 
   /** Assignment proposals: groups analyzed documents by topic/project and creates an insight, an action and a notification. */
   buildProposals(docIds: string[]): void {
     for (const plan of this.scanProposals.plans(docIds)) {
-      this.insights.upsert(plan.insight);
-      this.notifications.create(plan.notification);
+      this.deps.insights.upsert(plan.insight);
+      this.deps.notifications.create(plan.notification);
     }
   }
 
@@ -332,7 +315,7 @@ export class ScannerService {
 
   /** Re-plans the periodic scan from settings and enabled folders; cheap and idempotent, an unchanged plan keeps its timer. */
   applySettings(): void {
-    const scan = this.settings.get().scan;
+    const scan = this.deps.settings.get().scan;
     const active = scan.enabled && scan.periodic && this.listDirectories().some((root) => root.enabled);
     this.schedule.setInterval(active ? scan.intervalMinutes * 60_000 : null);
   }
@@ -346,17 +329,17 @@ export class ScannerService {
     try {
       this.startScan(undefined, 'interval');
     } catch (err) {
-      this.ctx.logger.warn('scanner', 'Periodic scan not started', { error: err });
+      this.deps.ctx.logger.warn('scanner', 'Periodic scan not started', { error: err });
     }
   }
 
   startupScan(): void {
-    const scan = this.settings.get().scan;
+    const scan = this.deps.settings.get().scan;
     if (!scan.enabled || !scan.onStartup || this.listDirectories().length === 0) return;
     try {
       this.startScan(undefined, 'startup');
     } catch (err) {
-      this.ctx.logger.warn('scanner', 'Startup scan not started', { error: err });
+      this.deps.ctx.logger.warn('scanner', 'Startup scan not started', { error: err });
     }
   }
 

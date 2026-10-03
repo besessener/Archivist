@@ -78,23 +78,14 @@ export class LlmService {
   private readonly health: EndpointHealth;
   private readonly transmissions: TransmissionLog;
 
-  private readonly ctx: AppContext;
-  private readonly settings: SettingsService;
-  private readonly secrets: SecretService;
   private readonly fetchImpl: FetchLike;
   private readonly retryDelayMs: number;
 
-  constructor(deps: LlmServiceDeps) {
-    ({
-      ctx: this.ctx,
-      settings: this.settings,
-      secrets: this.secrets,
-      fetchImpl: this.fetchImpl = (...args) => fetch(...args),
-      retryDelayMs: this.retryDelayMs = 400,
-    } = deps);
-    const { ctx } = deps;
-    this.health = new EndpointHealth(ctx);
-    this.transmissions = new TransmissionLog(ctx);
+  constructor(private readonly deps: LlmServiceDeps) {
+    this.fetchImpl = deps.fetchImpl ?? ((...args) => fetch(...args));
+    this.retryDelayMs = deps.retryDelayMs ?? 400;
+    this.health = new EndpointHealth(deps.ctx);
+    this.transmissions = new TransmissionLog(deps.ctx);
   }
 
   status() {
@@ -102,25 +93,25 @@ export class LlmService {
   }
 
   isConfigured(): boolean {
-    const llm = this.settings.get().llm;
-    return Boolean(llm.baseUrl && llm.model && this.secrets.getApiKey());
+    const llm = this.deps.settings.get().llm;
+    return Boolean(llm.baseUrl && llm.model && this.deps.secrets.getApiKey());
   }
 
   /** Configured AND allowed by the privacy mode (mode „nur lokal“ blocks every external transmission). */
   canUse(): boolean {
-    return this.isConfigured() && this.settings.get().privacy.llmMode !== 'local_only';
+    return this.isConfigured() && this.deps.settings.get().privacy.llmMode !== 'local_only';
   }
 
   /** Background use nobody asked for (e.g. contradiction checks): only in „automatisch“, never in „vorher fragen“ (#201). */
   canUseInBackground(): boolean {
-    return this.isConfigured() && this.settings.get().privacy.llmMode === 'auto';
+    return this.isConfigured() && this.deps.settings.get().privacy.llmMode === 'auto';
   }
 
   private connection(overrides: LlmOverrides): Connection {
-    const llm = this.settings.get().llm;
+    const llm = this.deps.settings.get().llm;
     const baseUrl = (overrides.baseUrl ?? llm.baseUrl).trim();
     const model = (overrides.model ?? llm.model).trim();
-    const apiKey = overrides.apiKey ?? this.secrets.getApiKey();
+    const apiKey = overrides.apiKey ?? this.deps.secrets.getApiKey();
     if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
     return { baseUrl, model, apiKey };
   }
@@ -131,9 +122,9 @@ export class LlmService {
 
   /** Plain text answer via /responses. */
   async complete(request: LlmRequest, overrides: LlmOverrides = {}): Promise<string> {
-    const llm = this.settings.get().llm;
+    const llm = this.deps.settings.get().llm;
     const connection = this.connection(overrides);
-    if (!request.bypassPrivacy && this.settings.get().privacy.llmMode === 'local_only') {
+    if (!request.bypassPrivacy && this.deps.settings.get().privacy.llmMode === 'local_only') {
       throw new AppError('permission_error', 'Der Datenschutzmodus „nur lokal“ verhindert externe LLM-Aufrufe.');
     }
     const signal = request.signal ?? llmCancelScope.getStore();
@@ -195,7 +186,7 @@ export class LlmService {
   }
 
   private completeViaResponses(prepared: PreparedRequest): Promise<string> {
-    const llm = this.settings.get().llm;
+    const llm = this.deps.settings.get().llm;
     const { connection, request, signal } = prepared;
     const body = responsesRequestBody({
       model: connection.model,
@@ -222,7 +213,7 @@ export class LlmService {
           if (drop.length === 0) break;
           for (const param of drop) rejected.add(param);
           this.rejectedParams.set(endpointKey, rejected);
-          this.ctx.logger.warn('llm', 'Endpoint rejected optional parameters – retrying without them', { params: drop });
+          this.deps.ctx.logger.warn('llm', 'Endpoint rejected optional parameters – retrying without them', { params: drop });
           response = await post();
         }
         return responsesText(response);
@@ -231,8 +222,8 @@ export class LlmService {
   }
 
   /** Adapter for the configured endpoint: base URL (or the choice under „Erweitert“) decides (#296). */
-  adapterId(baseUrl = this.settings.get().llm.baseUrl): AgentAdapterId {
-    return detectAdapter(baseUrl, this.settings.get().agent?.adapter ?? 'auto');
+  adapterId(baseUrl = this.deps.settings.get().llm.baseUrl): AgentAdapterId {
+    return detectAdapter(baseUrl, this.deps.settings.get().agent?.adapter ?? 'auto');
   }
 
   /** Connection data for the agent adapters; every transmission goes into the transmission log. */
@@ -242,13 +233,13 @@ export class LlmService {
       baseUrl,
       model,
       apiKey,
-      timeoutMs: Math.max(this.settings.get().llm.timeoutMs, 120_000),
+      timeoutMs: Math.max(this.deps.settings.get().llm.timeoutMs, 120_000),
       fetchImpl: this.fetchImpl,
       log: (transmission) => {
         this.transmissions.record(transmission);
         if (transmission.success) this.health.markReachable();
       },
-      warn: (message, data) => this.ctx.logger.warn('llm', message, data),
+      warn: (message, data) => this.deps.ctx.logger.warn('llm', message, data),
     };
   }
 
@@ -261,7 +252,7 @@ export class LlmService {
   private completeViaClaude(prepared: PreparedRequest): Promise<string> {
     const { connection, request, signal } = prepared;
     const config = this.adapterConfig(connection);
-    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.settings.get().llm.timeoutMs, log: () => undefined });
+    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined });
     return this.transfer({
       transmission: this.transmissionOf(prepared, `${connection.baseUrl} (Messages API)`),
       signal,
@@ -292,7 +283,7 @@ export class LlmService {
         if (result.success) return result.data;
         lastIssues = issuesText(result.error);
       }
-      this.ctx.logger.warn('llm', 'Invalid structured LLM output', { schema: request.schemaName, issues: lastIssues, attempt });
+      this.deps.ctx.logger.warn('llm', 'Invalid structured LLM output', { schema: request.schemaName, issues: lastIssues, attempt });
     }
     throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
       details: `${request.schemaName}: ${lastIssues}; Auszug: ${lastRaw.slice(0, 160)}`,
@@ -301,8 +292,8 @@ export class LlmService {
 
   /** Embeddings via /embeddings (only if an embedding model is configured). */
   async embeddings(texts: string[], { purpose, documentIds = [] }: { purpose: string; documentIds?: string[] }): Promise<number[][]> {
-    const llm = this.settings.get().llm;
-    const apiKey = this.secrets.getApiKey();
+    const llm = this.deps.settings.get().llm;
+    const apiKey = this.deps.secrets.getApiKey();
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
     const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000)));
     const url = endpointUrl(llm.baseUrl, 'embeddings');

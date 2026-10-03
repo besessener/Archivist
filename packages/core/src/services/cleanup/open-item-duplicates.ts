@@ -1,17 +1,18 @@
-import type { EntityRef, OpenItem } from '@archivist/shared';
+import type { OpenItem } from '@archivist/shared';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { openItems, relations, reminders } from '../../db/schema';
 import { AppError } from '../../util/errors';
 import { nowIso } from '../../util/ids';
-import { tokenize, truncate } from '../../util/text';
+import { tokenize } from '../../util/text';
 import type { AuditService } from '../audit';
-import type { InsightInput, InsightService } from '../insights';
+import type { InsightService } from '../insights';
 import type { KnowledgeGraphService } from '../knowledge-graph';
 import { ACTIVE_STATUSES, type OpenItemService } from '../open-items';
 import { syncReminderAt } from '../reminders';
 import type { UndoService } from '../undo';
-import { assessOpenItemPair, type DuplicateAssessment } from './open-item-assessment';
+import { assessOpenItemPair } from './open-item-assessment';
+import { duplicateInsight, type DuplicatePair } from './open-item-duplicate-insight';
 import { chooseKept, duplicatePairKey, takeOverMissing, type TakeOverRules } from './record-merge';
 
 export { findOpenItemDuplicate } from './open-item-assessment';
@@ -43,12 +44,6 @@ const FIELD_LABELS: Partial<Record<keyof Row, string>> = {
 
 /** Cheap pre-filter: two titles can only match if they share a word stem (first three letters). */
 const stems = (title: string) => new Set(tokenize(title).map((token) => token.slice(0, 3)));
-
-export interface DuplicatePair {
-  keep: OpenItem;
-  duplicate: OpenItem;
-  assessment: DuplicateAssessment;
-}
 
 export interface OpenItemMergeResult {
   auditId: string;
@@ -87,40 +82,6 @@ function mergedColumns(keep: Row, duplicate: Row) {
   return { patch, set, keepBefore, fields };
 }
 
-function duplicateInsight(pair: DuplicatePair & { key: string; takenOver: string[] }): InsightInput {
-  const { keep, duplicate, assessment, takenOver } = pair;
-  const similarity = `Titel/Beschreibung ${Math.round(assessment.similarity * 100)} %${assessment.reasons.length ? `, ${assessment.reasons.join(', ')}` : ''}`;
-  const affected: EntityRef[] = [
-    { type: 'task', id: keep.id, label: keep.title },
-    { type: 'task', id: duplicate.id, label: duplicate.title },
-  ];
-  return {
-    kind: 'duplicate',
-    title: `Doppelter offener Punkt: „${truncate(keep.title, 70)}“`,
-    explanation: [
-      `„${keep.title}“ und „${duplicate.title}“ beschreiben vermutlich dieselbe Aufgabe (${similarity}).`,
-      `Vorschlag: „${keep.title}“ (zuerst erfasst) behalten${takenOver.length ? `, fehlende Angaben übernehmen (${takenOver.join(', ')})` : ''} und „${duplicate.title}“ als „verworfen (Duplikat)“ markieren.`,
-      'Es wird nichts gelöscht, und die Zusammenführung lässt sich rückgängig machen. Sind es verschiedene Punkte, lehne den Hinweis ab – er erscheint dann nicht wieder.',
-    ].join('\n\n'),
-    confidence: Math.min(0.95, assessment.score),
-    affected,
-    sourceIds: [keep.id, duplicate.id],
-    action: {
-      proposal: {
-        actionType: 'merge_open_items',
-        label: `„${truncate(duplicate.title, 60)}“ als Duplikat von „${truncate(keep.title, 60)}“ verwerfen`,
-        rationale: `Die offenen Punkte ähneln sich (${similarity}).`,
-        confidence: Math.min(0.95, assessment.score),
-        affectedEntities: affected,
-        requiredConfirmation: 'confirm',
-        proposedParameters: { keepId: keep.id, duplicateId: duplicate.id },
-      },
-      label: 'Zusammenführen',
-    },
-    dedupeKey: pair.key,
-  };
-}
-
 export interface OpenItemDuplicateServiceDeps {
   ctx: AppContext;
   openItems: OpenItemService;
@@ -132,14 +93,7 @@ export interface OpenItemDuplicateServiceDeps {
 
 /** Duplicate open items: the archive check proposes keeping the first one and discarding the other (undoable, never deleted). */
 export class OpenItemDuplicateService {
-  private readonly ctx: AppContext;
-  private readonly openItems: OpenItemService;
-  private readonly graph: KnowledgeGraphService;
-  private readonly audit: AuditService;
-  private readonly insights: InsightService;
-
-  constructor(deps: OpenItemDuplicateServiceDeps) {
-    ({ ctx: this.ctx, openItems: this.openItems, graph: this.graph, audit: this.audit, insights: this.insights } = deps);
+  constructor(private readonly deps: OpenItemDuplicateServiceDeps) {
     const { undo } = deps;
     undo.register(OPEN_ITEM_MERGE_UNDO_TYPE, {
       check: async (data) => this.undoConflicts(data as MergeUndoData),
@@ -148,7 +102,7 @@ export class OpenItemDuplicateService {
   }
 
   private get db() {
-    return this.ctx.database.db;
+    return this.deps.ctx.database.db;
   }
 
   private row(id: string): Row | undefined {
@@ -156,7 +110,7 @@ export class OpenItemDuplicateService {
   }
 
   /** All pairs of active open items that look like duplicates; `keep` is the item recorded first. */
-  findPairs(items: OpenItem[] = this.openItems.list({ onlyActive: true })): DuplicatePair[] {
+  findPairs(items: OpenItem[] = this.deps.openItems.list({ onlyActive: true })): DuplicatePair[] {
     const withStems = items.map((item) => ({ item, stems: stems(item.title) }));
     const pairs: DuplicatePair[] = [];
     for (let i = 0; i < withStems.length; i += 1) {
@@ -179,13 +133,13 @@ export class OpenItemDuplicateService {
       const key = duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, [pair.keep.id, pair.duplicate.id]);
       keepKeys.add(key);
       // a rejected hint („Verschieden“) stays rejected: upsert neither reopens it nor proposes its action again
-      this.insights.upsert(duplicateInsight({ ...pair, key, takenOver: this.takenOverLabels(pair) }));
+      this.deps.insights.upsert(duplicateInsight({ ...pair, key, takenOver: this.takenOverLabels(pair) }));
       count?.('duplicate_open_item');
       found += 1;
     }
     // hints whose cause is gone are removed (their proposals withdrawn); „Verschieden“ is kept while both items exist
     for (const key of this.rememberedDifferent()) keepKeys.add(key);
-    this.insights.reconcile(OPEN_ITEM_DUPLICATE_KEY_PREFIX, keepKeys);
+    this.deps.insights.reconcile(OPEN_ITEM_DUPLICATE_KEY_PREFIX, keepKeys);
     return found;
   }
 
@@ -200,7 +154,7 @@ export class OpenItemDuplicateService {
   /** Keys of pairs rejected as different while both items exist; they stay remembered even when no longer detected. */
   private rememberedDifferent(): string[] {
     const keys: string[] = [];
-    for (const insight of this.insights.list('rejected')) {
+    for (const insight of this.deps.insights.list('rejected')) {
       if (insight.kind !== 'duplicate' || insight.sourceIds.length !== 2) continue;
       const [a, b] = insight.sourceIds as [string, string];
       if (this.row(a) && this.row(b)) keys.push(duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, [a, b]));
@@ -226,7 +180,7 @@ export class OpenItemDuplicateService {
       .from(relations)
       .where(and(eq(relations.sourceEntityId, link.from), eq(relations.targetEntityId, link.to), eq(relations.relationType, link.type)))
       .get();
-    const relation = this.graph.link(
+    const relation = this.deps.graph.link(
       { sourceId: link.from, targetId: link.to, relationType: link.type },
       { confidence: opts.confidence, status: 'confirmed', sourceIds: opts.sourceIds },
     );
@@ -242,7 +196,7 @@ export class OpenItemDuplicateService {
       ...(patch.responsiblePersonId ? this.linkNew({ from: patch.responsiblePersonId, to: keep.id, type: 'responsible_for' }, options) : []),
     ];
     for (const sourceId of (patch.sourceIds ?? []).filter((id) => !keep.sourceIds.includes(id))) {
-      const type = this.graph.getEntity(sourceId)?.type;
+      const type = this.deps.graph.getEntity(sourceId)?.type;
       if (type === 'decision' || type === 'document')
         created.push(...this.linkNew({ from: keep.id, to: sourceId, type: 'results_from' }, { confidence: keep.confidence, sourceIds: [sourceId] }));
     }
@@ -268,13 +222,13 @@ export class OpenItemDuplicateService {
     const duplicate = this.row(duplicateId)!;
     const columns = mergedColumns(keep, duplicate);
     const moved = this.pendingReminders(duplicate.id).map((reminder) => reminder.id);
-    const auditId = this.ctx.database.transaction(() => this.writeMerge({ keep, duplicate, columns, moved, origin }));
-    void this.openItems.reindex(keep.id);
-    void this.openItems.reindex(duplicate.id);
-    this.ctx.events.changed('openItems', 'reminders', 'knowledge', 'status');
+    const auditId = this.deps.ctx.database.transaction(() => this.writeMerge({ keep, duplicate, columns, moved, origin }));
+    void this.deps.openItems.reindex(keep.id);
+    void this.deps.openItems.reindex(duplicate.id);
+    this.deps.ctx.events.changed('openItems', 'reminders', 'knowledge', 'status');
     const takenOver = columns.fields.map((field) => FIELD_LABELS[field] ?? field);
     if (moved.length) takenOver.push('Erinnerungen');
-    return { auditId, keep: this.openItems.get(keep.id), duplicate: this.openItems.get(duplicate.id), takenOver };
+    return { auditId, keep: this.deps.openItems.get(keep.id), duplicate: this.deps.openItems.get(duplicate.id), takenOver };
   }
 
   private writeMerge(input: { keep: Row; duplicate: Row; columns: ReturnType<typeof mergedColumns>; moved: string[]; origin: Origin }): string {
@@ -290,7 +244,7 @@ export class OpenItemDuplicateService {
     if (moved.length) this.db.update(reminders).set({ targetId: keep.id }).where(inArray(reminders.id, moved)).run();
     syncReminderAt(this.db, keep.id);
     syncReminderAt(this.db, duplicate.id);
-    if (patch.description !== undefined) this.graph.registerNode({ type: 'task', id: keep.id, name: keep.title, description: patch.description });
+    if (patch.description !== undefined) this.deps.graph.registerNode({ type: 'task', id: keep.id, name: keep.title, description: patch.description });
     const data: MergeUndoData = {
       keepId: keep.id,
       duplicateId: duplicate.id,
@@ -301,7 +255,7 @@ export class OpenItemDuplicateService {
       keepUpdatedAt: now,
       duplicateUpdatedAt: now,
     };
-    return this.audit.log({
+    return this.deps.audit.log({
       action: 'open_item.merge_duplicate',
       actor: origin.actor ?? 'user',
       trigger: origin.trigger ?? 'manual',
@@ -338,7 +292,7 @@ export class OpenItemDuplicateService {
   private undoMerge(undoData: MergeUndoData): string {
     const now = nowIso();
     const keep = this.row(undoData.keepId)!;
-    this.ctx.database.transaction(() => {
+    this.deps.ctx.database.transaction(() => {
       this.db
         .update(openItems)
         .set({ ...undoData.keepBefore, updatedAt: now })
@@ -353,13 +307,13 @@ export class OpenItemDuplicateService {
         this.db.update(reminders).set({ targetId: undoData.duplicateId }).where(inArray(reminders.id, undoData.movedReminderIds)).run();
       if (undoData.createdRelationIds.length) this.db.delete(relations).where(inArray(relations.id, undoData.createdRelationIds)).run();
       if ('description' in undoData.keepBefore)
-        this.graph.registerNode({ type: 'task', id: undoData.keepId, name: keep.title, description: undoData.keepBefore.description ?? null });
+        this.deps.graph.registerNode({ type: 'task', id: undoData.keepId, name: keep.title, description: undoData.keepBefore.description ?? null });
       syncReminderAt(this.db, undoData.keepId);
       syncReminderAt(this.db, undoData.duplicateId);
     });
-    void this.openItems.reindex(undoData.keepId);
-    void this.openItems.reindex(undoData.duplicateId);
-    this.ctx.events.changed('openItems', 'reminders', 'knowledge', 'status');
+    void this.deps.openItems.reindex(undoData.keepId);
+    void this.deps.openItems.reindex(undoData.duplicateId);
+    this.deps.ctx.events.changed('openItems', 'reminders', 'knowledge', 'status');
     return 'Zusammenführung der offenen Punkte rückgängig gemacht.';
   }
 }

@@ -64,17 +64,9 @@ export class ContradictionService {
   /** pairs (with their texts) the LLM judged not contradictory, so a scan does not ask again for the same texts */
   private readonly vetoed = new Set<string>();
 
-  private readonly ctx: AppContext;
-  private readonly decisions: DecisionService;
-  private readonly graph: KnowledgeGraphService;
-  private readonly insights: InsightService;
-  private readonly notifications: NotificationService;
-  private readonly llm: LlmService;
-
-  constructor(deps: ContradictionServiceDeps) {
-    ({ ctx: this.ctx, decisions: this.decisions, graph: this.graph, insights: this.insights, notifications: this.notifications, llm: this.llm } = deps);
+  constructor(private readonly deps: ContradictionServiceDeps) {
     // rejecting the insight closes the contradiction notice as well (seen, both decisions stay)
-    this.insights.onRejected((key) => {
+    this.deps.insights.onRejected((key) => {
       if (!key.startsWith('contradiction:')) return;
       const c = this.db
         .select()
@@ -83,8 +75,8 @@ export class ContradictionService {
         .get();
       if (c?.status !== 'detected') return;
       this.db.update(contradictions).set({ status: 'acknowledged' }).where(eq(contradictions.id, c.id)).run();
-      this.notifications.resolveByDedupePrefix(`contradiction:${c.id}`);
-      this.ctx.events.changed('contradictions');
+      this.deps.notifications.resolveByDedupePrefix(`contradiction:${c.id}`);
+      this.deps.ctx.events.changed('contradictions');
     });
   }
 
@@ -93,7 +85,7 @@ export class ContradictionService {
   }
 
   private get db() {
-    return this.ctx.database.db;
+    return this.deps.ctx.database.db;
   }
 
   list(status?: Contradiction['status']): Contradiction[] {
@@ -127,9 +119,9 @@ export class ContradictionService {
   }
 
   private async confirmWithLlm(a: Decision, b: Decision): Promise<{ isContradiction: boolean; confidence: number; description: string } | null> {
-    if (!this.llm.canUseInBackground()) return null;
+    if (!this.deps.llm.canUseInBackground()) return null;
     try {
-      const verdict = await this.llm.completeJson(ContradictionProposal, {
+      const verdict = await this.deps.llm.completeJson(ContradictionProposal, {
         schemaName: 'ContradictionProposal',
         purpose: 'Widerspruchsprüfung',
         instructions:
@@ -138,7 +130,7 @@ export class ContradictionService {
       });
       return { isContradiction: verdict.isContradiction, confidence: verdict.confidence, description: verdict.description };
     } catch (err) {
-      this.ctx.logger.warn('contradictions', 'LLM check not possible, using the lexical result', { error: err });
+      this.deps.ctx.logger.warn('contradictions', 'LLM check not possible, using the lexical result', { error: err });
       return null;
     }
   }
@@ -160,9 +152,9 @@ export class ContradictionService {
 
   /** Checks a (new) decision against the active decisions on the same topic/project. */
   async checkDecision(decisionId: string): Promise<Contradiction[]> {
-    const d = this.decisions.get(decisionId);
+    const d = this.deps.decisions.get(decisionId);
     if (!ACTIVE_DECISION_STATUSES.includes(d.status)) return [];
-    const others = this.decisions.activeFor({ topicId: d.topicId, projectId: d.projectId, excludeId: d.id });
+    const others = this.deps.decisions.activeFor({ topicId: d.topicId, projectId: d.projectId, excludeId: d.id });
     const created: Contradiction[] = [];
     for (const o of others) {
       const found = await this.evaluate(d, o);
@@ -174,11 +166,11 @@ export class ContradictionService {
   /** Archive check: all active decisions pairwise per topic, pairs already recorded not again; outdated contradictions are resolved. */
   async scanAll(): Promise<Contradiction[]> {
     this.reconcile();
-    const active = this.decisions.list().filter((d) => ACTIVE_DECISION_STATUSES.includes(d.status));
+    const active = this.deps.decisions.list().filter((d) => ACTIVE_DECISION_STATUSES.includes(d.status));
     const created: Contradiction[] = [];
     const seen = new Set<string>();
     for (const d of active) {
-      for (const o of this.decisions.activeFor({ topicId: d.topicId, projectId: d.projectId, excludeId: d.id })) {
+      for (const o of this.deps.decisions.activeFor({ topicId: d.topicId, projectId: d.projectId, excludeId: d.id })) {
         const key = ContradictionService.pairKey(d.id, o.id);
         if (seen.has(key)) continue;
         seen.add(key);
@@ -200,7 +192,7 @@ export class ContradictionService {
     for (const c of open) {
       const stillActive = c.affectedEntityIds.every((id) => {
         try {
-          return ACTIVE_DECISION_STATUSES.includes(this.decisions.get(id).status);
+          return ACTIVE_DECISION_STATUSES.includes(this.deps.decisions.get(id).status);
         } catch {
           return false;
         }
@@ -219,17 +211,17 @@ export class ContradictionService {
   /** Shared lifecycle: contradiction, its notification, its insight and its proposal are closed together. */
   private close(id: string, { resolution, reason }: { resolution: 'resolved' | 'false_positive'; reason: string }): void {
     this.db.update(contradictions).set({ status: resolution, resolvedAt: nowIso() }).where(eq(contradictions.id, id)).run();
-    this.notifications.resolveByDedupePrefix(`contradiction:${id}`);
-    this.insights.settle(`contradiction:${id}`, {
+    this.deps.notifications.resolveByDedupePrefix(`contradiction:${id}`);
+    this.deps.insights.settle(`contradiction:${id}`, {
       status: resolution === 'resolved' ? 'accepted' : 'rejected',
       reason: `Der Widerspruch wurde bereits aufgelöst: ${reason}`,
     });
-    this.ctx.events.changed('contradictions', 'insights');
+    this.deps.ctx.events.changed('contradictions', 'insights');
   }
 
   /** A contradiction found elsewhere (the LLM's refinement of a link, #284), recorded like one of the own check; an existing one is returned. */
   async recordPair(pair: { aId: string; bId: string }, finding: Finding): Promise<Contradiction> {
-    return this.record([this.decisions.get(pair.aId), this.decisions.get(pair.bId)], finding);
+    return this.record([this.deps.decisions.get(pair.aId), this.deps.decisions.get(pair.bId)], finding);
   }
 
   private async record([a, b]: [Decision, Decision], { reason, confidence }: Finding): Promise<Contradiction> {
@@ -262,12 +254,12 @@ export class ContradictionService {
     this.db.insert(contradictions).values(row).run();
     // one proposal per pair: the contradiction replaces a "possibly superseded" hint of the archive check
     for (const key of [`superseded:${older.id}:${newer.id}`, `superseded:${newer.id}:${older.id}`])
-      this.insights.retire(key, 'Für diese Entscheidungen wurde ein Widerspruch erkannt; er ersetzt den Hinweis.');
-    this.graph.link({ sourceId: newer.id, targetId: older.id, relationType: 'contradicts' }, { confidence, status: 'proposed' });
+      this.deps.insights.retire(key, 'Für diese Entscheidungen wurde ein Widerspruch erkannt; er ersetzt den Hinweis.');
+    this.deps.graph.link({ sourceId: newer.id, targetId: older.id, relationType: 'contradicts' }, { confidence, status: 'proposed' });
     // without a known order there is no direction to propose: the user decides on the decision page
     const action = ordered ? this.proposeSupersede(order, confidence) : null;
     this.announce(row, { older, newer, action });
-    this.ctx.events.changed('contradictions', 'insights', 'knowledge');
+    this.deps.ctx.events.changed('contradictions', 'insights', 'knowledge');
     return map(row);
   }
 
@@ -306,7 +298,7 @@ export class ContradictionService {
   /** Insight and notification of a new contradiction. */
   private announce(row: Row, found: { older: Decision; newer: Decision; action: StoredAgentAction | null }): void {
     const { older, newer, action } = found;
-    this.insights.upsert({
+    this.deps.insights.upsert({
       kind: 'contradiction',
       title: row.title,
       explanation: row.description,
@@ -319,7 +311,7 @@ export class ContradictionService {
       ...(action ? { recommendedActionId: action.id, recommendedActionLabel: 'Neuere Entscheidung ersetzt die ältere' } : {}),
       dedupeKey: `contradiction:${row.id}`,
     });
-    this.notifications.create({
+    this.deps.notifications.create({
       title: 'Möglicher Widerspruch erkannt',
       description: row.title,
       type: 'contradiction',
@@ -343,11 +335,11 @@ export class ContradictionService {
     if (!opts.confirmed) throw new AppError('permission_error', 'Widersprüche dürfen nur nach ausdrücklicher Bestätigung aufgelöst werden.');
     const c = this.get(id);
     if (opts.supersedeOldDecisionId && opts.supersedeNewDecisionId) {
-      this.decisions.supersede({ oldId: opts.supersedeOldDecisionId, newId: opts.supersedeNewDecisionId, confirmed: true, trigger: 'contradiction' });
+      this.deps.decisions.supersede({ oldId: opts.supersedeOldDecisionId, newId: opts.supersedeNewDecisionId, confirmed: true, trigger: 'contradiction' });
     }
     if (resolution === 'acknowledged') {
       this.db.update(contradictions).set({ status: resolution, resolvedAt: null }).where(eq(contradictions.id, id)).run();
-      this.ctx.events.changed('contradictions', 'insights');
+      this.deps.ctx.events.changed('contradictions', 'insights');
     } else this.close(id, { resolution, reason: resolution === 'resolved' ? 'Er wurde als aufgelöst markiert.' : 'Er wurde als Fehlalarm markiert.' });
     return this.get(c.id);
   }
