@@ -63,12 +63,12 @@ describe('decision date (#168)', () => {
 
 describe('required fields of a decision', () => {
   it('reports every missing field in a fixed order', () => {
-    expect(computeMissingFields({})).toEqual(['decidedAt', 'topic', 'participants', 'decisionText']);
-    expect(computeMissingFields({ topic: '  ', decisionText: ' ', participants: [] })).toEqual(['decidedAt', 'topic', 'participants', 'decisionText']);
+    expect(computeMissingFields({})).toEqual(['decidedAt', 'topic', 'decisionText']);
+    expect(computeMissingFields({ topic: '  ', decisionText: ' ' })).toEqual(['decidedAt', 'topic', 'decisionText']);
   });
 
   it('accepts each field when present or confirmed as unknown', () => {
-    const complete = { decidedAt: '2026-01-01', topic: 'T', participants: ['A'], decisionText: 'x' };
+    const complete = { decidedAt: '2026-01-01', topic: 'T', decisionText: 'x' };
     expect(computeMissingFields(complete)).toEqual([]);
     expect(computeMissingFields({ unknownFields: ['decidedAt', 'topic', 'participants', 'decisionText'] })).toEqual([]);
   });

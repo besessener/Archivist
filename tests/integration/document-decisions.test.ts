@@ -128,15 +128,15 @@ describe('Decisions from documents get their own participants (#178)', () => {
     expect(decision!.status).toBe('active');
   });
 
-  it('without named participants the decision stays a draft that asks for them', async () => {
+  it('without named participants the decision is still complete (#198)', async () => {
     const doc = await archived([FASSADE]);
     const [proposal] = await decisionProposals(doc);
     expect(proposal!.proposedParameters.participants).toEqual([]);
 
     await approve(proposal!.id);
     const [decision] = await app.ok('decisions:list', {});
-    expect(decision!.status).toBe('draft');
-    expect(decision!.missingFields).toContain('participants');
+    expect(decision!.participants).toEqual([]);
+    expect(decision!.missingFields).not.toContain('participants');
   });
 
   it('proposes every decision found, not only the first three', async () => {

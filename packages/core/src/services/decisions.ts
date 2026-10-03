@@ -156,7 +156,7 @@ export class DecisionService {
     const project = input.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: input.project }) : null;
     const decidedAt = checkedDecisionDate(input.decidedAt, today());
     const participants = this.persons.resolveNames(input.participants, { context: opts.personContext }).names;
-    const missing = computeMissingFields({ ...input, decidedAt, topic: topic?.name ?? null, participants });
+    const missing = computeMissingFields({ ...input, decidedAt, topic: topic?.name ?? null });
     return {
       id: newId(),
       title: input.title?.trim() || firstSentence(input.decisionText, 90),

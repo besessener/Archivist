@@ -103,10 +103,9 @@ describe('References in the chat lead to the right object', () => {
     app.llm.down = true;
     await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const r = await app.ok('chat:send', { text: 'Wir haben entschieden, dass wir prod-plat pausieren. Datum 01.03.2026.' });
-    const r2 = await app.ok('chat:send', { conversationId: r.conversationId, text: 'Anna' });
     const contra = await app.ok('contradictions:list', {});
     expect(contra.length).toBeGreaterThan(0);
-    const fromDecision = r2.assistantMessage.context?.contradictions ?? [];
+    const fromDecision = r.assistantMessage.context?.contradictions ?? [];
     expect(fromDecision.length).toBeGreaterThan(0);
     expect(fromDecision.every((c) => c.type === 'contradiction' && contra.some((x) => x.id === c.id))).toBe(true);
 

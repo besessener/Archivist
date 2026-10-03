@@ -109,8 +109,8 @@ describe('date recognition', () => {
 
 describe('decisions: required fields and follow-up questions', () => {
   it('determines missing required fields', () => {
-    expect(computeMissingFields({ decisionText: 'x' })).toEqual(['decidedAt', 'topic', 'participants']);
-    expect(computeMissingFields({ decisionText: 'x', decidedAt: '2026-01-01', topic: 'T', participants: ['A'] })).toEqual([]);
+    expect(computeMissingFields({ decisionText: 'x' })).toEqual(['decidedAt', 'topic']);
+    expect(computeMissingFields({ decisionText: 'x', decidedAt: '2026-01-01', topic: 'T' })).toEqual([]);
   });
   it('accepts fields explicitly confirmed as unknown', () => {
     expect(computeMissingFields({ decisionText: 'x', topic: 'T', unknownFields: ['decidedAt', 'participants'] })).toEqual([]);
