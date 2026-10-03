@@ -56,7 +56,7 @@ function archiveOverview(deps: ToolDeps): ToolOutput {
       `Größte Ordner: ${topCounts(largestFolders, 10)}`,
       `Aktive offene Punkte: ${deps.openItems.list({ onlyActive: true }).length}`,
       `Entscheidungen: ${deps.decisions.list().length}`,
-      `Offene Vorschläge: ${deps.actions.list('proposed').length}, offene Hinweise: ${deps.insights.list('open').length}`,
+      `Offene Vorschläge: ${deps.actions.list('proposed').length}, offene Hinweise: ${deps.insights.list({ status: 'open' }).length}`,
     ].join('\n'),
   };
 }

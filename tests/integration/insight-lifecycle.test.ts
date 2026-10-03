@@ -18,7 +18,7 @@ afterEach(async () => {
 const archiveRoot = () => app.services.settings.get().archiveRoot;
 const row = (id: string) => app.services.documents.getRow(id);
 const folderOf = (id: string) => path.posix.dirname(row(id).archiveRelPath!);
-const openInsights = (kind?: string) => app.services.insights.list('open').filter((i) => !kind || i.kind === kind);
+const openInsights = (kind?: string) => app.services.insights.list({ status: 'open' }).filter((i) => !kind || i.kind === kind);
 const actionStatus = (id: string) => app.services.actions.get(id).status;
 
 async function archived(name: string, loc: string, topic: string | null = TOPIC): Promise<string> {

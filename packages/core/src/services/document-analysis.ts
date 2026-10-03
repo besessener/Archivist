@@ -182,7 +182,7 @@ export class DocumentAnalyzer {
       const warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
       this.deps.ctx.logger.warn('documents', 'LLM classification failed', { documentId: row.id, error: err });
       this.deps.notifications.create({
-        title: 'LLM-Analyse fehlgeschlagen',
+        title: 'KI-Analyse fehlgeschlagen',
         description: warning,
         type: 'system',
         priority: 'normal',

@@ -23,6 +23,7 @@ export function initChat(page: Page) {
     conversationSelect: root.getByTestId('conversation-select'),
     /** Proposal cards below an answer; `data-status` holds the action's status. */
     actionCards: root.getByTestId('action-card'),
+    toasts: page.getByTestId('toast'),
     /** Agent mode (#300): live steps of a running run, its summary below the answer and the mode switch. */
     agent: {
       steps: root.getByTestId('chat-loading').getByTestId('agent-step'),

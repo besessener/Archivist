@@ -95,7 +95,7 @@ describe('index-only document whose original vanished', () => {
     const content = fs.readFileSync(file);
     fs.rmSync(file);
     await app.services.consistency.run({ trigger: 'manual' });
-    const open = () => app.services.insights.list('open').filter((i) => i.title.startsWith('Original fehlt'));
+    const open = () => app.services.insights.list({ status: 'open' }).filter((i) => i.title.startsWith('Original fehlt'));
     expect(open()).toHaveLength(1);
     expect(open()[0]!.affected.map((a) => a.id)).toEqual([id]);
     expect(open()[0]!.explanation).toContain(file);

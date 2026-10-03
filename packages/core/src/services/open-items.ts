@@ -1,5 +1,5 @@
 import { localDate, localToday, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { entities, messages, openItems, reminders } from '../db/schema';
 import { withSubject } from '../db/subject-filter';
@@ -39,6 +39,13 @@ export interface OpenItemServiceDeps {
 }
 
 /** Open items (tasks/questions) including responsible person, due date and status. */
+interface OpenItemFilter {
+  status?: OpenItemStatus;
+  topicId?: string;
+  projectId?: string;
+  onlyActive?: boolean;
+}
+
 export class OpenItemService {
   constructor(private readonly deps: OpenItemServiceDeps) {
     const { ctx, graph, undo } = deps;
@@ -94,20 +101,31 @@ export class OpenItemService {
     return this.map(this.row(id));
   }
 
-  list(opts: { status?: OpenItemStatus; topicId?: string; projectId?: string; onlyActive?: boolean } = {}): OpenItem[] {
+  private listCondition(filter: OpenItemFilter) {
     const conditions = [];
-    if (opts.status) conditions.push(eq(openItems.status, opts.status));
-    if (opts.onlyActive) conditions.push(inArray(openItems.status, ACTIVE_STATUSES));
+    if (filter.status) conditions.push(eq(openItems.status, filter.status));
+    if (filter.onlyActive) conditions.push(inArray(openItems.status, ACTIVE_STATUSES));
     // the main topic/project or a further one (#287)
-    if (opts.topicId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.topicId, subjectId: opts.topicId }));
-    if (opts.projectId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.projectId, subjectId: opts.projectId }));
-    const rows = this.db
-      .select()
-      .from(openItems)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(openItems.createdAt))
-      .all();
-    return this.mapMany(rows);
+    if (filter.topicId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.topicId, subjectId: filter.topicId }));
+    if (filter.projectId) conditions.push(withSubject({ idCol: openItems.id, mainCol: openItems.projectId, subjectId: filter.projectId }));
+    return conditions.length ? and(...conditions) : undefined;
+  }
+
+  /** Newest first; without `limit` all matching items (internal callers), the IPC channel always pages. */
+  list(opts: OpenItemFilter & { limit?: number; offset?: number } = {}): OpenItem[] {
+    const query = this.db.select().from(openItems).where(this.listCondition(opts)).orderBy(desc(openItems.createdAt), desc(openItems.id));
+    return this.mapMany(
+      opts.limit === undefined
+        ? query.all()
+        : query
+            .limit(opts.limit)
+            .offset(opts.offset ?? 0)
+            .all(),
+    );
+  }
+
+  count(filter: OpenItemFilter = {}): number {
+    return this.db.select({ n: count() }).from(openItems).where(this.listCondition(filter)).get()?.n ?? 0;
   }
 
   /** Finds an active open item by a hint – only on an unambiguous hit. */

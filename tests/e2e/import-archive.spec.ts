@@ -15,7 +15,7 @@ test.describe('import and archiving', () => {
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
     await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
-    await expect(app.inbox.locators.llmStatus.first()).toContainText(/LLM analysiert/i);
+    await expect(app.inbox.locators.llmStatus.first()).toContainText(/KI analysiert/i);
 
     await app.inbox.do.openArchivePlan();
     await expect(app.inbox.locators.archivePlan.source.first()).toContainText('inbox');

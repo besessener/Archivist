@@ -26,7 +26,7 @@ export function PreviewDialog({ preview, onClose, onConfirm }: { preview: Previe
       <DialogContent className="max-w-xl" data-testid="solution-preview">
         <DialogHeader>
           <DialogTitle>Lösungsvorschlag erzeugen?</DialogTitle>
-          <DialogDescription>Folgende Inhalte werden an das LLM gesendet …</DialogDescription>
+          <DialogDescription>Folgende Inhalte werden an die KI gesendet …</DialogDescription>
         </DialogHeader>
         {preview && (
           <div className="flex max-h-[55vh] flex-col gap-3 overflow-y-auto text-sm">

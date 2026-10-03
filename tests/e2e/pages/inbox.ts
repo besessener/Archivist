@@ -20,6 +20,14 @@ export function initInbox(page: Page) {
       topic: page.getByTestId('inbox-topic'),
       project: page.getByTestId('inbox-project'),
     },
+    /** Ignoring (#232): the toast offers „Rückgängig“; ignored documents are listed under the filter „Ignoriert“. */
+    ignore: {
+      button: page.getByTestId('inbox-ignore'),
+      toast: page.getByTestId('toast'),
+      filter: page.getByTestId('inbox-filter-ignored'),
+      allFilter: page.getByTestId('inbox-filter-all'),
+      takeBack: page.getByTestId('inbox-unignore'),
+    },
     buttons: {
       archive: page.getByTestId('inbox-archive'),
       reprocess: page.getByTestId('inbox-reprocess'),
@@ -70,6 +78,10 @@ export function initInbox(page: Page) {
       if (consent.allowLlm) await locators.reprocessDialog.allowLlm.check();
       await locators.reprocessDialog.confirm.click();
       await expect(locators.reprocessDialog.root).toBeHidden();
+    },
+    /** „Ignorieren“ on the first entry. */
+    ignoreFirst: async () => {
+      await locators.ignore.button.first().click();
     },
     openArchivePlan: async () => {
       await locators.buttons.archive.first().click();

@@ -31,6 +31,26 @@ export function seedArchivedDocuments(dataDir: string, docTypes: string[]): void
   database.close();
 }
 
+/** Creates the database before the first start with `count` active decisions and `count` open insights (the first ones are the oldest). */
+export function seedLongLists(dataDir: string, count: number): void {
+  const database = new DatabaseService(path.join(dataDir, 'database', 'archivist.db'), new Logger(null));
+  database.migrate(path.resolve(__dirname, '../../packages/core/migrations'));
+  const insertDecision = database.sqlite.prepare(
+    `INSERT INTO decisions (id, title, decision_text, decided_at, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+  );
+  const insertInsight = database.sqlite.prepare(
+    `INSERT INTO insights (id, kind, title, explanation, status, dedupe_key, created_at, updated_at) VALUES (?, 'orphan_document', ?, 'Ohne Zuordnung.', 'open', ?, ?, ?)`,
+  );
+  database.transaction(() => {
+    for (let index = 0; index < count; index++) {
+      const at = new Date(Date.UTC(2026, 0, 1) + index * 60_000).toISOString();
+      insertDecision.run(`dec-${index}`, `Entscheidung ${index + 1}`, `Wir entscheiden Nummer ${index + 1}.`, at, at, at);
+      insertInsight.run(`ins-${index}`, `Hinweis ${index + 1}`, `seed:${index}`, at, at);
+    }
+  });
+  database.close();
+}
+
 /** Deletes the newest entry of the audit log behind the running app's back, as another program on the database could. */
 export function cutOffNewestAuditEntry(dataDir: string): void {
   const database = new DatabaseService(path.join(dataDir, 'database', 'archivist.db'), new Logger(null));

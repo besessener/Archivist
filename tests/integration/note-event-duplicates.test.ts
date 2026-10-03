@@ -13,7 +13,7 @@ afterEach(async () => {
 
 const notesInGraph = () => app.services.graph.listEntities({ type: 'note' });
 const searchIds = async (query: string) => (await app.ok('search:global', { query })).map((h) => h.id);
-const duplicateInsights = (status: 'open' | 'accepted' | 'rejected' = 'open') => app.services.insights.list(status).filter((i) => i.kind === 'duplicate');
+const duplicateInsights = (status: 'open' | 'accepted' | 'rejected' = 'open') => app.services.insights.list({ status }).filter((i) => i.kind === 'duplicate');
 const insightFor = (id: string, status: 'open' | 'accepted' | 'rejected' = 'open') => duplicateInsights(status).find((i) => i.sourceIds.includes(id));
 const accept = (id: string) => app.ok('insights:respond', { response: 'accept', id, confirmed: true, strongConfirmed: false });
 const reject = (id: string) => app.ok('insights:respond', { response: 'reject', id });

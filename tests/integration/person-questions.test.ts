@@ -12,7 +12,7 @@ afterEach(async () => {
 
 const graph = () => app.services.graph;
 const person = (name: string) => graph().ensureEntity({ type: 'person', name });
-const questions = (status: 'open' | 'rejected' | 'accepted' = 'open') => app.services.insights.list(status).filter((i) => i.kind === 'unclear_person');
+const questions = (status: 'open' | 'rejected' | 'accepted' = 'open') => app.services.insights.list({ status }).filter((i) => i.kind === 'unclear_person');
 const choose = (id: string, choiceId: string) => app.ok('insights:respond', { response: 'choose', id, choiceId, confirmed: true, strongConfirmed: false });
 const hintCalls = () => app.llm.calls.filter((c) => c.schema === 'PersonHints');
 
