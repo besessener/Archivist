@@ -35,6 +35,11 @@ export function initSettings(page: Page) {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
       activeMode: page.getByTestId('privacy-mode-active'),
       extensions: page.getByTestId('privacy-exts'),
+      transmissions: {
+        rows: page.getByTestId('transmission-row'),
+        preview: page.getByTestId('transmission-preview'),
+        retentionNote: page.getByText('nach 90 Tagen automatisch gelöscht'),
+      },
       maskPersonal: page.getByTestId('privacy-mask-personal'),
       maskNote: page.getByTestId('privacy-mask-note'),
     },
@@ -124,6 +129,10 @@ export function initSettings(page: Page) {
     },
     openArchive: async () => {
       await locators.tabs.archive.click();
+    },
+    /** Opens the preview of the transmission log entry in the given row. */
+    openTransmissionPreview: async (row: number) => {
+      await locators.privacy.transmissions.rows.nth(row).getByRole('button', { name: 'Vorschau' }).click();
     },
     selectMode: async (mode: PrivacyMode) => {
       await locators.privacy.mode(mode).check();

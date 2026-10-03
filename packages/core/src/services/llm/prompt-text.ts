@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { redactSecrets, type RedactionOptions } from '../../util/redact';
 
 /** JSON mode of the Responses API needs the word "json" in the input (instructions don't count), else HTTP 400. */
 const JSON_INPUT_HINT = 'Antworte als JSON.\n\n';
@@ -48,4 +49,15 @@ export function parseJsonAnswer(raw: string): { ok: true; value: unknown } | { o
   } catch {
     return { ok: false };
   }
+}
+
+const PREVIEW_CHARS = 280;
+/** Lines of the standard prompt frame that say nothing about the content. */
+const PROMPT_FRAME = /^(?:Antworte als JSON\.|Heutiges Datum: .*)$/gm;
+
+/** What the transmission log shows: the caller's own summary of the request, else the sent text without the standard frame; masked, shortened. */
+export function previewOf(request: { preview?: string }, context: { sent: string; masking: RedactionOptions }): string {
+  const source = request.preview ?? context.sent.replace(PROMPT_FRAME, '');
+  const text = redactSecrets(source, context.masking).text.replace(/\s+/g, ' ').trim();
+  return text.slice(0, PREVIEW_CHARS);
 }

@@ -10,6 +10,8 @@ type LifecycleServices = WiredServices & {
   enqueueLinkRun: (trigger: string) => Job;
 };
 
+const TRANSMISSION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 /** Longest wait on running archive file operations when quitting; stays below the desktop's 10 s quit deadline (QUIT_DEADLINE_MS). */
 const ARCHIVE_DRAIN_TIMEOUT_MS = 8_000;
 
@@ -80,11 +82,22 @@ function startupBackup({ settings, backup, logger }: WiredServices): void {
 }
 
 export function createLifecycle(services: LifecycleServices) {
-  const { logger, settings, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, reader, database } = services;
+  const { logger, settings, llm, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, reader, database } = services;
+  let pruneTimer: NodeJS.Timeout | null = null;
+  const pruneTransmissions = () => {
+    try {
+      llm.pruneTransmissions();
+    } catch (err) {
+      logger.warn('llm', 'Pruning the transmission log failed', { error: err });
+    }
+  };
   return {
     /** Starts background work (only while the application runs). */
     start(): void {
       logger.prune(settings.get().logs.retentionDays);
+      pruneTransmissions();
+      pruneTimer = setInterval(pruneTransmissions, TRANSMISSION_PRUNE_INTERVAL_MS);
+      pruneTimer.unref();
       // before the queue resumes: documents stuck in `analyzing` without a job become `failed` (reprocessable)
       documents.recoverInterruptedAnalyses();
       jobs.start();
@@ -105,6 +118,7 @@ export function createLifecycle(services: LifecycleServices) {
 
     /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (8 s) were awaited. */
     async shutdown(options: { jobTimeoutMs?: number; archiveTimeoutMs?: number } = {}): Promise<void> {
+      if (pruneTimer) clearInterval(pruneTimer);
       reminders.stop();
       agent.stop();
       scanner.stop();

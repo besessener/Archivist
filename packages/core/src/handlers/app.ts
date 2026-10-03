@@ -132,6 +132,6 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
     },
 
     'llm:testConnection': (input) => services.agent.testConnection({ baseUrl: input.baseUrl, model: input.model, apiKey: input.apiKey }),
-    'llm:transmissions': (input) => services.llm.listTransmissions(input.limit),
+    'llm:transmissions': (input) => services.llm.listTransmissions(input.limit, input.offset),
   };
 }

@@ -83,7 +83,10 @@ export const ipcContract = {
     }),
     LlmTestResult,
   ),
-  'llm:transmissions': channel(z.object({ limit: z.number().int().min(1).max(500).default(100) }), z.array(LlmTransmission)),
+  'llm:transmissions': channel(
+    z.object({ limit: z.number().int().min(1).max(500).default(100), offset: z.number().int().min(0).default(0) }),
+    z.array(LlmTransmission),
+  ),
 
   // --- Chat ---
   'chat:send': channel(z.object({ conversationId: Id.optional(), text: z.string().min(1).max(20000) }), ChatSendResult),

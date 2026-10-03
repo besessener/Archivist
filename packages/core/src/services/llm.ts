@@ -12,7 +12,7 @@ import type { FetchLike } from '../agent/adapters/common';
 import { EndpointHealth } from './llm/endpoint-health';
 import { endpointUrl, postJson, type PostRequest } from './llm/http';
 import { isUnsupportedParamError, paramsToDrop, presentParams, withoutParams, type OptionalParam } from './llm/optional-params';
-import { correctionInput, issuesText, parseJsonAnswer, preparedInput, structuredInstructions } from './llm/prompt-text';
+import { correctionInput, issuesText, parseJsonAnswer, preparedInput, previewOf, structuredInstructions } from './llm/prompt-text';
 import { responsesRequestBody, responsesText } from './llm/responses';
 import { TransmissionLog, type Transmission } from './llm/transmission-log';
 
@@ -24,6 +24,8 @@ export interface LlmRequest {
   purpose: string;
   documentIds?: string[];
   json?: boolean;
+  /** What the log shows instead of the start of the prompt, e.g. the question and the source titles; masked like the request. */
+  preview?: string;
   /** only for the explicit connection test (sends fixed text only) */
   bypassPrivacy?: boolean;
   maxOutputTokens?: number;
@@ -56,6 +58,7 @@ interface PreparedRequest {
   instructions: string;
   redactions: number;
   personalRedactions: number;
+  preview: string;
   signal?: AbortSignal;
 }
 
@@ -149,6 +152,7 @@ export class LlmService {
       instructions: instructions.text,
       redactions: input.count + instructions.count,
       personalRedactions: input.personalData + instructions.personalData,
+      preview: previewOf(request, { sent: input.text, masking }),
       signal,
     };
     if (this.adapterId(connection.baseUrl) === 'anthropic') return this.completeViaClaude(prepared);
@@ -164,7 +168,7 @@ export class LlmService {
       redactions: prepared.redactions,
       personalRedactions: prepared.personalRedactions,
       documentIds: prepared.request.documentIds ?? [],
-      preview: prepared.sent.slice(0, 280),
+      preview: prepared.preview,
     };
   }
 
@@ -383,7 +387,12 @@ export class LlmService {
     }
   }
 
-  listTransmissions(limit = 100): LlmTransmission[] {
-    return this.transmissions.list(limit);
+  listTransmissions(limit = 100, offset = 0): LlmTransmission[] {
+    return this.transmissions.list({ limit, offset });
+  }
+
+  /** Deletes transmission log entries past the retention period; returns how many. */
+  pruneTransmissions(now = new Date()): number {
+    return this.transmissions.prune(now);
   }
 }
