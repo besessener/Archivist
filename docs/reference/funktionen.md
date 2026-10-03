@@ -45,7 +45,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Import** per Drag-and-Drop oder Dateiauswahl in einen sicheren Eingang (`inbox/`), mit Prüfsumme und Duplikaterkennung.
 - **Parser** für PDF, DOCX, PPTX, XLSX, EML, TXT/MD, PNG/JPG (Bilder und Scans per [OCR](#ocr)).
 - **Klassifikation** per LLM oder lokal, mit menschenlesbarem Zielpfad.
-- **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen); die Liste zeigt „N von M“.
+- **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000).
 - **Archivierung** per Kopieren (Standard), Verschieben, nur Indexieren oder Ignorieren; Undo.
 - **Nur indexierte Dokumente**: Ändert sich das Original, wird es beim nächsten Scan bzw. bei der Archivprüfung (andere Dateigröße) lokal neu eingelesen und neu indexiert – kein zweites Dokument, kein veralteter Inhalt in der Suche. Fehlt das Original, meldet die Archivprüfung „Original fehlt“.
 - **Archivierte Dokumente**: Wird das Original geändert und neu analysiert, wird das neue Dokument als Ersatz („ersetzt“, Vorschlag) des archivierten verknüpft.
@@ -170,7 +170,7 @@ Hybrid: FTS5-Stichwortsuche + Vektorähnlichkeit (Cosine, im Worker-Thread), per
 **Vektorsuche**
 
 - Lokale Hash-Vektoren sind lexikalisch und stimmen nicht mit ab – sie ergänzen nur Einträge, die die Stichwortsuche nicht gefunden hat.
-- Echte Embeddings (falls konfiguriert) stimmen mit ab. Wechselst du das Embedding-Modell, bettet ein Job die vorhandenen Dokumente neu ein (Dokumente, die nicht extern analysiert werden dürfen, behalten lokale Vektoren; Entscheidungen, Notizen, Aufgaben und Ereignisse werden immer lokal eingebettet).
+- Echte Embeddings (falls konfiguriert) stimmen mit ab. Zu jedem echten Vektor wird ein lokaler gespeichert, damit ein Eintrag auch ohne erreichbaren Endpunkt semantisch auffindbar bleibt. Im Modus „automatisch“ werden auch Entscheidungen, Notizen, Aufgaben und Ereignisse mit dem Embedding-Modell eingebettet (maskiert und im Übertragungsprotokoll); in „vorher fragen“ und „nur lokal“ bleiben sie lokal. Wechselst du das Embedding-Modell, bettet ein Job die vorhandenen Einträge neu ein; Dokumente, die nicht extern analysiert werden dürfen, behalten lokale Vektoren.
 - Im Datenschutzmodus `confirm` nutzen Suchindex und Suchanfragen ausschließlich lokale Vektoren. Antwortet der Embedding-Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer.
 
 ## Verzeichnisscan

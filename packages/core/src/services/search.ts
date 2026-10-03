@@ -16,7 +16,7 @@ export interface IndexInput {
   id: string;
   title: string;
   content: string;
-  /** false: create vectors locally only */
+  /** false: create vectors locally only; unset: documents locally, own records as the privacy mode allows */
   allowRemoteEmbedding?: boolean;
 }
 
@@ -25,6 +25,8 @@ export interface SearchHit extends SearchResult {
   /** The best matching chunk of the entity – the passage an answer should be based on (#157). */
   passage: string;
 }
+
+const OWN_RECORD_TYPES = new Set<EntityType>(['decision', 'note', 'task', 'question', 'event']);
 
 /** Job type that re-embeds entries after the embedding model changed (#173). */
 export const REEMBED_JOB = 'search.reembed';
@@ -86,12 +88,22 @@ export class SearchService {
     this.indexedListeners.push(listener);
   }
 
+  /** Whether own records get remote vectors right now (privacy mode and endpoint). */
+  ownRecordsGoRemote(): boolean {
+    return this.remoteAllowed();
+  }
+
+  /** Own records (decisions, notes, tasks, events) are embedded remotely when the privacy mode allows external use; documents decide for themselves (#173). */
+  private remoteByDefault(type: EntityType): boolean {
+    return OWN_RECORD_TYPES.has(type) && this.remoteAllowed();
+  }
+
   async index(input: IndexInput): Promise<number> {
     const parts = chunkText(input.content);
     if (parts.length === 0) parts.push(input.title);
     const embedded = await this.embedding.embed(
       parts.map((p) => `${input.title}\n${p}`),
-      { allowRemote: input.allowRemoteEmbedding ?? false, purpose: 'Suchindex', documentIds: input.type === 'document' ? [input.id] : [] },
+      { allowRemote: input.allowRemoteEmbedding ?? this.remoteByDefault(input.type), purpose: 'Suchindex', documentIds: input.type === 'document' ? [input.id] : [] },
     );
     const database = this.ctx.database;
     const written: Array<{ id: string; vector: Float32Array | undefined; localVector?: Float32Array }> = [];
@@ -139,9 +151,10 @@ export class SearchService {
 
   /**
    * Entries whose vectors came from another model than `model` (or lack the local vector next to a remote one) and that a re-index can fix (#173): documents may change
-   * between local and remote, every other type only leaves an outdated remote model (it is always embedded locally otherwise).
+   * between local and remote; own records do too when `ownRecords` is set, every other type only leaves an outdated remote model.
    */
-  entriesWithOtherModel(model: string): Array<{ id: string; type: EntityType }> {
+  entriesWithOtherModel(model: string, opts: { ownRecords?: boolean } = {}): Array<{ id: string; type: EntityType }> {
+    const upgradable = [...OWN_RECORD_TYPES];
     return this.ctx.database.db
       .selectDistinct({ id: chunks.entityId, type: chunks.entityType })
       .from(chunks)
@@ -149,7 +162,11 @@ export class SearchService {
         or(
           and(
             or(isNull(chunks.embeddingModel), ne(chunks.embeddingModel, model)),
-            or(eq(chunks.entityType, 'document'), and(isNotNull(chunks.embeddingModel), ne(chunks.embeddingModel, LOCAL_MODEL))),
+            or(
+              eq(chunks.entityType, 'document'),
+              opts.ownRecords ? inArray(chunks.entityType, upgradable) : undefined,
+              and(isNotNull(chunks.embeddingModel), ne(chunks.embeddingModel, LOCAL_MODEL)),
+            ),
           ),
           // remote vectors from before local ones were kept next to them
           and(isNotNull(chunks.embeddingModel), ne(chunks.embeddingModel, LOCAL_MODEL), isNull(chunks.localEmbedding)),

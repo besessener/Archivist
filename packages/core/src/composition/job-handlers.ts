@@ -128,7 +128,7 @@ export function registerJobHandlers(services: JobServices): void {
   });
   jobs.register<Record<string, never>>(REEMBED_JOB, {
     handler: async (job) => {
-      const stale = search.entriesWithOtherModel(embedding.currentModel({ allowRemote: true }));
+      const stale = search.entriesWithOtherModel(embedding.currentModel({ allowRemote: true }), { ownRecords: search.ownRecordsGoRemote() });
       for (const [index, entry] of stale.entries()) {
         job.signal.throwIfAborted();
         job.report(index / stale.length, `${index} von ${stale.length} neu eingebettet`);
