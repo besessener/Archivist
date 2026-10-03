@@ -191,6 +191,14 @@ export class GraphEntities {
     return this.update(row, { aliases });
   }
 
+  /** Forgets one alias again (case-insensitive); the entity stays unchanged when it has no such alias. */
+  removeAlias(entityId: string, alias: string): GraphEntity {
+    const row = this.requireRow(entityId);
+    const aliases = row.aliases.filter((existing) => normalizeName(existing) !== normalizeName(alias));
+    if (aliases.length === row.aliases.length) return mapEntity(row);
+    return this.update(row, { aliases });
+  }
+
   addRoles(entityId: string, roles: string[]): GraphEntity {
     const row = this.requireRow(entityId);
     const merged = mergeRoles(row.roles, roles);
