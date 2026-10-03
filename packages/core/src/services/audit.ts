@@ -139,9 +139,18 @@ export class AuditService {
     );
   }
 
-  /** Checks the hash chain and the separately kept anchor: no entry was changed, removed, inserted or cut off since it was written (entries from before the chain are not covered). */
+  /** Baselines an existing chain that has no anchor (log from before it, or a missing app_state row); a missing anchor can still be re-baselined by whoever removes it. */
+  seedAnchor(): void {
+    const db = this.ctx.database.db;
+    if (this.readAnchor(db)) return;
+    const hash = this.newestHash(db);
+    if (hash) this.writeAnchor(db, { count: this.chainedCount(db), hash });
+  }
+
+  /** Checks the chain and the separate anchor: nothing changed, removed, inserted or cut off since written; pre-chain entries are not covered. */
   verify(): AuditVerification {
     const db = this.ctx.database.db;
+    this.seedAnchor();
     return verifyAuditLog(
       db
         .select()

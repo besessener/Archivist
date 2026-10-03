@@ -61,7 +61,7 @@ export function parseAnchor(raw: string | null): ChainAnchor | null {
   }
 }
 
-/** True when the chained rows (from the first chained one on) are fewer than recorded or end in another hash; no anchor yet means nothing to compare. */
+/** True when the chained rows are fewer than the anchor counts or end in another hash; no anchor means nothing to compare. */
 export function isTruncated(rows: ChainedRow[], anchor: ChainAnchor | null): boolean {
   if (!anchor) return false;
   const first = rows.findIndex((row) => row.hash !== null);

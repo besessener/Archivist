@@ -30,3 +30,10 @@ export function seedArchivedDocuments(dataDir: string, docTypes: string[]): void
   );
   database.close();
 }
+
+/** Deletes the newest entry of the audit log behind the running app's back, as another program on the database could. */
+export function cutOffNewestAuditEntry(dataDir: string): void {
+  const database = new DatabaseService(path.join(dataDir, 'database', 'archivist.db'), new Logger(null));
+  database.sqlite.prepare('DELETE FROM audit_log WHERE rowid = (SELECT max(rowid) FROM audit_log)').run();
+  database.close();
+}

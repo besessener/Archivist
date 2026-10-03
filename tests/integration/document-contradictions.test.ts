@@ -1,5 +1,6 @@
+import path from 'node:path';
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { documents } from '../../packages/core/src/db/schema';
 import { archived } from '../helpers/agent';
 import { createTestApp, type TestApp } from '../helpers/harness';
@@ -90,15 +91,64 @@ describe('Contradictions between documents (#179)', () => {
     expect(questions()).toHaveLength(0);
   });
 
-  it('never sends a pair when one of the documents is excluded', async () => {
-    app.llm.on('ContradictionProposal', verdict(true));
-    const [first] = await twoOffers();
-    app.services.database.db.update(documents).set({ llmStatus: 'excluded' }).where(eq(documents.id, first)).run();
+  type Update = (set: Partial<typeof documents.$inferInsert>) => unknown;
+  const exclusions: Array<[string, (update: Update, id: string) => void]> = [
+    ['its own exclusion', (update) => update({ llmStatus: 'excluded' })],
+    ['its folder (folderLlmAllowed = false)', (update) => update({ folderLlmAllowed: false })],
+    [
+      'a never-analyze directory',
+      (_update, id) => {
+        const row = app.services.database.db.select({ sourcePath: documents.sourcePath }).from(documents).where(eq(documents.id, id)).get();
+        app.services.settings.update({ privacy: { neverAnalyzeDirs: [path.dirname(row!.sourcePath!)] } });
+      },
+    ],
+    [
+      'a never-analyze extension',
+      (update) => {
+        update({ ext: 'kdbx' });
+        app.services.settings.update({ privacy: { neverAnalyzeExtensions: ['kdbx'] } });
+      },
+    ],
+  ];
+
+  it.each(exclusions.flatMap(([name, exclude]) => [0, 1].map((index) => [name, index, exclude] as const)))(
+    'never sends a pair when %s excludes document %i',
+    async (_name, index, exclude) => {
+      app.llm.on('ContradictionProposal', verdict(true));
+      const id = (await twoOffers())[index]!;
+      exclude((set) => app.services.database.db.update(documents).set(set).where(eq(documents.id, id)).run(), id);
+
+      await app.services.contradictions.scanAll();
+
+      expect(questions()).toHaveLength(0);
+      expect(found()).toHaveLength(0);
+    },
+  );
+
+  it('stops after the first failed LLM question instead of burning the budget', async () => {
+    app.llm.on('ContradictionProposal', () => {
+      throw new Error('boom');
+    });
+    for (let i = 0; i < 4; i += 1) setScope(await offer(`angebot-${i}.txt`, `${1000 + i}`), { topicId: 'topic-dach' });
 
     await app.services.contradictions.scanAll();
 
-    expect(questions()).toHaveLength(0);
+    expect(new Set(questions().map((call) => call.input)).size).toBe(1);
     expect(found()).toHaveLength(0);
+  });
+
+  it('reads recorded pairs and stored verdicts in one query each, not per pair', async () => {
+    app.llm.on('ContradictionProposal', verdict(false));
+    for (let i = 0; i < 5; i += 1) setScope(await offer(`angebot-${i}.txt`, `${1000 + i}`), { topicId: 'topic-dach' });
+    await app.services.contradictions.scanAll();
+
+    const prepare = vi.spyOn(app.services.database.sqlite, 'prepare');
+    await app.services.contradictions.scanAll();
+    const reads = (fragment: string) => prepare.mock.calls.filter(([sql]) => sql.includes(fragment)).length;
+
+    expect(reads('from "contradiction_reviews"')).toBe(1);
+    expect(reads('"dedupe_key" like')).toBe(1);
+    expect(questions()).toHaveLength(10);
   });
 
   it('asks nothing in mode „vorher fragen“ or without an LLM', async () => {

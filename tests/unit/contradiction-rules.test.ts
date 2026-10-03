@@ -154,8 +154,27 @@ describe('negations in the polarity (#179)', () => {
     'Wir geben die Bestellung für den Server auf',
     'Wir geben eine Anzeige auf',
     'Wir werden einen Entwickler einstellen',
+    'Wir wollen eine Bestellung aufgeben',
+    'Wir haben einen Auftrag aufgegeben',
+    'Wir haben die Bestellung aufgegeben',
+    'Wir haben zwei Entwickler eingestellt',
+    'Wir geben einen Auftrag für den Umbau auf',
   ])('does not read hiring or ordering in „%s“ as stop', (text) => {
     expect(polarity(text)).toBeNull();
+  });
+
+  it.each([
+    'Wir beenden den Auftrag',
+    'Wir stoppen die Bestellung',
+    'Wir beenden die Zusammenarbeit mit dem Entwickler',
+    'Wir pausieren eine Phase',
+    'Wir stellen die Zusammenarbeit mit dem Entwickler ein',
+    'Wir geben den Auftrag auf',
+    'Wir stellen die Anzeige ein',
+    'Wir stoppen die Bestellung und stellen einen Entwickler ein',
+    'Wir stellen einen Entwickler ein und beenden den Auftrag',
+  ])('keeps „%s“ as stop', (text) => {
+    expect(polarity(text)).toBe('stop');
   });
 
   it('finds the README case „weiterführen“ against „nicht weiterführen“ as a conflict', () => {

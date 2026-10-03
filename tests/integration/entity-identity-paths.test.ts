@@ -81,7 +81,7 @@ describe('„ich“ in decision participants is the own person on every path (#1
     expectOwnPersonParticipates(created.id);
   });
 
-  it('a decision proposal from a document, once approved', async () => {
+  it('a decision proposal from a document, once approved: „ich“ is the author, not the user', async () => {
     const action = app.services.actions.propose({
       actionType: 'record_decision',
       label: 'Entscheidung',
@@ -89,12 +89,24 @@ describe('„ich“ in decision participants is the own person on every path (#1
       confidence: 0.6,
       affectedEntities: [],
       requiredConfirmation: 'confirm',
-      proposedParameters: { title: 'Umzug', decisionText: 'Wir ziehen um.', topic: 'Umzug', participants: ['ich', 'Anna'], sourceIds: [] },
+      proposedParameters: { title: 'Umzug', decisionText: 'Wir ziehen um.', topic: 'Umzug', participants: ['ich', 'Anna'], sourceIds: ['doc'] },
     });
     await app.ok('actions:resolve', { decision: 'approve', actionId: action.id, confirmed: true, strongConfirmed: false });
     const [created] = await app.ok('decisions:list', {});
-    expect(created!.participants).toEqual([OWN_NAME, 'Anna']);
-    expectOwnPersonParticipates(created!.id);
+    const me = graph()
+      .listEntities({ type: 'person' })
+      .find((p) => p.isSelf);
+    expect(created!.participants).not.toContain(OWN_NAME);
+    expect(created!.participants).toContain('Anna');
+    expect(me).toBeUndefined();
+  });
+
+  it('a form decision citing a document source does not map „ich“ either, a patch adding one neither', async () => {
+    const created = await app.ok('decisions:create', decisionInput({ sourceIds: ['doc'] }));
+    expect(created.participants).not.toContain(OWN_NAME);
+    const plain = await app.ok('decisions:create', decisionInput({ decisionText: 'Wir kaufen.', participants: ['Anna'] }));
+    const patched = await app.ok('decisions:update', { id: plain.id, patch: { participants: ['Anna', 'ich'], sourceIds: ['doc'] } });
+    expect(patched.participants).not.toContain(OWN_NAME);
   });
 
   it('stays the author, not the user, in a document’s person list', () => {

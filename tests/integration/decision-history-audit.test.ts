@@ -196,6 +196,22 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
     expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: true });
   });
 
+  it('seeds a missing anchor at startup, so cutting entries off before the next write still shows', async () => {
+    entries(3);
+    sql("DELETE FROM app_state WHERE key = 'audit.chainAnchor'");
+    await app.services.shutdown();
+    app = await createTestApp({ privacy: 'auto', dataRoot: app.root });
+    sql('DELETE FROM audit_log WHERE id = ?', ids().at(-1));
+    expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: true });
+  });
+
+  it('seeds a missing anchor on verify', async () => {
+    entries(3);
+    sql("DELETE FROM app_state WHERE key = 'audit.chainAnchor'");
+    expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: false });
+    expect(app.services.database.sqlite.prepare("SELECT value FROM app_state WHERE key = 'audit.chainAnchor'").get()).toBeDefined();
+  });
+
   it('an empty log is intact', async () => {
     expect(await app.ok('audit:verify', {})).toEqual({ checked: 0, brokenEntryId: null, truncated: false });
   });

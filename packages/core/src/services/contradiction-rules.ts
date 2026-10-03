@@ -18,9 +18,15 @@ const GO = [
   /\b(?:starten|einführen|einfuehren|beauftragen|freigeben|freigegeben|genehmigt|umsetzen|umgesetzt|fortgeführt|weitergeführt|fortgesetzt|reaktivier\w*)\b/i,
 ];
 const NEGATION = /\b(?:nicht|kein\w*|niemals|nie)\b/i;
+const HIRE_OBJECT = String.raw`(?:einen|eine|einem|zwei|drei|vier|fünf|\d+|neue[nrms]?|weitere[nrms]?)\s+(?:\p{L}+\s+)?(?:mitarbeiter|entwickler|personal|fachkraft|fachkräfte|praktikant|bewerber|werkstudent|azubi)\p{L}*`;
+const ORDER_OBJECT = String.raw`(?:(?:eine|die|neue)\s+)?(?:bestell|anzeige|annonce|inserat|gepäck)\p{L}*|(?:einen|zwei|drei|neue[nr]?)\s+auftr\p{L}+`;
 /** Hiring ("einen Entwickler einstellen") and ordering ("eine Bestellung aufgeben") use stop verbs without stopping anything. */
-const NOT_A_STOP =
-  /\b(?:einen|eine|einem|zwei|drei|vier|fünf|\d+|neue[nrms]?|mitarbeiter\w*|entwickler\w*|personal|fachkraft|fachkräfte|praktikant\w*|bestell\w*|auftrag|aufträge|anzeige|annonce|inserat|gepäck)\b/i;
+const NOT_A_STOP = [
+  new RegExp(String.raw`\b${HIRE_OBJECT}\s+ein(?:ge)?stell\p{L}*`, 'iu'),
+  new RegExp(String.raw`\bstell\p{L}*\s+${HIRE_OBJECT}\s+ein\b`, 'iu'),
+  new RegExp(String.raw`\b(?:${ORDER_OBJECT})\s+(?:aufgeb\p{L}*|aufgegeben)`, 'iu'),
+  new RegExp(String.raw`\bgeb\p{L}*\s+(?:${ORDER_OBJECT})[^.]{0,30}\sauf\b`, 'iu'),
+];
 const CLAUSE_BREAK = /[.;,!?]|\bsondern\b|\baber\b/i;
 
 export type Polarity = 'go' | 'stop' | null;
@@ -30,7 +36,8 @@ const flip = (polarity: Exclude<Polarity, null>): Polarity => (polarity === 'go'
 function clausePolarity(clause: string): Polarity {
   if (STOP_WITH_NEGATION.some((p) => p.test(clause))) return 'stop';
   const negated = NEGATION.test(clause);
-  const stops = !NOT_A_STOP.test(clause) && STOP.some((p) => p.test(clause));
+  const stopCandidate = NOT_A_STOP.reduce((text, pattern) => text.replace(pattern, ' '), clause);
+  const stops = STOP.some((p) => p.test(stopCandidate));
   const polarity: Polarity = stops ? 'stop' : GO.some((p) => p.test(clause)) ? 'go' : null;
   return polarity && negated ? flip(polarity) : polarity;
 }
