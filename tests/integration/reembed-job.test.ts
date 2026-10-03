@@ -45,6 +45,25 @@ describe('Re-embedding after the embedding model changed (#173)', () => {
     expect(app.services.search.entriesWithOtherModel('model-a').map((e) => e.id)).toContain(id);
   });
 
+  it('queues another job when the model changes again while a job is running', async () => {
+    const id = await archivedDocument();
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    app.llm.embed = async (texts) => {
+      await gate;
+      return texts.map(() => [1, 0, 0]);
+    };
+    await app.ok('settings:update', { llm: { embeddingModel: 'model-a' } });
+    while (app.llm.embeddingRequests.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+
+    await app.ok('settings:update', { llm: { embeddingModel: 'model-b' } });
+    release();
+    await app.services.jobs.whenIdle();
+
+    expect(app.services.jobs.list().filter((job) => job.type === 'search.reembed')).toHaveLength(2);
+    expect(app.services.search.entriesWithOtherModel('model-b').map((e) => e.id)).not.toContain(id);
+  });
+
   it('does not start a job for other settings changes', async () => {
     await app.ok('settings:update', { llm: { timeoutMs: 45_000 } });
     await app.services.jobs.whenIdle();
