@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 // The periodic check notices archive files whose size no longer matches the archived document (#239).
@@ -8,7 +8,10 @@ let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'local_only' });
 });
-afterEach(async () => app.cleanup());
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await app.cleanup();
+});
 
 async function archived(name: string, content: string): Promise<string> {
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
@@ -60,5 +63,23 @@ describe('Archive check: changed archive files', () => {
     fs.writeFileSync(victim, original);
     await app.services.consistency.run();
     expect(await changedFileHints()).toEqual([]);
+  });
+
+  it('a known changed file stays reported while it cannot be read', async () => {
+    const target = await archived('gesperrt.txt', 'Quittung über 30 Euro');
+    const original = fs.readFileSync(target, 'utf8');
+    fs.writeFileSync(target, original.replace('30', '31'));
+    await app.services.consistency.run();
+    expect(await changedFileHints()).toHaveLength(1);
+    const pool = app.services.pool;
+    const realRun = pool.run.bind(pool);
+    vi.spyOn(pool, 'run').mockImplementation(((task: string, input: { path: string }) =>
+      task === 'hashFile' && input.path === target
+        ? Promise.reject(new Error('EBUSY: resource busy or locked'))
+        : realRun(task as never, input as never)) as never);
+
+    await app.services.consistency.run();
+
+    expect(await changedFileHints()).toHaveLength(1);
   });
 });

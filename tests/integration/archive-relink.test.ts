@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { classification } from '../helpers/document-classifications';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
@@ -10,7 +10,10 @@ let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
 });
-afterEach(async () => app.cleanup());
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await app.cleanup();
+});
 
 async function archived(name: string, content: string): Promise<{ id: string; file: string }> {
   app.llm.on('DocumentClassification', () =>
@@ -80,6 +83,26 @@ describe('Relinking moved archive files', () => {
 
     expect(Object.fromEntries(result.relinked.map((r) => [r.documentId, r.path]))).toEqual({ [first.id]: movedFirst, [second.id]: movedSecond });
     expect((await app.ok('archive:verify', {})).ok).toBe(true);
+  });
+
+  it('leaves a file alone that another document claimed while the candidates were checked', async () => {
+    const lost = await archived('quittung.txt', 'Quittung Bäckerei');
+    const other = await archived('anderes.txt', 'Anderes Dokument');
+    const moved = moveOutside(lost.file, 'quittung-kopie.txt');
+    const claimedRel = 'private/belege/quittung-kopie.txt';
+    const pool = app.services.pool;
+    const realRun = pool.run.bind(pool);
+    vi.spyOn(pool, 'run').mockImplementation(((task: string, input: unknown) => {
+      // an archiving that finished meanwhile now points at this very file
+      app.services.ctx.database.sqlite.prepare('update documents set archive_rel_path = ? where id = ?').run(claimedRel, other.id);
+      return realRun(task as never, input as never);
+    }) as never);
+
+    const result = await app.ok('archive:relink', { confirmed: true });
+
+    expect(result).toEqual({ relinked: [], stillMissing: 1 });
+    expect(app.services.documents.getRow(lost.id).archiveRelPath).toBe('private/belege/quittung.txt');
+    expect(fs.existsSync(moved)).toBe(true);
   });
 
   it('needs the explicit confirmation', async () => {

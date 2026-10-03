@@ -51,7 +51,7 @@ export class DatabaseService {
     this.db = drizzle(this.sqlite, { schema });
   }
 
-  /** Fails with a recoverable error when SQLite finds the file damaged (a quick structural check, no data is read). */
+  /** Fails with a recoverable error when SQLite finds the file damaged (quick_check: reads every page, but skips index content checks). */
   private assertIntact(file: string): void {
     if (file === ':memory:') return;
     let problem: string | null = null;
