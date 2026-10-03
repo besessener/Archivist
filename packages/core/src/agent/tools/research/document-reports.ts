@@ -6,7 +6,6 @@ import { docDay, docLine, resolveDocs, unknownNote, type ToolScope } from '../co
 import { businessDate, documentText, shareableDocs, skippedNote } from './access';
 import { formatEuro, invoiceTotal, sumAmounts } from './amounts';
 import { DEADLINE_LABEL, findDeadlines, type Deadline } from './deadlines';
-import { MAX_DIFF_LINES, diffLines } from './diff';
 import { monthGaps, numberGaps, sequenceNumber } from './gaps';
 import { invoiceNumber, matchPayments, parseStatement, type InvoiceInfo, type Payment } from './payments';
 
@@ -84,31 +83,6 @@ export async function gapsReport(scope: ToolScope, args: { documents: string[]; 
   if (!found.length) return { content: `Keine auswertbaren Dokumente.${skippedNote(skipped)}${unknownNote(unknown)}`, isError: true };
   const output = args.by === 'month' ? monthGapsOutput(found) : numberGapsOutput(scope.ctx, found);
   return { ...output, content: output.content + skippedNote(skipped) + unknownNote(unknown) };
-}
-
-const showLines = (lines: string[]) => lines.slice(0, 80).join('\n') + (lines.length > 80 ? `\n… und ${lines.length - 80} weitere Zeilen` : '');
-
-export async function compareReport(scope: ToolScope, args: { a: string; b: string }): Promise<ToolOutput> {
-  const { deps, ctx } = scope;
-  const { docs: found, unknown } = resolveDocs(scope, [args.a, args.b]);
-  const first = found.find((d) => d.id === ctx.refs.resolve(args.a));
-  const second = found.find((d) => d.id === ctx.refs.resolve(args.b));
-  if (!first || !second) return { content: `Zwei bekannte Dokument-IDs nötig.${unknownNote(unknown)}`, isError: true };
-  if (!deps.privacy.mayShareDocument(first) || !deps.privacy.mayShareDocument(second))
-    return { content: 'Mindestens eines der Dokumente ist nicht zur Übertragung freigegeben – der Vergleich ist nicht möglich.', isError: true };
-  const diff = diffLines(documentText(deps, first.id), documentText(deps, second.id));
-  const refA = ctx.refs.doc(first.id);
-  const refB = ctx.refs.doc(second.id);
-  return {
-    content: [
-      `A = ${docLine(scope, first)}`,
-      `B = ${docLine(scope, second)}`,
-      `${diff.common} gemeinsame Zeilen, ${diff.onlyA.length} nur in A, ${diff.onlyB.length} nur in B${diff.capped ? ` (nur die ersten ${MAX_DIFF_LINES} Zeilen verglichen)` : ''}.`,
-      diff.onlyA.length ? `Nur in A:\n${asData(`${refA}-nur-A`, showLines(diff.onlyA))}` : 'Nur in A: –',
-      diff.onlyB.length ? `Nur in B:\n${asData(`${refB}-nur-B`, showLines(diff.onlyB))}` : 'Nur in B: –',
-    ].join('\n'),
-    summary: `${diff.onlyA.length} nur in A, ${diff.onlyB.length} nur in B`,
-  };
 }
 
 function reminderNote(pending: Reminder[], documentId: string): string {

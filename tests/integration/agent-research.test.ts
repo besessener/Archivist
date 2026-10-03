@@ -153,15 +153,42 @@ describe('agent research tools', () => {
     expect(byNumber.content).toContain('fehlend 3');
   });
 
-  it('compares two contract versions line by line', async () => {
-    const a = await archived('vertrag-alt.txt', 'Mietvertrag\nMiete 800 €\nLaufzeit unbefristet', { docType: 'Vertrag' });
+  it('compares contract versions as a table of changed lines', async () => {
+    const a = await archived('vertrag-alt.txt', 'Mietvertrag\nMiete 800 €\nLaufzeit unbefristet\nKaution 2400 €', { docType: 'Vertrag' });
     const b = await archived('vertrag-neu.txt', 'Mietvertrag\nMiete 850 €\nLaufzeit unbefristet\nHaustiere erlaubt', { docType: 'Vertrag' });
 
     const out = await call('compare_documents', { a: ctx.refs.doc(a), b: ctx.refs.doc(b) });
 
-    expect(out.summary).toBe('1 nur in A, 2 nur in B');
-    expect(out.content).toMatch(/Nur in A:\n<<<DOKUMENTINHALT[^\n]*\nMiete 800 €/);
-    expect(out.content).toContain('Haustiere erlaubt');
+    expect(out.summary).toBe('2 geändert, 0 nur in A, 0 nur in B');
+    expect(out.content).toContain('| In A (alt) | In B (neu) | Änderung |');
+    expect(out.content).toContain('| Miete 800 € | Miete 850 € | Miete 800 € → 850 € |');
+    expect(out.content).toContain('| Kaution 2400 € | Haustiere erlaubt |');
+    expect(out.content).toContain(`quelle="${ctx.refs.doc(a)}-${ctx.refs.doc(b)}-geändert"`);
+  });
+
+  it('lists lines without a counterpart and compares the first document with each further one', async () => {
+    const a = await archived('v1.txt', 'Vertrag\nMiete 800 €\nAlte Klausel', { docType: 'Vertrag' });
+    const b = await archived('v2.txt', 'Vertrag\nMiete 850 €', { docType: 'Vertrag' });
+    const c = await archived('v3.txt', 'Vertrag\nMiete 800 €\nAlte Klausel\nNeue Klausel', { docType: 'Vertrag' });
+
+    const out = await call('compare_documents', { a: ctx.refs.doc(a), b: ctx.refs.doc(b), weitere: [ctx.refs.doc(c)] });
+
+    expect(out.content).toContain('B1 = ');
+    expect(out.content).toContain('B2 = ');
+    expect(out.content).toMatch(/Nur in A:\n<<<DOKUMENTINHALT[^\n]*\nAlte Klausel/);
+    expect(out.content).toMatch(/Nur in B2:\n<<<DOKUMENTINHALT[^\n]*\nNeue Klausel/);
+    expect(out.summary).toBe('1 geändert, 1 nur in A, 1 nur in B');
+  });
+
+  it('refuses to compare when one of the documents is not released', async () => {
+    const a = await archived('offen.txt', 'Text A', { docType: 'Vertrag' });
+    const b = await archived('gesperrt.txt', 'Text B', { docType: 'Vertrag' });
+    lockDocument(b);
+
+    const out = await call('compare_documents', { a: ctx.refs.doc(a), b: ctx.refs.doc(b) });
+
+    expect(out.isError).toBe(true);
+    expect(out.content).toContain('nicht zur Übertragung freigegeben');
   });
 
   it('finds deadlines with computation path and notices an existing reminder', async () => {
