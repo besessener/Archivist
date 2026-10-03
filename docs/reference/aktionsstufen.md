@@ -46,7 +46,7 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 - Bekannte, unveränderte Dateien (Größe + Änderungszeit) werden weder neu gehasht noch analysiert.
 - Dateien, deren Inhalt bereits als Dokument im Eingang oder im Archiv liegt (auch als Upload, in einer anderen Wurzel oder als „x (1).pdf“), werden als Duplikat markiert statt erneut angelegt.
 - Ändert sich eine gescannte Datei, deren Dokument noch im Eingang liegt, aktualisiert die nächste Analyse diesen Eintrag.
-- Pro Wurzel werden höchstens 20.000 Dateien erfasst. Wird das Limit erreicht, erscheint ein Hinweis; Dateien hinter dem Limit oder in (vorübergehend) nicht lesbaren Ordnern gelten nicht als verschwunden.
+- Der Scan hat keine Obergrenze: Er durchläuft jede Wurzel seitenweise (500 Dateien) und schreibt jede Seite in einer Transaktion. Nicht mehr gesehene, noch unbearbeitete Dateien gelten als verschwunden; Dateien in (vorübergehend) nicht lesbaren Ordnern nicht.
 
 ## LLM-Datenschutz
 

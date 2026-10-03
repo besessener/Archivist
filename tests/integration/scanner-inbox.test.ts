@@ -118,29 +118,27 @@ describe('scanner duplicate detection across active document states', () => {
   });
 });
 
-describe('scanner file limit and unreadable areas', () => {
-  it('reports the file limit and keeps files beyond it in the list', async () => {
-    for (const n of ['a', 'b', 'c']) app.file(`Downloads/${n}.txt`, `Datei ${n} mit eigenem Inhalt.`);
+describe('scanner paging and unreadable areas', () => {
+  it('records every file across several pages, pages through the results and removes a vanished file', async () => {
+    for (const n of ['a', 'b', 'c', 'f']) app.file(`Downloads/${n}.txt`, `Datei ${n} mit eigenem Inhalt.`);
+    app.file('Downloads/d/e.txt', 'Datei e im Unterordner.');
+    app.file('Downloads/d/g.txt', 'Datei g im Unterordner.');
     await app.ok('scanner:addDirectory', { path: path.join(app.home, 'Downloads'), recursive: true });
-    await scan();
-    expect(await files()).toHaveLength(3);
-    expect((await app.ok('scanner:getResults', {})).lastSummary!.limitReached).toBeUndefined();
-
-    app.services.scanner.maxFilesPerRoot = 2;
+    app.services.scanner.pageSize = 2;
     await scan();
     const res = await app.ok('scanner:getResults', {});
-    expect(res.lastSummary).toMatchObject({ scanned: 2, limitReached: true });
-    expect(res.files.map((f) => f.name).sort()).toEqual(['a.txt', 'b.txt', 'c.txt']);
-    const notes = await app.ok('notifications:list', {});
-    const note = notes.find((n) => n.title === 'Scan-Limit erreicht')!;
-    expect(note.description).toMatch(/nur die ersten 2 passenden Dateien/);
+    expect(res.lastSummary).toMatchObject({ scanned: 6, newFiles: 6 });
+    expect(res.files.map((f) => f.name).sort()).toEqual(['a.txt', 'b.txt', 'c.txt', 'e.txt', 'f.txt', 'g.txt']);
+    expect(await app.ok('notifications:list', {})).not.toContainEqual(expect.objectContaining({ title: 'Scan-Limit erreicht' }));
+    const second = await app.ok('scanner:getResults', { limit: 4, offset: 4 });
+    expect(second).toMatchObject({ total: 6, files: expect.any(Array) });
+    expect(second.files).toHaveLength(2);
 
-    // exactly at the limit is not a truncation, and a really vanished file is removed again
     fs.rmSync(path.join(app.home, 'Downloads', 'c.txt'));
     await scan();
     const again = await app.ok('scanner:getResults', {});
-    expect(again.lastSummary!.limitReached).toBeUndefined();
-    expect(again.files.map((f) => f.name).sort()).toEqual(['a.txt', 'b.txt']);
+    expect(again.lastSummary).toMatchObject({ scanned: 5, unchanged: 5 });
+    expect(again.files.map((f) => f.name).sort()).toEqual(['a.txt', 'b.txt', 'e.txt', 'f.txt', 'g.txt']);
   });
 
   it('does not treat files in an unreadable subfolder as vanished', async () => {

@@ -303,8 +303,13 @@ export const ipcContract = {
   'scanner:listDirectories': channel(Empty, z.array(ScanRoot)),
   'scanner:start': channel(z.object({ rootId: Id.optional() }), z.object({ jobId: Id })),
   'scanner:getResults': channel(
-    z.object({ rootId: Id.optional(), status: ScanFileStatus.optional(), limit: z.number().int().min(1).max(2000).default(500) }),
-    z.object({ files: z.array(ScanFile), lastSummary: ScanSummary.nullable() }),
+    z.object({
+      rootId: Id.optional(),
+      status: ScanFileStatus.optional(),
+      limit: z.number().int().min(1).max(2000).default(500),
+      offset: z.number().int().min(0).default(0),
+    }),
+    z.object({ files: z.array(ScanFile), total: z.number().int(), lastSummary: ScanSummary.nullable() }),
   ),
   'scanner:analyze': channel(z.object({ fileIds: z.array(Id).min(1).max(500), confirmLlm: z.boolean().default(false) }), z.object({ jobId: Id })),
   'scanner:proposals': channel(Empty, z.array(ScanProposalGroup)),

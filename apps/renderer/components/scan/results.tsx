@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Ban, ExternalLink, FolderX, Microscope } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { EmptyState, ErrorNote, Loading, Notice } from '@/components/common/states';
@@ -54,7 +54,11 @@ export function ScanResults() {
   const [llmOk, setLlmOk] = useState(false);
   const [excluding, setExcluding] = useState<{ kind: 'file' | 'dir'; path: string } | null>(null);
 
-  const files = data?.files ?? [];
+  const [more, setMore] = useState<ScanFileRecord[]>([]);
+  // a refreshed first page (new scan, filter) replaces what was loaded after it
+  useEffect(() => setMore([]), [data, filter]);
+  const files = useMemo(() => [...(data?.files ?? []), ...more], [data, more]);
+  const total = data?.total ?? 0;
   const summary = data?.lastSummary ?? null;
   const selectedFiles = useMemo(() => files.filter((f) => selected.has(f.id)), [files, selected]);
   const llmAllowedRoots = new Set((roots.data ?? []).filter((r) => r.llmAllowed).map((r) => r.id));
@@ -102,11 +106,6 @@ export function ScanResults() {
           {formatNumber(summary.scanned)} Dateien geprüft: <strong>{formatNumber(summary.newFiles)} neu</strong>, {formatNumber(summary.changedFiles)} geändert,{' '}
           {formatNumber(summary.unchanged)} unverändert, {formatNumber(summary.duplicates)} Duplikate, {formatNumber(summary.excluded)} ausgeschlossen,{' '}
           {formatNumber(summary.skipped)} übersprungen.
-          {summary.limitReached && (
-            <p className="mt-1 text-destructive" data-testid="scan-limit-reached">
-              Das Dateilimit wurde erreicht: Weitere Dateien wurden nicht geprüft. Bitte Unterordner ausschließen oder kleinere Verzeichnisse einzeln freigeben.
-            </p>
-          )}
           {summary.errors.length > 0 && (
             <ul className="mt-1 list-disc pl-5 text-destructive">
               {summary.errors.slice(0, 5).map((e, i) => (
@@ -216,6 +215,27 @@ export function ScanResults() {
               ))}
             </TBody>
           </Table>
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <p data-testid="scan-results-count">
+            {formatNumber(files.length)} von {formatNumber(total)} Dateien angezeigt
+          </p>
+          {files.length < total && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                void run(() => call('scanner:getResults', { ...(filter ? { status: filter } : {}), offset: files.length, limit: 500 }), {
+                  errorTitle: 'Weitere Dateien konnten nicht geladen werden',
+                }).then((page) => page && setMore((previous) => [...previous, ...page.files]))
+              }
+              data-testid="scan-load-more"
+            >
+              Mehr laden
+            </Button>
+          )}
         </div>
       )}
 
