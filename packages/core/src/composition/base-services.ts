@@ -63,7 +63,7 @@ export function createBaseServices(options: CreateServicesOptions) {
   const reader = new DbReader(database.db, { workerFile: options.readerFile ?? null, databaseFile: database.file, logger });
   const llm = new LlmService(ctx, settings, secrets, options.fetchImpl, options.llmRetryDelayMs);
   const privacy = new PrivacyService(settings);
-  const embedding = new EmbeddingService(settings, llm);
+  const embedding = new EmbeddingService({ settings, llm, logger: ctx.logger });
   const graph = new KnowledgeGraphService(ctx, audit, undo);
   const persons = new PersonService(ctx, graph);
   const self = new SelfService(ctx, settings, graph);

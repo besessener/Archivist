@@ -14,7 +14,7 @@ Ohne konfiguriertes Embedding-Modell nutzt Archivist **lokale Feature-Hashing-Ve
 
 Deshalb stimmen sie bei der Rangfolge **nicht mit ab**. Sie ergänzen nur Einträge, die die Stichwortsuche gar nicht gefunden hat. Würden sie mitstimmen, würden lexikalisch ähnliche, aber irrelevante Treffer gute Stichworttreffer verdrängen.
 
-Mit einem konfigurierten Embedding-Modell (`/embeddings`) kommen echte Embeddings hinzu, die mit abstimmen – sofern der Datenschutzmodus es erlaubt. Im Modus `confirm` bleiben Suchindex und Suchanfragen lokal, weil sonst jeder Suchbegriff und jedes Dokument an den Embedding-Endpunkt ginge. Antwortet der Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer – eine langsame Cloud soll die Suche nicht blockieren.
+Mit einem konfigurierten Embedding-Modell (`/embeddings`) kommen echte Embeddings hinzu, die mit abstimmen – sofern der Datenschutzmodus es erlaubt. Im Modus `confirm` bleiben Suchindex und Suchanfragen lokal, weil sonst jeder Suchbegriff und jedes Dokument an den Embedding-Endpunkt ginge. Antwortet der Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer – eine langsame Cloud soll die Suche nicht blockieren. Scheitert der Endpunkt beim Indexieren, nimmt Archivist für diese Texte lokale Vektoren und vermerkt das im Protokoll.
 
 ## Warum kein `sqlite-vec`
 

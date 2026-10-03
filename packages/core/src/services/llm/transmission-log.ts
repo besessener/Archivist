@@ -18,8 +18,9 @@ export class TransmissionLog {
         .run();
       const { purpose, model, bytes, redactions, success } = transmission;
       this.ctx.logger.info('llm', 'LLM transmission', { purpose, model, bytes, redactions, success });
-    } catch {
-      // logging must not make calls fail
+    } catch (error) {
+      // a failing record must not make the call fail
+      this.ctx.logger.error('llm', 'Recording the LLM transmission failed', { error });
     }
   }
 

@@ -6,6 +6,7 @@ import { AgentRunner, type RunnerOptions } from '../../packages/core/src/agent/r
 import { RefStore, ToolRegistry, defineTool, type ToolContext } from '../../packages/core/src/agent/registry';
 import type { AgentMessage, AgentToolCall, ProviderAdapter, StreamEvent, TurnRequest, TurnResult } from '../../packages/core/src/agent/types';
 import { AppError } from '../../packages/core/src/util/errors';
+import { Logger } from '../../packages/core/src/util/logger';
 
 type TurnOutcome = Partial<TurnResult> | Error;
 export type Step = TurnOutcome | ((request: TurnRequest, turnIndex: number) => TurnOutcome | Promise<TurnOutcome>);
@@ -189,6 +190,7 @@ export function setupRunner(script: Step[], options: RunnerSetupOptions = {}) {
     effort: 'high',
     massThreshold: 100,
     ctx,
+    logger: new Logger(null),
     propose: ({ tool, args, reason }) => {
       proposals.push({ tool: tool.name, args, reason });
       return `VORSCHLAG (${reason})`;

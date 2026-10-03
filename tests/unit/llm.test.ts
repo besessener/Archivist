@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '../../packages/core/src/context';
 import { LlmService } from '../../packages/core/src/services/llm';
 import type { SecretService } from '../../packages/core/src/services/secret';
 import type { SettingsService } from '../../packages/core/src/services/settings';
+import { Logger } from '../../packages/core/src/util/logger';
 
 /** LLM client with fixed settings and an endpoint that rejects the given optional parameters with HTTP 400. */
 const client = (rejection: string, unsupported: string[] = ['store']) => {
@@ -13,7 +14,7 @@ const client = (rejection: string, unsupported: string[] = ['store']) => {
     if (unsupported.some((p) => p in body)) return new Response(JSON.stringify({ error: { message: rejection } }), { status: 400 });
     return new Response(JSON.stringify({ output_text: 'OK' }), { status: 200 });
   };
-  const ctx = { events: { emit: () => true }, logger: { info: () => {}, warn: () => {} }, database: {} };
+  const ctx = { events: { emit: () => true }, logger: new Logger(null), database: {} };
   const settings = {
     get: () => ({
       llm: { baseUrl: 'https://llm.example.test/v1', model: 'test-model', maxInputChars: 10000, reasoningEffort: 'low', timeoutMs: 5000 },
@@ -22,7 +23,7 @@ const client = (rejection: string, unsupported: string[] = ['store']) => {
   };
   const secrets = { getApiKey: () => 'sk-test' };
   const llm = new LlmService(ctx as unknown as AppContext, settings as unknown as SettingsService, secrets as unknown as SecretService, fetchImpl, 0);
-  return { llm, bodies };
+  return { llm, bodies, logger: ctx.logger };
 };
 
 const request = { instructions: 'Test', input: 'Hallo', purpose: 'Test', json: true };
@@ -99,7 +100,7 @@ describe('LLM client: JSON mode', () => {
         );
       return new Response(JSON.stringify({ output_text: '{"ok":true}' }), { status: 200 });
     };
-    const ctx = { events: { emit: () => true }, logger: { info: () => {}, warn: () => {} }, database: {} };
+    const ctx = { events: { emit: () => true }, logger: new Logger(null), database: {} };
     const settings = {
       get: () => ({
         llm: { baseUrl: 'https://llm.example.test/v1', model: 'test-model', maxInputChars: 20, reasoningEffort: null, timeoutMs: 5000 },
@@ -141,7 +142,7 @@ describe('LLM client: circuit breaker (#151)', () => {
       if (down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
       return new Response(JSON.stringify({ output_text: 'OK' }), { status: 200 });
     };
-    const ctx = { events: { emit: () => true }, logger: { info: () => {}, warn: () => {} }, database: {} };
+    const ctx = { events: { emit: () => true }, logger: new Logger(null), database: {} };
     const settings = {
       get: () => ({
         llm: { baseUrl: 'https://llm.example.test/v1', model: 'test-model', maxInputChars: 10000, reasoningEffort: null, timeoutMs: 5000 },
@@ -179,5 +180,15 @@ describe('LLM client: circuit breaker (#151)', () => {
     await expect(llm.complete(request)).rejects.toThrow();
     await expect(llm.complete(request)).rejects.toThrow(/abgelehnt/);
     expect(bodies).toHaveLength(2);
+  });
+});
+
+describe('LLM client: transmission log', () => {
+  it('a transmission it cannot record is logged as an error, and the call still succeeds', async () => {
+    const { llm, logger } = client('', []);
+    const error = vi.spyOn(logger, 'error');
+
+    await expect(llm.complete(request)).resolves.toBe('OK');
+    expect(error).toHaveBeenCalledWith('llm', 'Recording the LLM transmission failed', expect.objectContaining({ error: expect.any(Error) }));
   });
 });

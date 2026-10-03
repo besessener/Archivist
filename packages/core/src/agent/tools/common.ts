@@ -32,6 +32,7 @@ import { folderLabel, folderOf } from '../../services/archive-structure';
 import type { AgentFileJobs } from '../file-jobs';
 import type { MemoryService } from '../memory';
 import type { ToolContext } from '../registry';
+import type { Logger } from '../../util/logger';
 import type { CaptureService } from '../../services/capture';
 import type { KnowledgeAnswerService } from '../../services/knowledge-answers';
 
@@ -74,6 +75,7 @@ export interface ToolDeps {
   capture: CaptureService;
   answers: KnowledgeAnswerService;
   enqueueConsistency: (trigger: string) => void;
+  logger: Logger;
 }
 
 export const ARCHIVED: DocumentStatus[] = ['archived', 'indexed_only'];

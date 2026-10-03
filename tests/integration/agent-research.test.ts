@@ -48,6 +48,7 @@ function depsOf(t: TestApp): ToolDeps {
     capture: s.capture,
     answers: s.answers,
     enqueueConsistency: () => undefined,
+    logger: s.ctx.logger,
   };
 }
 

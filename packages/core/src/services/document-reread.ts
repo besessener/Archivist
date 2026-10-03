@@ -30,7 +30,10 @@ export class DocumentRereader {
       .where(and(eq(documents.id, id), eq(documents.status, 'indexed_only'), eq(documents.sha256, row.sha256)))
       .run();
     if (!updated.changes) return false;
-    if (row.stagedPath) await fsp.rm(row.stagedPath, { force: true }).catch(() => undefined);
+    if (row.stagedPath)
+      await fsp
+        .rm(row.stagedPath, { force: true })
+        .catch((error: unknown) => this.deps.ctx.logger.warn('documents', 'Old staged copy not removed', { id, error }));
     this.deps.audit.log({
       action: 'document.refresh',
       actor: 'agent',

@@ -1,5 +1,6 @@
 import type { AgentEffort, AgentLimits, AgentRunStatus, AgentStep, AgentUsage } from '@archivist/shared';
 import { AppError, toErrorInfo } from '../util/errors';
+import type { Logger } from '../util/logger';
 import type { UserQuestion } from './ask-user';
 import { addUsage, budgetTokens, emptyUsage } from './pricing';
 import type { ToolContext, ToolRegistry } from './registry';
@@ -24,6 +25,7 @@ export interface RunnerOptions {
   maxOutputTokens?: number;
   massThreshold: number;
   ctx: ToolContext;
+  logger: Logger;
   /** Secrets already masked before the run (system instructions, the user's message). */
   redactions?: number;
   /** Offer the provider's web search (chat runs only, setting „Websuche“). */
@@ -232,8 +234,9 @@ export class AgentRunner {
       if (!turn) return '';
       if (turn.toolCalls.length) this.pendingTool = { role: 'tool', results: unexecuted(turn.toolCalls, 'Nicht ausgeführt: technische Grenze erreicht.') };
       return turn.text;
-    } catch {
-      return ''; // the deterministic summary is enough
+    } catch (error) {
+      this.options.logger.warn('agent', 'Wrap-up answer failed, using the fixed summary', { error });
+      return '';
     }
   }
 

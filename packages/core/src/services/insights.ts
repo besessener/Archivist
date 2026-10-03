@@ -254,8 +254,8 @@ export class InsightService {
     if (i.recommendedActionId) {
       try {
         await this.actions.resolve(i.recommendedActionId, 'reject', {});
-      } catch {
-        /* already decided */
+      } catch (error) {
+        this.ctx.logger.info('insights', 'Recommended action not rejected, probably decided already', { error });
       }
     }
     this.db.update(insights).set({ status: 'rejected', updatedAt: nowIso() }).where(eq(insights.id, id)).run();

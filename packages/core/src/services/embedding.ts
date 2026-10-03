@@ -1,5 +1,6 @@
 import type { LlmService } from './llm';
 import type { SettingsService } from './settings';
+import type { Logger } from '../util/logger';
 import { stripDiacritics, tokenize } from '../util/text';
 
 export const LOCAL_MODEL = 'local-hash-v1';
@@ -46,10 +47,13 @@ export interface EmbedResult {
 }
 
 export class EmbeddingService {
-  constructor(
-    private readonly settings: SettingsService,
-    private readonly llm: LlmService,
-  ) {}
+  private readonly settings: SettingsService;
+  private readonly llm: LlmService;
+  private readonly logger: Logger;
+
+  constructor(deps: { settings: SettingsService; llm: LlmService; logger: Logger }) {
+    ({ settings: this.settings, llm: this.llm, logger: this.logger } = deps);
+  }
 
   /** Model that requests would currently use. */
   currentModel(allowRemote: boolean): string {
@@ -73,8 +77,9 @@ export class EmbeddingService {
           return f;
         });
         return { vectors, model, dim: vectors[0]?.length ?? 0 };
-      } catch {
-        /* fall back to local vectors – indexing must not depend on the cloud */
+      } catch (error) {
+        // indexing must not depend on the cloud: local vectors take over
+        this.logger.warn('embedding', 'Remote embeddings failed, using local vectors', { model, error });
       }
     }
     return { vectors: texts.map(localEmbed), model: LOCAL_MODEL, dim: LOCAL_DIM };

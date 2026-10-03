@@ -164,6 +164,7 @@ export class AgentRunExecutor {
       effort: agent.effort,
       massThreshold: agent.massActionThreshold,
       ctx,
+      logger: this.deps.ctx.logger,
       // web search runs in chat only; background runs never leave the archive (#301)
       webSearch: kind === 'chat' && agent.webSearch,
       propose: (proposal) => {

@@ -56,6 +56,7 @@ function deps(): ToolDeps {
     capture: s.capture,
     answers: s.answers,
     enqueueConsistency: () => undefined,
+    logger: s.ctx.logger,
   };
 }
 

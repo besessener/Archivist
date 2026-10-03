@@ -32,7 +32,8 @@ export async function linkHint(scope: ToolScope, id: string | null): Promise<str
     const found = await scope.deps.links.candidates(id, { limit: 3 });
     if (!found.length) return '';
     return `\nMögliche Verknüpfungen (anbieten; verknüpfen nur auf Wunsch des Benutzers, sonst bleibt es ein Vorschlag):\n${found.map((c) => candidateLine(scope, c)).join('\n')}`;
-  } catch {
+  } catch (error) {
+    scope.deps.logger.warn('agent', 'Link proposals for a captured entry failed', { error });
     return '';
   }
 }

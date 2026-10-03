@@ -38,6 +38,7 @@ export function createAgent(services: WiredServices, enqueueConsistency: (trigge
       memory,
       fileJobs: agentFileJobs,
       links: services.links,
+      logger: ctx.logger,
       subjects: services.subjects,
       cases: services.cases,
       linkThresholds: services.linkThresholds,
