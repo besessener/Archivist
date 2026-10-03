@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkLlmBaseUrl } from '@archivist/shared';
+import { checkLlmBaseUrl } from '../../packages/shared/src/llm-base-url';
 
 describe('checkLlmBaseUrl (#209)', () => {
   it.each([
