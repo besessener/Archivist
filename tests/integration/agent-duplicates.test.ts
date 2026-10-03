@@ -221,3 +221,90 @@ describe('agent duplicate tools', () => {
     expect(wrong.isError).toBe(true);
   });
 });
+
+describe('agent duplicate tools: undo and merges', () => {
+  it('undoes the duplicate_of relation set by mark_duplicates', async () => {
+    const keep = await archived('Angebot.txt', 'Angebot Version 2', { title: 'Angebot' });
+    const dup = await archived('Angebot alt.txt', 'Angebot Version 1', { title: 'Angebot alt' });
+    await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup)], as: 'duplicate', action: 'mark' });
+    const link = lastAudit('relation.link')!;
+    expect(link).toMatchObject({ undoable: true, trigger: 'agent' });
+
+    const result = await app.services.undo.undo(link.id);
+
+    expect(result.undone).toBe(true);
+    expect(app.services.graph.relationsOf(dup, { types: ['duplicate_of'] })).toEqual([]);
+  });
+
+  it('undoes the supersedes relation set for an older version', async () => {
+    const keep = await archived('Vertrag final.txt', 'Vertrag neu', { title: 'Vertrag final' });
+    const old = await archived('Vertrag Entwurf.txt', 'Vertrag alt', { title: 'Vertrag Entwurf' });
+    await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(old)], as: 'older_version', action: 'mark' });
+    expect(app.services.graph.relationsOf(keep, { types: ['supersedes'] })).toHaveLength(1);
+
+    await app.services.undo.undo(lastAudit('relation.link')!.id);
+
+    expect(app.services.graph.relationsOf(keep, { types: ['supersedes'] })).toEqual([]);
+  });
+
+  it('undoes the move into the subfolder', async () => {
+    const keep = await archived('Vertrag final.txt', 'Vertrag neu', { loc: 'private/vertraege', title: 'Vertrag final' });
+    const old = await archived('Vertrag Entwurf.txt', 'Vertrag alt', { loc: 'private/vertraege', title: 'Vertrag Entwurf' });
+    await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(old)], as: 'older_version', action: 'subfolder' });
+    expect(row(old)!.archiveRelPath).toBe('private/vertraege/Ältere Versionen/Vertrag Entwurf.txt');
+
+    const result = await app.services.undo.undo(lastAudit('archive.relocate')!.id);
+
+    expect(result.undone).toBe(true);
+    expect(row(old)!.archiveRelPath).toBe('private/vertraege/Vertrag Entwurf.txt');
+  });
+
+  it('merges open items, notes, events and persons and undoes each merge', async () => {
+    const keepItem = await app.ok('openItems:create', { title: 'Steuererklärung abgeben', priority: 'normal', sourceIds: [], confidence: 0.9 });
+    const dupItem = await app.ok('openItems:create', { title: 'Steuererklärung abgeben!', priority: 'normal', sourceIds: [], confidence: 0.9 });
+    const keepNote = await app.services.notes.create({ content: 'Steuerunterlagen bis Ende Mai sammeln' });
+    const dupNote = await app.services.notes.create({ content: 'Steuerunterlagen bis Ende Mai sammeln!' });
+    const keepEvent = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', sourceIds: [] });
+    const dupEvent = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', description: 'mit Kunde', sourceIds: [] });
+    const keepPerson = app.services.graph.ensureEntity({ type: 'person', name: 'Anna Schmidt' });
+    const dupPerson = app.services.graph.ensureEntity({ type: 'person', name: 'Anna Schmid' });
+    const merges = [
+      { kind: 'open_item', keep: keepItem.id, duplicate: dupItem.id, action: 'open_item.merge_duplicate' },
+      { kind: 'note', keep: keepNote.id, duplicate: dupNote.id, action: 'note.merge_duplicate' },
+      { kind: 'event', keep: keepEvent.id, duplicate: dupEvent.id, action: 'event.merge_duplicate' },
+      { kind: 'person', keep: keepPerson.id, duplicate: dupPerson.id, action: 'entity.merge' },
+    ] as const;
+
+    for (const merge of merges) {
+      const out = await call('merge_entries', { kind: merge.kind, keep: ctx.refs.entry(merge.keep), duplicate: ctx.refs.entry(merge.duplicate) });
+      expect(out).toMatchObject({ summary: 'zusammengeführt', changed: 1 });
+      expect(lastAudit(merge.action)).toMatchObject({ undoable: true, trigger: 'agent' });
+    }
+    expect(app.services.openItems.get(dupItem.id).status).toBe('dismissed');
+    expect(app.services.graph.getEntity(dupNote.id)?.duplicateOfId).toBe(keepNote.id);
+    expect(app.services.eventRecords.get(dupEvent.id).duplicateOfId).toBe(keepEvent.id);
+    expect(app.services.graph.getEntity(dupPerson.id)).toBeUndefined();
+
+    for (const merge of merges) expect((await app.services.undo.undo(lastAudit(merge.action)!.id)).undone).toBe(true);
+
+    expect(app.services.openItems.get(dupItem.id).status).toBe('open');
+    expect(app.services.graph.getEntity(dupNote.id)?.duplicateOfId).toBeNull();
+    expect(app.services.eventRecords.get(dupEvent.id).duplicateOfId).toBeNull();
+    expect(app.services.graph.getEntity(dupPerson.id)).toMatchObject({ name: 'Anna Schmid' });
+  });
+
+  it('groups near duplicates that differ only after the first 200 characters, not those that differ before', async () => {
+    const start = 'Mietvertrag über die Wohnung im zweiten Obergeschoss mit Balkon, Einbauküche und Kellerabteil, Miete monatlich im Voraus fällig. '.repeat(2);
+    const same1 = await archived('Vertrag A.txt', `${start}Schluss A: Kaution 2400 Euro.`, { title: 'Vertrag Nord' });
+    const same2 = await archived('Vertrag B.txt', `${start}Schluss B: Kaution 3000 Euro und Haustiere erlaubt.`, { title: 'Vertrag Süd' });
+    const other = await archived('Vertrag C.txt', `Kaufvertrag. ${start}Schluss A: Kaution 2400 Euro.`, { title: 'Vertrag West' });
+    expect(start.length).toBeGreaterThan(200);
+
+    const out = await call('find_duplicates', { kinds: ['near'] });
+
+    expect(out.content).toContain('sehr ähnlicher Textanfang');
+    expect(out.content).toContain(ctx.refs.doc(same1));
+    expect(out.content).toContain(ctx.refs.doc(same2));
+    expect(out.content).not.toContain(ctx.refs.doc(other));
+  });
+});
