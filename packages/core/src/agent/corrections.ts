@@ -18,6 +18,35 @@ interface DocumentCorrection {
   correction: Correction;
 }
 
+interface MetadataEntry {
+  action: string;
+  entityIds?: string[];
+  before?: unknown;
+  after?: unknown;
+}
+
+interface MetadataSnapshot {
+  topic?: string | null;
+  topicId?: string | null;
+  tags?: string[];
+  addTags?: string[];
+}
+
+/** Did the user change the main topic? A bulk update names it, the other edits show it in the topic id. */
+function topicChanged(entry: MetadataEntry, currentTopicId: string | null): boolean {
+  if (entry.action === 'document.bulkUpdate') return Boolean((entry.after as MetadataSnapshot | null)?.topic?.trim());
+  const before = (entry.before ?? {}) as MetadataSnapshot;
+  return before.topicId !== undefined && before.topicId !== currentTopicId;
+}
+
+/** Tags the user added: named by a bulk update, else those of the edit that were not there before. */
+function addedTags(entry: MetadataEntry): string[] {
+  const after = (entry.after ?? {}) as MetadataSnapshot;
+  if (entry.action === 'document.bulkUpdate') return after.addTags ?? [];
+  const known = (entry.before as MetadataSnapshot | null)?.tags ?? [];
+  return (after.tags ?? []).filter((tag) => !known.includes(tag));
+}
+
 const METADATA_ACTIONS = ['document.updateMetadata', 'document.assign', 'document.bulkUpdate'];
 
 /** How a correction reads in the memory, as a rule it could become, and in the proposal. */
@@ -82,21 +111,16 @@ export class CorrectionLearner {
       this.corrected({ documentId, docType: row.docType, ext: row.ext, correction: { kind: 'folder', from: fromFolder, to: toFolder } });
   }
 
-  private metadataChanged(entry: { action: string; entityIds?: string[]; before?: unknown; after?: unknown }): void {
+  private metadataChanged(entry: MetadataEntry): void {
     const { audit, docs } = this.deps.tools;
-    const before = (entry.before ?? {}) as { topicId?: string | null; tags?: string[] };
-    const after = (entry.after ?? {}) as { topic?: string | null; topicId?: string | null; tags?: string[]; addTags?: string[] };
     for (const documentId of entry.entityIds ?? []) {
       if (!audit.lastAgentChange(documentId, 'document.') && !audit.lastAgentChange(documentId, 'archive.')) continue;
       const row = docs.findRow(documentId);
       if (!row) continue;
       const base = { documentId, docType: row.docType, ext: row.ext };
       const topic = docs.get(documentId).topicName;
-      const topicChanged =
-        entry.action === 'document.bulkUpdate' ? Boolean(after.topic?.trim()) : before.topicId !== undefined && before.topicId !== row.topicId;
-      if (topic && topicChanged) this.corrected({ ...base, correction: { kind: 'topic', to: topic } });
-      const added = (entry.action === 'document.bulkUpdate' ? after.addTags : after.tags?.filter((tag) => !(before.tags ?? []).includes(tag))) ?? [];
-      for (const tag of added) this.corrected({ ...base, correction: { kind: 'tag', tag } });
+      if (topic && topicChanged(entry, row.topicId)) this.corrected({ ...base, correction: { kind: 'topic', to: topic } });
+      for (const tag of addedTags(entry)) this.corrected({ ...base, correction: { kind: 'tag', tag } });
     }
   }
 

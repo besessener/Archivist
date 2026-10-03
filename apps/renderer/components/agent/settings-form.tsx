@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { BackgroundSection, CapabilitySection, LimitsFields, PriceTable, priceRowsFrom } from './settings-fields';
-import { fail, intIn, parseLimits, parsePrices, toLimits, type AgentPatch, type Parsed, type PriceRow } from './settings-parse';
+import { KindLimitsFields } from './kind-limits-fields';
+import { fail, intIn, parseKindLimits, parseLimits, parsePrices, toKindLimits, toLimits, type AgentPatch, type Parsed, type PriceRow } from './settings-parse';
 
 const EFFORTS: Array<[AgentSettings['effort'], string]> = [
   ['low', 'niedrig'],
@@ -32,6 +33,7 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
   const [adapter, setAdapter] = useState(agent.adapter);
   const [chat, setChat] = useState(toLimits(agent.chatLimits));
   const [backgroundLimits, setBackgroundLimits] = useState(toLimits(agent.backgroundLimits));
+  const [kindLimits, setKindLimits] = useState(toKindLimits(agent.backgroundKindLimits));
   const [retries, setRetries] = useState(String(agent.maxRetries));
   const [learning, setLearning] = useState(agent.learning);
   const [webSearch, setWebSearch] = useState(agent.webSearch);
@@ -48,6 +50,8 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
     if (!chatLimits.ok) return chatLimits;
     const parsedBackgroundLimits = parseLimits(backgroundLimits, 'Hintergrund');
     if (!parsedBackgroundLimits.ok) return parsedBackgroundLimits;
+    const parsedKindLimits = parseKindLimits(kindLimits);
+    if (!parsedKindLimits.ok) return parsedKindLimits;
     const deadlineLeadDays = intIn(leadDays, { min: 1, max: 365 });
     if (deadlineLeadDays === null) return fail('Fristen-Wächter: Vorlauf zwischen 1 und 365 Tagen.');
     const priceTable = parsePrices(prices);
@@ -62,6 +66,7 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
         adapter,
         chatLimits: chatLimits.value,
         backgroundLimits: parsedBackgroundLimits.value,
+        backgroundKindLimits: parsedKindLimits.value,
         maxRetries,
         learning,
         webSearch,
@@ -127,6 +132,7 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
         </Field>
         <LimitsFields id="agent-chat" title="Grenzen im Chat" value={chat} onChange={setChat} />
         <LimitsFields id="agent-bg" title="Grenzen im Hintergrund" value={backgroundLimits} onChange={setBackgroundLimits} />
+        <KindLimitsFields value={kindLimits} onChange={setKindLimits} />
         <Field label="Wiederholungen pro Anfrage" htmlFor="agent-retries" hint="Nach Ratenlimits, Server- oder Netzwerkfehlern (0 bis 10).">
           <Input id="agent-retries" type="number" min={0} max={10} className="w-32" value={retries} onChange={(e) => setRetries(e.target.value)} />
         </Field>

@@ -95,7 +95,7 @@ describe('run_workflow (#315)', () => {
     const done = await app.ok('chat:send', { conversationId: asked.conversationId, text: 'Ja' });
     expect(lastToolOutput(app)).toContain('1. Belege des Jahres 2025 sammeln');
     expect(timesApplied(wf.id)).toBe(1);
-    expect((await app.ok('agent:run', { id: done.assistantMessage.runId! })).applied.map((x) => x.id)).toContain(wf.id);
+    expect((await app.ok('agent:run', { id: done.assistantMessage.runId! })).applied?.map((x) => x.id)).toContain(wf.id);
 
     app.llm.agent = scriptedTurns({ calls: [call] }, { text: 'Wieder erledigt.' });
     await app.ok('chat:send', { text: 'Nochmal die Steuer-Mappe für 2025' });

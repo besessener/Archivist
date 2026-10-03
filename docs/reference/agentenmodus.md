@@ -12,7 +12,7 @@ Code: `packages/core/src/agent/`.
 - Ungültige Argumente gehen als Fehler-Ergebnis an das Modell zurück.
 - Lesende Aufrufe einer Runde laufen parallel.
 - Rückfragen (`ask_user`) sind ein eigener Ausgang; die Antwort setzt den Lauf mit vollem Kontext fort.
-- **Grenzen** statt fester Schrittzahl: Token-Budget, Notbremse für Runden, Zeitlimit, Schleifenerkennung und „Stopp“. An einer Grenze fasst der Agent zusammen, was erledigt ist und was fehlt. Einstellbar unter Einstellungen → Agent → Erweitert (`chatLimits`, `backgroundLimits`).
+- **Grenzen** statt fester Schrittzahl: Token-Budget, Notbremse für Runden, Zeitlimit, Schleifenerkennung und „Stopp“. An einer Grenze fasst der Agent zusammen, was erledigt ist und was fehlt. Einstellbar unter Einstellungen → Agent → Erweitert (`chatLimits`, `backgroundLimits`). Für Hintergrundaufgaben gibt es dort außerdem eigene Grenzen je Auslöser (`backgroundKindLimits`: Einsortieren, Archivprüfung, Verknüpfungen, geplante Abläufe); leere Felder gelten wie `backgroundLimits`.
 
 ## Anbieter
 
@@ -142,20 +142,33 @@ Weitere Werkzeuge für die Verknüpfungen:
 
 ## Hintergrund
 
-- Neue Dateien nach Scan bzw. Analyse einsortieren.
-- Agentische Archivprüfung.
-- Verknüpfungsvorschläge (bleiben Vorschläge).
-- Geplante eigene Abläufe.
+Code: `background-tasks.ts` (Aufgaben, Benachrichtigung), `background-schedule.ts` (Zeitgeber), `service.ts` (`runBackground`).
 
-Alles als Jobs mit eigenem Budget, abbrechbar, je Lauf eine gebündelte Benachrichtigung. Dazu ohne LLM: Fristen-Wächter und Wochenrückblick.
+| Auslöser | Wann | Aufgabe |
+| --- | --- | --- |
+| `inbox` | 20 Sekunden nach der letzten Analyse einer neuen Datei – nach Scan **und** nach Import (`document.analyze`, `scanner.analyze`); mehrere Dateien ergeben einen Lauf | Eingang einsortieren |
+| `archive_check` | Nachtlauf, wenn eingeschaltet | Befunde der Archivprüfung auswerten, eindeutig Falsches aufräumen |
+| `links` | Nachtlauf, wenn eingeschaltet | Verknüpfungen pflegen (bleiben Vorschläge) |
+| `workflow:<id>` | Nachtlauf am eingestellten Wochentag | eigenen Ablauf mit `run_workflow` ausführen |
+
+- Der Nachtlauf (`nightlyHour`) ist der einzige Zeitplan: Archivprüfung, Verknüpfungen **und** Abläufe mit Wochentag starten nur zu dieser Stunde. Ohne Uhrzeit läuft nachts nichts; die Einstellungen und der Ablauf-Dialog sagen das ausdrücklich. Einmal pro Tag.
+- Alles sind Jobs (`agent.background`, höchstens 2 Versuche) mit eigenem Budget je Auslöser, abbrechbar. Ohne Rückfragen: Bei Unsicherheit bleibt etwas im Eingang oder wird ein Vorschlag.
+- Dieselben Modi, Ausnahmen und der Datenschutz wie im Chat. Im Modus „Fragen“ wird jede Änderung ein Vorschlag.
+- **Eingang einsortieren:** Zuerst wendet der Lauf gelernte Regeln an (`apply_rules`, `preview=false`). Trifft eine Regel mit Ordner ein Eingangsdokument, wird es als Kopie dorthin archiviert (Thema, Projekt und Schlagwörter der Regel inklusive); eine neue Hauptkategorie bleibt dem Benutzer vorbehalten. Für den Rest gelten der Vorschlag der Analyse (`document_details`) und ähnliche frühere Ablagen (`similar_filings`, nur freigegebene Dokumente); eindeutige Fälle archiviert der Lauf, unsichere bleiben im Eingang.
+- **Nichts doppelt bezahlen:** Ein Eingangsdokument gilt erst als gesehen, wenn ein Lauf darüber entschieden hat (Status `done`) oder es archiviert wurde. Wird ein Lauf unterbrochen (Neustart, Abbruch, Fehler, Grenze), nimmt der nächste Versuch nur noch die unerledigten Dokumente. Der Job merkt sich die Lauf-ID als Checkpoint; ein fortgesetzter Versuch (auch Archivprüfung, Verknüpfungen, Ablauf) bekommt die schon erledigten Schritte des unterbrochenen Laufs genannt und wiederholt sie nicht.
+- **Benachrichtigung:** Je Lauf eine gebündelte Meldung mit Zusammenfassung, den Änderungen und wartenden Vorschlägen. Aktionen: „Lauf ansehen“ und – wenn der Lauf etwas geändert hat – „Rückgängig“ (`undo_run`; macht den ganzen Lauf über `agent:undoRun` rückgängig, wie in der Laufansicht, und erledigt die Meldung).
+- Dazu ohne LLM: Fristen-Wächter und Wochenrückblick.
 
 ## Gedächtnis
 
-- Gespeichert werden Regeln, eigene Abläufe, Korrekturen, Vorlieben und Wissen über den Benutzer; sie werden jedem Lauf mitgegeben.
-- Gespeichert wird nur auf ausdrücklichen Wunsch oder nach Rückfrage, nie aus Dokumenten.
-- Nach mehreren gleichartigen Korrekturen schlägt Archivist eine Regel vor.
-- Alles ist unter Einstellungen → Agent einsehbar, abschaltbar und löschbar.
-- Gelerntes hebt nie Modus, Ausnahmen, Datenschutz oder Grenzen auf.
+- Gespeichert werden Regeln, eigene Abläufe, Korrekturen, Vorlieben und Wissen über den Benutzer; sie werden jedem Lauf mitgegeben (Fakten und Vorlieben als eigene Abschnitte der Systemanweisung).
+- Gespeichert wird nur auf ausdrücklichen Wunsch oder nach Rückfrage, nie aus Dokumenten. Ausdrücklich heißt: „merk dir …“, „speichere …“, „ab jetzt …“, „künftig …“, „Regel: …“ oder „… immer nach/in/unter …“ mit einem Ablage-Verb (ein bloßes „immer“ genügt nicht, Fragen nie) – oder ein „Ja“ auf eine Rückfrage des Agenten.
+- **Regeln und Abläufe brauchen eine Bestätigung des Wortlauts:** `remember` (und `update_memory` mit neuer Regel bzw. neuen Schritten) wird vom Gate abgewiesen, solange der Benutzer nicht auf eine Rückfrage `ask_user` mit dem genauen Wortlaut „Ja“ gesagt hat (`needsConfirmedText`). Vorschläge aus Korrekturen sind bereits Vorschlagskarten. Im Hintergrund kann niemand antworten; dort wird nichts gelernt.
+- **Widersprüche beim Speichern:** Überschneiden sich die Bedingungen einer neuen Regel mit einer vorhandenen (nicht nur bei gleicher Bedingung) und nennen sie einen anderen Ordner oder ein anderes Thema, speichert `remember` nicht, sondern meldet die Regel; der Agent fragt, welche gelten soll. Beim Anwenden meldet `apply_rules` unauflösbare Widersprüche weiterhin je Dokument.
+- **`run_workflow`** startet einen gelernten Ablauf per Name oder ID: `workflow` und `parameters` (z. B. `{"jahr":"2025"}`). Das Werkzeug prüft die Parameter (fehlende nennt es, im Chat fragt der Agent nach), zählt den Lauf und liefert die Schritte, in denen `{name}` durch die Werte ersetzt ist; die Schritte führt der Agent mit den üblichen Werkzeugen aus, also unter Modus, Ausnahmen und Datenschutz. Der **erste** Lauf eines Ablaufs liefert nur den Plan; der Agent zeigt ihn mit `ask_user` und ruft das Werkzeug nach dem „Ja“ erneut auf. Im Hintergrund kann niemand bestätigen: Ein nie bestätigter Ablauf meldet dort nur seinen Plan, und Abläufe mit Parametern laufen dort nicht. Ändern geht mit `update_memory` (oder in der Oberfläche); der nächste Lauf nutzt die neuen Schritte. Optional hat ein Ablauf einen Wochentag für den Nachtlauf.
+- **Aus Korrekturen lernen:** Verschiebt der Benutzer ein vom Agenten abgelegtes Dokument, ändert er dessen Thema oder fügt er ein Schlagwort hinzu, wird das als Korrektur gemerkt. Nach 3 gleichartigen Korrekturen (`CORRECTIONS_FOR_RULE`) erscheint ein Hinweis mit Regelvorschlag (Ordner, Thema oder Schlagwort je Dokumenttyp bzw. Endung); gespeichert wird erst nach seiner Bestätigung. „Lauf rückgängig“ und „Schritt rückgängig“ zählen ebenfalls als Korrektur (ohne Regelvorschlag). Eine einzelne Korrektur ergibt nie eine Regel.
+- Gelerntes hebt nie Modus, Ausnahmen, Datenschutz oder Grenzen auf: Eine Regel mit Ordner wird im Modus „Fragen“ zum Vorschlag, zählt für die Schwelle für Massenaktionen und legt keine neuen Hauptkategorien an; Anweisungen wie „ignoriere den Datenschutz“ in Fakten oder Regeln bleiben wirkungslos, nicht freigegebene Dokumente dienen weder als Beispiel noch erscheinen sie im Klartext.
+- **Ansicht** unter Einstellungen → Agent → „Was Archivist gelernt hat“: Einträge einsehen, ein- und ausschalten, bearbeiten, löschen, als JSON exportieren und importieren. Regeln (Bedingungen und Aktionen) und Abläufe (Schritte, Parameter, Wochentag) bearbeitest du in Feldern, nicht als JSON.
 
 ## Evaluation
 

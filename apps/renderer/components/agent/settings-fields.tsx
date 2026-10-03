@@ -147,7 +147,11 @@ export function BackgroundSection({
       <SwitchRow label="Verknüpfungen vorschlagen" hint="Für Einträge ohne Verbindung (nur Vorschläge).">
         <Switch checked={background.links} onCheckedChange={(checked) => onChange({ ...background, links: checked })} aria-label="Verknüpfungen vorschlagen" />
       </SwitchRow>
-      <Field label="Nachtlauf (Archivprüfung und Verknüpfungen)" htmlFor="agent-nightly">
+      <Field
+        label="Nachtlauf (Archivprüfung, Verknüpfungen und geplante Abläufe)"
+        htmlFor="agent-nightly"
+        hint="Auch Abläufe mit festem Wochentag (Einstellungen → Agent → Was Archivist gelernt hat) starten nur im Nachtlauf. Ohne Uhrzeit läuft nachts nichts."
+      >
         <Select
           id="agent-nightly"
           value={background.nightlyHour === null ? '' : String(background.nightlyHour)}
