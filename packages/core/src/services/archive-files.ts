@@ -11,6 +11,8 @@ import { uniquePath } from '../util/paths';
 const NAME_ATTEMPTS = 5;
 /** Marks a copy that is still being written; never a name the archive hands out. */
 const PARTIAL_SUFFIX = '.partial';
+/** The name of a temporary copy: `<target>.<uuid>.partial`. */
+export const PARTIAL_COPY_PATTERN = /\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.partial$/;
 const NO_FREE_NAME = 'Es konnte kein freier Zieldateiname gefunden werden.';
 
 export const errorCode = (err: unknown) => (err as NodeJS.ErrnoException | null)?.code;

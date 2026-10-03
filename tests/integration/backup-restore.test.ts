@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveDataPaths } from '../../packages/core/src/context';
-import { newestIntactSource, scheduleRestore } from '../../packages/core/src/services/backup-restore';
+import { applyPendingRestore, newestIntactSource, scheduleRestore } from '../../packages/core/src/services/backup-restore';
 import { classification } from '../helpers/document-classifications';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
@@ -156,7 +157,7 @@ describe('Restoring a backup', () => {
     fs.writeFileSync(path.join(newer.path, 'archivist.db'), 'beschädigt '.repeat(500));
     const paths = app.services.paths;
 
-    const source = newestIntactSource(paths.backups);
+    const source = newestIntactSource(paths);
 
     expect(source?.name).toBe(older.name);
     expect(fs.existsSync(path.join(paths.root, 'restore-pending.json')), 'choosing schedules nothing').toBe(false);
@@ -176,9 +177,78 @@ describe('Restoring a backup', () => {
 
     await expect(startApp()).rejects.toMatchObject({ category: 'database_corrupt' });
     const paths = resolveDataPaths(dataRoot);
-    scheduleRestore(paths, newestIntactSource(paths.backups)!.name);
+    scheduleRestore(paths, newestIntactSource(paths)!.name);
     const recovered = await startApp();
 
     expect(documentTitles(recovered)).toEqual(['gerettet.txt']);
+  });
+
+  it('offers the database a restore replaced as a source and brings it back, again keeping the one it replaces', async () => {
+    let app = await startApp();
+    await archived(app, 'alt.txt', 'Dokument vom Backup');
+    const backup = await app.ok('backup:create', { includeArchive: false });
+    await archived(app, 'neu.txt', 'Dokument nach dem Backup');
+    await app.ok('backup:restore', { name: backup.name, confirmed: true });
+    app = await restart(app);
+    expect(documentTitles(app)).toEqual(['alt.txt']);
+
+    const aside = (await app.ok('backup:list', {})).find((b) => b.kind === 'before_restore');
+    expect(aside?.name).toMatch(/^vor-wiederherstellung-/);
+    expect(aside?.path).toBe(path.join(root, 'Archivist', 'database', aside!.name));
+    expect(aside?.sizeBytes).toBeGreaterThan(0);
+    const restoreEntry = app.services.audit.list({ limit: 5 }).find((e) => e.action === 'backup.restore');
+    expect(restoreEntry?.after).toMatchObject({ restoredFrom: backup.name });
+
+    await app.ok('backup:restore', { name: aside!.name, confirmed: true });
+    app = await restart(app);
+
+    expect(documentTitles(app)).toEqual(['alt.txt', 'neu.txt']);
+    const asides = (await app.ok('backup:list', {})).filter((b) => b.kind === 'before_restore');
+    expect(
+      asides.map((b) => b.name),
+      'the chain is kept: the first aside stays, the replaced state is aside again',
+    ).toContain(aside!.name);
+    expect(asides).toHaveLength(2);
+  });
+
+  it('brings the write-ahead log of a set-aside database along', async () => {
+    const paths = resolveDataPaths(path.join(root, 'Archivist'));
+    fs.mkdirSync(paths.backups, { recursive: true });
+    const aside = path.join(paths.database, 'vor-wiederherstellung-2026-10-01T10-00-00-000');
+    fs.mkdirSync(aside, { recursive: true });
+    const source = new Database(path.join(root, 'quelle.db'));
+    source.pragma('journal_mode = WAL');
+    source.pragma('wal_autocheckpoint = 0');
+    source.exec("CREATE TABLE notizen (text TEXT); INSERT INTO notizen VALUES ('nur im Log')");
+    fs.copyFileSync(path.join(root, 'quelle.db'), path.join(aside, 'archivist.db'));
+    fs.copyFileSync(path.join(root, 'quelle.db-wal'), path.join(aside, 'archivist.db-wal'));
+    source.close();
+
+    scheduleRestore(paths, path.basename(aside));
+    applyPendingRestore(paths, path.join(root, 'archiv'));
+
+    const restored = new Database(path.join(paths.database, 'archivist.db'), { readonly: true });
+    expect(restored.prepare('SELECT text FROM notizen').all()).toEqual([{ text: 'nur im Log' }]);
+    restored.close();
+  });
+
+  it('checking a backup never changes it: no files appear in the backup or aside folders', async () => {
+    const app = await startApp();
+    await archived(app, 'alt.txt', 'Dokument');
+    const backup = await app.ok('backup:create', { includeArchive: false });
+    const paths = app.services.paths;
+    const listing = (dir: string) =>
+      fs
+        .readdirSync(dir, { recursive: true })
+        .map((entry) => String(entry))
+        .toSorted()
+        .map((entry) => `${entry}:${fs.statSync(path.join(dir, entry)).size}`);
+    const before = listing(paths.backups);
+
+    await app.ok('backup:restore', { name: backup.name, confirmed: true });
+    expect(newestIntactSource(paths)?.name).toBe(backup.name);
+
+    expect(listing(paths.backups)).toEqual(before);
+    expect(fs.readdirSync(paths.database).filter((f) => f.includes('.restoring'))).toEqual([]);
   });
 });
