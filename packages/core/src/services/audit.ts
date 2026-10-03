@@ -1,6 +1,7 @@
 import type { AuditEntry, AuditVerification } from '@archivist/shared';
 import { and, asc, desc, eq, inArray, isNotNull, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
+import type { Db } from '../db/database';
 import { auditLog, entities } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
@@ -77,19 +78,21 @@ export class AuditService {
       success: input.success ?? true,
       runId: run?.runId ?? null,
     };
-    const prevHash = this.newestHash();
-    this.ctx.database.db
-      .insert(auditLog)
-      .values({
-        ...fixed,
-        after: (input.after ?? null) as ArchivistJson | null,
-        error: input.error ?? null,
-        undoType: undo?.type ?? null,
-        undoData: (undo?.data ?? null) as ArchivistJson | null,
-        prevHash,
-        hash: chainHash(fixed, prevHash),
-      })
-      .run();
+    // invariant: reading the newest hash and inserting the entry that chains to it is one step
+    this.ctx.database.db.transaction((tx) => {
+      const prevHash = this.newestHash(tx);
+      tx.insert(auditLog)
+        .values({
+          ...fixed,
+          after: (input.after ?? null) as ArchivistJson | null,
+          error: input.error ?? null,
+          undoType: undo?.type ?? null,
+          undoData: (undo?.data ?? null) as ArchivistJson | null,
+          prevHash,
+          hash: chainHash(fixed, prevHash),
+        })
+        .run();
+    });
     this.ctx.events.changed('audit');
     for (const listener of this.listeners) {
       try {
@@ -101,9 +104,9 @@ export class AuditService {
     return id;
   }
 
-  private newestHash(): string | null {
+  private newestHash(db: Pick<Db, 'select'>): string | null {
     return (
-      this.ctx.database.db
+      db
         .select({ hash: auditLog.hash })
         .from(auditLog)
         .orderBy(sql`rowid desc`)

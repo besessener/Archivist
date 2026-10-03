@@ -173,12 +173,17 @@ describe('relation semantics (#189)', () => {
     sqlite.prepare("UPDATE entities SET type = 'document' WHERE id = ?").run(document.id);
     insert.run('old-system', person.id, document.id, 'proposed', 0, null, 'field');
     insert.run('old-user', other.id, document.id, 'confirmed', 1, 'user', 'manual');
+    const third = graph().ensureEntity({ type: 'person', name: 'Dora Beispiel' });
+    insert.run('old-other-method', third.id, document.id, 'proposed', 0, null, 'agent');
 
     const migration = fs.readFileSync(path.resolve(__dirname, '../../packages/core/migrations/0025_mentions_not_produced.sql'), 'utf8');
     sqlite.exec(migration);
 
-    const rows = sqlite.prepare("SELECT id, relation_type AS type, status, method FROM relations WHERE id IN ('old-system', 'old-user') ORDER BY id").all();
+    const rows = sqlite
+      .prepare("SELECT id, relation_type AS type, status, method FROM relations WHERE id IN ('old-system', 'old-user', 'old-other-method') ORDER BY id")
+      .all();
     expect(rows).toEqual([
+      { id: 'old-other-method', type: 'produced', status: 'proposed', method: 'agent' },
       { id: 'old-system', type: 'mentioned_in', status: 'confirmed', method: 'mention' },
       { id: 'old-user', type: 'produced', status: 'confirmed', method: 'manual' },
     ]);

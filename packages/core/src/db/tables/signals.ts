@@ -60,6 +60,8 @@ export const contradictions = sqliteTable(
     dedupeKey: text('dedupe_key').notNull(),
     createdAt: text('created_at').notNull(),
     resolvedAt: text('resolved_at'),
+    /** Resolved by superseding one decision: only undoing that supersede raises the contradiction again. */
+    resolvedBySupersede: integer('resolved_by_supersede', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [uniqueIndex('contradictions_dedupe_idx').on(t.dedupeKey)],
 );

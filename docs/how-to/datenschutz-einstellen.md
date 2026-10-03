@@ -22,7 +22,7 @@ Unter **Einstellungen → Datenschutz → Nie analysieren**:
 - **Dateitypen** mit Komma getrennt eintragen, z. B. `xlsx, eml`,
 - **Einzelne Dateien** mit vollständigem Pfad, einer pro Zeile.
 
-Was hier steht, geht nie an das LLM – unabhängig vom Modus. Ausschlüsse vergleichen auch den realen Pfad (Symlinks/Junctions) und ignorieren unter Windows die Groß-/Kleinschreibung.
+Was hier steht, geht nie an das LLM – unabhängig vom Modus. Das gilt auch für die Widerspruchsprüfung: Stammt eine der beiden Entscheidungen eines Paars aus einem ausgeschlossenen Dokument, fragt Archivist das LLM nicht, dann entscheiden nur die lexikalischen Regeln. Ausschlüsse vergleichen auch den realen Pfad (Symlinks/Junctions) und ignorieren unter Windows die Groß-/Kleinschreibung.
 
 Für einen gescannten Ordner geht es auch direkt beim Verzeichnis unter **Scan**: **KI-Analyse erlaubt** ausschalten. Entziehst du die Freigabe später, gilt das sofort für bereits erfasste Dokumente – auch in laufenden Chat-Gesprächen des Agenten: Was er vorher aus dem Dokument gelesen hat, geht mit der nächsten Nachricht nicht erneut an das LLM.
 

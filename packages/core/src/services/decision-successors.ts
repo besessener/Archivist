@@ -5,7 +5,7 @@ import { decisions, relations } from '../db/schema';
 
 const CHUNK = 500;
 
-/** The decisions that replace each given decision: the one whose `supersedes` column names it, plus those linked by a confirmed `supersedes` relation (several replacements live there only). */
+/** The decisions replacing each given one: via the `supersedes` column or a confirmed `supersedes` relation. */
 export function successorsOf(db: Db, ids: string[]): Map<string, Decision['supersededBy']> {
   const replacedBy = new Map<string, Set<string>>();
   const remember = (oldId: string, newId: string) => replacedBy.set(oldId, (replacedBy.get(oldId) ?? new Set()).add(newId));

@@ -1,7 +1,7 @@
 import type { AuditVerification } from '@archivist/shared';
 import { sha256Text } from '../util/hash';
 
-/** The fields of an audit entry that never change after writing; outcome fields (`after`, `error`, undo data, `undoneAt`) are amended later and not chained. */
+/** The fixed fields of an audit entry; outcome fields amended later are not chained. */
 export interface ChainedFields {
   id: string;
   at: string;
@@ -27,7 +27,7 @@ export function chainHash(fields: ChainedFields, prevHash: string | null): strin
   return sha256Text(JSON.stringify([prevHash, id, at, action, actor, trigger, confirmed, entityIds, paths, before ?? null, success, runId]));
 }
 
-/** Walks the rows in write order: an entry changed, removed or inserted after the first chained one breaks the chain at the entry that no longer fits. */
+/** Walks the rows in write order and reports the first entry that no longer fits the chain. */
 export function verifyChain(rows: ChainedRow[]): AuditVerification {
   let expectedPrev: string | null = null;
   let started = false;

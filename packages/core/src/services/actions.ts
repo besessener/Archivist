@@ -1,12 +1,5 @@
-import {
-  ActionParamSchemas,
-  type AgentActionProposal,
-  type AgentActionStatus,
-  type AgentActionType,
-  type EntityRef,
-  type StoredAgentAction,
-} from '@archivist/shared';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { ActionParamSchemas, type AgentActionProposal, type AgentActionStatus, type AgentActionType, type StoredAgentAction } from '@archivist/shared';
+import { eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { agentActions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
@@ -14,32 +7,11 @@ import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
 import type { ActionDeps, AgentBatchExecutor } from './action-deps';
 import { executeAction } from './action-executors';
-import { EXTRACTED_NOTIFICATION_PREFIX } from './notifications';
+import { type ActionRow, MAX_PAGE_SIZE, pageOfActions, resolveSettledNotifications, toStoredAction } from './action-store';
 import { mergedIds, revalidate, type Revalidation } from './action-revalidation';
-
-type Row = typeof agentActions.$inferSelect;
-
-const toStoredAction = (r: Row): StoredAgentAction => ({
-  id: r.id,
-  conversationId: r.conversationId,
-  actionType: r.actionType as AgentActionType,
-  label: r.label,
-  rationale: r.rationale,
-  confidence: r.confidence,
-  affectedEntities: r.affectedEntities as EntityRef[],
-  requiredConfirmation: r.requiredConfirmation as StoredAgentAction['requiredConfirmation'],
-  proposedParameters: r.params as Record<string, unknown>,
-  status: r.status as AgentActionStatus,
-  result: r.result,
-  createdAt: r.createdAt,
-  resolvedAt: r.resolvedAt,
-});
 
 /** From this many documents a relocation counts as especially far-reaching („besonders folgenreich“). */
 const STRONG_RELOCATION_DOCUMENTS = 20;
-
-/** Upper bound of one page of actions. */
-const MAX_PAGE_SIZE = 200;
 
 /** Job type that executes a confirmed big action in the background (#254). */
 export const ACTION_EXECUTE_JOB = 'action.execute';
@@ -93,7 +65,7 @@ export class ActionService {
     // relocating many documents at once needs the confirmation dialog; a typed „ja“ in the chat is not enough (#199)
     const items = input.actionType === 'relocate_documents' ? ((params.items as unknown[] | undefined)?.length ?? 0) : 0;
     const requiredConfirmation = items >= STRONG_RELOCATION_DOCUMENTS ? 'strong' : input.requiredConfirmation;
-    const row: Row = {
+    const row: ActionRow = {
       id: newId(),
       conversationId: input.conversationId ?? null,
       actionType: input.actionType,
@@ -139,18 +111,8 @@ export class ActionService {
     return this.page({ status, limit: MAX_PAGE_SIZE, offset: 0 });
   }
 
-  /** One page of actions, newest first, optionally of one status and type. */
   page(query: { status?: AgentActionStatus; actionType?: AgentActionType; limit: number; offset: number }): StoredAgentAction[] {
-    const filters = [query.status && eq(agentActions.status, query.status), query.actionType && eq(agentActions.actionType, query.actionType)];
-    return this.db
-      .select()
-      .from(agentActions)
-      .where(and(...filters.filter((f) => f !== undefined)))
-      .orderBy(desc(agentActions.createdAt), desc(agentActions.id))
-      .limit(Math.min(query.limit, MAX_PAGE_SIZE))
-      .offset(query.offset)
-      .all()
-      .map(toStoredAction);
+    return pageOfActions(this.db, query);
   }
 
   /** Open proposals shown as a card in this conversation and originating there, in the order they were shown. */
@@ -205,12 +167,8 @@ export class ActionService {
     return decided;
   }
 
-  /** Document notifications („Dokument enthält …“) are done once every proposal they offer is decided; the proposals stay on the page. */
   private resolveSettledNotifications(): void {
-    for (const notification of this.deps.notifications.openByDedupePrefix(EXTRACTED_NOTIFICATION_PREFIX)) {
-      const targets = notification.proposedActions.flatMap((a) => (a.kind === 'confirm_action' && a.target ? [a.target] : []));
-      if (targets.every((target) => this.get(target).status !== 'proposed')) this.deps.notifications.resolve(notification.id);
-    }
+    resolveSettledNotifications(this.deps.notifications, (id) => this.get(id).status);
   }
 
   private reject(action: StoredAgentAction): StoredAgentAction {

@@ -5,10 +5,20 @@ import { contradictionReviews } from '../db/schema';
 import { sha256Text } from '../util/hash';
 import { nowIso } from '../util/ids';
 import { truncate } from '../util/text';
+import type { DocumentService } from './documents';
 import type { LlmService } from './llm';
+import type { PrivacyService } from './privacy';
 
 /** Upper bound of LLM questions per scan; every answer is stored, so the next scan continues with the rest. */
-export const MAX_REVIEWS_PER_RUN = 60;
+export const MAX_REVIEWS_PER_SCAN = 60;
+
+/** Upper bound of LLM questions when one decision is checked right away, so a request never waits for a whole scan. */
+export const MAX_REVIEWS_PER_CHECK = 10;
+
+/** The LLM questions one run may still ask; each run owns its budget. */
+export interface ReviewBudget {
+  left: number;
+}
 
 export interface ReviewVerdict {
   isContradiction: boolean;
@@ -21,22 +31,23 @@ type DecisionPair = [Decision, Decision];
 /** Hash of both decision texts, independent of their order: a verdict stays valid as long as the texts do. */
 const textHashOf = ([a, b]: DecisionPair): string => sha256Text([a.decisionText, b.decisionText].sort().join('\n'));
 
+export interface ContradictionReviewerDeps {
+  ctx: AppContext;
+  llm: LlmService;
+  privacy: PrivacyService;
+  docs: Pick<DocumentService, 'findRow'>;
+}
+
 /** The LLM's verdict on pairs of decisions, stored per text hash so no pair is asked about twice (also across restarts). */
 export class ContradictionReviewer {
-  private reviewsLeft = 0;
+  constructor(private readonly deps: ContradictionReviewerDeps) {}
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly llm: LlmService,
-  ) {}
+  private get ctx() {
+    return this.deps.ctx;
+  }
 
   private get db() {
     return this.ctx.database.db;
-  }
-
-  /** Starts a scan or check: the budget of LLM questions is full again. */
-  startRun(): void {
-    this.reviewsLeft = MAX_REVIEWS_PER_RUN;
   }
 
   /** The stored verdict for these texts, if there is one. */
@@ -57,15 +68,26 @@ export class ContradictionReviewer {
       .run();
   }
 
-  /** Stored or fresh verdict; null when the LLM cannot be asked (offline, privacy mode, budget used up, error). */
-  async review(pair: DecisionPair, signal?: AbortSignal): Promise<ReviewVerdict | null> {
+  /** Background use only, and only when every source document of both decisions may be shared (not excluded or locked). */
+  private mayAsk(pair: DecisionPair): boolean {
+    if (!this.deps.llm.canUseInBackground()) return false;
+    return pair.every((decision) =>
+      decision.sourceIds.every((id) => {
+        const document = this.deps.docs.findRow(id);
+        return !document || this.deps.privacy.mayShareDocument(document);
+      }),
+    );
+  }
+
+  /** Stored or fresh verdict; null when the LLM cannot be asked (offline, privacy mode, excluded source, budget used up, error). */
+  async review(pair: DecisionPair, budget: ReviewBudget, signal?: AbortSignal): Promise<ReviewVerdict | null> {
     const known = this.stored(pair);
     if (known !== undefined) return { isContradiction: known, confidence: known ? 0.5 : 1, description: '' };
-    if (this.reviewsLeft <= 0 || !this.llm.canUseInBackground()) return null;
-    this.reviewsLeft -= 1;
+    if (budget.left <= 0 || !this.mayAsk(pair)) return null;
+    budget.left -= 1;
     const [a, b] = pair;
     try {
-      const verdict = await this.llm.completeJson(ContradictionProposal, {
+      const verdict = await this.deps.llm.completeJson(ContradictionProposal, {
         schemaName: 'ContradictionProposal',
         purpose: 'Widerspruchsprüfung',
         instructions:

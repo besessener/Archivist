@@ -8,11 +8,7 @@ export type DecisionKind = z.infer<typeof DecisionKind>;
 export const DecisionOrigin = z.enum(['chat', 'form', 'document']);
 export type DecisionOrigin = z.infer<typeof DecisionOrigin>;
 
-/**
- * draft: required fields missing. active: asserted (dictated in chat, entered in the form, taken over by the agent on request).
- * confirmed: the user checked and confirmed it (a completed draft, an approved document proposal). unclear: not reviewed or doubtful.
- * superseded and revoked: no longer valid.
- */
+/** draft: fields missing; active: asserted; confirmed: completed in the form or a confirmed proposal; unclear: doubtful; superseded and revoked: invalid. */
 export const DecisionStatus = z.enum(['draft', 'confirmed', 'active', 'superseded', 'revoked', 'unclear']);
 export type DecisionStatus = z.infer<typeof DecisionStatus>;
 /** Valid decisions: only these may replace another one and are checked for contradictions. */
