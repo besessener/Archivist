@@ -2,7 +2,7 @@
 
 import { Archive, CheckCircle2, FolderPlus, Loader2, PlugZap, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
 import { connectionTitle, connectionTone } from '@/lib/labels';
-import type { IpcOutput } from '@archivist/shared';
+import { checkLlmBaseUrl, type IpcOutput } from '@archivist/shared';
 import { AgentCapabilityNote } from '@/components/agent/capability-note';
 import { Field, Notice } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
@@ -98,6 +98,8 @@ export interface LlmForm {
 }
 
 export function LlmStep({ form, test, testing, onTest }: { form: LlmForm; test: ConnectionTest | null; testing: boolean; onTest: () => void }) {
+  const baseUrlCheck = checkLlmBaseUrl(form.baseUrl);
+  const baseUrlError = baseUrlCheck.ok ? undefined : baseUrlCheck.message;
   return (
     <div className="flex flex-col gap-4" data-testid="setup-step-llm">
       <div>
@@ -107,10 +109,12 @@ export function LlmStep({ form, test, testing, onTest }: { form: LlmForm; test: 
           Anbieter oder deiner IT.
         </p>
       </div>
-      <Field label="Adresse des Dienstes (Base URL)" htmlFor="setup-baseurl" hint="Beispiel: https://api.openai.com/v1">
+      <Field label="Adresse des Dienstes (Base URL)" htmlFor="setup-baseurl" hint="Beispiel: https://api.openai.com/v1" error={baseUrlError}>
         <Input
           id="setup-baseurl"
           data-testid="setup-baseurl"
+          aria-invalid={baseUrlError ? true : undefined}
+          aria-describedby={baseUrlError ? 'setup-baseurl-error' : undefined}
           value={form.baseUrl}
           onChange={(e) => form.setBaseUrl(e.target.value)}
           placeholder="https://…/v1"
@@ -157,7 +161,7 @@ export function LlmStep({ form, test, testing, onTest }: { form: LlmForm; test: 
         </Select>
       </Field>
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" onClick={onTest} disabled={testing || !form.baseUrl.trim()} data-testid="setup-test">
+        <Button variant="outline" onClick={onTest} disabled={testing || !form.baseUrl.trim() || Boolean(baseUrlError)} data-testid="setup-test">
           {testing ? <Loader2 className="animate-spin" aria-hidden /> : <PlugZap aria-hidden />} Verbindung testen
         </Button>
       </div>

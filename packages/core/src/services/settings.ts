@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Settings, SettingsPatch } from '@archivist/shared';
+import { Settings, SettingsPatch, checkLlmBaseUrl } from '@archivist/shared';
 import type { EventBus } from '../context';
 import type { NotificationInput } from './notifications';
 import { AppError, validationError } from '../util/errors';
@@ -199,18 +199,11 @@ export class SettingsService {
   }
 }
 
-/** The trimmed base URL without trailing slashes; it must be http(s) unless empty. */
+/** The trimmed base URL without trailing slashes; https:// (or http:// on this machine only) unless empty. */
 function checkedBaseUrl(baseUrl: string): string {
+  const check = checkLlmBaseUrl(baseUrl);
+  if (!check.ok) throw validationError(check.message);
   let url = baseUrl.trim();
-  if (url && !isHttpUrl(url)) throw validationError('Die Base URL muss mit http:// oder https:// beginnen.');
   while (url.endsWith('/')) url = url.slice(0, -1);
   return url;
-}
-
-function isHttpUrl(url: string): boolean {
-  try {
-    return /^https?:$/.test(new URL(url).protocol);
-  } catch {
-    return false;
-  }
 }

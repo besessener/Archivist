@@ -30,6 +30,12 @@ Was hier steht, geht nie an das LLM – unabhängig vom Modus. Ausschlüsse verg
 
 Für einen gescannten Ordner geht es auch direkt beim Verzeichnis unter **Scan**: **KI-Analyse erlaubt** ausschalten. Entziehst du die Freigabe später, gilt das sofort für bereits erfasste Dokumente – auch in laufenden Chat-Gesprächen des Agenten: Was er vorher aus dem Dokument gelesen hat, geht mit der nächsten Nachricht nicht erneut an das LLM.
 
+## Verschlüsselte Verbindung sicherstellen
+
+Archivist sendet nur über `https://` an einen fremden Rechner. Eine `http://`-Adresse ist nur für deinen eigenen Rechner erlaubt (`localhost`, `127.0.0.1`, `[::1]`, z. B. ein lokaler Ollama-Server). Trägst du unter **Einstellungen → KI** eine andere `http://`-Adresse ein, erscheint am Feld eine Meldung, und Speichern sowie der Verbindungstest bleiben gesperrt – verwende dann die `https://`-Adresse deines Anbieters. Der API-Key geht dabei immer nur in einem Header an den Endpunkt ([LLM-Schnittstelle](../reference/llm-schnittstelle.md#anfragen)).
+
+Hatte eine ältere Version eine solche Adresse gespeichert, sendet Archivist nichts an sie und zeigt die Meldung, bis du sie korrigierst.
+
 ## Protokoll und Diagnose für den Agenten
 
 Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `diagnose` den Zustand von Archivist lesen ([Archivist untersuchen](../reference/agentenmodus.md#archivist-untersuchen)). Was er dabei liest, ist Teil seiner Anfrage an das LLM – du steuerst es so:

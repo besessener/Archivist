@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
 import { connectionTitle, connectionTone } from '@/lib/labels';
-import type { IpcOutput } from '@archivist/shared';
+import { checkLlmBaseUrl, type IpcOutput } from '@archivist/shared';
 import { Section, useSaveSettings, type TabProps } from './shared';
 
 type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high';
@@ -45,14 +45,24 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
 
   const timeout = Number(timeoutS);
   const chars = Number(maxChars);
-  const valid = timeout >= 1 && timeout <= 600 && chars >= 500 && chars <= 2000000;
+  const baseUrlCheck = checkLlmBaseUrl(baseUrl);
+  const baseUrlError = baseUrlCheck.ok ? undefined : baseUrlCheck.message;
+  const valid = timeout >= 1 && timeout <= 600 && chars >= 500 && chars <= 2000000 && !baseUrlError;
 
   return (
     <div className="flex flex-col gap-4">
       <Section title="Verbindung zur KI" description="Jeder Dienst mit OpenAI-kompatibler Schnittstelle funktioniert.">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Adresse (Base URL)" htmlFor="s-baseurl" className="sm:col-span-2">
-            <Input id="s-baseurl" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" data-testid="settings-baseurl" />
+          <Field label="Adresse (Base URL)" htmlFor="s-baseurl" error={baseUrlError} className="sm:col-span-2">
+            <Input
+              id="s-baseurl"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://…/v1"
+              aria-invalid={baseUrlError ? true : undefined}
+              aria-describedby={baseUrlError ? 's-baseurl-error' : undefined}
+              data-testid="settings-baseurl"
+            />
           </Field>
           <Field label="Modellname" htmlFor="s-model">
             <Input id="s-model" value={model} onChange={(e) => setModel(e.target.value)} data-testid="settings-model" />
@@ -96,7 +106,12 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           >
             <Save aria-hidden /> Speichern
           </Button>
-          <Button variant="outline" onClick={() => void runTest()} disabled={testing || !baseUrl.trim()} data-testid="settings-test-connection">
+          <Button
+            variant="outline"
+            onClick={() => void runTest()}
+            disabled={testing || !baseUrl.trim() || Boolean(baseUrlError)}
+            data-testid="settings-test-connection"
+          >
             {testing ? <Loader2 className="animate-spin" aria-hidden /> : <PlugZap aria-hidden />} Verbindung testen
           </Button>
         </div>

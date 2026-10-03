@@ -4,6 +4,7 @@
 | --- | --- |
 | „Ein natives Modul passt nicht zur Laufzeitumgebung“ | `npm install` erneut ausführen und `npm run native:check` prüfen. |
 | LLM-Test: „nicht erreichbar“ | Base URL, Proxy und Firewall prüfen; Logs unter `…/Archivist/logs/`. |
+| „Unverschlüsseltes http:// ist nur für localhost erlaubt“ | Die Base URL unter Einstellungen → KI auf `https://` umstellen, siehe [Datenschutz einstellen](datenschutz-einstellen.md#verschlüsselte-verbindung-sicherstellen). |
 | LLM-Test: „Endpunkt oder Modell nicht gefunden“ | Die Base URL muss auf die API-Wurzel zeigen (z. B. `…/openai/v1`), der Modellname exakt dem Deployment entsprechen. |
 | Claude auf Foundry: Chat arbeitet nicht als Agent | Den Anthropic-Endpunkt `https://<resource>.services.ai.azure.com/anthropic` eintragen, siehe [LLM-Anbieter verbinden](llm-anbieter-verbinden.md#claude-auf-foundry-mit-werkzeugen-nutzen). |
 | LLM-Anfragen scheitern sofort | Nach einer Zeitüberschreitung oder einem unerreichbaren Endpunkt scheitern Anfragen 60 s lang sofort, statt erneut zu warten. Kurz warten oder **Verbindung testen** – der Test geht immer durch. |
