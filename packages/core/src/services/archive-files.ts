@@ -29,14 +29,39 @@ export async function hasChecksum(p: string, sha256: string): Promise<boolean> {
   }
 }
 
-/** Flushes a file and its folder entry to disk; the folder flush is best effort (Windows cannot open folders). */
-async function syncToDisk(p: string): Promise<void> {
+/** Open errors that only mean the file is read-only. */
+const READ_ONLY_CODES = new Set(['EACCES', 'EPERM']);
+/** Folder flushes the platform or file system does not offer (Windows cannot open folders). */
+const NO_FOLDER_FLUSH_CODES = new Set(['EISDIR', 'EPERM', 'EINVAL', 'ENOTSUP']);
+
+async function flushFile(p: string): Promise<void> {
   const file = await fsp.open(p, 'r+');
   try {
     await file.sync();
   } finally {
     await file.close();
   }
+}
+
+/** Windows flushes only through a writable handle, so a read-only copy of ours is writable just for the flush. */
+async function flushOwnFile(p: string): Promise<void> {
+  try {
+    return await flushFile(p);
+  } catch (err) {
+    if (!READ_ONLY_CODES.has(errorCode(err) ?? '')) throw err;
+  }
+  const permissions = (await fsp.stat(p)).mode & 0o7777;
+  await fsp.chmod(p, permissions | 0o200);
+  try {
+    await flushFile(p);
+  } finally {
+    await fsp.chmod(p, permissions);
+  }
+}
+
+/** Flushes a file and its folder entry to disk; only a folder flush the platform does not offer is skipped. */
+async function syncToDisk(p: string): Promise<void> {
+  await flushOwnFile(p);
   try {
     const folder = await fsp.open(path.dirname(p), 'r');
     try {
@@ -44,8 +69,8 @@ async function syncToDisk(p: string): Promise<void> {
     } finally {
       await folder.close();
     }
-  } catch {
-    // no folder handles on this platform: the file itself is flushed
+  } catch (err) {
+    if (!NO_FOLDER_FLUSH_CODES.has(errorCode(err) ?? '')) throw err;
   }
 }
 
