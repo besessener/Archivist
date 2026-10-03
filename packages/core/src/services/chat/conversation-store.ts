@@ -107,6 +107,19 @@ export class ConversationStore {
       .map((r) => this.toMessage(r));
   }
 
+  /** The newest `count` messages, oldest first – without loading the whole conversation (#253). */
+  recent(conversationId: string, count: number): ChatMessage[] {
+    return this.db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(desc(messages.createdAt))
+      .limit(count)
+      .all()
+      .reverse()
+      .map((r) => this.toMessage(r));
+  }
+
   saveUserMessage(conversationId: string, text: string): ChatMessage {
     return this.insert(this.row(conversationId, { role: 'user', content: text }));
   }

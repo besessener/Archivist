@@ -25,4 +25,13 @@ describe('Chat requests of one conversation (#251)', () => {
     expect(a.assistantMessage.id).not.toBe(b.assistantMessage.id);
     expect(order.indexOf('Zweite')).toBeGreaterThan(order.indexOf('Erste') + 1);
   });
+
+  it('hands only the last six messages to the intent prompt (#253)', async () => {
+    app.llm.on('ChatIntent', () => intent({ intent: 'smalltalk' }));
+    const first = await app.ok('chat:send', { text: 'Nachricht 01' });
+    for (let i = 2; i <= 8; i += 1) await app.ok('chat:send', { text: `Nachricht ${String(i).padStart(2, '0')}`, conversationId: first.conversationId });
+    const input = app.llm.calls.filter((c) => c.schema === 'ChatIntent').at(-1)!.input;
+    expect(input).not.toContain('Nachricht 01');
+    expect(input).toContain('Benutzer: Nachricht 07');
+  });
 });

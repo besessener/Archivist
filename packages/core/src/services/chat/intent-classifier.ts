@@ -66,7 +66,7 @@ export class IntentClassifier {
       mostRelevant(this.deps.graph.listEntities({ type, limit: 500, confirmedOnly: true }), { query, keyOf: (e) => e.name, limit: 40 })
         .map((e) => e.name)
         .join(', ') || '–';
-    return `Heutiges Datum: ${promptNow(new Date())}\nOffene Rückfrage: ${pendingHint(turn.state.pending, this.deps)}\nZuletzt gezeigte Dokumente: ${turn.state.last?.documentIds?.length ?? 0}\n${refs.text}\nBekannte Themen: ${known('topic')}\nBekannte Projekte: ${known('project')}\n\n${historyHint(this.helpers.store.history(turn.conversationId))}Nachricht des Benutzers:\n${turn.text}`;
+    return `Heutiges Datum: ${promptNow(new Date())}\nOffene Rückfrage: ${pendingHint(turn.state.pending, this.deps)}\nZuletzt gezeigte Dokumente: ${turn.state.last?.documentIds?.length ?? 0}\n${refs.text}\nBekannte Themen: ${known('topic')}\nBekannte Projekte: ${known('project')}\n\n${historyHint(this.helpers.store.recent(turn.conversationId, 7))}Nachricht des Benutzers:\n${turn.text}`;
   }
 
   /** Context for the intent prompt: user, open items, decisions and open proposals – titles and metadata only, most relevant first. */
