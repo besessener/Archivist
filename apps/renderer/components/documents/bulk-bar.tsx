@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { FolderInput, PenLine, Tags, X } from 'lucide-react';
+import { FolderInput, PenLine, RefreshCw, Tags, X } from 'lucide-react';
 import { Field, Notice } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
@@ -15,8 +15,9 @@ import type { ArchiveResultRecord, DocRecord } from '@/lib/types';
 import { parseList } from '@/lib/utils';
 import { CaseSelect } from '@/components/knowledge/case-dialog';
 import { RenameDialog } from './rename-dialog';
+import { ReprocessDialog } from './reprocess-dialog';
 
-type Result = { kind: 'assign'; updated: number } | { kind: 'move' | 'rename'; result: ArchiveResultRecord };
+type Result = { kind: 'assign'; updated: number } | { kind: 'reprocess' } | { kind: 'move' | 'rename'; result: ArchiveResultRecord };
 
 function AssignDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: () => void; onDone: (r: Result) => void }) {
   const [topic, setTopic] = useState('');
@@ -144,7 +145,7 @@ function MoveDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: () 
 }
 
 function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => void }) {
-  const r = result.kind === 'assign' ? null : result.result;
+  const r = result.kind === 'move' || result.kind === 'rename' ? result.result : null;
   const problems = r ? r.items.filter((i) => i.outcome !== 'success') : [];
   return (
     <Notice
@@ -152,9 +153,11 @@ function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => vo
       title={
         result.kind === 'assign'
           ? `${plural(result.updated, ['Dokument', 'Dokumente'])} zugeordnet`
-          : result.kind === 'rename'
-            ? 'Umbenennen abgeschlossen'
-            : 'Verschieben abgeschlossen'
+          : result.kind === 'reprocess'
+            ? 'Neuverarbeitung gestartet'
+            : result.kind === 'rename'
+              ? 'Umbenennen abgeschlossen'
+              : 'Verschieben abgeschlossen'
       }
       role="status"
       data-testid="bulk-result"
@@ -172,6 +175,7 @@ function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => vo
           ))}
         </ul>
       )}
+      {result.kind === 'reprocess' && <p>Den Fortschritt siehst du bei den Aufgaben. Neue Metadaten erscheinen als Vorschlag im jeweiligen Dokument.</p>}
       {result.kind === 'assign' && <p>Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.</p>}
       <Button size="icon-sm" variant="ghost" className="absolute right-1 top-1" aria-label="Hinweis schließen" onClick={onDismiss}>
         <X aria-hidden />
@@ -182,7 +186,7 @@ function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => vo
 
 /** Bulk actions for a multi-selection of documents (#291, #304). */
 export function BulkBar({ docs, onClear, onDone }: { docs: DocRecord[]; onClear: () => void; onDone: () => void }) {
-  const [dialog, setDialog] = useState<'assign' | 'move' | 'rename' | null>(null);
+  const [dialog, setDialog] = useState<'assign' | 'move' | 'rename' | 'reprocess' | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const finish = (r: Result) => {
     setDialog(null);
@@ -210,6 +214,9 @@ export function BulkBar({ docs, onClear, onDone }: { docs: DocRecord[]; onClear:
           <Button size="sm" variant="outline" onClick={() => setDialog('rename')} data-testid="bulk-rename">
             <PenLine aria-hidden /> Umbenennen
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setDialog('reprocess')} data-testid="bulk-reprocess">
+            <RefreshCw aria-hidden /> Neu verarbeiten
+          </Button>
           <Button size="sm" variant="ghost" onClick={onClear} data-testid="bulk-clear">
             Auswahl aufheben
           </Button>
@@ -218,6 +225,9 @@ export function BulkBar({ docs, onClear, onDone }: { docs: DocRecord[]; onClear:
       {result && <ResultNote result={result} onDismiss={() => setResult(null)} />}
       {dialog === 'assign' && <AssignDialog docs={docs} onClose={() => setDialog(null)} onDone={finish} />}
       {dialog === 'move' && <MoveDialog docs={docs} onClose={() => setDialog(null)} onDone={finish} />}
+      {dialog === 'reprocess' && (
+        <ReprocessDialog ids={docs.map((d) => d.id)} onClose={() => setDialog(null)} onStarted={() => finish({ kind: 'reprocess' })} />
+      )}
       {dialog === 'rename' && <RenameDialog docs={docs} onClose={() => setDialog(null)} onDone={(r) => finish({ kind: 'rename', result: r })} />}
     </div>
   );

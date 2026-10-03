@@ -13,6 +13,7 @@ import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { IpcOutput } from '@archivist/shared';
 import { ArchiveRootSection } from './archive-root';
+import { IndexSection } from './index-section';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 import { TrashSection } from './trash-section';
 
@@ -191,6 +192,8 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           </div>
         </div>
       </Section>
+
+      <IndexSection />
 
       <TrashSection />
 

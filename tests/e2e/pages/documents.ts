@@ -19,6 +19,7 @@ export function initDocuments(page: Page) {
     bulk: {
       selectAll: page.getByTestId('documents-select-all'),
       rename: page.getByTestId('bulk-rename'),
+      reprocess: page.getByTestId('bulk-reprocess'),
       result: page.getByTestId('bulk-result'),
     },
     /** The detail dialog of a document, with „In den Papierkorb“. */
@@ -27,6 +28,27 @@ export function initDocuments(page: Page) {
       open: page.getByTestId('doc-open'),
       trash: page.getByTestId('doc-trash'),
       confirmTrash: page.getByTestId('doc-trash-confirm'),
+      edit: page.getByTestId('doc-edit'),
+      editTitle: page.getByTestId('doc-edit-title'),
+      confirmSave: page.getByTestId('confirm-dialog-confirm'),
+      save: page.getByTestId('doc-save'),
+      reprocess: page.getByTestId('doc-reprocess'),
+      /** New metadata proposed for the archived document (#220). */
+      reanalysis: {
+        proposal: page.getByTestId('reanalysis-proposal'),
+        changes: page.getByTestId('reanalysis-change'),
+        apply: page.getByTestId('reanalysis-apply'),
+        confirmApply: page.getByTestId('reanalysis-apply-confirm'),
+        discard: page.getByTestId('reanalysis-discard'),
+      },
+    },
+    proposalBadge: page.getByTestId('document-has-proposal'),
+    reprocessDialog: {
+      root: page.getByTestId('reprocess-dialog'),
+      reread: page.getByTestId('reprocess-reread'),
+      estimate: page.getByTestId('bulk-consent-estimate'),
+      allowLlm: page.getByTestId('reprocess-llm'),
+      start: page.getByTestId('reprocess-start'),
     },
     toasts: page.getByTestId('toast'),
     renameDialog: {

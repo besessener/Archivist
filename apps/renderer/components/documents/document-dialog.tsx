@@ -18,6 +18,7 @@ import { useRun } from '@/lib/use-run';
 import type { DocRecord } from '@/lib/types';
 import { parseList } from '@/lib/utils';
 import { DocumentEditFields, DocumentMeta, type MetadataForm } from './document-meta';
+import { ReanalysisSection } from './reanalysis-section';
 import { TrashDocumentButton } from './trash-document';
 
 type Change = [label: string, before: string, after: string];
@@ -125,8 +126,18 @@ function DocumentDetail({ doc, onChanged, onTrashed }: { doc: DocRecord; onChang
 
       {!editing ? <DocumentMeta doc={doc} extra={extra} /> : <DocumentEditFields form={form} extra={extra} />}
       {doc.textPreview && !editing && (
-        <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{doc.textPreview}</p>
+        <div
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region must be reachable by keyboard (axe scrollable-region-focusable)
+          tabIndex={0}
+          role="region"
+          aria-label="Textvorschau"
+          className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground"
+        >
+          {doc.textPreview}
+        </div>
       )}
+
+      {(doc.status === 'archived' || doc.status === 'indexed_only') && !editing && <ReanalysisSection doc={doc} onChanged={onChanged} />}
 
       {(doc.status === 'archived' || doc.status === 'indexed_only') && <RelatedEntries id={doc.id} link={{ name: doc.title }} />}
 

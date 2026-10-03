@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Ban, ExternalLink, FolderX, Microscope } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { AnalyzeAll } from './analyze-all';
 import { EmptyState, ErrorNote, Loading, Notice } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -96,6 +97,8 @@ export function ScanResults() {
           </Button>
         </div>
       </div>
+
+      <AnalyzeAll />
 
       {summary && (
         <Notice title="Letzte Suche" data-testid="scan-summary">
