@@ -49,6 +49,7 @@ export type RelationStatus = z.infer<typeof RelationStatus>;
 export const ErrorCategory = z.enum([
   'validation_error',
   'database_error',
+  'database_corrupt',
   'filesystem_error',
   'parser_error',
   'llm_error',

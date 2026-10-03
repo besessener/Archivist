@@ -179,6 +179,30 @@ describe('Archiving: the inbox copy cannot be removed after the commit', () => {
   });
 });
 
+describe('Archiving: the audit entry is part of the commit', () => {
+  it('a failing audit write rolls the whole archiving back and keeps every file', async () => {
+    const { src, id } = await imported('audit.txt', 'Dokument ohne Protokolleintrag');
+    const staged = row(id).stagedPath!;
+    vi.spyOn(app.services.audit, 'log').mockImplementation(() => {
+      throw new Error('SQLITE_FULL: database or disk is full');
+    });
+
+    const res = await app.call('documents:archive', {
+      items: [{ documentId: id, mode: 'copy', categoryPath: 'work/notes', topic: TOPIC }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    } as never);
+
+    expect(res.ok).toBe(false);
+    expect(row(id).status).not.toBe('archived');
+    expect(row(id).archiveRelPath).toBeNull();
+    expect(filesIn(archiveRoot())).toEqual([]);
+    expect(fs.existsSync(src)).toBe(true);
+    expect(fs.existsSync(staged)).toBe(true);
+  });
+});
+
 describe('Archiving: the audit entry exists before any source is deleted', () => {
   it('moving logs the undoable entry first and corrects it when the original cannot be removed', async () => {
     const { src, id } = await imported('move.txt', 'Zu verschiebendes Dokument');

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DatabaseService, type MigrationStatus } from '../db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from '../context';
 import { AuditService } from '../services/audit';
+import { applyPendingRestore } from '../services/backup-restore';
 import { CategoryService } from '../services/categories';
 import { EmbeddingService } from '../services/embedding';
 import { JobQueueService } from '../services/jobs';
@@ -53,6 +54,8 @@ export function createBaseServices(options: CreateServicesOptions) {
   fs.mkdirSync(paths.archive, { recursive: true });
 
   const logger = new Logger(paths.logs, settings.get().logs.level);
+  const restore = applyPendingRestore(paths, paths.archive);
+  if (restore) logger.info('backup', 'Database restored from a backup', { ...restore });
   const database = new DatabaseService(path.join(paths.database, 'archivist.db'), logger);
   const migration: MigrationStatus = database.migrate(options.migrationsFolder, paths.backups);
   logger.info('app', 'Database ready', { migrations: migration });

@@ -9,6 +9,11 @@ import * as schema from './schema';
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
+const DATABASE_CORRUPT =
+  'Die Datenbank von Archivist ist beschädigt. Deine Dokumente im Archivordner sind davon nicht betroffen. Archivist kann die Datenbank aus einem Backup wiederherstellen.';
+/** SQLite result codes (better-sqlite3 error codes) that mean the file itself is damaged. */
+const CORRUPT_CODES = new Set(['SQLITE_CORRUPT', 'SQLITE_NOTADB', 'SQLITE_CORRUPT_VTAB', 'SQLITE_CORRUPT_INDEX', 'SQLITE_CORRUPT_SEQUENCE']);
+
 const PRE_MIGRATION_PREFIX = 'vor-migration-';
 const PRE_MIGRATION_KEEP = 3;
 const NEWER_DATABASE =
@@ -38,11 +43,28 @@ export class DatabaseService {
         details: err instanceof Error ? err.message : String(err),
       });
     }
+    this.assertIntact(file);
     this.sqlite.pragma('journal_mode = WAL');
     this.sqlite.pragma('synchronous = FULL'); // WAL+NORMAL does not sync commits; originals are deleted after them
     this.sqlite.pragma('foreign_keys = ON');
     this.sqlite.pragma('busy_timeout = 5000');
     this.db = drizzle(this.sqlite, { schema });
+  }
+
+  /** Fails with a recoverable error when SQLite finds the file damaged (a quick structural check, no data is read). */
+  private assertIntact(file: string): void {
+    if (file === ':memory:') return;
+    let problem: string | null = null;
+    try {
+      const result = this.sqlite.pragma('quick_check(1)', { simple: true });
+      if (result !== 'ok') problem = String(result);
+    } catch (err) {
+      if (!CORRUPT_CODES.has((err as { code?: string }).code ?? '')) throw err;
+      problem = err instanceof Error ? err.message : String(err);
+    }
+    if (problem === null) return;
+    this.sqlite.close();
+    throw new AppError('database_corrupt', DATABASE_CORRUPT, { details: problem });
   }
 
   /** Applies the Drizzle migrations; refuses a database of a newer app, snapshots into `backupDir` before pending ones. */

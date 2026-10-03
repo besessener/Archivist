@@ -9,6 +9,7 @@ declare global {
 const CATEGORY_TITLES: Record<ErrorCategory, string> = {
   validation_error: 'Ungültige Eingabe',
   database_error: 'Datenbankfehler',
+  database_corrupt: 'Datenbank beschädigt',
   filesystem_error: 'Dateifehler',
   parser_error: 'Datei konnte nicht gelesen werden',
   llm_error: 'Fehler bei der KI-Verbindung',

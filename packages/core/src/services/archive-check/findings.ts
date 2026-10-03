@@ -1,5 +1,7 @@
 import type { AppContext } from '../../context';
 import { sha256Text } from '../../util/hash';
+import type { WorkerPool } from '../../workers/pool';
+import type { AppStateService } from '../app-state';
 import type { ContradictionService } from '../contradictions';
 import type { DecisionService } from '../decisions';
 import type { InsightService } from '../insights';
@@ -18,6 +20,8 @@ export interface CheckDeps {
   contradictions: ContradictionService;
   insights: InsightService;
   notifications: NotificationService;
+  pool: WorkerPool;
+  appState: AppStateService;
 }
 
 /** What one run of the archive check found; hints whose key is missing afterwards are closed. */

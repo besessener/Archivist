@@ -1,4 +1,5 @@
 import fsp from 'node:fs/promises';
+import { scheduleRestore } from './backup-restore';
 import path from 'node:path';
 import type { BackupInfo, Settings } from '@archivist/shared';
 import { and, count, eq, isNotNull } from 'drizzle-orm';
@@ -208,6 +209,19 @@ export class BackupService {
       }
     }
     return out.sort((a, b) => compareDescending(a.createdAt, b.createdAt) || compareDescending(a.name, b.name));
+  }
+
+  /** Schedules the restore of a backup for the next start; the current database is kept next to the restored one. */
+  requestRestore(name: string): void {
+    scheduleRestore(this.ctx.paths, name);
+    this.audit.log({
+      action: 'backup.restore',
+      actor: 'user',
+      trigger: 'manual',
+      confirmed: true,
+      paths: [path.join(this.ctx.paths.backups, name)],
+      after: { name },
+    });
   }
 
   /** All valid backups with their total (recursive) size, newest first. */

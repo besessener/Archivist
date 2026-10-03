@@ -14,7 +14,7 @@ import { call } from '@/lib/ipc';
 import { formatBytes, formatDateTime } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
-import { LOCAL_TIME, type AuditEntry } from '@archivist/shared';
+import { LOCAL_TIME, type AuditEntry, type BackupInfo } from '@archivist/shared';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 import { PathText } from '@/components/common/path-text';
 
@@ -127,6 +127,8 @@ export function BackupsTab({ settings, reload }: TabProps) {
   const list = useQuery('backup:list', {}, { scopes: ['settings', 'audit'] });
   const [creating, setCreating] = useState<'metadata' | 'full' | null>(null);
   const [keep, setKeep] = useState(String(settings.backups.keep));
+  const [restoring, setRestoring] = useState<BackupInfo | null>(null);
+  const [restartPending, setRestartPending] = useState(false);
 
   async function create({ includeArchive }: { includeArchive: boolean }) {
     setCreating(includeArchive ? 'full' : 'metadata');
@@ -202,6 +204,11 @@ export function BackupsTab({ settings, reload }: TabProps) {
         </div>
       </Section>
       <Section title="Vorhandene Backups">
+        {restartPending && (
+          <Notice tone="info" data-testid="backup-restart-notice">
+            Die Wiederherstellung ist vorbereitet. Archivist startet neu und setzt das Backup beim Start ein.
+          </Notice>
+        )}
         {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
         {!list.data && list.loading && <Loading />}
         {list.data && list.data.length === 0 && <EmptyState title="Noch keine Backups" />}
@@ -213,6 +220,9 @@ export function BackupsTab({ settings, reload }: TabProps) {
                 <TH>Art</TH>
                 <TH>Größe</TH>
                 <TH>Ort</TH>
+                <TH>
+                  <span className="sr-only">Wiederherstellen</span>
+                </TH>
               </tr>
             </THead>
             <TBody>
@@ -226,12 +236,42 @@ export function BackupsTab({ settings, reload }: TabProps) {
                   <TD className="text-xs text-muted-foreground">
                     <PathText path={b.path} />
                   </TD>
+                  <TD>
+                    <Button variant="outline" size="sm" disabled={restartPending} onClick={() => setRestoring(b)} data-testid="backup-restore">
+                      Wiederherstellen
+                    </Button>
+                  </TD>
                 </TR>
               ))}
             </TBody>
           </Table>
         )}
       </Section>
+      <ConfirmDialog
+        open={restoring !== null}
+        onOpenChange={(o) => !o && setRestoring(null)}
+        title="Backup wiederherstellen?"
+        description="Archivist ersetzt die aktuelle Datenbank durch den Stand dieses Backups und startet neu. Änderungen seit diesem Backup gehen in der Datenbank verloren; die bisherige Datenbank bleibt im Datenordner erhalten. Dateien in deinem Archivordner werden nicht gelöscht."
+        confirmLabel="Wiederherstellen und neu starten"
+        confirmTestId="backup-restore-confirm"
+        destructive
+        onConfirm={async () => {
+          if (!restoring) return;
+          const result = await run(() => call('backup:restore', { name: restoring.name, confirmed: true }), {
+            success: 'Wiederherstellung vorbereitet.',
+          });
+          if (result) {
+            setRestoring(null);
+            setRestartPending(true);
+          }
+        }}
+      >
+        {restoring && (
+          <p className="text-sm">
+            Backup vom <strong>{formatDateTime(restoring.createdAt)}</strong> ({restoring.kind === 'full' ? 'vollständig' : 'nur Metadaten'})
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

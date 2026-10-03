@@ -14,7 +14,7 @@ import { assignmentNames, type ArchivePlanner, type ArchiveTarget, type PlannedA
 import type { DocRow } from './documents';
 import type { RelationChangeSet } from './knowledge-graph';
 import type { ArchiveDeps } from './archive-deps';
-import { archivedEntry, plannedRemovals, type ArchivedEntryInput } from './archive-entry';
+import { archivedEntry, plannedRemovals, type ArchivedEntryInput, type PlannedRemovals } from './archive-entry';
 
 /** What one archiving needs once its plan has passed every check. */
 interface Archiving {
@@ -39,14 +39,6 @@ interface RemovedSources {
 }
 
 const NO_COPY: ArchivedCopy = { targetAbs: null, archiveRel: null };
-
-interface CommitState {
-  source: string;
-  copy: ArchivedCopy;
-  categoryPath: string | null;
-  updatedAt: string;
-  planned: ArchivedEntryInput['removed'];
-}
 
 function snapshotBefore(row: DocRow): ArchiveUndoData['before'] {
   return {
@@ -150,15 +142,20 @@ export class ArchiveExecutor {
     const source = plan.item.sourcePath!;
     const copy = req.mode === 'index_only' ? NO_COPY : await this.copyToArchive(source, { target: plan.target!, sha256: row.sha256 });
     const updatedAt = nowIso();
-    // logged with the commit, before any source is deleted; an interrupted run leaves identical files that undo accepts as restored
+    // logged in the commit, before any source is deleted; an interrupted run leaves identical files that undo accepts as already restored
     const planned = req.mode === 'index_only' ? NOTHING_REMOVED : plannedRemovals(row, req.mode);
-    const committed = await this.commit(archiving, { source, copy, categoryPath: plan.target?.categoryPath ?? null, updatedAt, planned });
-    const entry = { source, copy, relations: committed.relations, afterUpdatedAt: updatedAt };
+    const { auditId, relationChanges } = await this.commit(archiving, {
+      copy,
+      categoryPath: plan.target?.categoryPath ?? null,
+      updatedAt,
+      entry: { source, removed: planned },
+    });
+    const entry = { source, copy, relations: relationChanges, afterUpdatedAt: updatedAt };
     const removed = req.mode === 'index_only' ? NOTHING_REMOVED : await this.removeSources(row, req.mode);
-    // like cleanupInbox: clearing the inbox reference keeps updatedAt, so undo data written before stays valid
+    // like cleanupInbox: clearing the inbox reference keeps updatedAt, so the undo data written with the commit stays valid
     if (removed.removedStaged) this.db.update(documents).set({ stagedPath: null }).where(eq(documents.id, row.id)).run();
     if (removed.removedStaged !== planned.removedStaged || removed.removedSource !== planned.removedSource)
-      this.deps.audit.amend(committed.auditId, archivedEntry(archiving, { ...entry, removed }));
+      this.deps.audit.amend(auditId, archivedEntry(archiving, { ...entry, removed }));
     // From here on the archiving is committed and undoable: follow-up steps may only add warnings.
     await this.reindexAfterCommit(row.id, removed.warnings);
     this.deps.ctx.events.emit('document:archived', { documentId: row.id, sourcePath: row.sourcePath });
@@ -168,13 +165,7 @@ export class ArchiveExecutor {
     } catch (err) {
       this.deps.ctx.logger.error('archive', 'Could not create proposals from the document', { documentId: row.id, error: err });
     }
-    return {
-      documentId: row.id,
-      outcome: 'success',
-      targetPath: copy.targetAbs,
-      message: [successMessage(req.mode), ...removed.warnings].join(' '),
-      auditId: committed.auditId,
-    };
+    return { documentId: row.id, outcome: 'success', targetPath: copy.targetAbs, message: [successMessage(req.mode), ...removed.warnings].join(' '), auditId };
   }
 
   private async copyToArchive(source: string, verified: { target: ArchiveTarget; sha256: string }): Promise<ArchivedCopy> {
@@ -197,13 +188,16 @@ export class ArchiveExecutor {
   }
 
   /** Database, knowledge graph and audit entry in one transaction; on failure the copy just made is removed again. */
-  private async commit(archiving: Archiving, state: CommitState): Promise<{ auditId: string; relations: RelationChangeSet }> {
+  private async commit(
+    archiving: Archiving,
+    state: { copy: ArchivedCopy; categoryPath: string | null; updatedAt: string; entry: { source: string; removed: PlannedRemovals } },
+  ): Promise<{ auditId: string; relationChanges: RelationChangeSet }> {
     try {
       return this.deps.ctx.database.transaction(() => {
         // only relations the archiving created or changed go into the undo data, never pre-existing (e.g. rejected) ones
-        const relations = this.deps.graph.trackRelationChanges(archiving.row.id, () => this.writeArchived(archiving, state)).changes;
-        const { source, copy, planned, updatedAt } = state;
-        return { auditId: this.logArchived(archiving, { source, copy, relations, removed: planned, afterUpdatedAt: updatedAt }), relations };
+        const { changes } = this.deps.graph.trackRelationChanges(archiving.row.id, () => this.writeArchived(archiving, state));
+        const auditId = this.logArchived(archiving, { ...state.entry, copy: state.copy, relations: changes, afterUpdatedAt: state.updatedAt });
+        return { auditId, relationChanges: changes };
       });
     } catch (err) {
       const targetAbs = state.copy.targetAbs;
@@ -218,7 +212,7 @@ export class ArchiveExecutor {
     }
   }
 
-  private writeArchived(archiving: Archiving, state: CommitState): void {
+  private writeArchived(archiving: Archiving, state: { copy: ArchivedCopy; categoryPath: string | null; updatedAt: string }): void {
     const { req, row, proposal } = archiving;
     const { categoryPath, updatedAt } = state;
     const { graph } = this.deps;
