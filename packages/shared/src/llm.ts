@@ -1,9 +1,7 @@
 import { z } from 'zod';
-import { ArchiveLocationProposal, DecisionField, DecisionKind } from './domain';
 import { Confidence, RelationType } from './common';
-
-export { AgentActionProposal, ArchiveLocationProposal } from './domain';
-export { SourceReference } from './common';
+import { DecisionField, DecisionKind } from './decisions';
+import { ArchiveLocationProposal } from './documents';
 
 /** LLMs tend to return null instead of omitting fields. */
 const opt = <T extends z.ZodType>(t: T) => t.nullish();
@@ -81,7 +79,7 @@ export const ChatIntent = z.object({
   confidence: Confidence,
   rationale: z.string().default(''),
   query: opt(z.string()).describe('Such- bzw. Fragetext'),
-  alternativeQueries: opt(z.array(z.string()).transform((a) => a.slice(0, 4))).describe(
+  alternativeQueries: opt(z.array(z.string()).transform((queries) => queries.slice(0, 4))).describe(
     'Nur bei Fragen/Suchen: 2–4 weitere Suchformulierungen (Synonyme, Umschreibungen, dieselben Kernbegriffe auf Englisch bzw. Deutsch)',
   ),
   topic: opt(z.string()),

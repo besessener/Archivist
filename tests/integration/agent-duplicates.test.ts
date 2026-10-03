@@ -1,34 +1,16 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RefStore, riskOf, type AgentTool, type ToolContext, type ToolOutput } from '../../packages/core/src/agent/registry';
+import { riskOf, type AgentTool, type ToolContext, type ToolOutput } from '../../packages/core/src/agent/registry';
 import type { ToolDeps } from '../../packages/core/src/agent/tools/common';
 import { duplicateTools } from '../../packages/core/src/agent/tools/duplicates';
 import { documents } from '../../packages/core/src/db/schema';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
+import { emptyToolContext } from '../helpers/agent';
 
 let app: TestApp;
 let tools: Map<string, AgentTool>;
 let ctx: ToolContext;
-
-const newCtx = (): ToolContext => ({
-  runId: 'r1',
-  conversationId: null,
-  trigger: 'chat',
-  mode: 'auto',
-  refs: new RefStore(),
-  shared: new Set(),
-  signal: new AbortController().signal,
-  userText: '',
-  lastAnswer: null,
-  files: [],
-  applied: [],
-  changes: [],
-  changedCount: 0,
-  tainted: null,
-  actionIds: [],
-});
 
 function depsOf(t: TestApp): ToolDeps {
   const s = t.services;
@@ -66,13 +48,14 @@ function depsOf(t: TestApp): ToolDeps {
     capture: s.capture,
     answers: s.answers,
     enqueueConsistency: () => undefined,
+    logger: s.ctx.logger,
   };
 }
 
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   tools = new Map(duplicateTools(depsOf(app)).map((t) => [t.name, t]));
-  ctx = newCtx();
+  ctx = emptyToolContext();
 });
 afterEach(async () => {
   await app.cleanup();
@@ -87,22 +70,15 @@ const LONG = 'Angebot für die neue Küche mit Einbaugeräten, Arbeitsplatte aus
 
 async function archived(name: string, content: string, opts: { loc?: string; date?: string | null; title?: string } = {}): Promise<string> {
   const loc = opts.loc ?? 'private/haus';
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Angebot',
-    title: opts.title ?? name.replace(/\.\w+$/, ''),
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: null,
-    project: null,
-    persons: [],
-    dates: [],
-    documentDate: opts.date ?? null,
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({
+      title: opts.title ?? name.replace(/\.\w+$/, ''),
+      summary: `Zusammenfassung ${name}`,
+      categoryPath: loc,
+      docType: 'Angebot',
+      documentDate: opts.date ?? null,
+    }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -116,8 +92,7 @@ async function archived(name: string, content: string, opts: { loc?: string; dat
 }
 
 const row = (id: string) => app.services.documents.findRow(id);
-const abs = (id: string) => path.join(app.services.settings.get().archiveRoot, ...row(id)!.archiveRelPath!.split('/'));
-const lastAudit = (action: string) => app.services.audit.list(50).find((e) => e.action === action);
+const lastAudit = (action: string) => app.services.audit.list({ limit: 50 }).find((e) => e.action === action);
 
 describe('agent duplicate tools', () => {
   it('finds exact duplicates, near duplicates and versions with reason and newest document', async () => {
@@ -155,7 +130,7 @@ describe('agent duplicate tools', () => {
 
     const marked = await call('mark_different', { a: ctx.refs.doc(v1), b: ctx.refs.doc(v2) });
     expect(marked.content).toContain('sind verschieden');
-    expect(app.services.graph.rejectedBetween(v1, v2, { includeDuplicateOf: true })?.relationType).toBe('duplicate_of');
+    expect(app.services.graph.rejectedBetween({ a: v1, b: v2, includeDuplicateOf: true })?.relationType).toBe('duplicate_of');
     expect(lastAudit('relation.markDifferent')).toMatchObject({ undoable: false });
 
     const again = await call('find_duplicates', { kinds: ['versions'] });
@@ -213,28 +188,28 @@ describe('agent duplicate tools', () => {
     expect(row(keep)!.archiveRelPath).toBe('private/vertraege/Vertrag final.txt');
   });
 
-  it('deletes duplicates for good, but never the kept document or a file outside the archive', async () => {
+  it('moves duplicates into the trash, never the kept document; undo brings them back', async () => {
     const keep = await archived('Foto-Liste.txt', 'Liste A', { title: 'Foto-Liste' });
     const dup = await archived('Foto-Liste Kopie.txt', 'Liste A Kopie', { title: 'Foto-Liste Kopie' });
-    const dupFile = abs(dup);
-    const original = row(dup)!.sourcePath!;
-    app.services.graph.link(dup, keep, 'duplicate_of', { status: 'proposed' });
+    app.services.graph.link({ sourceId: dup, targetId: keep, relationType: 'duplicate_of' }, { status: 'proposed' });
 
     const out = await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup), ctx.refs.doc(keep)], action: 'delete' });
 
-    expect(out).toMatchObject({ changed: 1, change: '1 Duplikat(e) endgültig gelöscht' });
+    expect(out).toMatchObject({ changed: 1, change: '1 Duplikat(e) in den Papierkorb gelegt' });
     expect(row(dup)).toBeUndefined();
-    expect(fs.existsSync(dupFile)).toBe(false);
-    expect(fs.existsSync(original), "the user's original stays").toBe(true);
-    expect(fs.existsSync(abs(keep))).toBe(true);
-    expect(app.services.graph.getEntity(dup)).toBeUndefined();
-    expect(app.services.graph.relationsOf(keep, { types: ['duplicate_of'] })).toEqual([]);
-    expect(lastAudit('document.delete')).toMatchObject({ undoable: false, entityIds: [dup], before: { title: 'Foto-Liste Kopie' } });
+    expect(row(keep)).toBeDefined();
+    const trashed = lastAudit('document.trash')!;
+    expect(trashed).toMatchObject({ undoable: true, entityIds: [dup], trigger: 'agent' });
+
+    await app.services.undo.undo(trashed.id);
+
+    expect(row(dup)).toMatchObject({ title: 'Foto-Liste Kopie' });
+    expect(app.services.graph.relationsOf(keep, { types: ['duplicate_of'] })).toHaveLength(1);
   });
 
   it('merges duplicate topics through the existing merge flow', async () => {
-    const keep = app.services.graph.ensureEntity('topic', 'Küche');
-    const dup = app.services.graph.ensureEntity('topic', 'Kueche neu');
+    const keep = app.services.graph.ensureEntity({ type: 'topic', name: 'Küche' });
+    const dup = app.services.graph.ensureEntity({ type: 'topic', name: 'Kueche neu' });
 
     const out = await call('merge_entries', { kind: 'topic', keep: ctx.refs.entry(keep.id), duplicate: ctx.refs.entry(dup.id) });
 

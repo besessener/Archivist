@@ -3,11 +3,9 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
-/**
- * Fault injection for archiving and relocating: file system calls fail halfway (EBUSY, ENOSPC, EXDEV).
- * Afterwards the state must be unambiguous and the reported message must match it.
- */
+// File system calls fail halfway (EBUSY, ENOSPC, EXDEV): the state stays unambiguous and the message matches it.
 
 const TOPIC = 'Bildungsurlaub 2026';
 
@@ -49,21 +47,7 @@ const diskFullDuringCopy = () =>
   });
 
 function classifyAs(name: string, loc: string, topic: string | null) {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: topic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc, mainTopic: topic }));
 }
 
 async function imported(name: string, content: string, loc = 'work/notes', topic: string | null = TOPIC) {
@@ -103,7 +87,7 @@ describe('Archiving: the inbox copy cannot be removed after the commit', () => {
     expect(row(id)).toMatchObject({ status: 'archived', stagedPath: staged });
     expect(fs.readFileSync(res.items[0]!.targetPath!, 'utf8')).toBe('Im Viewer geöffnetes Dokument');
     expect(fs.existsSync(staged)).toBe(true);
-    expect(app.services.audit.list(10, true).some((e) => e.id === res.items[0]!.auditId)).toBe(true);
+    expect(app.services.audit.list({ limit: 10, onlyUndoable: true }).some((e) => e.id === res.items[0]!.auditId)).toBe(true);
 
     // still locked: the cleanup leaves the copy and the mark in place
     expect(await app.services.archive.cleanupInbox()).toBe(0);
@@ -287,7 +271,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     await archived('a.txt', 'Inhalt A', 'work/a');
     await archived('b.txt', 'Inhalt B', 'work/a');
     const c = await archived('c.txt', 'Inhalt C', 'work/c');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
     expect(insight.recommendedActionId).toBeTruthy();
     return { c, insight };
@@ -307,7 +291,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
 
     // the cause is gone; the next archive check offers a fresh proposal on the same hint
     fs.writeFileSync(abs(c), 'Inhalt C');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const again = app.services.insights.get(insight.id);
     expect(again.status).toBe('open');
     expect(again.recommendedActionId).not.toBe(insight.recommendedActionId);
@@ -323,7 +307,7 @@ describe('Relocation proposal: „0 verschoben“ is not a success', () => {
     await archived('b.txt', 'Inhalt B', 'work/a');
     await archived('c.txt', 'Inhalt C', 'work/c');
     const d = await archived('d.txt', 'Inhalt D', 'work/d');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const insight = app.services.insights.list('open').find((i) => i.kind === 'scattered_documents')!;
     fs.appendFileSync(abs(d), ' – bearbeitet');
 

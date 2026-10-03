@@ -51,7 +51,7 @@ describe('knowledge:createEntity ("Neu anlegen" on the knowledge page)', () => {
     const timeline = await app.ok('timeline:get', {});
     expect(timeline.some((e) => e.kind === 'event' && e.id === `event:${r.entity.id}` && e.date === '2026-10-01')).toBe(true);
     await vi.waitFor(async () => expect(await searchIds('Testing Day')).toContain(r.entity.id));
-    expect(app.services.audit.list(50).some((a) => a.action === 'event.create' && a.entityIds.includes(r.entity.id))).toBe(true);
+    expect(app.services.audit.list({ limit: 50 }).some((a) => a.action === 'event.create' && a.entityIds.includes(r.entity.id))).toBe(true);
   });
 
   it('reports an identical event (same title, same day) as existing and keeps other dates separate', async () => {
@@ -123,7 +123,7 @@ describe('NoteService (single note-creation path)', () => {
   });
 
   it('create() always adds a new note and links it', async () => {
-    const topic = app.services.graph.ensureEntity('topic', 'Garten');
+    const topic = app.services.graph.ensureEntity({ type: 'topic', name: 'Garten' });
     const n1 = await app.services.notes.create({ content: 'Rasen mähen', links: [{ targetId: topic.id, relationType: 'relates_to' }] });
     const n2 = await app.services.notes.create({ content: 'Rasen mähen' });
     expect(n1.id).not.toBe(n2.id);

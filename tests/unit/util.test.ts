@@ -6,7 +6,7 @@ import { Logger } from '../../packages/core/src/util/logger';
 import { redactSecrets } from '../../packages/core/src/util/redact';
 import { normalizeDateInput, parseGermanDate, promptNow } from '../../packages/core/src/util/dates';
 import { chunkText, nameSimilarity, searchStem } from '../../packages/core/src/util/text';
-import { chosenOption, polarity } from '../../packages/core/src/services/contradictions';
+import { chosenOption, polarity } from '../../packages/core/src/services/contradiction-rules';
 import { computeMissingFields, questionFor } from '../../packages/core/src/services/decisions';
 import { detectOpenItemSentences } from '../../packages/core/src/services/open-items';
 import { localEmbed } from '../../packages/core/src/services/embedding';
@@ -149,7 +149,7 @@ describe('other helper functions', () => {
   it('name similarity and chunking', () => {
     expect(nameSimilarity('prod-plat', 'ProdPlat')).toBeGreaterThan(0.9);
     expect(nameSimilarity('Hauskauf', 'Urlaub')).toBeLessThan(0.5);
-    const chunks = chunkText('Satz eins. '.repeat(400), 500, 50);
+    const chunks = chunkText('Satz eins. '.repeat(400), { size: 500, overlap: 50 });
     expect(chunks.length).toBeGreaterThan(5);
     expect(Math.max(...chunks.map((c) => c.length))).toBeLessThanOrEqual(520);
   });

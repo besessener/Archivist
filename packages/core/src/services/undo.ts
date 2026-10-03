@@ -8,16 +8,13 @@ export interface UndoHandler {
   run(data: unknown): Promise<string>;
 }
 
-/**
- * Undo foundation: handlers register per action type. Before undoing, it is checked
- * whether newer changes exist – they are never overwritten unnoticed.
- */
 /** Undo of one action made of several parts (e.g. a bulk assignment, #291): its steps, undone in reverse order. */
 export const COMPOSITE_UNDO_TYPE = 'composite';
 export interface CompositeUndoData {
   steps: Array<{ type: string; data: unknown }>;
 }
 
+/** Undo foundation: handlers register per action type; newer changes are never overwritten unnoticed. */
 export class UndoService {
   private readonly handlers = new Map<string, UndoHandler>();
 
@@ -27,22 +24,22 @@ export class UndoService {
   ) {
     this.register(COMPOSITE_UNDO_TYPE, {
       check: async (data) => {
-        const out: string[] = [];
-        for (const s of (data as CompositeUndoData).steps) out.push(...(await this.handler(s.type).check(s.data)));
-        return out;
+        const conflicts: string[] = [];
+        for (const step of (data as CompositeUndoData).steps) conflicts.push(...(await this.handler(step.type).check(step.data)));
+        return conflicts;
       },
       run: async (data) => {
         const messages: string[] = [];
-        for (const s of (data as CompositeUndoData).steps.toReversed()) messages.push(await this.handler(s.type).run(s.data));
+        for (const step of (data as CompositeUndoData).steps.toReversed()) messages.push(await this.handler(step.type).run(step.data));
         return messages.join(' ');
       },
     });
   }
 
   private handler(type: string): UndoHandler {
-    const h = this.handlers.get(type);
-    if (!h) throw new AppError('validation_error', `Kein Undo-Handler für „${type}“.`);
-    return h;
+    const found = this.handlers.get(type);
+    if (!found) throw new AppError('validation_error', `Kein Undo-Handler für „${type}“.`);
+    return found;
   }
 
   register(type: string, handler: UndoHandler): void {
@@ -53,8 +50,7 @@ export class UndoService {
     const row = this.audit.getRow(auditId);
     if (!row.undoType) throw new AppError('validation_error', 'Diese Aktion kann nicht rückgängig gemacht werden.');
     if (row.undoneAt) return { undone: false, message: 'Die Aktion wurde bereits rückgängig gemacht.', conflicts: [] };
-    const handler = this.handlers.get(row.undoType);
-    if (!handler) throw new AppError('validation_error', `Kein Undo-Handler für „${row.undoType}“.`);
+    const handler = this.handler(row.undoType);
     const conflicts = await handler.check(row.undoData);
     if (conflicts.length > 0) {
       this.ctx.logger.warn('undo', 'Undo rejected because of conflicts', { auditId, conflicts });

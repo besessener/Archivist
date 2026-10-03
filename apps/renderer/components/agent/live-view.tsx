@@ -6,23 +6,20 @@ import { AgentProgress } from '@archivist/shared';
 import { Button } from '@/components/ui/button';
 import { call } from '@/lib/ipc';
 import { subscribe } from '@/lib/events';
+import { useToast } from '@/lib/toast';
 import { RUN_STATUS, StepList, usageLine } from './run-utils';
 
 type Progress = AgentProgress;
 
 function parseProgress(payload: unknown): Progress | null {
-  const res = AgentProgress.safeParse(payload);
-  return res.success ? res.data : null;
+  const result = AgentProgress.safeParse(payload);
+  return result.success ? result.data : null;
 }
 
-/**
- * Live state of the agent run of a conversation (#300): loaded on mount / conversation switch via
- * `agent:conversation` (survives switching tabs and reloads) and kept current with `agent:progress`.
- * `pending`: a request of this view is running; for a new conversation (id still unknown) the first chat run
- * that reports progress is adopted.
- */
-export function useAgentProgress(conversationId: string | null, pending: boolean): Progress | null {
+/** Live state of a conversation's agent run (#300); while `pending` in a new conversation, the first running chat run is adopted. */
+export function useAgentProgress({ conversationId, pending }: { conversationId: string | null; pending: boolean }): Progress | null {
   const [progress, setProgress] = useState<Progress | null>(null);
+  const { reportError } = useToast();
   const adopted = useRef<string | null>(null);
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
@@ -39,7 +36,7 @@ export function useAgentProgress(conversationId: string | null, pending: boolean
           // an event may already have arrived in the meantime – it is newer
           if (p) setProgress((prev) => prev ?? p);
         })
-        .catch(() => undefined);
+        .catch((err: unknown) => alive && reportError(err, undefined, 'Agentenfortschritt konnte nicht geladen werden'));
     } else if (pendingRef.current) {
       // a new conversation whose id is not known here yet (e.g. back from another tab): adopt its running run
       call('agent:active', {})
@@ -49,7 +46,7 @@ export function useAgentProgress(conversationId: string | null, pending: boolean
           adopted.current = p.runId;
           setProgress((prev) => prev ?? p);
         })
-        .catch(() => undefined);
+        .catch((err: unknown) => alive && reportError(err, undefined, 'Agentenfortschritt konnte nicht geladen werden'));
     }
     const off = subscribe('agent:progress', (payload) => {
       const p = parseProgress(payload);
@@ -67,7 +64,7 @@ export function useAgentProgress(conversationId: string | null, pending: boolean
       alive = false;
       off();
     };
-  }, [conversationId]);
+  }, [conversationId, reportError]);
 
   // A new request starts: forget the finished run shown before.
   useEffect(() => {
@@ -104,7 +101,7 @@ export function AgentLiveView({ progress, onStop, stopping }: { progress: Progre
         <span className="flex-1">{running ? (steps.length > 0 ? 'Archivist arbeitet …' : 'Archivist denkt nach …') : RUN_STATUS[progress.status].label}</span>
         {progress && (
           <span className="text-[11px]" data-testid="agent-live-usage">
-            {usageLine(progress.usage, progress.costUsd)}
+            {usageLine({ usage: progress.usage, costUsd: progress.costUsd })}
           </span>
         )}
         <Button variant="ghost" size="sm" onClick={onStop} disabled={stopping || !running} data-testid="chat-cancel">

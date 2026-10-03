@@ -51,7 +51,6 @@ export default tseslint.config(
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
     },
   },
-  // Accessibility in the renderer (strict). label-has-associated-control is checked by axe in the E2E tests.
   {
     files: ['tests/**/*.ts'],
     rules: {
@@ -59,6 +58,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-assignment': 'off',
     },
   },
+  // Accessibility in the renderer (strict). label-has-associated-control is checked by axe in the E2E tests.
   {
     files: ['apps/renderer/**/*.tsx'],
     plugins: { 'jsx-a11y': jsxA11y },
@@ -83,8 +83,8 @@ export default tseslint.config(
       'sonarjs/no-alphabetical-sort': 'off',
       // Date, key and intent detection are deliberately complex patterns and are covered by tests.
       'sonarjs/regex-complexity': 'off',
-      // Ratchet: the highest measured value is 59; the limit is lowered when functions are split up.
-      'sonarjs/cognitive-complexity': ['error', 60],
+      // Every function is at most 15 (SonarJS default) since the refactor; split a function instead of raising it.
+      'sonarjs/cognitive-complexity': ['error', 15],
     },
   },
 );

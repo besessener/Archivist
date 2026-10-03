@@ -188,13 +188,13 @@ function EntryRow({ entry, onEdit, onDelete }: { entry: Entry; onEdit: () => voi
 
 /** What Archivist has learned (#315): rules, workflows, corrections, preferences and knowledge. */
 export function AgentMemoryList() {
-  const q = useQuery('agent:memory', {}, { scopes: ['agent'] });
+  const query = useQuery('agent:memory', {}, { scopes: ['agent'] });
   const { run } = useRun();
   const { toast } = useToast();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const entries = useMemo(() => (q.data ?? []) as Entry[], [q.data]);
+  const entries = useMemo(() => (query.data ?? []) as Entry[], [query.data]);
 
   function exportJson() {
     const data = entries.map(({ kind, name, content, data: d, enabled }) => ({ kind, name, content, data: d ?? null, enabled }));
@@ -261,9 +261,9 @@ export function AgentMemoryList() {
           }}
         />
       </div>
-      {q.error && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}
-      {!q.data && q.loading && <Loading />}
-      {q.data && entries.length === 0 && (
+      {query.error && <ErrorNote error={query.error} onRetry={() => void query.refetch()} />}
+      {!query.data && query.loading && <Loading />}
+      {query.data && entries.length === 0 && (
         <EmptyState title="Noch nichts gelernt" description="Sag im Chat z. B. „Merk dir: …“ oder korrigiere eine Ablage – Archivist lernt daraus." />
       )}
       {KINDS.map(([kind, label, hint]) => {

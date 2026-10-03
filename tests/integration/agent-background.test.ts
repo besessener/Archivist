@@ -25,13 +25,13 @@ const watcher = () =>
       actions: app.services.actions,
       insights: app.services.insights,
     },
-    post: (title, content, existing) => app.services.chat.postAssistant(title, content, existing),
+    post: (message) => app.services.chat.postAssistant(message),
   });
 
 describe('Background agent (#313)', () => {
   it('sorts new inbox files in mode „Auto“ and sends ONE bundled notification with the run', async () => {
-    const a = await inInbox(app, 'rechnung-1.txt', 'Rechnung Stadtwerke 120 €');
-    const b = await inInbox(app, 'rechnung-2.txt', 'Rechnung Stadtwerke 80 €');
+    const a = await inInbox(app, { name: 'rechnung-1.txt', content: 'Rechnung Stadtwerke 120 €' });
+    const b = await inInbox(app, { name: 'rechnung-2.txt', content: 'Rechnung Stadtwerke 80 €' });
     app.llm.agent = scriptedTurns(
       ({ body }) => {
         expect(String(body.instructions)).toContain('HINTERGRUND');
@@ -55,7 +55,7 @@ describe('Background agent (#313)', () => {
 
   it('follows the same mode: „Fragen“ leaves the files in the inbox with a proposal', async () => {
     app.services.settings.update({ agent: { mode: 'ask' } });
-    const a = await inInbox(app, 'rechnung.txt', 'Rechnung');
+    const a = await inInbox(app, { name: 'rechnung.txt', content: 'Rechnung' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: 'private/rechnungen' } }] },
       { text: 'Vorschlag gemacht.' },
@@ -67,7 +67,7 @@ describe('Background agent (#313)', () => {
   });
 
   it('does nothing without background permission (privacy mode „vorher fragen“) and skips documents already handled', async () => {
-    const a = await inInbox(app, 'rechnung.txt', 'Rechnung');
+    const a = await inInbox(app, { name: 'rechnung.txt', content: 'Rechnung' });
     app.services.settings.update({ privacy: { llmMode: 'confirm' } });
     expect(await app.services.agent.runBackground('inbox', { docIds: [a] })).toBeNull();
     app.services.settings.update({ privacy: { llmMode: 'auto' } });
@@ -78,7 +78,7 @@ describe('Background agent (#313)', () => {
   it('a new scan analysis schedules ONE inbox run as a job', async () => {
     const queued: Array<{ kind: string; docIds: string[] }> = [];
     app.services.agent.start({ enqueue: (kind, docIds) => queued.push({ kind, docIds }), post: () => 'x' });
-    const a = await inInbox(app, 'neu.txt', 'Neu');
+    const a = await inInbox(app, { name: 'neu.txt', content: 'Neu' });
     app.services.agent.scheduleInbox(0);
     app.services.agent.scheduleInbox(0);
     await new Promise((r) => setTimeout(r, 20));
@@ -87,7 +87,7 @@ describe('Background agent (#313)', () => {
   });
 
   it('agentic archive check and links run with their own task; links stay proposals', async () => {
-    const doc = await archived(app, 'mietvertrag.txt', 'Mietvertrag', 'private/wohnen');
+    const doc = await archived(app, { name: 'mietvertrag.txt', content: 'Mietvertrag', folder: 'private/wohnen' });
     const topic = await app.ok('knowledge:createEntity', { type: 'topic', name: 'Wohnung' });
     app.llm.agent = scriptedTurns(
       ({ body }) => {

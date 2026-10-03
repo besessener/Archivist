@@ -97,7 +97,7 @@ describe('SettingsService.load with an invalid settings.json (Issue #57)', () =>
     const original = JSON.stringify({ ...saved, ocr: { enabled: true, languages: 'deu+chi-sim' } }, null, 2);
     fs.writeFileSync(file, original);
 
-    const svc = new SettingsService(file, archiveRoot);
+    const svc = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     const expected = { ...saved, ocr: { enabled: true, languages: 'deu+eng' } };
     expect(svc.get()).toEqual(expected);
     // local_only, exclusions, archive path and LLM configuration survive
@@ -114,7 +114,7 @@ describe('SettingsService.load with an invalid settings.json (Issue #57)', () =>
     expect(problem).toEqual({ kind: 'invalid', fields: ['ocr.languages'], backupFile: path.join(configDir, backup!) });
     expect(svc.takeLoadProblem()).toBeNull();
 
-    const again = new SettingsService(file, archiveRoot);
+    const again = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     expect(again.get()).toEqual(expected);
     expect(again.takeLoadProblem()).toBeNull();
     expect(backups('invalid')).toHaveLength(1);
@@ -122,24 +122,24 @@ describe('SettingsService.load with an invalid settings.json (Issue #57)', () =>
 
   it('a later update does not bring back the defaults of the other sections', () => {
     fs.writeFileSync(file, JSON.stringify({ ...userSettings('/mein/archiv'), scan: { enabled: true, intervalMinutes: 'oft' } }));
-    const svc = new SettingsService(file, archiveRoot);
+    const svc = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     const after = svc.update({ backups: { keep: 7 } });
     expect(after.privacy.llmMode).toBe('local_only');
     expect(after.llm.model).toBe('model-a');
     expect(after.scan).toEqual({ ...defaults.scan, enabled: true });
-    expect(new SettingsService(file, archiveRoot).get()).toEqual(after);
+    expect(new SettingsService({ file, defaultArchiveRoot: archiveRoot }).get()).toEqual(after);
   });
 
   it('a valid file is loaded unchanged without backup or problem', () => {
     fs.writeFileSync(file, JSON.stringify(userSettings('/mein/archiv')));
-    const svc = new SettingsService(file, archiveRoot);
+    const svc = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     expect(svc.get()).toEqual(userSettings('/mein/archiv'));
     expect(svc.takeLoadProblem()).toBeNull();
     expect(fs.readdirSync(configDir)).toEqual(['settings.json']);
   });
 
   it('a missing file is created with defaults and reports nothing', () => {
-    const svc = new SettingsService(file, archiveRoot);
+    const svc = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     expect(svc.get()).toEqual({ ...defaults, archiveRoot });
     expect(svc.takeLoadProblem()).toBeNull();
     expect(fs.existsSync(file)).toBe(true);
@@ -150,7 +150,7 @@ describe('SettingsService.load with an invalid settings.json (Issue #57)', () =>
     ['no object', '[1, 2]'],
   ])('%s: the file is moved aside and reported as unreadable', (_, content) => {
     fs.writeFileSync(file, content);
-    const svc = new SettingsService(file, archiveRoot);
+    const svc = new SettingsService({ file, defaultArchiveRoot: archiveRoot });
     expect(svc.get()).toEqual({ ...defaults, archiveRoot });
     const [backup] = backups('corrupt');
     expect(fs.readFileSync(path.join(configDir, backup!), 'utf8')).toBe(content);

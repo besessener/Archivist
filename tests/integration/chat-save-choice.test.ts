@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseSaveChoice } from '../../packages/core/src/services/chat';
+import { parseSaveChoice } from '../../packages/core/src/services/chat/intents';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const decisionEx = (over: Record<string, unknown> = {}) => ({ participants: [], alternatives: [], unknownFields: [], confidence: 0.85, ...over });
+import { extractedDecision, intent } from '../helpers/chat-intents';
 
 describe('parseSaveChoice (#43)', () => {
   it.each([
@@ -43,7 +41,7 @@ const unsure = () => ({
       intent: 'decision_new',
       segment: 'Kickoff mit dem Kunden am 03.03.2026',
       decisionCertainty: 'unsure',
-      decision: decisionEx({ decisionText: 'Kickoff mit dem Kunden', title: 'Kickoff mit Kunde', decidedAt: '2026-03-03' }),
+      decision: extractedDecision({ decisionText: 'Kickoff mit dem Kunden', title: 'Kickoff mit Kunde', decidedAt: '2026-03-03' }),
     }),
   ],
 });

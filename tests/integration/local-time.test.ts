@@ -2,16 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setDefaultTimeZone } from '@archivist/shared';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
-/**
- * #77: "today", "overdue", reminders and timeline days follow local time, not UTC.
- * Zone and clock are pinned per test so the results do not depend on the machine.
- */
+// #77: "today", "overdue", reminders and timeline days follow local time, not UTC.
 let app: TestApp;
 
-/**
- * Pins zone and clock. The zone is set via setDefaultTimeZone, not process.env.TZ: in worker threads
- * (e.g. the Stryker/Vitest threads pool) changing process.env.TZ does not change the ICU default zone.
- */
+/** Not via process.env.TZ: in worker threads (Stryker/Vitest pool) it does not change the ICU default zone. */
 function useZoneAndClock(timeZone: string, iso: string): void {
   setDefaultTimeZone(timeZone);
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -99,7 +93,7 @@ describe('Overdue and due today follow the local day (#77)', () => {
 
     useZoneAndClock('Europe/Berlin', '2026-09-30T22:30:00Z'); // 2026-10-01 00:30 local
     expect(app.services.openItems.overdue().map((i) => i.id)).toEqual([yesterday.id]);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(await dueTitles()).toEqual(['Heute fällig: Rechnung prüfen', 'Überfällig: Bericht abgeben']);
     expect((await app.ok('notifications:list', {})).find((n) => n.title.startsWith('Heute fällig'))!.affectedEntityIds).toEqual([today.id]);
   });
@@ -108,7 +102,7 @@ describe('Overdue and due today follow the local day (#77)', () => {
     await createItem('Rechnung prüfen', '2026-10-01');
     useZoneAndClock('America/New_York', '2026-10-02T03:30:00Z'); // 2026-10-01 23:30 local
     expect(app.services.openItems.overdue()).toEqual([]);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(await dueTitles()).toEqual(['Heute fällig: Rechnung prüfen']);
   });
 });

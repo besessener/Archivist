@@ -18,7 +18,7 @@ describe('Several topics and projects per entry (#287)', () => {
     const d = await app.ok('decisions:create', { decisionText: 'Wir nehmen die Wärmepumpe.', topic: 'Heizung', asDraft: false, sourceIds: [] });
     const item = await app.ok('openItems:create', { title: 'Förderung beantragen', topic: 'Heizung' });
     const ev = await app.ok('events:create', { title: 'Beratung Energie', occurredAt: '2026-09-01T10:00:00.000Z', topic: 'Heizung' });
-    const doc = await archived(app, 'angebot.md', 'Angebot Wärmepumpe', 'private/haus', { topic: 'Heizung' });
+    const doc = await archived(app, { name: 'angebot.md', content: 'Angebot Wärmepumpe', folder: 'private/haus', topic: 'Heizung' });
 
     for (const id of [d.id, item.id, ev.id, doc]) await app.ok('subjects:setExtras', { id, topics: ['Förderung', 'Heizung'], projects: ['Sanierung 2026'] });
     const s = (await app.ok('subjects:of', { ids: [d.id] }))[d.id]!;
@@ -62,11 +62,11 @@ describe('Several topics and projects per entry (#287)', () => {
     await app.ok('audit:undo', { auditId: merged.auditId });
     expect(names((await app.ok('subjects:of', { ids: [item.id] }))[item.id]!.extraTopics)).toEqual(['Garten']);
 
-    const doc = await archived(app, 'brief.md', 'Ein Brief', 'private/post');
-    let report = await app.services.consistency.run('test');
+    const doc = await archived(app, { name: 'brief.md', content: 'Ein Brief', folder: 'private/post' });
+    let report = await app.services.consistency.run({ trigger: 'test' });
     expect(report.byKind.orphan_document).toBe(1);
     await app.ok('subjects:setExtras', { id: doc, projects: ['Post'] });
-    report = await app.services.consistency.run('test');
+    report = await app.services.consistency.run({ trigger: 'test' });
     expect(report.byKind.orphan_document).toBeUndefined();
   });
 

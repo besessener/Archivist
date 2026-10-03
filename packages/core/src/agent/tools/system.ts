@@ -12,10 +12,7 @@ interface SettingSpec {
   schema: z.ZodType;
 }
 
-/**
- * Settings the agent may change on request (#312). Privacy settings, the mass action threshold and automatic analysis
- * are critical: they always ask (#298). Everything else is an ordinary, undoable change.
- */
+/** Settings the agent may change on request (#312); privacy, the mass action threshold and auto-analysis always ask (#298). */
 const SETTINGS: Record<string, SettingSpec> = {
   'agent.mode': { label: 'Agentenmodus', risk: 'write', schema: z.enum(['auto', 'ask']) },
   'agent.massActionThreshold': { label: 'Schwelle für Massenaktionen', risk: 'critical', schema: z.coerce.number().int().min(1) },

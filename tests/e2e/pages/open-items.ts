@@ -38,5 +38,5 @@ export function initOpenItems(page: Page) {
       await expect(locators.reminderDialog).toBeHidden();
     },
   };
-  return Object.assign(pageObject(locators.rows, locators, interactions), { row });
+  return Object.assign(pageObject({ root: locators.rows, locators, actions: interactions }), { row });
 }

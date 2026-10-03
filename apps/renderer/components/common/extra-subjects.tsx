@@ -11,13 +11,10 @@ import { parseList } from '@/lib/utils';
 const SCOPES = ['documents', 'decisions', 'openItems', 'events', 'knowledge'];
 const join = (xs: Array<{ name: string }> | undefined) => (xs ?? []).map((x) => x.name).join(', ');
 
-/**
- * Further topics and projects of an entry in a form (#287): the main ones stay in their own fields (the archive folder
- * follows the main topic). `save` stores the further ones after the entry itself was saved – one undo step.
- */
-export function useExtraSubjects(id: string | undefined, open = true) {
-  const q = useQuery('subjects:of', id ? { ids: [id] } : undefined, { scopes: SCOPES, enabled: Boolean(id) && open });
-  const current = id ? q.data?.[id] : undefined;
+/** Further topics and projects of an entry in a form (#287); `save` stores them after the entry itself, as one undo step. */
+export function useExtraSubjects(id: string | undefined, { open = true }: { open?: boolean } = {}) {
+  const query = useQuery('subjects:of', id ? { ids: [id] } : undefined, { scopes: SCOPES, enabled: Boolean(id) && open });
+  const current = id ? query.data?.[id] : undefined;
   const [topics, setTopics] = useState('');
   const [projects, setProjects] = useState('');
   const initialTopics = join(current?.extraTopics);

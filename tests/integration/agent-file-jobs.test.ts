@@ -20,7 +20,7 @@ const relocations = (runId: string) => app.services.audit.forRun(runId).filter((
 
 async function slides(n: number, from = 1): Promise<string[]> {
   const ids: string[] = [];
-  for (let i = from; i < from + n; i += 1) ids.push(await archived(app, `folie-${i}.md`, `Folie ${i}`, 'work/misc'));
+  for (let i = from; i < from + n; i += 1) ids.push(await archived(app, { name: `folie-${i}.md`, content: `Folie ${i}`, folder: 'work/misc' }));
   return ids;
 }
 
@@ -244,12 +244,15 @@ describe('Large file operations as a job of their own (#304)', () => {
       files: [],
       error: null,
     });
-    app.services.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, 'Fortsetzung', {
-      runId,
-      stepId,
-      explicit: true,
-      op: 'relocate',
-      items: ids.map((documentId) => ({ documentId, categoryPath: 'work/presentations' })),
+    app.services.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, {
+      label: 'Fortsetzung',
+      payload: {
+        runId,
+        stepId,
+        explicit: true,
+        op: 'relocate',
+        items: ids.map((documentId) => ({ documentId, categoryPath: 'work/presentations' })),
+      },
     });
     await app.services.jobs.whenIdle();
     for (const id of ids) expect(folderOf(app, id)).toBe('work/presentations');
@@ -262,7 +265,11 @@ describe('Large file operations as a job of their own (#304)', () => {
   });
 
   it('archiving many inbox documents also runs as one job under the run id, undoable as a whole', async () => {
-    const ids = [await inInbox(app, 'brief-1.txt', 'Brief 1'), await inInbox(app, 'brief-2.txt', 'Brief 2'), await inInbox(app, 'brief-3.txt', 'Brief 3')];
+    const ids = [
+      await inInbox(app, { name: 'brief-1.txt', content: 'Brief 1' }),
+      await inInbox(app, { name: 'brief-2.txt', content: 'Brief 2' }),
+      await inInbox(app, { name: 'brief-3.txt', content: 'Brief 3' }),
+    ];
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { status: 'inbox' } }] },
       { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], folder: 'private/post' } }] },

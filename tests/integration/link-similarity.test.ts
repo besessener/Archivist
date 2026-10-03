@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { MIN_SIMILARITY } from '../../packages/core/src/services/link-methods';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { archived, inInbox } from '../helpers/agent';
+import { flatText } from '../helpers/link-texts';
 
 let app: TestApp;
 afterEach(async () => {
@@ -13,14 +14,13 @@ const relatedTo = () =>
     .prepare(`SELECT source_entity_id AS s, target_entity_id AS t, status, method, origin, evidence FROM relations WHERE relation_type = 'related_to'`)
     .all() as Array<{ s: string; t: string; status: string; method: string; origin: string; evidence: string | null }>;
 const between = (a: string, b: string) => relatedTo().filter((r) => (r.s === a && r.t === b) || (r.s === b && r.t === a));
-const flatText = (what: string) => `${what} für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.`;
 
 describe('Similar entries as `related_to` proposals after indexing (#271)', () => {
   it('archiving proposes similar documents with the passage as evidence – in a job, not on the archiving path', async () => {
     app = await createTestApp({ autoLinks: true });
-    const lease = await archived(app, 'mietvertrag.md', flatText('Mietvertrag'), 'private/wohnen');
-    const costs = await archived(app, 'nebenkosten.md', flatText('Nebenkostenabrechnung'), 'private/wohnen');
-    const recipe = await archived(app, 'rezept.md', 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', 'private/kochen');
+    const lease = await archived(app, { name: 'mietvertrag.md', content: flatText('Mietvertrag'), folder: 'private/wohnen' });
+    const costs = await archived(app, { name: 'nebenkosten.md', content: flatText('Nebenkostenabrechnung'), folder: 'private/wohnen' });
+    const recipe = await archived(app, { name: 'rezept.md', content: 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', folder: 'private/kochen' });
     await app.services.jobs.whenIdle();
 
     expect(between(lease, costs)).toEqual([expect.objectContaining({ status: 'proposed', method: 'similarity', origin: 'system' })]);
@@ -36,7 +36,7 @@ describe('Similar entries as `related_to` proposals after indexing (#271)', () =
     app = await createTestApp({ autoLinks: true });
     const note = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Wohnung', description: flatText('Notiz zum Mietvertrag') })).entity.id;
     const item = (await app.ok('openItems:create', { title: 'Kaution zurückfordern', description: flatText('Kaution vom Mietvertrag') })).id;
-    const inbox = await inInbox(app, 'mietvertrag-kopie.md', flatText('Mietvertrag'));
+    const inbox = await inInbox(app, { name: 'mietvertrag-kopie.md', content: flatText('Mietvertrag') });
     await app.services.jobs.whenIdle();
 
     expect(between(note, item)).toEqual([expect.objectContaining({ status: 'proposed', method: 'similarity' })]);
@@ -57,7 +57,7 @@ describe('Similar entries as `related_to` proposals after indexing (#271)', () =
     expect(relatedTo().length).toBeGreaterThan(0);
 
     // the user rejects every proposal and allows more: the rejected pairs never come back
-    for (const r of app.services.graph.relationsOf(notes[0]!, { statuses: ['proposed'] })) app.services.graph.decideRelation(r.id, 'rejected');
+    for (const r of app.services.graph.relationsOf(notes[0]!, { statuses: ['proposed'] })) app.services.graph.decideRelation(r.id, { status: 'rejected' });
     const rejected = relatedTo().filter((r) => r.status === 'rejected');
     app.services.settings.update({ links: { maxProposalsPerEntry: 5 } });
     for (const id of notes) await app.services.notes.reindex(id);
@@ -68,7 +68,7 @@ describe('Similar entries as `related_to` proposals after indexing (#271)', () =
     const a = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Kopie A', description: flatText('Kopie') })).entity.id;
     await app.services.jobs.whenIdle();
     const b = (await app.services.notes.create({ title: 'Kopie B', content: flatText('Kopie') })).id;
-    app.services.graph.link(b, a, 'duplicate_of', { status: 'proposed' });
+    app.services.graph.link({ sourceId: b, targetId: a, relationType: 'duplicate_of' }, { status: 'proposed' });
     await app.services.notes.reindex(b);
     await app.services.jobs.whenIdle();
     expect(between(a, b)).toEqual([]);
@@ -93,7 +93,7 @@ describe('Similar entries as `related_to` proposals after indexing (#271)', () =
     for (const name of Object.keys(vec)) {
       const id = `note-${name}`;
       ids[name] = id;
-      app.services.graph.registerNode('note', id, name, `${name} Text`);
+      app.services.graph.registerNode({ type: 'note', id, name, description: `${name} Text` });
       await app.services.search.index({ type: 'note', id, title: name, content: `${name} Text`, allowRemoteEmbedding: true });
     }
     await app.services.jobs.whenIdle();

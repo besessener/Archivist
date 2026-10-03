@@ -19,10 +19,7 @@ import { useRun } from '@/lib/use-run';
 import { cn } from '@/lib/utils';
 import { CaseAssignDialog } from './case-dialog';
 
-/**
- * Who stands behind a relation and why (#270): „automatisch“, „von dir bestätigt“ or „manuell“, how it came about and its
- * evidence (the passage, the message …). A field mirror is never shown as confirmed by the user unless the user did so (#189).
- */
+/** Who stands behind a relation and why (#270); a field mirror only shows as confirmed by the user if the user did so (#189). */
 export function RelationProvenance({ relation }: { relation: Pick<GraphRelation, 'origin' | 'method' | 'resolvedByUser' | 'status' | 'evidence'> }) {
   const kind = relationProvenance(relation);
   const label = kind === 'auto' && relation.origin === 'agent' ? 'vom Agenten' : RELATION_PROVENANCE_LABELS[kind];
@@ -47,11 +44,7 @@ export function RelationProvenance({ relation }: { relation: Pick<GraphRelation,
 
 const RELATED_PAGE = 10;
 
-/**
- * Related entries (#276): direct relations and connections over shared topics, projects, persons, tags and cases –
- * strongest first, each with its reason („gleiches Projekt … + gleiche Person …“). Proposals can be confirmed or rejected
- * right here (undoable). With `link`, the section brings its own „Verknüpfen“ button (#277).
- */
+/** Related entries strongest first with their reason (#276); with `link`, the section brings its own „Verknüpfen“ button (#277). */
 export function RelatedEntries({ id, link }: { id: string; link?: { name: string } }) {
   const [page, setPage] = useState(0);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -143,10 +136,7 @@ export function RelatedEntries({ id, link }: { id: string; link?: { name: string
   );
 }
 
-/**
- * Link proposals for the entry (#283, #313): similar entries and mentioned topics/projects, with the reason – the same
- * function as the agent's `suggest_links`. „Verknüpfen“ confirms the link (undoable); ignoring has no consequences.
- */
+/** Link proposals for the entry (#283, #313), the same function as the agent's `suggest_links`; ignoring one has no consequences. */
 export function LinkSuggestions({ id }: { id: string }) {
   const q = useQuery('links:suggestions', { id, limit: 3 }, { scopes: ['knowledge'] });
   const { run, busy } = useRun();

@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { agentApp, archived, scriptedTurns } from '../helpers/agent';
+import { intent } from '../helpers/chat-intents';
 
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();
 });
 
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 const coOrigin = () =>
   app.services.database.sqlite
     .prepare(`SELECT source_entity_id AS s, target_entity_id AS t, status, origin, evidence, source_ids AS src FROM relations WHERE method = 'co_origin'`)
@@ -66,8 +66,12 @@ describe('Entries created together are linked (#272)', () => {
 
   it('entries taken from the same document are linked with each other – also when created at different times', async () => {
     app = await createTestApp({ privacy: 'auto', autoLinks: true });
-    const doc = await archived(app, 'protokoll.md', 'Protokoll der Eigentümerversammlung: Dach wird saniert, Angebote einholen.', 'private/haus');
-    const other = await archived(app, 'rechnung.md', 'Rechnung Handwerker für die Heizung.', 'private/haus');
+    const doc = await archived(app, {
+      name: 'protokoll.md',
+      content: 'Protokoll der Eigentümerversammlung: Dach wird saniert, Angebote einholen.',
+      folder: 'private/haus',
+    });
+    const other = await archived(app, { name: 'rechnung.md', content: 'Rechnung Handwerker für die Heizung.', folder: 'private/haus' });
     const decision = app.services.decisions.create({
       decisionText: 'Das Dach wird 2027 saniert.',
       title: 'Dachsanierung',
@@ -91,12 +95,12 @@ describe('Entries created together are linked (#272)', () => {
 
   it('a pair the user rejected or already linked is not proposed again', async () => {
     app = await createTestApp({ privacy: 'auto', autoLinks: true });
-    const doc = await archived(app, 'protokoll.md', 'Protokoll: drei Punkte.', 'private/haus');
+    const doc = await archived(app, { name: 'protokoll.md', content: 'Protokoll: drei Punkte.', folder: 'private/haus' });
     const mk = (title: string) => app.services.openItems.create({ title, sourceIds: [doc], priority: 'normal', confidence: 0.8 });
     const a = mk('Punkt A');
     const b = mk('Punkt B');
     const r = app.services.graph.relationsOf(a.id).find((x) => x.method === 'co_origin')!;
-    app.services.graph.decideRelation(r.id, 'rejected');
+    app.services.graph.decideRelation(r.id, { status: 'rejected' });
     const c = mk('Punkt C');
     // C is proposed with A and B; A–B stays rejected
     expect(pairs()).toEqual(new Set([pairKey(a.id, b.id), pairKey(c.id, a.id), pairKey(c.id, b.id)]));

@@ -7,39 +7,47 @@ export function cn(...inputs: ClassValue[]): string {
 
 /** Date as YYYY-MM-DD (local time). */
 export function toIsoDay(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function addDays(days: number, from: Date = new Date()): Date {
-  const d = new Date(from);
-  d.setDate(d.getDate() + days);
-  return d;
+  const date = new Date(from);
+  date.setDate(date.getDate() + days);
+  return date;
 }
 
 /** Next Monday (tomorrow at the earliest). */
 export function nextMonday(from: Date = new Date()): Date {
-  const d = new Date(from);
-  const diff = (8 - d.getDay()) % 7 || 7;
-  d.setDate(d.getDate() + diff);
-  return d;
+  const date = new Date(from);
+  const daysAhead = (8 - date.getDay()) % 7 || 7;
+  date.setDate(date.getDate() + daysAhead);
+  return date;
+}
+
+/** A copy of `set` that contains `value` exactly when `present`. */
+export function withMembership<T>(set: Set<T>, { value, present }: { value: T; present: boolean }): Set<T> {
+  const next = new Set(set);
+  if (present) next.add(value);
+  else next.delete(value);
+  return next;
 }
 
 export function parseList(text: string): string[] {
   return text
     .split(/[,\n]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 export function nonEmpty(text: string): string | undefined {
-  const t = text.trim();
-  return t.length > 0 ? t : undefined;
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function basename(p: string): string {
-  const parts = p.split(/[\\/]/);
-  return parts[parts.length - 1] ?? p;
+export function basename(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] ?? path;
 }

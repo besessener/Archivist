@@ -16,6 +16,7 @@ import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { LOCAL_TIME, type AuditEntry } from '@archivist/shared';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
+import { PathText } from '@/components/common/path-text';
 
 export function ProfileTab({ settings, reload }: TabProps) {
   const { save, busy } = useSaveSettings(reload);
@@ -127,13 +128,13 @@ export function BackupsTab({ settings, reload }: TabProps) {
   const [creating, setCreating] = useState<'metadata' | 'full' | null>(null);
   const [keep, setKeep] = useState(String(settings.backups.keep));
 
-  async function create(includeArchive: boolean) {
+  async function create({ includeArchive }: { includeArchive: boolean }) {
     setCreating(includeArchive ? 'full' : 'metadata');
-    const b = await run(() => call('backup:create', { includeArchive }), {
+    const backup = await run(() => call('backup:create', { includeArchive }), {
       success: includeArchive ? 'Vollständiges Backup erstellt.' : 'Metadaten-Backup erstellt.',
     });
     setCreating(null);
-    if (b) void list.refetch();
+    if (backup) void list.refetch();
   }
 
   return (
@@ -147,7 +148,13 @@ export function BackupsTab({ settings, reload }: TabProps) {
             <p className="text-sm text-muted-foreground">
               Sichert Entscheidungen, offene Punkte, Wissen und Einstellungen – <strong>nicht</strong> deine Dokumentdateien. Klein und schnell.
             </p>
-            <Button variant="outline" disabled={creating !== null} onClick={() => void create(false)} data-testid="backup-metadata">
+            <Button
+              variant="outline"
+              className="mt-auto"
+              disabled={creating !== null}
+              onClick={() => void create({ includeArchive: false })}
+              data-testid="backup-metadata"
+            >
               {creating === 'metadata' && <Loader2 className="animate-spin" aria-hidden />} Metadaten sichern
             </Button>
           </div>
@@ -158,7 +165,13 @@ export function BackupsTab({ settings, reload }: TabProps) {
             <p className="text-sm text-muted-foreground">
               Sichert zusätzlich alle archivierten Dokumentdateien. Kann viel Speicherplatz brauchen und länger dauern.
             </p>
-            <Button variant="outline" disabled={creating !== null} onClick={() => void create(true)} data-testid="backup-full">
+            <Button
+              variant="outline"
+              className="mt-auto"
+              disabled={creating !== null}
+              onClick={() => void create({ includeArchive: true })}
+              data-testid="backup-full"
+            >
               {creating === 'full' && <Loader2 className="animate-spin" aria-hidden />} Alles sichern
             </Button>
           </div>
@@ -210,7 +223,9 @@ export function BackupsTab({ settings, reload }: TabProps) {
                     <Badge variant={b.kind === 'full' ? 'info' : 'secondary'}>{b.kind === 'full' ? 'Vollständig' : 'Nur Metadaten'}</Badge>
                   </TD>
                   <TD className="whitespace-nowrap">{formatBytes(b.sizeBytes)}</TD>
-                  <TD className="break-all text-xs text-muted-foreground">{b.path}</TD>
+                  <TD className="text-xs text-muted-foreground">
+                    <PathText path={b.path} />
+                  </TD>
                 </TR>
               ))}
             </TBody>
@@ -262,8 +277,8 @@ export function AuditTab() {
                   <TD>{a.actor === 'user' ? 'Du' : 'Archivist'}</TD>
                   <TD className="max-w-xs">
                     {a.paths.slice(0, 3).map((p) => (
-                      <code key={p} className="block break-all text-xs">
-                        {p}
+                      <code key={p} className="block text-xs">
+                        <PathText path={p} />
                       </code>
                     ))}
                     {a.paths.length > 3 && <span className="text-xs text-muted-foreground">… und {a.paths.length - 3} weitere</span>}
@@ -307,9 +322,9 @@ export function AuditTab() {
         confirmTestId="audit-undo-confirm"
         onConfirm={async () => {
           if (!undoing) return;
-          const res = await run(() => call('audit:undo', { auditId: undoing.id }));
-          if (res) {
-            setResults((prev) => ({ ...prev, [undoing.id]: res }));
+          const result = await run(() => call('audit:undo', { auditId: undoing.id }));
+          if (result) {
+            setResults((prev) => ({ ...prev, [undoing.id]: result }));
             setUndoing(null);
             void refetch();
           }
@@ -319,8 +334,8 @@ export function AuditTab() {
           <div className="text-sm">
             <p className="font-medium">{undoing.action}</p>
             {undoing.paths.map((p) => (
-              <code key={p} className="block break-all text-xs text-muted-foreground">
-                {p}
+              <code key={p} className="block text-xs text-muted-foreground">
+                <PathText path={p} />
               </code>
             ))}
           </div>

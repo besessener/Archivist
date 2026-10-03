@@ -12,18 +12,17 @@ export const SELF_PLACEHOLDER = 'Ich';
 /** Audit action when an existing person with the user's name is merged into the own person. */
 export const SELF_MERGE_ACTION = 'persons.self_merge';
 
-/**
- * The user's own person: exactly one person entity carries the flag `isSelf` (badge „Du“ in the UI). It carries the
- * real name from the profile (documents mention the real name, so only then they are linked); without a name it is the
- * placeholder „Ich“, renamed or merged as soon as the name is entered. „ich/mir/mich/mein …“ in the chat resolve to it,
- * in documents „ich“ means the author and is not mapped.
- */
+export type SelfServiceDeps = { ctx: AppContext; settings: SettingsService; graph: KnowledgeGraphService };
+
+/** The user's own person (`isSelf`, badge „Du“): named like the profile, else „Ich“ until a name is entered. */
 export class SelfService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly graph: KnowledgeGraphService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly graph: KnowledgeGraphService;
+
+  constructor(deps: SelfServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, graph: this.graph } = deps);
+  }
 
   private get db() {
     return this.ctx.database.db;
@@ -50,16 +49,13 @@ export class SelfService {
     return Boolean(key) && this.ownNameKeys().has(key);
   }
 
-  /**
-   * The own person, created on first use: a person that already carries the profile name becomes it, otherwise a new
-   * person with the profile name (or „Ich“) is created.
-   */
+  /** The own person, created on first use: an existing person with the profile name becomes it, else a new one. */
   ensure(): GraphEntity {
     const existing = this.get();
     if (existing) return existing;
     const name = this.settings.get().profile.name.trim();
     const candidate = name ? this.personWithKey(parsePersonName(name).comparisonKey) : undefined;
-    const entity = candidate ?? this.graph.ensureEntity('person', name || SELF_PLACEHOLDER);
+    const entity = candidate ?? this.graph.ensureEntity({ type: 'person', name: name || SELF_PLACEHOLDER });
     this.db.update(entities).set({ isSelf: true }).where(eq(entities.id, entity.id)).run();
     this.ctx.events.changed('knowledge');
     return this.graph.getEntity(entity.id)!;
@@ -71,10 +67,7 @@ export class SelfService {
     return input.parsed.comparisonKey && this.ownNameKeys().has(input.parsed.comparisonKey) ? this.ensure() : null;
   };
 
-  /**
-   * Applies the profile name to the own person: the placeholder (or a former name) is renamed; a separate person that
-   * already carries the new name is merged into the own person. Both are undoable in the change log.
-   */
+  /** Applies the profile name: renames the own person, or merges a person already carrying it into it (undoable). */
   async syncProfile(): Promise<void> {
     const self = this.get();
     const name = this.settings.get().profile.name.trim();
@@ -84,7 +77,7 @@ export class SelfService {
     if (other) {
       await this.graph.merge({ sourceIds: [other.id], targetId: self.id, targetName: name }, { actor: 'user', trigger: 'profile', action: SELF_MERGE_ACTION });
     } else {
-      await this.graph.rename(self.id, name, { actor: 'user', trigger: 'profile', keepOldName: self.name !== SELF_PLACEHOLDER });
+      await this.graph.rename({ id: self.id, name }, { actor: 'user', trigger: 'profile', keepOldName: self.name !== SELF_PLACEHOLDER });
     }
     this.ctx.logger.info('persons', 'Own person adjusted to the profile name', { from: self.name, to: name, merged: Boolean(other) });
   }

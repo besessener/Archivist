@@ -32,6 +32,7 @@ import { folderLabel, folderOf } from '../../services/archive-structure';
 import type { AgentFileJobs } from '../file-jobs';
 import type { MemoryService } from '../memory';
 import type { ToolContext } from '../registry';
+import type { Logger } from '../../util/logger';
 import type { CaptureService } from '../../services/capture';
 import type { KnowledgeAnswerService } from '../../services/knowledge-answers';
 
@@ -74,6 +75,7 @@ export interface ToolDeps {
   capture: CaptureService;
   answers: KnowledgeAnswerService;
   enqueueConsistency: (trigger: string) => void;
+  logger: Logger;
 }
 
 export const ARCHIVED: DocumentStatus[] = ['archived', 'indexed_only'];
@@ -105,14 +107,21 @@ export const TYPE_LABEL: Partial<Record<EntityType, string>> = {
   case: 'Vorgang',
 };
 
-export const lower = (s: string | null | undefined) => (s ?? '').toLowerCase();
-export const normExt = (e: string) => e.toLowerCase().replace(/^\*?\./, '');
+/** The services and the context of the run a tool call works with. */
+export interface ToolScope {
+  deps: ToolDeps;
+  ctx: ToolContext;
+}
+
+export const lower = (text: string | null | undefined) => (text ?? '').toLowerCase();
+export const normalizeExtension = (extension: string) => extension.toLowerCase().replace(/^\*?\./, '');
 /** Business date of a document: its own date, else the archive or import date. */
 export const docDay = (d: Pick<DocumentRecord, 'documentDate' | 'archivedAt' | 'createdAt'>) => (d.documentDate ?? d.archivedAt ?? d.createdAt).slice(0, 10);
-export const normFolder = (f: string) => f.replaceAll('\\', '/').split('/').filter(Boolean).join('/');
+export const normalizeFolder = (folder: string) => folder.replaceAll('\\', '/').split('/').filter(Boolean).join('/');
 
 /** Every document line that goes to the model passes the privacy filter (#301). */
-export function docLine(d: DocumentRecord, ctx: ToolContext, privacy: PrivacyService): string {
+export function docLine({ deps, ctx }: ToolScope, d: DocumentRecord): string {
+  const { privacy } = deps;
   const ref = ctx.refs.doc(d.id);
   const folder = d.archiveRelPath ? folderLabel(folderOf(d)) : '–';
   const status = STATUS_LABEL[d.status] ?? d.status;
@@ -139,7 +148,7 @@ export function docLine(d: DocumentRecord, ctx: ToolContext, privacy: PrivacySer
 const RESOLVE_CHUNK = 1000;
 
 /** Resolves D/S refs to documents; unknown refs are named in the result instead of being guessed. */
-export function resolveDocs(deps: ToolDeps, ctx: ToolContext, refs: readonly string[]): { docs: DocumentRecord[]; unknown: string[] } {
+export function resolveDocs({ deps, ctx }: ToolScope, refs: readonly string[]): { docs: DocumentRecord[]; unknown: string[] } {
   const { ids, unknown } = ctx.refs.resolveMany(refs);
   const docs: DocumentRecord[] = [];
   // chunked: a result set (S…) can stand for far more documents than one query may bind
@@ -148,6 +157,9 @@ export function resolveDocs(deps: ToolDeps, ctx: ToolContext, refs: readonly str
   const order = new Map(ids.map((id, i) => [id, i]));
   return { docs: docs.toSorted((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)), unknown: [...unknown, ...ids.filter((id) => !found.has(id))] };
 }
+
+/** How many entries a call over these refs affects (mass action threshold); unresolved refs count one each. */
+export const affectedCount = (ctx: ToolContext, refs: readonly string[]) => ctx.refs.resolveMany(refs).ids.length || refs.length;
 
 export const unknownNote = (unknown: string[]) =>
   unknown.length ? `\nUnbekannte IDs: ${unknown.slice(0, 10).join(', ')} – verwende IDs aus find_documents, search oder list_entries.` : '';

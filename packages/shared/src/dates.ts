@@ -1,10 +1,4 @@
-/**
- * Local-time helpers shared by core and renderer (#77).
- *
- * "Today", "overdue" and timeline days follow the user's local time zone, never UTC.
- * Every function takes an optional IANA time zone; without it the process/browser zone is used.
- * Tests pass an explicit zone so they do not depend on the machine they run on.
- */
+// Local-time helpers (#77): days follow the user's zone, never UTC; without an explicit zone the process or browser zone applies.
 
 /** Time of day `HH:MM` (24 h), e.g. `08:00`. */
 export const LOCAL_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -16,11 +10,7 @@ const DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d
 
 let defaultTimeZone: string | null = null;
 
-/**
- * Sets the zone used when a function gets no explicit one (null: the zone of the process or browser again).
- * Needed where `process.env.TZ` cannot be changed at runtime, e.g. in worker threads, whose environment
- * is a copy that does not reach the ICU default zone. Throws a RangeError for an unknown zone.
- */
+/** Default zone for calls without one (null: process zone); worker threads need it because their copied `TZ` never reaches ICU. */
 export function setDefaultTimeZone(timeZone: string | null): void {
   if (timeZone !== null) formatter(timeZone); // validates the zone
   defaultTimeZone = timeZone;
@@ -53,7 +43,7 @@ function formatter(timeZone: string): Intl.DateTimeFormat {
 /** Wall-clock fields of an instant in the given zone. */
 function wallClock(ms: number, timeZone: string): { y: number; mo: number; d: number; h: number; mi: number; s: number } {
   const parts = formatter(timeZone).formatToParts(new Date(ms));
-  const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
   return { y: get('year'), mo: get('month'), d: get('day'), h: get('hour'), mi: get('minute'), s: get('second') };
 }
 
@@ -66,12 +56,7 @@ function zoneOffsetMs(ms: number, timeZone: string): number {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/**
- * Local calendar day (`YYYY-MM-DD`) of a date or timestamp.
- * - Date-only values (`2026-10-01`) are already local days and stay unchanged.
- * - Timestamps with a zone (`2026-09-30T22:30:00Z`) are converted to the local day (Berlin: 2026-10-01).
- * - Wall-clock times without a zone (`2026-10-01T09:00`) are taken as local time.
- */
+/** Local day (`YYYY-MM-DD`): date-only values stay, zoned timestamps are converted, wall-clock times count as local. */
 export function localDate(value: string | Date, timeZone: string = currentTimeZone()): string {
   if (typeof value === 'string') {
     if (DATE_ONLY.test(value)) return value;
@@ -90,10 +75,7 @@ export function localToday(now: Date = new Date(), timeZone: string = currentTim
   return localDate(now, timeZone);
 }
 
-/**
- * The instant of a local wall-clock time, e.g. `2026-10-05` at `08:00` in Europe/Berlin → 2026-10-05T06:00:00Z.
- * A time that does not exist (spring-forward gap) resolves to the corresponding time after the switch.
- */
+/** Instant of a local wall-clock time; a time in the spring-forward gap resolves to the time after the switch. */
 export function localDateTime(day: string, time: string, timeZone: string = currentTimeZone()): Date {
   const d = DATE_ONLY.exec(day);
   const t = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time);
@@ -104,11 +86,7 @@ export function localDateTime(day: string, time: string, timeZone: string = curr
   return new Date(second);
 }
 
-/**
- * The instant a date or timestamp stands for when used as a point in time (e.g. a reminder):
- * date-only values mean `defaultTime` local time on that day, wall-clock times without a zone mean local time,
- * timestamps with a zone are taken as they are. Returns null for unparsable values.
- */
+/** Instant of a value as a point in time: a date-only value means `defaultTime` local time that day; null if unparsable. */
 export function localInstant(value: string, defaultTime: string, timeZone: string = currentTimeZone()): Date | null {
   if (DATE_ONLY.test(value)) return localDateTime(value, defaultTime, timeZone);
   const m = DATE_TIME.exec(value);

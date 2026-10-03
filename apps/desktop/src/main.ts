@@ -7,18 +7,17 @@ import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { isExternalWebUrl } from './external-links';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
-/**
- * Electron main process: app lifecycle, secure windows, IPC allowlist and operating system access.
- * The business logic lives entirely in the service layer (@archivist/core); compute-heavy work runs in worker threads.
- */
+// Electron main process: lifecycle, secure windows, IPC allowlist and OS access; the business logic lives in @archivist/core.
 const isDev = Boolean(process.env.ARCHIVIST_DEV_URL);
 const testMode = process.env.ARCHIVIST_TEST_MODE === '1';
 
+// the interface is German only: date and time fields follow Chromium's language, not the operating system's
+app.commandLine.appendSwitch('lang', 'de-DE');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 if (process.env.ARCHIVIST_DATA_DIR) app.setPath('userData', path.join(process.env.ARCHIVIST_DATA_DIR, '.electron'));
 // Windows shows desktop notifications only for a process whose AppUserModelID matches a Start menu shortcut
-if (process.platform === 'win32') app.setAppUserModelId(appUserModelId(app.isPackaged, process.execPath));
+if (process.platform === 'win32') app.setAppUserModelId(appUserModelId({ packaged: app.isPackaged, execPath: process.execPath }));
 
 let services: Services | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -35,7 +34,7 @@ const quitter = new QuitController({
 });
 
 const dataRoot = () => process.env.ARCHIVIST_DATA_DIR ?? path.join(app.getPath('documents'), 'Archivist');
-const resource = (...p: string[]) => path.join(__dirname, ...p);
+const resource = (...segments: string[]) => path.join(__dirname, ...segments);
 
 /** Encryption via Electron safeStorage (Windows DPAPI; the Linux branches only serve development and CI). */
 const cipher: SecretCipher = {
@@ -57,17 +56,17 @@ const host: HostApi = {
   version: app.getVersion(),
   platform: process.platform,
   selectDirectory: async (title) => {
-    const opts: Electron.OpenDialogOptions = { title: title ?? 'Verzeichnis auswählen', properties: ['openDirectory'] };
+    const options: Electron.OpenDialogOptions = { title: title ?? 'Verzeichnis auswählen', properties: ['openDirectory'] };
     if (process.env.ARCHIVIST_TEST_PICK_DIR) return process.env.ARCHIVIST_TEST_PICK_DIR; // E2E: no native dialog
-    const res = mainWindow ? await dialog.showOpenDialog(mainWindow, opts) : await dialog.showOpenDialog(opts);
-    return res.canceled || res.filePaths.length === 0 ? null : (res.filePaths[0] ?? null);
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    return result.canceled || result.filePaths.length === 0 ? null : (result.filePaths[0] ?? null);
   },
-  openPath: (p) => shell.openPath(p),
-  revealPath: (p) => shell.showItemInFolder(p),
+  openPath: (filePath) => shell.openPath(filePath),
+  revealPath: (filePath) => shell.showItemInFolder(filePath),
   saveFile: async (defaultName) => {
-    const opts: Electron.SaveDialogOptions = { title: 'Speichern unter', defaultPath: path.join(app.getPath('documents'), defaultName) };
-    const res = mainWindow ? await dialog.showSaveDialog(mainWindow, opts) : await dialog.showSaveDialog(opts);
-    return res.canceled || !res.filePath ? null : res.filePath;
+    const options: Electron.SaveDialogOptions = { title: 'Speichern unter', defaultPath: path.join(app.getPath('documents'), defaultName) };
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
+    return result.canceled || !result.filePath ? null : result.filePath;
   },
 };
 
@@ -77,8 +76,10 @@ function isTrustedSender(event: IpcMainInvokeEvent): boolean {
   return trusted && mainWindow !== null && event.sender === mainWindow.webContents;
 }
 
-function registerIpc(svc: Services): void {
-  const dispatch = createIpcDispatcher(createHandlers(svc, host), (channel, err) => svc.logger.error('ipc', `Error in ${channel}`, { error: err }));
+function registerIpc(appServices: Services): void {
+  const dispatch = createIpcDispatcher(createHandlers(appServices, host), (channel, err) =>
+    appServices.logger.error('ipc', `Error in ${channel}`, { error: err }),
+  );
   for (const channel of IPC_CHANNELS) {
     ipcMain.handle(channel, async (event, input: unknown) => {
       if (!isTrustedSender(event)) {
@@ -89,28 +90,28 @@ function registerIpc(svc: Services): void {
   }
 }
 
-function forwardEvents(svc: Services): void {
+function forwardEvents(appServices: Services): void {
   const send = (channel: string, payload: unknown) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
   let timer: NodeJS.Timeout | null = null;
   const scopes = new Set<string>();
-  svc.events.on('data:changed', (e: { scopes: string[] }) => {
-    for (const s of e.scopes) scopes.add(s);
+  appServices.events.on('data:changed', (change: { scopes: string[] }) => {
+    for (const scope of change.scopes) scopes.add(scope);
     timer ??= setTimeout(() => {
       send('data:changed', { scopes: [...scopes] });
       scopes.clear();
       timer = null;
     }, 60);
   });
-  svc.events.on('job:updated', (job) => send('job:updated', job));
-  svc.events.on('status:changed', () => send('status:changed', {}));
+  appServices.events.on('job:updated', (job) => send('job:updated', job));
+  appServices.events.on('status:changed', () => send('status:changed', {}));
   // live steps of agent runs (#300); throttled in the agent service
-  svc.events.on('agent:progress', (p: unknown) => send('agent:progress', p));
-  svc.events.on('notification:new', (n: AppNotification) => {
-    send('notification:new', n);
-    if (svc.settings.get().notifications.desktop && Notification.isSupported()) {
-      const note = new Notification({ title: n.title, body: n.description.slice(0, 200), silent: n.priority === 'low' });
+  appServices.events.on('agent:progress', (progress: unknown) => send('agent:progress', progress));
+  appServices.events.on('notification:new', (notification: AppNotification) => {
+    send('notification:new', notification);
+    if (appServices.settings.get().notifications.desktop && Notification.isSupported()) {
+      const note = new Notification({ title: notification.title, body: notification.description.slice(0, 200), silent: notification.priority === 'low' });
       note.on('click', showMainWindow);
       note.show();
     }
@@ -138,21 +139,21 @@ function createWindow(): void {
     },
   });
   // the window title stays short; the page <title> carries the subtitle
-  mainWindow.on('page-title-updated', (e) => e.preventDefault());
-  const wc = mainWindow.webContents;
+  mainWindow.on('page-title-updated', (event) => event.preventDefault());
+  const contents = mainWindow.webContents;
   const allowed = (url: string) => url.startsWith(`${APP_ORIGIN}/`) || (isDev && url.startsWith(process.env.ARCHIVIST_DEV_URL!));
-  wc.on('will-navigate', (e, url) => {
-    if (!allowed(url)) e.preventDefault();
+  contents.on('will-navigate', (event, url) => {
+    if (!allowed(url)) event.preventDefault();
   });
-  wc.on('will-redirect', (e, url) => {
-    if (!allowed(url)) e.preventDefault();
+  contents.on('will-redirect', (event, url) => {
+    if (!allowed(url)) event.preventDefault();
   });
   // links (e.g. sources of a web search) open in the system browser – never inside the app window
-  wc.setWindowOpenHandler(({ url }) => {
+  contents.setWindowOpenHandler(({ url }) => {
     if (isExternalWebUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
-  wc.on('will-attach-webview', (e) => e.preventDefault());
+  contents.on('will-attach-webview', (event) => event.preventDefault());
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -201,24 +202,24 @@ async function start(): Promise<void> {
     workerFile: resource('worker.cjs'),
     readerFile: resource('db-reader.cjs'),
   });
-  const svc = services;
+  const appServices = services;
 
   // The renderer is served via a custom protocol (no HTTP server, no file://)
   const rendererRoot = resource('renderer');
   protocol.handle('app', async (request) => {
-    const res = await serveRenderer(rendererRoot, request.url);
-    return new Response(res.body as ConstructorParameters<typeof Response>[0], { status: res.status, headers: res.headers });
+    const served = await serveRenderer(rendererRoot, request.url);
+    return new Response(served.body as ConstructorParameters<typeof Response>[0], { status: served.status, headers: served.headers });
   });
 
   // Always deny permission requests (camera, location …)
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, respond) => respond(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
 
-  registerIpc(svc);
-  forwardEvents(svc);
+  registerIpc(appServices);
+  forwardEvents(appServices);
   buildMenu();
   createWindow();
-  svc.start();
+  appServices.start();
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -244,9 +245,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) showMainWindow();
   });
-  app.on('before-quit', (e) => {
+  app.on('before-quit', (event) => {
     if (!services) return;
-    e.preventDefault();
+    event.preventDefault();
     void quitter.quit();
   });
   process.on('uncaughtException', (err) => services?.logger.error('process', 'uncaughtException', { error: err }));

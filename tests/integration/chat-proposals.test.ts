@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { shortAnswer } from '../../packages/core/src/services/chat-state';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
+import { intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -30,7 +28,10 @@ const foreignProposal = (conversationId: string | null = null) =>
 
 function proposedRelation(a: string, b: string) {
   const g = app.services.graph;
-  return g.link(g.ensureEntity('topic', a).id, g.ensureEntity('project', b).id, 'relates_to', { confidence: 0.6, status: 'proposed' })!;
+  return g.link(
+    { sourceId: g.ensureEntity({ type: 'topic', name: a }).id, targetId: g.ensureEntity({ type: 'project', name: b }).id, relationType: 'relates_to' },
+    { confidence: 0.6, status: 'proposed' },
+  )!;
 }
 
 describe('„ja/ok/bitte“ confirms only proposals of this conversation (#37)', () => {

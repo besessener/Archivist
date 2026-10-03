@@ -35,5 +35,5 @@ export function initScan(page: Page) {
       await locators.buttons.confirmAnalysis.click();
     },
   };
-  return Object.assign(pageObject(locators.fileRows, locators, interactions), { fileRow });
+  return Object.assign(pageObject({ root: locators.fileRows, locators, actions: interactions }), { fileRow });
 }

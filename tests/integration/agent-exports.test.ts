@@ -3,10 +3,14 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RefStore, type AgentTool, type ToolContext } from '../../packages/core/src/agent/registry';
+import type { AgentTool, ToolContext } from '../../packages/core/src/agent/registry';
 import type { ToolDeps } from '../../packages/core/src/agent/tools/common';
-import { csvCell, exportTools, monthGaps, parseAmount } from '../../packages/core/src/agent/tools/exports';
+import { exportTools } from '../../packages/core/src/agent/tools/exports';
+import { csvCell } from '../../packages/core/src/agent/tools/exports/csv';
+import { monthGaps, parseAmount } from '../../packages/core/src/agent/tools/exports/items';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
+import { emptyToolContext } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -14,24 +18,6 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await app.cleanup();
-});
-
-const newCtx = (): ToolContext => ({
-  runId: 'r1',
-  conversationId: null,
-  trigger: 'chat',
-  mode: 'auto',
-  refs: new RefStore(),
-  shared: new Set(),
-  signal: new AbortController().signal,
-  userText: '',
-  lastAnswer: null,
-  files: [],
-  applied: [],
-  changes: [],
-  changedCount: 0,
-  tainted: null,
-  actionIds: [],
 });
 
 function deps(): ToolDeps {
@@ -70,6 +56,7 @@ function deps(): ToolDeps {
     capture: s.capture,
     answers: s.answers,
     enqueueConsistency: () => undefined,
+    logger: s.ctx.logger,
   };
 }
 
@@ -85,21 +72,15 @@ const run = (name: string, args: unknown, ctx: ToolContext) => {
 
 /** Imports a file and archives it (copy) into `loc` with the given title and document date. */
 async function archived(name: string, content: string | Buffer, loc: string, title: string, date: string): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Rechnung',
-    title,
-    summary: `Zusammenfassung ${title}`,
-    mainTopic: null,
-    project: null,
-    persons: [],
-    dates: [{ date, kind: 'document_date', label: 'Rechnungsdatum' }],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({
+      title,
+      summary: `Zusammenfassung ${title}`,
+      categoryPath: loc,
+      docType: 'Rechnung',
+      dates: [{ date, kind: 'document_date', label: 'Rechnungsdatum' }],
+    }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -127,7 +108,7 @@ async function setup() {
   const a = await archived('strom-jan.txt', 'Stromrechnung Januar\nGesamtbetrag: 1.234,56 €\n', 'private/finanzen/strom', 'Strom Januar', '2026-01-15');
   const b = await archived('strom-apr.txt', 'Stromrechnung April\nZu zahlender Betrag 100,44 EUR\n', 'private/finanzen/strom', 'Strom April', '2026-04-10');
   const c = await archived('vertrag.pdf', await makePdf(2, 'Vertrag'), 'private/finanzen/vertrag', 'Stromvertrag', '2026-02-01');
-  const ctx = newCtx();
+  const ctx = emptyToolContext();
   const refs = [a, b, c].map((id) => ctx.refs.doc(id));
   const before = [a, b, c].map((id) => fs.readFileSync(abs(id)));
   return { ids: [a, b, c], ctx, refs, before };
@@ -214,7 +195,7 @@ describe('agent export tools (#311)', () => {
 
   it('keeps titles of non-shareable documents out of the tool result (the local file is complete)', async () => {
     const { ids, ctx, refs } = await setup();
-    app.services.documents.setLlmExcluded(ids[0]!, true);
+    app.services.documents.setLlmExcluded(ids[0]!, { excluded: true });
     fs.rmSync(abs(ids[0]!));
     for (const p of [app.services.documents.getRow(ids[0]!).sourcePath, app.services.documents.getRow(ids[0]!).stagedPath])
       if (p) fs.rmSync(p, { force: true });
@@ -230,7 +211,7 @@ describe('agent export tools (#311)', () => {
   });
 
   it('writes reports as Markdown and PDF', async () => {
-    const ctx = newCtx();
+    const ctx = emptyToolContext();
     const md = '## Ergebnis\n\nStrom kostete „1.335,00 €“ – siehe D1.\n\n- Punkt eins\n- Punkt ✓ zwei';
     await run('write_report', { title: 'Stromkosten', markdown: md, format: 'md' }, ctx);
     expect(fs.readFileSync(ctx.files[0]!, 'utf8')).toBe(`# Stromkosten\n\n${md}\n`);

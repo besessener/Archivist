@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, scriptedTurns, sentText } from '../helpers/agent';
+import { agentApp, archived, lastToolOutput, scriptedTurns, sentText } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -10,27 +10,24 @@ afterEach(async () => {
   await app.cleanup();
 });
 
-/** Output of the last tool call the model got back. */
-const lastOutput = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ??
-  '';
-
 /** Three documents about the same flat, one recipe. */
 async function flat() {
-  const lease = await archived(
-    app,
-    'mietvertrag.md',
-    'Mietvertrag für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.',
-    'private/wohnen',
-  );
-  const costs = await archived(
-    app,
-    'nebenkosten.md',
-    'Nebenkostenabrechnung für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Miete und Heizung.',
-    'private/wohnen',
-  );
-  const recipe = await archived(app, 'rezept.md', 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', 'private/kochen');
-  const notice = await archived(app, 'kuendigung.md', 'Kündigung der Wohnung Hauptstraße 5 an Vermieter Schmidt, Kaution zurück.', 'private/wohnen');
+  const lease = await archived(app, {
+    name: 'mietvertrag.md',
+    content: 'Mietvertrag für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Kaution 1500 Euro, Miete monatlich.',
+    folder: 'private/wohnen',
+  });
+  const costs = await archived(app, {
+    name: 'nebenkosten.md',
+    content: 'Nebenkostenabrechnung für die Wohnung in der Hauptstraße 5. Vermieter Schmidt, Miete und Heizung.',
+    folder: 'private/wohnen',
+  });
+  const recipe = await archived(app, { name: 'rezept.md', content: 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', folder: 'private/kochen' });
+  const notice = await archived(app, {
+    name: 'kuendigung.md',
+    content: 'Kündigung der Wohnung Hauptstraße 5 an Vermieter Schmidt, Kaution zurück.',
+    folder: 'private/wohnen',
+  });
   return { lease, costs, recipe, notice };
 }
 
@@ -51,8 +48,8 @@ describe('Link methods as tools of their own (#313)', () => {
       await app.ok('knowledge:createEntity', { type: 'note', name: 'Termin', description: 'Termin mit dem Vermieter zum Projekt Hauptstraße am Freitag.' })
     ).entity;
     // the user rejected „Mietvertrag – Kündigung“ before: never proposed again
-    const r = app.services.graph.linkEntries(d.lease, d.notice, 'related_to', { status: 'proposed' });
-    app.services.graph.decideRelation(r.relation.id, 'rejected');
+    const r = app.services.graph.linkEntries({ sourceId: d.lease, targetId: d.notice, relationType: 'related_to' }, { status: 'proposed' });
+    app.services.graph.decideRelation(r.relation.id, { status: 'rejected' });
 
     const ui = await app.ok('links:suggestions', { id: d.lease, limit: 3 });
     expect(ui.map((c) => c.id)).toEqual([d.costs]);
@@ -69,7 +66,7 @@ describe('Link methods as tools of their own (#313)', () => {
       { calls: [{ name: 'find_documents', args: { name: 'mietvertrag' } }] },
       { calls: [{ name: 'suggest_links', args: { entries: ['D1'] } }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('nebenkosten');
         expect(out).not.toContain('kuendigung');
         expect(out).not.toContain('rezept');
@@ -88,7 +85,7 @@ describe('Link methods as tools of their own (#313)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'record_note', args: { content: 'Der Vermieter will die Fenster im Projekt Hauptstraße tauschen.' } }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('Mögliche Verknüpfungen');
         expect(out).toMatch(/→ K\d+ Projekt „Hauptstraße“ \(90 %, nennt das Projekt „Hauptstraße“\)/);
         return { calls: [{ name: 'ask_user', args: { question: 'Das klingt nach Projekt Hauptstraße – verknüpfen?', options: ['Ja', 'Nein'] } }] };
@@ -133,7 +130,7 @@ describe('Link methods as tools of their own (#313)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_unlinked_entries', args: { limit: 1 } }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('2 verwaiste Einträge, hier 1–1');
         expect(out).toContain('rezept');
         expect(out).toContain('Weitere mit offset=1');
@@ -144,7 +141,7 @@ describe('Link methods as tools of their own (#313)', () => {
       { text: 'ok' },
     );
     await app.ok('chat:send', { text: 'Welche Einträge hängen allein herum?' });
-    const out = lastOutput();
+    const out = lastToolOutput(app);
     expect(out).toContain('2 verwaiste Einträge, hier 2–2');
     // the notice gets the lease and the costs as targets
     expect(out).toMatch(/kuendigung“\n\s+→ .*(mietvertrag|nebenkosten)/);
@@ -156,7 +153,7 @@ describe('Link methods as tools of their own (#313)', () => {
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_topic_clusters', args: {} }] },
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         expect(out).toContain('Gruppe 1 (S1, 3 Einträge)');
         expect(out).not.toContain('rezept');
         return { calls: [{ name: 'propose_topic', args: { name: 'Wohnung Hauptstraße', entries: ['S1'] } }] };
@@ -179,27 +176,27 @@ describe('Link methods as tools of their own (#313)', () => {
     for (const id of [d.lease, d.costs, d.notice]) expect(app.services.documents.get(id).topicName).toBeNull();
 
     // „Nein“ to a group is remembered: the same group is not offered again
-    const again = app.services.links.proposeTopic('Andere', [d.lease, d.costs]);
+    const again = app.services.links.proposeTopic({ name: 'Andere', memberIds: [d.lease, d.costs] });
     const other = (await app.ok('insights:list', { status: 'open' })).find((i) => i.id === again.insightId)!;
     await app.ok('insights:respond', { response: 'reject', id: other.id });
-    expect(app.services.links.proposeTopic('Andere', [d.lease, d.costs]).actionId).toBeNull();
+    expect(app.services.links.proposeTopic({ name: 'Andere', memberIds: [d.lease, d.costs] }).actionId).toBeNull();
     const clusters = await app.services.links.clusters({ minSize: 2 });
     expect(clusters.some((c) => c.members.length === 2 && c.members.every((m) => [d.lease, d.costs].includes(m.id)))).toBe(false);
   });
 
   it('backfill_links: proposes (never confirms) in steps and continues where it stopped; rejected pairs never again; undone with the run', async () => {
     const d = await flat();
-    const r = app.services.graph.linkEntries(d.costs, d.notice, 'related_to', { status: 'proposed' });
-    app.services.graph.decideRelation(r.relation.id, 'rejected');
+    const r = app.services.graph.linkEntries({ sourceId: d.costs, targetId: d.notice, relationType: 'related_to' }, { status: 'proposed' });
+    app.services.graph.decideRelation(r.relation.id, { status: 'rejected' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'backfill_links', args: { maxEntries: 2 } }] },
       () => {
-        expect(lastOutput()).toMatch(/2 Einträge geprüft, \d+ Verknüpfungen vorgeschlagen\. Noch 2 Einträge/);
+        expect(lastToolOutput(app)).toMatch(/2 Einträge geprüft, \d+ Verknüpfungen vorgeschlagen\. Noch 2 Einträge/);
         return { calls: [{ name: 'backfill_links', args: { maxEntries: 50 } }] };
       },
       () => {
-        expect(lastOutput()).toContain('2 Einträge geprüft');
-        expect(lastOutput()).toContain('vollständig durchlaufen');
+        expect(lastToolOutput(app)).toContain('2 Einträge geprüft');
+        expect(lastToolOutput(app)).toContain('vollständig durchlaufen');
         return { text: 'Fertig.' };
       },
     );
@@ -236,8 +233,8 @@ describe('Link methods as tools of their own (#313)', () => {
 describe('Background link run with the link-method tools (#313)', () => {
   it('works through the methods, only proposes, never repeats a rejected pair and sends ONE notification', async () => {
     const d = await flat();
-    const r = app.services.graph.linkEntries(d.lease, d.costs, 'related_to', { status: 'proposed' });
-    app.services.graph.decideRelation(r.relation.id, 'rejected');
+    const r = app.services.graph.linkEntries({ sourceId: d.lease, targetId: d.costs, relationType: 'related_to' }, { status: 'proposed' });
+    app.services.graph.decideRelation(r.relation.id, { status: 'rejected' });
     app.llm.agent = scriptedTurns(
       ({ body, tools }) => {
         const task = JSON.stringify(body.input);
@@ -250,14 +247,14 @@ describe('Background link run with the link-method tools (#313)', () => {
       { calls: [{ name: 'find_unlinked_entries', args: {} }] },
       // the recipe is unlinked; the model links it „on request“ with the notice – in the background only a proposal
       () => {
-        const out = lastOutput();
+        const out = lastToolOutput(app);
         const recipe = /(D\d+) Dokument „rezept“/.exec(out)?.[1];
         expect(recipe).toBeTruthy();
         return { calls: [{ name: 'find_documents', args: { name: 'kuendigung' } }], text: recipe };
       },
       ({ body }) => {
         const recipe = /(D\d+) Dokument „rezept“/.exec(JSON.stringify(body.input))![1]!;
-        const notice = /(D\d+): „kuendigung“/.exec(lastOutput())![1]!;
+        const notice = /(D\d+): „kuendigung“/.exec(lastToolOutput(app))![1]!;
         const lease = /(D\d+) Dokument „mietvertrag“/.exec(JSON.stringify(body.input))?.[1] ?? 'D1';
         return {
           calls: [
@@ -268,11 +265,11 @@ describe('Background link run with the link-method tools (#313)', () => {
         };
       },
       () => {
-        expect(lastOutput()).not.toContain('nebenkosten');
+        expect(lastToolOutput(app)).not.toContain('nebenkosten');
         return { calls: [{ name: 'find_topic_clusters', args: {} }] };
       },
       () => {
-        const group = /Gruppe 1 \((S\d+), 3 Einträge\)/.exec(lastOutput())?.[1];
+        const group = /Gruppe 1 \((S\d+), 3 Einträge\)/.exec(lastToolOutput(app))?.[1];
         expect(group).toBeTruthy();
         return { calls: [{ name: 'propose_topic', args: { name: 'Wohnung', entries: [group!] } }] };
       },

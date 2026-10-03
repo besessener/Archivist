@@ -15,20 +15,23 @@ export interface DataPaths {
   backups: string;
   inbox: string;
   quarantine: string;
+  /** Documents moved to the trash, until restored or the trash is emptied. */
+  trash: string;
 }
 
 export function resolveDataPaths(root: string, archiveOverride?: string): DataPaths {
-  const r = path.resolve(root);
+  const resolvedRoot = path.resolve(root);
   return {
-    root: r,
-    archive: archiveOverride ? path.resolve(archiveOverride) : path.join(r, 'archive'),
-    database: path.join(r, 'database'),
-    index: path.join(r, 'index'),
-    config: path.join(r, 'config'),
-    logs: path.join(r, 'logs'),
-    backups: path.join(r, 'backups'),
-    inbox: path.join(r, 'inbox'),
-    quarantine: path.join(r, 'quarantine'),
+    root: resolvedRoot,
+    archive: archiveOverride ? path.resolve(archiveOverride) : path.join(resolvedRoot, 'archive'),
+    database: path.join(resolvedRoot, 'database'),
+    index: path.join(resolvedRoot, 'index'),
+    config: path.join(resolvedRoot, 'config'),
+    logs: path.join(resolvedRoot, 'logs'),
+    backups: path.join(resolvedRoot, 'backups'),
+    inbox: path.join(resolvedRoot, 'inbox'),
+    quarantine: path.join(resolvedRoot, 'quarantine'),
+    trash: path.join(resolvedRoot, 'trash'),
   };
 }
 

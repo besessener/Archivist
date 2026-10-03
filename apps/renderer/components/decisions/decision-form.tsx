@@ -1,31 +1,61 @@
 'use client';
 
-import { ExtraSubjectFields, useExtraSubjects } from '@/components/common/extra-subjects';
 import { useState } from 'react';
-import { DECISION_FIELD_LABELS, EditableDecisionStatus, isEditableDecisionStatus, localDate, type DecisionField, type DecisionStatus } from '@archivist/shared';
+import {
+  DECISION_FIELD_LABELS,
+  isEditableDecisionStatus,
+  localDate,
+  type DecisionField,
+  type DecisionStatus,
+  type EditableDecisionStatus,
+} from '@archivist/shared';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { ExtraSubjectFields, useExtraSubjects } from '@/components/common/extra-subjects';
 import { MARKDOWN_HINT } from '@/components/common/markdown';
+import { Field, Notice } from '@/components/common/states';
+import {
+  DecisionStatusField,
+  SupersededByField,
+  isStatusLocked,
+  pendingCriticalStatus,
+  type CriticalStatus,
+} from '@/components/decisions/decision-status-field';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Field, Notice } from '@/components/common/states';
 import { call } from '@/lib/ipc';
-import { formatLongDate } from '@/lib/format';
-import { DECISION_STATUS_LABELS } from '@/lib/labels';
-import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { DecisionRecord } from '@/lib/types';
-import { nonEmpty, parseList } from '@/lib/utils';
+import { nonEmpty, parseList, withMembership } from '@/lib/utils';
 
-/** Statuses that need an explicit confirmation (stage 2) and get an undo entry; never sent via `decisions:update`. */
-type CriticalStatus = 'superseded' | 'revoked';
-const isCritical = (s: DecisionStatus): s is CriticalStatus => s === 'superseded' || s === 'revoked';
+function dayOf(value: string | null | undefined): string {
+  return value ? localDate(value) : '';
+}
 
-function dayOf(v: string | null | undefined): string {
-  return v ? localDate(v) : '';
+/** The status sent with an edit; a pending supersede/revoke goes its own confirmed way instead. */
+function editStatusFor({
+  locked,
+  pendingCritical,
+  draft,
+  status,
+}: {
+  locked: boolean;
+  pendingCritical: CriticalStatus | null;
+  draft: boolean;
+  status: DecisionStatus;
+}): EditableDecisionStatus | undefined {
+  if (locked || pendingCritical) return undefined;
+  if (draft) return 'draft';
+  return status === 'draft' || !isEditableDecisionStatus(status) ? 'confirmed' : status;
+}
+
+function successMessage({ isNew, draft, pendingCritical }: { isNew: boolean; draft: boolean; pendingCritical: CriticalStatus | null }): string {
+  if (isNew) return draft ? 'Entwurf gespeichert.' : 'Entscheidung angelegt.';
+  if (pendingCritical === 'revoked') return 'Entscheidung widerrufen.';
+  if (pendingCritical === 'superseded') return 'Entscheidung als ersetzt markiert.';
+  return 'Entscheidung gespeichert.';
 }
 
 export function DecisionFormDialog({
@@ -35,9 +65,9 @@ export function DecisionFormDialog({
   onSaved,
 }: {
   open: boolean;
-  onOpenChange: (o: boolean) => void;
+  onOpenChange: (open: boolean) => void;
   decision: DecisionRecord | null;
-  onSaved: (d: DecisionRecord) => void;
+  onSaved: (decision: DecisionRecord) => void;
 }) {
   const { run, busy } = useRun();
   const [title, setTitle] = useState(decision?.title ?? '');
@@ -45,7 +75,7 @@ export function DecisionFormDialog({
   const [decidedAt, setDecidedAt] = useState(dayOf(decision?.decidedAt));
   const [topic, setTopic] = useState(decision?.topicName ?? '');
   const [project, setProject] = useState(decision?.projectName ?? '');
-  const extra = useExtraSubjects(decision?.id, open);
+  const extra = useExtraSubjects(decision?.id, { open });
   const [participants, setParticipants] = useState((decision?.participants ?? []).join(', '));
   const [rationale, setRationale] = useState(decision?.rationale ?? '');
   const [consequences, setConsequences] = useState(decision?.consequences ?? '');
@@ -57,10 +87,8 @@ export function DecisionFormDialog({
   const [status, setStatus] = useState<DecisionStatus>(decision?.status ?? 'confirmed');
   const [supersededBy, setSupersededBy] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
-  // superseded/revoked decisions keep their status here; the way back is undo in the audit log
-  const statusLocked = decision !== null && !isEditableDecisionStatus(decision.status);
-  const pendingCritical: CriticalStatus | null = decision && !statusLocked && isCritical(status) ? status : null;
-  const others = useQuery('decisions:list', {}, { scopes: ['decisions'], enabled: open && pendingCritical === 'superseded' });
+  const statusLocked = isStatusLocked(decision);
+  const pendingCritical = pendingCriticalStatus(decision, status);
 
   const filled: Record<DecisionField, boolean> = {
     decisionText: text.trim().length > 0,
@@ -68,7 +96,7 @@ export function DecisionFormDialog({
     topic: topic.trim().length > 0,
     participants: parseList(participants).length > 0,
   };
-  const missing = (Object.keys(filled) as DecisionField[]).filter((f) => !filled[f] && !unknown.has(f));
+  const missing = (Object.keys(filled) as DecisionField[]).filter((field) => !filled[field] && !unknown.has(field));
   const onlyTextMissing = missing.length === 1 && missing[0] === 'decisionText';
   const canSave = text.trim().length > 0 && !busy && !onlyTextMissing && (pendingCritical !== 'superseded' || supersededBy !== '');
   const effectiveDraft = draft || missing.length > 0;
@@ -91,22 +119,17 @@ export function DecisionFormDialog({
   const [initialFormState] = useState(formState);
   const fieldsChanged = formState !== initialFormState;
 
-  function toggleUnknown(f: DecisionField, v: boolean) {
-    setUnknown((prev) => {
-      const next = new Set(prev);
-      if (v) next.add(f);
-      else next.delete(f);
-      return next;
-    });
+  function setFieldUnknown(field: DecisionField, isUnknown: boolean) {
+    setUnknown((previous) => withMembership(previous, { value: field, present: isUnknown }));
   }
 
-  const unknownBox = (f: DecisionField) => (
+  const unknownBox = (field: DecisionField) => (
     <CheckboxField
-      checked={unknown.has(f)}
-      onCheckedChange={(v) => toggleUnknown(f, v === true)}
+      checked={unknown.has(field)}
+      onCheckedChange={(checked) => setFieldUnknown(field, checked === true)}
       label="unbekannt"
       className="text-xs"
-      data-testid={`decision-unknown-${f}`}
+      data-testid={`decision-unknown-${field}`}
     />
   );
 
@@ -117,7 +140,7 @@ export function DecisionFormDialog({
   }
 
   async function persist() {
-    const unknownFields = [...unknown].filter((f) => !filled[f]);
+    const unknownFields = [...unknown].filter((field) => !filled[field]);
     const body = {
       ...(nonEmpty(title) ? { title: nonEmpty(title) } : {}),
       decisionText: text.trim(),
@@ -129,23 +152,22 @@ export function DecisionFormDialog({
       consequences: nonEmpty(consequences) ?? null,
       alternatives: alternatives
         .split('\n')
-        .map((s) => s.trim())
+        .map((alternative) => alternative.trim())
         .filter(Boolean),
       validFrom: validFrom || null,
       validUntil: validUntil || null,
       unknownFields,
       asDraft: effectiveDraft,
     };
-    const editStatus: EditableDecisionStatus | undefined =
-      statusLocked || pendingCritical ? undefined : effectiveDraft ? 'draft' : status === 'draft' || !isEditableDecisionStatus(status) ? 'confirmed' : status;
-    const out = await run(
+    const editStatus = editStatusFor({ locked: statusLocked, pendingCritical, draft: effectiveDraft, status });
+    const saved = await run(
       async () => {
         if (!decision) {
           const created = await call('decisions:create', body);
           await extra.save(created.id);
           return created;
         }
-        const saved =
+        const updated =
           pendingCritical && !fieldsChanged
             ? decision
             : await call('decisions:update', { id: decision.id, patch: { ...body, ...(editStatus ? { status: editStatus } : {}) } });
@@ -154,25 +176,14 @@ export function DecisionFormDialog({
         if (pendingCritical === 'revoked') return call('decisions:revoke', { id: decision.id, confirmed: true });
         if (pendingCritical === 'superseded')
           return (await call('decisions:supersede', { oldDecisionId: decision.id, newDecisionId: supersededBy, confirmed: true })).old;
-        return saved;
+        return updated;
       },
-      {
-        success: !decision
-          ? effectiveDraft
-            ? 'Entwurf gespeichert.'
-            : 'Entscheidung angelegt.'
-          : pendingCritical === 'revoked'
-            ? 'Entscheidung widerrufen.'
-            : pendingCritical === 'superseded'
-              ? 'Entscheidung als ersetzt markiert.'
-              : 'Entscheidung gespeichert.',
-      },
+      { success: successMessage({ isNew: !decision, draft: effectiveDraft, pendingCritical }) },
     );
     setConfirmOpen(false);
-    if (out) {
-      onSaved(out);
-      onOpenChange(false);
-    }
+    if (!saved) return;
+    onSaved(saved);
+    onOpenChange(false);
   }
 
   return (
@@ -246,66 +257,21 @@ export function DecisionFormDialog({
           <Field label="Gültig bis" htmlFor="d-until">
             <Input id="d-until" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
           </Field>
-          {decision && (
-            <Field
-              label="Status"
-              htmlFor="d-status"
-              hint={
-                statusLocked
-                  ? 'Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.'
-                  : pendingCritical
-                    ? 'Wird erst nach deiner Bestätigung übernommen und lässt sich im Änderungsprotokoll rückgängig machen.'
-                    : undefined
-              }
-            >
-              <Select
-                id="d-status"
-                value={status}
-                disabled={statusLocked}
-                onChange={(e) => setStatus(e.target.value as DecisionStatus)}
-                data-testid="decision-status"
-              >
-                {statusLocked ? (
-                  <option value={decision.status}>{DECISION_STATUS_LABELS[decision.status]}</option>
-                ) : (
-                  <>
-                    {EditableDecisionStatus.options.map((s) => (
-                      <option key={s} value={s}>
-                        {DECISION_STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                    <option value="superseded">{DECISION_STATUS_LABELS.superseded} …</option>
-                    <option value="revoked">{DECISION_STATUS_LABELS.revoked} …</option>
-                  </>
-                )}
-              </Select>
-            </Field>
-          )}
+          {decision && <DecisionStatusField decision={decision} status={status} onStatusChange={setStatus} />}
           {pendingCritical === 'superseded' && decision && (
-            <Field label="Ersetzt durch" htmlFor="d-superseded-by">
-              <Select id="d-superseded-by" value={supersededBy} onChange={(e) => setSupersededBy(e.target.value)} data-testid="decision-superseded-by">
-                <option value="">Neuere Entscheidung wählen …</option>
-                {(others.data ?? [])
-                  .filter((x) => x.id !== decision.id)
-                  .map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {(x.title || x.decisionText).slice(0, 80)} ({formatLongDate(x.decidedAt, 'ohne Datum')})
-                    </option>
-                  ))}
-              </Select>
-            </Field>
+            <SupersededByField decision={decision} open={open} value={supersededBy} onChange={setSupersededBy} />
           )}
         </div>
         {missing.length > 0 && !onlyTextMissing && (
           <Notice tone="warning" title="Noch nicht vollständig" data-testid="decision-missing">
-            Es fehlt: {missing.map((f) => DECISION_FIELD_LABELS[f]).join(', ')}. Die Entscheidung wird als Entwurf gespeichert, bis du das ergänzt oder als
-            „unbekannt“ markieren.
+            Es fehlt: {missing.map((field) => DECISION_FIELD_LABELS[field]).join(', ')}. Die Entscheidung wird als Entwurf gespeichert, bis du das ergänzt oder
+            als „unbekannt“ markieren.
           </Notice>
         )}
         <CheckboxField
           checked={effectiveDraft}
           disabled={missing.length > 0}
-          onCheckedChange={(v) => setDraft(v === true)}
+          onCheckedChange={(checked) => setDraft(checked === true)}
           label="Als Entwurf speichern"
           data-testid="decision-draft"
         />

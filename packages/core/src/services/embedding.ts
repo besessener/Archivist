@@ -1,5 +1,6 @@
 import type { LlmService } from './llm';
 import type { SettingsService } from './settings';
+import type { Logger } from '../util/logger';
 import { stripDiacritics, tokenize } from '../util/text';
 
 export const LOCAL_MODEL = 'local-hash-v1';
@@ -14,10 +15,7 @@ function fnv1a(str: string, seed = 0x811c9dc5): number {
   return h >>> 0;
 }
 
-/**
- * Local, deterministic vectors (feature hashing over words and character trigrams).
- * No network request, no model file – robust offline and for confidential documents.
- */
+/** Local, deterministic vectors (feature hashing over words and character trigrams): no network, no model file. */
 export function localEmbed(text: string): Float32Array {
   const vec = new Float32Array(LOCAL_DIM);
   const tokens = tokenize(text);
@@ -25,9 +23,9 @@ export function localEmbed(text: string): Float32Array {
   for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
   const add = (feature: string, weight: number) => {
     const h = fnv1a(feature);
-    const idx = h % LOCAL_DIM;
+    const slot = h % LOCAL_DIM;
     const sign = (fnv1a(feature, 0x9747b28c) & 1) === 0 ? 1 : -1;
-    vec[idx] = (vec[idx] ?? 0) + sign * weight;
+    vec[slot] = (vec[slot] ?? 0) + sign * weight;
   };
   for (const [tok, count] of tf) {
     const w = 1 + Math.log(count);
@@ -49,24 +47,28 @@ export interface EmbedResult {
 }
 
 export class EmbeddingService {
-  constructor(
-    private readonly settings: SettingsService,
-    private readonly llm: LlmService,
-  ) {}
+  private readonly settings: SettingsService;
+  private readonly llm: LlmService;
+  private readonly logger: Logger;
+
+  constructor(deps: { settings: SettingsService; llm: LlmService; logger: Logger }) {
+    ({ settings: this.settings, llm: this.llm, logger: this.logger } = deps);
+  }
 
   /** Model that requests would currently use. */
-  currentModel(allowRemote: boolean): string {
-    const cfg = this.settings.get().llm;
-    return allowRemote && cfg.embeddingModel && this.llm.isConfigured() ? cfg.embeddingModel : LOCAL_MODEL;
+  currentModel({ allowRemote }: { allowRemote: boolean }): string {
+    const llmSettings = this.settings.get().llm;
+    return allowRemote && llmSettings.embeddingModel && this.llm.isConfigured() ? llmSettings.embeddingModel : LOCAL_MODEL;
   }
 
   /** `allowRemote=false` forces local vectors (e.g. for documents excluded from external analysis). */
   async embed(texts: string[], opts: { allowRemote: boolean; purpose: string; documentIds?: string[] }): Promise<EmbedResult> {
-    const model = this.currentModel(opts.allowRemote);
+    const model = this.currentModel({ allowRemote: opts.allowRemote });
     if (model !== LOCAL_MODEL) {
       try {
         const out: number[][] = [];
-        for (let i = 0; i < texts.length; i += 32) out.push(...(await this.llm.embeddings(texts.slice(i, i + 32), opts.purpose, opts.documentIds)));
+        for (let i = 0; i < texts.length; i += 32)
+          out.push(...(await this.llm.embeddings(texts.slice(i, i + 32), { purpose: opts.purpose, documentIds: opts.documentIds })));
         const vectors = out.map((v) => {
           const f = Float32Array.from(v);
           let n = 0;
@@ -76,8 +78,9 @@ export class EmbeddingService {
           return f;
         });
         return { vectors, model, dim: vectors[0]?.length ?? 0 };
-      } catch {
-        /* fall back to local vectors – indexing must not depend on the cloud */
+      } catch (error) {
+        // indexing must not depend on the cloud: local vectors take over
+        this.logger.warn('embedding', 'Remote embeddings failed, using local vectors', { model, error });
       }
     }
     return { vectors: texts.map(localEmbed), model: LOCAL_MODEL, dim: LOCAL_DIM };

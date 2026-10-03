@@ -84,9 +84,9 @@ export class AuditService {
       })
       .run();
     this.ctx.events.changed('audit');
-    for (const l of this.listeners) {
+    for (const listener of this.listeners) {
       try {
-        l({ ...input, id, runId: run?.runId ?? null });
+        listener({ ...input, id, runId: run?.runId ?? null });
       } catch (err) {
         this.ctx.logger.warn('audit', 'Audit listener failed', { error: err });
       }
@@ -94,7 +94,7 @@ export class AuditService {
     return id;
   }
 
-  private map(r: Row): AuditEntry {
+  private toEntry(r: Row): AuditEntry {
     return {
       id: r.id,
       at: r.at,
@@ -114,15 +114,15 @@ export class AuditService {
     };
   }
 
-  list(limit = 200, onlyUndoable = false): AuditEntry[] {
+  list({ limit = 200, onlyUndoable = false }: { limit?: number; onlyUndoable?: boolean } = {}): AuditEntry[] {
     const rows = this.ctx.database.db
       .select()
       .from(auditLog)
       .orderBy(desc(auditLog.at))
       .limit(limit * (onlyUndoable ? 5 : 1))
       .all();
-    const mapped = rows.map((r) => this.map(r));
-    return (onlyUndoable ? mapped.filter((m) => m.undoable) : mapped).slice(0, limit);
+    const entries = rows.map((r) => this.toEntry(r));
+    return (onlyUndoable ? entries.filter((e) => e.undoable) : entries).slice(0, limit);
   }
 
   /** Changes of one agent run, newest first (undo of a whole run goes through them in this order). */
@@ -134,6 +134,12 @@ export class AuditService {
     const row = this.ctx.database.db.select().from(auditLog).where(eq(auditLog.id, id)).get();
     if (!row) throw new AppError('validation_error', 'Audit-Eintrag nicht gefunden.');
     return row;
+  }
+
+  /** Ends the undo of an entry whose undo data no longer exists (e.g. files deleted from the trash); the entry itself stays. */
+  endUndo(id: string): void {
+    this.ctx.database.db.update(auditLog).set({ undoType: null, undoData: null }).where(eq(auditLog.id, id)).run();
+    this.ctx.events.changed('audit');
   }
 
   markUndone(id: string): void {

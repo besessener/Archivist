@@ -1,0 +1,90 @@
+'use client';
+
+import { useState } from 'react';
+import { RotateCcw, Trash2 } from 'lucide-react';
+import type { IpcOutput, TrashEntry } from '@archivist/shared';
+import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { PathText } from '@/components/common/path-text';
+import { ErrorNote, Loading, Notice } from '@/components/common/states';
+import { Button } from '@/components/ui/button';
+import { call } from '@/lib/ipc';
+import { formatDateTime } from '@/lib/format';
+import { useQuery } from '@/lib/use-query';
+import { useRun } from '@/lib/use-run';
+import { Section } from './shared';
+
+type UndoResult = IpcOutput<'audit:undo'>;
+
+/** Documents in the trash: restore each, or empty the trash for good after a second confirmation. */
+export function TrashSection() {
+  const { run, busy } = useRun();
+  const trash = useQuery('trash:list', {}, { scopes: ['documents', 'audit'] });
+  const [results, setResults] = useState<Record<string, UndoResult>>({});
+  const [emptying, setEmptying] = useState(false);
+  const entries = trash.data ?? [];
+
+  async function restore(entry: TrashEntry) {
+    const result = await run(() => call('audit:undo', { auditId: entry.auditId }));
+    if (!result) return;
+    setResults((previous) => ({ ...previous, [entry.auditId]: result }));
+    void trash.refetch();
+  }
+
+  return (
+    <Section
+      title="Papierkorb"
+      description="Gelöschte Dokumente liegen hier, bis du den Papierkorb leerst. Bis dahin kannst du sie mit allen Verknüpfungen wiederherstellen."
+    >
+      {trash.error && !trash.data && <ErrorNote error={trash.error} onRetry={() => void trash.refetch()} />}
+      {!trash.data && trash.loading && <Loading />}
+      {trash.data && entries.length === 0 && <p className="text-sm text-muted-foreground">Der Papierkorb ist leer.</p>}
+      {entries.length > 0 && (
+        <ul className="flex flex-col gap-2" data-testid="trash-list">
+          {entries.map((entry) => (
+            <li key={entry.auditId} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3" data-testid="trash-item">
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-medium">{entry.title || 'Ohne Titel'}</p>
+                <p className="text-xs text-muted-foreground">Gelöscht am {formatDateTime(entry.trashedAt)}</p>
+                {entry.files.map((file) => (
+                  <code key={file} className="mt-1 block text-xs text-muted-foreground">
+                    <PathText path={file} />
+                  </code>
+                ))}
+                {results[entry.auditId] && !results[entry.auditId]!.undone && (
+                  <Notice tone="warning" className="mt-2" title="Nicht wiederhergestellt">
+                    {results[entry.auditId]!.conflicts.join(' ')}
+                  </Notice>
+                )}
+              </div>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => void restore(entry)} data-testid="trash-restore">
+                <RotateCcw aria-hidden /> Wiederherstellen
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div>
+        <Button variant="outline" disabled={busy || entries.length === 0} onClick={() => setEmptying(true)} data-testid="trash-empty">
+          <Trash2 aria-hidden /> Papierkorb leeren …
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={emptying}
+        onOpenChange={setEmptying}
+        title="Papierkorb endgültig leeren?"
+        description={`${entries.length === 1 ? 'Ein Dokument wird' : `${entries.length} Dokumente werden`} endgültig gelöscht. Das lässt sich nicht rückgängig machen.`}
+        requireCheckbox="Ich verstehe, dass diese Dateien endgültig gelöscht werden."
+        confirmLabel="Endgültig löschen"
+        destructive
+        confirmTestId="trash-empty-confirm"
+        onConfirm={async (checked) => {
+          if (!checked) return;
+          const result = await run(() => call('trash:empty', { confirmed: true, permanentlyConfirmed: true }), {
+            success: 'Papierkorb geleert',
+          });
+          if (result) setEmptying(false);
+        }}
+      />
+    </Section>
+  );
+}

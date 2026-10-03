@@ -38,10 +38,22 @@ export interface SettingsLoadProblem {
   backupFile: string | null;
 }
 
-/**
- * Validates raw settings field by field: every invalid field is removed so that only it falls back to its default,
- * while all valid sections and fields are kept. Returns the repaired settings and the affected field paths.
- */
+/** Removes the field an issue points at (a section field or a top-level key); returns its path, or null if absent. */
+function removeIssueField(draft: Record<string, unknown>, issuePath: readonly PropertyKey[]): string | null {
+  const [key, field] = issuePath;
+  if (typeof key !== 'string') return null;
+  const section = draft[key];
+  if (SECTION_KEYS.has(key) && typeof field === 'string' && isPlainObject(section)) {
+    if (!(field in section)) return null;
+    delete section[field];
+    return `${key}.${field}`;
+  }
+  if (!(key in draft)) return null;
+  delete draft[key];
+  return key;
+}
+
+/** Validates raw settings field by field: only invalid fields fall back to their default; returns them as paths. */
 export function repairSettings(raw: Record<string, unknown>): { settings: Settings; invalidFields: string[] } {
   const draft = structuredClone(raw);
   const invalid = new Set<string>();
@@ -49,25 +61,10 @@ export function repairSettings(raw: Record<string, unknown>): { settings: Settin
   for (;;) {
     const parsed = Settings.safeParse(draft);
     if (parsed.success) return { settings: parsed.data, invalidFields: [...invalid] };
-    let removed = false;
-    for (const issue of parsed.error.issues) {
-      const [key, field] = issue.path;
-      if (typeof key !== 'string') continue;
-      const section = draft[key];
-      if (SECTION_KEYS.has(key) && typeof field === 'string' && isPlainObject(section)) {
-        if (field in section) {
-          delete section[field];
-          invalid.add(`${key}.${field}`);
-          removed = true;
-        }
-      } else if (key in draft) {
-        delete draft[key];
-        invalid.add(key);
-        removed = true;
-      }
-    }
+    const removed = parsed.error.issues.map((issue) => removeIssueField(draft, issue.path)).filter((field): field is string => field !== null);
+    for (const field of removed) invalid.add(field);
     // Should not happen (e.g. a cross-field rule); fall back to the defaults instead of looping forever.
-    if (!removed) return { settings: Settings.parse({}), invalidFields: [...invalid, ...Object.keys(draft)] };
+    if (!removed.length) return { settings: Settings.parse({}), invalidFields: [...invalid, ...Object.keys(draft)] };
   }
 }
 
@@ -91,23 +88,23 @@ export function settingsLoadNotification(problem: SettingsLoadProblem): Notifica
   };
 }
 
+export type SettingsServiceDeps = { file: string; defaultArchiveRoot: string; events?: EventBus };
+
 /** Non-secret application configuration (config/settings.json). API keys are NOT stored here. */
 export class SettingsService {
   private current: Settings;
   private loadProblem: SettingsLoadProblem | null = null;
 
-  constructor(
-    private readonly file: string,
-    private readonly defaultArchiveRoot: string,
-    private readonly events?: EventBus,
-  ) {
+  private readonly file: string;
+  private readonly defaultArchiveRoot: string;
+  private readonly events?: EventBus;
+
+  constructor(deps: SettingsServiceDeps) {
+    ({ file: this.file, defaultArchiveRoot: this.defaultArchiveRoot, events: this.events } = deps);
     this.current = this.load();
   }
 
-  /**
-   * Returns the problem found while loading settings.json (once) and forgets it.
-   * The service is created before the database, so the composition root turns this into a notification later.
-   */
+  /** Returns the load problem once and forgets it; the composition root reports it once the database exists. */
   takeLoadProblem(): SettingsLoadProblem | null {
     const problem = this.loadProblem;
     this.loadProblem = null;
@@ -115,10 +112,10 @@ export class SettingsService {
   }
 
   /** Saves the original file next to it (`settings.json.<suffix>-<time>`); returns the backup path or null. */
-  private backup(suffix: string, move: boolean): string | null {
+  private backup(suffix: 'corrupt' | 'invalid', mode: 'move' | 'copy'): string | null {
     const target = `${this.file}.${suffix}-${Date.now()}`;
     try {
-      if (move) fs.renameSync(this.file, target);
+      if (mode === 'move') fs.renameSync(this.file, target);
       else fs.copyFileSync(this.file, target, fs.constants.COPYFILE_EXCL);
       return target;
     } catch {
@@ -137,14 +134,14 @@ export class SettingsService {
     let persistRepaired = false;
     if (!isPlainObject(raw)) {
       // back up the broken file instead of silently overwriting it
-      const backupFile = this.backup('corrupt', true);
+      const backupFile = this.backup('corrupt', 'move');
       this.loadProblem = { kind: 'unreadable', fields: [], backupFile };
       settings = Settings.parse({});
     } else {
       const { settings: repaired, invalidFields } = repairSettings(raw);
       settings = repaired;
       if (invalidFields.length) {
-        const backupFile = this.backup('invalid', false);
+        const backupFile = this.backup('invalid', 'copy');
         this.loadProblem = { kind: 'invalid', fields: invalidFields, backupFile };
         // Only write the repaired file once the original is safe; otherwise keep it untouched until the next save.
         persistRepaired = backupFile !== null;
@@ -157,9 +154,9 @@ export class SettingsService {
 
   private persist(settings: Settings): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2), 'utf8');
-    fs.renameSync(tmp, this.file);
+    const temporaryFile = `${this.file}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify(settings, null, 2), 'utf8');
+    fs.renameSync(temporaryFile, this.file);
   }
 
   get(): Settings {
@@ -169,43 +166,46 @@ export class SettingsService {
   update(patchInput: unknown): Settings {
     const patch = SettingsPatch.parse(patchInput);
     const next: Record<string, unknown> = { ...this.current };
-    for (const [key, value] of Object.entries(patch)) {
-      // eslint-disable-next-line sonarjs/different-types-comparison -- defensive: the patch arrives as parsed JSON via IPC
-      if (value === undefined) continue;
+    for (const [key, value] of Object.entries(definedFields(patch))) {
       const prev = (this.current as Record<string, unknown>)[key];
-      // eslint-disable-next-line sonarjs/different-types-comparison -- defensive: the patch arrives as parsed JSON via IPC
-      const isSection = value !== null && typeof value === 'object' && !Array.isArray(value) && typeof prev === 'object';
-      next[key] = isSection ? mergeSection(prev as Record<string, unknown>, definedFields(value)) : value;
+      next[key] = isPlainObject(value) && typeof prev === 'object' ? mergeSection(prev as Record<string, unknown>, definedFields(value)) : value;
     }
     const parsed = Settings.safeParse(next);
     if (!parsed.success) throw validationError('Ungültige Einstellungen.', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     const settings = parsed.data;
-    if (patch.llm?.baseUrl !== undefined) {
-      const url = settings.llm.baseUrl.trim();
-      if (url) {
-        try {
-          const u = new URL(url);
-          if (!/^https?:$/.test(u.protocol)) throw new Error('protocol');
-        } catch {
-          throw validationError('Die Base URL muss mit http:// oder https:// beginnen.');
-        }
-      }
-      // eslint-disable-next-line sonarjs/super-linear-regex -- base URL, length is bounded
-      settings.llm.baseUrl = url.replace(/\/+$/, '');
-    }
-    if (patch.archiveRoot !== undefined) {
-      if (!settings.archiveRoot.trim()) settings.archiveRoot = this.defaultArchiveRoot;
-      settings.archiveRoot = path.resolve(settings.archiveRoot);
-      try {
-        fs.mkdirSync(settings.archiveRoot, { recursive: true });
-        fs.accessSync(settings.archiveRoot, fs.constants.W_OK);
-      } catch (err) {
-        throw new AppError('filesystem_error', 'Der Archivpfad ist nicht beschreibbar.', { cause: err, details: settings.archiveRoot });
-      }
-    }
+    if (patch.llm?.baseUrl !== undefined) settings.llm.baseUrl = checkedBaseUrl(settings.llm.baseUrl);
+    if (patch.archiveRoot !== undefined) settings.archiveRoot = this.writableArchiveRoot(settings.archiveRoot);
     this.persist(settings);
     this.current = settings;
     this.events?.changed('settings');
     return this.get();
+  }
+
+  /** The absolute archive path (empty means the default), created if missing and checked for write access. */
+  private writableArchiveRoot(archiveRoot: string): string {
+    const root = path.resolve(archiveRoot.trim() ? archiveRoot : this.defaultArchiveRoot);
+    try {
+      fs.mkdirSync(root, { recursive: true });
+      fs.accessSync(root, fs.constants.W_OK);
+    } catch (err) {
+      throw new AppError('filesystem_error', 'Der Archivpfad ist nicht beschreibbar.', { cause: err, details: root });
+    }
+    return root;
+  }
+}
+
+/** The trimmed base URL without trailing slashes; it must be http(s) unless empty. */
+function checkedBaseUrl(baseUrl: string): string {
+  let url = baseUrl.trim();
+  if (url && !isHttpUrl(url)) throw validationError('Die Base URL muss mit http:// oder https:// beginnen.');
+  while (url.endsWith('/')) url = url.slice(0, -1);
+  return url;
+}
+
+function isHttpUrl(url: string): boolean {
+  try {
+    return /^https?:$/.test(new URL(url).protocol);
+  } catch {
+    return false;
   }
 }

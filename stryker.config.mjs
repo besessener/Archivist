@@ -6,7 +6,7 @@ export default {
   testRunner: 'vitest',
   vitest: { configFile: 'vitest.mutation.config.mts' },
   coverageAnalysis: 'perTest',
-  // Targeted: only modules where an unnoticed bug would be expensive (path safety, secrets, privacy gate, undo).
+  // Targeted: modules where an unnoticed bug would be expensive (path safety, secrets, privacy and agent gate, undo, pure domain rules).
   mutate: MUTATE_TARGETS,
   reporters: ['clear-text', 'progress', 'json', 'html'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
@@ -14,8 +14,7 @@ export default {
   timeoutMS: 30_000,
   tempDirName: '.stryker-tmp',
   cleanTempDir: true,
-  // Measured: 87.7% overall (paths 80, redact 97, privacy 97, undo 100). The rest are Windows branches in paths.ts and equivalent
-  // mutants. `break` sits just below and is only raised, never lowered.
+  // Full run measured 97.2 % (the rest: equivalent mutants); the thresholds are only raised, never lowered.
   incrementalFile: 'reports/stryker-incremental.json',
-  thresholds: { high: 95, low: 85, break: 85 },
+  thresholds: { high: 95, low: 95, break: 95 },
 };

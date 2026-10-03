@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
+import { intent } from '../helpers/chat-intents';
 
 /** Issue #274: persons and tags in the graph always match the fields of an entry. */
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 
 let app: TestApp;
 beforeEach(async () => {
@@ -24,21 +24,9 @@ const relStatus = (from: string | undefined, to: string, type: string) =>
 const lastAudit = async (action: string) => (await app.ok('audit:list', {})).find((a) => a.action === action)!;
 
 async function archived(persons: string[], tags: string[]): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Protokoll',
-    title: 'Protokoll',
-    summary: 'Zusammenfassung',
-    mainTopic: null,
-    project: null,
-    persons,
-    dates: [],
-    tags,
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: 'Protokoll', summary: 'Zusammenfassung', categoryPath: 'work/notes', docType: 'Protokoll', persons, tags }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file('in/protokoll.txt', 'Protokoll der Sitzung')] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;

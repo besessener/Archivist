@@ -1,6 +1,4 @@
-// Checks whether the native modules (better-sqlite3, sharp) load in Node AND in the Electron runtime.
-// better-sqlite3 (>= 13) and sharp use N-API prebuilds: the same binary runs in Node and Electron,
-// no electron-rebuild is needed. This script makes that reproducibly verifiable.
+// Checks that better-sqlite3 and sharp load in Node AND in Electron: their N-API prebuilds need no electron-rebuild.
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
@@ -13,20 +11,20 @@ const sharp = require('sharp');
 console.log(JSON.stringify({ sqlite: db.prepare('select sqlite_version() v').get().v, fts5: fts > 0, sharp: sharp.versions.sharp, abi: process.versions.modules, electron: process.versions.electron ?? null }));
 `;
 
-function run(label, cmd, args, env = {}) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', env: { ...process.env, ...env } });
-  if (r.status !== 0) {
-    console.error(`✗ ${label} failed:\n${r.stderr || r.stdout}`);
+function run(label, runtime) {
+  const result = spawnSync(runtime.executable, ['-e', probe], { encoding: 'utf8', env: { ...process.env, ...runtime.env } });
+  if (result.status !== 0) {
+    console.error(`✗ ${label} failed:\n${result.stderr || result.stdout}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`✓ ${label}: ${r.stdout.trim()}`);
+  console.log(`✓ ${label}: ${result.stdout.trim()}`);
 }
 
-run('Node', process.execPath, ['-e', probe]);
+run('Node', { executable: process.execPath });
 try {
   const electron = require('electron');
-  run('Electron', electron, ['-e', probe], { ELECTRON_RUN_AS_NODE: '1' });
+  run('Electron', { executable: electron, env: { ELECTRON_RUN_AS_NODE: '1' } });
 } catch {
   console.log('• Electron not installed – check skipped.');
 }

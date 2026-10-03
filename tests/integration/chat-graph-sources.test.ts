@@ -36,10 +36,17 @@ const decide = (title: string, text: string) =>
 
 describe('Knowledge answers use the knowledge graph (#289)', () => {
   it('a question about a document also finds the decision the document supports – with the relation as path', async () => {
-    const offer = await archived(app, 'angebot.md', 'Angebot des Dachdeckers Kowalski über 18.000 Euro für die Dachsanierung.', 'private/haus');
+    const offer = await archived(app, {
+      name: 'angebot.md',
+      content: 'Angebot des Dachdeckers Kowalski über 18.000 Euro für die Dachsanierung.',
+      folder: 'private/haus',
+    });
     // the decision text shares no word with the question
     const decision = decide('Sanierung beauftragt', 'Wir beauftragen die Firma für die Arbeiten im Frühjahr.');
-    app.services.graph.link(offer, decision.id, 'supports', { status: 'confirmed', resolvedByUser: true, method: 'manual' });
+    app.services.graph.link(
+      { sourceId: offer, targetId: decision.id, relationType: 'supports' },
+      { status: 'confirmed', resolvedByUser: true, method: 'manual' },
+    );
 
     const res = await app.ok('chat:send', { text: 'Was stand im Angebot von Kowalski?' });
     const sources = res.assistantMessage.sources;
@@ -50,17 +57,17 @@ describe('Knowledge answers use the knowledge graph (#289)', () => {
   });
 
   it('proposed, rejected and outdated relations are never used', async () => {
-    const offer = await archived(app, 'angebot.md', 'Angebot des Dachdeckers Kowalski über 18.000 Euro.', 'private/haus');
+    const offer = await archived(app, { name: 'angebot.md', content: 'Angebot des Dachdeckers Kowalski über 18.000 Euro.', folder: 'private/haus' });
     const ids = [
       decide('Eins', 'Erster Beschluss zu den Arbeiten.').id,
       decide('Zwei', 'Zweiter Beschluss zu den Arbeiten.').id,
       decide('Drei', 'Dritter Beschluss zu den Arbeiten.').id,
     ];
-    app.services.graph.link(offer, ids[0]!, 'supports', { status: 'proposed', method: 'analysis' });
-    const rejected = app.services.graph.link(offer, ids[1]!, 'supports', { status: 'proposed', method: 'analysis' })!;
-    app.services.graph.decideRelation(rejected.id, 'rejected');
-    const outdated = app.services.graph.link(offer, ids[2]!, 'supports', { status: 'confirmed' })!;
-    app.services.graph.setRelationStatus(outdated.id, 'outdated', 'system');
+    app.services.graph.link({ sourceId: offer, targetId: ids[0]!, relationType: 'supports' }, { status: 'proposed', method: 'analysis' });
+    const rejected = app.services.graph.link({ sourceId: offer, targetId: ids[1]!, relationType: 'supports' }, { status: 'proposed', method: 'analysis' })!;
+    app.services.graph.decideRelation(rejected.id, { status: 'rejected' });
+    const outdated = app.services.graph.link({ sourceId: offer, targetId: ids[2]!, relationType: 'supports' }, { status: 'confirmed' })!;
+    app.services.graph.setRelationStatus(outdated.id, { status: 'outdated', by: 'system' });
 
     const res = await app.ok('chat:send', { text: 'Was stand im Angebot von Kowalski?' });
     expect(res.assistantMessage.sources.some((s) => ids.includes(s.id))).toBe(false);

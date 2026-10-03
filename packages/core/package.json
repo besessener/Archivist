@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "db:generate": "npx --yes drizzle-kit@0.31.11 generate"
+    "db:generate": "node ../../scripts/db-generate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/foundry-sdk": "^0.5.2",

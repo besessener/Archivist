@@ -1,4 +1,4 @@
-import type { EntityType, GraphEntity } from '@archivist/shared';
+import type { EntityType, GraphEntity, GraphRelation } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { normalizeName } from '../util/text';
 import type { KnowledgeGraphService } from './knowledge-graph';
@@ -13,8 +13,8 @@ const TARGET_TYPES: EntityType[] = ['note', 'document', 'decision', 'task', 'que
 export function wikiNames(text: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const m of text.matchAll(WIKI_LINK)) {
-    const name = (m[1] ?? '').replace(/\s+/g, ' ').trim();
+  for (const match of text.matchAll(WIKI_LINK)) {
+    const name = (match[1] ?? '').replace(/\s+/g, ' ').trim();
     const key = normalizeName(name);
     if (!name || !key || seen.has(key)) continue;
     seen.add(key);
@@ -25,6 +25,12 @@ export function wikiNames(text: string): string[] {
 
 const evidenceOf = (name: string) => `[[${name}]]`;
 
+/** The kept wiki-link relation whose link text (its evidence) names `name`. */
+const keptLinkOf = (kept: GraphRelation[], name: string): GraphRelation | undefined => {
+  const key = normalizeName(name);
+  return kept.find((relation) => relation.evidence && normalizeName(relation.evidence.slice(2, -2)) === key);
+};
+
 export interface WikiSuggestion {
   id: string;
   type: EntityType;
@@ -33,11 +39,7 @@ export interface WikiSuggestion {
   alias: string | null;
 }
 
-/**
- * Wiki links in notes (#285): a `[[Name]]` becomes a manual relation (method `wikilink`, confirmed) from the note to the
- * entry of that name or alias; a link removed from the text removes its relation. The relation keeps the link text as
- * its evidence, so a renamed or merged target keeps its link even when the old name no longer resolves.
- */
+/** Wiki links in notes (#285): `[[Name]]` is a confirmed `wikilink` relation whose evidence keeps the link text for renamed targets. */
 export class WikiLinks {
   constructor(
     private readonly ctx: AppContext,
@@ -49,21 +51,21 @@ export class WikiLinks {
   }
 
   /** A target counts: not discarded as a duplicate; a document only once archived or indexed. */
-  private usable(e: GraphEntity | undefined, selfId?: string): e is GraphEntity {
-    if (!e || e.id === selfId || e.duplicateOfId) return false;
-    if (e.type !== 'document') return true;
-    return Boolean(this.sqlite.prepare(`SELECT 1 FROM documents WHERE id = ? AND status IN ('archived','indexed_only')`).get(e.id));
+  private usable(entity: GraphEntity | undefined, selfId?: string): entity is GraphEntity {
+    if (!entity || entity.id === selfId || entity.duplicateOfId) return false;
+    if (entity.type !== 'document') return true;
+    return Boolean(this.sqlite.prepare(`SELECT 1 FROM documents WHERE id = ? AND status IN ('archived','indexed_only')`).get(entity.id));
   }
 
   /** The entry a name stands for: exact name first, then a unique alias – in the order of {@link TARGET_TYPES}. */
   resolve(name: string, selfId?: string): GraphEntity | undefined {
     for (const type of TARGET_TYPES) {
-      const e = this.graph.findByName(type, name);
-      if (this.usable(e, selfId)) return e;
+      const entity = this.graph.findByName(type, name);
+      if (this.usable(entity, selfId)) return entity;
     }
     for (const type of TARGET_TYPES) {
-      const e = this.graph.findByNameOrAlias(type, name);
-      if (this.usable(e, selfId)) return e;
+      const entity = this.graph.findByNameOrAlias(type, name);
+      if (this.usable(entity, selfId)) return entity;
     }
     return undefined;
   }
@@ -72,14 +74,14 @@ export class WikiLinks {
   resolveAll(names: string[], noteId?: string): Array<{ name: string; entity: { id: string; type: EntityType; name: string } | null }> {
     const kept = noteId ? this.current(noteId) : [];
     return names.map((name) => {
-      const e = this.resolve(name, noteId) ?? this.keptTarget(kept, name);
-      return { name, entity: e ? { id: e.id, type: e.type, name: e.name } : null };
+      const entity = this.resolve(name, noteId) ?? this.keptTarget(kept, name);
+      return { name, entity: entity ? { id: entity.id, type: entity.type, name: entity.name } : null };
     });
   }
 
   /** Autocomplete after `[[`: entries whose name or alias contains the query, names starting with it first. */
   suggest(query: string, opts: { limit?: number; excludeId?: string } = {}): WikiSuggestion[] {
-    const q = normalizeName(query);
+    const normalized = normalizeName(query);
     const limit = opts.limit ?? 8;
     const types = TARGET_TYPES.map((t) => `'${t}'`).join(',');
     const rows = this.sqlite
@@ -89,35 +91,32 @@ export class WikiLinks {
            AND (e.normalized_name LIKE ? OR e.aliases LIKE ?)
          ORDER BY CASE WHEN e.normalized_name LIKE ? THEN 0 ELSE 1 END, length(e.name), e.name LIMIT ?`,
       )
-      .all(`%${q}%`, `%${query.trim()}%`, `${q}%`, limit * 3) as Array<{ id: string; type: EntityType; name: string; aliases: string }>;
+      .all(`%${normalized}%`, `%${query.trim()}%`, `${normalized}%`, limit * 3) as Array<{ id: string; type: EntityType; name: string; aliases: string }>;
     const out: WikiSuggestion[] = [];
-    for (const r of rows) {
-      if (r.id === opts.excludeId) continue;
-      const byName = normalizeName(r.name).includes(q);
-      const alias = byName ? null : ((JSON.parse(r.aliases) as string[]).find((a) => normalizeName(a).includes(q)) ?? null);
+    for (const row of rows) {
+      if (row.id === opts.excludeId) continue;
+      const byName = normalizeName(row.name).includes(normalized);
+      const alias = byName ? null : ((JSON.parse(row.aliases) as string[]).find((a) => normalizeName(a).includes(normalized)) ?? null);
       if (!byName && !alias) continue;
-      out.push({ id: r.id, type: r.type, name: r.name, alias });
+      out.push({ id: row.id, type: row.type, name: row.name, alias });
       if (out.length >= limit) break;
     }
     return out;
   }
 
   /** The note's current wiki-link relations. */
-  private current(noteId: string) {
-    return this.graph.relationsOf(noteId, { statuses: ['confirmed', 'proposed'] }).filter((r) => r.method === 'wikilink' && r.sourceEntityId === noteId);
+  private current(noteId: string): GraphRelation[] {
+    return this.graph
+      .relationsOf(noteId, { statuses: ['confirmed', 'proposed'] })
+      .filter((relation) => relation.method === 'wikilink' && relation.sourceEntityId === noteId);
   }
 
-  private keptTarget(kept: ReturnType<WikiLinks['current']>, name: string): GraphEntity | undefined {
-    const key = normalizeName(name);
-    const r = kept.find((x) => x.evidence && normalizeName(x.evidence.slice(2, -2)) === key);
-    return r ? this.graph.getEntity(r.targetEntityId) : undefined;
+  private keptTarget(kept: GraphRelation[], name: string): GraphEntity | undefined {
+    const relation = keptLinkOf(kept, name);
+    return relation ? this.graph.getEntity(relation.targetEntityId) : undefined;
   }
 
-  /**
-   * Brings the note's wiki-link relations in line with its text: new links are created (confirmed, the user's own),
-   * links no longer in the text are removed. A name that resolves to nothing keeps a relation that already carries it
-   * (renamed or merged target); otherwise it is reported as unknown.
-   */
+  /** New links are created as the user's own, removed ones deleted; an unresolved name keeps a relation that carries it. */
   sync(noteId: string, text: string): { linked: number; removed: number; unknown: string[] } {
     const kept = this.current(noteId);
     const keep = new Set<string>();
@@ -126,30 +125,31 @@ export class WikiLinks {
     for (const name of wikiNames(text)) {
       const target = this.resolve(name, noteId);
       if (!target) {
-        const key = normalizeName(name);
-        const prev = kept.find((x) => x.evidence && normalizeName(x.evidence.slice(2, -2)) === key);
-        if (prev) keep.add(prev.id);
+        const previous = keptLinkOf(kept, name);
+        if (previous) keep.add(previous.id);
         else unknown.push(name);
         continue;
       }
-      const r = this.graph.link(noteId, target.id, 'relates_to', {
-        status: 'confirmed',
-        confidence: 1,
-        resolvedByUser: true,
-        origin: 'user',
-        method: 'wikilink',
-        evidence: evidenceOf(name),
-      });
-      if (!r) continue;
-      keep.add(r.id);
-      if (r.created) linked += 1;
+      const result = this.graph.link(
+        { sourceId: noteId, targetId: target.id, relationType: 'relates_to' },
+        {
+          status: 'confirmed',
+          confidence: 1,
+          resolvedByUser: true,
+          origin: 'user',
+          method: 'wikilink',
+          evidence: evidenceOf(name),
+        },
+      );
+      if (!result) continue;
+      keep.add(result.id);
+      if (result.created) linked += 1;
     }
     let removed = 0;
-    for (const r of kept)
-      if (!keep.has(r.id)) {
-        this.graph.deleteRelation(r.id);
-        removed += 1;
-      }
+    for (const relation of kept.filter((x) => !keep.has(x.id))) {
+      this.graph.deleteRelation(relation.id);
+      removed += 1;
+    }
     return { linked, removed, unknown };
   }
 }

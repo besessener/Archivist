@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ruleMatches } from '../../packages/core/src/agent/memory';
 import type { TestApp } from '../helpers/harness';
-import { agentApp, archived, folderOf, scriptedTurns } from '../helpers/agent';
+import { agentApp, archived, folderOf, lastToolOutput, scriptedTurns } from '../helpers/agent';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -12,13 +12,13 @@ afterEach(async () => {
 });
 
 const stadtwerkeRule = { when: { sender: 'Stadtwerke' }, then: { folder: 'private/finanzen/energie' } };
-const lastOutput = () =>
-  ((app.llm.agentRequests.at(-1)?.input as Array<{ type?: string; output?: string }>) ?? []).filter((i) => i.type === 'function_call_output').at(-1)?.output ??
-  '';
 
 describe('Learning: rules, workflows, corrections, memory (#315)', () => {
   it('stores a rule on the explicit instruction, gives it to every run and applies it retroactively', async () => {
-    const doc = await archived(app, 'stadtwerke-rechnung.txt', 'Stadtwerke München Rechnung Strom', 'private/misc', {
+    const doc = await archived(app, {
+      name: 'stadtwerke-rechnung.txt',
+      content: 'Stadtwerke München Rechnung Strom',
+      folder: 'private/misc',
       docType: 'Rechnung',
       persons: ['Stadtwerke München'],
     });
@@ -49,7 +49,7 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
         return { calls: [{ name: 'apply_rules', args: { preview: true } }] };
       },
       () => {
-        expect(lastOutput()).toContain('Vorschau');
+        expect(lastToolOutput(app)).toContain('Vorschau');
         return { calls: [{ name: 'apply_rules', args: { preview: false } }] };
       },
       { text: `Regel [${rules[0]!.id}] angewendet.` },
@@ -68,7 +68,7 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
     );
     await app.ok('chat:send', { text: 'Wer ist eigentlich mein Vermieter?' });
     expect(await app.ok('agent:memory', {})).toHaveLength(0);
-    expect(lastOutput()).toContain('Frag zuerst');
+    expect(lastToolOutput(app)).toContain('Frag zuerst');
   });
 
   it('after asking: „ja“ stores the fact', async () => {
@@ -90,11 +90,11 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
       data: { when: { sender: 'Stadtwerke' }, then: { folder: 'private/a' } },
     });
     app.services.memory.save({ kind: 'rule', name: 'B', content: 'Strom nach b', data: { when: { textContains: 'Strom' }, then: { folder: 'private/b' } } });
-    const doc = await archived(app, 'rechnung.txt', 'Stadtwerke Strom', 'private/misc', { persons: ['Stadtwerke'] });
+    const doc = await archived(app, { name: 'rechnung.txt', content: 'Stadtwerke Strom', folder: 'private/misc', persons: ['Stadtwerke'] });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'apply_rules', args: { preview: false } }] }, { text: 'Widerspruch – welche Regel soll gelten?' });
     await app.ok('chat:send', { text: 'Wende die Regeln an' });
     expect(folderOf(app, doc)).toBe('private/misc');
-    expect(lastOutput()).toContain('verschiedene Ordner');
+    expect(lastToolOutput(app)).toContain('verschiedene Ordner');
   });
 
   it('workflows: taught by name, changed later, given to the run', async () => {
@@ -145,7 +145,8 @@ describe('Learning: rules, workflows, corrections, memory (#315)', () => {
 
   it('repeated corrections of the agent lead to a rule PROPOSAL; the rule is stored only after confirmation', async () => {
     const docs = [];
-    for (const n of [1, 2, 3]) docs.push(await archived(app, `arzt-${n}.txt`, `Arztrechnung ${n}`, 'private/misc', { docType: 'Arztrechnung' }));
+    for (const n of [1, 2, 3])
+      docs.push(await archived(app, { name: `arzt-${n}.txt`, content: `Arztrechnung ${n}`, folder: 'private/misc', docType: 'Arztrechnung' }));
     // the agent filed them (inside a run) …
     for (const id of docs) {
       app.llm.agent = scriptedTurns(

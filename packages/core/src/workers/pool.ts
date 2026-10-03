@@ -4,8 +4,8 @@ import { AppError } from '../util/errors';
 import { tasks, type TaskMap, type TaskName } from './tasks';
 
 interface Pending {
-  resolve: (v: unknown) => void;
-  reject: (e: Error) => void;
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
 }
 
 interface Slot {
@@ -21,9 +21,7 @@ interface Waiting {
   transfer: ArrayBuffer[];
 }
 
-/**
- * Worker thread pool for CPU-intensive tasks. Without `workerFile` everything runs inline (tests/fallback).
- */
+/** Worker thread pool for CPU-intensive tasks. Without `workerFile` everything runs inline (tests/fallback). */
 export class WorkerPool {
   private slots: Slot[] = [];
   private queue: Waiting[] = [];
@@ -45,7 +43,7 @@ export class WorkerPool {
     if (!this.workerFile) return tasks[task](payload);
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
       this.queue.push({ id, task, payload, transfer: [] });
       this.pump();
     });
@@ -54,14 +52,14 @@ export class WorkerPool {
   private spawn(): Slot {
     const worker = new Worker(this.workerFile!);
     const slot: Slot = { worker, busy: false, current: null };
-    worker.on('message', (msg: { id: number; ok: boolean; result?: unknown; error?: string; code?: string }) => {
-      const p = this.pending.get(msg.id);
-      this.pending.delete(msg.id);
+    worker.on('message', (message: { id: number; ok: boolean; result?: unknown; error?: string; code?: string }) => {
+      const request = this.pending.get(message.id);
+      this.pending.delete(message.id);
       slot.busy = false;
       slot.current = null;
-      if (p) {
-        if (msg.ok) p.resolve(msg.result);
-        else p.reject(Object.assign(new Error(msg.error ?? 'Worker-Fehler'), { code: msg.code }));
+      if (request) {
+        if (message.ok) request.resolve(message.result);
+        else request.reject(Object.assign(new Error(message.error ?? 'Worker-Fehler'), { code: message.code }));
       }
       this.pump();
     });
@@ -70,7 +68,7 @@ export class WorkerPool {
         this.pending.get(slot.current)?.reject(new AppError('native_module_error', 'Der Worker-Thread ist abgestürzt.', { cause: err, details: err.message }));
         this.pending.delete(slot.current);
       }
-      this.slots = this.slots.filter((s) => s !== slot);
+      this.slots = this.slots.filter((other) => other !== slot);
       this.pump();
     };
     worker.on('error', fail);
@@ -83,7 +81,7 @@ export class WorkerPool {
 
   private pump(): void {
     while (this.queue.length > 0) {
-      let slot = this.slots.find((s) => !s.busy);
+      let slot = this.slots.find((candidate) => !candidate.busy);
       if (!slot && this.slots.length < this.size) slot = this.spawn();
       if (!slot) return;
       const job = this.queue.shift()!;
@@ -95,9 +93,9 @@ export class WorkerPool {
 
   async close(): Promise<void> {
     this.closed = true;
-    for (const p of this.pending.values()) p.reject(new Error('Worker-Pool beendet'));
+    for (const request of this.pending.values()) request.reject(new Error('Worker-Pool beendet'));
     this.pending.clear();
-    await Promise.all(this.slots.map((s) => s.worker.terminate()));
+    await Promise.all(this.slots.map((slot) => slot.worker.terminate()));
     this.slots = [];
   }
 }

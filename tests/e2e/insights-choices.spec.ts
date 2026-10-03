@@ -35,7 +35,7 @@ test.describe('insights: question with several answers', () => {
     const card = app.insights.card(QUESTION);
     await expect(app.insights.choices(card)).toHaveText(['Projekt', 'Thema', 'Beides ist richtig (verschieden)'], { timeout: 30_000 });
 
-    await app.insights.do.choose(card, 'Projekt', { confirm: true });
+    await app.insights.do.choose(card, { label: 'Projekt', confirm: true });
 
     expect(await entryTypes(page)).toEqual(['project']);
     await app.insights.do.showStatus('accepted');
@@ -47,7 +47,7 @@ test.describe('insights: question with several answers', () => {
     const card = app.insights.card(QUESTION);
     await expect(app.insights.choices(card)).toHaveCount(3, { timeout: 30_000 });
 
-    await app.insights.do.choose(card, 'Beides ist richtig', { confirm: false });
+    await app.insights.do.choose(card, { label: 'Beides ist richtig', confirm: false });
 
     expect(await entryTypes(page)).toEqual(['project', 'topic']);
     await app.insights.do.showStatus('rejected');

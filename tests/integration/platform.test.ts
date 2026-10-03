@@ -11,6 +11,7 @@ import { WorkerPool } from '../../packages/core/src/workers/pool';
 import { Logger } from '../../packages/core/src/util/logger';
 import { makePdf } from '../helpers/fixtures';
 import { createTestApp, MIGRATIONS, TestCipher } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 describe('Database migrations', () => {
   it('creates the schema incl. FTS5, is idempotent and reports the version', () => {
@@ -76,17 +77,19 @@ describe('Persistent job queue', () => {
       createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher(), jobConcurrency: 1, llmRetryDelayMs: 0 });
 
     const s1 = make();
-    const job = s1.jobs.enqueue('test.echo', 'Echo', { n: 7 }); // queue not started → stays pending
-    const waiting = s1.jobs.enqueue('test.echo', 'Wartend', { n: 8 });
+    const job = s1.jobs.enqueue('test.echo', { label: 'Echo', payload: { n: 7 } }); // queue not started → stays pending
+    const waiting = s1.jobs.enqueue('test.echo', { label: 'Wartend', payload: { n: 8 } });
     s1.database.sqlite.prepare("update jobs set status='running' where id=?").run(job.id); // simulate a crash
     await s1.shutdown();
 
     const s2 = make();
     const seen: number[] = [];
-    s2.jobs.register<{ n: number }>('test.echo', async (j) => {
-      j.report(0.5, 'halb');
-      seen.push(j.payload.n);
-      return { echoed: j.payload.n };
+    s2.jobs.register<{ n: number }>('test.echo', {
+      handler: async (j) => {
+        j.report(0.5, 'halb');
+        seen.push(j.payload.n);
+        return { echoed: j.payload.n };
+      },
     });
     expect(s2.jobs.start()).toBe(1); // 1 interrupted job requeued
     await s2.jobs.whenIdle();
@@ -97,12 +100,14 @@ describe('Persistent job queue', () => {
 
     // error → failed → retry
     let attempt = 0;
-    s2.jobs.register('test.flaky', async () => {
-      attempt += 1;
-      if (attempt === 1) throw new Error('kaputt');
-      return 'ok';
+    s2.jobs.register('test.flaky', {
+      handler: async () => {
+        attempt += 1;
+        if (attempt === 1) throw new Error('kaputt');
+        return 'ok';
+      },
     });
-    const flaky = s2.jobs.enqueue('test.flaky', 'Flaky');
+    const flaky = s2.jobs.enqueue('test.flaky', { label: 'Flaky' });
     await s2.jobs.whenIdle();
     expect(s2.jobs.get(flaky.id)).toMatchObject({ status: 'failed', error: expect.stringContaining('kaputt') });
     s2.jobs.retry(flaky.id);
@@ -112,13 +117,15 @@ describe('Persistent job queue', () => {
     // cancel: queued immediately, running cooperatively
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    s2.jobs.register('test.long', async (j) => {
-      await gate;
-      j.throwIfCancelled();
-      return 'fertig';
+    s2.jobs.register('test.long', {
+      handler: async (j) => {
+        await gate;
+        j.throwIfCancelled();
+        return 'fertig';
+      },
     });
-    const running = s2.jobs.enqueue('test.long', 'Lang');
-    const queued = s2.jobs.enqueue('test.long', 'Wartet');
+    const running = s2.jobs.enqueue('test.long', { label: 'Lang' });
+    const queued = s2.jobs.enqueue('test.long', { label: 'Wartet' });
     await new Promise((r) => setTimeout(r, 30));
     expect(s2.jobs.cancel(queued.id).status).toBe('cancelled');
     s2.jobs.cancel(running.id);
@@ -176,21 +183,7 @@ describe('Worker threads', () => {
 
   it('the complete application works with worker threads (import + search)', async () => {
     const app = await createTestApp({ privacy: 'auto', workerFile });
-    app.llm.on('DocumentClassification', () => ({
-      docType: 'Notiz',
-      title: 'Thread',
-      summary: 's',
-      mainTopic: null,
-      project: null,
-      persons: [],
-      dates: [],
-      tags: [],
-      location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-      decisions: [],
-      openItems: [],
-      confidence: 0.7,
-      rationale: 'x',
-    }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Thread', summary: 's', categoryPath: 'work/notes' }));
     const imp = await app.ok('documents:import', { paths: [app.file('t.txt', 'Dokument verarbeitet im Worker Thread Zebrastreifen')] });
     await app.services.jobs.whenIdle();
     await app.ok('documents:archive', {
@@ -286,7 +279,7 @@ describe('Secrets, backups, settings', () => {
 
   it('refuses to save when no secure storage is available', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-sec-'));
-    const s = createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher(false) });
+    const s = createServices({ dataRoot: path.join(root, 'A'), migrationsFolder: MIGRATIONS, cipher: new TestCipher({ available: false }) });
     expect(() => s.secrets.setApiKey('sk-abc123456')).toThrow(/sicher/i);
     expect(s.secrets.hasApiKey()).toBe(false);
     await s.shutdown();
@@ -295,21 +288,7 @@ describe('Secrets, backups, settings', () => {
 
   it('creates consistent backups (metadata vs. full) without the API key', async () => {
     const app = await createTestApp({ privacy: 'auto' });
-    app.llm.on('DocumentClassification', () => ({
-      docType: 'Notiz',
-      title: 'B',
-      summary: 's',
-      mainTopic: null,
-      project: null,
-      persons: [],
-      dates: [],
-      tags: [],
-      location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-      decisions: [],
-      openItems: [],
-      confidence: 0.7,
-      rationale: 'x',
-    }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'B', summary: 's', categoryPath: 'work/notes' }));
     const imp = await app.ok('documents:import', { paths: [app.file('b.txt', 'Backup Dokument Inhalt')] });
     await app.services.jobs.whenIdle();
     await app.ok('documents:archive', {

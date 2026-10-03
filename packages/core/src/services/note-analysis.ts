@@ -51,21 +51,19 @@ function namesIn(text: string, entries: Array<Pick<GraphEntity, 'name' | 'aliase
     .map((e) => e.name);
 }
 
-/**
- * Analyses notes like documents (#273): topic, project, persons and tags – with the language model in privacy mode
- * „automatisch“, otherwise locally (known names and hashtags in the text). The findings become PROPOSED relations with
- * method `analysis` and their evidence; persons go through the central person resolution (aliases, „ich“ = the user).
- * Run again after an edit: relations the analysis no longer finds become `outdated`; relations the user confirmed or
- * rejected stay as they are.
- */
+export type NoteAnalysisServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; persons: PersonService; llm: LlmService; privacy: PrivacyService };
+
+/** Analyses notes like documents (#273) into PROPOSED relations; a rerun marks what it no longer finds `outdated`, the user's decisions stay. */
 export class NoteAnalysisService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly persons: PersonService,
-    private readonly llm: LlmService,
-    private readonly privacy: PrivacyService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly persons: PersonService;
+  private readonly llm: LlmService;
+  private readonly privacy: PrivacyService;
+
+  constructor(deps: NoteAnalysisServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, persons: this.persons, llm: this.llm, privacy: this.privacy } = deps);
+  }
 
   /** Finds topic, project, persons and tags of a note (no change). */
   async findings(note: GraphEntity, opts: { signal?: AbortSignal } = {}): Promise<NoteFindings> {
@@ -90,7 +88,7 @@ export class NoteAnalysisService {
     // only in „automatisch“: a note is analysed in the background, nobody could confirm a request in „vorher fragen“
     if (this.privacy.mode() !== 'auto' || !this.llm.canUseInBackground()) return local;
     try {
-      const res = await this.llm.completeJson(NoteAnalysis, {
+      const analysis = await this.llm.completeJson(NoteAnalysis, {
         schemaName: 'NoteAnalysis',
         purpose: 'Analyse einer Notiz (Thema, Projekt, Personen, Tags)',
         signal: opts.signal,
@@ -116,10 +114,10 @@ export class NoteAnalysisService {
         ) ??
         (name?.trim() || null);
       return {
-        topic: snap(res.topic, topics),
-        project: snap(res.project, projects),
-        persons: res.persons.map((p) => p.trim()).filter(Boolean),
-        tags: [...new Set(res.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 8),
+        topic: snap(analysis.topic, topics),
+        project: snap(analysis.project, projects),
+        persons: analysis.persons.map((p) => p.trim()).filter(Boolean),
+        tags: [...new Set(analysis.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 8),
         via: 'llm',
       };
     } catch (err) {
@@ -139,29 +137,35 @@ export class NoteAnalysisService {
     const evidence = (label: string, name: string) => (f.via === 'llm' ? `Analyse der Notiz: ${label} „${name}“` : `„${name}“ steht in der Notiz`);
     const targets: Array<{ id: string; type: 'topic' | 'project' | 'person' | 'tag'; evidence: string }> = [];
     if (f.topic)
-      targets.push({ id: this.graph.ensureEntity('topic', f.topic, null, { fromDocument: true }).id, type: 'topic', evidence: evidence('Thema', f.topic) });
+      targets.push({
+        id: this.graph.ensureEntity({ type: 'topic', name: f.topic, description: null, fromDocument: true }).id,
+        type: 'topic',
+        evidence: evidence('Thema', f.topic),
+      });
     if (f.project)
       targets.push({
-        id: this.graph.ensureEntity('project', f.project, null, { fromDocument: true }).id,
+        id: this.graph.ensureEntity({ type: 'project', name: f.project, description: null, fromDocument: true }).id,
         type: 'project',
         evidence: evidence('Projekt', f.project),
       });
-    // the central person resolution: aliases, own identity – a note is the user's own words, so „ich“ is the user (like in
-    // the chat); unknown names only from the language model
+    // a note is the user's own words, so „ich“ is the user; unknown names are created only from the language model's findings
     const resolved = this.persons.resolveNames(f.persons, { context: 'chat', create: f.via === 'llm' });
     for (const p of resolved.entities) targets.push({ id: p.id, type: 'person', evidence: evidence('Person', p.name) });
-    for (const t of f.tags) targets.push({ id: this.graph.ensureEntity('tag', t).id, type: 'tag', evidence: evidence('Tag', t) });
+    for (const t of f.tags) targets.push({ id: this.graph.ensureEntity({ type: 'tag', name: t }).id, type: 'tag', evidence: evidence('Tag', t) });
 
     let proposed = 0;
     const keep = new Set<string>();
     for (const t of targets) {
       keep.add(`${t.id}|${RELATION_OF[t.type]}`);
-      const r = this.graph.link(noteId, t.id, RELATION_OF[t.type], {
-        status: 'proposed',
-        confidence: f.via === 'llm' ? 0.7 : 0.6,
-        method: 'analysis',
-        evidence: t.evidence,
-      });
+      const r = this.graph.link(
+        { sourceId: noteId, targetId: t.id, relationType: RELATION_OF[t.type] },
+        {
+          status: 'proposed',
+          confidence: f.via === 'llm' ? 0.7 : 0.6,
+          method: 'analysis',
+          evidence: t.evidence,
+        },
+      );
       if (r?.created) proposed += 1;
     }
     // what an earlier analysis proposed and this one no longer finds is outdated – decisions of the user stay
@@ -169,7 +173,7 @@ export class NoteAnalysisService {
       .relationsOf(noteId, { statuses: ['proposed', 'confirmed'] })
       .filter((r) => r.sourceEntityId === noteId && r.method === 'analysis' && !r.resolvedByUser && !keep.has(`${r.targetEntityId}|${r.relationType}`))
       .filter((r) => ANALYSED_TYPES.has(this.graph.getEntity(r.targetEntityId)?.type ?? 'note'));
-    for (const r of stale) this.graph.setRelationStatus(r.id, 'outdated', 'system');
+    for (const r of stale) this.graph.setRelationStatus(r.id, { status: 'outdated', by: 'system' });
     if (proposed || stale.length) this.ctx.events.changed('knowledge');
     return { proposed, outdated: stale.length };
   }

@@ -44,7 +44,13 @@ describe('Same day and same person (#278)', () => {
   });
 
   it('the business date counts, not when it was captured; documents by their document date', async () => {
-    const doc = await archived(app, 'protokoll.md', 'Protokoll der Baubesprechung.', 'private/haus', { persons: ['Anna Berger'], documentDate: '2026-08-15' });
+    const doc = await archived(app, {
+      name: 'protokoll.md',
+      content: 'Protokoll der Baubesprechung.',
+      folder: 'private/haus',
+      persons: ['Anna Berger'],
+      documentDate: '2026-08-15',
+    });
     const e = event('Baubesprechung', '2026-08-15', ['Anna Berger']);
     // captured today, but happened on another day
     event('Telefonat', '2026-08-20', ['Anna Berger']);
@@ -62,7 +68,7 @@ describe('Same day and same person (#278)', () => {
     const b = decision('Termin verschoben', '2026-07-02', ['Anna Berger']);
     await app.services.jobs.whenIdle();
     const r = app.services.graph.relationsOf(a.id).find((x) => x.method === 'date_person')!;
-    app.services.graph.decideRelation(r.id, 'rejected');
+    app.services.graph.decideRelation(r.id, { status: 'rejected' });
     await app.ok('decisions:update', { id: b.id, patch: { title: 'Termin verschoben (neu)' } });
     await app.services.jobs.whenIdle();
     expect(dayPerson().map((x) => x.status)).toEqual(['rejected']);

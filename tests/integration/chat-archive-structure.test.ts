@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { subjectFromText } from '../../packages/core/src/services/chat';
+import { subjectFromText } from '../../packages/core/src/services/chat/subjects';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
+import { intent, userText } from '../helpers/chat-intents';
 
 const TOPIC = 'Bildungsurlaub 2026';
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 
 let app: TestApp;
 beforeEach(async () => {
@@ -19,21 +20,7 @@ const archiveRoot = () => app.services.settings.get().archiveRoot;
 const folderOf = (id: string) => path.posix.dirname(app.services.documents.getRow(id).archiveRelPath!);
 
 async function archived(name: string, loc: string, topic: string | null = TOPIC, content = `Inhalt von ${name}`): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: topic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc, mainTopic: topic }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -116,7 +103,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
     app.llm.on('ChatIntent', (_s, input) => {
       if (/Wie sind die Dokumente abgelegt/.test(input)) return intent({ intent: 'archive_structure', topic: TOPIC });
       if (/selbe verzeichnis/.test(input)) return intent({ intent: 'archive_reorganize' });
-      if (/^ja\b/m.test(input.split('Nachricht des Benutzers:\n')[1] ?? '')) return intent({ intent: 'proposal_confirm' });
+      if (/^ja\b/m.test(userText(input))) return intent({ intent: 'proposal_confirm' });
       return intent({ intent: 'unknown' });
     });
 
@@ -142,7 +129,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
   it('takes a named target folder and replaces the earlier open proposal', async () => {
     const { ids } = await scatteredArchive();
     app.llm.on('ChatIntent', (_s, input) => {
-      const text = input.split('Nachricht des Benutzers:\n')[1] ?? '';
+      const text = userText(input);
       if (/anderen ordner/.test(text)) return intent({ intent: 'archive_reorganize', topic: TOPIC, path: 'work/hr/bildungsurlaub' });
       return intent({ intent: 'archive_reorganize', topic: TOPIC });
     });
@@ -161,9 +148,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
     const { ids } = await scatteredArchive();
     const before = ids.map(folderOf);
     app.llm.on('ChatIntent', (_s, input) =>
-      /nein/.test(input.split('Nachricht des Benutzers:\n')[1] ?? '')
-        ? intent({ intent: 'proposal_reject' })
-        : intent({ intent: 'archive_reorganize', topic: TOPIC }),
+      /nein/.test(userText(input)) ? intent({ intent: 'proposal_reject' }) : intent({ intent: 'archive_reorganize', topic: TOPIC }),
     );
 
     const first = await send('leg alle in einen ordner');
@@ -215,7 +200,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
       const { ids, other } = await scatteredArchive();
       const before = ids.map(folderOf);
 
-      const report = await app.services.consistency.run('test');
+      const report = await app.services.consistency.run({ trigger: 'test' });
 
       expect(report.byKind.scattered_documents).toBe(1);
       const [insight] = scattered();
@@ -233,8 +218,8 @@ describe('Chat: checking the filing and putting documents into one directory', (
     it('creates no duplicates on further runs', async () => {
       await scatteredArchive();
 
-      await app.services.consistency.run('test');
-      await app.services.consistency.run('test');
+      await app.services.consistency.run({ trigger: 'test' });
+      await app.services.consistency.run({ trigger: 'test' });
 
       expect(scattered()).toHaveLength(1);
       expect(app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents')).toHaveLength(1);
@@ -242,11 +227,11 @@ describe('Chat: checking the filing and putting documents into one directory', (
 
     it('after the proposal is confirmed, the hint resolves itself on the next run', async () => {
       const { ids } = await scatteredArchive();
-      await app.services.consistency.run('test');
+      await app.services.consistency.run({ trigger: 'test' });
       const action = app.services.actions.get(scattered()[0]!.recommendedActionId!);
 
-      const done = await app.services.actions.resolve(action.id, 'approve', { confirmed: true });
-      await app.services.consistency.run('test');
+      const done = await app.services.actions.resolve(action.id, { decision: 'approve', confirmed: true });
+      await app.services.consistency.run({ trigger: 'test' });
 
       expect(done.status).toBe('executed');
       expect(new Set(ids.map(folderOf))).toEqual(new Set(['private/bildungsurlaub/2026']));
@@ -258,7 +243,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
       await archived('B', 'work/a');
       await archived('C', 'work/b', 'Anderes Thema');
 
-      const report = await app.services.consistency.run('test');
+      const report = await app.services.consistency.run({ trigger: 'test' });
 
       expect(report.byKind.scattered_documents).toBeUndefined();
       expect(scattered()).toHaveLength(0);
@@ -274,7 +259,7 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
     const { ids, other } = await scatteredArchive();
     await archived('Steuer-Beleg', 'private/steuer-2', 'Steuer');
     app.llm.on('ChatIntent', (_s, input) => {
-      const text = input.split('Nachricht des Benutzers:\n')[1] ?? '';
+      const text = userText(input);
       if (/Steuer/.test(text)) return intent({ intent: 'archive_structure', topic: 'Steuer' });
       return intent({ intent: 'archive_reorganize', query: 'Bildungsurlaub' });
     });
@@ -337,27 +322,13 @@ describe('„Leg alle Dokumente zu X zusammen“ moves exactly X (#45)', () => {
 
   it('„archivieren“ uses inbox documents even when recently archived ones were shown', async () => {
     await scatteredArchive();
-    app.llm.on('DocumentClassification', () => ({
-      docType: 'Rechnung',
-      title: 'Neue Rechnung',
-      summary: 'Rechnung',
-      mainTopic: 'Rechnungen',
-      project: null,
-      persons: [],
-      dates: [],
-      tags: [],
-      location: { categoryPath: 'private/rechnungen', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-      decisions: [],
-      openItems: [],
-      confidence: 0.7,
-      rationale: 'x',
-    }));
+    app.llm.on('DocumentClassification', () =>
+      classification({ title: 'Neue Rechnung', summary: 'Rechnung', categoryPath: 'private/rechnungen', docType: 'Rechnung', mainTopic: 'Rechnungen' }),
+    );
     const imp = await app.ok('documents:import', { paths: [app.file('in/rechnung.txt', 'Rechnung Nr. 1')] });
     await app.services.jobs.whenIdle();
     app.llm.on('ChatIntent', (_s, input) =>
-      /archiviere/i.test(input.split('Nachricht des Benutzers:\n')[1] ?? '')
-        ? intent({ intent: 'archive_execute' })
-        : intent({ intent: 'archive_structure', topic: TOPIC }),
+      /archiviere/i.test(userText(input)) ? intent({ intent: 'archive_execute' }) : intent({ intent: 'archive_structure', topic: TOPIC }),
     );
     const first = await send('Wie liegen die Bildungsurlaub-Dokumente?');
 

@@ -1,34 +1,34 @@
-const dateFmt = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-const dateTimeFmt = new Intl.DateTimeFormat('de-DE', {
+const dateFormat = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const dateTimeFormat = new Intl.DateTimeFormat('de-DE', {
   day: '2-digit',
   month: '2-digit',
   year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
 });
-const longDateFmt = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+const longDateFormat = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
 
 function parse(value: string | null | undefined): Date | null {
   if (!value) return null;
   // interpret plain date values as local days (no time zone shift)
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  const match = /^(\parsed{4})-(\parsed{2})-(\parsed{2})$/.exec(value);
+  const parsed = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 export function formatDate(value: string | null | undefined, fallback = '–'): string {
-  const d = parse(value);
-  return d ? dateFmt.format(d) : fallback;
+  const parsed = parse(value);
+  return parsed ? dateFormat.format(parsed) : fallback;
 }
 
 export function formatLongDate(value: string | null | undefined, fallback = '–'): string {
-  const d = parse(value);
-  return d ? longDateFmt.format(d) : fallback;
+  const parsed = parse(value);
+  return parsed ? longDateFormat.format(parsed) : fallback;
 }
 
 export function formatDateTime(value: string | null | undefined, fallback = '–'): string {
-  const d = parse(value);
-  return d ? dateTimeFmt.format(d) : fallback;
+  const parsed = parse(value);
+  return parsed ? dateTimeFormat.format(parsed) : fallback;
 }
 
 /** An estimate in words, never as a percentage: the values are self-reports of the AI or rules, not measured (#167). */
@@ -56,11 +56,11 @@ export function formatNumber(value: number): string {
 }
 
 export function relativeDay(value: string | null | undefined): string {
-  const d = parse(value);
-  if (!d) return '–';
+  const parsed = parse(value);
+  if (!parsed) return '–';
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const target = new Date(d);
+  const target = new Date(parsed);
   target.setHours(0, 0, 0, 0);
   const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
   if (diff === 0) return 'heute';
@@ -70,6 +70,7 @@ export function relativeDay(value: string | null | undefined): string {
   return `vor ${-diff} Tagen`;
 }
 
-export function plural(n: number, one: string, many: string): string {
-  return `${formatNumber(n)} ${n === 1 ? one : many}`;
+/** „1 Eintrag“, „3 Einträge“: the count with its singular or plural noun. */
+export function plural(count: number, [one, many]: readonly [string, string]): string {
+  return `${formatNumber(count)} ${count === 1 ? one : many}`;
 }

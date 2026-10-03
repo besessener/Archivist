@@ -103,7 +103,7 @@ describe('status changes via update', () => {
       expect(res.ok).toBe(false);
     }
     // internal callers are guarded too
-    expect(() => app.services.decisions.update(d.id, { status: 'revoked' } as unknown as DecisionPatch)).toThrow(/Bestätigung/);
+    expect(() => app.services.decisions.update(d.id, { patch: { status: 'revoked' } as unknown as DecisionPatch })).toThrow(/Bestätigung/);
     expect((await app.ok('decisions:get', { id: d.id })).status).toBe('active');
   });
 
@@ -155,7 +155,7 @@ describe('status changes via update', () => {
       const res = await app.call('openItems:update', { id: item.id, patch: { status } as unknown as OpenItemPatch });
       expect(res.ok).toBe(false);
     }
-    expect(() => app.services.openItems.update(item.id, { status: 'resolved' } as unknown as OpenItemPatch)).toThrow(/Bestätigung/);
+    expect(() => app.services.openItems.update(item.id, { patch: { status: 'resolved' } as unknown as OpenItemPatch })).toThrow(/Bestätigung/);
     expect(app.services.openItems.get(item.id).status).toBe('blocked');
 
     await app.ok('openItems:close', { id: item.id, status: 'resolved', confirmed: true });

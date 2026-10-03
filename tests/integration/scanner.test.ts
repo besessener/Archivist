@@ -2,24 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { topicNoteClassification } from '../helpers/document-classifications';
 
 let app: TestApp;
-const cls = (topic: string, over: Record<string, unknown> = {}) => ({
-  docType: 'Notiz',
-  title: `Notiz ${topic}`,
-  summary: `Notiz zu ${topic}.`,
-  mainTopic: topic,
-  project: null,
-  persons: [],
-  dates: [],
-  tags: [topic.toLowerCase()],
-  location: { categoryPath: `work/projects/${topic}`, fileName: null, newMainCategory: false, rationale: `Bezug zu ${topic}`, confidence: 0.8 },
-  decisions: [],
-  openItems: [],
-  confidence: 0.8,
-  rationale: 'test',
-  ...over,
-});
 
 async function scan(rootId?: string) {
   const { jobId } = await app.ok('scanner:start', { rootId });
@@ -111,7 +96,7 @@ describe('Folder scan (default mode: local only, confirm)', () => {
 
   it('in confirm mode analyses only locally, sends content only after explicit approval and masks secrets', async () => {
     app.services.settings.update({ scan: { enabled: true } });
-    app.llm.on('DocumentClassification', () => cls('Hauskauf'));
+    app.llm.on('DocumentClassification', () => topicNoteClassification('Hauskauf'));
     const dl = path.join(app.home, 'Downloads');
     app.file('Downloads/kauf.txt', 'Hauskauf Musterstraße.\npassword: hunter2xx\nKey sk-abcdefghijklmnopqrstu\nDas Budget muss noch geklärt werden.');
     await app.ok('scanner:addDirectory', { path: dl, recursive: true });
@@ -144,7 +129,7 @@ describe('Folder scan (default mode: local only, confirm)', () => {
 
   it('excludes files and folders from LLM processing', async () => {
     app.services.settings.update({ scan: { enabled: true }, privacy: { llmMode: 'auto' } });
-    app.llm.on('DocumentClassification', () => cls('Geheim'));
+    app.llm.on('DocumentClassification', () => topicNoteClassification('Geheim'));
     const dl = path.join(app.home, 'Downloads');
     app.file('Downloads/privat/tagebuch.txt', 'Sehr privater Inhalt.');
     app.file('Downloads/normal.txt', 'Normaler Inhalt zum Archivieren.');
@@ -168,7 +153,7 @@ describe('Folder scan (default mode: local only, confirm)', () => {
 
   it('privacy mode „nur lokal“ never sends content', async () => {
     app.services.settings.update({ scan: { enabled: true }, privacy: { llmMode: 'local_only' } });
-    app.llm.on('DocumentClassification', () => cls('X'));
+    app.llm.on('DocumentClassification', () => topicNoteClassification('X'));
     app.file('Downloads/x.txt', 'Inhalt X');
     await app.ok('scanner:addDirectory', { path: path.join(app.home, 'Downloads'), recursive: true });
     await scan();
@@ -194,7 +179,7 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
   it('proposes documents for an existing topic and archives only the selected ones', async () => {
     app.services.settings.update({ scan: { enabled: true } });
     app.llm.on('DocumentClassification', () =>
-      cls('Hauskauf', {
+      topicNoteClassification('Hauskauf', {
         decisions: [
           {
             title: 'Kaufentscheidung',
@@ -207,7 +192,6 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
         ],
       }),
     );
-    // existing topic
     await app.ok('knowledge:createEntity', { type: 'topic', name: 'Hauskauf' });
     const dl = path.join(app.home, 'Downloads');
     for (const n of ['kaufvertrag', 'grundbuch', 'finanzierung'])
@@ -227,7 +211,6 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
     const insight = (await app.ok('insights:list', {})).find((i) => i.kind === 'assignment')!;
     expect(insight.recommendedActionId).toBeTruthy();
 
-    // confirm only 2 of 3
     const chosen = groups[0]!.documentIds.slice(0, 2);
     const plan = await app.ok('documents:previewArchive', { items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })) });
     expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('work', 'projects', 'Hauskauf')))).toBe(true);
@@ -256,7 +239,7 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
 
   it('moving requires additional confirmation, removes the original and can be undone', async () => {
     app.services.settings.update({ scan: { enabled: true } });
-    app.llm.on('DocumentClassification', () => cls('Umzug'));
+    app.llm.on('DocumentClassification', () => topicNoteClassification('Umzug'));
     const dl = path.join(app.home, 'Downloads');
     const src = app.file('Downloads/umzug.txt', 'Umzugsplanung 2026, Termin fix.');
     await app.ok('scanner:addDirectory', { path: dl, recursive: true });
@@ -293,7 +276,7 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
 
   it('the actions „nur indexieren“ and „ignorieren“ change no files', async () => {
     app.services.settings.update({ scan: { enabled: true } });
-    app.llm.on('DocumentClassification', () => cls('Allgemein'));
+    app.llm.on('DocumentClassification', () => topicNoteClassification('Allgemein'));
     const a = app.file('Downloads/a.txt', 'Inhalt A zum Indexieren');
     const b = app.file('Downloads/b.txt', 'Inhalt B zum Ignorieren');
     await app.ok('scanner:addDirectory', { path: path.join(app.home, 'Downloads'), recursive: true });

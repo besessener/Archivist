@@ -27,11 +27,7 @@ export function eventPatch(event: EventRecord, input: EventFormInput): EventPatc
   return patch;
 }
 
-/**
- * Dialog "Ereignis hinzufügen" / "Ereignis bearbeiten" (title, date, description, topic, project, participants), shared by the
- * timeline and the knowledge page. Pass `event` to edit an existing event (fields are prefilled). `onSubmit` performs
- * the IPC call and returns whether the dialog may close. Mount it with a changing `key` to reset the fields.
- */
+/** Adds or, with `event`, edits an event (timeline and knowledge page); mount it with a changing `key` to reset the fields. */
 export function EventFormDialog({
   open,
   onOpenChange,
@@ -40,7 +36,7 @@ export function EventFormDialog({
   event = null,
 }: {
   open: boolean;
-  onOpenChange: (o: boolean) => void;
+  onOpenChange: (open: boolean) => void;
   /** Returns whether the dialog may close – or the id of the saved event (then its further topics/projects are stored too). */
   onSubmit: (input: EventFormInput) => Promise<boolean | string>;
   initialTitle?: string;
@@ -53,7 +49,7 @@ export function EventFormDialog({
   const [topic, setTopic] = useState(event?.topicName ?? '');
   const [project, setProject] = useState(event?.projectName ?? '');
   const [participants, setParticipants] = useState(event?.participants.join(', ') ?? '');
-  const extra = useExtraSubjects(event?.id ?? undefined, open);
+  const extra = useExtraSubjects(event?.id ?? undefined, { open });
   async function save() {
     setBusy(true);
     try {

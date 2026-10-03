@@ -1,90 +1,196 @@
 import { z } from 'zod';
 import type { DocumentRecord, EntityType } from '@archivist/shared';
-import { nameSimilarity, normalizeName, truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
-import { defineTool, list, type AgentTool, type ToolContext } from '../registry';
-import { ARCHIVED, allDocs, docDay, docLine, normExt, resolveDocs, unknownNote, type ToolDeps } from './common';
+import type { DocRow } from '../../services/documents';
+import { defineTool, list, type AgentTool, type ToolOutput } from '../registry';
+import { affectedCount, resolveDocs, unknownNote, type ToolDeps, type ToolScope } from './common';
+import { duplicateReport } from './duplicate-report';
 
-/**
- * Duplicates and versions (#308, #230): find exact duplicates, near duplicates and older versions of documents, mark
- * them (relation + tag, optionally a subfolder), delete them for good (critical), remember pairs that are different,
- * and merge duplicate entries of the knowledge base through the existing merge flows.
- */
+type MergeKind = 'open_item' | 'note' | 'event' | 'topic' | 'project' | 'person';
 
-export type DuplicateKind = 'exact' | 'near' | 'versions';
+const MERGE_LABEL: Record<MergeKind, string> = {
+  open_item: 'offene Punkte',
+  note: 'Notizen',
+  event: 'Ereignisse',
+  topic: 'Themen',
+  project: 'Projekte',
+  person: 'Personen',
+};
 
-const VERSION_TOKEN_RE =
-  /^(?:final|finale|endfassung|kopie|copy|neu|alt|entwurf|draft|v\d{1,3}|version|rev\d{0,3}|korr|korrigiert|aktuell|überarbeitet|ueberarbeitet)$/;
-const DATE_IN_NAME_RE = /\b(?:\d{4}[-_.]\d{2}[-_.]\d{2}|\d{2}[-_.]\d{2}[-_.]\d{4}|\d{8})\b/g;
-
-/**
- * Name without version markers (final, v2, Kopie, copy, (1), _neu, _alt, Entwurf, draft) and full dates, normalized;
- * `marker`: a non-date marker was present, `dates`: the dates that were stripped.
- */
-export function versionKey(name: string): { key: string; marker: boolean; dates: string[] } {
-  const base = name.replace(/\.[a-z0-9]{1,8}$/i, '');
-  const dates = [...base.matchAll(DATE_IN_NAME_RE)].map((m) => m[0].replace(/\D/g, ''));
-  let marker = /\(\d{1,3}\)|\bversion\s?\d/i.test(base);
-  const tokens = normalizeName(
-    base
-      .replace(DATE_IN_NAME_RE, ' ')
-      .replace(/\(\d{1,3}\)/g, ' ')
-      .replace(/\bversion\s?\d{1,3}\b/gi, ' '),
-  )
-    .split(' ')
-    .filter((t) => {
-      if (!VERSION_TOKEN_RE.test(t)) return true;
-      marker = true;
-      return false;
-    });
-  return { key: tokens.join(' '), marker, dates };
+interface MarkArgs {
+  keep: string;
+  duplicates: string[];
+  as: 'duplicate' | 'older_version';
+  action: 'mark' | 'subfolder' | 'delete';
 }
 
-/** Two names are versions of each other: same key, similar titles, and not just two dated issues of a series. */
-export function looksLikeVersions(a: { name: string; title: string }, b: { name: string; title: string }): boolean {
-  const ka = versionKey(a.name);
-  const kb = versionKey(b.name);
-  if (!ka.key || ka.key !== kb.key) return false;
-  // titles are compared without their version markers as well („Plan Entwurf“ ~ „Plan final“)
-  const ta = versionKey(a.title).key || a.title;
-  const tb = versionKey(b.title).key || b.title;
-  if (Math.max(nameSimilarity(a.title, b.title), nameSimilarity(ta, tb)) < 0.75) return false;
-  const differentDates = ka.dates.length > 0 && kb.dates.length > 0 && ka.dates.join() !== kb.dates.join();
-  return !(differentDates && !ka.marker && !kb.marker);
+/** The duplicates to treat: never the document to keep. */
+interface Treatment {
+  keep: DocRow;
+  targets: DocumentRecord[];
+  keepRef: string;
+  refs: string;
+  unknown: string[];
 }
 
-const newestKey = (d: Pick<DocumentRecord, 'documentDate' | 'archivedAt' | 'createdAt'>) => `${docDay(d)}|${d.archivedAt ?? d.createdAt}`;
-
-export function duplicateTools(deps: ToolDeps): AgentTool[] {
-  const { docs, graph, privacy } = deps;
-
-  /** The user said these two are different (rejected duplicate_of in either direction). */
-  const markedDifferent = (a: string, b: string) =>
-    graph.relationsOf(a, { statuses: ['rejected'], types: ['duplicate_of'] }).some((r) => r.sourceEntityId === b || r.targetEntityId === b) ||
-    graph.rejectedBetween(a, b, { includeDuplicateOf: true })?.relationType === 'duplicate_of';
-
-  /** Greedy clusters of a bucket that never put two documents together the user marked as different. */
-  const cluster = (bucket: DocumentRecord[], fits: (a: DocumentRecord, b: DocumentRecord) => boolean = () => true): DocumentRecord[][] => {
-    const groups: DocumentRecord[][] = [];
-    for (const d of bucket) {
-      const g = groups.find((xs) => xs.every((x) => !markedDifferent(x.id, d.id)) && xs.some((x) => fits(x, d)));
-      if (g) g.push(d);
-      else groups.push([d]);
+/** Moves the duplicates into the trash: restorable via undo until the user empties the trash. */
+async function trashDuplicates({ deps, ctx }: ToolScope, treatment: Treatment): Promise<ToolOutput> {
+  const { keepRef, refs, targets, unknown } = treatment;
+  const failed: string[] = [];
+  let trashed = 0;
+  for (const d of targets) {
+    try {
+      await deps.docs.moveToTrash(d.id, { confirmed: true, trigger: 'agent' });
+      trashed += 1;
+    } catch (error) {
+      failed.push(`${ctx.refs.doc(d.id)}: ${error instanceof Error ? error.message : String(error)}`);
     }
-    return groups.filter((g) => g.length > 1);
+  }
+  return {
+    content: `${trashed} Duplikat(e) von ${keepRef} in den Papierkorb gelegt (${refs}); ${keepRef} bleibt. Wiederherstellen über das Änderungsprotokoll oder Einstellungen → Archiv → Papierkorb.${failed.length ? `\nFehlgeschlagen: ${failed.join('; ')}` : ''}${unknownNote(unknown)}`,
+    summary: `${trashed} im Papierkorb`,
+    change: `${trashed} Duplikat(e) in den Papierkorb gelegt`,
+    changed: trashed,
+    isError: trashed === 0,
   };
+}
 
-  const describeGroup = (ctx: ToolContext, kind: DuplicateKind, g: DocumentRecord[], reason: string) => {
-    const newest = g.toSorted((a, b) => newestKey(b).localeCompare(newestKey(a)))[0]!;
-    const set = ctx.refs.set(g.map((d) => d.id));
-    return [
-      `${kind === 'exact' ? 'Exaktes Duplikat' : kind === 'near' ? 'Fast gleich' : 'Versionen'} (${g.length} Dokumente, ${set}) – ${reason}. Neueste: ${ctx.refs.doc(newest.id)}`,
-      ...g.map((d) => `  - ${docLine(d, ctx, privacy)}`),
-    ].join('\n');
+/** Moves the duplicates into the subfolder „Duplikate“ / „Ältere Versionen“ next to the kept document; returns the report lines and the change. */
+async function moveToSubfolder(scope: ToolScope, move: { treatment: Treatment; as: MarkArgs['as'] }): Promise<{ lines: string[]; change: string }> {
+  const { deps, ctx } = scope;
+  const { keep, keepRef, targets } = move.treatment;
+  if (!keep.archiveRelPath) return { lines: [`${keepRef} liegt nicht im Archiv – kein Unterordner möglich.`], change: '' };
+  const folder = folderOf(keep);
+  const target = deps.categories.canonical(`${folder ? `${folder}/` : ''}${move.as === 'duplicate' ? 'Duplikate' : 'Ältere Versionen'}`);
+  const main = deps.categories.needsApproval(target);
+  if (main) return { lines: [`Der Hauptordner „${main}“ existiert nicht – nicht verschoben. Neue Hauptordner legt nur der Benutzer an.`], change: '' };
+  deps.categories.create(target, { confirmed: true });
+  const result = await deps.archive.relocate(
+    targets.map((d) => ({ documentId: d.id, categoryPath: target })),
+    { confirmed: true, trigger: 'agent' },
+  );
+  const lines = [
+    `Nach „${target}“ verschoben: ${result.success} erfolgreich${result.skipped ? `, ${result.skipped} übersprungen` : ''}${result.failed ? `, ${result.failed} fehlgeschlagen` : ''}.`,
+    ...result.items
+      .filter((x) => x.outcome !== 'success')
+      .slice(0, 20)
+      .map((i) => `- ${ctx.refs.doc(i.documentId)}: ${i.message}`),
+  ];
+  return { lines, change: ` und ${result.success} nach ${target} verschoben` };
+}
+
+async function markDuplicates(scope: ToolScope, mark: { treatment: Treatment; args: MarkArgs }): Promise<ToolOutput> {
+  const { deps } = scope;
+  const { treatment, args } = mark;
+  const { keep, keepRef, refs, targets, unknown } = treatment;
+  const tag = args.as === 'duplicate' ? 'Duplikat' : 'ältere Version';
+  for (const d of targets) {
+    if (args.as === 'duplicate')
+      deps.graph.linkEntries({ sourceId: d.id, targetId: keep.id, relationType: 'duplicate_of' }, { status: 'confirmed', trigger: 'agent' });
+    else deps.graph.linkEntries({ sourceId: keep.id, targetId: d.id, relationType: 'supersedes' }, { status: 'confirmed', trigger: 'agent' });
+  }
+  const { auditId } = deps.docs.bulkUpdate(
+    targets.map((d) => d.id),
+    { patch: { addTags: [tag] }, trigger: 'agent' },
+  );
+  const lines = [`${targets.length} Dokument(e) als ${tag} von ${keepRef} markiert (${refs}), Schlagwort „${tag}“ gesetzt.`];
+  let change = `${targets.length} Dokument(e) als ${tag} markiert`;
+  if (args.action === 'subfolder') {
+    const moved = await moveToSubfolder(scope, { treatment, as: args.as });
+    lines.push(...moved.lines);
+    change += moved.change;
+  }
+  return {
+    content: lines.join('\n') + (auditId ? `\n(Schlagwort rückgängig machbar, Protokoll ${auditId})` : '') + unknownNote(unknown),
+    summary: `${targets.length} markiert`,
+    change,
+    changed: targets.length,
   };
+}
 
-  const resolveOne = (ctx: ToolContext, ref: string) => ctx.refs.resolve(ref);
+async function treatDuplicates(scope: ToolScope, args: MarkArgs): Promise<ToolOutput> {
+  const { deps, ctx } = scope;
+  const keepId = ctx.refs.resolve(args.keep);
+  const keep = keepId ? deps.docs.findRow(keepId) : undefined;
+  if (!keepId || !keep) return { content: `Unbekannte Dokument-ID „${args.keep}“ für keep.`, isError: true };
+  const { docs: duplicates, unknown } = resolveDocs(scope, args.duplicates);
+  const targets = duplicates.filter((d) => d.id !== keepId);
+  if (!targets.length) return { content: `Keine Duplikate angegeben (keep wird nie verändert).${unknownNote(unknown)}`, isError: true };
+  const treatment = { keep, targets, keepRef: ctx.refs.doc(keepId), refs: targets.map((d) => ctx.refs.doc(d.id)).join(', '), unknown };
+  if (args.action === 'delete') return trashDuplicates(scope, treatment);
+  return markDuplicates(scope, { treatment, args });
+}
 
+async function markDifferent({ deps, ctx }: ToolScope, args: { a: string; b: string }): Promise<ToolOutput> {
+  const { graph } = deps;
+  const a = ctx.refs.resolve(args.a);
+  const b = ctx.refs.resolve(args.b);
+  if (!a || !b || a === b || !graph.getEntity(a) || !graph.getEntity(b))
+    return { content: 'Zwei verschiedene, bekannte IDs (D… oder K…) nötig.', isError: true };
+  const existing = graph.relationsOf(a, { types: ['duplicate_of'] }).filter((r) => r.sourceEntityId === b || r.targetEntityId === b);
+  let relationId: string | null = null;
+  for (const r of existing) {
+    if (r.status !== 'rejected') graph.setRelationStatus(r.id, { status: 'rejected', by: 'user' });
+    relationId = r.id;
+  }
+  relationId ??=
+    graph.link({ sourceId: a, targetId: b, relationType: 'duplicate_of' }, { status: 'rejected', resolvedByUser: true, origin: 'user' })?.id ?? null;
+  deps.audit.log({
+    action: 'relation.markDifferent',
+    actor: 'user',
+    trigger: 'agent',
+    confirmed: true,
+    entityIds: [relationId, a, b].filter((x): x is string => Boolean(x)),
+    before: existing.length ? { status: existing.map((r) => r.status) } : null,
+    after: { status: 'rejected', relationType: 'duplicate_of' },
+  });
+  const refA = args.a.trim().toUpperCase();
+  const refB = args.b.trim().toUpperCase();
+  return {
+    content: `Gemerkt: ${refA} und ${refB} sind verschieden und werden nicht mehr als Duplikat genannt.`,
+    summary: 'gemerkt',
+    change: `${refA} und ${refB} als verschieden markiert`,
+  };
+}
+
+const SUBJECT_TYPE: Partial<Record<MergeKind, EntityType>> = { topic: 'topic', project: 'project', person: 'person' };
+
+/** What the kept entry took over, or why the entries do not fit the kind. */
+async function mergeInto(
+  deps: ToolDeps,
+  merge: { kind: MergeKind; keepId: string; duplicateId: string },
+): Promise<{ takenOver: string[] } | { error: string }> {
+  const { kind, keepId, duplicateId } = merge;
+  const options = { actor: 'agent' as const, trigger: 'agent' };
+  if (kind === 'open_item') return deps.openItemDuplicates.merge({ keepId, duplicateId }, options);
+  if (kind === 'note') return deps.noteEventDuplicates.mergeNotes({ keepId, duplicateId }, options);
+  if (kind === 'event') return deps.noteEventDuplicates.mergeEvents({ keepId, duplicateId }, options);
+  const type = SUBJECT_TYPE[kind];
+  if (deps.graph.getEntity(keepId)?.type !== type || deps.graph.getEntity(duplicateId)?.type !== type)
+    return { error: `Beide Einträge müssen vom Typ ${MERGE_LABEL[kind]} sein.` };
+  await deps.graph.merge({ sourceIds: [duplicateId], targetId: keepId }, options);
+  return { takenOver: ['Verknüpfungen', 'Name als Alias'] };
+}
+
+async function mergeEntries({ deps, ctx }: ToolScope, args: { kind: MergeKind; keep: string; duplicate: string }): Promise<ToolOutput> {
+  const keepId = ctx.refs.resolve(args.keep);
+  const duplicateId = ctx.refs.resolve(args.duplicate);
+  if (!keepId || !duplicateId || keepId === duplicateId) return { content: 'Zwei verschiedene, bekannte K-IDs nötig.', isError: true };
+  const merged = await mergeInto(deps, { kind: args.kind, keepId, duplicateId });
+  if ('error' in merged) return { content: merged.error, isError: true };
+  const { takenOver } = merged;
+  const keepRef = ctx.refs.entry(keepId);
+  const duplicateRef = ctx.refs.entry(duplicateId);
+  return {
+    content: `${duplicateRef} in ${keepRef} zusammengeführt${takenOver.length ? `; übernommen: ${takenOver.join(', ')}` : ''}. Rückgängig machbar.`,
+    summary: 'zusammengeführt',
+    change: `Doppelte ${MERGE_LABEL[args.kind]} zusammengeführt`,
+    changed: 1,
+  };
+}
+
+/** Duplicates and versions (#308, #230): find, mark or delete them, remember different pairs, merge duplicate entries. */
+export function duplicateTools(deps: ToolDeps): AgentTool[] {
   return [
     defineTool({
       name: 'find_duplicates',
@@ -96,101 +202,12 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
       }),
       risk: 'read',
       label: () => 'Suche Duplikate und Versionen',
-      run: async (a, ctx) => {
-        const { docs: found, unknown } = a.documents?.length
-          ? resolveDocs(deps, ctx, a.documents)
-          : { docs: allDocs(deps).filter((d) => ARCHIVED.includes(d.status)), unknown: [] as string[] };
-        const kinds = new Set<DuplicateKind>(a.kinds?.length ? a.kinds : ['exact', 'near', 'versions']);
-        const grouped = new Set<string>();
-        const pairKey = (g: DocumentRecord[]) =>
-          g
-            .map((d) => d.id)
-            .toSorted()
-            .join('|');
-        const seen = new Set<string>();
-        const out: string[] = [];
-        const push = (kind: DuplicateKind, groups: DocumentRecord[][], reason: (g: DocumentRecord[]) => string) => {
-          for (const g of groups) {
-            const key = pairKey(g);
-            // a group already reported under a stronger kind (or fully contained in one) is not repeated
-            if (seen.has(key) || g.every((d) => grouped.has(d.id))) continue;
-            seen.add(key);
-            for (const d of g) grouped.add(d.id);
-            out.push(describeGroup(ctx, kind, g, reason(g)));
-          }
-        };
-        const bucketBy = (key: (d: DocumentRecord) => string | null) => {
-          const m = new Map<string, DocumentRecord[]>();
-          for (const d of found) {
-            const k = key(d);
-            if (k) m.set(k, [...(m.get(k) ?? []), d]);
-          }
-          return [...m.values()].filter((xs) => xs.length > 1);
-        };
-        if (kinds.has('exact'))
-          push(
-            'exact',
-            bucketBy((d) => d.sha256).flatMap((b) => cluster(b)),
-            () => 'gleicher Dateiinhalt (gleiche Prüfsumme)',
-          );
-        if (kinds.has('near')) {
-          const startOf = (d: DocumentRecord) => {
-            const n = normalizeName(d.textPreview);
-            return n.length >= 80 ? n.slice(0, 200) : null;
-          };
-          push(
-            'near',
-            bucketBy(startOf).flatMap((b) => cluster(b)),
-            (g) => {
-              const hashes = new Set(g.map((d) => docs.findRow(d.id)?.textHash ?? null));
-              return hashes.size === 1 && !hashes.has(null)
-                ? 'gleicher Textinhalt (andere Datei, z. B. anderes Format oder neu gespeichert)'
-                : 'sehr ähnlicher Textanfang';
-            },
-          );
-        }
-        if (kinds.has('versions'))
-          push(
-            'versions',
-            bucketBy((d) => {
-              const k = versionKey(d.originalName).key;
-              return k ? `${normExt(d.ext)}|${k}` : null;
-            }).flatMap((b) => cluster(b, (x, y) => looksLikeVersions({ name: x.originalName, title: x.title }, { name: y.originalName, title: y.title }))),
-            (g) => {
-              const marked = g.filter((d) => versionKey(d.originalName).marker).map((d) => ctx.refs.doc(d.id));
-              return `gleicher Name bis auf Versions- oder Datumsangaben, ähnlicher Titel${marked.length ? ` (Versionsmerkmal bei ${marked.join(', ')})` : ''}`;
-            },
-          );
-        const hints = deps.insights
-          .list('open')
-          .filter((i) => i.kind.includes('duplicate'))
-          .slice(0, 20)
-          .map((i) => {
-            const affectedDocs = i.affected.filter((x) => x.type === 'document');
-            const hidden = affectedDocs.some((x) => {
-              const row = docs.findRow(x.id);
-              return !row || !privacy.mayShareDocument(docs.toRecord(row));
-            });
-            const refs = i.affected.map((x) => (x.type === 'document' ? ctx.refs.doc(x.id) : ctx.refs.entry(x.id))).join(', ');
-            return hidden
-              ? `- Hinweis ${ctx.refs.entry(i.id)} (${i.kind}) zu ${refs}`
-              : `- Hinweis ${ctx.refs.entry(i.id)} (${i.kind}): ${truncate(i.title, 100)} – ${refs}`;
-          });
-        const content = [
-          out.length ? `${out.length} Gruppe(n) unter ${found.length} Dokumenten:` : `Keine Duplikate unter ${found.length} Dokumenten gefunden.`,
-          ...out,
-          hints.length ? `Offene Duplikat-Hinweise der Archivprüfung:\n${hints.join('\n')}` : null,
-          out.length ? 'Behalten/markieren mit mark_duplicates, „sind verschieden“ mit mark_different.' : null,
-        ]
-          .filter(Boolean)
-          .join('\n');
-        return { content: content + unknownNote(unknown), summary: out.length ? `${out.length} Gruppe(n)` : 'keine Duplikate' };
-      },
+      run: (a, ctx) => duplicateReport({ deps, ctx }, a),
     }),
     defineTool({
       name: 'mark_duplicates',
       description:
-        'Behandelt Duplikate bzw. ältere Versionen eines Dokuments (keep bleibt unverändert): action "mark" verknüpft und setzt das Schlagwort „Duplikat“ bzw. „ältere Version“; "subfolder" verschiebt sie zusätzlich in den Unterordner Duplikate bzw. Ältere Versionen neben keep; "delete" löscht sie endgültig (nicht rückgängig zu machen, immer mit Rückfrage).',
+        'Behandelt Duplikate bzw. ältere Versionen eines Dokuments (keep bleibt unverändert): action "mark" verknüpft und setzt das Schlagwort „Duplikat“ bzw. „ältere Version“; "subfolder" verschiebt sie zusätzlich in den Unterordner Duplikate bzw. Ältere Versionen neben keep; "delete" legt sie in den Papierkorb (wiederherstellbar, bis der Benutzer den Papierkorb leert; immer mit Rückfrage).',
       schema: z.object({
         keep: z.string().min(1),
         duplicates: list,
@@ -198,82 +215,12 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
         action: z.enum(['mark', 'subfolder', 'delete']).default('mark'),
       }),
       risk: (a) => (a.action === 'delete' ? 'critical' : 'write'),
-      count: (a, ctx) => ctx.refs.resolveMany(a.duplicates).ids.length || a.duplicates.length,
+      count: (a, ctx) => affectedCount(ctx, a.duplicates),
       label: (a) =>
         a.action === 'delete'
-          ? `Lösche ${a.duplicates.length} Duplikat(e) endgültig`
+          ? `Lege ${a.duplicates.length} Duplikat(e) in den Papierkorb`
           : `Markiere ${a.duplicates.length} Dokument(e) als ${a.as === 'duplicate' ? 'Duplikat' : 'ältere Version'}${a.action === 'subfolder' ? ' und verschiebe sie' : ''}`,
-      run: async (a, ctx) => {
-        const keepId = resolveOne(ctx, a.keep);
-        const keep = keepId ? docs.findRow(keepId) : undefined;
-        if (!keepId || !keep) return { content: `Unbekannte Dokument-ID „${a.keep}“ für keep.`, isError: true };
-        const { docs: dups, unknown } = resolveDocs(deps, ctx, a.duplicates);
-        const targets = dups.filter((d) => d.id !== keepId);
-        if (!targets.length) return { content: `Keine Duplikate angegeben (keep wird nie verändert).${unknownNote(unknown)}`, isError: true };
-        const keepRef = ctx.refs.doc(keepId);
-        const refs = targets.map((d) => ctx.refs.doc(d.id)).join(', ');
-
-        if (a.action === 'delete') {
-          const failed: string[] = [];
-          let deleted = 0;
-          for (const d of targets) {
-            try {
-              docs.deletePermanently(d.id, { trigger: 'agent' });
-              deleted += 1;
-            } catch (err) {
-              failed.push(`${ctx.refs.doc(d.id)}: ${err instanceof Error ? err.message : String(err)}`);
-            }
-          }
-          return {
-            content: `${deleted} Duplikat(e) von ${keepRef} endgültig gelöscht (${refs}); ${keepRef} bleibt.${failed.length ? `\nFehlgeschlagen: ${failed.join('; ')}` : ''}${unknownNote(unknown)}`,
-            summary: `${deleted} gelöscht`,
-            change: `${deleted} Duplikat(e) endgültig gelöscht`,
-            changed: deleted,
-            isError: deleted === 0,
-          };
-        }
-
-        const tag = a.as === 'duplicate' ? 'Duplikat' : 'ältere Version';
-        for (const d of targets) {
-          if (a.as === 'duplicate') graph.linkEntries(d.id, keepId, 'duplicate_of', { status: 'confirmed', trigger: 'agent' });
-          else graph.linkEntries(keepId, d.id, 'supersedes', { status: 'confirmed', trigger: 'agent' });
-        }
-        const { auditId } = docs.bulkUpdate(
-          targets.map((d) => d.id),
-          { addTags: [tag] },
-          { trigger: 'agent' },
-        );
-        const lines = [`${targets.length} Dokument(e) als ${tag} von ${keepRef} markiert (${refs}), Schlagwort „${tag}“ gesetzt.`];
-        let change = `${targets.length} Dokument(e) als ${tag} markiert`;
-        if (a.action === 'subfolder') {
-          if (!keep.archiveRelPath) lines.push(`${keepRef} liegt nicht im Archiv – kein Unterordner möglich.`);
-          else {
-            const folder = folderOf(keep);
-            const sub = `${folder ? `${folder}/` : ''}${a.as === 'duplicate' ? 'Duplikate' : 'Ältere Versionen'}`;
-            const target = deps.categories.canonical(sub);
-            const main = deps.categories.needsApproval(target);
-            if (main) lines.push(`Der Hauptordner „${main}“ existiert nicht – nicht verschoben. Neue Hauptordner legt nur der Benutzer an.`);
-            else {
-              deps.categories.create(target, true);
-              const res = await deps.archive.relocate(
-                targets.map((d) => ({ documentId: d.id, categoryPath: target })),
-                { confirmed: true, trigger: 'agent' },
-              );
-              lines.push(
-                `Nach „${target}“ verschoben: ${res.success} erfolgreich${res.skipped ? `, ${res.skipped} übersprungen` : ''}${res.failed ? `, ${res.failed} fehlgeschlagen` : ''}.`,
-              );
-              for (const i of res.items.filter((x) => x.outcome !== 'success').slice(0, 20)) lines.push(`- ${ctx.refs.doc(i.documentId)}: ${i.message}`);
-              change += ` und ${res.success} nach ${target} verschoben`;
-            }
-          }
-        }
-        return {
-          content: lines.join('\n') + (auditId ? `\n(Schlagwort rückgängig machbar, Protokoll ${auditId})` : '') + unknownNote(unknown),
-          summary: `${targets.length} markiert`,
-          change,
-          changed: targets.length,
-        };
-      },
+      run: (a, ctx) => treatDuplicates({ deps, ctx }, a),
     }),
     defineTool({
       name: 'mark_different',
@@ -281,35 +228,7 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
       schema: z.object({ a: z.string().min(1), b: z.string().min(1) }),
       risk: 'write',
       label: () => 'Merke: die beiden sind verschieden',
-      run: async (args, ctx) => {
-        const a = resolveOne(ctx, args.a);
-        const b = resolveOne(ctx, args.b);
-        if (!a || !b || a === b || !graph.getEntity(a) || !graph.getEntity(b))
-          return { content: 'Zwei verschiedene, bekannte IDs (D… oder K…) nötig.', isError: true };
-        const existing = graph.relationsOf(a, { types: ['duplicate_of'] }).filter((r) => r.sourceEntityId === b || r.targetEntityId === b);
-        let relationId: string | null = null;
-        for (const r of existing) {
-          if (r.status !== 'rejected') graph.setRelationStatus(r.id, 'rejected', 'user');
-          relationId = r.id;
-        }
-        if (!relationId) relationId = graph.link(a, b, 'duplicate_of', { status: 'rejected', resolvedByUser: true, origin: 'user' })?.id ?? null;
-        deps.audit.log({
-          action: 'relation.markDifferent',
-          actor: 'user',
-          trigger: 'agent',
-          confirmed: true,
-          entityIds: [relationId, a, b].filter((x): x is string => Boolean(x)),
-          before: existing.length ? { status: existing.map((r) => r.status) } : null,
-          after: { status: 'rejected', relationType: 'duplicate_of' },
-        });
-        const ra = args.a.trim().toUpperCase();
-        const rb = args.b.trim().toUpperCase();
-        return {
-          content: `Gemerkt: ${ra} und ${rb} sind verschieden und werden nicht mehr als Duplikat genannt.`,
-          summary: 'gemerkt',
-          change: `${ra} und ${rb} als verschieden markiert`,
-        };
-      },
+      run: (args, ctx) => markDifferent({ deps, ctx }, args),
     }),
     defineTool({
       name: 'merge_entries',
@@ -322,50 +241,7 @@ export function duplicateTools(deps: ToolDeps): AgentTool[] {
       }),
       risk: 'write',
       label: (a) => `Führe zwei ${MERGE_LABEL[a.kind]} zusammen`,
-      run: async (a, ctx) => {
-        const keepId = resolveOne(ctx, a.keep);
-        const dupId = resolveOne(ctx, a.duplicate);
-        if (!keepId || !dupId || keepId === dupId) return { content: 'Zwei verschiedene, bekannte K-IDs nötig.', isError: true };
-        const opts = { actor: 'agent' as const, trigger: 'agent' };
-        let takenOver: string[];
-        switch (a.kind) {
-          case 'open_item':
-            takenOver = deps.openItemDuplicates.merge(keepId, dupId, opts).takenOver;
-            break;
-          case 'note':
-            takenOver = deps.noteEventDuplicates.mergeNotes(keepId, dupId, opts).takenOver;
-            break;
-          case 'event':
-            takenOver = deps.noteEventDuplicates.mergeEvents(keepId, dupId, opts).takenOver;
-            break;
-          default: {
-            const types: Record<string, EntityType> = { topic: 'topic', project: 'project', person: 'person' };
-            const keep = graph.getEntity(keepId);
-            const dup = graph.getEntity(dupId);
-            if (keep?.type !== types[a.kind] || dup?.type !== types[a.kind])
-              return { content: `Beide Einträge müssen vom Typ ${MERGE_LABEL[a.kind]} sein.`, isError: true };
-            await graph.merge({ sourceIds: [dupId], targetId: keepId }, opts);
-            takenOver = ['Verknüpfungen', 'Name als Alias'];
-          }
-        }
-        const kr = ctx.refs.entry(keepId);
-        const dr = ctx.refs.entry(dupId);
-        return {
-          content: `${dr} in ${kr} zusammengeführt${takenOver.length ? `; übernommen: ${takenOver.join(', ')}` : ''}. Rückgängig machbar.`,
-          summary: 'zusammengeführt',
-          change: `Doppelte ${MERGE_LABEL[a.kind]} zusammengeführt`,
-          changed: 1,
-        };
-      },
+      run: (a, ctx) => mergeEntries({ deps, ctx }, a),
     }),
   ];
 }
-
-const MERGE_LABEL: Record<'open_item' | 'note' | 'event' | 'topic' | 'project' | 'person', string> = {
-  open_item: 'offene Punkte',
-  note: 'Notizen',
-  event: 'Ereignisse',
-  topic: 'Themen',
-  project: 'Projekte',
-  person: 'Personen',
-};

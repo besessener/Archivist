@@ -14,8 +14,8 @@ test.describe('linking knowledge (Epic #269)', () => {
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('knowledge');
     const k = app.knowledge;
-    await k.do.create('project', 'Hausbau');
-    await k.do.create('note', 'Statik', 'Statiker beauftragt.');
+    await k.do.create({ type: 'project', name: 'Hausbau' });
+    await k.do.create({ type: 'note', name: 'Statik', description: 'Statiker beauftragt.' });
 
     // [[ offers the entries; choosing one inserts the link
     await k.locators.buttons.create.click();
@@ -34,7 +34,7 @@ test.describe('linking knowledge (Epic #269)', () => {
     await expect(page.getByTestId('wiki-link-unknown')).toHaveText('Unbekannt');
 
     // a case: create, add the note, its page lists it
-    await k.do.create('case', 'Autokauf');
+    await k.do.create({ type: 'case', name: 'Autokauf' });
     await expect(k.heading()).toHaveText('Autokauf');
     await expect(page.getByTestId('case-view')).toBeVisible();
     await k().filter({ hasText: 'Baustelle' }).click();
@@ -55,6 +55,29 @@ test.describe('linking knowledge (Epic #269)', () => {
     await expect(page.getByTestId('case-entry').filter({ hasText: 'Baustelle' })).toBeVisible();
     await shot(page, 'case');
     await expectNoSeriousA11yViolations(page, testInfo);
+  });
+
+  test('typing right after choosing a wiki suggestion keeps the text in order, even when the next frame is late', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.do.create({ type: 'project', name: 'Hausbau' });
+    // a slow machine: the next animation frame only arrives while the user is already typing on
+    await page.evaluate(() => {
+      const later = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => window.setTimeout(() => later(callback), 60);
+    });
+
+    await k.locators.buttons.create.click();
+    await k.locators.inputs.type.selectOption('note');
+    await k.locators.inputs.name.fill('Baustelle');
+    await k.locators.inputs.description.pressSequentially('Termin zu [[Haus');
+    await page.getByTestId('wiki-suggestion').filter({ hasText: 'Hausbau' }).click();
+    await k.locators.inputs.description.pressSequentially(' und [[Unbekannt]]', { delay: 20 });
+
+    await expect(k.locators.inputs.description).toHaveValue('Termin zu [[Hausbau]] und [[Unbekannt]]');
+    await expect(page.getByTestId('wiki-unknown')).toContainText('„Unbekannt“ als Notiz anlegen');
   });
 
   test('bulk assignment of open items and the linkage metrics under Insights (#291, #292)', async ({ llm, on, page }, testInfo) => {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { intent } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -8,7 +9,6 @@ beforeEach(async () => {
 afterEach(async () => app.cleanup());
 
 const create = (title: string) => app.ok('openItems:create', { title, priority: 'normal', sourceIds: [], confidence: 0.9 });
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 
 describe('Closing an open item with an optional solution comment', () => {
   it('stores the comment, finds the item by it, shows it in the timeline; undo removes it again', async () => {

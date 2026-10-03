@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessOpenItemPair, findOpenItemDuplicate } from '../../packages/core/src/services/cleanup/open-item-duplicates';
+import { assessOpenItemPair, findOpenItemDuplicate } from '../../packages/core/src/services/cleanup/open-item-assessment';
 import { appendText, chooseKept, duplicatePairKey, takeOverMissing, titleSimilarity } from '../../packages/core/src/services/cleanup/record-merge';
 
 describe('assessOpenItemPair (#35)', () => {
@@ -64,7 +64,7 @@ describe('takeOverMissing / merge helpers (#35, also for notes/events)', () => {
   it('fills only missing values, appends text and unions lists', () => {
     const keep: R = { description: 'Konditionen klären', dueAt: null, owner: 'Anna', sources: ['a'] };
     const dup: R = { description: 'er wollte Rabatt', dueAt: '2026-11-15', owner: 'Bernd', sources: ['a', 'b'] };
-    expect(takeOverMissing(keep, dup, rules)).toEqual({
+    expect(takeOverMissing({ keep, duplicate: dup }, rules)).toEqual({
       patch: { description: 'Konditionen klären\ner wollte Rabatt', dueAt: '2026-11-15', sources: ['a', 'b'] },
       before: { description: 'Konditionen klären', dueAt: null, sources: ['a'] },
       fields: ['description', 'dueAt', 'sources'],
@@ -74,15 +74,15 @@ describe('takeOverMissing / merge helpers (#35, also for notes/events)', () => {
   it('takes over nothing if the duplicate record has nothing new', () => {
     const keep: R = { description: 'Rabatt klären', dueAt: '2026-01-01', owner: 'Anna', sources: ['a'] };
     const dup: R = { description: 'rabatt KLÄREN', dueAt: null, owner: null, sources: [] };
-    expect(takeOverMissing(keep, dup, rules).fields).toEqual([]);
+    expect(takeOverMissing({ keep, duplicate: dup }, rules).fields).toEqual([]);
   });
 
   it('appendText, duplicatePairKey and chooseKept', () => {
     expect(appendText(null, ' neu ')).toBe('neu');
     expect(appendText('alt', null)).toBe('alt');
     expect(appendText('Alt und neu', 'neu')).toBe('Alt und neu');
-    expect(duplicatePairKey('x:', 'b', 'a')).toBe(duplicatePairKey('x:', 'a', 'b'));
-    expect(duplicatePairKey('x:', 'b', 'a')).toBe('x:a|b');
+    expect(duplicatePairKey('x:', ['b', 'a'])).toBe(duplicatePairKey('x:', ['a', 'b']));
+    expect(duplicatePairKey('x:', ['b', 'a'])).toBe('x:a|b');
     const older = { id: 'z', createdAt: '2026-01-01' };
     const newer = { id: 'a', createdAt: '2026-02-01' };
     expect(chooseKept(newer, older)).toEqual({ keep: older, duplicate: newer });

@@ -17,12 +17,12 @@ describe('Graph view of the surroundings of an entry (#288)', () => {
     const c = await note('C');
     const d = await note('D');
     const project = (await app.ok('knowledge:createEntity', { type: 'project', name: 'Hausbau' })).entity.id;
-    g.linkEntries(a, b, 'related_to', { status: 'confirmed' });
-    g.linkEntries(b, c, 'results_from', { status: 'confirmed' });
-    g.link(a, d, 'related_to', { status: 'proposed', method: 'similarity' });
-    g.linkEntries(a, project, 'belongs_to', { status: 'confirmed' });
-    const rejected = g.link(a, await note('E'), 'related_to', { status: 'proposed', method: 'similarity' })!;
-    g.decideRelation(rejected.id, 'rejected');
+    g.linkEntries({ sourceId: a, targetId: b, relationType: 'related_to' }, { status: 'confirmed' });
+    g.linkEntries({ sourceId: b, targetId: c, relationType: 'results_from' }, { status: 'confirmed' });
+    g.link({ sourceId: a, targetId: d, relationType: 'related_to' }, { status: 'proposed', method: 'similarity' });
+    g.linkEntries({ sourceId: a, targetId: project, relationType: 'belongs_to' }, { status: 'confirmed' });
+    const rejected = g.link({ sourceId: a, targetId: await note('E'), relationType: 'related_to' }, { status: 'proposed', method: 'similarity' })!;
+    g.decideRelation(rejected.id, { status: 'rejected' });
 
     const one = await app.ok('knowledge:neighborhood', { id: a });
     expect(one.centerId).toBe(a);
@@ -41,7 +41,7 @@ describe('Graph view of the surroundings of an entry (#288)', () => {
     app = await createTestApp({ configured: false });
     const g = app.services.graph;
     const tag = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Viel' })).entity.id;
-    for (let i = 0; i < 20; i += 1) g.linkEntries(await note(`Notiz ${i}`), tag, 'relates_to', { status: 'confirmed' });
+    for (let i = 0; i < 20; i += 1) g.linkEntries({ sourceId: await note(`Notiz ${i}`), targetId: tag, relationType: 'relates_to' }, { status: 'confirmed' });
     const hub = await app.ok('knowledge:neighborhood', { id: tag });
     expect(hub.nodes).toEqual([expect.objectContaining({ id: tag, depth: 0 }), expect.objectContaining({ type: 'note', count: 20, name: '20 weitere' })]);
 

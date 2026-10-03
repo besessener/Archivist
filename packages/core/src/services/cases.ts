@@ -8,6 +8,7 @@ import type { KnowledgeGraphService } from './knowledge-graph';
 /** Kinds of entries a case collects (#286). */
 const CASE_ENTRY_TYPES: EntityType[] = ['document', 'note', 'decision', 'task', 'question', 'event'];
 const OPEN_ITEM_STATUSES = ['open', 'waiting', 'blocked'];
+const isOpenItem = (entry: { status: string | null }) => entry.status !== null && OPEN_ITEM_STATUSES.includes(entry.status);
 
 export interface CaseSummary {
   id: string;
@@ -32,26 +33,26 @@ export interface CaseEntry {
   relationId: string;
 }
 
-/**
- * Cases („Vorgänge“, #286): a collection of the documents, decisions, open items, events and notes that belong to one
- * matter – „Steuererklärung 2025“, „Autokauf“. A case is a node of the knowledge graph; an entry belongs to it over a
- * `belongs_to` relation and can belong to several cases. Creating, assigning and closing are undoable.
- */
+export type CaseServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; audit: AuditService };
+
+/** Cases („Vorgänge“, #286): graph nodes collecting the entries of one matter over `belongs_to`; every change is undoable. */
 export class CaseService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly audit: AuditService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly audit: AuditService;
+
+  constructor(deps: CaseServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, audit: this.audit } = deps);
+  }
 
   private get sqlite() {
     return this.ctx.database.sqlite;
   }
 
   private caseOf(id: string): GraphEntity {
-    const c = this.graph.getEntity(id);
-    if (c?.type !== 'case') throw new AppError('validation_error', 'Vorgang nicht gefunden.');
-    return c;
+    const found = this.graph.getEntity(id);
+    if (found?.type !== 'case') throw new AppError('validation_error', 'Vorgang nicht gefunden.');
+    return found;
   }
 
   /** Entries of a case: current assignments (confirmed and proposed), without discarded duplicates and inbox documents. */
@@ -74,8 +75,8 @@ export class CaseService {
          ORDER BY date DESC, e.name`,
       )
       .all(caseId, caseId, caseId)
-      .map((r) => {
-        const row = r as { id: string; type: EntityType; name: string; relStatus: string; relationId: string; date: string | null; status: string | null };
+      .map((result) => {
+        const row = result as { id: string; type: EntityType; name: string; relStatus: string; relationId: string; date: string | null; status: string | null };
         return {
           id: row.id,
           type: row.type,
@@ -86,23 +87,23 @@ export class CaseService {
           relationId: row.relationId,
         };
       })
-      .filter((e, i, all) => all.findIndex((x) => x.id === e.id) === i);
+      .filter((entry, index, all) => all.findIndex((x) => x.id === entry.id) === index);
   }
 
   list(opts: { includeClosed?: boolean } = {}): CaseSummary[] {
     return this.graph
       .listEntities({ type: 'case', limit: 1000 })
-      .filter((c) => opts.includeClosed !== false || c.status !== 'closed')
-      .map((c) => {
-        const entries = this.entries(c.id).filter((e) => !e.proposed);
+      .filter((found) => opts.includeClosed !== false || found.status !== 'closed')
+      .map((found) => {
+        const entries = this.entries(found.id).filter((entry) => !entry.proposed);
         return {
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          status: c.status === 'closed' ? ('closed' as const) : ('open' as const),
+          id: found.id,
+          name: found.name,
+          description: found.description,
+          status: found.status === 'closed' ? ('closed' as const) : ('open' as const),
           entries: entries.length,
-          openItems: entries.filter((e) => e.status && OPEN_ITEM_STATUSES.includes(e.status)).length,
-          updatedAt: c.updatedAt,
+          openItems: entries.filter(isOpenItem).length,
+          updatedAt: found.updatedAt,
         };
       })
       .toSorted((a, b) => Number(a.status === 'closed') - Number(b.status === 'closed') || a.name.localeCompare(b.name, 'de'));
@@ -110,38 +111,38 @@ export class CaseService {
 
   /** The page of a case: its entries (newest first, for the timeline) and its open items. */
   detail(caseId: string): { case: GraphEntity; entries: CaseEntry[]; openItems: CaseEntry[] } {
-    const c = this.caseOf(caseId);
+    const found = this.caseOf(caseId);
     const entries = this.entries(caseId);
-    return { case: c, entries, openItems: entries.filter((e) => e.status && OPEN_ITEM_STATUSES.includes(e.status)) };
+    return { case: found, entries, openItems: entries.filter(isOpenItem) };
   }
 
   /** A new case (or the existing one of that name or alias); creating is undoable. */
-  create(name: string, description?: string | null, opts: { trigger?: string } = {}): { case: GraphEntity; created: boolean } {
+  create({ name, description, ...opts }: { name: string; description?: string | null; trigger?: string }): { case: GraphEntity; created: boolean } {
     const clean = name.trim().replace(/\s+/g, ' ');
     if (!clean) throw new AppError('validation_error', 'Ein Vorgang braucht einen Namen.');
     const existing = this.graph.findByNameOrAlias('case', clean);
     if (existing) return { case: existing, created: false };
-    const c = this.graph.ensureEntity('case', clean, description?.trim() || null);
+    const created = this.graph.ensureEntity({ type: 'case', name: clean, description: description?.trim() || null });
     this.audit.log({
       action: 'case.create',
       actor: 'user',
       trigger: opts.trigger ?? 'manual',
       confirmed: true,
-      entityIds: [c.id],
-      after: { name: c.name },
-      undo: { type: CREATED_UNDO_TYPE, data: { action: 'case.create', id: c.id } satisfies CreatedUndoData },
+      entityIds: [created.id],
+      after: { name: created.name },
+      undo: { type: CREATED_UNDO_TYPE, data: { action: 'case.create', id: created.id } satisfies CreatedUndoData },
     });
-    return { case: c, created: true };
+    return { case: created, created: true };
   }
 
   /** Puts entries into a case – ONE undo step for all of them (#286, #291). */
-  assign(entryIds: string[], caseId: string, opts: { trigger?: string } = {}): number {
-    const c = this.caseOf(caseId);
+  assign({ entryIds, caseId, ...opts }: { entryIds: string[]; caseId: string; trigger?: string }): number {
+    const target = this.caseOf(caseId);
     const ids = entryIds.filter((id) => {
-      const e = this.graph.getEntity(id);
-      return e && CASE_ENTRY_TYPES.includes(e.type);
+      const entry = this.graph.getEntity(id);
+      return entry && CASE_ENTRY_TYPES.includes(entry.type);
     });
     if (!ids.length) throw new AppError('validation_error', 'Keine passenden Einträge für einen Vorgang ausgewählt.');
-    return this.graph.linkMany(ids, c.id, 'belongs_to', { trigger: opts.trigger, action: 'case.assign' });
+    return this.graph.linkMany({ sourceIds: ids, targetId: target.id, relationType: 'belongs_to' }, { trigger: opts.trigger, action: 'case.assign' });
   }
 }

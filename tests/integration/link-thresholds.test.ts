@@ -10,14 +10,14 @@ afterEach(async () => {
 describe('Learning from rejections, gently (#275)', () => {
   it('the raise grows with the rejection rate, is capped and needs enough decisions', () => {
     const cap = 0.1;
-    expect(LinkThresholds.raise(0, 7, cap)).toBe(0); // too few decisions
-    expect(LinkThresholds.raise(10, 10, cap)).toBe(0); // half rejected: nothing learned yet
-    expect(LinkThresholds.raise(3, 17, cap)).toBe(0.088);
-    expect(LinkThresholds.raise(0, 20, cap)).toBe(cap);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 7 }, cap)).toBe(0); // too few decisions
+    expect(LinkThresholds.raise({ confirmed: 10, rejected: 10 }, cap)).toBe(0); // half rejected: nothing learned yet
+    expect(LinkThresholds.raise({ confirmed: 3, rejected: 17 }, cap)).toBe(0.088);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 20 }, cap)).toBe(cap);
     // capped: no number of rejections goes beyond it
-    expect(LinkThresholds.raise(0, 1000, cap)).toBe(cap);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 1000 }, cap)).toBe(cap);
     // few decisions only count partly
-    expect(LinkThresholds.raise(0, 10, cap)).toBe(0.05);
+    expect(LinkThresholds.raise({ confirmed: 0, rejected: 10 }, cap)).toBe(0.05);
   });
 
   it('confirmations lower the threshold again; reset forgets; proposals become stricter but never stop', async () => {
@@ -28,8 +28,8 @@ describe('Learning from rejections, gently (#275)', () => {
     const decide = async (n: number, decision: 'confirmed' | 'rejected') => {
       for (let i = 0; i < n; i += 1) {
         const other = await note(`${decision} ${i} ${Math.random()}`);
-        const r = graph.link(hub, other, 'related_to', { status: 'proposed', method: 'similarity', evidence: 'x' })!;
-        graph.decideRelation(r.id, decision);
+        const r = graph.link({ sourceId: hub, targetId: other, relationType: 'related_to' }, { status: 'proposed', method: 'similarity', evidence: 'x' })!;
+        graph.decideRelation(r.id, { status: decision });
       }
     };
     const similarity = () => linkThresholds.list().find((t) => t.method === 'similarity')!;
@@ -71,7 +71,9 @@ describe('Learning from rejections, gently (#275)', () => {
     for (let i = 0; i < 20; i += 1) {
       const x = await note(`Abgelehnt ${i}`, `Etwas ganz anderes Nummer ${i}`);
       const y = await note(`Auch abgelehnt ${i}`, `Wieder etwas anderes ${i}`);
-      graph.decideRelation(graph.link(x, y, 'related_to', { status: 'proposed', method: 'similarity' })!.id, 'rejected');
+      graph.decideRelation(graph.link({ sourceId: x, targetId: y, relationType: 'related_to' }, { status: 'proposed', method: 'similarity' })!.id, {
+        status: 'rejected',
+      });
     }
     await app.services.jobs.whenIdle();
     const after = (await links.candidates(a, { limit: 5 })).filter((c) => c.method === 'similarity');

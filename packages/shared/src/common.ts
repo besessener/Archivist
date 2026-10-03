@@ -8,12 +8,7 @@ export const Id = z.string().min(1).max(100);
 type WithoutDefault<T> = T extends z.ZodDefault<infer Inner> ? Inner : T;
 type WithoutDefaults<Shape extends z.ZodRawShape> = { [K in keyof Shape]: WithoutDefault<Shape[K]> };
 
-/**
- * Patch schema for an object schema: every field optional and WITHOUT `.default()`.
- * Zod 4 applies defaults even inside `.partial()` / `.optional()`, so `Schema.partial()` would fill in every
- * missing field and a partial update would overwrite the stored values with defaults (issues #55, #58).
- * Only top-level defaults are removed; nested objects keep theirs.
- */
+/** All top-level fields optional and without `.default()`: Zod 4 fills defaults even in `.partial()`, which would overwrite stored values (#55, #58). */
 export function patchSchema<Shape extends z.ZodRawShape>(schema: z.ZodObject<Shape>) {
   const shape = Object.fromEntries(
     Object.entries(schema.shape).map(([key, field]) => [key, field instanceof z.ZodDefault ? field.unwrap() : field]),
@@ -44,13 +39,7 @@ export const RelationType = z.enum([
 ]);
 export type RelationType = z.infer<typeof RelationType>;
 
-/**
- * How a relation came about (#270): `field` mirrors a field of the entry (topic, project, persons, tags, folder),
- * `analysis` comes from analysing a document or note, `similarity` from similar content, `mention` from a named topic or
- * project, `co_origin` from the same chat message or document, `date_person` from the same day with the same person,
- * `wikilink` from a `[[Name]]` link, `manual` from the user, `agent` from the agent's own proposal, `refinement` from the LLM's
- * more precise kind of a confirmed `related_to` (#284).
- */
+/** How a relation came about (#270, #284); readable labels in `RELATION_METHOD_LABELS`. */
 export const RelationMethod = z.enum(['field', 'analysis', 'similarity', 'mention', 'co_origin', 'date_person', 'wikilink', 'manual', 'agent', 'refinement']);
 export type RelationMethod = z.infer<typeof RelationMethod>;
 
@@ -84,10 +73,7 @@ export const resultSchema = <T extends z.ZodType>(data: T) =>
   z.discriminatedUnion('ok', [z.object({ ok: z.literal(true), data }), z.object({ ok: z.literal(false), error: AppErrorInfo })]);
 export type Result<T> = { ok: true; data: T } | { ok: false; error: AppErrorInfo };
 
-/**
- * Kind of a reference (context panel, sources, chips): all knowledge objects plus reminders and contradictions,
- * which are no graph entities but still link to their own view.
- */
+/** Kind of a reference: every graph entity type plus reminders and contradictions, which link to their own view. */
 export const RefType = z.enum([...EntityType.options, 'reminder', 'contradiction']);
 export type RefType = z.infer<typeof RefType>;
 

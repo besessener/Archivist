@@ -22,9 +22,9 @@ Texterkennung läuft lokal mit `tesseract.js`; Sprachdaten liegen im Installatio
 
 Scans, Erinnerungen und Archivprüfungen laufen nur, **solange Archivist geöffnet ist**. Es gibt keinen Tray-Prozess, keinen Autostart und keinen Betriebssystemdienst, und die Anwendung behauptet nichts anderes. Damit die Archivprüfung trotzdem in einem verlässlichen Rhythmus läuft, wird der Zeitpunkt der letzten Prüfung gespeichert; das Intervall gilt über Neustarts hinweg.
 
-## Kein Löschen
+## Löschen nur über den Papierkorb
 
-Löschen (Stufe 3) ist bewusst nicht implementiert – siehe [Sicherheitsmodell](sicherheitsmodell.md#keine-datei-geht-verloren). Einzige Ausnahme sind Ereignisse, die du selbst erfasst hast; ihr Löschen ist über das Änderungsprotokoll rückgängig machbar.
+Ein gelöschtes Dokument landet im Papierkorb und lässt sich wiederherstellen, bis du ihn leerst; erst das Leeren löscht endgültig und braucht eine zweite Bestätigung – siehe [Sicherheitsmodell](sicherheitsmodell.md#keine-datei-geht-verloren). Deine Originale außerhalb des Archivs löscht Archivist nie. Selbst erfasste Ereignisse lassen sich löschen; auch das ist über das Änderungsprotokoll rückgängig machbar.
 
 ## Widersprüche sind Hinweise
 

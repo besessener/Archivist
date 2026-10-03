@@ -37,9 +37,11 @@ Settled decisions and safety rules. If a task seems to need one reversed, stop
 and say so; never work around it quietly. Reasoning lives in
 `docs/explanation/`, not here.
 
-- **No file is ever lost.** Archivist never deletes or overwrites user files;
-  every change goes through the audit log and can be undone (`UndoService`).
-  Delete, overwrite and archive-wide re-sorting are deliberately not
+- **No file is ever lost.** Archivist never overwrites user files and never
+  touches the user's originals; every change goes through the audit log and
+  can be undone (`UndoService`). Deleting a document moves its own copies into
+  the trash (undoable); only emptying the trash deletes for good, as a level-3
+  action. Overwrite and archive-wide re-sorting are deliberately not
   implemented.
 - **Confirmation is enforced in the schema, not the UI.** A level-2 action runs
   only via `confirmed: z.literal(true)`; level 3 needs the second explicit
@@ -75,9 +77,9 @@ and say so; never work around it quietly. Reasoning lives in
 
 ## Database changes
 
-- Change `packages/core/src/db/schema.ts`, run `npm run db:generate`, and read
-  the generated SQL. What Drizzle can't express (e.g. FTS5) is a custom
-  migration.
+- Change the tables in `packages/core/src/db/tables/` (exported by
+  `schema.ts`), run `npm run db:generate`, and read the generated SQL. What
+  Drizzle can't express (e.g. FTS5) is a custom migration.
 - Roll forward only: never edit, rename or delete a migration on `main`; undo
   with a new one. Migrations run unattended at startup against real user
   archives, so they must apply to a populated database, not just an empty one.

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 const TOPIC = 'Bildungsurlaub 2026';
 
@@ -21,21 +22,7 @@ const relocate = (items: Array<{ documentId: string; categoryPath: string }>, co
 
 /** Imports a text file and archives it (copy) into `loc`; `topic` is assigned to the document. */
 async function archived(name: string, content: string, loc: string, topic: string | null = TOPIC, mode: 'copy' | 'move' = 'copy'): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: topic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc, mainTopic: topic }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -173,21 +160,7 @@ describe('Relocating archived documents', () => {
     });
 
     it('documents that are not archived yet, and missing files', async () => {
-      app.llm.on('DocumentClassification', () => ({
-        docType: 'Notiz',
-        title: 'offen',
-        summary: 's',
-        mainTopic: null,
-        project: null,
-        persons: [],
-        dates: [],
-        tags: [],
-        location: { categoryPath: 'work/x', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-        decisions: [],
-        openItems: [],
-        confidence: 0.7,
-        rationale: 'x',
-      }));
+      app.llm.on('DocumentClassification', () => classification({ title: 'offen', summary: 's', categoryPath: 'work/x' }));
       const imp = await app.ok('documents:import', { paths: [app.file('in/offen.txt', 'noch in der Inbox')] });
       await app.services.jobs.whenIdle();
       const inbox = imp.imported[0]!.id;
@@ -254,7 +227,7 @@ describe('Relocating archived documents', () => {
 
     it('keeps a rejected relation to the old category through relocate and its undo', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
-      app.services.graph.setRelationStatus(categoryRelation(id, 'work/hr')!.id, 'rejected');
+      app.services.graph.setRelationStatus(categoryRelation(id, 'work/hr')!.id, { status: 'rejected' });
       const rejected = categoryRelation(id, 'work/hr')!;
 
       const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
@@ -271,9 +244,12 @@ describe('Relocating archived documents', () => {
 
     it('confirms an earlier rejected relation to the target category and restores it exactly on undo', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
-      const target = app.services.graph.ensureEntity('category', 'work/neu');
-      const link = app.services.graph.link(id, target.id, 'belongs_to', { confidence: 0.4, status: 'proposed', sourceIds: [id] })!;
-      app.services.graph.setRelationStatus(link.id, 'rejected');
+      const target = app.services.graph.ensureEntity({ type: 'category', name: 'work/neu' });
+      const link = app.services.graph.link(
+        { sourceId: id, targetId: target.id, relationType: 'belongs_to' },
+        { confidence: 0.4, status: 'proposed', sourceIds: [id] },
+      )!;
+      app.services.graph.setRelationStatus(link.id, { status: 'rejected' });
       const rejected = app.services.graph.getRelation(link.id)!;
 
       const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
@@ -291,7 +267,7 @@ describe('Relocating archived documents', () => {
     it('refuses when the user decided on the new category relation after relocating', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
       const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
-      app.services.graph.setRelationStatus(categoryRelation(id, 'work/neu')!.id, 'rejected');
+      app.services.graph.setRelationStatus(categoryRelation(id, 'work/neu')!.id, { status: 'rejected' });
 
       const undo = await app.ok('audit:undo', { auditId: res.items[0]!.auditId! });
 

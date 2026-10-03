@@ -14,9 +14,9 @@ const lastAssistant = async (conversationId: string) => (await app.ok('chat:hist
 
 describe('Agent in the chat (#295, #303, #304)', () => {
   it('„Verschiebe alle md nach presentations“: finds by extension, moves all, logs the run and undoes it as a whole', async () => {
-    const a = await archived(app, 'folien-q1.md', '# Q1', 'work/misc');
-    const b = await archived(app, 'folien-q2.md', '# Q2', 'work/misc');
-    const other = await archived(app, 'notiz.txt', 'Notiz', 'work/misc');
+    const a = await archived(app, { name: 'folien-q1.md', content: '# Q1', folder: 'work/misc' });
+    const b = await archived(app, { name: 'folien-q2.md', content: '# Q2', folder: 'work/misc' });
+    const other = await archived(app, { name: 'notiz.txt', content: 'Notiz', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: ['md'] } }] },
       ({ body }) => {
@@ -51,8 +51,8 @@ describe('Agent in the chat (#295, #303, #304)', () => {
   });
 
   it('a folder structure plan is always a proposal, one item per group, and can be confirmed in parts (#304)', async () => {
-    const a = await archived(app, 'rechnung.md', 'Rechnung', 'work/misc');
-    const b = await archived(app, 'vertrag.md', 'Vertrag', 'work/misc');
+    const a = await archived(app, { name: 'rechnung.md', content: 'Rechnung', folder: 'work/misc' });
+    const b = await archived(app, { name: 'vertrag.md', content: 'Vertrag', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       {
         calls: [
@@ -89,7 +89,7 @@ describe('Agent in the chat (#295, #303, #304)', () => {
 
   it('mode „Fragen“: prepares the change as one proposal card and executes it after confirmation', async () => {
     app.services.settings.update({ agent: { mode: 'ask' } });
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: 'md' } }] },
       { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'work/slides' } }] },
@@ -111,7 +111,7 @@ describe('Agent in the chat (#295, #303, #304)', () => {
   });
 
   it('„frag mich diesmal vorher“ switches only this conversation to „Fragen“', async () => {
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'move_documents', args: { documents: ['S9'], folder: 'work/x' } }] }, { text: 'ok' });
     const res = await app.ok('chat:send', { text: 'Frag mich diesmal vorher: räum die md auf' });
     const state = await app.ok('agent:conversation', { conversationId: res.conversationId });
@@ -124,8 +124,8 @@ describe('Agent in the chat (#295, #303, #304)', () => {
   });
 
   it('critical exceptions ask even in „Auto“: a new main category and mass actions above the threshold', async () => {
-    const a = await archived(app, 'a.md', 'A', 'work/misc');
-    const b = await archived(app, 'b.md', 'B', 'work/misc');
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: 'md' } }] },
       { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'neu/praesentationen' } }] },
@@ -173,7 +173,7 @@ describe('Agent in the chat (#295, #303, #304)', () => {
   });
 
   it('refs in the answer are shown as titles; documents not shared stay anonymous', async () => {
-    await archived(app, 'mietvertrag.md', 'Mietvertrag Wohnung', 'private/wohnen');
+    await archived(app, { name: 'mietvertrag.md', content: 'Mietvertrag Wohnung', folder: 'private/wohnen' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: { name: 'mietvertrag' } }] }, { text: 'Gefunden: D1.' });
     const res = await app.ok('chat:send', { text: 'Wo ist der Mietvertrag?' });
     expect(res.assistantMessage.content).toBe('Gefunden: „mietvertrag“.');

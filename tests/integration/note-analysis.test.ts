@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { intent } from '../helpers/chat-intents';
 
 let app: TestApp;
 afterEach(async () => {
   await app.cleanup();
 });
 
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
 const graph = () => app.services.graph;
 /** Relations of the note to topics, projects, persons and tags: „<type>:<name> <relation> <status>“. */
 const assigned = (noteId: string) =>
@@ -27,9 +27,9 @@ const createNote = async (name: string, description: string) => {
 describe('Notes are analysed like documents (#273)', () => {
   it('locally (mode „vorher fragen“): known topic, project, persons via alias and hashtags become proposals with evidence', async () => {
     app = await createTestApp({ privacy: 'confirm', autoLinks: true });
-    graph().ensureEntity('project', 'Hausbau');
-    graph().ensureEntity('topic', 'Finanzen');
-    const anna = graph().ensureEntity('person', 'Anna Berger');
+    graph().ensureEntity({ type: 'project', name: 'Hausbau' });
+    graph().ensureEntity({ type: 'topic', name: 'Finanzen' });
+    const anna = graph().ensureEntity({ type: 'person', name: 'Anna Berger' });
     graph().addAlias(anna.id, 'Anna');
     const id = await createNote('Termin Bank', 'Mit Anna über die Finanzen für den Hausbau gesprochen. #kredit');
 
@@ -69,7 +69,7 @@ describe('Notes are analysed like documents (#273)', () => {
   it('local only: nothing is sent', async () => {
     app = await createTestApp({ privacy: 'local_only', autoLinks: true });
     app.llm.on('NoteAnalysis', () => ({ topic: 'Geheim', persons: [], tags: [] }));
-    graph().ensureEntity('topic', 'Garten');
+    graph().ensureEntity({ type: 'topic', name: 'Garten' });
     const id = await createNote('Beet', 'Im Garten Tomaten pflanzen.');
     expect(assigned(id)).toEqual(['topic:Garten relates_to proposed']);
     expect(app.llm.calls).toEqual([]);
@@ -77,18 +77,18 @@ describe('Notes are analysed like documents (#273)', () => {
 
   it('editing analyses again: stale proposals become outdated, decisions of the user stay; undo restores text and relations', async () => {
     app = await createTestApp({ privacy: 'confirm', autoLinks: true });
-    graph().ensureEntity('project', 'Hausbau');
-    graph().ensureEntity('project', 'Garage');
-    graph().ensureEntity('topic', 'Finanzen');
-    graph().ensureEntity('person', 'Anna');
+    graph().ensureEntity({ type: 'project', name: 'Hausbau' });
+    graph().ensureEntity({ type: 'project', name: 'Garage' });
+    graph().ensureEntity({ type: 'topic', name: 'Finanzen' });
+    graph().ensureEntity({ type: 'person', name: 'Anna' });
     const id = await createNote('Bank', 'Finanzen für den Hausbau, mit Anna.');
     const rel = (name: string) =>
       graph()
         .relationsOf(id)
         .find((r) => graph().getEntity(r.targetEntityId)?.name === name)!;
     // the user confirms „Finanzen“ and rejects „Anna“
-    graph().decideRelation(rel('Finanzen').id, 'confirmed');
-    graph().decideRelation(rel('Anna').id, 'rejected');
+    graph().decideRelation(rel('Finanzen').id, { status: 'confirmed' });
+    graph().decideRelation(rel('Anna').id, { status: 'rejected' });
 
     await app.ok('knowledge:updateNote', { id, content: 'Jetzt geht es um die Garage.' });
     await app.services.jobs.whenIdle();
@@ -116,7 +116,7 @@ describe('Notes are analysed like documents (#273)', () => {
 
   it('notes captured in the chat are analysed as well', async () => {
     app = await createTestApp({ privacy: 'confirm', autoLinks: true });
-    graph().ensureEntity('project', 'Hausbau');
+    graph().ensureEntity({ type: 'project', name: 'Hausbau' });
     app.llm.on('ChatIntent', () => intent({ intent: 'note_capture', note: 'Statiker für den Hausbau anrufen' }));
     await app.ok('chat:send', { text: 'Notiz: Statiker für den Hausbau anrufen' });
     await app.services.jobs.whenIdle();

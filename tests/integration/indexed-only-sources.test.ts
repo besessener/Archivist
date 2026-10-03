@@ -2,27 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 /** Issue #229: originals of „Nur indexieren“ documents that change or vanish must not stay searchable with stale content. */
 
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto', scanEnabled: true });
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: 'Reiseplanung',
-    summary: 'Zusammenfassung',
-    mainTopic: null,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'work/notes', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Reiseplanung', summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
 });
 afterEach(async () => {
   await app.cleanup();
@@ -92,7 +79,7 @@ describe('index-only document whose original changes', () => {
     await app.services.jobs.whenIdle();
     await archive(id, 'index_only');
     fs.writeFileSync(src, NEW);
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(await hits('Zebrastreifen')).toHaveLength(0);
     expect((await hits('Giraffenwiese')).map((h) => h.id)).toEqual([id]);
     // opening shows the current original, not the stale inbox copy
@@ -107,14 +94,14 @@ describe('index-only document whose original vanished', () => {
     const { file, id } = await scannedAndArchived('index_only');
     const content = fs.readFileSync(file);
     fs.rmSync(file);
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     const open = () => app.services.insights.list('open').filter((i) => i.title.startsWith('Original fehlt'));
     expect(open()).toHaveLength(1);
     expect(open()[0]!.affected.map((a) => a.id)).toEqual([id]);
     expect(open()[0]!.explanation).toContain(file);
 
     fs.writeFileSync(file, content);
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(open()).toHaveLength(0);
   });
 });

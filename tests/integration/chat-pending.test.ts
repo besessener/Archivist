@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const decisionEx = (over: Record<string, unknown> = {}) => ({ participants: [], alternatives: [], unknownFields: [], confidence: 0.85, ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
+import { extractedDecision, intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -113,7 +110,7 @@ describe('Open follow-up questions do not block or hijack later messages (#42)',
           intent: 'decision_new',
           segment: 'Vielleicht wechseln wir den Anbieter.',
           decisionCertainty: 'unsure',
-          decision: decisionEx({ decisionText: 'Anbieter wechseln', title: 'Anbieter wechseln' }),
+          decision: extractedDecision({ decisionText: 'Anbieter wechseln', title: 'Anbieter wechseln' }),
         }),
         // without a note field: the note is created from the text
         intent({ intent: 'note_capture', segment: 'der Vertrag läuft bis März' }),
@@ -138,7 +135,7 @@ describe('Open follow-up questions do not block or hijack later messages (#42)',
           intent: 'decision_new',
           segment: 'Anbieter wechseln',
           decisionCertainty: 'unsure',
-          decision: decisionEx({ decisionText: 'Anbieter wechseln' }),
+          decision: extractedDecision({ decisionText: 'Anbieter wechseln' }),
         }),
         intent({ intent: 'reminder_create', segment: 'Erinnere mich am 30.10.', reminder: { remindAt: '2026-10-30', title: 'Anbieter vergleichen' } }),
       ],

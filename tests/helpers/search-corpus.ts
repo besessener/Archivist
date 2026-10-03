@@ -1,11 +1,4 @@
-/**
- * Golden corpus for the retrieval-quality test (#255): labelled German and English records with deliberate
- * distractors (same topic, different fact) and questions with the expected record keys.
- *
- * Every query has a `kind`; the test reports recall@10 / MRR per kind, so a regression shows where it happened.
- * `relevant` lists the keys that answer the question (the best one first). `none: true` marks must-not-match
- * queries: nothing in the corpus answers them, so they must not return the `forbidden` records.
- */
+// Golden corpus of the retrieval-quality test (#255): DE/EN records with same-topic distractors and labelled questions.
 export interface GoldenRecord {
   key: string;
   title: string;

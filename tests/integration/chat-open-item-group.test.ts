@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { intent, userText } from '../helpers/chat-intents';
 
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
 /** Short ids of the active open items in the prompt („- P1: Titel | …“) by title. */
 const promptIds = (input: string) => new Map([...input.matchAll(/^- (P\d+): (.+?) \|/gm)].map((m) => [m[2]!, m[1]!]));
 

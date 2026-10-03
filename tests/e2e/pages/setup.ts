@@ -25,11 +25,11 @@ export function initSetupWizard(page: Page) {
   };
   const interactions = {
     /** Enters the LLM endpoint and tests the connection. */
-    connectLlm: async (baseUrl: string, apiKey = 'sk-e2e-SECRET-0123456789', model = 'e2e-model') => {
+    connectLlm: async (baseUrl: string) => {
       await locators.buttons.next.click();
       await locators.inputs.baseUrl.fill(baseUrl);
-      await locators.inputs.apiKey.fill(apiKey);
-      await locators.inputs.model.fill(model);
+      await locators.inputs.apiKey.fill('sk-e2e-SECRET-0123456789');
+      await locators.inputs.model.fill('e2e-model');
       await locators.buttons.testConnection.click();
       await expect(locators.texts.testResult).toContainText('erfolgreich');
     },
@@ -47,5 +47,5 @@ export function initSetupWizard(page: Page) {
       await interactions.finish(mode);
     },
   };
-  return pageObject(root, locators, interactions);
+  return pageObject({ root, locators, actions: interactions });
 }

@@ -1,5 +1,4 @@
-// Checks before publishing that the version tag (e.g. v1.2.3) matches the version in apps/desktop/package.json.
-// Usage: node scripts/check-release-version.mjs v1.2.3
+// `node scripts/check-release-version.mjs v1.2.3`: before publishing, the tag must match apps/desktop/package.json.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

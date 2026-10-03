@@ -23,11 +23,11 @@ export function initKnowledge(page: Page) {
     toasts: page.getByTestId('toast'),
   };
   const interactions = {
-    create: async (type: CreatableType, name: string, description?: string) => {
+    create: async (entry: { type: CreatableType; name: string; description?: string }) => {
       await locators.buttons.create.click();
-      await locators.inputs.type.selectOption(type);
-      await locators.inputs.name.fill(name);
-      if (description) await locators.inputs.description.fill(description);
+      await locators.inputs.type.selectOption(entry.type);
+      await locators.inputs.name.fill(entry.name);
+      if (entry.description) await locators.inputs.description.fill(entry.description);
       await locators.buttons.save.click();
     },
     /** Picks "Ereignis" in the create dialog, which opens the timeline's event dialog. */
@@ -42,5 +42,5 @@ export function initKnowledge(page: Page) {
     },
   };
   const heading = () => locators.detail.getByRole('heading', { level: 2 });
-  return Object.assign(pageObject(locators.items, locators, interactions), { heading });
+  return Object.assign(pageObject({ root: locators.items, locators, actions: interactions }), { heading });
 }

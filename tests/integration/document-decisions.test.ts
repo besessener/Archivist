@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -26,21 +27,17 @@ const PROTOKOLL = [
 
 /** Imports and archives a document whose (fake) classification contains the given decisions. */
 async function archived(decisions: FoundDecision[], text = PROTOKOLL): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Protokoll',
-    title: 'Eigentümerversammlung',
-    summary: 'Protokoll',
-    mainTopic: 'Hausverwaltung',
-    project: null,
-    persons: ['Anna', 'Ben', 'Carla', 'Dieter', 'Eva', 'Gerd'],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'private/haus', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: decisions.map((d) => ({ participants: [], ...d })),
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({
+      title: 'Eigentümerversammlung',
+      summary: 'Protokoll',
+      categoryPath: 'private/haus',
+      docType: 'Protokoll',
+      mainTopic: 'Hausverwaltung',
+      persons: ['Anna', 'Ben', 'Carla', 'Dieter', 'Eva', 'Gerd'],
+      decisions: decisions.map((d) => ({ participants: [], ...d })),
+    }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file('in/protokoll.txt', text)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;

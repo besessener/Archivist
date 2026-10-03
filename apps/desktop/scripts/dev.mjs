@@ -9,7 +9,7 @@ const desktop = path.resolve(here, '..');
 const repo = path.resolve(desktop, '../..');
 const require = createRequire(import.meta.url);
 
-const run = (cmd, args, opts = {}) => spawn(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32', ...opts });
+const run = (command, args, options = {}) => spawn(command, args, { stdio: 'inherit', shell: process.platform === 'win32', ...options });
 
 // The frontend build is not needed in dev mode, but dist/ (main, preload, worker, migrations) is.
 const buildDist = run(process.execPath, [path.join(here, 'build.mjs')], { cwd: desktop, env: { ...process.env } });

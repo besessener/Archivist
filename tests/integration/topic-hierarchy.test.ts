@@ -13,14 +13,14 @@ describe('Topic hierarchy: subtopics instead of merging (#282)', () => {
     app = await createTestApp({ configured: false });
     const urlaub = await topic('Urlaub');
     const u26 = await topic('Urlaub 2026');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const q = app.services.insights.list('open').find((i) => i.kind === 'similar_entities')!;
     await app.ok('insights:respond', { response: 'choose', id: q.id, choiceId: 'subtopic', confirmed: true });
 
     expect(await app.ok('knowledge:hierarchy', {})).toEqual([{ childId: u26.id, parentId: urlaub.id }]);
     expect(app.services.graph.getEntity(u26.id)).toBeDefined();
     // no new duplicate question for a pair already ordered
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(app.services.insights.list('open').filter((i) => i.kind === 'similar_entities')).toEqual([]);
 
     const entry = (await app.ok('audit:list', {})).find((e) => e.action === 'relation.link')!;
@@ -59,9 +59,9 @@ describe('Topic hierarchy: subtopics instead of merging (#282)', () => {
     const u26 = await topic('Urlaub 2026');
     await app.ok('knowledge:link', { sourceId: u26.id, targetId: urlaub.id, relationType: 'subtopic_of', confirmed: true });
     await app.ok('decisions:create', { decisionText: 'Unterkunft: Ferienhaus am See.', topic: 'Urlaub 2026', asDraft: false, sourceIds: [] });
-    const answer = await app.services.answers.knowledgeQuestion(
-      'Welche Unterkunft haben wir?',
-      {
+    const answer = await app.services.answers.knowledgeQuestion({
+      text: 'Welche Unterkunft haben wir?',
+      intent: {
         intent: 'knowledge_question',
         confidence: 0.9,
         rationale: 'test',
@@ -80,8 +80,8 @@ describe('Topic hierarchy: subtopics instead of merging (#282)', () => {
         note: null,
         decisionCertainty: null,
       },
-      {},
-    );
+      state: {},
+    });
     expect(answer.content).toContain('Ferienhaus');
   });
 });

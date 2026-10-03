@@ -1,5 +1,4 @@
-// Used by `npm run db:generate` (drizzle-kit is deliberately loaded only on demand via npx in a pinned version,
-// so that its outdated dependencies do not end up in the lockfile).
+// `npm run db:generate` (scripts/db-generate.mjs) runs a pinned drizzle-kit outside the lockfile, next to the project's drizzle-orm.
 export default {
   dialect: 'sqlite',
   schema: './src/db/schema.ts',

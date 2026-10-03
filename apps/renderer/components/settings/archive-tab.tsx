@@ -14,6 +14,7 @@ import { useRun } from '@/lib/use-run';
 import type { IpcOutput } from '@archivist/shared';
 import { ArchiveRootSection } from './archive-root';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
+import { TrashSection } from './trash-section';
 
 export function ArchiveTab({ settings, reload }: TabProps) {
   const { save, busy } = useSaveSettings(reload);
@@ -164,6 +165,8 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           </div>
         </div>
       </Section>
+
+      <TrashSection />
 
       <ConfirmDialog
         open={confirmCat}

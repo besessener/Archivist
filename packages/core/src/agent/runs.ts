@@ -39,20 +39,31 @@ export interface UndoRunResult {
   message: string;
 }
 
+function undoMessage(undone: number, failed: number): string {
+  if (undone && !failed) return `${undone} Änderung(en) rückgängig gemacht.`;
+  if (undone) return `${undone} Änderung(en) rückgängig gemacht, ${failed} nicht möglich.`;
+  return failed ? 'Nichts rückgängig gemacht: Seit dem Lauf wurde etwas verändert.' : 'Es gab nichts rückgängig zu machen.';
+}
+
+function triggerCondition(trigger: 'chat' | 'background' | undefined) {
+  if (trigger === 'chat') return eq(agentRuns.trigger, 'chat');
+  return trigger === 'background' ? like(agentRuns.trigger, 'background:%') : undefined;
+}
+
 /** Shortened step for storage: results stay short, arguments are kept for the technical details. */
 const storedStep = (s: AgentStep): AgentStep => ({ ...s, result: s.result.slice(0, 600) });
 
-/**
- * Agent runs (#299): every run has a run id; stored are trigger, provider and model, the tool calls with shortened results,
- * tokens and cost, duration and outcome. Every change of the run carries the run id (audit log, relations), so that the whole
- * run – or a single step – can be undone in reverse order, with the conflict check of the existing undo.
- */
+export type AgentRunServiceDeps = { ctx: AppContext; audit: AuditService; undo: UndoService };
+
+/** Agent runs (#299): log of each run, whose changes carry its id so the run or a single step can be undone in reverse order. */
 export class AgentRunService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly audit: AuditService,
-    private readonly undo: UndoService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly audit: AuditService;
+  private readonly undo: UndoService;
+
+  constructor(deps: AgentRunServiceDeps) {
+    ({ ctx: this.ctx, audit: this.audit, undo: this.undo } = deps);
+  }
 
   private get db() {
     return this.ctx.database.db;
@@ -69,7 +80,7 @@ export class AgentRunService {
   }
 
   /** Intermediate state, so that a run interrupted by a restart is still visible with what it did. */
-  checkpoint(id: string, steps: AgentStep[], usage: AgentUsage): void {
+  checkpoint(id: string, { steps, usage }: { steps: AgentStep[]; usage: AgentUsage }): void {
     this.db
       .update(agentRuns)
       .set({ steps: steps.map(storedStep) as unknown as ArchivistJson, usage: usage })
@@ -77,19 +88,19 @@ export class AgentRunService {
       .run();
   }
 
-  finish(id: string, f: RunFinish): AgentRun {
+  finish(id: string, finished: RunFinish): AgentRun {
     this.db
       .update(agentRuns)
       .set({
-        status: f.status,
-        summary: f.summary.slice(0, 4000),
-        steps: f.steps.map(storedStep) as unknown as ArchivistJson,
-        usage: f.usage,
-        costUsd: f.costUsd,
-        rounds: f.rounds,
-        applied: f.applied,
-        files: f.files,
-        error: f.error,
+        status: finished.status,
+        summary: finished.summary.slice(0, 4000),
+        steps: finished.steps.map(storedStep) as unknown as ArchivistJson,
+        usage: finished.usage,
+        costUsd: finished.costUsd,
+        rounds: finished.rounds,
+        applied: finished.applied,
+        files: finished.files,
+        error: finished.error,
         finishedAt: nowIso(),
       })
       .where(eq(agentRuns.id, id))
@@ -100,9 +111,9 @@ export class AgentRunService {
 
   /** Steps executed later from a confirmed proposal card of the run (they carry the run id, so undo covers them). */
   appendSteps(id: string, steps: AgentStep[]): void {
-    const r = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
-    if (!r) return;
-    const all = [...((r.steps as unknown as AgentStep[]) ?? []), ...steps.map(storedStep)];
+    const row = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
+    if (!row) return;
+    const all = [...((row.steps as unknown as AgentStep[]) ?? []), ...steps.map(storedStep)];
     this.db
       .update(agentRuns)
       .set({ steps: all as unknown as ArchivistJson })
@@ -111,14 +122,11 @@ export class AgentRunService {
     this.ctx.events.changed('agent');
   }
 
-  /**
-   * Audit entries a file job wrote for a step after its run had ended (the job continued after a restart, #304): they
-   * join the step, so undo per step covers them. While the run is live the step collects them itself.
-   */
-  addStepAudit(id: string, stepId: string, auditIds: string[]): void {
+  /** Audit entries a file job wrote for a step after its run had ended (resumed after a restart, #304), so undo per step covers them. */
+  addStepAudit(id: string, { stepId, auditIds }: { stepId: string; auditIds: string[] }): void {
     if (!auditIds.length) return;
-    const r = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
-    const steps = (r?.steps as unknown as AgentStep[] | undefined) ?? [];
+    const row = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
+    const steps = (row?.steps as unknown as AgentStep[] | undefined) ?? [];
     const step = steps.find((s) => s.id === stepId);
     if (!step) return;
     step.auditIds = [...new Set([...step.auditIds, ...auditIds])];
@@ -132,60 +140,60 @@ export class AgentRunService {
 
   /** Runs still marked as running from before a restart are closed as cancelled; what they did stays logged. */
   closeInterrupted(): number {
-    const res = this.db
+    const closed = this.db
       .update(agentRuns)
       .set({ status: 'cancelled', error: 'Durch einen Neustart unterbrochen.', finishedAt: nowIso() })
       .where(eq(agentRuns.status, 'running'))
       .run();
-    return res.changes;
+    return closed.changes;
   }
 
   private undoableCount(runId: string): number {
     return this.audit.forRun(runId).filter((r) => r.undoType && !r.undoneAt && r.success).length;
   }
 
-  private map(r: Row): AgentRun {
+  private map(row: Row): AgentRun {
     return {
-      id: r.id,
-      conversationId: r.conversationId,
-      trigger: r.trigger,
-      task: r.task,
-      provider: r.provider,
-      model: r.model,
-      mode: r.mode as AgentMode,
-      status: r.status as AgentRunStatus,
-      summary: r.summary,
-      steps: (r.steps as unknown as AgentStep[]) ?? [],
-      usage: { ...emptyUsage(), ...(r.usage as unknown as Partial<AgentUsage>) },
-      costUsd: r.costUsd,
-      rounds: r.rounds,
-      applied: (r.applied as unknown as AgentRun['applied']) ?? [],
-      files: r.files,
-      undoable: this.undoableCount(r.id),
-      error: r.error,
-      startedAt: r.startedAt,
-      finishedAt: r.finishedAt,
+      id: row.id,
+      conversationId: row.conversationId,
+      trigger: row.trigger,
+      task: row.task,
+      provider: row.provider,
+      model: row.model,
+      mode: row.mode as AgentMode,
+      status: row.status as AgentRunStatus,
+      summary: row.summary,
+      steps: (row.steps as unknown as AgentStep[]) ?? [],
+      usage: { ...emptyUsage(), ...(row.usage as unknown as Partial<AgentUsage>) },
+      costUsd: row.costUsd,
+      rounds: row.rounds,
+      applied: (row.applied as unknown as AgentRun['applied']) ?? [],
+      files: row.files,
+      undoable: this.undoableCount(row.id),
+      error: row.error,
+      startedAt: row.startedAt,
+      finishedAt: row.finishedAt,
     };
   }
 
   get(id: string): AgentRun {
-    const r = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
-    if (!r) throw new AppError('validation_error', 'Agentenlauf nicht gefunden.');
-    return this.map(r);
+    const row = this.db.select().from(agentRuns).where(eq(agentRuns.id, id)).get();
+    if (!row) throw new AppError('validation_error', 'Agentenlauf nicht gefunden.');
+    return this.map(row);
   }
 
-  list(opts: { trigger?: 'chat' | 'background'; status?: AgentRunStatus; conversationId?: string; limit?: number } = {}): AgentRun[] {
-    const conds = [
-      opts.trigger === 'chat' ? eq(agentRuns.trigger, 'chat') : opts.trigger === 'background' ? like(agentRuns.trigger, 'background:%') : undefined,
-      opts.status ? eq(agentRuns.status, opts.status) : undefined,
-      opts.conversationId ? eq(agentRuns.conversationId, opts.conversationId) : undefined,
+  list(filter: { trigger?: 'chat' | 'background'; status?: AgentRunStatus; conversationId?: string; limit?: number } = {}): AgentRun[] {
+    const conditions = [
+      triggerCondition(filter.trigger),
+      filter.status ? eq(agentRuns.status, filter.status) : undefined,
+      filter.conversationId ? eq(agentRuns.conversationId, filter.conversationId) : undefined,
     ].filter(Boolean);
     return this.db
       .select()
       .from(agentRuns)
-      .where(conds.length ? and(...conds) : undefined)
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(agentRuns.startedAt))
-      .limit(opts.limit ?? 100)
+      .limit(filter.limit ?? 100)
       .all()
       .map((r) => this.map(r));
   }
@@ -197,33 +205,22 @@ export class AgentRunService {
     const conflicts: string[] = [];
     for (const id of ids) {
       try {
-        const r = await this.undo.undo(id);
-        if (r.undone) undone += 1;
-        else if (r.conflicts.length) {
+        const outcome = await this.undo.undo(id);
+        if (outcome.undone) undone += 1;
+        else if (outcome.conflicts.length) {
           failed += 1;
-          conflicts.push(...r.conflicts);
+          conflicts.push(...outcome.conflicts);
         }
       } catch (err) {
         failed += 1;
         conflicts.push(toErrorInfo(err).message);
       }
     }
-    const message =
-      undone && !failed
-        ? `${undone} Änderung(en) rückgängig gemacht.`
-        : undone
-          ? `${undone} Änderung(en) rückgängig gemacht, ${failed} nicht möglich.`
-          : failed
-            ? 'Nichts rückgängig gemacht: Seit dem Lauf wurde etwas verändert.'
-            : 'Es gab nichts rückgängig zu machen.';
     this.ctx.events.changed('agent');
-    return { undone, failed, conflicts: [...new Set(conflicts)], message };
+    return { undone, failed, conflicts: [...new Set(conflicts)], message: undoMessage(undone, failed) };
   }
 
-  /**
-   * Undoable entries of a run, newest first. The timestamps have millisecond resolution and several changes of one round
-   * often share one – the insertion order (rowid) decides then, so a later change is always undone before an earlier one.
-   */
+  /** Undoable entries of a run, newest first; rowid breaks ties of entries sharing a millisecond timestamp. */
   private undoableNewestFirst(runId: string): Array<typeof auditLog.$inferSelect> {
     return this.db
       .select()
@@ -261,19 +258,19 @@ export class AgentRunService {
     const dayMap = new Map<string, AgentUsageSummary['days'][number]>();
     const monthMap = new Map<string, AgentUsageSummary['months'][number]>();
     const total = { runs: 0, tokens: 0, costUsd: 0 };
-    for (const r of rows) {
-      const trigger = r.trigger === 'chat' ? 'chat' : 'background';
-      const usage = { ...emptyUsage(), ...(r.usage as unknown as Partial<AgentUsage>) };
+    for (const row of rows) {
+      const trigger = row.trigger === 'chat' ? 'chat' : 'background';
+      const usage = { ...emptyUsage(), ...(row.usage as unknown as Partial<AgentUsage>) };
       const tokens = budgetTokens(usage);
-      const cost = r.costUsd ?? 0;
-      const day = r.startedAt.slice(0, 10);
-      const month = r.startedAt.slice(0, 7);
+      const cost = row.costUsd ?? 0;
+      const day = row.startedAt.slice(0, 10);
+      const month = row.startedAt.slice(0, 7);
       if (day >= dayLimit) {
-        const d = dayMap.get(`${day}|${trigger}`) ?? { day, trigger, runs: 0, tokens: 0, costUsd: 0 };
-        dayMap.set(`${day}|${trigger}`, { ...d, runs: d.runs + 1, tokens: d.tokens + tokens, costUsd: d.costUsd + cost });
+        const dayEntry = dayMap.get(`${day}|${trigger}`) ?? { day, trigger, runs: 0, tokens: 0, costUsd: 0 };
+        dayMap.set(`${day}|${trigger}`, { ...dayEntry, runs: dayEntry.runs + 1, tokens: dayEntry.tokens + tokens, costUsd: dayEntry.costUsd + cost });
       }
-      const m = monthMap.get(`${month}|${trigger}`) ?? { month, trigger, runs: 0, tokens: 0, costUsd: 0 };
-      monthMap.set(`${month}|${trigger}`, { ...m, runs: m.runs + 1, tokens: m.tokens + tokens, costUsd: m.costUsd + cost });
+      const monthEntry = monthMap.get(`${month}|${trigger}`) ?? { month, trigger, runs: 0, tokens: 0, costUsd: 0 };
+      monthMap.set(`${month}|${trigger}`, { ...monthEntry, runs: monthEntry.runs + 1, tokens: monthEntry.tokens + tokens, costUsd: monthEntry.costUsd + cost });
       total.runs += 1;
       total.tokens += tokens;
       total.costUsd += cost;

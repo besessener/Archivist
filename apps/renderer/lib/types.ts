@@ -1,6 +1,6 @@
 import type { IpcOutput } from '@archivist/shared';
 
-export type ChatMsg = IpcOutput<'chat:history'>[number];
+export type ChatMessage = IpcOutput<'chat:history'>[number];
 export type DocRecord = IpcOutput<'documents:get'>;
 export type DecisionRecord = IpcOutput<'decisions:get'>;
 export type ActionRecord = IpcOutput<'actions:resolve'>;
@@ -13,4 +13,4 @@ export type ScanFileRecord = IpcOutput<'scanner:getResults'>['files'][number];
 export type ArchivePlanRecord = IpcOutput<'documents:previewArchive'>;
 export type ArchiveResultRecord = IpcOutput<'documents:archive'>;
 export type ImportResult = IpcOutput<'documents:import'>;
-export type SourceRef = ChatMsg['sources'][number];
+export type SourceRef = ChatMessage['sources'][number];

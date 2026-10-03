@@ -66,7 +66,7 @@ export interface CheckResult {
   reasons: string[];
 }
 
-// ---------- snapshot of the archive ----------
+// snapshot of the archive
 export interface DocState {
   archiveRelPath: string | null;
   status: string;
@@ -131,7 +131,7 @@ export function snapshot(services: Services): Snapshot {
   };
 }
 
-// ---------- check context ----------
+// check context
 export interface CheckContext {
   services: Services;
   /** fixture key → document id */

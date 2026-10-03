@@ -1,6 +1,6 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { BackupInfo } from '@archivist/shared';
+import type { BackupInfo, Settings } from '@archivist/shared';
 import { and, count, eq, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
@@ -22,18 +22,14 @@ async function dirSize(dir: string): Promise<number> {
   return total;
 }
 
-/**
- * Copies `src` to `dest` like `fsp.cp`, but leaves out every path in `excluded`.
- * Only directories that contain an excluded path are walked by hand; everything else is copied by `fsp.cp`,
- * so `fsp.cp` never sees a destination inside its own source (which it refuses).
- */
-async function copyTreeExcluding(src: string, dest: string, excluded: string[]): Promise<void> {
-  await fsp.mkdir(dest, { recursive: true });
-  for (const e of await fsp.readdir(src, { withFileTypes: true })) {
-    const from = path.join(src, e.name);
-    const to = path.join(dest, e.name);
+/** Copies like `fsp.cp` but leaves out `excluded`; folders holding an excluded path are walked by hand (`fsp.cp` refuses a destination inside its source). */
+async function copyTreeExcluding(tree: { source: string; dest: string }, excluded: string[]): Promise<void> {
+  await fsp.mkdir(tree.dest, { recursive: true });
+  for (const e of await fsp.readdir(tree.source, { withFileTypes: true })) {
+    const from = path.join(tree.source, e.name);
+    const to = path.join(tree.dest, e.name);
     if (excluded.some((x) => isInside(x, from))) continue;
-    if (e.isDirectory() && excluded.some((x) => isInside(from, x))) await copyTreeExcluding(from, to, excluded);
+    if (e.isDirectory() && excluded.some((x) => isInside(from, x))) await copyTreeExcluding({ source: from, dest: to }, excluded);
     else await fsp.cp(from, to, { recursive: true, errorOnExist: true, force: false });
   }
 }
@@ -46,7 +42,7 @@ async function fileCount(dir: string): Promise<number> {
 }
 
 /** Descending order by plain code-unit comparison (ISO timestamps and backup names sort correctly this way). */
-function cmpDesc(a: string, b: string): number {
+function compareDescending(a: string, b: string): number {
   if (a === b) return 0;
   return a < b ? 1 : -1;
 }
@@ -55,66 +51,35 @@ async function realpathOrSelf(p: string): Promise<string> {
   return fsp.realpath(p).catch(() => path.resolve(p));
 }
 
-/**
- * Backups: consistent SQLite snapshot via the online backup API (not by file copy) plus configuration.
- * The encrypted API key is never backed up. „Metadaten-Backup“ (metadata) and „vollständiges Archiv-Backup“ (full archive) are separate.
- * After each successful backup, only the newest `backups.keep` backups of the same kind are kept.
- */
-export class BackupService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly audit: AuditService,
-    private readonly archive: ArchiveService,
-  ) {}
+export type BackupServiceDeps = { ctx: AppContext; settings: SettingsService; audit: AuditService; archive: ArchiveService };
 
-  /**
-   * Creates a backup. A full backup fails (and prunes nothing) when the archive folder is unreachable, or empty
-   * while the database lists archived files. Archive file operations are blocked while the archive is copied, so
-   * the database snapshot matches the copied files. The manifest is written last: a backup interrupted by a crash
-   * has none, so it never counts as a valid backup and never pushes a complete one out of retention.
-   */
-  async create(includeArchive: boolean, trigger: 'manual' | 'startup' = 'manual'): Promise<BackupInfo> {
-    const cfg = this.settings.get();
-    if (includeArchive) await this.assertArchiveReachable(cfg.archiveRoot);
+/** Backups: SQLite snapshot via the online backup API plus settings (never the API key), optionally the archive; retention per kind. */
+export class BackupService {
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly audit: AuditService;
+  private readonly archive: ArchiveService;
+
+  constructor(deps: BackupServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, audit: this.audit, archive: this.archive } = deps);
+  }
+
+  /** Creates a backup; the manifest is written last, so an interrupted backup never counts and never pushes a complete one out. */
+  async create({ includeArchive, trigger = 'manual' }: { includeArchive: boolean; trigger?: 'manual' | 'startup' }): Promise<BackupInfo> {
+    const current = this.settings.get();
+    if (includeArchive) await this.assertArchiveReachable(current.archiveRoot);
+    // archive file operations are blocked while the archive is copied, so the database snapshot matches the files
     const release = includeArchive ? this.archive.beginBackup() : () => undefined;
-    let name: string;
-    let dir: string;
-    let archiveFiles: number | null = null;
+    let written: { name: string; dir: string; archiveFiles: number | null };
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
       await fsp.mkdir(this.ctx.paths.backups, { recursive: true });
-      ({ name, dir } = await this.reserveDir(`${includeArchive ? 'vollstaendig' : 'metadaten'}-${stamp}`));
-      try {
-        await this.ctx.database.backupTo(path.join(dir, 'archivist.db'));
-        await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(cfg, null, 2), 'utf8'); // contains no API key
-        if (includeArchive) {
-          const dest = path.join(dir, 'archive');
-          await this.copyArchive(cfg.archiveRoot, dest);
-          archiveFiles = await fileCount(dest);
-        }
-        await fsp.writeFile(
-          path.join(dir, 'manifest.json'),
-          JSON.stringify(
-            {
-              kind: includeArchive ? 'full' : 'metadata',
-              createdAt: new Date().toISOString(),
-              archiveRoot: cfg.archiveRoot,
-              ...(archiveFiles === null ? {} : { archiveFiles }),
-              note: 'Enthält Datenbank (inkl. Wissensgraph, Kategorien, Beziehungen, Audit Log) und Einstellungen ohne API-Key.',
-            },
-            null,
-            2,
-          ),
-          'utf8',
-        );
-      } catch (err) {
-        await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
-        throw fsError('Das Backup ist fehlgeschlagen.', err);
-      }
+      const { name, dir } = await this.reserveDir(`${includeArchive ? 'vollstaendig' : 'metadaten'}-${stamp}`);
+      written = { name, dir, archiveFiles: await this.writeBackup(dir, { settings: current, includeArchive }) };
     } finally {
       release();
     }
+    const { name, dir, archiveFiles } = written;
     this.audit.log({
       action: 'backup.create',
       actor: 'user',
@@ -127,10 +92,34 @@ export class BackupService {
     return this.info(name);
   }
 
-  /**
-   * A full backup needs the archive: a missing folder (e.g. an unplugged drive) or an empty one while the database
-   * lists archived files would produce a „full“ backup without documents that then pushes good ones out of retention.
-   */
+  /** Writes database, settings, archive copy and manifest into `dir`; on failure `dir` is removed. Returns the archive file count. */
+  private async writeBackup(dir: string, content: { settings: Settings; includeArchive: boolean }): Promise<number | null> {
+    const { settings, includeArchive } = content;
+    let archiveFiles: number | null = null;
+    try {
+      await this.ctx.database.backupTo(path.join(dir, 'archivist.db'));
+      await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf8'); // contains no API key
+      if (includeArchive) {
+        const dest = path.join(dir, 'archive');
+        await this.copyArchive(settings.archiveRoot, dest);
+        archiveFiles = await fileCount(dest);
+      }
+      const manifest = {
+        kind: includeArchive ? 'full' : 'metadata',
+        createdAt: new Date().toISOString(),
+        archiveRoot: settings.archiveRoot,
+        ...(archiveFiles === null ? {} : { archiveFiles }),
+        note: 'Enthält Datenbank (inkl. Wissensgraph, Kategorien, Beziehungen, Audit Log) und Einstellungen ohne API-Key.',
+      };
+      await fsp.writeFile(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+      return archiveFiles;
+    } catch (err) {
+      await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      throw fsError('Das Backup ist fehlgeschlagen.', { cause: err });
+    }
+  }
+
+  /** A full backup needs the archive: one without documents (unplugged drive, empty folder) would push good ones out of retention. */
   private async assertArchiveReachable(archiveRoot: string): Promise<void> {
     const stat = await fsp.stat(archiveRoot).catch(() => null);
     if (!stat?.isDirectory())
@@ -164,23 +153,19 @@ export class BackupService {
         await fsp.mkdir(dir);
         return { name, dir };
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || i >= 100) throw fsError('Das Backup ist fehlgeschlagen.', err);
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || i >= 100) throw fsError('Das Backup ist fehlgeschlagen.', { cause: err });
       }
     }
   }
 
-  /**
-   * Copies the archive into the backup. If the archive lies above the data directory, the data directory
-   * (with its backups, database files and logs) is not part of the archive and is skipped; the backups folder
-   * is always skipped. This prevents the backup from copying itself.
-   */
+  /** Copies the archive into the backup, never the backups folder or (when the archive lies above it) the data directory. */
   private async copyArchive(archiveRoot: string, dest: string): Promise<void> {
-    const src = await realpathOrSelf(archiveRoot);
+    const source = await realpathOrSelf(archiveRoot);
     const dataRoot = await realpathOrSelf(this.ctx.paths.root);
     const excluded = [await realpathOrSelf(this.ctx.paths.backups)];
-    if (!isInside(dataRoot, src)) excluded.push(dataRoot);
-    if (excluded.some((x) => isInside(src, x))) await copyTreeExcluding(src, dest, excluded);
-    else await fsp.cp(src, dest, { recursive: true, errorOnExist: true, force: false });
+    if (!isInside(dataRoot, source)) excluded.push(dataRoot);
+    if (excluded.some((x) => isInside(source, x))) await copyTreeExcluding({ source, dest }, excluded);
+    else await fsp.cp(source, dest, { recursive: true, errorOnExist: true, force: false });
   }
 
   /** Removes the oldest backups of `kind` beyond `backups.keep`. Never removes `current`; failures are only logged. */
@@ -222,7 +207,7 @@ export class BackupService {
         /* not a valid backup */
       }
     }
-    return out.sort((a, b) => cmpDesc(a.createdAt, b.createdAt) || cmpDesc(a.name, b.name));
+    return out.sort((a, b) => compareDescending(a.createdAt, b.createdAt) || compareDescending(a.name, b.name));
   }
 
   /** All valid backups with their total (recursive) size, newest first. */

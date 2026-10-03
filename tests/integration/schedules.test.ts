@@ -88,7 +88,7 @@ describe('Schedules react to changes without a restart', () => {
   it('a completed archive check restarts the interval', async () => {
     app.services.settings.update({ consistency: { intervalHours: 2 } });
     await vi.advanceTimersByTimeAsync(HOUR);
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(app.services.consistency.nextRunAt()).toBe(Date.now() + 2 * HOUR);
   });
 });

@@ -1,15 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { localToday } from '@archivist/shared';
-import type { Services } from '../../packages/core/src';
-import { addPeriod, fmtDe } from '../../packages/core/src/agent/tools/research';
-import { makePptx } from '../helpers/fixtures';
+import { addPeriod, formatGermanDate } from '../../packages/core/src/agent/tools/research/dates';
 
-/**
- * Test archive of the agent evaluation (#316). Everything is built deterministically WITHOUT the LLM: files are imported
- * with local analysis only („nur lokal“ during the setup), archived with an explicit folder and topic, and type, date,
- * title and sender are set via the bulk assignment. Deadlines are relative to today so the set does not rot.
- */
+// Test archive of the agent evaluation (#316), built without the LLM; deadlines are relative to today so the set does not rot.
 
 export interface EvalDoc {
   /** Stable key the checks refer to. */
@@ -29,7 +21,7 @@ export interface EvalDoc {
   excluded?: boolean;
 }
 
-// ---------- dates relative to today ----------
+// dates relative to today
 const TODAY = localToday();
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -52,28 +44,28 @@ export const DATES = {
   today: TODAY,
   /** old lease (2021): ends in 3 months, notice 3 months before → end of this month */
   leaseOldEnd: monthEnd(3),
-  leaseOldNotice: addPeriod(monthEnd(3), -3, 'monat'),
+  leaseOldNotice: addPeriod(monthEnd(3), { count: -3, unit: 'monat' }),
   /** new lease version: ends in 6 months, notice 3 months before (the correct answer) */
   leaseNewEnd: monthEnd(6),
-  leaseNewNotice: addPeriod(monthEnd(6), -3, 'monat'),
+  leaseNewNotice: addPeriod(monthEnd(6), { count: -3, unit: 'monat' }),
   /** household insurance: termination possible until the end of next month */
   insuranceNotice: monthEnd(1),
   insuranceEnd: monthEnd(4),
   /** mobile contract: 1 month notice before the end of the minimum term */
   mobileEnd: monthDay(5, 14),
-  mobileNotice: addPeriod(monthDay(5, 14), -1, 'monat'),
+  mobileNotice: addPeriod(monthDay(5, 14), { count: -1, unit: 'monat' }),
   /** washing machine bought 20 months ago with 24 months warranty */
   washerBought: monthDay(-20, 15),
-  washerWarrantyEnd: addPeriod(monthDay(-20, 15), 24, 'monat'),
+  washerWarrantyEnd: addPeriod(monthDay(-20, 15), { count: 24, unit: 'monat' }),
   /** corrected purchase date for the metadata task */
   washerCorrected: monthDay(-20, 10),
   /** identity card expires in about two months */
   idCardExpiry: monthDay(2, 20),
   /** a date for explicit reminders */
-  inThreeWeeks: addPeriod(TODAY, 3, 'woche'),
-  inFiveDays: addPeriod(TODAY, 5, 'tag'),
-  inTenDays: addPeriod(TODAY, 10, 'tag'),
-  threeDaysAgo: addPeriod(TODAY, -3, 'tag'),
+  inThreeWeeks: addPeriod(TODAY, { count: 3, unit: 'woche' }),
+  inFiveDays: addPeriod(TODAY, { count: 5, unit: 'tag' }),
+  inTenDays: addPeriod(TODAY, { count: 10, unit: 'tag' }),
+  threeDaysAgo: addPeriod(TODAY, { count: -3, unit: 'tag' }),
 };
 
 /** Ways a date may be written in an answer: 31.12.2026, 31.12.26, 2026-12-31, 31. Dezember 2026. */
@@ -81,12 +73,12 @@ export function dateForms(iso: string): string[] {
   const months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   const d = Number(iso.slice(8, 10));
   const m = Number(iso.slice(5, 7));
-  return [fmtDe(iso), `${pad2(d)}.${pad2(m)}.${iso.slice(2, 4)}`, iso, `${d}. ${months[m - 1]} ${iso.slice(0, 4)}`, `${d}.${m}.${iso.slice(0, 4)}`];
+  return [formatGermanDate(iso), `${pad2(d)}.${pad2(m)}.${iso.slice(2, 4)}`, iso, `${d}. ${months[m - 1]} ${iso.slice(0, 4)}`, `${d}.${m}.${iso.slice(0, 4)}`];
 }
 
-const de = fmtDe;
+const de = formatGermanDate;
 
-// ---------- documents ----------
+// documents
 const statement = (month: number, lines: string[]): EvalDoc => {
   const mm = pad2(month);
   return {
@@ -353,7 +345,7 @@ export const BASE_DOCS: EvalDoc[] = [
     title: 'Schreiben Hausratversicherung',
     folder: 'versicherungen/hausrat',
     docType: 'Brief',
-    documentDate: addPeriod(TODAY, -2, 'monat'),
+    documentDate: addPeriod(TODAY, { count: -2, unit: 'monat' }),
     persons: ['Sicher & Gut Versicherung'],
     content: [
       'Sicher & Gut Versicherung AG',
@@ -369,7 +361,7 @@ export const BASE_DOCS: EvalDoc[] = [
     title: 'Mobilfunkvertrag',
     folder: 'privat/vertraege',
     docType: 'Vertrag',
-    documentDate: addPeriod(DATES.mobileEnd, -24, 'monat'),
+    documentDate: addPeriod(DATES.mobileEnd, { count: -24, unit: 'monat' }),
     persons: ['FunkNetz'],
     content: `FunkNetz Mobilfunkvertrag\nTarif: Allnet 20 GB\nMonatlicher Preis: 19,99 €\nMindestlaufzeit bis ${de(DATES.mobileEnd)}.\nKündigungsfrist: 1 Monat zum Laufzeitende ${de(DATES.mobileEnd)}.`,
   },
@@ -379,7 +371,7 @@ export const BASE_DOCS: EvalDoc[] = [
     title: 'Personalausweis Kopie',
     folder: 'privat/dokumente',
     docType: 'Ausweis',
-    documentDate: addPeriod(DATES.idCardExpiry, -10, 'jahr'),
+    documentDate: addPeriod(DATES.idCardExpiry, { count: -10, unit: 'jahr' }),
     content: `Personalausweis (Kopie für die eigenen Unterlagen)\nName: Max Muster\nGültig bis ${de(DATES.idCardExpiry)}`,
   },
   // offer and its final version, mails about the bathroom
@@ -512,86 +504,3 @@ export const EMPTY_FOLDERS = ['arbeit/presentations'];
 
 /** An inbox document (analyzed locally, not archived). */
 export const inboxDoc = (d: Omit<EvalDoc, 'folder'>): EvalDoc => ({ ...d, folder: null });
-
-export interface BuildTarget {
-  services: Services;
-  /** Directory for the source files of the import (outside the archive). */
-  home: string;
-}
-
-/** Builds the archive deterministically without any LLM call; returns key → document id. */
-export async function buildArchive(target: BuildTarget, docs: EvalDoc[], emptyFolders: string[] = EMPTY_FOLDERS): Promise<Record<string, string>> {
-  const { services } = target;
-  const keys = new Set<string>();
-  for (const d of docs) {
-    if (keys.has(d.key)) throw new Error(`duplicate fixture key ${d.key}`);
-    keys.add(d.key);
-  }
-  const previousMode = services.settings.get().privacy.llmMode;
-  services.settings.update({ privacy: { llmMode: 'local_only' } });
-  try {
-    const folders = [...docs.flatMap((d) => (d.folder ? [d.folder] : [])), ...emptyFolders];
-    const mains = [...new Set(folders.map((f) => f.split('/')[0]!))];
-    for (const main of mains) if (services.categories.needsApproval(main)) services.categories.create(main, true);
-    for (const f of emptyFolders) services.categories.create(f, true);
-
-    const sourceDir = path.join(target.home, 'eval-sources');
-    const files: string[] = [];
-    for (const [i, d] of docs.entries()) {
-      const p = path.join(sourceDir, String(i).padStart(3, '0'), d.name);
-      fs.mkdirSync(path.dirname(p), { recursive: true });
-      // slide decks are real pptx files (one slide per paragraph), so file type filters meet the real thing
-      if (d.name.endsWith('.pptx')) await makePptx(p, d.content.split(/\n{2,}/));
-      else fs.writeFileSync(p, d.content);
-      files.push(p);
-    }
-    const imp = await services.documents.importPaths(files, { allowLlm: false });
-    if (imp.rejected.length || imp.duplicates.length)
-      throw new Error(
-        `fixture import failed: ${[...imp.rejected.map((r) => `${r.path}: ${r.reason}`), ...imp.duplicates.map((x) => `${x.path}: duplicate`)].join('; ')}`,
-      );
-    await services.jobs.whenIdle();
-    const ids: Record<string, string> = {};
-    docs.forEach((d, i) => {
-      const doc = imp.imported.find((x) => x.sourcePath === fs.realpathSync(files[i]!));
-      if (!doc) throw new Error(`fixture document ${d.key} not imported`);
-      ids[d.key] = doc.id;
-    });
-
-    const toArchive = docs.filter((d) => d.folder);
-    if (toArchive.length) {
-      const res = await services.archive.execute(
-        toArchive.map((d) => ({ documentId: ids[d.key]!, mode: 'copy' as const, categoryPath: d.folder!, topic: d.topic ?? null, project: null })),
-        { confirmed: true, approveNewCategories: mains, confirmMove: false, trigger: 'eval-setup' },
-      );
-      if (res.success !== toArchive.length)
-        throw new Error(
-          `fixture archiving failed: ${res.items
-            .filter((i) => i.outcome !== 'success')
-            .map((i) => i.message)
-            .join('; ')}`,
-        );
-    }
-    for (const d of docs) {
-      const id = ids[d.key]!;
-      services.documents.bulkUpdate(
-        [id],
-        {
-          ...(d.title ? { title: d.title } : {}),
-          ...(d.docType !== undefined ? { docType: d.docType } : {}),
-          ...(d.documentDate !== undefined ? { documentDate: d.documentDate } : {}),
-          ...(d.persons?.length ? { addPersons: d.persons } : {}),
-          ...(d.tags?.length ? { addTags: d.tags } : {}),
-          ...(!d.folder && d.topic ? { topic: d.topic } : {}),
-        },
-        { trigger: 'eval-setup' },
-      );
-      if (d.excluded) services.documents.setLlmExcluded(id, true);
-    }
-    await Promise.all(Object.values(ids).map((id) => services.documents.indexDocument(id)));
-    await services.jobs.whenIdle();
-    return ids;
-  } finally {
-    services.settings.update({ privacy: { llmMode: previousMode } });
-  }
-}

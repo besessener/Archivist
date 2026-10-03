@@ -102,10 +102,7 @@ export function PrivacyTab({ settings, reload }: TabProps) {
   );
 }
 
-/**
- * The mode is saved as soon as it is selected (issue #72). `mode` is optimistic only while saving;
- * a failed save reverts it, so outside of `busy` it always equals the saved, active mode.
- */
+/** Saves the mode on selection (#72); `mode` is optimistic only while saving, a failed save reverts it. */
 function ModeSection({ active, reload }: { active: Mode; reload: () => void }) {
   const { save, busy } = useSaveSettings(reload);
   const [mode, setMode] = useState<Mode>(active);

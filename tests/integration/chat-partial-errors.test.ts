@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IntentClassifier } from '../../packages/core/src/services/chat/intent-classifier';
+import { PendingQuestions } from '../../packages/core/src/services/chat/pending-questions';
 import { createTestApp, type TestApp } from '../helpers/harness';
-
-const intent = (over: Record<string, unknown>) => ({ intent: 'unknown', confidence: 0.9, rationale: 'test', ...over });
-const userText = (input: string) => input.split('Nachricht des Benutzers:\n')[1] ?? '';
+import { intent, userText } from '../helpers/chat-intents';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -14,10 +14,6 @@ afterEach(async () => {
 });
 
 const send = (text: string, conversationId?: string) => app.ok('chat:send', { text, conversationId });
-interface Internals {
-  droppedHint: () => string | null;
-  classify: () => Promise<unknown>;
-}
 
 const notes = () => app.services.graph.listEntities({ type: 'note' });
 
@@ -83,7 +79,7 @@ describe('Error in the middle of a message: partial results are preserved (#50)'
   it('an error outside the individual requests keeps what was already completed in the answer and state', async () => {
     const r1 = await send('Der Kickoff mit dem Kunden hat stattgefunden.');
     // the hint about the discarded follow-up question is produced only after the requests – if it fails, the note is already saved
-    vi.spyOn(app.services.chat as unknown as Internals, 'droppedHint').mockImplementation(() => {
+    vi.spyOn(PendingQuestions.prototype, 'droppedHint').mockImplementation(() => {
       throw new Error('Hinweis kaputt');
     });
 
@@ -104,7 +100,7 @@ describe('Error in the middle of a message: partial results are preserved (#50)'
 
   it('if the classification itself fails, the old follow-up question remains', async () => {
     const r1 = await send('Der Kickoff mit dem Kunden hat stattgefunden.');
-    vi.spyOn(app.services.chat as unknown as Internals, 'classify').mockRejectedValue(new Error('Einordnung kaputt'));
+    vi.spyOn(IntentClassifier.prototype, 'classify').mockRejectedValue(new Error('Einordnung kaputt'));
 
     const r2 = await send('Notiz: Server läuft wieder.', r1.conversationId);
 

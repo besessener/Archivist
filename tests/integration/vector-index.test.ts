@@ -30,15 +30,15 @@ describe('VectorIndex (#163)', () => {
     add('c2', 'decision', 'x1', unit([0.9, 0.1, 0, 0]));
     add('c3', 'document', 'd2', unit([0, 1, 0, 0]));
     const prepare = vi.spyOn(db, 'prepare');
-    const index = new VectorIndex(() => db, new WorkerPool(null));
+    const index = new VectorIndex({ sqlite: () => db, pool: new WorkerPool(null) });
     const q = unit([1, 0, 0, 0]);
-    const first = await index.search('m', q, { k: 10, minScore: 0.5 });
+    const first = await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5 });
     expect(first.map((h) => h.entityId)).toEqual(['d1', 'x1']);
     const loads = prepare.mock.calls.filter(([sql]) => sql.includes('FROM chunks'));
     expect(loads).toHaveLength(1);
     expect(loads[0]![0]).not.toMatch(/\btext\b/);
-    await index.search('m', q, { k: 10, minScore: 0.5 });
-    await index.search('m', q, { k: 10, minScore: 0.5, types: ['decision'] });
+    await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5 });
+    await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5, types: ['decision'] });
     expect(prepare.mock.calls.filter(([sql]) => sql.includes('FROM chunks'))).toHaveLength(1);
   });
 
@@ -46,20 +46,20 @@ describe('VectorIndex (#163)', () => {
     const { db, add } = memoryDb();
     add('c1', 'document', 'd1', unit([1, 0, 0, 0]));
     add('c2', 'decision', 'x1', unit([0.9, 0.1, 0, 0]));
-    const index = new VectorIndex(() => db, new WorkerPool(null));
+    const index = new VectorIndex({ sqlite: () => db, pool: new WorkerPool(null) });
     const q = unit([1, 0, 0, 0]);
-    expect((await index.search('m', q, { k: 10, minScore: 0.5, types: ['decision'] })).map((h) => h.entityId)).toEqual(['x1']);
-    expect(await index.search('m', q, { k: 10, minScore: 0.5, types: ['note'] })).toEqual([]);
+    expect((await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5, types: ['decision'] })).map((h) => h.entityId)).toEqual(['x1']);
+    expect(await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5, types: ['note'] })).toEqual([]);
 
-    index.replace('n1', 'note', 'm', [{ id: 'c9', vector: unit([0.95, 0.05, 0, 0]) }]);
-    expect((await index.search('m', q, { k: 10, minScore: 0.5, types: ['note'] })).map((h) => h.chunkId)).toEqual(['c9']);
+    index.replace({ id: 'n1', type: 'note' }, { model: 'm', chunks: [{ id: 'c9', vector: unit([0.95, 0.05, 0, 0]) }] });
+    expect((await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5, types: ['note'] })).map((h) => h.chunkId)).toEqual(['c9']);
     // replacing moves the entity to its new vector
-    index.replace('d1', 'document', 'm', [{ id: 'c10', vector: unit([0, 0, 1, 0]) }]);
-    expect((await index.search('m', q, { k: 10, minScore: 0.5 })).map((h) => h.entityId)).toEqual(['n1', 'x1']);
+    index.replace({ id: 'd1', type: 'document' }, { model: 'm', chunks: [{ id: 'c10', vector: unit([0, 0, 1, 0]) }] });
+    expect((await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5 })).map((h) => h.entityId)).toEqual(['n1', 'x1']);
     index.remove('x1');
-    expect((await index.search('m', q, { k: 10, minScore: 0.5 })).map((h) => h.entityId)).toEqual(['n1']);
+    expect((await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5 })).map((h) => h.entityId)).toEqual(['n1']);
     // other models are not affected
-    expect(await index.search('other', q, { k: 10, minScore: 0 })).toEqual([]);
+    expect(await index.search({ model: 'other', vector: q }, { k: 10, minScore: 0 })).toEqual([]);
   });
 
   it('spreads large indexes over several segments and merges their top-k', async () => {
@@ -67,8 +67,8 @@ describe('VectorIndex (#163)', () => {
     for (let i = 0; i < 25; i += 1) add(`c${i}`, 'document', `d${i}`, unit([1, i / 10, 0, 0]));
     const pool = new WorkerPool(null);
     const run = vi.spyOn(pool, 'run');
-    const index = new VectorIndex(() => db, pool, 4);
-    const hits = await index.search('m', unit([1, 0, 0, 0]), { k: 3, minScore: 0 });
+    const index = new VectorIndex({ sqlite: () => db, pool, maxSegmentRows: 4 });
+    const hits = await index.search({ model: 'm', vector: unit([1, 0, 0, 0]) }, { k: 3, minScore: 0 });
     expect(hits.map((h) => h.entityId)).toEqual(['d0', 'd1', 'd2']);
     expect(run).toHaveBeenCalledTimes(7);
     for (const [, payload] of run.mock.calls) expect((payload as { matrix: Float32Array }).matrix.buffer).toBeInstanceOf(SharedArrayBuffer);
@@ -120,8 +120,8 @@ describe('vector search in real worker threads', () => {
     for (let i = 0; i < 10; i += 1) add(`c${i}`, i % 2 ? 'note' : 'document', `e${i}`, unit([1, i, 0, 0]));
     const pool = new WorkerPool(workerFile, 2);
     try {
-      const index = new VectorIndex(() => db, pool, 3);
-      const hits = await index.search('m', unit([1, 0, 0, 0]), { k: 2, minScore: 0, types: ['document'] });
+      const index = new VectorIndex({ sqlite: () => db, pool, maxSegmentRows: 3 });
+      const hits = await index.search({ model: 'm', vector: unit([1, 0, 0, 0]) }, { k: 2, minScore: 0, types: ['document'] });
       expect(hits.map((h) => h.entityId)).toEqual(['e0', 'e2']);
     } finally {
       await pool.close();

@@ -13,7 +13,7 @@ import { call } from '@/lib/ipc';
 import { entityHref } from '@/lib/nav';
 import { formatDate } from '@/lib/format';
 import { useRun } from '@/lib/use-run';
-import type { ChatMsg, SourceRef } from '@/lib/types';
+import type { ChatMessage, SourceRef } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 /** Which date a source shows – an archive date must not look like the document's date (#168). */
@@ -74,7 +74,7 @@ export function ChatBubble({
   pending = false,
   onQuickReply,
 }: {
-  message: ChatMsg;
+  message: ChatMessage;
   pending?: boolean;
   /** Only set for the last reply: clicking a reply button sends its text. */
   onQuickReply?: (text: string) => void;

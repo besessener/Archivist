@@ -4,13 +4,13 @@ const STOPWORDS = new Set(
   ),
 );
 
-export function stripDiacritics(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+export function stripDiacritics(text: string): string {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 /** Name for comparisons: lower case, without accents, only letters/digits, single spaces. */
-export function normalizeName(s: string): string {
-  return stripDiacritics(s.toLowerCase().replace(/ß/g, 'ss'))
+export function normalizeName(name: string): string {
+  return stripDiacritics(name.toLowerCase().replace(/ß/g, 'ss'))
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
@@ -18,63 +18,60 @@ export function normalizeName(s: string): string {
 export function tokenize(text: string, opts: { keepStopwords?: boolean } = {}): string[] {
   const tokens = normalizeName(text)
     .split(' ')
-    .filter((t) => t.length > 1);
-  return opts.keepStopwords ? tokens : tokens.filter((t) => !STOPWORDS.has(t));
+    .filter((token) => token.length > 1);
+  return opts.keepStopwords ? tokens : tokens.filter((token) => !STOPWORDS.has(token));
 }
 
 /** Inflection endings (German and English), longest first; stripped from search terms only. */
 const SEARCH_SUFFIXES = ['ungen', 'ung', 'heiten', 'heit', 'keiten', 'keit', 'ing', 'ern', 'en', 'er', 'es', 'em', 'ed', 'e', 'n', 's'];
 
-/**
- * Light stemming for keyword search (query side): the FTS index has no stemmer, but terms are matched as
- * prefixes, so cutting an inflection ending lets „Entscheidung“ also find „entscheiden“, „Entscheidungen“,
- * „entscheidet“. Words stay at least 4 characters long; numbers stay unchanged.
- */
+/** Query-side stemming: FTS matches prefixes without a stemmer, so a cut ending also finds inflections; keeps 4+ characters and numbers. */
 export function searchStem(term: string): string {
   if (/\d/.test(term)) return term;
   for (const suffix of SEARCH_SUFFIXES) if (term.endsWith(suffix) && term.length - suffix.length >= 4) return term.slice(0, -suffix.length);
   return term;
 }
 
-export function truncate(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+export function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 export function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
   if (!a.length) return b.length;
   if (!b.length) return a.length;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i += 1) {
-    const cur = [i];
-    for (let j = 1; j <= b.length; j += 1) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      cur[j] = Math.min((cur[j - 1] ?? 0) + 1, (prev[j] ?? 0) + 1, (prev[j - 1] ?? 0) + cost);
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= a.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= b.length; column += 1) {
+      const cost = a[row - 1] === b[column - 1] ? 0 : 1;
+      current[column] = Math.min((current[column - 1] ?? 0) + 1, (previous[column] ?? 0) + 1, (previous[column - 1] ?? 0) + cost);
     }
-    prev = cur;
+    previous = current;
   }
-  return prev[b.length] ?? 0;
+  return previous[b.length] ?? 0;
 }
 
 /** Name similarity 0..1 (normalized Levenshtein distance, token overlap). */
 export function nameSimilarity(a: string, b: string): number {
-  const na = normalizeName(a);
-  const nb = normalizeName(b);
-  if (!na || !nb) return 0;
-  if (na === nb) return 1;
-  const compactA = na.replace(/ /g, '');
-  const compactB = nb.replace(/ /g, '');
+  const normalizedA = normalizeName(a);
+  const normalizedB = normalizeName(b);
+  if (!normalizedA || !normalizedB) return 0;
+  if (normalizedA === normalizedB) return 1;
+  const compactA = normalizedA.replace(/ /g, '');
+  const compactB = normalizedB.replace(/ /g, '');
   if (compactA === compactB) return 0.98;
-  const lev = 1 - levenshtein(compactA, compactB) / Math.max(compactA.length, compactB.length);
-  const ta = new Set(na.split(' '));
-  const tb = new Set(nb.split(' '));
-  const inter = [...ta].filter((t) => tb.has(t)).length;
-  const jac = inter / (ta.size + tb.size - inter);
-  return Math.max(lev, jac);
+  const editSimilarity = 1 - levenshtein(compactA, compactB) / Math.max(compactA.length, compactB.length);
+  const tokensA = new Set(normalizedA.split(' '));
+  const tokensB = new Set(normalizedB.split(' '));
+  const shared = [...tokensA].filter((token) => tokensB.has(token)).length;
+  const jaccard = shared / (tokensA.size + tokensB.size - shared);
+  return Math.max(editSimilarity, jaccard);
 }
 
 /** Splits text at paragraph/sentence boundaries into overlapping chunks. */
-export function chunkText(text: string, size = 900, overlap = 120): string[] {
+export function chunkText(text: string, options: { size?: number; overlap?: number } = {}): string[] {
+  const { size = 900, overlap = 120 } = options;
   const clean = text
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+/g, ' ')
@@ -99,7 +96,7 @@ export function chunkText(text: string, size = 900, overlap = 120): string[] {
 }
 
 export function firstSentence(text: string, max = 160): string {
-  const t = text.trim().replace(/\s+/g, ' ');
-  const m = /^(.+?[.!?])(\s|$)/.exec(t);
-  return truncate(m?.[1] ?? t, max);
+  const collapsed = text.trim().replace(/\s+/g, ' ');
+  const sentence = /^(.+?[.!?])(\s|$)/.exec(collapsed);
+  return truncate(sentence?.[1] ?? collapsed, max);
 }

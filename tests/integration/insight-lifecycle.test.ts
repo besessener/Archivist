@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 const TOPIC = 'Bildungsurlaub 2026';
 
@@ -21,21 +22,7 @@ const openInsights = (kind?: string) => app.services.insights.list('open').filte
 const actionStatus = (id: string) => app.services.actions.get(id).status;
 
 async function archived(name: string, loc: string, topic: string | null = TOPIC): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Notiz',
-    title: name,
-    summary: `Zusammenfassung ${name}`,
-    mainTopic: topic,
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: loc, fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc, mainTopic: topic }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, `Inhalt von ${name}`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -76,13 +63,13 @@ const decision = (decisionText: string, decidedAt: string | null, extra: Record<
 describe('Archive check: withdrawn hints withdraw their action too', () => {
   it('when the cause goes away, the hint disappears and its action becomes "withdrawn" (not "proposed")', async () => {
     const { odd } = await scattered();
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const [insight] = openInsights('scattered_documents');
     const actionId = insight!.recommendedActionId!;
     expect(actionStatus(actionId)).toBe('proposed');
 
     await relocate(odd, 'private/bildungsurlaub/2026'); // the user tidied up by other means
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('scattered_documents')).toHaveLength(0);
     expect(actionStatus(actionId)).toBe('withdrawn');
@@ -91,11 +78,11 @@ describe('Archive check: withdrawn hints withdraw their action too', () => {
 
   it('when the distribution changes, the hint replaces its proposal instead of creating a second one', async () => {
     await scattered();
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const first = openInsights('scattered_documents')[0]!;
 
     const extra = await archived('Ticket', 'work/tickets');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     const after = openInsights('scattered_documents');
     expect(after).toHaveLength(1);
@@ -114,12 +101,12 @@ describe('Stable keys: a run closes hints whose cause no longer exists', () => {
     const abs = path.join(archiveRoot(), row(id).archiveRelPath!);
     const backup = fs.readFileSync(abs);
     fs.unlinkSync(abs);
-    await app.services.consistency.run('test');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
+    await app.services.consistency.run({ trigger: 'test' });
     expect(openInsights('misplaced_file').filter((i) => i.title.includes('fehlt'))).toHaveLength(1);
 
     fs.writeFileSync(abs, backup);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('misplaced_file')).toHaveLength(0);
   });
@@ -137,26 +124,26 @@ describe('Stable keys: a run closes hints whose cause no longer exists', () => {
       confidence: 0.9,
       asDraft: false,
     });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(openInsights('incomplete_decision')).toHaveLength(1);
 
     await app.ok('decisions:update', { id: d.id, patch: { participants: ['Anna'] } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const still = openInsights('incomplete_decision');
     expect(still).toHaveLength(1);
     expect(still[0]!.explanation).not.toContain('Beteiligte');
 
     await app.ok('decisions:update', { id: d.id, patch: { participants: ['Anna'], decidedAt: '2026-03-01' } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(openInsights('incomplete_decision')).toHaveLength(0);
     expect((await app.ok('notifications:list', {})).filter((n) => n.type === 'incomplete_decision')).toHaveLength(0);
   });
 
   it('documents without a topic: a single hint that grows instead of a new one per change', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     await archived('Zweite lose Notiz', 'work/notizen', null);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     const orphan = openInsights('orphan_document');
     expect(orphan).toHaveLength(1);
@@ -171,11 +158,11 @@ describe('Stable keys: a run closes hints whose cause no longer exists', () => {
       sourceIds: [],
       confidence: 0.9,
     } as never);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect((await app.ok('notifications:list', {})).some((n) => n.type === 'open_item_overdue')).toBe(true);
 
     await app.ok('openItems:close', { id: item.id, status: 'resolved', confirmed: true });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect((await app.ok('notifications:list', {})).some((n) => n.type === 'open_item_overdue')).toBe(false);
   });
@@ -187,43 +174,43 @@ describe('Accepting without an action does not hide a problem forever', () => {
     const abs = path.join(archiveRoot(), row(id).archiveRelPath!);
     const backup = fs.readFileSync(abs);
     fs.unlinkSync(abs);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const missing = openInsights('misplaced_file')[0]!;
     await app.ok('insights:respond', { response: 'accept', id: missing.id, confirmed: true, strongConfirmed: false });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(openInsights('misplaced_file'), 'just confirmed: not again right away').toHaveLength(0);
 
     fs.writeFileSync(abs, backup);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     fs.unlinkSync(abs);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('misplaced_file')).toHaveLength(1);
   });
 
   it('if new affected objects are added, the confirmed hint reopens', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     await app.ok('insights:respond', { response: 'accept', id: openInsights('orphan_document')[0]!.id, confirmed: true, strongConfirmed: false });
 
     await archived('Zweite lose Notiz', 'work/notizen', null);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('orphan_document')).toHaveLength(1);
   });
 
   it('if the cause still exists days after confirming, the hint is reopened', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('orphan_document')[0]!;
     await app.ok('insights:respond', { response: 'accept', id: ins.id, confirmed: true, strongConfirmed: false });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(openInsights('orphan_document')).toHaveLength(0);
 
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 8 * 86_400_000);
     try {
-      await app.services.consistency.run('test');
+      await app.services.consistency.run({ trigger: 'test' });
     } finally {
       vi.useRealTimers();
     }
@@ -233,9 +220,9 @@ describe('Accepting without an action does not hide a problem forever', () => {
 
   it('rejected hints stay rejected as long as the cause exists', async () => {
     await archived('Lose Notiz', 'work/notizen', null);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     await app.ok('insights:respond', { response: 'reject', id: openInsights('orphan_document')[0]!.id });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(openInsights('orphan_document')).toHaveLength(0);
   });
 });
@@ -287,7 +274,7 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
     await decision('Wir führen prod-plat weiter.', '2026-01-10');
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
 
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('contradiction')).toHaveLength(1);
     expect(openInsights('possibly_superseded')).toHaveLength(0);
@@ -298,13 +285,13 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
     const b = await decision('Das Protokoll schreibt Anna.', '2026-03-01');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const superseded = openInsights('possibly_superseded')[0]!;
     expect(superseded).toBeDefined();
 
     await app.ok('decisions:update', { id: a.id, patch: { decisionText: 'Wir führen prod-plat weiter.' } });
     await app.ok('decisions:update', { id: b.id, patch: { decisionText: 'Wir machen mit prod-plat vorerst nicht weiter.' } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('contradiction')).toHaveLength(1);
     expect(openInsights('possibly_superseded')).toHaveLength(0);
@@ -316,11 +303,11 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
     const b = await decision('Das Protokoll schreibt Anna.', '2026-03-01');
-    app.services.decisions.supersede(a.id, b.id, { confirmed: true });
-    const audits = () => app.services.audit.list(100).filter((e) => e.action === 'decision.supersede').length;
+    app.services.decisions.supersede({ oldId: a.id, newId: b.id, confirmed: true });
+    const audits = () => app.services.audit.list({ limit: 100 }).filter((e) => e.action === 'decision.supersede').length;
     const before = audits();
 
-    const again = app.services.decisions.supersede(a.id, b.id, { confirmed: true });
+    const again = app.services.decisions.supersede({ oldId: a.id, newId: b.id, confirmed: true });
 
     expect(again.old.status).toBe('superseded');
     expect(again.new.supersedesDecisionId).toBe(a.id);
@@ -333,9 +320,9 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
     await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
     expect(await app.ok('contradictions:list', {})).toHaveLength(0);
 
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const asked = app.llm.calls.filter((c) => c.schema === 'ContradictionProposal').length;
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect(await app.ok('contradictions:list', {})).toHaveLength(0);
     expect(openInsights('contradiction')).toHaveLength(0);
@@ -349,7 +336,7 @@ describe('Contradiction, insight and action: one shared lifecycle', () => {
     const ins = contradictionInsight()!;
 
     app.services.decisions.revoke(a.id, { confirmed: true });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
 
     expect((await app.ok('contradictions:list', {}))[0]!.status).toBe('resolved');
     expect(contradictionInsight()).toBeUndefined();
@@ -385,7 +372,7 @@ describe('Accepting again is possible after a failure', () => {
 describe('Outdated proposals are re-checked before execution', () => {
   it('if the user has since put the document elsewhere, the older insight does not move it back', async () => {
     const { odd } = await scattered();
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('scattered_documents')[0]!;
 
     await relocate(odd, 'work/hr/bildungsurlaub'); // e.g. moved via chat in the meantime
@@ -398,14 +385,14 @@ describe('Outdated proposals are re-checked before execution', () => {
     expect(openInsights('scattered_documents')).toHaveLength(0);
 
     // the next check evaluates the current state afresh
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const fresh = openInsights('scattered_documents')[0]!;
     expect(app.services.actions.get(fresh.recommendedActionId!).status).toBe('proposed');
   });
 
   it('a relocation proposal in the chat withdraws open proposals from other sources for the same documents', async () => {
     await scattered();
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('scattered_documents')[0]!;
     app.llm.on('ChatIntent', () => ({ intent: 'archive_reorganize', confidence: 0.9, rationale: 'test', topic: TOPIC, path: 'work/hr/bildungsurlaub' }));
 
@@ -421,7 +408,7 @@ describe('Outdated proposals are re-checked before execution', () => {
     app.llm.down = true;
     const a = await decision('Das Meeting findet dienstags statt.', '2026-01-10');
     await decision('Das Protokoll schreibt Anna.', '2026-03-01');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('possibly_superseded')[0]!;
 
     app.services.decisions.revoke(a.id, { confirmed: true });
@@ -434,9 +421,9 @@ describe('Outdated proposals are re-checked before execution', () => {
 
   it('an action that was already decided cannot be withdrawn', async () => {
     const { odd } = await scattered();
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const actionId = openInsights('scattered_documents')[0]!.recommendedActionId!;
-    await app.services.actions.resolve(actionId, 'approve', { confirmed: true });
+    await app.services.actions.resolve(actionId, { decision: 'approve', confirmed: true });
 
     expect(app.services.actions.withdraw(actionId, 'egal')).toBe(false);
     expect(actionStatus(actionId)).toBe('executed');

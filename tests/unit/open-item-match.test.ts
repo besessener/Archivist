@@ -18,24 +18,30 @@ describe('matchOpenItems (#39)', () => {
     ['Die Steuererklärung ist erledigt', ['PoC vorstellen'], 'none', []],
     ['schließ den Punkt', ['PoC vorstellen'], 'none', []],
   ])('„%s“ in %j → %s', (hint, titles, status, expected) => {
-    const r = matchOpenItems(hint, items(...titles));
+    const r = matchOpenItems({ hint, items: items(...titles) });
     expect(r.status).toBe(status);
     expect(titlesOf(r)).toEqual(expected);
   });
 
   it('also searches the description', () => {
-    const r = matchOpenItems('Rabatt', [
-      { title: 'Angebot prüfen', description: 'Müller wollte Rabatt' },
-      { title: 'Zahnarzt anrufen', description: null },
-    ]);
+    const r = matchOpenItems({
+      hint: 'Rabatt',
+      items: [
+        { title: 'Angebot prüfen', description: 'Müller wollte Rabatt' },
+        { title: 'Zahnarzt anrufen', description: null },
+      ],
+    });
     expect(titlesOf(r)).toEqual(['Angebot prüfen']);
   });
 
   it('a title match beats a match in the description only', () => {
-    const r = matchOpenItems('Rabatt', [
-      { title: 'Rabatt verhandeln', description: null },
-      { title: 'Angebot prüfen', description: 'Müller wollte Rabatt' },
-    ]);
+    const r = matchOpenItems({
+      hint: 'Rabatt',
+      items: [
+        { title: 'Rabatt verhandeln', description: null },
+        { title: 'Angebot prüfen', description: 'Müller wollte Rabatt' },
+      ],
+    });
     expect(titlesOf(r)).toEqual(['Rabatt verhandeln']);
   });
 });

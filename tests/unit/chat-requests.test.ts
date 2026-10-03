@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createChatRequestStore, mergeChatMessages, requestsFor, type ChatSendOutcome } from '../../apps/renderer/lib/chat-requests';
-import type { ChatMsg } from '../../apps/renderer/lib/types';
+import type { ChatMessage } from '../../apps/renderer/lib/types';
 
-const msg = (overrides: Partial<ChatMsg>): ChatMsg => ({
+const msg = (overrides: Partial<ChatMessage>): ChatMessage => ({
   id: 'm1',
   conversationId: 'c1',
   role: 'user',
@@ -37,7 +37,7 @@ describe('chat requests outside the chat page', () => {
     const store = createChatRequestStore();
     store.setActiveConversation('c1');
     const d = deferred();
-    const done = store.send('c1', 'Hallo', () => d.promise);
+    const done = store.send({ conversationId: 'c1', content: 'Hallo' }, () => d.promise);
 
     // The page can be rebuilt at any time (e.g. after switching tabs) and reads the state from the store
     const running = requestsFor(store.getSnapshot().requests, 'c1');
@@ -60,7 +60,7 @@ describe('chat requests outside the chat page', () => {
     const store = createChatRequestStore();
     store.setActiveConversation(null);
     const first = deferred();
-    const done = store.send(null, 'Hallo', () => first.promise);
+    const done = store.send({ conversationId: null, content: 'Hallo' }, () => first.promise);
     expect(requestsFor(store.getSnapshot().requests, null)).toHaveLength(1);
     first.resolve(outcome('neu'));
     await done;
@@ -70,7 +70,7 @@ describe('chat requests outside the chat page', () => {
     const other = createChatRequestStore();
     other.setActiveConversation(null);
     const second = deferred();
-    const done2 = other.send(null, 'Hallo', () => second.promise);
+    const done2 = other.send({ conversationId: null, content: 'Hallo' }, () => second.promise);
     other.setActiveConversation('alt');
     second.resolve(outcome('neu'));
     await done2;
@@ -79,8 +79,8 @@ describe('chat requests outside the chat page', () => {
 
   it('on an error the request is removed', async () => {
     const store = createChatRequestStore();
-    await expect(store.send('c1', 'Hallo', () => Promise.resolve(undefined))).resolves.toBeUndefined();
-    await expect(store.send('c1', 'Hallo', () => Promise.reject(new Error('weg')))).resolves.toBeUndefined();
+    await expect(store.send({ conversationId: 'c1', content: 'Hallo' }, () => Promise.resolve(undefined))).resolves.toBeUndefined();
+    await expect(store.send({ conversationId: 'c1', content: 'Hallo' }, () => Promise.reject(new Error('weg')))).resolves.toBeUndefined();
     expect(store.getSnapshot().requests).toHaveLength(0);
   });
 
@@ -98,7 +98,7 @@ describe('chat requests outside the chat page', () => {
   it('the provisional message disappears as soon as the history contains the saved message', async () => {
     const store = createChatRequestStore();
     const d = deferred();
-    void store.send('c1', 'Hallo', () => d.promise);
+    void store.send({ conversationId: 'c1', content: 'Hallo' }, () => d.promise);
     const [request] = store.getSnapshot().requests;
     const later = new Date(Date.parse(request!.message.createdAt) + 5).toISOString();
     // An older message with the same text does not count as the saved request

@@ -1,7 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// Evaluation of the agent with real models (#316): costs money, never part of `npm test` or CI.
-// Only tests/eval/**/*.eval.ts, one task after another, with long timeouts.
+// Agent evaluation with real models (#316): costs money, never part of `npm test` or CI; one task after another.
 export default defineConfig({
   test: {
     include: ['tests/eval/**/*.eval.ts'],

@@ -17,7 +17,7 @@ Die regelbasierte Auswertung bleibt als Rückfallebene: ohne LLM, im Modus „nu
 Ein Agent, der jede Kleinigkeit bestätigen lässt, ist lästig; einer, der unkontrolliert handelt, gefährlich. Archivist löst das über zwei Ebenen:
 
 - **Rückgängig statt Rückfrage**: Im Modus „Auto“ führt der Agent Änderungen selbst aus. Jede trägt die Lauf-ID; ein ganzer Lauf oder ein einzelner Schritt lässt sich mit Konfliktprüfung zurücknehmen. Wer lieber vorher gefragt wird, schaltet auf „Fragen“.
-- **Feste Ausnahmen**: Endgültiges Löschen, Originaldateien außerhalb des Archivs, Datenschutz-Einstellungen, neue Hauptkategorien und Massenaktionen werden immer nachgefragt – in jedem Modus, egal was der Agent gelernt hat.
+- **Feste Ausnahmen**: Löschen (in den Papierkorb), Originaldateien außerhalb des Archivs, Datenschutz-Einstellungen, neue Hauptkategorien und Massenaktionen werden immer nachgefragt – in jedem Modus, egal was der Agent gelernt hat.
 
 ## Grenzen statt Schrittzahl
 

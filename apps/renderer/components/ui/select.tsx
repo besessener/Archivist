@@ -8,13 +8,10 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   ref,
 ) {
   return (
-    <div className="relative inline-block w-full">
+    <div className={cn('relative inline-block w-full', className)}>
       <select
         ref={ref}
-        className={cn(
-          'h-9 w-full appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50',
-          className,
-        )}
+        className="h-9 w-full appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
         {...props}
       >
         {children}

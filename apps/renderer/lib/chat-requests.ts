@@ -1,10 +1,10 @@
-import type { ChatMsg } from './types';
+import type { ChatMessage } from './types';
 
 /** Result of `chat:send` (only the fields the UI needs). */
 export interface ChatSendOutcome {
   conversationId: string;
-  userMessage: ChatMsg;
-  assistantMessage: ChatMsg;
+  userMessage: ChatMessage;
+  assistantMessage: ChatMessage;
 }
 
 /** A sent chat request whose reply is not yet in the loaded history. */
@@ -14,9 +14,9 @@ export interface ChatRequest {
   /** Conversation of the request; `null` = new conversation whose ID only becomes known with the reply. */
   conversationId: string | null;
   /** Provisional user message until the saved message is in the history. */
-  message: ChatMsg;
+  message: ChatMessage;
   /** Saved messages once the reply has arrived (until the history contains them). */
-  result: [ChatMsg, ChatMsg] | null;
+  result: [ChatMessage, ChatMessage] | null;
 }
 
 export interface ChatRequestState {
@@ -25,11 +25,7 @@ export interface ChatRequestState {
   activeConversationId: string | null | undefined;
 }
 
-/**
- * Keeps running chat requests outside the chat page. The request itself keeps running in the main process
- * when the user switches tabs; this store ensures that after returning, the chat page shows the running
- * request („Archivist denkt nach …“) and then the reply in the right conversation.
- */
+/** Keeps running chat requests outside the chat page, so after switching tabs it still shows them and their replies. */
 export function createChatRequestStore() {
   let state: ChatRequestState = { requests: [], activeConversationId: undefined };
   const listeners = new Set<() => void>();
@@ -37,11 +33,11 @@ export function createChatRequestStore() {
 
   const update = (next: ChatRequestState) => {
     state = next;
-    for (const l of listeners) l();
+    for (const listener of listeners) listener();
   };
   const patchRequest = (id: string, patch: Partial<ChatRequest>) =>
-    update({ ...state, requests: state.requests.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-  const removeRequest = (id: string) => update({ ...state, requests: state.requests.filter((r) => r.id !== id) });
+    update({ ...state, requests: state.requests.map((request) => (request.id === id ? { ...request, ...patch } : request)) });
+  const removeRequest = (id: string) => update({ ...state, requests: state.requests.filter((request) => request.id !== id) });
 
   return {
     getSnapshot: (): ChatRequestState => state,
@@ -52,14 +48,14 @@ export function createChatRequestStore() {
     setActiveConversation(id: string | null) {
       if (state.activeConversationId !== id) update({ ...state, activeConversationId: id });
     },
-    /**
-     * Sends a message via `sendFn` and remembers it until the reply has arrived.
-     * `sendFn` returns `undefined` on an error (the caller shows it); the request is then discarded.
-     */
-    async send(conversationId: string | null, content: string, sendFn: () => Promise<ChatSendOutcome | undefined>): Promise<ChatSendOutcome | undefined> {
+    /** Remembers the message until its reply arrives; `sendFn` returns `undefined` on an error it has shown, which discards it. */
+    async send(
+      { conversationId, content }: { conversationId: string | null; content: string },
+      sendFn: () => Promise<ChatSendOutcome | undefined>,
+    ): Promise<ChatSendOutcome | undefined> {
       const now = new Date();
       const id = `pending-${now.getTime()}-${++counter}`;
-      const message: ChatMsg = {
+      const message: ChatMessage = {
         id,
         conversationId: conversationId ?? 'pending',
         role: 'user',
@@ -75,52 +71,50 @@ export function createChatRequestStore() {
         quickReplies: [],
       };
       update({ ...state, requests: [...state.requests, { id, conversationId, message, result: null }] });
-      let res: ChatSendOutcome | undefined;
+      let outcome: ChatSendOutcome | undefined;
       try {
-        res = await sendFn();
+        outcome = await sendFn();
       } catch {
-        res = undefined;
+        outcome = undefined;
       }
-      if (!res) {
+      if (!outcome) {
         removeRequest(id);
         return undefined;
       }
       // A new conversation stays in view as long as the user has not switched to another one.
-      if (conversationId === null && state.activeConversationId === null) update({ ...state, activeConversationId: res.conversationId });
-      patchRequest(id, { conversationId: res.conversationId, result: [res.userMessage, res.assistantMessage] });
-      return res;
+      if (conversationId === null && state.activeConversationId === null) update({ ...state, activeConversationId: outcome.conversationId });
+      patchRequest(id, { conversationId: outcome.conversationId, result: [outcome.userMessage, outcome.assistantMessage] });
+      return outcome;
     },
     /** Forgets answered requests whose reply is in the loaded history. */
-    settle(history: ChatMsg[]) {
-      const ids = new Set(history.map((m) => m.id));
-      const done = state.requests.filter((r) => r.result && ids.has(r.result[1].id));
-      if (done.length > 0) update({ ...state, requests: state.requests.filter((r) => !done.includes(r)) });
+    settle(history: ChatMessage[]) {
+      const ids = new Set(history.map((message) => message.id));
+      const done = state.requests.filter((request) => request.result && ids.has(request.result[1].id));
+      if (done.length > 0) update({ ...state, requests: state.requests.filter((request) => !done.includes(request)) });
     },
   };
 }
 
 /** Requests of a conversation (`null` = new conversation). */
 export function requestsFor(requests: ChatRequest[], conversationId: string | null): ChatRequest[] {
-  return requests.filter((r) => r.conversationId === conversationId);
+  return requests.filter((request) => request.conversationId === conversationId);
 }
 
-/**
- * Merges the loaded history with the conversation's requests: answered requests contribute their
- * saved messages, running ones their provisional user message – unless the main process has already
- * saved it and the history contains it (same text, not older than the request).
- */
-export function mergeChatMessages(history: ChatMsg[], requests: ChatRequest[]): ChatMsg[] {
-  const out = [...history];
-  const ids = new Set(history.map((m) => m.id));
-  for (const r of requests) {
-    if (r.result) {
-      for (const m of r.result) if (!ids.has(m.id)) out.push(m);
+/** History plus the requests' saved replies, or their provisional message until the history holds it (same text, not older). */
+export function mergeChatMessages(history: ChatMessage[], requests: ChatRequest[]): ChatMessage[] {
+  const merged = [...history];
+  const ids = new Set(history.map((message) => message.id));
+  for (const request of requests) {
+    if (request.result) {
+      for (const message of request.result) if (!ids.has(message.id)) merged.push(message);
       continue;
     }
-    const saved = history.some((m) => m.role === 'user' && m.content === r.message.content && m.createdAt >= r.message.createdAt);
-    if (!saved) out.push(r.message);
+    const saved = history.some(
+      (message) => message.role === 'user' && message.content === request.message.content && message.createdAt >= request.message.createdAt,
+    );
+    if (!saved) merged.push(request.message);
   }
-  return out;
+  return merged;
 }
 
 /** Shared app store (lives as long as the window, not just as long as the chat page). */

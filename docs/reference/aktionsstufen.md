@@ -7,8 +7,8 @@ Was Archivist ohne Rückfrage darf, was eine Bestätigung braucht und wie Dateie
 | Stufe | Beispiele | Verhalten |
 | --- | --- | --- |
 | 1 – automatisch | Dateien in freigegebenen Ordnern auflisten, Metadaten/Prüfsummen, Textextraktion, Suchindex, Vorschläge, Insights, Benachrichtigungen | läuft ohne Rückfrage |
-| 2 – Bestätigung | Kopieren/Verschieben ins Archiv, **bereits archivierte Dokumente in einen anderen Archivordner verschieben**, Umbenennen, neue Hauptkategorie, Entscheidung als überholt markieren, Widerspruch lösen, offenen Punkt schließen, Metadaten überschreiben, Themen/Einträge zusammenführen (rückgängig machbar) | Aktionskarte bzw. Dialog mit Quell- und Zielpfad, Begründung, Confidence; ohne `confirmed: true` abgelehnt |
-| 3 – besonders | Umlagern von 20 oder mehr archivierten Dokumenten auf einmal; Löschen, Überschreiben, automatisches Umsortieren des ganzen Archivs | siehe unten |
+| 2 – Bestätigung | Kopieren/Verschieben ins Archiv, **Dokument in den Papierkorb legen** (rückgängig machbar), **bereits archivierte Dokumente in einen anderen Archivordner verschieben**, Umbenennen, neue Hauptkategorie, Entscheidung als überholt markieren, Widerspruch lösen, offenen Punkt schließen, Metadaten überschreiben, Themen/Einträge zusammenführen (rückgängig machbar) | Aktionskarte bzw. Dialog mit Quell- und Zielpfad, Begründung, Confidence; ohne `confirmed: true` abgelehnt |
+| 3 – besonders | Umlagern von 20 oder mehr archivierten Dokumenten auf einmal; **Papierkorb leeren** (endgültiges Löschen); Überschreiben, automatisches Umsortieren des ganzen Archivs | siehe unten |
 
 Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen selbst aus und macht sie rückgängig machbar; die dort genannten Ausnahmen werden immer nachgefragt.
 
@@ -17,7 +17,9 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 **Stufe 3 im Einzelnen**
 
 - **Umlagern ab 20 Dokumenten**: Karte „Besonders folgenreich“; ausgeführt erst nach einer zweiten, ausdrücklichen Bestätigung im Dialog – ein „ja“ im Chat genügt nicht. Umlagern ist nur für ausdrücklich genannte Dokumente möglich und wird immer vorher bestätigt.
-- **Löschen, Überschreiben, Umsortieren des ganzen Archivs** sind **nicht implementiert** – Archivist löscht und überschreibt keine Dateien.
+- **Löschen nur über den Papierkorb**: „In den Papierkorb“ (Dokument-Dialog, oder der Agent mit `mark_duplicates`, dann immer als Vorschlag mit zweiter Bestätigung) verschiebt die Archivdatei und die eigene Eingangskopie mit Prüfsumme nach `trash/` im Datenordner – dein Original außerhalb des Archivs bleibt unberührt. Dokument, Suchtreffer und Verknüpfungen verschwinden und kommen mit „Wiederherstellen“ (Einstellungen → Archiv → Papierkorb) oder über das Änderungsprotokoll zurück. Liegt am ursprünglichen Ort inzwischen eine andere Datei, wird nichts überschrieben, sondern der Konflikt gemeldet.
+- **Papierkorb leeren** löscht endgültig und braucht zwei Bestätigungen, im Schema erzwungen (`confirmed` und `permanentlyConfirmed`, beide `z.literal(true)`): den Dialog und das Häkchen „Ich verstehe, dass diese Dateien endgültig gelöscht werden“. Danach lassen sich diese Dokumente nicht mehr wiederherstellen; gelöscht wird nur, was im Papierkorb liegt.
+- **Überschreiben und Umsortieren des ganzen Archivs** sind **nicht implementiert** – Archivist überschreibt keine Dateien.
 - **Einzige Ausnahme beim Löschen** sind von dir erfasste **Ereignisse**: Sie lassen sich nach Bestätigung löschen, und das Löschen lässt sich unter Einstellungen → Änderungsprotokoll rückgängig machen (Ereignis mit Thema, Projekt, Verknüpfungen und Suchtreffer; was inzwischen entfernt wurde, nennt die Meldung).
 - **Auch Undo löscht nie die einzige Kopie**: Als weitere Kopie zählt nur eine Datei mit gleicher Prüfsumme am Quell- bzw. Eingangsort. Fehlt sie, weil das Original seitdem bearbeitet oder entfernt wurde, legt Undo die archivierte Fassung an den Ursprungsort zurück, bei Namenskonflikt als `Name (2).ext`.
 

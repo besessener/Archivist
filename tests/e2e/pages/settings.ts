@@ -32,6 +32,13 @@ export function initSettings(page: Page) {
         cancel: dialog.getByTestId('archive-root-cancel'),
       },
     },
+    trash: {
+      items: page.getByTestId('trash-item'),
+      restore: page.getByTestId('trash-restore'),
+      empty: page.getByTestId('trash-empty'),
+      confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
+      confirmEmpty: page.getByTestId('trash-empty-confirm'),
+    },
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),
       saveReminderTime: page.getByTestId('settings-reminder-time-save'),
@@ -53,6 +60,14 @@ export function initSettings(page: Page) {
       await locators.archiveRoot.change.click();
       await locators.archiveRoot.dialog.root.waitFor();
     },
+    /** Empties the trash: needs the second confirmation (checkbox) in the dialog. */
+    emptyTrash: async () => {
+      await locators.trash.empty.click();
+      await expect(locators.trash.confirmEmpty).toBeDisabled();
+      await locators.trash.confirmCheckbox.click();
+      await locators.trash.confirmEmpty.click();
+      await expect(locators.trash.items).toHaveCount(0);
+    },
     openNotifications: async () => {
       await locators.tabs.notifications.click();
     },
@@ -62,5 +77,5 @@ export function initSettings(page: Page) {
       await expect(locators.notifications.saveReminderTime).toBeDisabled();
     },
   };
-  return pageObject(page.getByRole('tablist', { name: 'Einstellungsbereiche' }), locators, interactions);
+  return pageObject({ root: page.getByRole('tablist', { name: 'Einstellungsbereiche' }), locators, actions: interactions });
 }

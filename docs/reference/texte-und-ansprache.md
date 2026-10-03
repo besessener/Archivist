@@ -11,7 +11,7 @@ Wir duzen – in der Oberfläche, im Chat, in Benachrichtigungen, Fehlermeldunge
 | alles, was programmiert ist: Bezeichner, Code-Kommentare, Testnamen, Log-Meldungen, Build- und CI-Ausgaben | alles, was Benutzer sehen: Oberfläche, Fehlermeldungen, Benachrichtigungen, Hinweise, Chat-Antworten |
 | | außerdem: LLM-Prompts (sie erzeugen deutsche Antworten), Muster für deutsche Eingaben, Testdaten |
 
-Die Oberfläche ist ausschließlich Deutsch.
+Die Oberfläche ist ausschließlich Deutsch – auch Datums- und Zeitfelder (`tt.mm.jjjj`, 24 Stunden), unabhängig von der Sprache des Betriebssystems.
 
 ## Dokumentation
 

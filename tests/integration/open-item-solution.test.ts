@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { classification } from '../helpers/document-classifications';
 
 let app: TestApp;
 beforeEach(async () => {
@@ -32,21 +33,9 @@ async function decision(title: string, text: string): Promise<string> {
 
 /** Import a document, let the (fake) LLM classify it and archive it. */
 async function archivedDoc(name: string, content: string): Promise<string> {
-  app.llm.on('DocumentClassification', () => ({
-    docType: 'Angebot',
-    title: name,
-    summary: `Zusammenfassung: ${content}`,
-    mainTopic: 'Hausrenovierung',
-    project: null,
-    persons: [],
-    dates: [],
-    tags: [],
-    location: { categoryPath: 'private/haus', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.7 },
-    decisions: [],
-    openItems: [],
-    confidence: 0.7,
-    rationale: 'x',
-  }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: name, summary: `Zusammenfassung: ${content}`, categoryPath: 'private/haus', docType: 'Angebot', mainTopic: 'Hausrenovierung' }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -84,7 +73,7 @@ describe('Solution proposal for open items (#46)', () => {
       sourceIds: [dec],
     });
     // note that is only found via the hybrid search
-    const note = app.services.graph.ensureEntity('note', 'Dachdecker Meier', 'Dachdecker Meier bietet Holzfaser-Dämmung an.');
+    const note = app.services.graph.ensureEntity({ type: 'note', name: 'Dachdecker Meier', description: 'Dachdecker Meier bietet Holzfaser-Dämmung an.' });
     await app.services.search.index({ type: 'note', id: note.id, title: note.name, content: 'Dachdecker Meier bietet Holzfaser Dämmung und Angebot an.' });
     app.llm.on('SolutionProposal', () => PROPOSAL);
 
@@ -116,10 +105,8 @@ describe('Solution proposal for open items (#46)', () => {
     expect(s.sources.find((x) => x.ref === 'S1')).toMatchObject({ id: dec, type: 'decision', used: true });
     expect(s.sources.some((x) => x.id === note.id)).toBe(true);
 
-    // stored and visible in the list
     const listed = (await app.ok('openItems:list', {})).find((i) => i.id === target.id)!;
     expect(listed.solution?.assessment).toBe(PROPOSAL.assessment);
-    // transmission log
     const log = await app.ok('llm:transmissions', {});
     expect(log.some((t) => t.purpose === 'Lösungsvorschlag' && t.success)).toBe(true);
   });
