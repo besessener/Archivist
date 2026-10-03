@@ -138,6 +138,30 @@ describe('run_workflow (#315)', () => {
   });
 });
 
+describe('Scheduled workflows (#313, #315)', () => {
+  it('the weekday of a workflow is set by remember and changed by update_memory, each after the user said „ja“', async () => {
+    const wording = { steps: ['Duplikate prüfen'], scheduleWeekday: 1 };
+    app.llm.agent = scriptedTurns(
+      question('Soll ich den Ablauf „Wochenrunde“ jeden Montag im Nachtlauf ausführen?'),
+      { calls: [{ name: 'remember', args: { kind: 'workflow', name: 'Wochenrunde', content: 'Duplikate prüfen', workflow: wording } }] },
+      { text: 'Gemerkt.' },
+    );
+    const asked = await app.ok('chat:send', { text: 'Merk dir: Jeden Montag Duplikate prüfen, Ablauf „Wochenrunde“' });
+    await app.ok('chat:send', { conversationId: asked.conversationId, text: 'Ja' });
+    const [stored] = await app.ok('agent:memory', { kind: 'workflow' });
+    expect(stored!.data).toMatchObject({ scheduleWeekday: 1 });
+
+    app.llm.agent = scriptedTurns(
+      question('Soll die Wochenrunde künftig am Freitag laufen?'),
+      { calls: [{ name: 'update_memory', args: { id: stored!.id, workflow: { ...wording, scheduleWeekday: 5 } } }] },
+      { text: 'Angepasst.' },
+    );
+    const change = await app.ok('chat:send', { text: 'Ab jetzt soll die Wochenrunde am Freitag laufen' });
+    await app.ok('chat:send', { conversationId: change.conversationId, text: 'Ja' });
+    expect((await app.ok('agent:memory', { kind: 'workflow' }))[0]!.data).toMatchObject({ scheduleWeekday: 5 });
+  });
+});
+
 describe('Corrections lead to rule proposals (#315)', () => {
   const docsOfType = async (docType: string, count: number) => {
     const ids: string[] = [];
