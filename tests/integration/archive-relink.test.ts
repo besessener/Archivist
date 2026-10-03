@@ -96,7 +96,7 @@ describe('Relinking moved archive files', () => {
       // an archiving that finished meanwhile now points at this very file
       app.services.ctx.database.sqlite.prepare('update documents set archive_rel_path = ? where id = ?').run(claimedRel, other.id);
       return realRun(task as never, input as never);
-    }) as never);
+    }));
 
     const result = await app.ok('archive:relink', { confirmed: true });
 
