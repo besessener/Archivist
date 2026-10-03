@@ -17,7 +17,7 @@ export function createHandlers(services: Services, host: HostApi): HandlerMap {
     ...appHandlers(services, host),
     ...agentHandlers(services, host),
     ...recordHandlers(services),
-    ...documentHandlers(services),
+    ...documentHandlers(services, host),
     ...knowledgeHandlers(services),
   };
 }

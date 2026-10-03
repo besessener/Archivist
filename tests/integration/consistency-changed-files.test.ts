@@ -42,4 +42,23 @@ describe('Archive check: changed archive files', () => {
     await app.services.consistency.run();
     expect(await changedFileHints()).toEqual([]);
   });
+
+  it('a same-size overwrite is found by the rolling checksum check and stays reported until the file matches again', async () => {
+    const targets: string[] = [];
+    for (let i = 0; i < 27; i += 1) targets.push(await archived(`beleg-${i}.txt`, `Quittung Nummer ${String(i).padStart(2, '0')} über 12 Euro`));
+    const victim = targets[7]!;
+    const original = fs.readFileSync(victim, 'utf8');
+    fs.writeFileSync(victim, original.replace('Quittung', 'Quittnug')); // same size, other content
+
+    // more files than one batch: after two runs every file was read once
+    await app.services.consistency.run();
+    await app.services.consistency.run();
+    expect(await changedFileHints()).toHaveLength(1);
+    await app.services.consistency.run();
+    expect(await changedFileHints(), 'a known changed file is read again on every run').toHaveLength(1);
+
+    fs.writeFileSync(victim, original);
+    await app.services.consistency.run();
+    expect(await changedFileHints()).toEqual([]);
+  });
 });

@@ -36,7 +36,9 @@ export function archivedEntry(archiving: { req: ArchiveItemRequest; row: DocRow;
 }
 
 /** Which sources `removeSources` is about to try to remove. */
-export function plannedRemovals(row: DocRow, mode: ArchiveItemRequest['mode']) {
+export type PlannedRemovals = { removedStaged: boolean; removedSource: boolean };
+
+export function plannedRemovals(row: DocRow, mode: ArchiveItemRequest['mode']): PlannedRemovals {
   return {
     removedStaged: Boolean(row.stagedPath && fs.existsSync(row.stagedPath)),
     removedSource: mode === 'move' && Boolean(row.sourcePath && fs.existsSync(row.sourcePath)),

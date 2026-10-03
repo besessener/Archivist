@@ -33,16 +33,10 @@ export async function checkStorage(run: CheckRun, archived: CheckedDocument[]): 
       });
       findings.count('misplaced_file');
     } else if (document.status === 'archived' && sizes[i] !== document.size) {
-      findings.insightKeys.add(`changed-file:${document.id}`);
-      deps.insights.upsert({
-        kind: 'misplaced_file',
-        title: `Archivdatei verändert: ${document.title}`,
-        explanation: `Die Datei ${absolutePath(root, relativePath)} hat eine andere Größe als beim Archivieren (${sizes[i]} statt ${document.size} Byte). Sie wurde möglicherweise überschrieben oder beschädigt; „Archiv prüfen“ vergleicht die Prüfsumme.`,
-        confidence: 0.9,
-        affected: [{ type: 'document', id: document.id, label: document.title }],
-        dedupeKey: `changed-file:${document.id}`,
+      reportChangedFile(run, {
+        document,
+        explanation: `Die Datei ${absolutePath(root, relativePath)} hat eine andere Größe als beim Archivieren (${sizes[i]} statt ${document.size} Byte). Sie wurde möglicherweise überschrieben oder beschädigt.`,
       });
-      findings.count('misplaced_file');
     } else if (document.categoryPath && !path.dirname(relativePath).replace(/\\/g, '/').startsWith(document.categoryPath)) {
       findings.insightKeys.add(`misplaced:${document.id}`);
       deps.insights.upsert({
@@ -56,6 +50,23 @@ export async function checkStorage(run: CheckRun, archived: CheckedDocument[]): 
       findings.count('misplaced_file');
     }
   }
+}
+
+/** Hint for an archive file whose size or checksum no longer matches the archived document; one hint per document. */
+export function reportChangedFile(run: CheckRun, found: { document: CheckedDocument; explanation: string }): void {
+  const { document, explanation } = found;
+  const key = `changed-file:${document.id}`;
+  if (run.findings.insightKeys.has(key)) return;
+  run.findings.insightKeys.add(key);
+  run.deps.insights.upsert({
+    kind: 'misplaced_file',
+    title: `Archivdatei verändert: ${document.title}`,
+    explanation,
+    confidence: 0.9,
+    affected: [{ type: 'document', id: document.id, label: document.title }],
+    dedupeKey: key,
+  });
+  run.findings.count('misplaced_file');
 }
 
 /** Index-only documents (#229): a vanished original becomes a hint, a changed one (other size) is re-read in place. */

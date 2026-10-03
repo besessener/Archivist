@@ -28,6 +28,7 @@ Dateien in `quarantine/` erscheinen in der Inbox unter „Quarantäne“: „Ord
 ## Datenbank
 
 - SQLite im WAL-Modus mit `synchronous=FULL`, Zugriff über better-sqlite3 + Drizzle.
+- `restore-pending.json` im Datenordner merkt eine Wiederherstellung für den nächsten Start vor; danach liegt die ersetzte Datenbank unter `database/vor-wiederherstellung-<Zeitstempel>/`.
 - Vor ausstehenden Migrationen legt Archivist eine Sicherung `backups/vor-migration-<Zeitstempel>.db` an (die drei neuesten bleiben); sie erscheint nicht unter „Vorhandene Backups“. Eine Datenbank, die eine neuere Version von Archivist angelegt hat, wird nicht geöffnet.
 - Schema: `packages/core/src/db/schema.ts` (Tabellen in `db/tables/`); Migrationen in `packages/core/migrations/`, beim Start automatisch angewendet. Ändern: [Datenbankschema ändern](../how-to/datenbankschema-aendern.md).
 - Die FTS5-Tabelle für die Stichwortsuche ist eine benutzerdefinierte Migration.

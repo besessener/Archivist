@@ -1,4 +1,4 @@
-import type { ArchiveItemRequest, ArchivePlan, ArchiveResult, VerifyReport } from '@archivist/shared';
+import type { ArchiveItemRequest, ArchivePlan, ArchiveResult, RelinkResult, VerifyReport } from '@archivist/shared';
 import { permissionError, toErrorInfo } from '../util/errors';
 import { ArchiveExecutor } from './archive-execute';
 import { ExtractedItemProposer, type ProposalSink } from './archive-extracted-items';
@@ -20,6 +20,7 @@ import {
   type RenameUndoData,
 } from './archive-model';
 import { ArchivePlanner } from './archive-plan';
+import { ArchiveRelinker, type RelinkUndoData } from './archive-relink';
 import { ArchiveRelocator } from './archive-relocate';
 import { RelocateUndo } from './archive-relocate-undo';
 import { ArchiveRenamer } from './archive-rename';
@@ -43,6 +44,7 @@ export class ArchiveService {
   private readonly relocator: ArchiveRelocator;
   private readonly renamer: ArchiveRenamer;
   private readonly maintenance: ArchiveMaintenance;
+  private readonly relinker: ArchiveRelinker;
 
   constructor({ undo, ...services }: ArchiveServiceDeps) {
     this.deps = { ...services, locks: new ArchiveLocks(), files: new ArchiveFileOps(services.ctx) };
@@ -52,6 +54,7 @@ export class ArchiveService {
     this.relocator = new ArchiveRelocator(this.deps, (documentId, warnings) => this.executor.reindexAfterCommit(documentId, warnings));
     this.renamer = new ArchiveRenamer(this.deps);
     this.maintenance = new ArchiveMaintenance(this.deps);
+    this.relinker = new ArchiveRelinker(this.deps);
     services.docs.useFileLock(this.deps.locks);
     this.registerUndo(undo);
   }
@@ -71,6 +74,10 @@ export class ArchiveService {
     undo.register('archive_relocate', {
       check: (d) => relocateUndo.check(d as RelocateUndoData),
       run: (d) => locks.guarded(() => relocateUndo.run(d as RelocateUndoData)),
+    });
+    undo.register('archive_relink', {
+      check: (d) => this.relinker.undoCheck(d as RelinkUndoData),
+      run: (d) => this.relinker.undoRun(d as RelinkUndoData),
     });
     // removed empty folders come back as (still empty) folders; main categories are never removed
     undo.register(FOLDERS_RESTORE_UNDO, {
@@ -190,6 +197,12 @@ export class ArchiveService {
     }
     this.deps.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
     return result;
+  }
+
+  /** Re-attaches archive files that were renamed or moved outside Archivist (matching checksum). Requires explicit confirmation. */
+  async relink(opts: { confirmed: boolean }): Promise<RelinkResult> {
+    if (!opts.confirmed) throw permissionError(UNCONFIRMED);
+    return this.deps.locks.guarded(() => this.relinker.relink());
   }
 
   /** Preview of renames: target names, conflicts with existing files and among each other – changes nothing. */

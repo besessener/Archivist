@@ -201,41 +201,46 @@ export class DocumentAnalyzer {
       analyzedBy: usedLlm ? 'llm' : 'local',
     };
     const title = c.title.slice(0, 200);
-    const stored = this.db
-      .update(documents)
-      .set({
-        title,
-        docType: c.docType,
-        summary: c.summary,
-        categoryPath: c.categoryPath,
-        persons: this.deps.persons.resolveNames(c.persons, { context: 'document', create: false }).names,
-        tags: c.tags,
-        dates: c.dates,
-        documentDate: c.documentDate,
-        confidence: c.confidence,
-        ...columns,
-        proposal,
-        llmStatus: llmStatusAfter(row, { usedLlm, decision: result.decision }),
-        status: 'proposed',
-        updatedAt: nowIso(),
-      })
-      // Only write the proposal if nobody archived (or ignored) the document while it was being analyzed.
-      .where(and(eq(documents.id, row.id), eq(documents.status, 'analyzing')))
-      .run();
-    if (!stored.changes) {
+    // document, graph node and notice change together: a failure in between leaves none of them
+    const stored = this.deps.ctx.database.transaction(() => {
+      const written = this.db
+        .update(documents)
+        .set({
+          title,
+          docType: c.docType,
+          summary: c.summary,
+          categoryPath: c.categoryPath,
+          persons: this.deps.persons.resolveNames(c.persons, { context: 'document', create: false }).names,
+          tags: c.tags,
+          dates: c.dates,
+          documentDate: c.documentDate,
+          confidence: c.confidence,
+          ...columns,
+          proposal,
+          llmStatus: llmStatusAfter(row, { usedLlm, decision: result.decision }),
+          status: 'proposed',
+          updatedAt: nowIso(),
+        })
+        // Only write the proposal if nobody archived (or ignored) the document while it was being analyzed.
+        .where(and(eq(documents.id, row.id), eq(documents.status, 'analyzing')))
+        .run();
+      if (!written.changes) return false;
+      this.deps.graph.registerNode({ type: 'document', id: row.id, name: title, description: c.summary });
+      this.deps.notifications.create({
+        title: 'Klassifikation bereit',
+        description: `„${c.title}“ → ${c.categoryPath} (${Math.round(c.confidence * 100)} % sicher)`,
+        type: 'classification_ready',
+        priority: 'low',
+        affectedEntityIds: [row.id],
+        proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
+        dedupeKey: `classified:${row.id}`,
+      });
+      return true;
+    });
+    if (!stored) {
       this.deps.ctx.logger.info('documents', 'Analysis result discarded: document status changed in the meantime', { documentId: row.id });
       return { usedLlm, warning, skipped: true };
     }
-    this.deps.graph.registerNode({ type: 'document', id: row.id, name: title, description: c.summary });
-    this.deps.notifications.create({
-      title: 'Klassifikation bereit',
-      description: `„${c.title}“ → ${c.categoryPath} (${Math.round(c.confidence * 100)} % sicher)`,
-      type: 'classification_ready',
-      priority: 'low',
-      affectedEntityIds: [row.id],
-      proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
-      dedupeKey: `classified:${row.id}`,
-    });
     this.deps.ctx.events.changed('documents', 'knowledge', 'status');
     return { usedLlm, warning };
   }
