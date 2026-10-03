@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
-import type { AgentAdapterId, AppErrorInfo, LlmTestResult, LlmTransmission } from '@archivist/shared';
+import { checkLlmBaseUrl, type AgentAdapterId, type AppErrorInfo, type LlmTestResult, type LlmTransmission } from '@archivist/shared';
 import type { AppContext } from '../context';
-import { AppError, toErrorInfo } from '../util/errors';
+import { AppError, toErrorInfo, validationError } from '../util/errors';
 import { redactSecrets } from '../util/redact';
 import { abortedError, mapHttpError } from '../util/llm-errors';
 import type { SecretService } from './secret';
@@ -68,6 +68,12 @@ interface Transfer {
 
 const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
+/** A stored URL from an older version may still be plain http:// on a remote host: nothing is sent to it. */
+function assertSecureBaseUrl(baseUrl: string): void {
+  const check = checkLlmBaseUrl(baseUrl);
+  if (!check.ok) throw validationError(check.message);
+}
+
 export type LlmServiceDeps = { ctx: AppContext; settings: SettingsService; secrets: SecretService; fetchImpl?: FetchLike; retryDelayMs?: number };
 
 /** OpenAI-compatible Responses API client: every transmission is logged masked, structured answers are validated with Zod. */
@@ -113,6 +119,7 @@ export class LlmService {
     const model = (overrides.model ?? llm.model).trim();
     const apiKey = overrides.apiKey ?? this.deps.secrets.getApiKey();
     if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
+    assertSecureBaseUrl(baseUrl);
     return { baseUrl, model, apiKey };
   }
 
@@ -299,6 +306,7 @@ export class LlmService {
     const llm = this.deps.settings.get().llm;
     const apiKey = this.deps.secrets.getApiKey();
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
+    assertSecureBaseUrl(llm.baseUrl);
     const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000)));
     const url = endpointUrl(llm.baseUrl, 'embeddings');
     let success = false;

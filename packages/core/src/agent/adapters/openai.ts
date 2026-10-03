@@ -2,7 +2,7 @@ import type { AgentEffort } from '@archivist/shared';
 import { abortedError, mapHttpError } from '../../util/llm-errors';
 import { AppError } from '../../util/errors';
 import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
-import { previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
+import { authHeaders, previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
 
 /** Output item of the Responses API as far as the adapter reads it. */
 interface OutputItem {
@@ -301,8 +301,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream, application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-          'api-key': this.config.apiKey,
+          ...authHeaders(this.url, this.config.apiKey),
         },
         body,
         signal: controller.signal,

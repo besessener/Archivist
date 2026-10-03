@@ -8,11 +8,18 @@ export function initSettings(page: Page) {
   const dialog = page.getByTestId('archive-root-dialog');
   const locators = {
     tabs: {
+      llm: page.getByTestId('tab-llm'),
       privacy: page.getByTestId('tab-privacy'),
       agent: page.getByTestId('tab-agent'),
       archive: page.getByTestId('tab-archive'),
       notifications: page.getByTestId('tab-notifications'),
       backups: page.getByTestId('tab-backups'),
+    },
+    llm: {
+      baseUrl: page.getByTestId('settings-baseurl'),
+      baseUrlError: page.getByTestId('s-baseurl-error'),
+      save: page.getByTestId('settings-save'),
+      testConnection: page.getByTestId('settings-test-connection'),
     },
     privacy: {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
@@ -94,6 +101,9 @@ export function initSettings(page: Page) {
     },
   };
   const interactions = {
+    openLlm: async () => {
+      await locators.tabs.llm.click();
+    },
     openPrivacy: async () => {
       await locators.tabs.privacy.click();
     },

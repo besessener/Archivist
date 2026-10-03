@@ -17,6 +17,14 @@ describe('OpenAI Responses adapter (#297)', () => {
     expect(['low', 'medium', 'high', 'xhigh', 'max'].map((e) => openAiEffort(e as never))).toEqual(['low', 'medium', 'high', 'high', 'high']);
   });
 
+  it('sends the key only as api-key to an Azure endpoint (#209)', async () => {
+    const t = fakeFetch(json(completed([{ type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }])));
+    const { config } = adapterSetup({ baseUrl: 'https://resource.openai.azure.com/openai/v1', model: 'gpt-5', fetchImpl: t.fetchImpl });
+    await new OpenAiResponsesAdapter(config).turn(request([user('Hallo')]));
+    expect(t.sent[0]!.headers['api-key']).toBe('sk-test-KEY-0123456789');
+    expect(t.sent[0]!.headers).not.toHaveProperty('authorization');
+  });
+
   it('sends model, instructions, input items, function tools and the fixed options', async () => {
     const base = uniqueBase();
     const t = fakeFetch(json(completed([{ type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }])));
@@ -40,7 +48,7 @@ describe('OpenAI Responses adapter (#297)', () => {
     const [req] = t.sent;
     expect(req!.url).toBe(`${base}/responses`);
     expect(req!.headers.authorization).toBe('Bearer sk-test-KEY-0123456789');
-    expect(req!.headers['api-key']).toBe('sk-test-KEY-0123456789');
+    expect(req!.headers).not.toHaveProperty('api-key');
     expect(req!.body).toEqual({
       model: 'gpt-5',
       instructions: 'Du bist Archivist.',
