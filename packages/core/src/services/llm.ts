@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
-import { checkLlmBaseUrl, type AgentAdapterId, type AppErrorInfo, type LlmTestResult, type LlmTransmission } from '@archivist/shared';
+import { checkLlmBaseUrl, type AgentAdapterId, type LlmTestResult, type LlmTransmission } from '@archivist/shared';
 import type { AppContext } from '../context';
-import { AppError, toErrorInfo, validationError } from '../util/errors';
+import { AppError, validationError } from '../util/errors';
 import { redactSecrets } from '../util/redact';
 import { abortedError, mapHttpError } from '../util/llm-errors';
 import type { SecretService } from './secret';
@@ -10,6 +10,7 @@ import type { SettingsService } from './settings';
 import { AnthropicAdapter, detectAdapter, type AdapterConfig } from '../agent/adapters';
 import type { FetchLike } from '../agent/adapters/common';
 import { EndpointHealth } from './llm/endpoint-health';
+import { runConnectionTest, runStructuredTest } from './llm/connection-test';
 import { endpointUrl, postJson, type PostRequest } from './llm/http';
 import { isUnsupportedParamError, paramsToDrop, presentParams, withoutParams, type OptionalParam } from './llm/optional-params';
 import { correctionInput, issuesText, parseJsonAnswer, preparedInput, structuredInstructions } from './llm/prompt-text';
@@ -46,6 +47,8 @@ interface Connection {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** A connection with unsaved values (settings dialog test) must not touch the shared endpoint status. */
+  source: 'saved' | 'unsaved';
 }
 
 /** A request after the privacy gate: input and instructions are cut and masked, ready to send. */
@@ -61,6 +64,7 @@ interface PreparedRequest {
 /** One logged transmission: its attempts (retried while `maxAttempts` allows) share one log entry. */
 interface Transfer {
   transmission: Omit<Transmission, 'success'>;
+  source: Connection['source'];
   signal?: AbortSignal;
   attempt: () => Promise<string>;
   maxAttempts: (err: unknown) => number;
@@ -120,7 +124,8 @@ export class LlmService {
     const apiKey = overrides.apiKey ?? this.deps.secrets.getApiKey();
     if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
     assertSecureBaseUrl(baseUrl);
-    return { baseUrl, model, apiKey };
+    const saved = baseUrl === llm.baseUrl.trim() && model === llm.model.trim() && apiKey === this.deps.secrets.getApiKey();
+    return { baseUrl, model, apiKey, source: saved ? 'saved' : 'unsaved' };
   }
 
   private post(request: PostRequest): Promise<{ status: number; text: string }> {
@@ -170,10 +175,10 @@ export class LlmService {
     try {
       const text = await this.withRetries(transfer);
       success = true;
-      this.health.markReachable();
+      if (transfer.source === 'saved') this.health.markReachable();
       return text;
     } catch (err) {
-      this.health.markFailed(err, transfer.signal);
+      if (transfer.source === 'saved') this.health.markFailed(err, transfer.signal);
       throw err;
     } finally {
       this.transmissions.record({ ...transfer.transmission, success });
@@ -209,6 +214,7 @@ export class LlmService {
     const post = () => this.post({ url, apiKey: connection.apiKey, body: withoutParams(body, rejected), timeoutMs: llm.timeoutMs, signal });
     return this.transfer({
       transmission: this.transmissionOf(prepared, url),
+      source: connection.source,
       signal,
       // a hanging endpoint is asked at most twice (each attempt waits the full timeout), other transient errors three times
       maxAttempts: (err) => (isTimeout(err) ? 2 : 3),
@@ -235,7 +241,8 @@ export class LlmService {
 
   /** Connection data for the agent adapters; every transmission goes into the transmission log. */
   adapterConfig(overrides: LlmOverrides = {}): AdapterConfig {
-    const { baseUrl, model, apiKey } = this.connection(overrides);
+    const { baseUrl, model, apiKey, source } = this.connection(overrides);
+    const saved = source === 'saved';
     return {
       baseUrl,
       model,
@@ -244,7 +251,10 @@ export class LlmService {
       fetchImpl: this.fetchImpl,
       log: (transmission) => {
         this.transmissions.record(transmission);
-        if (transmission.success) this.health.markReachable();
+        if (saved && transmission.success) this.health.markReachable();
+      },
+      fail: (err, signal) => {
+        if (saved) this.health.markFailed(err, signal);
       },
       warn: (message, data) => this.deps.ctx.logger.warn('llm', message, data),
     };
@@ -259,9 +269,10 @@ export class LlmService {
   private completeViaClaude(prepared: PreparedRequest): Promise<string> {
     const { connection, request, signal } = prepared;
     const config = this.adapterConfig(connection);
-    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined });
+    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined, fail: () => undefined });
     return this.transfer({
       transmission: this.transmissionOf(prepared, `${connection.baseUrl} (Messages API)`),
+      source: connection.source,
       signal,
       maxAttempts: () => 3,
       attempt: async () => {
@@ -296,9 +307,12 @@ export class LlmService {
       }
       this.deps.ctx.logger.warn('llm', 'Invalid structured LLM output', { schema: request.schemaName, issues: lastIssues, attempt });
     }
-    throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
+    const malformed = new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
       details: `${request.schemaName}: ${lastIssues}; Auszug: ${lastRaw.slice(0, 160)}`,
     });
+    // the transport succeeded, but the endpoint is not usable for structured answers
+    if (this.connection(overrides).source === 'saved') this.health.markFailed(malformed, request.signal ?? llmCancelScope.getStore());
+    throw malformed;
   }
 
   /** Embeddings via /embeddings (only if an embedding model is configured). */
@@ -322,7 +336,11 @@ export class LlmService {
       const parsed = embeddingsSchema.safeParse(JSON.parse(response.text));
       if (!parsed.success || parsed.data.data.length !== texts.length) throw new AppError('llm_error', 'Unerwartete Embedding-Antwort.');
       success = true;
+      this.health.markReachable();
       return parsed.data.data.map((entry) => entry.embedding);
+    } catch (err) {
+      this.health.markFailed(err);
+      throw err;
     } finally {
       this.transmissions.record({
         purpose,
@@ -337,44 +355,17 @@ export class LlmService {
     }
   }
 
-  async testConnection(overrides: LlmOverrides = {}): Promise<LlmTestResult> {
-    const started = Date.now();
-    try {
-      const reply = await this.complete(
-        {
-          instructions: 'Du bist ein Verbindungstest. Antworte mit genau einem Wort.',
-          input: 'Antworte mit dem Wort: OK',
-          purpose: 'Verbindungstest',
-          maxOutputTokens: 64,
-          bypassPrivacy: true,
-        },
-        overrides,
-      );
-      return { ok: true, latencyMs: Date.now() - started, message: 'Verbindung erfolgreich.', modelReply: reply.trim().slice(0, 80), error: null };
-    } catch (err) {
-      const info: AppErrorInfo = toErrorInfo(err);
-      return { ok: false, latencyMs: null, message: info.message, modelReply: null, error: info };
-    }
+  testConnection(overrides: LlmOverrides = {}): Promise<LlmTestResult> {
+    return runConnectionTest((request, connection) => this.complete(request, connection), overrides);
   }
 
   /** Same path as every feature (completeJson); no output limit, so reasoning tokens cannot cut the answer short. */
-  async testStructuredAnswer(overrides: LlmOverrides): Promise<{ ok: boolean; message: string }> {
-    try {
-      await this.completeJson(
-        z.object({ ok: z.boolean() }),
-        {
-          instructions: 'Du bist ein Verbindungstest. Antworte mit einem JSON-Objekt, bei dem ok true ist.',
-          input: 'Antworte mit {"ok": true}.',
-          purpose: 'Verbindungstest (strukturierte Antwort)',
-          schemaName: 'ConnectionTest',
-          bypassPrivacy: true,
-        },
-        overrides,
-      );
-      return { ok: true, message: 'Strukturierte Antworten funktionieren.' };
-    } catch (err) {
-      return { ok: false, message: toErrorInfo(err).message };
-    }
+  testStructuredAnswer(overrides: LlmOverrides): Promise<{ ok: boolean; message: string }> {
+    return runStructuredTest((schema, request, connection) => this.completeJson(schema, request, connection), overrides);
+  }
+
+  pruneTransmissions(days: number): number {
+    return this.transmissions.prune(days);
   }
 
   listTransmissions(limit = 100): LlmTransmission[] {

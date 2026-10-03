@@ -9,9 +9,6 @@ import { createPageTree, type PageTree } from './pages';
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- the electron package exports the binary path, which its typings (the Electron API) do not describe
 const electronPath = require('electron') as unknown as string;
 const appDir = path.resolve(__dirname, '../../apps/desktop');
-// ARCHIVIST_E2E_PACKAGED=1: test the packaged application (electron-builder --dir) instead of the development build
-const packaged = process.env.ARCHIVIST_E2E_PACKAGED === '1';
-const packagedBinary = path.join(appDir, 'release', 'linux-unpacked', 'archivist');
 
 /** Fresh, isolated working directory per test: the app's data folder and a "Downloads" folder that serves as scan target. */
 export interface Workspace {
@@ -35,8 +32,8 @@ async function launch(env: Record<string, string>): Promise<ElectronApplication>
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await electron.launch({
-        executablePath: packaged ? packagedBinary : electronPath,
-        args: [...(packaged ? [] : [appDir]), '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+        executablePath: electronPath,
+        args: [appDir, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
         timeout: 45_000,
         env,
       });

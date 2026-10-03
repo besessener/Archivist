@@ -50,6 +50,8 @@ export interface DocumentAccess {
   folderLlmAllowedFor(p: string): boolean;
   readablePath(r: DocRow): string;
   indexDocument(id: string): Promise<void>;
+  /** Re-indexes in the background, a few at a time (bulk changes). */
+  indexDocumentsInBackground(ids: string[]): void;
   archivePath(rel: string | null): string | null;
 }
 

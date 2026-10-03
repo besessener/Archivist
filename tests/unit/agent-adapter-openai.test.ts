@@ -163,11 +163,11 @@ describe('OpenAI Responses adapter (#297)', () => {
   it('a stream with an error event or without a final response is a retryable error', async () => {
     for (const body of [sse([{ type: 'error', message: 'overloaded' }]), sse([{ type: 'response.output_text.delta', delta: 'abgebr' }])]) {
       const t = fakeFetch(() => streamed(body));
-      const err = await new OpenAiResponsesAdapter(adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: t.fetchImpl }).config)
-        .turn(request([user('x')]))
-        .catch((e: unknown) => e);
+      const { config, failures } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: t.fetchImpl });
+      const err = await new OpenAiResponsesAdapter(config).turn(request([user('x')])).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(AppError);
       expect((err as AppError).retryable).toBe(true);
+      expect(failures).toEqual([err]);
     }
   });
 

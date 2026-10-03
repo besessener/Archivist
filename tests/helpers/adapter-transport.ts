@@ -37,15 +37,17 @@ export const uniqueModel = (model: string) => `${model}-t${(uniqueCounter += 1)}
 /** Adapter configuration with a test key that records transmission logs and warnings. */
 export function adapterSetup(endpoint: { baseUrl: string; model: string; fetchImpl: typeof fetch }) {
   const logs: Array<Record<string, unknown>> = [];
+  const failures: unknown[] = [];
   const warns: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const config: AdapterConfig = {
     ...endpoint,
     apiKey: 'sk-test-KEY-0123456789',
     timeoutMs: 10_000,
     log: (entry) => logs.push(entry),
+    fail: (err) => failures.push(err),
     warn: (message, data) => warns.push({ message, data }),
   };
-  return { config, logs, warns };
+  return { config, logs, warns, failures };
 }
 
 export const TOOLS: ToolSpec[] = [
