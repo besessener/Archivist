@@ -51,6 +51,7 @@ describe('Database migrations', () => {
     expect(s2.applied).toBe(s1.applied);
     // WAL + foreign keys + consistent backup via the SQLite backup API
     expect(db.sqlite.pragma('journal_mode', { simple: true })).toBe('wal');
+    expect(db.sqlite.pragma('synchronous', { simple: true }), 'FULL: commits are durable before originals are deleted').toBe(2);
     db.sqlite.prepare("insert into categories (id, path, approved, created_at) values ('1','test',1,'now')").run();
     return db.backupTo(path.join(dir, 'backup.db')).then(() => {
       const copy = new Database(path.join(dir, 'backup.db'), { readonly: true });

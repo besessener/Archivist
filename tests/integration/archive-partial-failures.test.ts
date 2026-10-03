@@ -73,6 +73,24 @@ async function archived(name: string, content: string, loc: string): Promise<str
   return id;
 }
 
+describe('Archiving: the archive copy cannot be flushed to disk', () => {
+  it('fails without touching the source and leaves no copy behind', async () => {
+    const { src, id } = await imported('sync.txt', 'Nicht flushbares Dokument');
+    const handle = await fsp.open(src, 'r');
+    const failingSync = vi.spyOn(Object.getPrototypeOf(handle), 'sync').mockRejectedValue(errno('EIO'));
+    await handle.close();
+
+    const res = await archive(id);
+
+    expect(failingSync).toHaveBeenCalled();
+    expect(res).toMatchObject({ success: 0, failed: 1 });
+    expect(res.items[0]!.message).toMatch(/nicht kopiert werden.*EIO.*nichts verändert/);
+    expect(fs.existsSync(src)).toBe(true);
+    expect(filesIn(archiveRoot())).toEqual([]);
+    expect(row(id).status).not.toBe('archived');
+  });
+});
+
 describe('Archiving: the inbox copy cannot be removed after the commit', () => {
   it('stays validly archived with an undo entry; the inbox copy is marked and removed later', async () => {
     const { src, id } = await imported('offen.txt', 'Im Viewer geöffnetes Dokument');

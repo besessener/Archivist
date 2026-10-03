@@ -26,6 +26,26 @@ export async function hasChecksum(p: string, sha256: string): Promise<boolean> {
   }
 }
 
+/** Flushes a file and its folder entry to disk; the folder flush is best effort (Windows cannot open folders). */
+async function syncToDisk(p: string): Promise<void> {
+  const file = await fsp.open(p, 'r+');
+  try {
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+  try {
+    const folder = await fsp.open(path.dirname(p), 'r');
+    try {
+      await folder.sync();
+    } finally {
+      await folder.close();
+    }
+  } catch {
+    // no folder handles on this platform: the file itself is flushed
+  }
+}
+
 /** Removes empty folders from `dir` upwards to `root` (never non-empty ones, never the root). */
 export async function pruneEmptyDirs(root: string, dir: string): Promise<void> {
   let current = dir;
@@ -82,6 +102,7 @@ export class ArchiveFileOps {
       const dest = await uniquePath(target.dir, target.fileName);
       try {
         await fsp.copyFile(target.source, dest, fs.constants.COPYFILE_EXCL);
+        await syncToDisk(dest);
         return dest;
       } catch (err) {
         if (errorCode(err) === 'EEXIST') continue; // someone else's file: never touch it, try the next free name
@@ -106,6 +127,7 @@ export class ArchiveFileOps {
   /** Places the source like `placeExclusive`, then removes it; if that fails, the new entry is taken back or reported. */
   async moveExclusive(placement: FilePlacement): Promise<string> {
     const { dest, linked } = await this.placeExclusive(placement);
+    await syncToDisk(dest).catch((err) => this.failCopy(err, dest));
     try {
       await fsp.unlink(placement.source);
     } catch (err) {
