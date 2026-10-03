@@ -15,6 +15,5 @@ export default {
   tempDirName: '.stryker-tmp',
   cleanTempDir: true,
   // Full run measured 97.2 % (the rest: equivalent mutants); the thresholds are only raised, never lowered.
-  incrementalFile: 'reports/stryker-incremental.json',
   thresholds: { high: 95, low: 95, break: 95 },
 };
