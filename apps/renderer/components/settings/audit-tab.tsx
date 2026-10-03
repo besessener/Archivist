@@ -23,7 +23,7 @@ const MAX_ENTRIES = 5000;
 function ChainStatus() {
   const verification = useQuery('audit:verify', {}, { scopes: ['audit'] });
   if (!verification.data) return null;
-  if (verification.data.brokenEntryId === null)
+  if (verification.data.brokenEntryId === null && !verification.data.truncated)
     return (
       <p className="text-xs text-muted-foreground" data-testid="audit-chain-ok">
         {verification.data.checked} Einträge wurden seit dem Schreiben nicht verändert.
@@ -31,8 +31,11 @@ function ChainStatus() {
     );
   return (
     <Notice tone="danger" title="Das Änderungsprotokoll wurde nachträglich verändert" data-testid="audit-chain-broken">
-      Ein Eintrag wurde nach dem Schreiben geändert, entfernt oder eingefügt (erster betroffener Eintrag: {verification.data.brokenEntryId}). Prüfe, ob andere
-      Programme auf die Datenbank von Archivist zugegriffen haben.
+      {verification.data.brokenEntryId !== null && (
+        <>Ein Eintrag wurde nach dem Schreiben geändert, entfernt oder eingefügt (erster betroffener Eintrag: {verification.data.brokenEntryId}). </>
+      )}
+      {verification.data.truncated && <>Es fehlen Einträge am Anfang oder Ende des Protokolls. </>}
+      Prüfe, ob andere Programme auf die Datenbank von Archivist zugegriffen haben.
     </Notice>
   );
 }

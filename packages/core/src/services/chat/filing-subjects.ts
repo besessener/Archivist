@@ -80,7 +80,7 @@ export class FilingSubjects {
       name: e.name,
       docs: archivedWithFile(this.deps.docs.list({ [e.type === 'topic' ? 'topicId' : 'projectId']: e.id, limit: 200 })),
     });
-    const exact = this.deps.graph.findByName('topic', subject) ?? this.deps.graph.findByName('project', subject);
+    const exact = this.deps.graph.findByNameOrAlias('topic', subject) ?? this.deps.graph.findByNameOrAlias('project', subject);
     const exactHit = exact ? withDocs(exact) : null;
     if (exactHit?.docs.length) return [exactHit];
     const wanted = subjectTokens(subject);

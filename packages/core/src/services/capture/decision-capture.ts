@@ -101,16 +101,16 @@ export class DecisionCapture {
     const unclear = isNew && topic && !project && request.intent.intent === 'decision_new' && extracted.topicIsProject === null ? topic : null;
     if (!unclear) return { topic, project, clarify: null };
     // do not ask for names that are already known, use the existing entry instead
-    if (this.deps.graph.findByName('project', unclear)) return { topic, project: unclear, clarify: null };
-    if (this.deps.graph.findByName('topic', unclear)) return { topic, project, clarify: null };
+    if (this.deps.graph.findByNameOrAlias('project', unclear)) return { topic, project: unclear, clarify: null };
+    if (this.deps.graph.findByNameOrAlias('topic', unclear)) return { topic, project, clarify: null };
     return { topic, project, clarify: unclear };
   }
 
   /** A name confirmed as project is one entry: the topic of the same name moves into the project (undoable merge). */
   private async moveTopicToProject(name: string): Promise<void> {
     const { graph } = this.deps;
-    const topic = graph.findByName('topic', name);
-    const project = graph.findByName('project', name);
+    const topic = graph.findByNameOrAlias('topic', name);
+    const project = graph.findByNameOrAlias('project', name);
     if (!topic || !project) return;
     await graph.merge({ sourceIds: [topic.id], targetId: project.id, allowCrossType: true }, { trigger: 'chat' });
   }

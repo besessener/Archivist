@@ -51,7 +51,7 @@ export class LookupReplies {
 
   /** The newest archived documents of a known topic or project; filtered in the database so inbox documents cannot hide them. */
   private subjectDocuments(name: string): { docs: SourceReference[]; heading: string | null } {
-    const subject = this.deps.graph.findByName('topic', name) ?? this.deps.graph.findByName('project', name);
+    const subject = this.deps.graph.findByNameOrAlias('topic', name) ?? this.deps.graph.findByNameOrAlias('project', name);
     if (!subject) return { docs: [], heading: null };
     const filter = { [subject.type === 'topic' ? 'topicId' : 'projectId']: subject.id, statuses: ARCHIVED_STATUSES };
     const rows = this.deps.docs.list({ ...filter, limit: TOPIC_DOCUMENT_LIMIT });
@@ -110,9 +110,9 @@ export class LookupReplies {
 
   /** The topic or project of a timeline query: exact name first, otherwise the most similar one; null when none fits. */
   private timelineSubject(name: string): TimelineSubject | null {
-    const topic = this.deps.graph.findByName('topic', name);
+    const topic = this.deps.graph.findByNameOrAlias('topic', name);
     if (topic) return { topicId: topic.id, label: `Thema „${topic.name}“` };
-    const project = this.deps.graph.findByName('project', name);
+    const project = this.deps.graph.findByNameOrAlias('project', name);
     if (project) return { projectId: project.id, label: `Projekt „${project.name}“` };
     const similar = this.deps.graph.listEntities({ query: name, limit: 5 }).find((e) => e.type === 'topic' || e.type === 'project');
     if (!similar) return null;

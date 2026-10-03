@@ -2,12 +2,12 @@ import type { AuditEntry, AuditVerification } from '@archivist/shared';
 import { and, asc, desc, eq, inArray, isNotNull, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import type { Db } from '../db/database';
-import { auditLog, entities } from '../db/schema';
+import { appState, auditLog, entities } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
 import { AppError } from '../util/errors';
 import { currentRun } from '../agent/scope';
-import { chainHash, verifyChain } from './audit-chain';
+import { ANCHOR_KEY, chainHash, parseAnchor, verifyAuditLog, type ChainAnchor } from './audit-chain';
 
 export interface AuditInput {
   action: string;
@@ -78,9 +78,11 @@ export class AuditService {
       success: input.success ?? true,
       runId: run?.runId ?? null,
     };
-    // invariant: reading the newest hash and inserting the entry that chains to it is one step
+    // invariant: reading the newest hash, inserting the entry that chains to it and moving the anchor is one step
     this.ctx.database.db.transaction((tx) => {
       const prevHash = this.newestHash(tx);
+      const hash = chainHash(fixed, prevHash);
+      const anchor = this.readAnchor(tx);
       tx.insert(auditLog)
         .values({
           ...fixed,
@@ -89,9 +91,11 @@ export class AuditService {
           undoType: undo?.type ?? null,
           undoData: (undo?.data ?? null) as ArchivistJson | null,
           prevHash,
-          hash: chainHash(fixed, prevHash),
+          hash,
         })
         .run();
+      // without an anchor yet (log from before it) the current rows are the baseline
+      this.writeAnchor(tx, { count: anchor ? anchor.count + 1 : this.chainedCount(tx), hash });
     });
     this.ctx.events.changed('audit');
     for (const listener of this.listeners) {
@@ -115,14 +119,36 @@ export class AuditService {
     );
   }
 
-  /** Checks the hash chain: no entry was changed, removed or inserted since it was written (entries from before the chain are not covered). */
+  private readAnchor(db: Pick<Db, 'select'>): ChainAnchor | null {
+    return parseAnchor(db.select().from(appState).where(eq(appState.key, ANCHOR_KEY)).get()?.value ?? null);
+  }
+
+  private writeAnchor(db: Pick<Db, 'insert'>, anchor: ChainAnchor): void {
+    const value = JSON.stringify(anchor);
+    const updatedAt = nowIso();
+    db.insert(appState).values({ key: ANCHOR_KEY, value, updatedAt }).onConflictDoUpdate({ target: appState.key, set: { value, updatedAt } }).run();
+  }
+
+  private chainedCount(db: Pick<Db, 'select'>): number {
+    return (
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(auditLog)
+        .where(isNotNull(auditLog.hash))
+        .get()?.count ?? 0
+    );
+  }
+
+  /** Checks the hash chain and the separately kept anchor: no entry was changed, removed, inserted or cut off since it was written (entries from before the chain are not covered). */
   verify(): AuditVerification {
-    return verifyChain(
-      this.ctx.database.db
+    const db = this.ctx.database.db;
+    return verifyAuditLog(
+      db
         .select()
         .from(auditLog)
         .orderBy(asc(sql`rowid`))
         .all(),
+      this.readAnchor(db),
     );
   }
 

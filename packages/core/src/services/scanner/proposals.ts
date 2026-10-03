@@ -87,7 +87,8 @@ export class ScanProposals {
 
   private planGroup(key: string, group: RowGroup) {
     const { graph } = this.deps;
-    const known = (group.project && graph.findByName('project', group.project)) || (group.topic && graph.findByName('topic', group.topic)) || null;
+    const known =
+      (group.project && graph.findByNameOrAlias('project', group.project)) || (group.topic && graph.findByNameOrAlias('topic', group.topic)) || null;
     const decisions = group.rows.filter((row) => (proposalOf(row)?.possibleDecisions.length ?? 0) > 0).length;
     const duplicates = group.rows.filter((row) => proposalOf(row)?.duplicateOfDocumentId).length;
     const label = known ? `${known.type === 'project' ? 'Projekt' : 'Thema'} „${known.name}“` : `„${group.label}“`;
