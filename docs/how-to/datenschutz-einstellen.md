@@ -14,6 +14,10 @@ So legst du fest, was Archivist an den LLM-Endpunkt senden darf.
 
 Die Auswahl wird sofort gespeichert; der aktive Modus steht darunter. Wechselst du in „vorher fragen“ oder „nur lokal“ das Embedding-Modell, geht dadurch nichts hinaus: Lokal eingebettete Einträge bleiben lokal. Was die Modi im Einzelnen bewirken, steht in der [Referenz](../reference/aktionsstufen.md#llm-datenschutz).
 
+## Einwilligung bei großen Läufen
+
+Im Modus „vorher fragen“ fragt Archivist bei **Alle N neuen Dateien analysieren** (Scan) und bei **Neu verarbeiten** (Dokumente) **einmal** für den ganzen Lauf: Der Dialog nennt, wie viele Dateien oder Dokumente insgesamt anstehen, wie viele davon laut deinen Einstellungen (Ausschlüsse, Ordnerfreigabe, Dateityp) überhaupt an das LLM gehen dürfen, und eine grobe Token-Schätzung. Ohne Häkchen läuft der Lauf rein lokal. Im Modus „automatisch“ startet der Lauf ohne Dialog, in „nur lokal“ geht nichts hinaus. Ein per Drag-and-Drop importierter Ordner wird im Modus „vorher fragen“ nur lokal analysiert. Jede Anfrage eines Laufs steht einzeln im Übertragungsprotokoll.
+
 ## Begrenzen, wie viel Text an das Embedding-Modell geht
 
 Mit einem Embedding-Modell im Modus `auto` geht der Text freigegebener Dokumente abschnittsweise an `/embeddings`. Wie viel davon, begrenzt **Einstellungen → KI → maximale Eingabegröße** (`llm.maxInputChars`, Standard 24 000 Zeichen): Pro Dokument gehen höchstens so viele Zeichen insgesamt hinaus, Titel jedes Abschnitts eingerechnet, vor der Maskierung. Der Rest des Dokuments bekommt nur lokale Vektoren. Willst du, dass von einem Dokument nur ein kleiner Anfang den Rechner verlässt, senke den Wert; willst du gar nichts senden, lass das Embedding-Modell leer oder wähle `confirm`.

@@ -1,6 +1,6 @@
 import { runSummary, progressLine } from '../util/bulk-text';
 import { untilSettled } from './analysis-retry';
-import type { DocumentService } from './documents';
+import type { AnalysisResult, AnalyzeOptions } from './document-analysis';
 import { isJobCancelled, type JobContext, type JobQueueService } from './jobs';
 import type { NotificationService } from './notifications';
 import type { AppContext } from '../context';
@@ -37,9 +37,14 @@ export interface BatchState {
 
 export const emptyBatchState = (): BatchState => ({ after: null, analyzed: 0, failed: 0, skipped: 0, failures: [] });
 
+/** What the batch needs of the document service (typed by shape to keep the modules acyclic). */
+export interface BatchDocuments {
+  analyze(id: string, opts: AnalyzeOptions): Promise<AnalysisResult>;
+}
+
 export interface BatchDeps {
   ctx: AppContext;
-  documents: DocumentService;
+  documents: BatchDocuments;
   jobs: JobQueueService;
   notifications: NotificationService;
 }

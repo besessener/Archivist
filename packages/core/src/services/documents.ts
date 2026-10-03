@@ -63,13 +63,13 @@ export class DocumentService {
     this.deps = { ...services, documents: this, nearDuplicates: this.nearDuplicates };
     this.importer = new DocumentImporter(this.deps);
     this.analyzer = new DocumentAnalyzer(this.deps);
-    this.reanalysis = new DocumentReanalysis(this.deps, this.analyzer);
     this.batch = new DocumentBatchAnalysis({ ctx: services.ctx, documents: this, jobs: services.jobs, notifications: services.notifications });
     this.folderImport = new FolderImport(this.deps, this.importer, this.batch);
     this.indexRepair = new DocumentIndexRepair(services.ctx, this);
     this.rereader = new DocumentRereader(this.deps);
     this.metadata = new DocumentMetadataEditor(this.deps);
     this.metadata.registerUndo(undo);
+    this.reanalysis = new DocumentReanalysis(this.deps, { analyzer: this.analyzer, metadata: this.metadata });
     this.trash = new DocumentTrash(this.deps, () => this.fileLock);
     this.trash.registerUndo(undo);
   }
@@ -223,14 +223,6 @@ export class DocumentService {
   /** Sets or removes metadata of several documents at once (#291, #305); the whole batch is ONE undo step. */
   bulkUpdate(ids: string[], change: { patch: BulkPatch; trigger?: string }): { updated: DocumentRecord[]; auditId: string | null } {
     return this.metadata.bulkUpdate(ids, change);
-  }
-
-  /** Applies a re-analysis proposal to the metadata of an archived document; requires the user's confirmation (level 2). */
-  applyReanalysis(id: string, { confirmed }: { confirmed: boolean }): DocumentRecord {
-    if (!confirmed) throw new AppError('permission_error', 'Das Übernehmen neuer Metadaten erfordert eine Bestätigung.');
-    const proposal = this.reanalysis.get(id);
-    if (!proposal) throw new AppError('validation_error', 'Zu diesem Dokument liegt kein Vorschlag vor.');
-    return this.metadata.applyReanalysis(id, proposal);
   }
 
   ignore(id: string): DocumentRecord {

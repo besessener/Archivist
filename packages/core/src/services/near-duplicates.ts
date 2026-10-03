@@ -9,6 +9,9 @@ import { areNearDuplicates, bandBuckets, minhashSignature, signatureFromBytes, s
 const COMPARED_STATUSES = ['archived', 'indexed_only', 'proposed'];
 const IN_COMPARED = COMPARED_STATUSES.map((status) => `'${status}'`).join(', ');
 
+/** Bound for the candidate pairs of one run, so a flood of copies cannot stall the archive check. */
+const MAX_CANDIDATE_PAIRS = 2_000_000;
+
 /** Documents per backfill step. */
 export const BACKFILL_BATCH = 200;
 
@@ -66,7 +69,8 @@ export class NearDuplicateIndex {
          FROM document_lsh_bands a
          JOIN document_lsh_bands b ON b.band = a.band AND b.bucket = a.bucket AND b.document_id > a.document_id
          JOIN documents da ON da.id = a.document_id AND da.status IN (${IN_COMPARED})
-         JOIN documents db ON db.id = b.document_id AND db.status IN (${IN_COMPARED})`,
+         JOIN documents db ON db.id = b.document_id AND db.status IN (${IN_COMPARED})
+         LIMIT ${MAX_CANDIDATE_PAIRS}`,
       )
       .all() as Array<{ first: string; second: string }>;
     const signatures = new Map<string, Signature | null>();

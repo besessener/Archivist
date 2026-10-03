@@ -1,12 +1,13 @@
 import type { IndexStatus } from '@archivist/shared';
 import type { AppContext } from '../context';
-import { yieldPeriodically } from './archive-check/findings';
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import type { DocumentAccess } from './document-model';
 import type { JobContext } from './jobs';
 
 /** Job type that re-indexes archived documents missing from the search index (#220). */
 export const DOCUMENT_REINDEX_JOB = 'documents.reindex';
 
+const YIELD_EVERY = 50;
 const ARCHIVED = `('archived', 'indexed_only')`;
 
 /** Finds archived documents without index entries (a crash or an error between archiving and indexing) and indexes them again. */
@@ -47,7 +48,7 @@ export class DocumentIndexRepair {
       job.report(index / missing.length, `${index} von ${missing.length} Dokumenten indexiert`);
       await this.documents.indexDocument(id);
       if (!this.isIndexed(id)) failed += 1;
-      await yieldPeriodically(index);
+      if (index % YIELD_EVERY === YIELD_EVERY - 1) await yieldToEventLoop();
     }
     const done = missing.length - failed;
     return { summary: `${done} von ${missing.length} Dokumenten indexiert${failed ? `, ${failed} fehlgeschlagen` : ''}` };

@@ -61,7 +61,7 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'documents:trash': (input) => services.documents.moveToTrash(input.id, { confirmed: input.confirmed, trigger: 'manual' }),
     'documents:reanalysis': (input) => services.documents.reanalysis.get(input.id),
     'documents:reanalysisPending': () => ({ documentIds: services.documents.reanalysis.pendingIds() }),
-    'documents:applyReanalysis': (input) => services.documents.applyReanalysis(input.id, { confirmed: input.confirmed }),
+    'documents:applyReanalysis': (input) => services.documents.reanalysis.apply(input.id, { confirmed: input.confirmed }),
     'documents:discardReanalysis': (input) => {
       services.documents.reanalysis.discard(input.id);
       return { ok: true as const };

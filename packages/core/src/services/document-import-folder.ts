@@ -5,7 +5,6 @@ import { and, asc, eq, gt, gte, notInArray, sql } from 'drizzle-orm';
 import { documents } from '../db/schema';
 import { SCAN_MAX_FILES } from '../workers/tasks';
 import { emptyBatchState, BATCH_SIZE, type BatchState, type DocumentBatchAnalysis, type DocumentSource } from './document-batch';
-import type { DocumentImporter } from './document-import';
 import type { DocumentDeps } from './document-model';
 import type { JobContext } from './jobs';
 
@@ -16,6 +15,11 @@ export const DOCUMENT_IMPORT_FOLDER_JOB = 'documents.importFolder';
 export const IMPORT_FOLDER_MAX_FILES = SCAN_MAX_FILES;
 const COPY_CHUNK = 50;
 const MAX_IMPORT_BYTES = 500 * 1024 * 1024;
+
+/** The part of the importer a folder import uses (typed by shape to keep the modules acyclic). */
+export interface QuietImporter {
+  importQuietly(files: string[], opts: { allowLlm: boolean }): Promise<{ imported: unknown[]; duplicates: unknown[]; rejected: unknown[] }>;
+}
 
 export interface ImportFolderPayload {
   path: string;
@@ -38,7 +42,7 @@ export class FolderImport {
 
   constructor(
     private readonly deps: DocumentDeps,
-    private readonly importer: DocumentImporter,
+    private readonly importer: QuietImporter,
     private readonly analysis: DocumentBatchAnalysis,
   ) {}
 

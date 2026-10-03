@@ -40,6 +40,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 ## Fehler und Ausfall
 
 - Nicht erreichbarer Endpunkt: verständliche Fehlermeldung, Retries bei transienten Fehlern (Netzwerk/429/5xx), Status in der Kopfzeile.
+- **Dokumentanalyse bei Limit oder Ausfall**: Meldet der Endpunkt nach den Wiederholungen des Clients (3 Anfragen) weiterhin einen wiederholbaren Fehler, stuft die Analyse das Dokument nicht still herab. Sie reiht den Auftrag neu ein und wartet so lange, wie der Server verlangt (`Retry-After`, auf höchstens 5 Minuten begrenzt; der Fehlertyp trägt es als `retryAfterMs`), sonst mit zunehmender Wartezeit (5 s, 10 s, … bis 5 min). Das Dokument bleibt `llmStatus: pending`. Nach dem 5. erfolglosen Versuch fällt die Analyse auf die lokale Klassifikation zurück und benachrichtigt wie bisher. Nicht wiederholbare Fehler (401, 403, 404, ungültige Antwort) fallen sofort zurück. Jeder Versuch ist eine eigene Anfrage im Übertragungsprotokoll.
 - Nach einer Zeitüberschreitung oder einem unerreichbaren Endpunkt scheitern Anfragen 60 s lang sofort; der Verbindungstest geht immer durch.
 - Der Chat fällt auf eine regelbasierte Auswertung bzw. lokale Trefferlisten zurück und kennzeichnet das deutlich.
 
