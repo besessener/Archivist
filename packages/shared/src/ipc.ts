@@ -11,6 +11,8 @@ import {
   ArchiveRootStatus,
   BackupInfo,
   Category,
+  CategoryMigrationPlan,
+  CategoryMigrationResult,
   RelinkResult,
   VerifyReport,
 } from './archive';
@@ -560,6 +562,10 @@ export const ipcContract = {
   // --- Categories, backup, archive check ---
   'categories:list': channel(Empty, z.array(Category)),
   'categories:create': channel(z.object({ path: z.string().min(1), confirmed: Confirmed }), Category),
+  /** Preview (changes nothing): what renaming `work`/`private` to `Arbeit`/`Privat` would move (#233). */
+  'categories:previewMigration': channel(Empty, CategoryMigrationPlan),
+  /** Level 2: renames the English main categories and moves their files; every move is logged and undoable (#233). */
+  'categories:migrate': channel(z.object({ confirmed: Confirmed }), CategoryMigrationResult),
   'backup:create': channel(z.object({ includeArchive: z.boolean().default(false) }), BackupInfo),
   'backup:list': channel(Empty, z.array(BackupInfo)),
   'backup:restore': channel(z.object({ name: z.string().min(1).max(200), confirmed: Confirmed }), z.object({ restartRequired: z.literal(true) })),

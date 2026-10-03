@@ -33,7 +33,7 @@ const decision = (title: string, participants: string[]) =>
   });
 
 async function archivedDoc(title: string, persons: string[]): Promise<string> {
-  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'work/notes', persons }));
+  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', persons }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${title}.txt`, `${title}: ausreichend langer Inhalt für den Test`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;

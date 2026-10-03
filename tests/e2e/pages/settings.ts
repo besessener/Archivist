@@ -91,6 +91,18 @@ export function initSettings(page: Page) {
         save: page.getByTestId('memory-save'),
       },
     },
+    categories: {
+      list: page.getByTestId('category-list'),
+      newPath: page.getByTestId('category-new'),
+      create: page.getByTestId('category-create'),
+      confirmCreate: page.getByTestId('category-confirm'),
+    },
+    categoryMigration: {
+      plan: page.getByTestId('category-migration-plan'),
+      start: page.getByTestId('category-migration-start'),
+      confirm: page.getByTestId('category-migration-confirm'),
+      result: page.getByTestId('category-migration-result'),
+    },
     archiveCheck: {
       verify: page.getByTestId('archive-verify'),
       report: page.getByTestId('verify-report'),
@@ -122,6 +134,13 @@ export function initSettings(page: Page) {
     },
     openArchive: async () => {
       await locators.tabs.archive.click();
+    },
+    /** Creates a category through the form and its confirmation dialog. */
+    createCategory: async (categoryPath: string) => {
+      await locators.categories.newPath.fill(categoryPath);
+      await locators.categories.create.click();
+      await locators.categories.confirmCreate.click();
+      await expect(locators.categories.list).toContainText(categoryPath);
     },
     selectMode: async (mode: PrivacyMode) => {
       await locators.privacy.mode(mode).check();

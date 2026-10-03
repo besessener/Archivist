@@ -18,7 +18,7 @@ async function archivedWithDecisions(name: string, sentences: string[]): Promise
     classification({
       title: name,
       summary: 'Protokoll',
-      categoryPath: 'private/haus',
+      categoryPath: 'Privat/haus',
       decisions: sentences.map((s) => ({ title: s.slice(10, 30), decisionText: s, kind: 'decided', evidence: s, participants: [] })),
     }),
   );
@@ -26,7 +26,7 @@ async function archivedWithDecisions(name: string, sentences: string[]): Promise
   await app.services.jobs.whenIdle();
   const id = imported.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'private/haus' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/haus' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

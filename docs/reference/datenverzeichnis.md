@@ -4,7 +4,7 @@ Standardmäßig `~/Documents/Archivist/`, überschreibbar mit `ARCHIVIST_DATA_DI
 
 ```
 Archivist/
-├── archive/       archivierte Dateien in menschenlesbaren Ordnern (work/projects/prod-plat/, private/vacation/2026/ …)
+├── archive/       archivierte Dateien in menschenlesbaren Ordnern (Arbeit/Projekte/prod-plat/, Privat/Urlaub/2026/ …)
 ├── database/      archivist.db (SQLite, WAL)
 ├── index/         lokale Indexdaten (z. B. OCR-Sprachdaten unter tessdata/)
 ├── config/        settings.json (nicht geheim) und llm-api-key.enc (verschlüsselt)
@@ -18,7 +18,8 @@ Archivist/
 ## Ablage im Archiv
 
 - Die Ablage bleibt **auch ohne Archivist verständlich**: keine Hash-/UUID-Ordner, keine reinen Dateityp-Ordner (`pdf/`, `docx/` …).
-- Vorgeschlagene Pfade werden bereinigt. Unterkategorien darf der Agent vorschlagen, **neue Hauptkategorien** (erstes Pfadsegment) nur nach Bestätigung.
+- Vorgeschlagene Pfade werden bereinigt. Unterkategorien darf der Agent vorschlagen, **neue Hauptkategorien** (erstes Pfadsegment) nur nach Bestätigung. Neu angelegte Archive beginnen mit den Hauptkategorien `Arbeit` und `Privat`; Groß-/Kleinschreibung zählt bei Kategorien nicht (wie unter NTFS), eine vorhandene Schreibweise wird übernommen.
+- Archive aus früheren Versionen haben die englischen Hauptkategorien `work` und `private`. Sie bleiben unverändert, bis du sie unter Einstellungen → Archiv → „Hauptkategorien auf Deutsch umstellen“ umbenennen lässt (siehe [Hauptkategorien umbenennen](../how-to/hauptkategorien-umbenennen.md)); solange legt Archivist `Arbeit`/`Privat` nicht zusätzlich an.
 - Archivdateien werden relativ zum Archivwurzelpfad referenziert (`archive_rel_path`). Der Archivordner kann deshalb umziehen, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md).
 
 ## Quarantäne

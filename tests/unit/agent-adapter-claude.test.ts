@@ -134,7 +134,7 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
         [
           { type: 'thinking', thinking: 'Erst suchen.', signature: 'SIG' },
           { type: 'text', text: 'Ich suche die Dateien.' },
-          { type: 'tool_use', id: 'toolu_1', name: 'find_documents', input: { ext: ['md', 'txt'], folder: 'work/misc' } },
+          { type: 'tool_use', id: 'toolu_1', name: 'find_documents', input: { ext: ['md', 'txt'], folder: 'Arbeit/misc' } },
         ],
         { usage: { input: 120, output: 33, cacheRead: 4_000, cacheWrite: 900 } },
       ),
@@ -149,7 +149,7 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
       text: 'Ich suche die Dateien.',
       stopReason: 'tool_use',
       streamed: true,
-      toolCalls: [{ id: 'toolu_1', name: 'find_documents', args: { ext: ['md', 'txt'], folder: 'work/misc' } }],
+      toolCalls: [{ id: 'toolu_1', name: 'find_documents', args: { ext: ['md', 'txt'], folder: 'Arbeit/misc' } }],
       usage: { inputTokens: 120, outputTokens: 33, cacheReadTokens: 4_000, cacheWriteTokens: 900 },
     });
     expect(res.refusal).toBeUndefined();

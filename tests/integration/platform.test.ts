@@ -184,7 +184,7 @@ describe('Worker threads', () => {
 
   it('the complete application works with worker threads (import + search)', async () => {
     const app = await createTestApp({ privacy: 'auto', workerFile });
-    app.llm.on('DocumentClassification', () => classification({ title: 'Thread', summary: 's', categoryPath: 'work/notes' }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Thread', summary: 's', categoryPath: 'Arbeit/notes' }));
     const imp = await app.ok('documents:import', { paths: [app.file('t.txt', 'Dokument verarbeitet im Worker Thread Zebrastreifen')] });
     await app.services.jobs.whenIdle();
     await app.ok('documents:archive', {
@@ -289,7 +289,7 @@ describe('Secrets, backups, settings', () => {
 
   it('creates consistent backups (metadata vs. full) without the API key', async () => {
     const app = await createTestApp({ privacy: 'auto' });
-    app.llm.on('DocumentClassification', () => classification({ title: 'B', summary: 's', categoryPath: 'work/notes' }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'B', summary: 's', categoryPath: 'Arbeit/notes' }));
     const imp = await app.ok('documents:import', { paths: [app.file('b.txt', 'Backup Dokument Inhalt')] });
     await app.services.jobs.whenIdle();
     await app.ok('documents:archive', {
@@ -304,7 +304,7 @@ describe('Secrets, backups, settings', () => {
     expect(meta.kind).toBe('metadata');
     expect(full.kind).toBe('full');
     expect(fs.existsSync(path.join(meta.path, 'archive'))).toBe(false);
-    expect(fs.readdirSync(path.join(full.path, 'archive', 'work', 'notes'))).toContain('b.txt');
+    expect(fs.readdirSync(path.join(full.path, 'archive', 'Arbeit', 'notes'))).toContain('b.txt');
     const copy = new Database(path.join(meta.path, 'archivist.db'), { readonly: true });
     expect((copy.prepare('select count(*) c from documents').get() as { c: number }).c).toBe(1);
     copy.close();

@@ -37,7 +37,7 @@ const goOnline = () => app.services.settings.update({ privacy: { llmMode: 'auto'
 describe('Privacy of the contradiction check', () => {
   it('never sends a pair to the LLM when a source document of one decision is excluded', async () => {
     app.llm.on('ContradictionProposal', verdict(true));
-    const secret = await archived(app, { name: 'geheim.txt', content: 'Geheim', folder: 'private/misc' });
+    const secret = await archived(app, { name: 'geheim.txt', content: 'Geheim', folder: 'Privat/misc' });
     app.services.database.db.update(documents).set({ llmStatus: 'excluded' }).where(eq(documents.id, secret)).run();
 
     await decision('Das Budget beträgt 5000 Euro.', '2026-01-10', { sourceIds: [secret] });
@@ -50,7 +50,7 @@ describe('Privacy of the contradiction check', () => {
 
   it('still asks the LLM when the source document may be shared', async () => {
     app.llm.on('ContradictionProposal', verdict(true));
-    const open = await archived(app, { name: 'offen.txt', content: 'Offen', folder: 'private/misc' });
+    const open = await archived(app, { name: 'offen.txt', content: 'Offen', folder: 'Privat/misc' });
 
     await decision('Das Budget beträgt 5000 Euro.', '2026-01-10', { sourceIds: [open] });
     await decision('Das Budget beträgt 8000 Euro.', '2026-03-01');
@@ -60,7 +60,7 @@ describe('Privacy of the contradiction check', () => {
   });
 
   it('keeps the lexical result for a pair with an excluded source', async () => {
-    const secret = await archived(app, { name: 'geheim.txt', content: 'Geheim', folder: 'private/misc' });
+    const secret = await archived(app, { name: 'geheim.txt', content: 'Geheim', folder: 'Privat/misc' });
     app.services.database.db.update(documents).set({ llmStatus: 'excluded' }).where(eq(documents.id, secret)).run();
 
     await decision('Wir führen prod-plat weiter.', '2026-01-10', { sourceIds: [secret] });

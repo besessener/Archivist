@@ -63,7 +63,7 @@ function classification(input: string) {
     dates: [{ date: vacation ? '2026-06-12' : '2026-05-04', label: null }],
     tags: vacation ? ['urlaub'] : ['jour-fixe'],
     location: {
-      categoryPath: vacation ? 'private/vacation/2026' : 'work/projects/Nordlicht',
+      categoryPath: vacation ? 'Privat/Urlaub/2026' : 'Arbeit/Projekte/Nordlicht',
       fileName: null,
       newMainCategory: false,
       rationale: vacation ? 'Urlaubsantrag vom 12.06.2026' : 'Das Dokument nennt das Projekt Nordlicht.',

@@ -23,7 +23,7 @@ Der API-Key wird verschlüsselt gespeichert, nie im Klartext.
 
 1. Zieh dein PDF in das Archivist-Fenster.
 2. Archivist kopiert es in den Eingang, liest den Text aus und fragt – wegen des Modus `confirm` – ob es zur Analyse an das LLM gehen darf. Bestätige.
-3. Öffne die **Inbox**. Dort steht dein Dokument mit vorgeschlagener Kategorie und einem lesbaren Zielpfad wie `work/projects/prod-plat/`.
+3. Öffne die **Inbox**. Dort steht dein Dokument mit vorgeschlagener Kategorie und einem lesbaren Zielpfad wie `Arbeit/Projekte/prod-plat/`.
 4. Prüf Quell- und Zielpfad und bestätige.
 
 Dein Dokument liegt jetzt als Kopie unter `~/Documents/Archivist/archive/…`. Das Original ist unverändert. Willst du es doch nicht archiviert haben, findest du die Aktion unter Einstellungen → Änderungsprotokoll mit **Rückgängig**.

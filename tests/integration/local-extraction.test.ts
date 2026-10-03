@@ -22,7 +22,7 @@ async function archiveOffline(path: string, text: string) {
   await app.services.jobs.whenIdle();
   const id = imported.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'work/meetings' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Arbeit/meetings' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

@@ -10,7 +10,7 @@ let queues: JobQueueService[] = [];
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Test' }),
+    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: 'Test' }),
   );
 });
 afterEach(async () => {

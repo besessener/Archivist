@@ -12,15 +12,15 @@ const doc = (id: string, rel: string | null, topic: string | null = null, projec
 describe('evaluating where documents are filed in the archive', () => {
   describe('folderOf', () => {
     it('returns the folder of the archive file, also with Windows separators', () => {
-      expect(folderOf({ archiveRelPath: 'private/bildungsurlaub/2026/antrag.pdf' })).toBe('private/bildungsurlaub/2026');
-      expect(folderOf({ archiveRelPath: 'work\\hr\\antrag.pdf' })).toBe('work/hr');
+      expect(folderOf({ archiveRelPath: 'Privat/bildungsurlaub/2026/antrag.pdf' })).toBe('Privat/bildungsurlaub/2026');
+      expect(folderOf({ archiveRelPath: 'Arbeit\\hr\\antrag.pdf' })).toBe('Arbeit/hr');
     });
 
     it('reports an empty folder for files at the top level and without a path', () => {
       expect(folderOf({ archiveRelPath: 'antrag.pdf' })).toBe('');
       expect(folderOf({ archiveRelPath: null })).toBe('');
       expect(folderLabel('')).toBe('(oberste Ebene des Archivs)');
-      expect(folderLabel('work/hr')).toBe('work/hr');
+      expect(folderLabel('Arbeit/hr')).toBe('Arbeit/hr');
     });
   });
 
@@ -44,21 +44,21 @@ describe('evaluating where documents are filed in the archive', () => {
     const pick = (...rels: string[]) => chooseTargetFolder(groupByFolder(rels.map((rel, i) => doc(String(i), rel))));
 
     it('picks the folder that already holds the most documents', () => {
-      expect(pick('a/1.pdf', 'b/2.pdf', 'b/3.pdf', 'c/4.pdf')).toBe('b');
+      expect(pick('a/1.pdf', 'b/2.pdf', 'b/3.pdf', 'c/4.pdf')).toEqual({ kind: 'chosen', folder: 'b' });
     });
 
-    it('on a tie picks the more specific (deeper) folder, then the alphabetically first one', () => {
-      expect(pick('a/1.pdf', 'b/c/2.pdf')).toBe('b/c');
-      expect(pick('z/1.pdf', 'a/2.pdf')).toBe('a');
+    it('decides nothing on a tie and returns the tied folders alphabetically, deeper or not', () => {
+      expect(pick('a/1.pdf', 'b/c/2.pdf')).toEqual({ kind: 'tied', folders: ['a', 'b/c'] });
+      expect(pick('z/1.pdf', 'a/2.pdf', 'm/3.pdf', 'm/4.pdf', 'a/5.pdf', 'z/6.pdf')).toEqual({ kind: 'tied', folders: ['a', 'm', 'z'] });
     });
 
     it('never picks the top level, even if most documents are there', () => {
-      expect(pick('1.pdf', '2.pdf', '3.pdf', 'a/4.pdf')).toBe('a');
+      expect(pick('1.pdf', '2.pdf', '3.pdf', 'a/4.pdf')).toEqual({ kind: 'chosen', folder: 'a' });
     });
 
-    it('returns null if there is only the top level or nothing at all', () => {
-      expect(pick('1.pdf', '2.pdf')).toBeNull();
-      expect(chooseTargetFolder([])).toBeNull();
+    it('returns none if there is only the top level or nothing at all', () => {
+      expect(pick('1.pdf', '2.pdf')).toEqual({ kind: 'none' });
+      expect(chooseTargetFolder([])).toEqual({ kind: 'none' });
     });
   });
 

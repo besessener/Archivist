@@ -107,9 +107,9 @@ async function makePdf(pages: number, text: string): Promise<Buffer> {
 const abs = (id: string) => path.join(app.services.settings.get().archiveRoot, ...app.services.documents.getRow(id).archiveRelPath!.split('/'));
 
 async function setup() {
-  const a = await archived('strom-jan.txt', 'Stromrechnung Januar\nGesamtbetrag: 1.234,56 €\n', 'private/finanzen/strom', 'Strom Januar', '2026-01-15');
-  const b = await archived('strom-apr.txt', 'Stromrechnung April\nZu zahlender Betrag 100,44 EUR\n', 'private/finanzen/strom', 'Strom April', '2026-04-10');
-  const c = await archived('vertrag.pdf', await makePdf(2, 'Vertrag'), 'private/finanzen/vertrag', 'Stromvertrag', '2026-02-01');
+  const a = await archived('strom-jan.txt', 'Stromrechnung Januar\nGesamtbetrag: 1.234,56 €\n', 'Privat/finanzen/strom', 'Strom Januar', '2026-01-15');
+  const b = await archived('strom-apr.txt', 'Stromrechnung April\nZu zahlender Betrag 100,44 EUR\n', 'Privat/finanzen/strom', 'Strom April', '2026-04-10');
+  const c = await archived('vertrag.pdf', await makePdf(2, 'Vertrag'), 'Privat/finanzen/vertrag', 'Stromvertrag', '2026-02-01');
   const ctx = emptyToolContext();
   const refs = [a, b, c].map((id) => ctx.refs.doc(id));
   const before = [a, b, c].map((id) => fs.readFileSync(abs(id)));
@@ -188,9 +188,9 @@ describe('agent export tools (#311)', () => {
     const lines = csv.slice(1).trimEnd().split('\r\n');
     expect(lines).toEqual([
       'Datum;Titel;Betrag;Ordner',
-      '2026-01-15;Strom Januar;1234,56;private/finanzen/strom',
-      '2026-02-01;Stromvertrag;;private/finanzen/vertrag',
-      '2026-04-10;Strom April;100,44;private/finanzen/strom',
+      '2026-01-15;Strom Januar;1234,56;Privat/finanzen/strom',
+      '2026-02-01;Stromvertrag;;Privat/finanzen/vertrag',
+      '2026-04-10;Strom April;100,44;Privat/finanzen/strom',
     ]);
     expect(out.content).toContain('3 Zeile(n)');
   });

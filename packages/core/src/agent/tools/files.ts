@@ -67,7 +67,7 @@ export function fileTools(deps: ToolDeps): AgentTool[] {
       name: 'move_documents',
       description:
         'Archivierte Dokumente (D…/S…) in einen Ordner des Archivs verschieben; Unterordner werden angelegt. Eine NEUE Hauptkategorie (erste Ebene) fragt immer nach. Nichts wird überschrieben (gleichnamige Dateien bekommen einen freien Namen). Dokumente im Eingang mit archive_inbox ablegen.',
-      schema: z.object({ documents: list, folder: z.string().min(1).describe('Zielordner relativ zum Archiv, z. B. "work/presentations"') }),
+      schema: z.object({ documents: list, folder: z.string().min(1).describe('Zielordner relativ zum Archiv, z. B. "Arbeit/Präsentationen"') }),
       risk: (a) => (newMain(a.folder) ? 'critical' : 'write'),
       count: (a, ctx) => affectedCount(ctx, a.documents),
       label: (a) => `Verschiebe ${a.documents.length === 1 && !a.documents[0]!.toUpperCase().startsWith('S') ? 'ein Dokument' : 'Dokumente'} nach ${a.folder}`,

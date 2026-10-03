@@ -169,7 +169,7 @@ describe('every creation path resolves topics, projects and tags by alias (#188)
     const [knownTopic, knownProject] = [topic(), project()];
     const tag = graph().ensureEntity({ type: 'tag', name: 'Wichtig' });
     graph().addAlias(tag.id, 'Dringlich');
-    app.llm.on('DocumentClassification', () => classification({ title: 'Kaufvertrag', summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Kaufvertrag', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes' }));
     const imported = await app.ok('documents:import', { paths: [app.file('in/kaufvertrag.txt', 'Kaufvertrag: ausreichend langer Inhalt für den Test')] });
     await app.services.jobs.whenIdle();
     const id = imported.imported[0]!.id;

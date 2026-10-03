@@ -40,7 +40,7 @@ async function archivedDoc(title: string, meta: { topic?: string; project?: stri
     classification({
       title,
       summary: 'Zusammenfassung',
-      categoryPath: 'work/notes',
+      categoryPath: 'Arbeit/notes',
       mainTopic: meta.topic ?? null,
       project: meta.project ?? null,
       persons: meta.persons ?? [],

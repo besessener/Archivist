@@ -47,7 +47,7 @@ export const ARCHIVE_TASKS: EvalTask[] = [
     messages: ['Verschiebe alle Folien nach presentations'],
     check: (c) =>
       verdict(
-        inFolder(c, SLIDES, (f) => f === 'arbeit/presentations', 'arbeit/presentations'),
+        inFolder(c, SLIDES, (f) => f === 'Arbeit/presentations', 'Arbeit/presentations'),
         onlyChanged(c, SLIDES, ['archiveRelPath']),
         notFailed(c),
       ),

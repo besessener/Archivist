@@ -10,27 +10,27 @@ test.describe('import and archiving', () => {
   test('proposes a target for an imported file and changes nothing before confirmation', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const target = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
+    const target = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await expect(app.inbox.locators.llmStatus.first()).toContainText(/LLM analysiert/i);
 
     await app.inbox.do.openArchivePlan();
     await expect(app.inbox.locators.archivePlan.source.first()).toContainText('inbox');
-    await expect(app.inbox.locators.archivePlan.target.first()).toContainText(path.join('work', 'projects', 'Nordlicht', 'jour-fixe.txt'));
+    await expect(app.inbox.locators.archivePlan.target.first()).toContainText(path.join('Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt'));
     expect(fs.existsSync(target), 'nothing may be in the archive before confirmation').toBe(false);
   });
 
   test('archives after confirmation and leaves the original unchanged', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const target = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
+    const target = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await app.inbox.do.openArchivePlan();
     await app.inbox.do.confirmArchive();
 
@@ -41,11 +41,11 @@ test.describe('import and archiving', () => {
   test('renames archived files of a multi-selection by a scheme, after a preview (#304)', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const folder = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht');
+    const folder = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht');
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await app.inbox.do.openArchivePlan();
     await app.inbox.do.confirmArchive();
     await app.inbox.locators.archivePlan.close.click();
@@ -82,7 +82,7 @@ test.describe('import and archiving', () => {
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await expect(app.inbox.locators.fields.project.first()).toHaveValue('Nordlicht');
     await app.inbox.locators.fields.project.first().fill('');
 

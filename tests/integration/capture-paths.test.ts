@@ -340,7 +340,7 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
     await archived(app, {
       name: 'protokoll.txt',
       content: 'Beschluss: Die Plattform zieht bis Ende März nach Frankfurt um, verantwortlich ist Jana.',
-      folder: 'work/protokolle',
+      folder: 'Arbeit/protokolle',
     });
     app.llm.on('KnowledgeAnswer', () => ({
       answer: 'Nach Frankfurt.',

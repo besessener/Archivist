@@ -18,9 +18,9 @@ const between = (a: string, b: string) => relatedTo().filter((r) => (r.s === a &
 describe('Similar entries as `related_to` proposals after indexing (#271)', () => {
   it('archiving proposes similar documents with the passage as evidence – in a job, not on the archiving path', async () => {
     app = await createTestApp({ autoLinks: true });
-    const lease = await archived(app, { name: 'mietvertrag.md', content: flatText('Mietvertrag'), folder: 'private/wohnen' });
-    const costs = await archived(app, { name: 'nebenkosten.md', content: flatText('Nebenkostenabrechnung'), folder: 'private/wohnen' });
-    const recipe = await archived(app, { name: 'rezept.md', content: 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', folder: 'private/kochen' });
+    const lease = await archived(app, { name: 'mietvertrag.md', content: flatText('Mietvertrag'), folder: 'Privat/wohnen' });
+    const costs = await archived(app, { name: 'nebenkosten.md', content: flatText('Nebenkostenabrechnung'), folder: 'Privat/wohnen' });
+    const recipe = await archived(app, { name: 'rezept.md', content: 'Rezept für Apfelkuchen mit Zucker, Mehl und Butter.', folder: 'Privat/kochen' });
     await app.services.jobs.whenIdle();
 
     expect(between(lease, costs)).toEqual([expect.objectContaining({ status: 'proposed', method: 'similarity', origin: 'system' })]);

@@ -21,7 +21,7 @@ const classification = (over: Record<string, unknown> = {}) => ({
   dates: [{ date: '2026-06-12', label: 'Termin' }],
   tags: ['jour-fixe', 'budget'],
   location: {
-    categoryPath: 'work/projects/prod-plat',
+    categoryPath: 'Arbeit/projects/prod-plat',
     fileName: null,
     newMainCategory: false,
     rationale: 'Das Dokument nennt das Projekt prod-plat.',
@@ -79,13 +79,13 @@ describe('Import, classify, archive and undo a file', () => {
     const doc = await app.ok('documents:get', { id });
     expect(doc.status).toBe('proposed');
     expect(doc.llmStatus).toBe('analyzed');
-    expect(doc.proposal?.location.categoryPath).toBe('work/projects/prod-plat');
+    expect(doc.proposal?.location.categoryPath).toBe('Arbeit/projects/prod-plat');
     expect(doc.stagedPath && fs.existsSync(doc.stagedPath)).toBe(true);
     expect(fs.existsSync(src)).toBe(true);
 
     // the plan shows source/target; nothing has been copied yet
     const plan = await app.ok('documents:previewArchive', { items: [{ documentId: id, mode: 'copy' }] });
-    expect(plan.items[0]!.targetPath).toContain(path.join('work', 'projects', 'prod-plat', 'jour-fixe.txt'));
+    expect(plan.items[0]!.targetPath).toContain(path.join('Arbeit', 'projects', 'prod-plat', 'jour-fixe.txt'));
     expect(fs.existsSync(plan.items[0]!.targetPath!)).toBe(false);
 
     // without confirmation → rejection at the IPC boundary

@@ -31,7 +31,7 @@ async function archived(decisions: FoundDecision[], text = PROTOKOLL): Promise<s
     classification({
       title: 'Eigentümerversammlung',
       summary: 'Protokoll',
-      categoryPath: 'private/haus',
+      categoryPath: 'Privat/haus',
       docType: 'Protokoll',
       mainTopic: 'Hausverwaltung',
       persons: ['Anna', 'Ben', 'Carla', 'Dieter', 'Eva', 'Gerd'],
@@ -42,7 +42,7 @@ async function archived(decisions: FoundDecision[], text = PROTOKOLL): Promise<s
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'private/haus' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/haus' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

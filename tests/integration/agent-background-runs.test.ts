@@ -27,7 +27,7 @@ describe('Background runs: notification, resume, limits (#313)', () => {
   it('the notification offers „Rückgängig“ for the whole run, next to „Lauf ansehen“', async () => {
     const a = await inInbox(app, { name: 'rechnung-1.txt', content: 'Rechnung 1' });
     app.llm.agent = scriptedTurns(
-      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'copy', folder: 'private/rechnungen' } }] },
+      { calls: [{ name: 'archive_inbox', args: { documents: ['S1'], mode: 'copy', folder: 'Privat/rechnungen' } }] },
       { text: 'Archiviert.' },
     );
     const run = await app.services.agent.runBackground('inbox', { docIds: [a] });
@@ -48,7 +48,7 @@ describe('Background runs: notification, resume, limits (#313)', () => {
     const job = jobs.enqueue('agent.background', { label: 'Test', payload: { kind: 'inbox', docIds: [a, b] }, maxAttempts: 2 });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'rechnung-a', status: 'inbox' } }] },
-      { calls: [{ name: 'archive_inbox', args: { documents: ['D1'], mode: 'copy', folder: 'private/rechnungen' } }] },
+      { calls: [{ name: 'archive_inbox', args: { documents: ['D1'], mode: 'copy', folder: 'Privat/rechnungen' } }] },
       () => {
         checkpoint = storedCheckpoint(job.id);
         jobs.cancel(job.id); // the app goes down while the run works on the second document
@@ -178,7 +178,7 @@ describe('Schedules (#313)', () => {
 });
 
 describe('Inbox run applies learned rules (#313, #315)', () => {
-  const rule = { when: { docType: 'Rechnung' }, then: { folder: 'private/finanzen/energie', tags: ['Strom'] } };
+  const rule = { when: { docType: 'Rechnung' }, then: { folder: 'Privat/finanzen/energie', tags: ['Strom'] } };
 
   it('mode „Auto“: a rule files the inbox document into its folder with its tags', async () => {
     app.services.memory.save({ kind: 'rule', name: 'Rechnung → Energie', content: 'Rechnungen nach energie', data: rule });
@@ -186,7 +186,7 @@ describe('Inbox run applies learned rules (#313, #315)', () => {
     app.llm.agent = scriptedTurns({ calls: [{ name: 'apply_rules', args: { documents: ['S1'], preview: false } }] }, { text: 'Regel angewendet.' });
     const run = await app.services.agent.runBackground('inbox', { docIds: [a] });
     expect(run?.status).toBe('done');
-    expect(folderOf(app, a)).toBe('private/finanzen/energie');
+    expect(folderOf(app, a)).toBe('Privat/finanzen/energie');
     expect(app.services.documents.get(a).tags).toContain('Strom');
     expect(run?.applied.map((x) => x.label)).toContain('Rechnung → Energie');
     expect((await app.ok('agent:undoRun', { runId: run!.id })).undone).toBeGreaterThan(0);
@@ -202,6 +202,6 @@ describe('Inbox run applies learned rules (#313, #315)', () => {
     const card = (await app.ok('actions:list', { status: 'proposed' })).find((x) => x.actionType === 'agent_batch')!;
     expect(card).toBeTruthy();
     await app.ok('actions:resolve', { decision: 'approve', actionId: card.id, confirmed: true });
-    expect(folderOf(app, a)).toBe('private/finanzen/energie');
+    expect(folderOf(app, a)).toBe('Privat/finanzen/energie');
   });
 });

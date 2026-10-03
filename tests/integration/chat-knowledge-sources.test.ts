@@ -15,7 +15,7 @@ const classification = (title: string, summary: string) => ({
   persons: [],
   dates: [],
   tags: [],
-  location: { categoryPath: 'work/protokolle', fileName: null, newMainCategory: false, rationale: 'test', confidence: 0.8 },
+  location: { categoryPath: 'Arbeit/protokolle', fileName: null, newMainCategory: false, rationale: 'test', confidence: 0.8 },
   decisions: [],
   openItems: [],
   confidence: 0.8,

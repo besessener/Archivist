@@ -27,7 +27,7 @@ function state() {
 }
 
 async function importedDoc(title: string): Promise<string> {
-  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
+  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes' }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${title}.txt`, `${title}: ausreichend langer Inhalt für den Test`)] });
   await app.services.jobs.whenIdle();
   return imp.imported[0]!.id;

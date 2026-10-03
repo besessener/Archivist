@@ -18,7 +18,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function newApp(dataRoot?: string): Promise<TestApp> {
   const app = await createTestApp({ privacy: 'auto', dataRoot });
   app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Test' }),
+    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: 'Test' }),
   );
   return app;
 }
