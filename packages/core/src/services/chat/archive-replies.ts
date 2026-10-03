@@ -122,7 +122,8 @@ export class ArchiveReplies {
   async contradictionCheck(state: ConvState): Promise<Reply> {
     await this.deps.contradictions.scanAll();
     const list = this.deps.contradictions.list('detected');
-    if (list.length === 0)
+    const outdated = this.deps.insights.list('open').filter((insight) => insight.kind === 'possibly_superseded');
+    if (list.length === 0 && outdated.length === 0)
       return {
         intent: 'contradiction_check',
         content: `Ich habe keine widersprüchlichen Aussagen gefunden.${this.scatterHint()}`,
@@ -130,16 +131,20 @@ export class ArchiveReplies {
         uncertainties: ['Die Prüfung erkennt nur eindeutige Gegensätze bei aktiven Entscheidungen zum gleichen Thema.'],
         state,
       };
-    const actions = list.flatMap((c) => {
-      const insight = this.deps.insights.byDedupeKey(`contradiction:${c.id}`);
-      return insight?.recommendedActionId ? [this.deps.actions.get(insight.recommendedActionId)] : [];
-    });
+    const insights = [...list.map((c) => this.deps.insights.byDedupeKey(`contradiction:${c.id}`)), ...outdated];
+    const actions = insights.flatMap((insight) => (insight?.recommendedActionId ? [this.deps.actions.get(insight.recommendedActionId)] : []));
+    const sections = [
+      list.length ? `Ich habe ${list.length} mögliche(n) Widerspruch/Widersprüche gefunden:\n\n${list.map((c) => `**${c.title}**\n${c.description}`).join('\n\n')}` : '',
+      outdated.length
+        ? `Möglicherweise überholte Entscheidungen (${outdated.length}):\n\n${outdated.map((i) => `**${i.title}**\n${i.explanation}`).join('\n\n')}`
+        : '',
+    ].filter(Boolean);
     return {
       intent: 'contradiction_check',
-      content: `Ich habe ${list.length} mögliche(n) Widerspruch/Widersprüche gefunden:\n\n${list.map((c) => `**${c.title}**\n${c.description}`).join('\n\n')}\n\nDas sind Hinweise, keine festgestellte Wahrheit.`,
+      content: `${sections.join('\n\n')}\n\nDas sind Hinweise, keine festgestellte Wahrheit.`,
       actions: actions.filter((a) => a.status === 'proposed'),
       context: { contradictions: list.map((c) => ({ type: 'contradiction' as const, id: c.id, label: c.title })) },
-      confidence: Math.max(...list.map((c) => c.confidence)),
+      confidence: list.length ? Math.max(...list.map((c) => c.confidence)) : 0.5,
       state,
     };
   }
