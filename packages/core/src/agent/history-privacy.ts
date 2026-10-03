@@ -11,13 +11,17 @@ const mentions = (text: string, withdrawn: ReadonlySet<string>) => [...text.matc
 export function withholdWithdrawn(history: readonly AgentMessage[], withdrawn: ReadonlySet<string>): AgentMessage[] {
   if (!withdrawn.size) return [...history];
   const lastAssistant = history.findLastIndex((m) => m.role === 'assistant');
+  // an answer built on a withheld result may quote it without naming the document, so it is withheld too
+  let builtOnWithheld = false;
   return history.map((m, i) => {
+    if (m.role === 'user') builtOnWithheld = false;
     if (m.role === 'tool') {
       if (!m.results.some((r) => mentions(r.content, withdrawn))) return m;
+      builtOnWithheld = true;
       return { ...m, results: m.results.map((r) => (mentions(r.content, withdrawn) ? { ...r, content: WITHHELD_RESULT } : r)) };
     }
     if (m.role !== 'assistant') return m;
-    const text = mentions(m.text, withdrawn) ? WITHHELD_TEXT : m.text;
+    const text = (builtOnWithheld && m.toolCalls.length === 0) || mentions(m.text, withdrawn) ? WITHHELD_TEXT : m.text;
     if (i === lastAssistant && m.toolCalls.length) return { ...m, text };
     return { ...m, text, raw: undefined };
   });
