@@ -3,6 +3,7 @@ import { and, count, desc, eq, getTableColumns, inArray, like, or, sql } from 'd
 import type { Db } from '../db/database';
 import { documents, entities } from '../db/schema';
 import { withSubject } from '../db/subject-filter';
+import { allTermsMatch } from './search-keywords';
 
 /** Characters of the text read for list entries: enough for the 600-character preview, never the whole text (#214). */
 const PREVIEW_SOURCE_CHARS = 2000;
@@ -38,7 +39,10 @@ function listFilter(opts: DocumentListQuery) {
   if (opts.projectId) conditions.push(withSubject({ idCol: documents.id, mainCol: documents.projectId, subjectId: opts.projectId }));
   if (opts.query?.trim()) {
     const pattern = `%${opts.query.trim()}%`;
-    conditions.push(or(like(documents.title, pattern), like(documents.originalName, pattern), like(documents.summary, pattern)));
+    const match = allTermsMatch(opts.query);
+    // title, file name and summary as typed, plus the full text through the search index (#171)
+    const inText = match ? sql`${documents.id} IN (SELECT entity_id FROM search_fts WHERE entity_type = 'document' AND search_fts MATCH ${match})` : undefined;
+    conditions.push(or(like(documents.title, pattern), like(documents.originalName, pattern), like(documents.summary, pattern), inText));
   }
   return conditions.length ? and(...conditions) : undefined;
 }

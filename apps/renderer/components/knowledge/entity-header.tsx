@@ -1,7 +1,7 @@
 'use client';
 
 import type { IpcOutput } from '@archivist/shared';
-import { Check, FolderKanban, GitMerge, Link2, Pencil, Waypoints } from 'lucide-react';
+import { Check, FolderKanban, GitMerge, Link2, Pencil, Trash2, Waypoints } from 'lucide-react';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown, type WikiResolver } from '@/components/common/markdown';
 import { CASE_ENTRY_TYPES } from '@/components/knowledge/case-dialog';
@@ -14,7 +14,7 @@ import { useRun } from '@/lib/use-run';
 
 type Entity = IpcOutput<'knowledge:getEntity'>['entity'];
 
-export type EntityDialog = 'link' | 'case' | 'edit' | 'merge';
+export type EntityDialog = 'link' | 'case' | 'edit' | 'merge' | 'delete';
 
 export interface EntityHeaderProps {
   entity: Entity;
@@ -111,6 +111,11 @@ function EntityActions({ entity, graphOpen, onToggleGraph, onOpenDialog }: Entit
       {entity.type === 'note' && active && (
         <Button variant="outline" size="sm" onClick={() => onOpenDialog('edit')} data-testid="note-edit">
           <Pencil aria-hidden /> Bearbeiten
+        </Button>
+      )}
+      {entity.type === 'note' && active && (
+        <Button variant="outline" size="sm" onClick={() => onOpenDialog('delete')} data-testid="note-delete">
+          <Trash2 aria-hidden /> Löschen
         </Button>
       )}
       {entity.type === 'topic' && (

@@ -6,6 +6,7 @@ import { AppError } from '../util/errors';
 import { newId } from '../util/ids';
 import { normalizeName, truncate } from '../util/text';
 import type { AuditService } from './audit';
+import type { NodeSnapshot } from './graph/entities';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
@@ -17,6 +18,12 @@ interface NoteUpdateUndo {
   id: string;
   before: { name: string; description: string | null };
   afterUpdatedAt: string;
+}
+
+/** Undo of deleting a note: its node with relations. */
+const NOTE_DELETE_UNDO = 'note.delete';
+interface NoteDeleteUndo {
+  snapshot: NodeSnapshot;
 }
 
 export interface NoteInput {
@@ -51,6 +58,43 @@ export class NoteService {
       check: async (data) => this.updateConflicts(data as NoteUpdateUndo),
       run: async (data) => this.revertUpdate(data as NoteUpdateUndo),
     });
+    undo?.register(NOTE_DELETE_UNDO, {
+      check: async (data) => this.deleteConflicts(data as NoteDeleteUndo),
+      run: async (data) => this.restoreDeleted(data as NoteDeleteUndo),
+    });
+  }
+
+  private deleteConflicts(undoData: NoteDeleteUndo): string[] {
+    return this.graph.getEntity(undoData.snapshot.node.id) ? ['Die Notiz ist bereits wiederhergestellt.'] : [];
+  }
+
+  private async restoreDeleted({ snapshot }: NoteDeleteUndo): Promise<string> {
+    const skipped = this.graph.restoreNode(snapshot);
+    await this.reindex(snapshot.node.id);
+    this.ctx.events.emit('entry:updated', { id: snapshot.node.id, type: 'note' });
+    this.ctx.events.changed('knowledge', 'status');
+    return skipped > 0 ? `Notiz wiederhergestellt. ${skipped} Verknüpfung(en) nicht, weil inzwischen entfernt.` : 'Notiz wiederhergestellt.';
+  }
+
+  /** Deletes a note from the graph and the search index; undoable (#248). */
+  delete(id: string, opts: { confirmed: boolean; trigger?: string }): void {
+    if (!opts.confirmed) throw new AppError('permission_error', 'Das Löschen einer Notiz erfordert eine ausdrückliche Bestätigung.');
+    const note = this.graph.getEntity(id);
+    if (note?.type !== 'note') throw new AppError('validation_error', 'Notiz nicht gefunden.');
+    const snapshot = this.graph.snapshotNode(id);
+    if (!snapshot) throw new AppError('validation_error', 'Notiz nicht gefunden.');
+    this.graph.removeNode(id);
+    this.search.remove(id);
+    this.audit?.log({
+      action: 'note.delete',
+      actor: 'user',
+      trigger: opts.trigger ?? 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { title: note.name },
+      undo: { type: NOTE_DELETE_UNDO, data: { snapshot } satisfies NoteDeleteUndo },
+    });
+    this.ctx.events.changed('knowledge', 'status');
   }
 
   private updateConflicts(undoData: NoteUpdateUndo): string[] {

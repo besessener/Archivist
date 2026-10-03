@@ -38,4 +38,12 @@ describe('Contradiction check in the chat (#252)', () => {
     expect(reply.assistantMessage.content).toContain('Möglicherweise überholte Entscheidungen');
     expect(reply.assistantMessage.content).toContain('Das Meeting findet dienstags statt');
   });
+
+  it('runs the contradiction scan as a job (#254)', async () => {
+    app.llm.on('ChatIntent', () => intent({ intent: 'contradiction_check' }));
+
+    await app.ok('chat:send', { text: 'Gibt es Widersprüche?' });
+
+    expect(app.services.jobs.list().find((job) => job.type === 'contradiction.scan')).toMatchObject({ status: 'succeeded', label: 'Widersprüche prüfen' });
+  });
 });

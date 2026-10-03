@@ -1,0 +1,1 @@
+ALTER TABLE `chunks` ADD `local_embedding` blob;

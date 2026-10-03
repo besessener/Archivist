@@ -87,6 +87,11 @@ and say so; never work around it quietly. Reasoning lives in
 
 ## How to work here
 
+- **The LLM is the normal case.** Design, build, test and document every
+  feature for a configured LLM. Without one (unconfigured or `local_only`) the
+  app stays usable through a plain fallback, but never add behaviour, extra
+  questions or heuristics that exist only for that case; the rule-based chat is
+  an emergency fallback, not a second product.
 - **Smallest necessary change.** Preserve existing behaviour unless changing it
   is what was asked. Boy-scout fixes stay inside the function or file you are
   already editing; if something outside it breaks a rule, say so rather than

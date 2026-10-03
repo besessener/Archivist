@@ -68,6 +68,8 @@ export const chunks = sqliteTable(
     text: text('text').notNull(),
     embedding: blob('embedding', { mode: 'buffer' }),
     embeddingModel: text('embedding_model'),
+    /** Local hash vector kept next to a remote one, so the entry stays findable by the local pass when the endpoint is gone (#173). */
+    localEmbedding: blob('local_embedding', { mode: 'buffer' }),
   },
   (t) => [index('chunks_entity_idx').on(t.entityId)],
 );

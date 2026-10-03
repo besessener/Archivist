@@ -169,6 +169,13 @@
       "when": 1790956531470,
       "tag": "0023_subject_assignments",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791031574688,
+      "tag": "0024_local_vectors",
+      "breakpoints": true
     }
   ]
 }

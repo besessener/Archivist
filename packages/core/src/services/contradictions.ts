@@ -59,6 +59,9 @@ export interface ContradictionServiceDeps {
 }
 
 /** Contradictions are hints: decisions are never revoked or superseded autonomously, the resolution is an action the user confirms. */
+/** Job type of the contradiction scan the chat starts (#254). */
+export const CONTRADICTION_SCAN_JOB = 'contradiction.scan';
+
 export class ContradictionService {
   private actions!: ActionService;
   /** pairs (with their texts) the LLM judged not contradictory, so a scan does not ask again for the same texts */
@@ -164,7 +167,7 @@ export class ContradictionService {
   }
 
   /** Archive check: all active decisions pairwise per topic, pairs already recorded not again; outdated contradictions are resolved. */
-  async scanAll(): Promise<Contradiction[]> {
+  async scanAll(signal?: AbortSignal): Promise<Contradiction[]> {
     this.reconcile();
     const active = this.deps.decisions.list().filter((d) => ACTIVE_DECISION_STATUSES.includes(d.status));
     const created: Contradiction[] = [];
@@ -175,6 +178,7 @@ export class ContradictionService {
         if (seen.has(key)) continue;
         seen.add(key);
         if (this.forPair(d.id, o.id)) continue;
+        signal?.throwIfAborted();
         const found = await this.evaluate(d, o);
         if (found) created.push(await this.record([d, o], found));
       }

@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { WorkerPool } from '../workers/pool';
+import { LOCAL_MODEL } from './embedding';
 
 /** Bytes per segment; a segment is one SharedArrayBuffer, well below the per-buffer limit of V8/Electron (~2 GiB). */
 const SEGMENT_BYTES = 128 * 1024 * 1024;
@@ -148,9 +149,13 @@ export class VectorIndex {
     const cached = this.models.get(model);
     if (cached) return cached;
     let index: ModelIndex | null = null;
-    const rows = this.sqlite()
-      .prepare('SELECT id, entity_id AS entityId, entity_type AS entityType, embedding FROM chunks WHERE embedding_model = ? AND embedding IS NOT NULL')
-      .iterate(model) as IterableIterator<{ id: string; entityId: string; entityType: string; embedding: Buffer }>;
+    // local vectors also live next to remote ones (#173)
+    const query =
+      model === LOCAL_MODEL
+        ? 'SELECT id, entity_id AS entityId, entity_type AS entityType, embedding FROM chunks WHERE embedding_model = @model AND embedding IS NOT NULL ' +
+          'UNION ALL SELECT id, entity_id, entity_type, local_embedding FROM chunks WHERE embedding_model != @model AND local_embedding IS NOT NULL'
+        : 'SELECT id, entity_id AS entityId, entity_type AS entityType, embedding FROM chunks WHERE embedding_model = @model AND embedding IS NOT NULL';
+    const rows = this.sqlite().prepare(query).iterate({ model }) as IterableIterator<{ id: string; entityId: string; entityType: string; embedding: Buffer }>;
     for (const r of rows) {
       const vector = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, Math.floor(r.embedding.byteLength / 4));
       index ??= new ModelIndex({ dim: vector.length, typeCode: this.typeCode, maxSegmentRows: this.maxSegmentRows });
@@ -161,12 +166,16 @@ export class VectorIndex {
   }
 
   /** Called after an entity's chunks were rewritten in the database. */
-  replace(entity: { id: string; type: string }, written: { model: string; chunks: Array<{ id: string; vector: Float32Array | undefined }> }): void {
+  replace(
+    entity: { id: string; type: string },
+    written: { model: string; chunks: Array<{ id: string; vector: Float32Array | undefined; localVector?: Float32Array }> },
+  ): void {
     for (const m of this.models.values()) m.remove(entity.id);
+    const row = (chunkId: string) => ({ chunkId, entityId: entity.id, entityType: entity.type });
     const index = this.models.get(written.model);
-    if (index) {
-      for (const c of written.chunks) if (c.vector) index.add({ chunkId: c.id, entityId: entity.id, entityType: entity.type }, c.vector);
-    }
+    if (index) for (const c of written.chunks) if (c.vector) index.add(row(c.id), c.vector);
+    const local = written.model === LOCAL_MODEL ? undefined : this.models.get(LOCAL_MODEL);
+    if (local) for (const c of written.chunks) if (c.localVector) local.add(row(c.id), c.localVector);
     this.compact();
   }
 

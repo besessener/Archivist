@@ -16,19 +16,17 @@ export function checkedDecisionDate(value: string | null | undefined, today: str
   return iso;
 }
 
-/** Required fields (when, topic, participants, decision) that are neither present nor confirmed as unknown. */
+/** Required fields (when, topic, decision; participants are optional for a private archive, #198) that are neither present nor confirmed as unknown. */
 export function computeMissingFields(d: {
   decisionText?: string | null;
   decidedAt?: string | null;
   topic?: string | null;
-  participants?: string[];
   unknownFields?: DecisionField[];
 }): DecisionField[] {
   const unknown = new Set(d.unknownFields ?? []);
   const missing: DecisionField[] = [];
   if (!d.decidedAt && !unknown.has('decidedAt')) missing.push('decidedAt');
   if (!d.topic?.trim() && !unknown.has('topic')) missing.push('topic');
-  if ((d.participants ?? []).length === 0 && !unknown.has('participants')) missing.push('participants');
   if (!d.decisionText?.trim() && !unknown.has('decisionText')) missing.push('decisionText');
   return missing;
 }

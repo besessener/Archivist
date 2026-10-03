@@ -16,7 +16,7 @@ import { withMembership } from '@/lib/utils';
 
 const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondary' | 'success' | 'danger' | 'warning' | 'info' }> = {
   proposed: { label: 'Wartet auf deine Entscheidung', variant: 'warning' },
-  approved: { label: 'Bestätigt', variant: 'info' },
+  approved: { label: 'Wird ausgeführt', variant: 'info' },
   rejected: { label: 'Abgelehnt', variant: 'secondary' },
   executed: { label: 'Ausgeführt', variant: 'success' },
   failed: { label: 'Fehlgeschlagen', variant: 'danger' },

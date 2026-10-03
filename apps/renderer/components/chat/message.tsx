@@ -51,15 +51,25 @@ function SourceChip({ source }: { source: SourceRef }) {
     'flex max-w-xs items-start gap-2 rounded-lg border bg-background px-2.5 py-1.5 transition-colors hover:border-primary/60 hover:bg-primary/8 focus-visible:outline-2 focus-visible:outline-ring';
   if (source.type === 'document') {
     return (
-      <button
-        type="button"
-        className={cls}
-        data-testid="chat-source"
-        title={source.snippet || source.title}
-        onClick={() => void run(() => call('app:openPath', { documentId: source.id }), { errorTitle: 'Datei konnte nicht geöffnet werden' })}
-      >
-        {inner}
-      </button>
+      <span className="flex max-w-xs items-stretch gap-1">
+        <button
+          type="button"
+          className={cls}
+          data-testid="chat-source"
+          title={source.snippet || source.title}
+          onClick={() => void run(() => call('app:openPath', { documentId: source.id }), { errorTitle: 'Datei konnte nicht geöffnet werden' })}
+        >
+          {inner}
+        </button>
+        <Link
+          href={entityHref('document', source.id)}
+          className="flex items-center rounded-lg border bg-background px-2 text-[11px] text-primary hover:border-primary/60 hover:bg-primary/8 focus-visible:outline-2 focus-visible:outline-ring"
+          data-testid="chat-source-details"
+          aria-label={`Details zu ${source.title}`}
+        >
+          Details
+        </Link>
+      </span>
     );
   }
   return (

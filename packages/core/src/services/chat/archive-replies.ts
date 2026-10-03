@@ -2,10 +2,14 @@ import fs from 'node:fs';
 import type { DocumentRecord, DocumentStatus, StoredAgentAction } from '@archivist/shared';
 import { toErrorInfo } from '../../util/errors';
 import type { ConvState, Reply } from '../chat-state';
+import { CONTRADICTION_SCAN_JOB } from '../contradictions';
 import type { ChatDeps, ChatRequest } from './types';
 
 type ArchiveDeps = Pick<ChatDeps, 'docs' | 'actions' | 'jobs' | 'openItems' | 'decisions' | 'insights' | 'scanner' | 'contradictions' | 'graph'>;
 type Relation = ReturnType<ChatDeps['graph']['relationsOf']>[number];
+
+/** How long the chat waits for the scan job before it answers with what is known so far. */
+const SCAN_WAIT_MS = 20_000;
 
 const isInInbox = (d: DocumentRecord) => d.status === 'proposed' || d.status === 'staged';
 
@@ -120,13 +124,21 @@ export class ArchiveReplies {
   }
 
   async contradictionCheck(state: ConvState): Promise<Reply> {
-    await this.deps.contradictions.scanAll();
+    // a job of its own (visible and cancellable under Jobs); short scans still answer right away (#254)
+    const queued = this.deps.jobs.enqueue(CONTRADICTION_SCAN_JOB, { label: 'Widersprüche prüfen', sameAs: () => true });
+    const scan = await this.deps.jobs.waitFor(queued.id, SCAN_WAIT_MS);
+    const stillRunning = scan.status === 'pending' || scan.status === 'running';
+    const scanNote = stillRunning
+      ? '\n\n_Die Prüfung läuft noch im Hintergrund (siehe Jobs). Neue Funde melde ich als Hinweis; frag später noch einmal nach._'
+      : scan.status === 'failed'
+        ? `\n\n_Die Prüfung ist fehlgeschlagen: ${scan.error ?? 'unbekannter Fehler'}_`
+        : '';
     const list = this.deps.contradictions.list('detected');
     const outdated = this.deps.insights.list('open').filter((insight) => insight.kind === 'possibly_superseded');
     if (list.length === 0 && outdated.length === 0)
       return {
         intent: 'contradiction_check',
-        content: `Ich habe keine widersprüchlichen Aussagen gefunden.${this.scatterHint()}`,
+        content: `Ich habe keine widersprüchlichen Aussagen gefunden.${this.scatterHint()}${scanNote}`,
         confidence: 0.6,
         uncertainties: ['Die Prüfung erkennt nur eindeutige Gegensätze bei aktiven Entscheidungen zum gleichen Thema.'],
         state,
@@ -143,7 +155,7 @@ export class ArchiveReplies {
     ].filter(Boolean);
     return {
       intent: 'contradiction_check',
-      content: `${sections.join('\n\n')}\n\nDas sind Hinweise, keine festgestellte Wahrheit.`,
+      content: `${sections.join('\n\n')}\n\nDas sind Hinweise, keine festgestellte Wahrheit.${scanNote}`,
       actions: actions.filter((a) => a.status === 'proposed'),
       context: { contradictions: list.map((c) => ({ type: 'contradiction' as const, id: c.id, label: c.title })) },
       confidence: list.length ? Math.max(...list.map((c) => c.confidence)) : 0.5,

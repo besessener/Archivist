@@ -80,7 +80,7 @@ export function ContextPanel() {
                       {
                         {
                           proposed: 'Offen',
-                          approved: 'Bestätigt',
+                          approved: 'Wird ausgeführt',
                           rejected: 'Abgelehnt',
                           executed: 'Ausgeführt',
                           failed: 'Fehlgeschlagen',

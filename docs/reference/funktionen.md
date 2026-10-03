@@ -36,8 +36,8 @@ Der Chat ist die zentrale Schnittstelle.
 
 ## Decision Tracking
 
-- Pflichtfelder: *Wann, Thema, Beteiligte, Entscheidung*.
-- Gezielte Rückfragen; die Entscheidung bleibt Entwurf, bis alles vollständig ist oder ausdrücklich als „unbekannt“ bestätigt wurde.
+- Pflichtfelder: *Wann, Thema, Entscheidung*. *Beteiligte* sind optional und werden nicht erfragt; wer sie nennt, bekommt sie gespeichert.
+- Gezielte Rückfragen nach den fehlenden Pflichtfeldern; die Entscheidung bleibt Entwurf, bis alles vollständig ist oder ausdrücklich als „unbekannt“ bestätigt wurde.
 - Ersetzen/Widerrufen nur nach Bestätigung (auch aus dem Formular) und rückgängig machbar.
 
 ## Dokumente
@@ -45,6 +45,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Import** per Drag-and-Drop oder Dateiauswahl in einen sicheren Eingang (`inbox/`), mit Prüfsumme und Duplikaterkennung.
 - **Parser** für PDF, DOCX, PPTX, XLSX, EML, TXT/MD, PNG/JPG (Bilder und Scans per [OCR](#ocr)).
 - **Klassifikation** per LLM oder lokal, mit menschenlesbarem Zielpfad.
+- **Suche in der Dokumentenliste**: Das Suchfeld findet Titel, Dateinamen, Zusammenfassung und den Volltext (alle Suchbegriffe müssen vorkommen); die Liste zeigt die neuesten 100 und „N von M“; „Mehr laden“ holt jeweils 100 weitere (bis 1000).
 - **Archivierung** per Kopieren (Standard), Verschieben, nur Indexieren oder Ignorieren; Undo.
 - **Nur indexierte Dokumente**: Ändert sich das Original, wird es beim nächsten Scan bzw. bei der Archivprüfung (andere Dateigröße) lokal neu eingelesen und neu indexiert – kein zweites Dokument, kein veralteter Inhalt in der Suche. Fehlt das Original, meldet die Archivprüfung „Original fehlt“.
 - **Archivierte Dokumente**: Wird das Original geändert und neu analysiert, wird das neue Dokument als Ersatz („ersetzt“, Vorschlag) des archivierten verknüpft.
@@ -69,6 +70,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **„Neu anlegen“** auf der Wissen-Seite erzeugt echte Einträge (Ereignisse mit Datum über den Timeline-Dialog, Notizen indexiert) und öffnet bei einem bereits vorhandenen Eintrag diesen mit dem Hinweis „existiert bereits“.
 - **Unbestätigte Themen und Projekte**: Unverändert aus einem Dokument übernommene Themen und Projekte sind auf der Wissen-Seite „unbestätigt“ und werden dem Modell erst nach deiner Bestätigung (oder sobald du den Namen selbst verwendest) als bekannt genannt.
 - **Notizen bearbeiten**: „Bearbeiten“ auf der Wissen-Seite ändert Titel und Text einer Notiz; danach wird sie neu indexiert und neu analysiert. Rückgängig im Änderungsprotokoll.
+- **Notizen löschen**: „Löschen“ entfernt eine Notiz nach Bestätigung aus Wissensgraph und Suche; rückgängig im Änderungsprotokoll.
 
 ## Verknüpfungen
 
@@ -168,7 +170,7 @@ Hybrid: FTS5-Stichwortsuche + Vektorähnlichkeit (Cosine, im Worker-Thread), per
 **Vektorsuche**
 
 - Lokale Hash-Vektoren sind lexikalisch und stimmen nicht mit ab – sie ergänzen nur Einträge, die die Stichwortsuche nicht gefunden hat.
-- Echte Embeddings (falls konfiguriert) stimmen mit ab.
+- Echte Embeddings (falls konfiguriert) stimmen mit ab. Zu jedem echten Vektor wird ein lokaler gespeichert, damit ein Eintrag auch ohne erreichbaren Endpunkt semantisch auffindbar bleibt. Im Modus „automatisch“ werden auch Entscheidungen, Notizen, Aufgaben und Ereignisse mit dem Embedding-Modell eingebettet (maskiert und im Übertragungsprotokoll); in „vorher fragen“ und „nur lokal“ bleiben sie lokal. Wechselst du das Embedding-Modell, bettet ein Job die vorhandenen Einträge neu ein; Dokumente, die nicht extern analysiert werden dürfen, behalten lokale Vektoren.
 - Im Datenschutzmodus `confirm` nutzen Suchindex und Suchanfragen ausschließlich lokale Vektoren. Antwortet der Embedding-Endpunkt nicht innerhalb von 2,5 s, liefert die Suche die lokalen Treffer. Warum das passiert, zeigt der Agent mit `read_logs` und `diagnose` ([Archivist untersuchen](agentenmodus.md#archivist-untersuchen)).
 
 ## Verzeichnisscan
@@ -237,6 +239,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Nach einem Absturz läuft ein Job höchstens noch einmal; ohne verbleibende Versuche schlägt er fehl, statt bei jedem Start erneut abzustürzen.
 - Stapel-Analysen setzen nach Absturz oder Beenden hinter den bereits erledigten Dateien fort.
 - Ein Scan desselben Ordners bzw. eine Archivprüfung wird nicht doppelt eingereiht.
+- Als Job laufen auch die Widerspruchsprüfung aus dem Chat, das Archivieren oder Umlagern ab 10 Dokumenten nach deiner Bestätigung (die Karte zeigt „Wird ausgeführt“, bis das Ergebnis da ist) und das Neu-Einbetten aller Einträge, wenn du das Embedding-Modell wechselst. Kurze Läufe antworten noch im selben Zug.
 - Abgeschlossene Jobs werden nach 30 Tagen entfernt.
 - Schwere Arbeit läuft in Worker-Threads.
 - Einsehbar unter Einstellungen → Verarbeitung.

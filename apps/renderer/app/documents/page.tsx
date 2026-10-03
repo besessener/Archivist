@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 import type { DocumentStatus } from '@archivist/shared';
@@ -11,13 +11,16 @@ import { BulkBar } from '@/components/documents/bulk-bar';
 import { DocumentDialog } from '@/components/documents/document-dialog';
 import { DocumentsTable } from '@/components/documents/documents-table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useDebounced } from '@/lib/use-debounced';
 import { useQuery } from '@/lib/use-query';
 
 const ARCHIVED: DocumentStatus[] = ['archived', 'indexed_only'];
-const LIMIT = 1000;
+/** Documents per page; „Mehr laden“ extends the window by another page, up to the IPC limit. */
+const PAGE_SIZE = 100;
+const MAX_LIMIT = 1000;
 
 function DocumentsInner() {
   const router = useRouter();
@@ -29,7 +32,10 @@ function DocumentsInner() {
   const query = useDebounced(search.trim(), 300);
   // filtered in the database so newer inbox entries cannot hide archived documents; the total tells whether the list is complete (#222)
   const filter = { statuses: ARCHIVED, ...(query ? { query } : {}), ...(topicId ? { topicId } : {}) };
-  const list = useQuery('documents:list', { ...filter, limit: LIMIT }, { scopes: ['documents'] });
+  const [pages, setPages] = useState(1);
+  const limit = Math.min(MAX_LIMIT, pages * PAGE_SIZE);
+  useEffect(() => setPages(1), [query, topicId]);
+  const list = useQuery('documents:list', { ...filter, limit }, { scopes: ['documents'] });
   const total = useQuery('documents:count', filter, { scopes: ['documents'] });
   const topic = useQuery('knowledge:getEntity', topicId ? { id: topicId } : undefined, { enabled: !!topicId });
 
@@ -82,10 +88,17 @@ function DocumentsInner() {
         )}
       </div>
       {(total.data ?? 0) > docs.length && (
-        <p className="mb-4 text-sm text-muted-foreground" data-testid="documents-capped">
-          Angezeigt werden die neuesten {docs.length.toLocaleString('de-DE')} von {total.data!.toLocaleString('de-DE')} Dokumenten. Grenze die Liste mit der
-          Suche oder einem Thema ein, um ältere zu finden.
-        </p>
+        <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground" data-testid="documents-capped">
+          <p>
+            Angezeigt werden die neuesten {docs.length.toLocaleString('de-DE')} von {total.data!.toLocaleString('de-DE')} Dokumenten.
+            {limit >= MAX_LIMIT && ' Grenze die Liste mit der Suche oder einem Thema ein, um ältere zu finden.'}
+          </p>
+          {limit < MAX_LIMIT && (
+            <Button variant="outline" size="sm" onClick={() => setPages((p) => p + 1)} disabled={list.loading} data-testid="documents-load-more">
+              Mehr laden
+            </Button>
+          )}
+        </div>
       )}
       {list.error && !list.data && <ErrorNote error={list.error} onRetry={() => void list.refetch()} />}
       {!list.data && list.loading && <Loading />}

@@ -15,11 +15,14 @@ export interface FakeLlmServer {
   delayMs: number;
   /** Agent turns, the last one repeats; unset, the endpoint has no tool calling and the chat stays rule-based. */
   agentTurns: AgentTurn[] | null;
+  /** false: the connection test's structured (JSON) request gets an invalid answer, as from an endpoint without working JSON mode. */
+  structuredAnswers: boolean;
   close(): Promise<void>;
 }
 
 interface Control {
   delayMs: number;
+  structuredAnswers: boolean;
   agentTurns: AgentTurn[] | null;
   agentRound: number;
 }
@@ -147,7 +150,7 @@ function answerAgent(control: Control, request: ParsedRequest, response: http.Se
 /** Minimal OpenAI-compatible endpoint (Responses API) for the E2E test. */
 export async function startFakeLlm(): Promise<FakeLlmServer> {
   const calls: FakeLlmServer['calls'] = [];
-  const control: Control = { delayMs: 0, agentTurns: null, agentRound: 0 };
+  const control: Control = { delayMs: 0, structuredAnswers: true, agentTurns: null, agentRound: 0 };
   const answer = (request: ParsedRequest, response: http.ServerResponse) => {
     // without agent turns a tool request gets a plain text answer, as from an endpoint without tool calling
     if (request.tools?.length && control.agentTurns) {
@@ -156,7 +159,7 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
     }
     const schema = /JSON-Schema „(\w+)“/.exec(request.instructions ?? '')?.[1] ?? 'plain';
     calls.push({ schema, input: request.input ?? '' });
-    const text = textAnswer(schema, request.input ?? '');
+    const text = !control.structuredAnswers && schema === 'ConnectionTest' ? '{}' : textAnswer(schema, request.input ?? '');
     const payload = JSON.stringify({
       id: 'r',
       status: 'completed',
@@ -185,6 +188,12 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
     },
     set delayMs(ms: number) {
       control.delayMs = ms;
+    },
+    get structuredAnswers() {
+      return control.structuredAnswers;
+    },
+    set structuredAnswers(works: boolean) {
+      control.structuredAnswers = works;
     },
     get agentTurns() {
       return control.agentTurns;

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { AppStatus } from '@archivist/shared';
 import type { Services } from '../create-services';
+import { REEMBED_JOB } from '../services/search';
 import { AppError, permissionError } from '../util/errors';
 import { isInside } from '../util/paths';
 import type { HandlerGroup, HostApi } from './types';
@@ -88,11 +89,14 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
     'settings:get': () => ({ settings: services.settings.get(), hasApiKey: services.secrets.hasApiKey() }),
     'settings:update': (input) => {
       const before = services.settings.get().archiveRoot;
+      const embeddingBefore = services.settings.get().llm.embeddingModel;
       if (input.archiveRoot !== undefined && services.archive.isRootChangeActive())
         throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
       const settings = services.settings.update(input);
       // a direct path change (without moving the archive) warns when archived documents are not found there
       if (settings.archiveRoot !== before) services.archiveRoot.warnUnreachable(settings.archiveRoot);
+      // vectors of another model are useless for the new one: move the entries over in the background (#173)
+      if (settings.llm.embeddingModel !== embeddingBefore) services.jobs.enqueue(REEMBED_JOB, { label: 'Einträge neu einbetten', sameAs: () => true });
       return { settings };
     },
     'settings:setApiKey': (input) => {

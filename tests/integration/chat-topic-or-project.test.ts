@@ -60,11 +60,8 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
   it('understands „Thema“ and „Projekt“ without an LLM too', async () => {
     app.llm.down = true;
     const r1 = await send('Wir haben am 03.03.2026 mit prod-plat entschieden: Pause.');
+    expect(r1.assistantMessage.content).toContain('Die Entscheidung ist gespeichert');
     expect(r1.assistantMessage.content).toMatch(question);
-    // the question stays asked across the additions
-    const r2 = await send('Anna und Ben', r1.conversationId);
-    expect(r2.assistantMessage.content).toContain('Die Entscheidung ist gespeichert');
-    expect(r2.assistantMessage.content).toMatch(question);
     const r3 = await send('Thema', r1.conversationId);
     expect(r3.assistantMessage.content).not.toMatch(question);
     const d = (await app.ok('decisions:list', {}))[0]!;
@@ -74,7 +71,6 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
 
     const r4 = await send('Wir haben am 04.03.2026 mit nord-licht entschieden: Start.');
     expect(r4.assistantMessage.content).toMatch(/Ist „nord-licht“ das Thema oder der Name des Projekts\?/);
-    await send('Anna', r4.conversationId);
     await send('Das ist ein Projekt', r4.conversationId);
     const nl = (await app.ok('decisions:list', {})).find((x) => x.topicName === 'nord-licht')!;
     expect(nl.projectName).toBe('nord-licht');

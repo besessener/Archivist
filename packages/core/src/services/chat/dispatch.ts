@@ -3,6 +3,7 @@ import type { Reply } from '../chat-state';
 import { ArchiveReplies } from './archive-replies';
 import type { ConversationStore } from './conversation-store';
 import { FilingReplies } from './filing';
+import { historyLines } from './intent-prompt';
 import { LookupReplies } from './lookup-replies';
 import { ChatProposals } from './proposals';
 import type { ChatDeps, ChatRequest } from './types';
@@ -19,7 +20,7 @@ export class ChatDispatcher {
 
   constructor(
     private readonly deps: ChatDeps,
-    store: ConversationStore,
+    private readonly store: ConversationStore,
   ) {
     this.proposals = new ChatProposals(deps.actions, store);
     this.lookups = new LookupReplies(deps);
@@ -34,7 +35,7 @@ export class ChatDispatcher {
     if (CaptureService.handles(intent.intent)) return this.deps.capture.handle({ conv: conversationId, text, intent, state }, { viaLlm: options.viaLlm });
     switch (intent.intent) {
       case 'knowledge_question':
-        return this.deps.answers.knowledgeQuestion(request);
+        return this.deps.answers.knowledgeQuestion({ ...request, history: historyLines(this.store.recent(conversationId, 7)) });
       case 'document_search':
         return this.lookups.documentSearch(request);
       case 'timeline_query':

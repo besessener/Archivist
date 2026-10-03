@@ -1,5 +1,5 @@
 import type { ChatContext, ChatMessage, Conversation, SourceReference, StoredAgentAction } from '@archivist/shared';
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { conversations, messages } from '../../db/schema';
 import { AppError } from '../../util/errors';
@@ -157,7 +157,7 @@ export class ConversationStore {
     const shown = this.db
       .select({ actionIds: messages.actionIds })
       .from(messages)
-      .where(eq(messages.conversationId, conversationId))
+      .where(and(eq(messages.conversationId, conversationId), sql`json_array_length(${messages.actionIds}) > 0`))
       .orderBy(asc(messages.createdAt))
       .all()
       .flatMap((m) => m.actionIds);

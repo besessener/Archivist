@@ -20,6 +20,15 @@ test.describe('setup on first launch', () => {
     await expect(setup.locators.texts.testResult).toContainText('erfolgreich');
   });
 
+  test('warns when only the structured answers of the endpoint fail (#265)', async ({ llm, on, page }) => {
+    const setup = on(page).setup;
+    llm.structuredAnswers = false;
+
+    await setup.do.connectLlm(llm.url);
+
+    await expect(setup.locators.texts.testResult).toContainText('strukturierte Antworten fehlgeschlagen');
+  });
+
   test('stores the API key encrypted and never in plain text', async ({ llm, on, page, workspace }) => {
     await on(page).setup.do.complete(llm.url);
 

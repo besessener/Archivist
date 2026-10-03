@@ -55,11 +55,11 @@ describe('Decision workflow with follow-up questions (LLM)', () => {
     const r1 = await app.ok('chat:send', { text: 'Wir haben entschieden, dass wir mit prod-plat erstmal nicht weitermachen.' });
     const m1 = r1.assistantMessage;
     expect(m1.content).toContain('Wann wurde das entschieden?');
-    expect(m1.content).toContain('Wer war an der Entscheidung beteiligt?');
+    expect(m1.content).not.toContain('Wer war an der Entscheidung beteiligt?');
     expect(m1.content).toMatch(/„prod-plat“ das Thema oder der Name des Projekts/);
     const draft = (await app.ok('decisions:list', {}))[0]!;
     expect(draft.status).toBe('draft');
-    expect(draft.missingFields.sort()).toEqual(['decidedAt', 'participants']);
+    expect(draft.missingFields).toEqual(['decidedAt']);
 
     const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Am 3. März 2026 mit Anna und Ben, prod-plat ist ein Projekt.' });
     expect(r2.assistantMessage.content).toContain('Die Entscheidung ist gespeichert');
@@ -82,25 +82,19 @@ describe('Decision workflow with follow-up questions (LLM)', () => {
     expect(a.context?.decisions?.length).toBeGreaterThan(0);
   });
 
-  it('saves fields that were explicitly confirmed as unknown', async () => {
-    let n = 0;
-    app.llm.on('ChatIntent', () => {
-      n += 1;
-      return n === 1
-        ? intent({
-            intent: 'decision_new',
-            decision: extractedDecision({ decisionText: 'Wir wechseln den Stromanbieter.', topic: 'Strom', topicIsProject: false, decidedAt: '2026-02-01' }),
-          })
-        : intent({ intent: 'decision_amend', decision: extractedDecision({ unknownFields: ['participants'] }) });
-    });
+  it('saves a decision without participants once date and topic are known (#198)', async () => {
+    app.llm.on('ChatIntent', () =>
+      intent({
+        intent: 'decision_new',
+        decision: extractedDecision({ decisionText: 'Wir wechseln den Stromanbieter.', topic: 'Strom', topicIsProject: false, decidedAt: '2026-02-01' }),
+      }),
+    );
     const r1 = await app.ok('chat:send', { text: 'Wir wechseln den Stromanbieter, seit 1.2.2026.' });
-    expect(r1.assistantMessage.content).toContain('Wer war an der Entscheidung beteiligt?');
-    const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Weiß ich nicht.' });
-    expect(r2.assistantMessage.content).toContain('gespeichert');
-    expect(r2.assistantMessage.uncertainties.join(' ')).toMatch(/Beteiligte.*unbekannt/);
+    expect(r1.assistantMessage.content).toContain('gespeichert');
+    expect(r1.assistantMessage.content).not.toContain('Wer war an der Entscheidung beteiligt?');
     const d = (await app.ok('decisions:list', {}))[0]!;
     expect(d.status).toBe('active');
-    expect(d.unknownFields).toContain('participants');
+    expect(d.participants).toEqual([]);
   });
 });
 
@@ -112,12 +106,9 @@ describe('Decision workflow without an LLM (rule-based fallback)', () => {
     expect(r1.assistantMessage.content).not.toContain('Wer war an der Entscheidung');
     expect(r1.assistantMessage.errorMessage).toMatch(/nicht erreichbar/);
     const r2 = await app.ok('chat:send', { conversationId: r1.conversationId, text: '12.03.2026' });
-    expect(r2.assistantMessage.content).toContain('Wer war an der Entscheidung beteiligt?');
-    const r3 = await app.ok('chat:send', { conversationId: r1.conversationId, text: 'Anna und Ben' });
-    expect(r3.assistantMessage.content).toContain('gespeichert');
+    expect(r2.assistantMessage.content).toContain('gespeichert');
     const d = (await app.ok('decisions:list', {}))[0]!;
     expect(d.decidedAt?.slice(0, 10)).toBe('2026-03-12');
-    expect(d.participants).toEqual(['Anna', 'Ben']);
     expect(d.topicName).toBe('prod-plat');
   });
 
@@ -218,11 +209,9 @@ describe('Contradictions and replacing only after confirmation', () => {
     app.llm.down = true;
     await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const r = await app.ok('chat:send', { text: 'Wir haben entschieden, dass wir prod-plat pausieren. Datum 01.03.2026.' });
-    // rule-based: date detected, topic prod-plat detected, participants missing → follow-up question
-    expect(r.assistantMessage.content).toContain('Wer war an der Entscheidung beteiligt?');
-    const r2 = await app.ok('chat:send', { conversationId: r.conversationId, text: 'Anna' });
-    expect(r2.assistantMessage.content).toMatch(/Widerspruch|widersprüchlich/);
-    expect(r2.assistantMessage.actions.some((x) => x.actionType === 'supersede_decision' && x.status === 'proposed')).toBe(true);
+    // rule-based: date and topic prod-plat detected – complete without participants, so the contradiction check runs right away
+    expect(r.assistantMessage.content).toMatch(/Widerspruch|widersprüchlich/);
+    expect(r.assistantMessage.actions.some((x) => x.actionType === 'supersede_decision' && x.status === 'proposed')).toBe(true);
   });
 });
 

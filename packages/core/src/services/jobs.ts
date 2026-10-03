@@ -248,6 +248,17 @@ export class JobQueueService {
     return { interrupted: running.length, unfinished: unfinished.length };
   }
 
+  /** Waits for one job to end, at most `timeoutMs`; returns its latest state, which is still pending or running after a timeout. */
+  async waitFor(id: string, timeoutMs: number): Promise<Job> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const job = this.get(id);
+      if (job.status !== 'pending' && job.status !== 'running') return job;
+      if (Date.now() > deadline) return job;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+  }
+
   /** Waits until no pending/running jobs exist any more (mainly for tests and shutdown). */
   async whenIdle(timeoutMs = 30_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;

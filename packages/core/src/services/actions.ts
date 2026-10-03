@@ -37,6 +37,18 @@ const toStoredAction = (r: Row): StoredAgentAction => ({
 /** From this many documents a relocation counts as especially far-reaching („besonders folgenreich“). */
 const STRONG_RELOCATION_DOCUMENTS = 20;
 
+/** Job type that executes a confirmed big action in the background (#254). */
+export const ACTION_EXECUTE_JOB = 'action.execute';
+
+/** From this many documents archiving or relocating runs as a job. */
+const BACKGROUND_ITEMS = 10;
+
+/** How long the confirming caller waits for such a job before it answers „läuft im Hintergrund“. */
+const BACKGROUND_WAIT_MS = 15_000;
+
+const runsInBackground = (type: AgentActionType, params: Record<string, unknown> | null): boolean =>
+  (type === 'archive_documents' || type === 'relocate_documents') && ((params?.items as unknown[] | undefined)?.length ?? 0) >= BACKGROUND_ITEMS;
+
 /** Agent actions: the agent only proposes; execution happens exclusively through `resolve` after the user's decision. */
 export class ActionService {
   private deps!: ActionDeps;
@@ -206,20 +218,32 @@ export class ActionService {
     if (action.requiredConfirmation === 'strong' && !opts.strongConfirmed) {
       throw new AppError('permission_error', 'Diese Aktion ist besonders kritisch und erfordert eine zweite, ausdrückliche Bestätigung.');
     }
-    const requested = { ...action.proposedParameters, ...(opts.overrides ?? {}) };
-    const parsed = ActionParamSchemas[action.actionType].safeParse(requested);
-    let params: Record<string, unknown> | null = parsed.success ? parsed.data : null; // invalid parameters fail below
-    if (params) {
-      const checked = this.recheck(action.actionType, params);
-      if ('stale' in checked) {
-        // the world changed since the proposal: never execute outdated parameters (e.g. move a document back)
-        this.withdraw(action.id, `Nicht ausgeführt, der Vorschlag ist nicht mehr aktuell: ${checked.stale}`);
-        return this.get(action.id);
-      }
-      params = checked.params;
+    const prepared = this.prepare(action, opts.overrides ?? {});
+    if ('stale' in prepared) {
+      // the world changed since the proposal: never execute outdated parameters (e.g. move a document back)
+      this.withdraw(action.id, `Nicht ausgeführt, der Vorschlag ist nicht mehr aktuell: ${prepared.stale}`);
+      return this.get(action.id);
     }
     this.db.update(agentActions).set({ status: 'approved' }).where(eq(agentActions.id, action.id)).run();
-    const executed = await this.run(action, { params, requested });
+    if (runsInBackground(action.actionType, prepared.params)) return this.runViaJob(action, opts.overrides ?? {});
+    await this.execute(action, prepared);
+    return this.get(action.id);
+  }
+
+  /** Validated parameters (with the user's overrides) and the check against the current state. */
+  private prepare(
+    action: StoredAgentAction,
+    overrides: Record<string, unknown>,
+  ): { params: Record<string, unknown> | null; requested: Record<string, unknown> } | { stale: string } {
+    const requested = { ...action.proposedParameters, ...overrides };
+    const parsed = ActionParamSchemas[action.actionType].safeParse(requested);
+    if (!parsed.success) return { params: null, requested }; // invalid parameters fail in `run`
+    const checked = this.recheck(action.actionType, parsed.data);
+    return 'stale' in checked ? { stale: checked.stale } : { params: checked.params, requested };
+  }
+
+  private async execute(action: StoredAgentAction, input: { params: Record<string, unknown> | null; requested: Record<string, unknown> }): Promise<void> {
+    const executed = await this.run(action, input);
     if (executed) {
       try {
         this.afterExecuted(action.id, { type: action.actionType, params: executed });
@@ -228,7 +252,32 @@ export class ActionService {
       }
     }
     this.ctx.events.changed('status', 'insights', 'notifications');
+  }
+
+  /** Big actions run as a job (visible under Jobs); the caller still gets the result if it arrives within a short wait (#254). */
+  private async runViaJob(action: StoredAgentAction, overrides: Record<string, unknown>): Promise<StoredAgentAction> {
+    const job = this.deps.jobs.enqueue(ACTION_EXECUTE_JOB, { label: action.label, payload: { actionId: action.id, overrides }, maxAttempts: 1 });
+    await this.deps.jobs.waitFor(job.id, BACKGROUND_WAIT_MS);
     return this.get(action.id);
+  }
+
+  /** The job of a confirmed big action: the same preparation and execution as inline, nothing for an action that is no longer `approved`. */
+  async executeApproved(id: string, overrides: Record<string, unknown>): Promise<void> {
+    const action = this.get(id);
+    if (action.status !== 'approved') return;
+    const prepared = this.prepare(action, overrides);
+    if ('stale' in prepared) {
+      this.withdraw(id, `Nicht ausgeführt, der Vorschlag ist nicht mehr aktuell: ${prepared.stale}`);
+      return;
+    }
+    await this.execute(action, prepared);
+  }
+
+  /** The job ended without a result (failed, cancelled, interrupted): the card must not stay „Bestätigt“ forever. */
+  markNotExecuted(id: string, reason: string): void {
+    if (this.get(id).status !== 'approved') return;
+    this.db.update(agentActions).set({ status: 'failed', result: reason, resolvedAt: nowIso() }).where(eq(agentActions.id, id)).run();
+    this.ctx.events.changed('status', 'insights', 'notifications');
   }
 
   /** Revalidation against the current state; an error while checking also makes the proposal stale. */

@@ -179,10 +179,10 @@ describe('call sites use the central resolution (#28)', () => {
     expect(personNames()).toEqual(['Anna Schmidt', 'Monika Lor-Zade']);
   });
 
-  it('a decision whose only participant is an answer word still misses participants', async () => {
+  it('a decision whose only participant is an answer word has no participants and is not asked for them (#198)', async () => {
     const d = await decision('Nur ja', ['ja']);
     expect(d.participants).toEqual([]);
-    expect(d.missingFields).toContain('participants');
+    expect(d.missingFields).not.toContain('participants');
   });
 
   it('open items: responsible resolved; answer words neither create a person nor clear the responsible person', async () => {

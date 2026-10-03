@@ -8,7 +8,7 @@ So legst du fest, was Archivist an den LLM-Endpunkt senden darf.
 
 | Modus | Wirkung |
 | --- | --- |
-| `auto` | Inhalte automatisch analysieren |
+| `auto` | Inhalte automatisch analysieren; ein konfiguriertes Embedding-Modell bekommt auch deine Entscheidungen, Notizen, offenen Punkte und Ereignisse |
 | `confirm` (Standard) | vor jeder externen Analyse ausdrücklich bestätigen |
 | `local_only` | nie extern – keine Klassifikation, keine Chat-Auswertung, keine Embeddings per LLM |
 
