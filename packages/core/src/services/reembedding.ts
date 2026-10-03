@@ -32,8 +32,12 @@ export async function reembedEntries(deps: ReembeddingDeps, job: JobContext<Reco
   const left = new Set(search.entriesWithOtherModel(model, documentGoesRemote).map((entry) => entry.id));
   const moved = stale.filter((entry) => !left.has(entry.id)).length;
   if (moved < stale.length)
-    throw new AppError('llm_error', `Nur ${moved} von ${stale.length} Einträgen neu eingebettet: Das Embedding-Modell war nicht erreichbar.`, {
-      retryable: true,
-    });
+    throw new AppError(
+      'llm_error',
+      `Nur ${moved} von ${stale.length} Einträgen neu eingebettet; die übrigen behalten vorerst ihre bisherigen Vektoren (meist, weil das Embedding-Modell nicht erreichbar war).`,
+      {
+        retryable: true,
+      },
+    );
   return { summary: moved === 1 ? '1 Eintrag neu eingebettet' : `${moved} Einträge neu eingebettet` };
 }
