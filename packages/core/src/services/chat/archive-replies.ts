@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import type { ArchivePlanItem, DocumentRecord, DocumentStatus, Job, StoredAgentAction } from '@archivist/shared';
+import { RELATION_TYPE_LABELS, type ArchivePlanItem, type DocumentRecord, type DocumentStatus, type Job, type StoredAgentAction } from '@archivist/shared';
 import { toErrorInfo } from '../../util/errors';
 import type { ConvState, Reply } from '../chat-state';
-import { RELATION_LABEL } from '../graph/relation-reason';
 import { CONTRADICTION_SCAN_JOB } from '../contradictions';
 import type { ChatDeps, ChatRequest } from './types';
 
@@ -102,7 +101,7 @@ export class ArchiveReplies {
       const job = this.deps.scanner.startScan(undefined, 'chat');
       return {
         intent: 'scan_start',
-        content: `Der Scan läuft (Job „${job.label}“). Ich melde mich über die Notification Bell, sobald er fertig ist. Es werden nur Dateien aufgelistet – es gehen keine Inhalte an das LLM, bevor du Dateien zur Analyse auswählst.`,
+        content: `Der Scan läuft (Job „${job.label}“). Ich melde mich über die Notification Bell, sobald er fertig ist. Es werden nur Dateien aufgelistet – es gehen keine Inhalte an die KI, bevor du Dateien zur Analyse auswählst.`,
         confidence: 0.9,
         state,
       };
@@ -187,8 +186,8 @@ export class ArchiveReplies {
       actions.push(
         this.deps.actions.propose({
           actionType: 'confirm_relation',
-          label: `Beziehung: ${source} → ${RELATION_LABEL[r.relationType]} → ${target}`,
-          rationale: `Vorgeschlagene Beziehung (Confidence ${Math.round(r.confidence * 100)} %). Bestätigen übernimmt sie, Ablehnen verwirft sie.`,
+          label: `Beziehung: ${source} → ${RELATION_TYPE_LABELS[r.relationType]} → ${target}`,
+          rationale: `Vorgeschlagene Beziehung (Sicherheit ${Math.round(r.confidence * 100)} %). Bestätigen übernimmt sie, Ablehnen verwirft sie.`,
           confidence: r.confidence,
           affectedEntities: [],
           requiredConfirmation: 'confirm',
@@ -196,7 +195,7 @@ export class ArchiveReplies {
           conversationId,
         }),
       );
-      return `• ${source} → ${RELATION_LABEL[r.relationType]} → ${target} (${Math.round(r.confidence * 100)} %)`;
+      return `• ${source} → ${RELATION_TYPE_LABELS[r.relationType]} → ${target} (${Math.round(r.confidence * 100)} %)`;
     });
     return { intent: 'relation_decide', content: `Diese Beziehungen sind noch ungeklärt:\n\n${lines.join('\n')}`, actions, confidence: 0.7, state };
   }

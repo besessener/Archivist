@@ -241,7 +241,10 @@ export const ipcContract = {
     }),
     DocumentRecord,
   ),
-  'documents:ignore': channel(z.object({ id: Id }), DocumentRecord),
+  /** Ignoring is undoable (`audit:undo` with the returned `auditId`). */
+  'documents:ignore': channel(z.object({ id: Id }), z.object({ document: DocumentRecord, auditId: Id })),
+  /** Takes an ignored document back into the inbox, restoring its previous status. */
+  'documents:unignore': channel(z.object({ id: Id }), DocumentRecord),
   /** Bulk assignment for a multi-selection (#291): ONE undo step. */
   'documents:bulkUpdate': channel(
     z.object({

@@ -8,19 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress, ProgressIndeterminate } from '@/components/ui/progress';
 import { useApp } from '@/lib/app-context';
+import { DOCUMENT_STATUS_LABELS } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { basename } from '@/lib/utils';
 
-const STATUS_TEXT: Record<string, string> = {
-  staged: 'Wartet auf Analyse',
-  analyzing: 'Wird analysiert …',
-  proposed: 'Vorschlag liegt in der Inbox',
-  failed: 'Fehlgeschlagen',
-  quarantined: 'In Quarantäne',
-  archived: 'Archiviert',
-  indexed_only: 'Indexiert',
-  ignored: 'Ignoriert',
-};
 
 /** Imported files whose status the card follows (one list request); the rest is only counted (#222). */
 const TRACKED = 1000;
@@ -95,7 +86,7 @@ export function ImportCard() {
                   <span className="min-w-0 flex-1 truncate" title={d.originalName}>
                     {d.originalName}
                   </span>
-                  <span className="shrink-0 text-muted-foreground">{STATUS_TEXT[d.status] ?? d.status}</span>
+                  <span className="shrink-0 text-muted-foreground">{DOCUMENT_STATUS_LABELS[d.status]}</span>
                 </li>
               ))}
             </ul>

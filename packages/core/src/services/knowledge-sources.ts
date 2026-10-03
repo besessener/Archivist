@@ -1,4 +1,4 @@
-import { localDate, type Decision, type SourceReference } from '@archivist/shared';
+import { localDate, OPEN_ITEM_STATUS_LABELS, type Decision, type OpenItemStatus, type SourceReference } from '@archivist/shared';
 import { truncate } from '../util/text';
 import { decisionSource } from './chat-state';
 import type { DecisionService } from './decisions';
@@ -186,7 +186,7 @@ export class SourceReader {
       id: i.id,
       type: 'task',
       title: i.title,
-      snippet: `Status: ${i.status}${i.dueAt ? `, fällig ${i.dueAt.slice(0, 10)}` : ''}`,
+      snippet: `Status: ${OPEN_ITEM_STATUS_LABELS[i.status as OpenItemStatus] ?? i.status}${i.dueAt ? `, fällig ${i.dueAt.slice(0, 10)}` : ''}`,
       path: null,
       date: i.createdAt,
       dateKind: 'created',

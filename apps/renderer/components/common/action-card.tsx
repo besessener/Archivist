@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
+import { useToast, type ToastInput } from '@/lib/toast';
 import type { ActionRecord } from '@/lib/types';
 import { ConfidenceBadge } from './confidence';
 import { ConfirmDialog } from './confirm-dialog';
@@ -22,6 +23,16 @@ const STATUS: Record<ActionRecord['status'], { label: string; variant: 'secondar
   executed: { label: 'Ausgeführt', variant: 'success' },
   failed: { label: 'Fehlgeschlagen', variant: 'danger' },
   withdrawn: { label: 'Nicht mehr aktuell', variant: 'secondary' },
+};
+
+/** The toast follows the status the main process returned: the action may already have been settled elsewhere (e.g. „ja“ in the chat). */
+const RESOLVED_TOASTS: Record<ActionRecord['status'], (action: ActionRecord) => ToastInput> = {
+  proposed: () => ({ title: 'Die Aktion wartet noch auf deine Entscheidung.', variant: 'info' }),
+  approved: () => ({ title: 'Aktion bestätigt.', variant: 'success' }),
+  executed: () => ({ title: 'Aktion ausgeführt.', variant: 'success' }),
+  rejected: () => ({ title: 'Vorschlag abgelehnt.', variant: 'success' }),
+  withdrawn: () => ({ title: 'Nicht mehr aktuell.', variant: 'info' }),
+  failed: (action) => ({ title: 'Aktion fehlgeschlagen.', description: action.result ?? undefined, variant: 'error' }),
 };
 
 type Params = Record<string, unknown>;
@@ -153,6 +164,10 @@ function BatchChecklist({
 /** Card for an action proposal from the agent, with confirm/reject. */
 export function ActionCard({ action, onResolved }: { action: ActionRecord; onResolved?: (resolved: ActionRecord) => void }) {
   const [current, setCurrent] = useState<ActionRecord>(action);
+  useEffect(() => {
+    setCurrent(action);
+  }, [action]);
+  const { toast } = useToast();
   // a big action runs as a job (#254): while it runs, the card reloads it whenever the job or the action changes
   const running = useQuery('actions:get', { id: current.id }, { scopes: ['status'], jobs: true, enabled: current.status === 'approved' });
   useEffect(() => {
@@ -184,9 +199,9 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
               ...(parameterOverrides ? { parameterOverrides } : {}),
             })
           : call('actions:resolve', { decision: 'reject', actionId: current.id }),
-      { success: decision === 'approve' ? 'Aktion bestätigt.' : 'Vorschlag abgelehnt.' },
     );
     if (resolved) {
+      toast(RESOLVED_TOASTS[resolved.status](resolved));
       setCurrent(resolved);
       onResolved?.(resolved);
     }

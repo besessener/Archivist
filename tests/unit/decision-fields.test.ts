@@ -163,8 +163,8 @@ describe('rendering a decision', () => {
         '**Begründung:** Bewährt',
         '**Auswirkungen:** Migration nötig',
         '**Alternativen:** MySQL; SQLite',
-        '**Status:** active',
-        '**Confidence:** 86 %',
+        '**Status:** Gültig',
+        '**Sicherheit:** 86 %',
       ].join('\n'),
     );
   });
