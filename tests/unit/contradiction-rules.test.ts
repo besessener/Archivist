@@ -192,8 +192,21 @@ describe('which decisions are compared', () => {
     expect(relatedPairs([a, b])).toHaveLength(1);
   });
 
-  it('sees shared content words but ignores stop words and short words', () => {
-    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Meeting wird verschoben')).toBe(true);
+  it('needs two shared content words, so a single common word is not enough', () => {
+    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Meeting wird verschoben')).toBe(false);
+    expect(sharesContent('Das Meeting findet dienstags statt', 'Das Meeting dienstags wird verschoben')).toBe(true);
+    expect(sharesContent('Das Budget für die Solaranlage beträgt 5000 Euro', 'Das Budget der Solaranlage steigt')).toBe(true);
+  });
+
+  it('ignores stop words, filler words and short words in German and English', () => {
+    expect(sharesContent('Wir haben beschlossen, dass wegen der Kosten', 'Wir haben entschieden, dass wegen des Wetters')).toBe(false);
+    expect(sharesContent('The project will have been delayed again', 'The project will have been cancelled')).toBe(false);
     expect(sharesContent('Das Meeting findet dienstags statt', 'Das Protokoll schreibt Anna')).toBe(false);
+  });
+
+  it('accepts one shared word when it is all a very short decision says', () => {
+    expect(sharesContent('Postgres', 'Die Datenbank der Plattform läuft künftig auf Postgres')).toBe(true);
+    expect(sharesContent('Postgres', 'Die Datenbank der Plattform läuft künftig auf MySQL')).toBe(false);
+    expect(sharesContent('', 'Die Datenbank der Plattform')).toBe(false);
   });
 });

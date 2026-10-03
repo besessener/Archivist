@@ -152,7 +152,7 @@ export class ArchiveReplies {
         intent: 'contradiction_check',
         content: `Ich habe keine widersprüchlichen Aussagen gefunden.${this.scatterHint()}${scanNote}`,
         confidence: 0.6,
-        uncertainties: ['Die Prüfung erkennt nur eindeutige Gegensätze bei aktiven Entscheidungen zum gleichen Thema.'],
+        uncertainties: ['Die Prüfung vergleicht aktive Entscheidungen und, wenn eine KI eingerichtet ist, Dokumente zum gleichen Thema oder Projekt.'],
         state,
       };
     const insights = [...list.map((c) => this.deps.insights.byDedupeKey(`contradiction:${c.id}`)), ...outdated];

@@ -87,13 +87,21 @@ export function sharesScope(a: Decision, b: Decision): boolean {
   return (a.topicId !== null && a.topicId === b.topicId) || (a.projectId !== null && a.projectId === b.projectId);
 }
 
-/** Every pair of decisions that share a topic or a project, each pair once (grouped, so no pairwise scan over all decisions). */
-export function relatedPairs(decisions: Decision[]): Array<[Decision, Decision]> {
-  const groups = new Map<string, Decision[]>();
-  for (const decision of decisions)
-    for (const key of [decision.topicId && `topic:${decision.topicId}`, decision.projectId && `project:${decision.projectId}`])
-      if (key) groups.set(key, [...(groups.get(key) ?? []), decision]);
-  const pairs = new Map<string, [Decision, Decision]>();
+interface Scoped {
+  id: string;
+  topicId: string | null;
+  projectId: string | null;
+}
+
+/** Every pair that shares a topic or a project, each pair once (grouped, so no pairwise scan over everything); `maxPerGroup` keeps the first entries of a group only. */
+export function relatedPairs<T extends Scoped>(entries: T[], { maxPerGroup = Infinity }: { maxPerGroup?: number } = {}): Array<[T, T]> {
+  const groups = new Map<string, T[]>();
+  for (const entry of entries)
+    for (const key of [entry.topicId && `topic:${entry.topicId}`, entry.projectId && `project:${entry.projectId}`]) {
+      const group = groups.get(key || '') ?? [];
+      if (key && group.length < maxPerGroup) groups.set(key, [...group, entry]);
+    }
+  const pairs = new Map<string, [T, T]>();
   for (const group of groups.values())
     for (const [index, first] of group.entries())
       for (const second of group.slice(index + 1)) pairs.set([first.id, second.id].sort().join('|'), [first, second]);
@@ -101,9 +109,26 @@ export function relatedPairs(decisions: Decision[]): Array<[Decision, Decision]>
 }
 
 const MIN_SHARED_WORD_LENGTH = 4;
+/** Words that carry no topic (normalized: no umlauts); the general stop words come from `tokenize`. */
+const FILLER_WORDS = new Set(
+  'wurde wurden soll sollen sollte kann koennen konnte wollen wollte wird werden sein seine seiner ihre ihren unser unsere unseren wegen durch gegen ohne zwischen beim vom hier dort jetzt heute alle alles jede jeder jedes diesen diesem dieser noch schon ueber unter nach bevor weil damit sodass gibt geben gab habe habt have has had will would should shall could can our your their they them which when what into than then also more most some any been being does done'.split(
+    ' ',
+  ),
+);
 
-/** Whether two decision texts talk about the same thing: they share at least one content word. */
+/** The distinctive words of a text: no stop or filler words, at least four letters. */
+export function contentWords(text: string): Set<string> {
+  return new Set(tokenize(text).filter((word) => word.length >= MIN_SHARED_WORD_LENGTH && !FILLER_WORDS.has(word)));
+}
+
+/** Whether two word sets talk about the same thing: two shared words, or all words of a text that has fewer (a short decision). */
+export function overlaps(a: Set<string>, b: Set<string>): boolean {
+  const needed = Math.min(2, a.size, b.size);
+  if (needed === 0) return false;
+  return [...a].filter((word) => b.has(word)).length >= needed;
+}
+
+/** Whether two texts talk about the same thing: they share at least two content words (after stop-word removal). */
 export function sharesContent(a: string, b: string): boolean {
-  const wordsOfB = new Set(tokenize(b).filter((word) => word.length >= MIN_SHARED_WORD_LENGTH));
-  return tokenize(a).some((word) => word.length >= MIN_SHARED_WORD_LENGTH && wordsOfB.has(word));
+  return overlaps(contentWords(a), contentWords(b));
 }

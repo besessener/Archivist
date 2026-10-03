@@ -1,6 +1,6 @@
 import { DECISION_FIELD_LABELS, type Decision } from '@archivist/shared';
 import { normalizeName, truncate } from '../../util/text';
-import { sharesContent } from '../contradiction-rules';
+import { contentWords, overlaps, sharesScope } from '../contradiction-rules';
 import { decisionDates } from '../decision-dating';
 import { ACTIVE_DECISION_STATUSES } from '../decisions';
 import { yieldPeriodically, type CheckRun } from './findings';
@@ -39,20 +39,10 @@ export async function checkIncompleteDecisions(run: CheckRun, decisions: Decisio
   }
 }
 
-/** Active decisions grouped by topic, or by project when they have no topic. */
-function activeByScope(decisions: Decision[]): Decision[][] {
-  const groups = new Map<string, Decision[]>();
-  for (const decision of decisions.filter((x) => ACTIVE_DECISION_STATUSES.includes(x.status))) {
-    const key = decision.topicId ? `topic:${decision.topicId}` : decision.projectId ? `project:${decision.projectId}` : null;
-    if (key) groups.set(key, [...(groups.get(key) ?? []), decision]);
-  }
-  return [...groups.values()];
-}
-
 type DateOf = (decision: Decision) => string;
 const dayOf = (dateOf: DateOf, decision: Decision) => dateOf(decision).slice(0, 10);
 
-/** Active decisions with identical text and the same (or no) date: the later captured one is probably a duplicate of the earlier one. */
+/** Active decisions with identical text and the same (or no) date on a shared topic or project: the later captured one is probably a duplicate of the earlier one. */
 function checkDuplicates(run: CheckRun, { list, dateOf }: { list: Decision[]; dateOf: DateOf }): void {
   const buckets = new Map<string, Decision[]>();
   for (const decision of list) {
@@ -61,8 +51,9 @@ function checkDuplicates(run: CheckRun, { list, dateOf }: { list: Decision[]; da
   }
   for (const bucket of buckets.values()) {
     const byCapture = bucket.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
-    for (let i = 0; i < byCapture.length - 1; i += 1) {
-      const [older, newer] = [byCapture[i]!, byCapture[i + 1]!];
+    for (const [index, newer] of byCapture.entries()) {
+      const older = byCapture.slice(0, index).findLast((candidate) => sharesScope(candidate, newer));
+      if (!older) continue;
       proposeSupersede(run, {
         older,
         newer,
@@ -76,29 +67,32 @@ function checkDuplicates(run: CheckRun, { list, dateOf }: { list: Decision[]; da
 
 const scopeName = (decision: Decision) => decision.topicName ?? decision.projectName ?? 'diesem Thema';
 
-/** Two active decisions on the same topic or project that speak about the same thing: the older one may be superseded (unless a contradiction covers the pair). */
+/** Two active decisions sharing a topic or a project (like the contradiction check) that speak about the same thing: the older one may be superseded (unless a contradiction covers the pair). */
 export function checkSuperseded(run: CheckRun, decisions: Decision[]): void {
-  for (const list of activeByScope(decisions)) {
-    if (list.length < 2) continue;
-    // only dated decisions (own date or that of a source document): the capture date says nothing about which is newer (#168)
-    const dating = decisionDates(run.deps.ctx.database.db, list);
-    const dateOf: DateOf = (decision) => dating.get(decision.id)?.date ?? '';
-    checkDuplicates(run, { list, dateOf });
-    const sorted = list.filter((decision) => dateOf(decision)).sort((a, b) => dateOf(a).localeCompare(dateOf(b)));
-    for (const [index, newer] of sorted.entries()) {
-      const older = sorted
-        .slice(0, index)
-        .findLast((candidate) => dayOf(dateOf, candidate) !== dayOf(dateOf, newer) && sharesContent(candidate.decisionText, newer.decisionText));
-      if (!older || run.deps.contradictions.forPair(older.id, newer.id)) continue;
-      const newerDate = dayOf(dateOf, newer);
-      proposeSupersede(run, {
-        older,
-        newer,
-        title: `Möglicherweise überholt: ${older.title}`,
-        explanation: `Zum Thema „${scopeName(older)}“ existiert eine neuere aktive Entscheidung vom ${newerDate}${newer.decidedAt ? '' : ' (laut Quelldokument)'}: ${truncate(newer.decisionText, 160)}`,
-        rationale: `Zum Thema „${scopeName(older)}“ gibt es eine neuere Entscheidung.`,
-      });
-    }
+  const active = decisions.filter((decision) => ACTIVE_DECISION_STATUSES.includes(decision.status) && (decision.topicId || decision.projectId));
+  if (active.length < 2) return;
+  // only dated decisions (own date or that of a source document): the capture date says nothing about which is newer (#168)
+  const dating = decisionDates(run.deps.ctx.database.db, active);
+  const dateOf: DateOf = (decision) => dating.get(decision.id)?.date ?? '';
+  checkDuplicates(run, { list: active, dateOf });
+  const sorted = active.filter((decision) => dateOf(decision)).sort((a, b) => dateOf(a).localeCompare(dateOf(b)));
+  const words = new Map(sorted.map((decision) => [decision.id, contentWords(decision.decisionText)]));
+  for (const [index, newer] of sorted.entries()) {
+    const older = sorted
+      .slice(0, index)
+      .findLast(
+        (candidate) =>
+          dayOf(dateOf, candidate) !== dayOf(dateOf, newer) && sharesScope(candidate, newer) && overlaps(words.get(candidate.id)!, words.get(newer.id)!),
+      );
+    if (!older || run.deps.contradictions.forPair(older.id, newer.id)) continue;
+    const newerDate = dayOf(dateOf, newer);
+    proposeSupersede(run, {
+      older,
+      newer,
+      title: `Möglicherweise überholt: ${older.title}`,
+      explanation: `Zum Thema „${scopeName(older)}“ existiert eine neuere aktive Entscheidung vom ${newerDate}${newer.decidedAt ? '' : ' (laut Quelldokument)'}: ${truncate(newer.decisionText, 160)}`,
+      rationale: `Zum Thema „${scopeName(older)}“ gibt es eine neuere Entscheidung.`,
+    });
   }
 }
 

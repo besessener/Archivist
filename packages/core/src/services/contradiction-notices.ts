@@ -56,3 +56,29 @@ export function announce(
     dedupeKey: `contradiction:${row.id}`,
   });
 }
+
+/** Insight and notification of a new contradiction between two documents; there is nothing to supersede, the user reads both and decides. */
+export function announceDocuments(
+  deps: { insights: InsightService; notifications: NotificationService },
+  row: ContradictionRow,
+  documents: Array<{ id: string; title: string }>,
+): void {
+  deps.insights.upsert({
+    kind: 'contradiction',
+    title: row.title,
+    explanation: row.description,
+    confidence: row.confidence,
+    affected: documents.map(({ id, title }) => ({ type: 'document' as const, id, label: title })),
+    sourceIds: row.sourceIds,
+    dedupeKey: `contradiction:${row.id}`,
+  });
+  deps.notifications.create({
+    title: 'Möglicher Widerspruch zwischen Dokumenten erkannt',
+    description: row.title,
+    type: 'contradiction',
+    priority: 'high',
+    affectedEntityIds: documents.map(({ id }) => id),
+    proposedActions: [{ label: 'Insights öffnen', kind: 'navigate', target: '/insights/' }],
+    dedupeKey: `contradiction:${row.id}`,
+  });
+}

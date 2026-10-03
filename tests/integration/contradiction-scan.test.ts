@@ -272,6 +272,28 @@ describe('„Möglicherweise überholt“ needs a common subject (#186)', () => 
     expect(openInsights('possibly_superseded')).toHaveLength(1);
   });
 
+  it('is not raised when the decisions share only a single common word', async () => {
+    app.llm.down = true;
+    await decision('Das Meeting findet dienstags statt.', '2026-01-10');
+    await decision('Das Meeting wird verschoben.', '2026-03-01');
+
+    await app.services.consistency.run({ trigger: 'test' });
+
+    expect(openInsights('possibly_superseded')).toHaveLength(0);
+  });
+
+  it('compares decisions of different topics in the same project, like the contradiction check', async () => {
+    app.llm.down = true;
+    await decision('Das Meeting findet dienstags statt.', '2026-01-10', { topic: 'Planung', project: 'Verein' });
+    await decision('Das Meeting findet donnerstags statt.', '2026-03-01', { topic: 'Termine', project: 'Verein' });
+    await decision('Das Meeting findet freitags statt.', '2026-04-01', { topic: 'Termine', project: 'Garten' });
+
+    await app.services.consistency.run({ trigger: 'test' });
+
+    expect(openInsights('possibly_superseded').map((i) => i.title)).toEqual(expect.arrayContaining([expect.stringContaining('Möglicherweise überholt')]));
+    expect(openInsights('possibly_superseded').flatMap((i) => i.affected.map((e) => e.id))).toHaveLength(4);
+  });
+
   it.each([
     ['dated', '2026-03-01'],
     ['undated', null],

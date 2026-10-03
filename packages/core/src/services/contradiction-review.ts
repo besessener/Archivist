@@ -52,18 +52,22 @@ export class ContradictionReviewer {
 
   /** The stored verdict for these texts, if there is one. */
   stored(pair: DecisionPair): boolean | undefined {
-    return this.db
-      .select()
-      .from(contradictionReviews)
-      .where(eq(contradictionReviews.textHash, textHashOf(pair)))
-      .get()?.isContradiction;
+    return this.storedByHash(textHashOf(pair));
   }
 
   remember(pair: DecisionPair, isContradiction: boolean): void {
+    this.rememberByHash(textHashOf(pair), isContradiction);
+  }
+
+  storedByHash(textHash: string): boolean | undefined {
+    return this.db.select().from(contradictionReviews).where(eq(contradictionReviews.textHash, textHash)).get()?.isContradiction;
+  }
+
+  rememberByHash(textHash: string, isContradiction: boolean): void {
     const reviewedAt = nowIso();
     this.db
       .insert(contradictionReviews)
-      .values({ textHash: textHashOf(pair), isContradiction, reviewedAt })
+      .values({ textHash, isContradiction, reviewedAt })
       .onConflictDoUpdate({ target: contradictionReviews.textHash, set: { isContradiction, reviewedAt } })
       .run();
   }
