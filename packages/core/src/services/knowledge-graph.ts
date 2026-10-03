@@ -88,6 +88,11 @@ export class KnowledgeGraphService {
     return this.entities.list(opts);
   }
 
+  /** All names of a type, without the cap of {@link listEntities}. */
+  entityNames(query: { type: EntityType; confirmedOnly?: boolean }): string[] {
+    return this.entities.names(query);
+  }
+
   /** Remembers `alias` as an alternative name of the entity (no-op if it equals the name or a known alias). */
   addAlias(entityId: string, alias: string): GraphEntity {
     return this.entities.addAlias(entityId, alias);

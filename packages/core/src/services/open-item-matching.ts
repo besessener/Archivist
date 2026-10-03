@@ -12,6 +12,9 @@ const OPEN_PATTERNS = [
   /rückmeldung\s+(?:steht\s+)?(?:noch\s+)?aus(?:stehend)?|ausstehende\s+rückmeldung/i,
   /entscheidung\s+(?:steht\s+)?(?:noch\s+)?aus(?:stehend)?|ausstehende\s+entscheidung/i,
   /follow[- ]?up\s+(?:ist\s+)?erforderlich/i,
+  /\bto\s+be\s+(?:clarified|checked|decided|confirmed|agreed)\b/i,
+  /\bopen\s+(?:item|point|question)\b|\b(?:action\s+item|follow[- ]?up)\s*:/i,
+  /\bnot\s+yet\s+(?:clarified|decided|resolved)\b/i,
 ];
 
 export function detectOpenItemSentences(text: string, max = 8): string[] {

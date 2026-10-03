@@ -6,7 +6,7 @@ import {
   type EntityRef,
   type StoredAgentAction,
 } from '@archivist/shared';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { agentActions } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
@@ -14,6 +14,7 @@ import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
 import type { ActionDeps, AgentBatchExecutor } from './action-deps';
 import { executeAction } from './action-executors';
+import { EXTRACTED_NOTIFICATION_PREFIX } from './notifications';
 import { mergedIds, revalidate, type Revalidation } from './action-revalidation';
 
 type Row = typeof agentActions.$inferSelect;
@@ -36,6 +37,9 @@ const toStoredAction = (r: Row): StoredAgentAction => ({
 
 /** From this many documents a relocation counts as especially far-reaching („besonders folgenreich“). */
 const STRONG_RELOCATION_DOCUMENTS = 20;
+
+/** Upper bound of one page of actions. */
+const MAX_PAGE_SIZE = 200;
 
 /** Job type that executes a confirmed big action in the background (#254). */
 export const ACTION_EXECUTE_JOB = 'action.execute';
@@ -132,12 +136,19 @@ export class ActionService {
   }
 
   list(status?: StoredAgentAction['status']): StoredAgentAction[] {
+    return this.page({ status, limit: MAX_PAGE_SIZE, offset: 0 });
+  }
+
+  /** One page of actions, newest first, optionally of one status and type. */
+  page(query: { status?: AgentActionStatus; actionType?: AgentActionType; limit: number; offset: number }): StoredAgentAction[] {
+    const filters = [query.status && eq(agentActions.status, query.status), query.actionType && eq(agentActions.actionType, query.actionType)];
     return this.db
       .select()
       .from(agentActions)
-      .where(status ? eq(agentActions.status, status) : undefined)
-      .orderBy(desc(agentActions.createdAt))
-      .limit(200)
+      .where(and(...filters.filter((f) => f !== undefined)))
+      .orderBy(desc(agentActions.createdAt), desc(agentActions.id))
+      .limit(Math.min(query.limit, MAX_PAGE_SIZE))
+      .offset(query.offset)
       .all()
       .map(toStoredAction);
   }
@@ -154,6 +165,7 @@ export class ActionService {
     this.db.update(agentActions).set({ status: 'withdrawn', result: reason, resolvedAt: nowIso() }).where(eq(agentActions.id, id)).run();
     const withdrawn = this.get(id);
     for (const listener of this.withdrawnListeners) listener(withdrawn);
+    this.resolveSettledNotifications();
     this.ctx.events.changed('status', 'insights');
     return true;
   }
@@ -188,8 +200,17 @@ export class ActionService {
   ): Promise<StoredAgentAction> {
     const action = this.get(id);
     if (action.status !== 'proposed') return action;
-    if (decision === 'reject') return this.reject(action);
-    return this.approve(action, opts);
+    const decided = decision === 'reject' ? this.reject(action) : await this.approve(action, opts);
+    this.resolveSettledNotifications();
+    return decided;
+  }
+
+  /** Document notifications („Dokument enthält …“) are done once every proposal they offer is decided; the proposals stay on the page. */
+  private resolveSettledNotifications(): void {
+    for (const notification of this.deps.notifications.openByDedupePrefix(EXTRACTED_NOTIFICATION_PREFIX)) {
+      const targets = notification.proposedActions.flatMap((a) => (a.kind === 'confirm_action' && a.target ? [a.target] : []));
+      if (targets.every((target) => this.get(target).status !== 'proposed')) this.deps.notifications.resolve(notification.id);
+    }
   }
 
   private reject(action: StoredAgentAction): StoredAgentAction {

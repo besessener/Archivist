@@ -52,6 +52,7 @@ const userMessage = (input: string) => input.split('Nachricht des Benutzers:\n')
 function classification(input: string) {
   const name = /Dateiname: (.+)/.exec(input)?.[1] ?? '';
   const vacation = /urlaub/i.test(name);
+  const decided = /beschluss/i.test(name);
   return {
     docType: vacation ? 'Urlaubsantrag' : 'Protokoll',
     title: vacation ? 'Urlaubsantrag Juni 2026' : 'Jour Fixe Nordlicht',
@@ -68,7 +69,17 @@ function classification(input: string) {
       rationale: vacation ? 'Urlaubsantrag vom 12.06.2026' : 'Das Dokument nennt das Projekt Nordlicht.',
       confidence: 0.88,
     },
-    decisions: [],
+    decisions: decided
+      ? [
+          {
+            title: 'Fassade streichen',
+            decisionText: 'Die Fassade wird im Herbst gestrichen.',
+            kind: 'decided',
+            evidence: 'Beschluss: Die Fassade wird im Herbst gestrichen.',
+            participants: [],
+          },
+        ]
+      : [],
     openItems: [],
     confidence: 0.88,
     rationale: 'E2E',

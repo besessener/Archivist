@@ -6,6 +6,7 @@ import type { DecisionService } from './decisions';
 import type { DocumentService } from './documents';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
+import type { NotificationService } from './notifications';
 import type { OpenItemService } from './open-items';
 import type { ReminderService } from './reminders';
 import type { UndoService } from './undo';
@@ -60,6 +61,7 @@ export interface ActionDeps {
   noteEventDuplicates: NoteEventMerger;
   scanner: PathExcluder;
   reminders: ReminderService;
+  notifications: Pick<NotificationService, 'openByDedupePrefix' | 'resolve'>;
   audit: AuditService;
   undo: UndoService;
   jobs: Pick<JobQueueService, 'enqueue' | 'waitFor'>;

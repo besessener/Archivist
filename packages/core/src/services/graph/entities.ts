@@ -175,6 +175,18 @@ export class GraphEntities {
     return rows.map((row) => ({ ...mapEntity(row), relationCount: counts.get(row.id) ?? 0 }));
   }
 
+  /** Every name of this type (no cap), served by the type/name index – for matching a document against all known topics. */
+  names(query: { type: EntityType; confirmedOnly?: boolean }): string[] {
+    const conditions = [eq(entities.type, query.type), ...(query.confirmedOnly ? [eq(entities.unconfirmed, false)] : [])];
+    return this.db
+      .select({ name: entities.name })
+      .from(entities)
+      .where(and(...conditions))
+      .orderBy(entities.normalizedName)
+      .all()
+      .map((row) => row.name);
+  }
+
   private currentRelationCounts(ids: string[]): Map<string, number> {
     const counts = new Map<string, number>();
     const current = this.db
