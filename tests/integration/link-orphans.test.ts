@@ -35,12 +35,12 @@ describe('Archive check: entries without any link (#290)', () => {
     expect((await app.ok('links:proposals', {})).items.map((i) => i.relation.id)).toContain(proposal[0]!.id);
 
     // the user confirms the proposal: the recipe is left
-    app.services.graph.decideRelation(proposal[0]!.id, 'confirmed');
+    app.services.graph.decideRelation(proposal[0]!.id, { status: 'confirmed' });
     await app.services.links.checkOrphans();
     expect(hint()).toMatchObject({ title: '1 Eintrag ohne Verknüpfung', sourceIds: [recipe] });
 
     // the recipe gets a confirmed link: the cause is gone, the hint closes
-    app.services.graph.linkEntries(recipe, lease, 'relates_to', { status: 'confirmed' });
+    app.services.graph.linkEntries({ sourceId: recipe, targetId: lease, relationType: 'relates_to' }, { status: 'confirmed' });
     expect(await app.services.links.checkOrphans()).toEqual({ pending: 0, proposed: 0 });
     expect(hint()).toBeUndefined();
   });
@@ -51,7 +51,7 @@ describe('Archive check: entries without any link (#290)', () => {
     await note('Nebenkosten', flatText('Nebenkostenabrechnung'));
     await app.services.jobs.whenIdle();
     await app.services.links.checkOrphans();
-    for (const rel of app.services.graph.relationsOf(lease, { statuses: ['proposed'] })) app.services.graph.decideRelation(rel.id, 'rejected');
+    for (const rel of app.services.graph.relationsOf(lease, { statuses: ['proposed'] })) app.services.graph.decideRelation(rel.id, { status: 'rejected' });
 
     expect(await app.services.links.checkOrphans()).toEqual({ pending: 2, proposed: 0 });
     expect(hint()!.explanation).not.toContain('passende Ziele');
@@ -84,13 +84,13 @@ describe('Archive check: entries without any link (#290)', () => {
     await note('Mietvertrag', flatText('Mietvertrag'));
     await note('Nebenkosten', flatText('Nebenkostenabrechnung'));
     await app.services.jobs.whenIdle();
-    const report = await app.services.consistency.run('test');
+    const report = await app.services.consistency.run({ trigger: 'test' });
     expect(report.byKind.orphan_entries).toBe(1);
     expect(report.summary).toContain('Einträge ohne Verknüpfung');
     expect(app.services.links.proposals().total).toBe(0);
 
     app.services.settings.update({ links: { autoPropose: true } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(app.services.links.proposals().total).toBe(1);
   });
 });
@@ -108,7 +108,7 @@ describe('Linkage metrics (#292)', () => {
     expect(m.history).toEqual([]);
 
     app.services.settings.update({ links: { autoPropose: true } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     m = await app.ok('links:metrics', {});
     expect(m.current).toMatchObject({ orphans: 1, openProposals: 1 });
     expect(m.history).toHaveLength(1);
@@ -116,13 +116,16 @@ describe('Linkage metrics (#292)', () => {
 
     // decisions of the user count per method: one confirmed, one rejected
     const [p] = app.services.graph.relationsOf(lease, { statuses: ['proposed'] });
-    app.services.graph.decideRelation(p!.id, 'confirmed');
-    const r = app.services.graph.link(recipe, costs, 'related_to', { status: 'proposed', method: 'mention', evidence: 'x' })!;
-    app.services.graph.decideRelation(r.id, 'rejected');
+    app.services.graph.decideRelation(p!.id, { status: 'confirmed' });
+    const r = app.services.graph.link(
+      { sourceId: recipe, targetId: costs, relationType: 'related_to' },
+      { status: 'proposed', method: 'mention', evidence: 'x' },
+    )!;
+    app.services.graph.decideRelation(r.id, { status: 'rejected' });
     // a manual link is no proposal and does not count
-    app.services.graph.linkEntries(recipe, lease, 'relates_to', { status: 'confirmed' });
+    app.services.graph.linkEntries({ sourceId: recipe, targetId: lease, relationType: 'relates_to' }, { status: 'confirmed' });
 
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     m = await app.ok('links:metrics', {});
     expect(m.methods.find((x) => x.method === 'similarity')).toMatchObject({ confirmed: 1, rejected: 0, open: 0, rate: 1 });
     expect(m.methods.find((x) => x.method === 'mention')).toMatchObject({ confirmed: 0, rejected: 1, rate: 0 });

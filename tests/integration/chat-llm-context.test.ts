@@ -79,11 +79,25 @@ describe('Context for the LLM (#38)', () => {
 
   it('open proposals of this conversation are listed with ID in the prompt; an approval via proposalId is asked back (#199)', async () => {
     const g = app.services.graph;
-    const relA = g.link(g.ensureEntity('topic', 'Hauskauf').id, g.ensureEntity('project', 'Nordlicht').id, 'relates_to', {
-      confidence: 0.6,
-      status: 'proposed',
-    })!;
-    const relB = g.link(g.ensureEntity('topic', 'Steuer').id, g.ensureEntity('project', 'Südwind').id, 'relates_to', { confidence: 0.6, status: 'proposed' })!;
+    const relA = g.link(
+      {
+        sourceId: g.ensureEntity({ type: 'topic', name: 'Hauskauf' }).id,
+        targetId: g.ensureEntity({ type: 'project', name: 'Nordlicht' }).id,
+        relationType: 'relates_to',
+      },
+      {
+        confidence: 0.6,
+        status: 'proposed',
+      },
+    )!;
+    const relB = g.link(
+      {
+        sourceId: g.ensureEntity({ type: 'topic', name: 'Steuer' }).id,
+        targetId: g.ensureEntity({ type: 'project', name: 'Südwind' }).id,
+        relationType: 'relates_to',
+      },
+      { confidence: 0.6, status: 'proposed' },
+    )!;
     app.llm.on('ChatIntent', () => intent({ intent: 'relation_decide' }));
     const r1 = await send('Welche Beziehungen sind offen?');
     app.llm.on('ChatIntent', (_s, input) => intent({ intent: 'proposal_confirm', proposalId: shortId(input, 'Beziehung: Steuer') }));

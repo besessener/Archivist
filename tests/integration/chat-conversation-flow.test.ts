@@ -59,7 +59,7 @@ describe('Open items, reminders and notification bell', () => {
   it('reports overdue open items during the archive check', async () => {
     app.llm.down = true;
     await app.ok('openItems:create', { title: 'Steuerbescheid prüfen', dueAt: '2020-01-01', priority: 'normal', sourceIds: [], confidence: 0.9 });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const notes = await app.ok('notifications:list', {});
     expect(notes.some((n) => n.type === 'open_item_overdue')).toBe(true);
     expect(notes.some((n) => n.type === 'open_item_no_owner')).toBe(true);

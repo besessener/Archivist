@@ -44,9 +44,9 @@ describe('Own identity (#29)', () => {
 
   it('merges an existing person with the entered name into the own person', async () => {
     const me = self().ensure();
-    const existing = graph().ensureEntity('person', 'Monika Lor-Zade');
-    const topic = graph().ensureEntity('topic', 'Budget');
-    graph().link(existing.id, topic.id, 'relates_to', { status: 'confirmed' });
+    const existing = graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade' });
+    const topic = graph().ensureEntity({ type: 'topic', name: 'Budget' });
+    graph().link({ sourceId: existing.id, targetId: topic.id, relationType: 'relates_to' }, { status: 'confirmed' });
 
     setName('Monika Lor-Zade');
     await waitFor(() => !graph().getEntity(existing.id));
@@ -60,7 +60,7 @@ describe('Own identity (#29)', () => {
   });
 
   it('on first creation takes a person who already has that name instead of creating a second one', () => {
-    const existing = graph().ensureEntity('person', 'Dr. Monika Lor-Zade');
+    const existing = graph().ensureEntity({ type: 'person', name: 'Dr. Monika Lor-Zade' });
     setName('Monika Lor-Zade');
     expect(self().ensure().id).toBe(existing.id);
   });
@@ -96,12 +96,12 @@ describe('Own identity (#29)', () => {
   it('the archive check merges persons with my name, nickname or „ich“ into me', async () => {
     setName('Monika Lor-Zade', ['Moni']);
     const me = self().ensure();
-    const ich = graph().ensureEntity('person', 'ich'); // former entry from before the own identity existed
-    const moni = graph().ensureEntity('person', 'Moni');
-    const role = graph().ensureEntity('person', 'Monika Lor-Zade (Chefin)');
-    const other = graph().ensureEntity('person', 'Anna Schmidt');
+    const ich = graph().ensureEntity({ type: 'person', name: 'ich' }); // former entry from before the own identity existed
+    const moni = graph().ensureEntity({ type: 'person', name: 'Moni' });
+    const role = graph().ensureEntity({ type: 'person', name: 'Monika Lor-Zade (Chefin)' });
+    const other = graph().ensureEntity({ type: 'person', name: 'Anna Schmidt' });
 
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
 
     for (const e of [ich, moni, role]) expect(graph().getEntity(e.id)).toBeUndefined();
     expect(graph().getEntity(other.id)).toBeDefined();

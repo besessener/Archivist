@@ -11,16 +11,20 @@ export interface SecretCipher {
   decrypt(data: Buffer): string;
 }
 
+export type SecretServiceDeps = { file: string; cipher: SecretCipher; logger: Logger };
+
 /** Stores the LLM API key only encrypted (OS credential store via safeStorage); never in plain text in config or logs. */
 export class SecretService {
   /** undefined until the key file was read once */
   private cache: string | null | undefined;
 
-  constructor(
-    private readonly file: string,
-    private readonly cipher: SecretCipher,
-    private readonly logger: Logger,
-  ) {
+  private readonly file: string;
+  private readonly cipher: SecretCipher;
+  private readonly logger: Logger;
+
+  constructor(deps: SecretServiceDeps) {
+    ({ file: this.file, cipher: this.cipher, logger: this.logger } = deps);
+    const { logger } = deps;
     const key = this.getApiKey();
     if (key) logger.registerSecret(key);
   }

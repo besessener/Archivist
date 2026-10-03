@@ -68,6 +68,8 @@ interface Transfer {
 
 const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
+export type LlmServiceDeps = { ctx: AppContext; settings: SettingsService; secrets: SecretService; fetchImpl?: FetchLike; retryDelayMs?: number };
+
 /** OpenAI-compatible Responses API client: every transmission is logged masked, structured answers are validated with Zod. */
 export class LlmService {
   /** Optional parameters an endpoint (base URL + model) has rejected; kept in memory so they are not re-learned every call. */
@@ -76,13 +78,21 @@ export class LlmService {
   private readonly health: EndpointHealth;
   private readonly transmissions: TransmissionLog;
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly secrets: SecretService,
-    private readonly fetchImpl: FetchLike = (...args) => fetch(...args),
-    private readonly retryDelayMs = 400,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly secrets: SecretService;
+  private readonly fetchImpl: FetchLike;
+  private readonly retryDelayMs: number;
+
+  constructor(deps: LlmServiceDeps) {
+    ({
+      ctx: this.ctx,
+      settings: this.settings,
+      secrets: this.secrets,
+      fetchImpl: this.fetchImpl = (...args) => fetch(...args),
+      retryDelayMs: this.retryDelayMs = 400,
+    } = deps);
+    const { ctx } = deps;
     this.health = new EndpointHealth(ctx);
     this.transmissions = new TransmissionLog(ctx);
   }
@@ -266,18 +276,14 @@ export class LlmService {
   }
 
   /** Structured answer validated with Zod: on invalid output exactly one correction request, then an error (nothing runs). */
-  async completeJson<T extends z.ZodType>(
-    schema: T,
-    request: Omit<LlmRequest, 'json'> & { schemaName: string },
-    overrides: LlmOverrides = {},
-  ): Promise<z.output<T>> {
+  async completeJson<T extends z.ZodType>(schema: T, request: Omit<LlmRequest, 'json'> & { schemaName: string }): Promise<z.output<T>> {
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }));
     const instructions = structuredInstructions(request, jsonSchema);
     let lastIssues = '';
     let lastRaw = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const input = attempt === 0 ? request.input : correctionInput(request.input, lastIssues);
-      const raw = await this.complete({ ...request, instructions, input, json: true }, overrides);
+      const raw = await this.complete({ ...request, instructions, input, json: true });
       lastRaw = raw;
       const parsed = parseJsonAnswer(raw);
       if (!parsed.ok) lastIssues = 'kein gültiges JSON';
@@ -294,7 +300,7 @@ export class LlmService {
   }
 
   /** Embeddings via /embeddings (only if an embedding model is configured). */
-  async embeddings(texts: string[], purpose: string, documentIds: string[] = []): Promise<number[][]> {
+  async embeddings(texts: string[], { purpose, documentIds = [] }: { purpose: string; documentIds?: string[] }): Promise<number[][]> {
     const llm = this.settings.get().llm;
     const apiKey = this.secrets.getApiKey();
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');

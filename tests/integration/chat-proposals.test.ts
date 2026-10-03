@@ -28,7 +28,10 @@ const foreignProposal = (conversationId: string | null = null) =>
 
 function proposedRelation(a: string, b: string) {
   const g = app.services.graph;
-  return g.link(g.ensureEntity('topic', a).id, g.ensureEntity('project', b).id, 'relates_to', { confidence: 0.6, status: 'proposed' })!;
+  return g.link(
+    { sourceId: g.ensureEntity({ type: 'topic', name: a }).id, targetId: g.ensureEntity({ type: 'project', name: b }).id, relationType: 'relates_to' },
+    { confidence: 0.6, status: 'proposed' },
+  )!;
 }
 
 describe('„ja/ok/bitte“ confirms only proposals of this conversation (#37)', () => {

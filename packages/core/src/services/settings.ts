@@ -88,16 +88,19 @@ export function settingsLoadNotification(problem: SettingsLoadProblem): Notifica
   };
 }
 
+export type SettingsServiceDeps = { file: string; defaultArchiveRoot: string; events?: EventBus };
+
 /** Non-secret application configuration (config/settings.json). API keys are NOT stored here. */
 export class SettingsService {
   private current: Settings;
   private loadProblem: SettingsLoadProblem | null = null;
 
-  constructor(
-    private readonly file: string,
-    private readonly defaultArchiveRoot: string,
-    private readonly events?: EventBus,
-  ) {
+  private readonly file: string;
+  private readonly defaultArchiveRoot: string;
+  private readonly events?: EventBus;
+
+  constructor(deps: SettingsServiceDeps) {
+    ({ file: this.file, defaultArchiveRoot: this.defaultArchiveRoot, events: this.events } = deps);
     this.current = this.load();
   }
 

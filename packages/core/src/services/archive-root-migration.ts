@@ -52,7 +52,7 @@ async function copyVerified(target: { source: string; dest: string; rel: string 
   } catch (err) {
     await fsp.rm(partial, { force: true }).catch(() => undefined);
     if (err instanceof AppError) throw err;
-    throw fsError(`„${rel}“ konnte nicht kopiert werden${errorCode(err) ? ` (${errorCode(err)})` : ''}.`, err);
+    throw fsError(`„${rel}“ konnte nicht kopiert werden${errorCode(err) ? ` (${errorCode(err)})` : ''}.`, { cause: err });
   }
   return sha;
 }
@@ -86,7 +86,7 @@ export async function copyTree(job: JobContext<RootRoute>, work: { plan: Migrate
       await fsp.mkdir(toAbs(to, rel));
       made.createdDirs.push(rel);
     } catch (err) {
-      if (errorCode(err) !== 'EEXIST') throw fsError(`Der Ordner „${rel}“ konnte nicht angelegt werden.`, err);
+      if (errorCode(err) !== 'EEXIST') throw fsError(`Der Ordner „${rel}“ konnte nicht angelegt werden.`, { cause: err });
     }
   }
   const total = plan.files.length;

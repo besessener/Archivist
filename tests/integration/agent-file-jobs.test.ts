@@ -244,12 +244,15 @@ describe('Large file operations as a job of their own (#304)', () => {
       files: [],
       error: null,
     });
-    app.services.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, 'Fortsetzung', {
-      runId,
-      stepId,
-      explicit: true,
-      op: 'relocate',
-      items: ids.map((documentId) => ({ documentId, categoryPath: 'work/presentations' })),
+    app.services.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, {
+      label: 'Fortsetzung',
+      payload: {
+        runId,
+        stepId,
+        explicit: true,
+        op: 'relocate',
+        items: ids.map((documentId) => ({ documentId, categoryPath: 'work/presentations' })),
+      },
     });
     await app.services.jobs.whenIdle();
     for (const id of ids) expect(folderOf(app, id)).toBe('work/presentations');

@@ -222,7 +222,7 @@ export class PersonService {
 
   /** A mention no step matched becomes a new person; unclear candidates are only logged, never assigned. */
   private createPerson(name: string, opts: { description?: string | null; candidates: PersonCandidate[] }): GraphEntity {
-    const created = this.graph.ensureEntity('person', name, opts.description);
+    const created = this.graph.ensureEntity({ type: 'person', name, description: opts.description });
     if (opts.candidates.length) {
       this.ctx.logger.info('persons', 'Unclear person mention created as a separate person', {
         name: created.name,

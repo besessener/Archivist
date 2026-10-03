@@ -6,9 +6,7 @@ import type { AppContext } from '../context';
 import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
-import type { WorkerPool } from '../workers/pool';
 import type { AuditService } from './audit';
-import type { CategoryService } from './categories';
 import { DocumentAnalyzer, QUARANTINE_NOT_ANALYZED, type AnalysisResult, type AnalyzeOptions } from './document-analysis';
 import type { BulkPatch } from './document-bulk';
 import { DocumentImporter, type ImportResult } from './document-import';
@@ -20,9 +18,6 @@ import { DocumentRereader } from './document-reread';
 import { DocumentTrash, type FileOperationLock } from './document-trash';
 import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
-import type { LlmService } from './llm';
-import type { NotificationService } from './notifications';
-import type { PersonService } from './persons';
 import type { PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
@@ -31,6 +26,8 @@ import type { UndoService } from './undo';
 export type { DocRow } from './document-model';
 
 export const DOCUMENT_REREAD_JOB = 'documents.reread';
+
+export type DocumentServiceDeps = Omit<DocumentDeps, 'documents'> & { undo: UndoService };
 
 export class DocumentService {
   private readonly deps: DocumentDeps;
@@ -41,22 +38,17 @@ export class DocumentService {
   private readonly trash: DocumentTrash;
   private fileLock: FileOperationLock = { guardedFor: (_documentId, operation) => operation() };
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly graph: KnowledgeGraphService,
-    persons: PersonService,
-    private readonly search: SearchService,
-    llm: LlmService,
-    private readonly privacy: PrivacyService,
-    pool: WorkerPool,
-    private readonly audit: AuditService,
-    notifications: NotificationService,
-    categories: CategoryService,
-    private readonly jobs: JobQueueService,
-    undo: UndoService,
-  ) {
-    this.deps = { ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, documents: this };
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly graph: KnowledgeGraphService;
+  private readonly search: SearchService;
+  private readonly privacy: PrivacyService;
+  private readonly audit: AuditService;
+  private readonly jobs: JobQueueService;
+
+  constructor({ undo, ...services }: DocumentServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, graph: this.graph, search: this.search, privacy: this.privacy, audit: this.audit, jobs: this.jobs } = services);
+    this.deps = { ...services, documents: this };
     this.importer = new DocumentImporter(this.deps);
     this.analyzer = new DocumentAnalyzer(this.deps);
     this.rereader = new DocumentRereader(this.deps);
@@ -140,7 +132,7 @@ export class DocumentService {
   }
 
   /** "Import anyway" for a quarantined file; requires an explicit confirmation by the user. */
-  releaseFromQuarantine(id: string, confirmed: boolean): Promise<DocumentRecord> {
+  releaseFromQuarantine(id: string, { confirmed }: { confirmed: boolean }): Promise<DocumentRecord> {
     if (!confirmed) throw new AppError('permission_error', 'Das Importieren einer Datei aus der Quarantäne erfordert eine Bestätigung.');
     return this.importer.releaseFromQuarantine(id);
   }
@@ -149,7 +141,7 @@ export class DocumentService {
   insertDocument(input: NewDocument): DocumentRecord {
     const row = newDocumentRow(input, { id: newId(), at: nowIso() });
     this.db.insert(documents).values(row).run();
-    this.graph.registerNode('document', row.id, row.title, null);
+    this.graph.registerNode({ type: 'document', id: row.id, name: row.title, description: null });
     this.ctx.events.changed('documents', 'knowledge');
     return this.toRecord(row);
   }
@@ -157,7 +149,7 @@ export class DocumentService {
   /** File to read from (preferably our own copy in the inbox). */
   readablePath(r: DocRow): string {
     for (const p of [r.stagedPath, r.sourcePath]) if (p && fs.existsSync(p)) return p;
-    throw fsError('Die Quelldatei ist nicht mehr vorhanden.', undefined, false);
+    throw fsError('Die Quelldatei ist nicht mehr vorhanden.', { retryable: false });
   }
 
   /** Content analysis: extract locally, optionally classify via LLM, propose a target folder – the file is not touched. */
@@ -187,15 +179,15 @@ export class DocumentService {
 
   /** Re-reads archived documents in one job with progress (see `rereadArchived`). */
   enqueueReread(ids: string[]): string {
-    return this.jobs.enqueue(DOCUMENT_REREAD_JOB, `Lese ${ids.length} Dokument(e) neu`, { documentIds: ids }).id;
+    return this.jobs.enqueue(DOCUMENT_REREAD_JOB, { label: `Lese ${ids.length} Dokument(e) neu`, payload: { documentIds: ids } }).id;
   }
 
-  /** Triggers (re)processing. `allowLlm=true` corresponds to the user's explicit permission. */
-  enqueueAnalysis(id: string, allowLlm: boolean): string {
+  /** Triggers (re)processing. `allowLlm: true` corresponds to the user's explicit permission. */
+  enqueueAnalysis(id: string, { allowLlm }: { allowLlm: boolean }): string {
     const doc = this.getRow(id);
     if (doc.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
     if (isArchivedStatus(doc.status)) throw new AppError('validation_error', 'Archivierte oder nur indexierte Dokumente werden nicht erneut analysiert.');
-    return this.jobs.enqueue('document.analyze', `Analysiere ${doc.originalName}`, { documentId: id, allowLlm }).id;
+    return this.jobs.enqueue('document.analyze', { label: `Analysiere ${doc.originalName}`, payload: { documentId: id, allowLlm } }).id;
   }
 
   /** Assigns the document to a topic/project (confirmed relations); without a file action. */
@@ -203,14 +195,14 @@ export class DocumentService {
     return this.metadata.assign(id, request);
   }
 
-  updateMetadata(id: string, patch: MetadataPatch, confirmed: boolean): DocumentRecord {
+  updateMetadata(id: string, { patch, confirmed }: { patch: MetadataPatch; confirmed: boolean }): DocumentRecord {
     if (!confirmed) throw new AppError('permission_error', 'Das Überschreiben von Metadaten erfordert eine Bestätigung.');
     return this.metadata.updateMetadata(id, patch);
   }
 
   /** Sets or removes metadata of several documents at once (#291, #305); the whole batch is ONE undo step. */
-  bulkUpdate(ids: string[], patch: BulkPatch, opts: { trigger?: string } = {}): { updated: DocumentRecord[]; auditId: string | null } {
-    return this.metadata.bulkUpdate(ids, { patch, trigger: opts.trigger });
+  bulkUpdate(ids: string[], change: { patch: BulkPatch; trigger?: string }): { updated: DocumentRecord[]; auditId: string | null } {
+    return this.metadata.bulkUpdate(ids, change);
   }
 
   ignore(id: string): DocumentRecord {
@@ -230,7 +222,7 @@ export class DocumentService {
     return this.get(id);
   }
 
-  setLlmExcluded(id: string, excluded: boolean): DocumentRecord {
+  setLlmExcluded(id: string, { excluded }: { excluded: boolean }): DocumentRecord {
     const row = this.getRow(id);
     const included = row.llmStatus === 'excluded' ? 'pending' : row.llmStatus;
     this.db

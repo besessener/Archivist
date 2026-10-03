@@ -28,16 +28,26 @@ interface EventDeleteUndo {
   node: NodeSnapshot | null;
 }
 
+export interface EventServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  search: SearchService;
+  audit: AuditService;
+  persons: PersonService;
+  undo: UndoService;
+}
+
 /** Dated events („habe am 01.10.2026 beim German Testing Day eingereicht“): a type of their own, shown in the timeline, search and knowledge graph. */
 export class EventService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly search: SearchService,
-    private readonly audit: AuditService,
-    private readonly persons: PersonService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly search: SearchService;
+  private readonly audit: AuditService;
+  private readonly persons: PersonService;
+
+  constructor(deps: EventServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, search: this.search, audit: this.audit, persons: this.persons } = deps);
+    const { undo } = deps;
     undo.register('event_update', {
       check: async (data) => this.updateConflicts(data as EventUpdateUndo),
       run: async (data) => this.revertUpdate(data as EventUpdateUndo),
@@ -114,8 +124,8 @@ export class EventService {
     const occurredAt = normalizeDateInput(input.occurredAt ?? null);
     if (!occurredAt) throw new AppError('validation_error', 'Für ein Ereignis wird ein gültiges Datum benötigt.');
     const now = nowIso();
-    const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
-    const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
+    const topic = input.topic?.trim() ? this.graph.ensureEntity({ type: 'topic', name: input.topic }) : null;
+    const project = input.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: input.project }) : null;
     const personContext = mentionContext(provenance.trigger, 'manual');
     const row: Row = {
       id: newId(),
@@ -132,9 +142,17 @@ export class EventService {
     };
     this.db.transaction(() => {
       this.db.insert(events).values(row).run();
-      this.graph.registerNode('event', row.id, row.title, row.description);
-      if (topic) this.graph.link(row.id, topic.id, 'relates_to', { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds });
-      if (project) this.graph.link(row.id, project.id, 'belongs_to', { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds });
+      this.graph.registerNode({ type: 'event', id: row.id, name: row.title, description: row.description });
+      if (topic)
+        this.graph.link(
+          { sourceId: row.id, targetId: topic.id, relationType: 'relates_to' },
+          { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds },
+        );
+      if (project)
+        this.graph.link(
+          { sourceId: row.id, targetId: project.id, relationType: 'belongs_to' },
+          { confidence: 0.9, status: 'confirmed', sourceIds: row.sourceIds },
+        );
       this.syncParticipants(row, personContext);
     });
     this.audit.log({
@@ -176,12 +194,15 @@ export class EventService {
     const personIds: string[] = [];
     for (const person of this.persons.resolveNames(event.participants, { context: personContext }).entities) {
       personIds.push(person.id);
-      this.graph.link(person.id, event.id, 'participated_in', { confidence: 0.9, status: 'confirmed', sourceIds: event.sourceIds });
+      this.graph.link(
+        { sourceId: person.id, targetId: event.id, relationType: 'participated_in' },
+        { confidence: 0.9, status: 'confirmed', sourceIds: event.sourceIds },
+      );
     }
-    this.graph.unlinkSystemRelations(event.id, 'participated_in', personIds, { direction: 'in', otherType: 'person' });
+    this.graph.unlinkSystemRelations({ entityId: event.id, relationType: 'participated_in', keepIds: personIds, direction: 'in', otherType: 'person' });
   }
 
-  update(id: string, patch: Partial<EventInput>, provenance: { trigger?: string } = {}): EventRecord {
+  update(id: string, { patch, ...provenance }: { patch: Partial<EventInput>; trigger?: string }): EventRecord {
     const current = this.requireRow(id);
     const personContext = mentionContext(provenance.trigger, 'manual');
     const set = this.changesOf(patch, personContext);
@@ -213,8 +234,8 @@ export class EventService {
       if (!occurredAt) throw new AppError('validation_error', 'Ungültiges Datum.');
       set.occurredAt = occurredAt;
     }
-    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
-    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity({ type: 'topic', name: patch.topic }).id : null;
+    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: patch.project }).id : null;
     if (patch.participants !== undefined) set.participants = this.persons.resolveNames(patch.participants, { context: personContext }).names;
     return set;
   }
@@ -224,12 +245,19 @@ export class EventService {
     const { id } = current;
     this.db.update(events).set(set).where(eq(events.id, id)).run();
     if (set.participants) this.syncParticipants({ ...current, ...set }, update.personContext);
-    this.graph.registerNode('event', id, set.title ?? current.title, set.description === undefined ? current.description : set.description);
-    if (set.topicId) this.graph.link(id, set.topicId, 'relates_to', { confidence: 0.9, status: 'confirmed' });
-    if (set.projectId) this.graph.link(id, set.projectId, 'belongs_to', { confidence: 0.9, status: 'confirmed' });
+    this.graph.registerNode({
+      type: 'event',
+      id,
+      name: set.title ?? current.title,
+      description: set.description === undefined ? current.description : set.description,
+    });
+    if (set.topicId) this.graph.link({ sourceId: id, targetId: set.topicId, relationType: 'relates_to' }, { confidence: 0.9, status: 'confirmed' });
+    if (set.projectId) this.graph.link({ sourceId: id, targetId: set.projectId, relationType: 'belongs_to' }, { confidence: 0.9, status: 'confirmed' });
     // the previous topic/project no longer applies
-    if (set.topicId !== undefined) this.graph.unlinkSystemRelations(id, 'relates_to', set.topicId ? [set.topicId] : [], { otherType: 'topic' });
-    if (set.projectId !== undefined) this.graph.unlinkSystemRelations(id, 'belongs_to', set.projectId ? [set.projectId] : [], { otherType: 'project' });
+    if (set.topicId !== undefined)
+      this.graph.unlinkSystemRelations({ entityId: id, relationType: 'relates_to', keepIds: set.topicId ? [set.topicId] : [], otherType: 'topic' });
+    if (set.projectId !== undefined)
+      this.graph.unlinkSystemRelations({ entityId: id, relationType: 'belongs_to', keepIds: set.projectId ? [set.projectId] : [], otherType: 'project' });
   }
 
   private updateConflicts(undoData: EventUpdateUndo): string[] {
@@ -247,7 +275,7 @@ export class EventService {
         .where(eq(events.id, undoData.id))
         .run();
       const row = this.row(undoData.id);
-      if (row) this.graph.registerNode('event', row.id, row.title, row.description);
+      if (row) this.graph.registerNode({ type: 'event', id: row.id, name: row.title, description: row.description });
       this.graph.revertRelationChanges(undoData.relations);
     });
     void this.reindex(undoData.id);
@@ -290,7 +318,7 @@ export class EventService {
     this.db.transaction(() => {
       this.db.insert(events).values(row).run();
       if (undoData.node) skipped = this.graph.restoreNode(undoData.node);
-      else this.graph.registerNode('event', row.id, row.title, row.description);
+      else this.graph.registerNode({ type: 'event', id: row.id, name: row.title, description: row.description });
     });
     void this.reindex(row.id);
     this.ctx.events.changed('events', 'knowledge', 'status');

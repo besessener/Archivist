@@ -153,7 +153,7 @@ function holdOptional(run: WorkRun): void {
   const pending = run.current.pending;
   if ((pending?.kind !== 'open_item' && pending?.kind !== 'decision') || !pending.optional) return;
   if (run.optional?.kind === 'open_item' && pending.kind === 'open_item')
-    run.optional = openItemPending([...openItemAsks(run.optional), ...openItemAsks(pending)], true);
+    run.optional = openItemPending([...openItemAsks(run.optional), ...openItemAsks(pending)], { optional: true });
   else if (run.optional?.kind !== 'decision') run.optional = pending;
   run.current = { ...run.current, pending: null };
 }

@@ -38,8 +38,8 @@ describe('trash: deleting with a safety net', () => {
 
   it('restores file, document, links and search entry via undo', async () => {
     const id = await archived(app, { name: 'Angebot Bad.txt', content: 'Angebot Badsanierung', folder: 'private/haus' });
-    const topic = app.services.graph.ensureEntity('topic', 'Bad');
-    app.services.graph.link(id, topic.id, 'relates_to', { status: 'confirmed' });
+    const topic = app.services.graph.ensureEntity({ type: 'topic', name: 'Bad' });
+    app.services.graph.link({ sourceId: id, targetId: topic.id, relationType: 'relates_to' }, { status: 'confirmed' });
     const file = archiveFile(id);
     const { auditId } = await app.ok('documents:trash', { id, confirmed: true });
 

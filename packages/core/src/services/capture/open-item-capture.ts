@@ -24,7 +24,7 @@ import type { CaptureDeps, CaptureRequest } from './capture-deps';
 import { noOpenItemQuestion, type OpenItemLookup } from './open-item-lookup';
 
 type ExtractedOpenItem = NonNullable<ChatIntent['openItem']>;
-type OpenItemPatch = Parameters<OpenItemService['update']>[1];
+type OpenItemPatch = Parameters<OpenItemService['update']>[1]['patch'];
 type AskedItem = { item: OpenItem; asked: OpenItemField[] };
 
 /** Title, description and owner of a new open item, from the LLM's extraction or derived from the message. */
@@ -170,7 +170,7 @@ export class OpenItemCapture {
       confidence: item.confidence,
       uncertainties: asked.map((field) => (field === 'responsible' ? 'Verantwortlicher unbekannt' : 'Fälligkeitsdatum unbekannt')),
       state: {
-        pending: openItemPending(asked.length ? [{ openItemId: item.id, asked }] : [], true),
+        pending: openItemPending(asked.length ? [{ openItemId: item.id, asked }] : [], { optional: true }),
         last: { ...(state.last ?? {}), openItemId: item.id },
       },
     };
@@ -195,7 +195,7 @@ export class OpenItemCapture {
     if (!existing.responsiblePersonId && responsible.name) patch.responsible = responsible.name;
     const due = normalizeDateInput(extracted.dueAt ?? null);
     if (!existing.dueAt && due) patch.dueAt = due;
-    const updated = Object.keys(patch).length ? this.deps.openItems.update(existing.id, patch, { trigger: 'chat' }) : existing;
+    const updated = Object.keys(patch).length ? this.deps.openItems.update(existing.id, { patch, trigger: 'chat' }) : existing;
     return {
       intent: 'open_item_update',
       content: `Ich habe den bestehenden Punkt **${updated.title}** ergänzt.`,
@@ -250,7 +250,7 @@ export class OpenItemCapture {
       context: { openItems: updated.map((item) => ({ type: 'task' as const, id: item.id, label: item.title })) },
       confidence: 0.8,
       state: {
-        pending: openItemPending(remaining, pending?.optional),
+        pending: openItemPending(remaining, { optional: pending?.optional }),
         last: { ...(state.last ?? {}), openItemId: updated.at(-1)!.id },
       },
     };
@@ -281,7 +281,7 @@ export class OpenItemCapture {
   private applyAnswer(entry: AskedItem, answer: { extracted: ExtractedOpenItem; text: string }): { updated: OpenItem; stillAsked: OpenItemField[] } {
     const { item, asked } = entry;
     const patch = this.answerPatch(entry, answer);
-    const updated = Object.keys(patch).length ? this.deps.openItems.update(item.id, patch, { trigger: 'chat' }) : item;
+    const updated = Object.keys(patch).length ? this.deps.openItems.update(item.id, { patch, trigger: 'chat' }) : item;
     const stillAsked: OpenItemField[] = [];
     if (!updated.responsiblePersonId && !updated.responsibleUnknown && asked.includes('responsible') && !patch.responsible) stillAsked.push('responsible');
     if (!updated.dueAt && !updated.dueUnknown && asked.includes('due') && !patch.dueAt) stillAsked.push('due');

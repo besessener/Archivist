@@ -76,7 +76,7 @@ export class OpenItemLookup {
     if (number) return candidates[Number(number) - 1] ?? null;
     const exact = candidates.find((candidate) => normalizeName(candidate.title) === normalized);
     if (exact) return exact;
-    const match = matchOpenItems(text, candidates);
+    const match = matchOpenItems({ hint: text, items: candidates });
     return match.status === 'match' ? match.item : null;
   }
 }

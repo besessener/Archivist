@@ -63,15 +63,14 @@ function planLine(scope: ToolScope, p: RulePlan): string {
 async function applyRules({ deps, ctx }: ToolScope, p: RulePlan): Promise<void> {
   const { then, doc } = p;
   if (then.topic || then.project || then.tags?.length) {
-    deps.docs.bulkUpdate(
-      [doc.id],
-      {
+    deps.docs.bulkUpdate([doc.id], {
+      patch: {
         ...(then.topic ? { topic: then.topic } : {}),
         ...(then.project ? { project: then.project } : {}),
         ...(then.tags?.length ? { addTags: then.tags } : {}),
       },
-      { trigger: 'agent' },
-    );
+      trigger: 'agent',
+    });
   }
   const archived = doc.status === 'archived';
   if (

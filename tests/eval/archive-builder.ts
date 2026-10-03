@@ -22,8 +22,8 @@ function assertUniqueKeys(docs: EvalDoc[]): void {
 function prepareFolders(services: Services, docs: EvalDoc[]): string[] {
   const folders = [...docs.flatMap((doc) => (doc.folder ? [doc.folder] : [])), ...EMPTY_FOLDERS];
   const mains = [...new Set(folders.map((folder) => folder.split('/')[0]!))];
-  for (const main of mains) if (services.categories.needsApproval(main)) services.categories.create(main, true);
-  for (const folder of EMPTY_FOLDERS) services.categories.create(folder, true);
+  for (const main of mains) if (services.categories.needsApproval(main)) services.categories.create(main, { confirmed: true });
+  for (const folder of EMPTY_FOLDERS) services.categories.create(folder, { confirmed: true });
   return mains;
 }
 
@@ -105,8 +105,8 @@ export async function buildArchive(target: BuildTarget, docs: EvalDoc[]): Promis
     await archiveIntoFolders(services, { docs, ids, mains });
     for (const doc of docs) {
       const id = ids[doc.key]!;
-      services.documents.bulkUpdate([id], metadataPatch(doc), { trigger: 'eval-setup' });
-      if (doc.excluded) services.documents.setLlmExcluded(id, true);
+      services.documents.bulkUpdate([id], { patch: metadataPatch(doc), trigger: 'eval-setup' });
+      if (doc.excluded) services.documents.setLlmExcluded(id, { excluded: true });
     }
     await Promise.all(Object.values(ids).map((id) => services.documents.indexDocument(id)));
     await services.jobs.whenIdle();

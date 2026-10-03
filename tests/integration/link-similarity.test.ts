@@ -57,7 +57,7 @@ describe('Similar entries as `related_to` proposals after indexing (#271)', () =
     expect(relatedTo().length).toBeGreaterThan(0);
 
     // the user rejects every proposal and allows more: the rejected pairs never come back
-    for (const r of app.services.graph.relationsOf(notes[0]!, { statuses: ['proposed'] })) app.services.graph.decideRelation(r.id, 'rejected');
+    for (const r of app.services.graph.relationsOf(notes[0]!, { statuses: ['proposed'] })) app.services.graph.decideRelation(r.id, { status: 'rejected' });
     const rejected = relatedTo().filter((r) => r.status === 'rejected');
     app.services.settings.update({ links: { maxProposalsPerEntry: 5 } });
     for (const id of notes) await app.services.notes.reindex(id);
@@ -68,7 +68,7 @@ describe('Similar entries as `related_to` proposals after indexing (#271)', () =
     const a = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Kopie A', description: flatText('Kopie') })).entity.id;
     await app.services.jobs.whenIdle();
     const b = (await app.services.notes.create({ title: 'Kopie B', content: flatText('Kopie') })).id;
-    app.services.graph.link(b, a, 'duplicate_of', { status: 'proposed' });
+    app.services.graph.link({ sourceId: b, targetId: a, relationType: 'duplicate_of' }, { status: 'proposed' });
     await app.services.notes.reindex(b);
     await app.services.jobs.whenIdle();
     expect(between(a, b)).toEqual([]);
@@ -93,7 +93,7 @@ describe('Similar entries as `related_to` proposals after indexing (#271)', () =
     for (const name of Object.keys(vec)) {
       const id = `note-${name}`;
       ids[name] = id;
-      app.services.graph.registerNode('note', id, name, `${name} Text`);
+      app.services.graph.registerNode({ type: 'note', id, name, description: `${name} Text` });
       await app.services.search.index({ type: 'note', id, title: name, content: `${name} Text`, allowRemoteEmbedding: true });
     }
     await app.services.jobs.whenIdle();

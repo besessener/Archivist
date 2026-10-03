@@ -13,7 +13,7 @@ const newestKey = (d: Pick<DocumentRecord, 'documentDate' | 'archivedAt' | 'crea
 /** The user said these two are different (rejected duplicate_of in either direction). */
 const markedDifferent = (deps: ToolDeps) => (a: string, b: string) =>
   deps.graph.relationsOf(a, { statuses: ['rejected'], types: ['duplicate_of'] }).some((r) => r.sourceEntityId === b || r.targetEntityId === b) ||
-  deps.graph.rejectedBetween(a, b, { includeDuplicateOf: true })?.relationType === 'duplicate_of';
+  deps.graph.rejectedBetween({ a, b, includeDuplicateOf: true })?.relationType === 'duplicate_of';
 
 interface Grouping {
   differ: (a: string, b: string) => boolean;

@@ -28,7 +28,7 @@ async function makeQueue(retryBaseDelayMs: number): Promise<JobQueueService> {
   return q;
 }
 
-const transient = () => fsError('Datei ist gesperrt.', undefined, true);
+const transient = () => fsError('Datei ist gesperrt.', { retryable: true });
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 const analyzeJob = () => app.services.jobs.list().find((j) => j.type === 'document.analyze')!;
 const analyzedDocId = () => app.services.jobs.activePayloads<{ documentId: string }>('document.analyze')[0]!.documentId;
@@ -51,25 +51,24 @@ function failExtraction(times: number, error: () => Error, before?: () => void) 
 
 describe('Retry with backoff', () => {
   it('computes the backoff exponentially and caps it', () => {
-    expect([1, 2, 3, 4].map((n) => retryDelayMs(n, 1000, 60_000))).toEqual([1000, 2000, 4000, 8000]);
-    expect(retryDelayMs(10, 1000, 60_000)).toBe(60_000);
-    expect(retryDelayMs(0, 1000, 60_000)).toBe(1000);
+    expect([1, 2, 3, 4].map((n) => retryDelayMs(n, { baseMs: 1000, maxMs: 60_000 }))).toEqual([1000, 2000, 4000, 8000]);
+    expect(retryDelayMs(10, { baseMs: 1000, maxMs: 60_000 })).toBe(60_000);
+    expect(retryDelayMs(0, { baseMs: 1000, maxMs: 60_000 })).toBe(1000);
   });
 
   it('waits increasingly longer before each further attempt and reports the failure only after the last attempt', async () => {
     const q = await makeQueue(40);
     const startedAt: number[] = [];
     const onFailed = vi.fn();
-    q.register(
-      'test.transient',
-      async () => {
+    q.register('test.transient', {
+      handler: async () => {
         startedAt.push(Date.now());
         throw transient();
       },
-      { onFailed },
-    );
+      hooks: { onFailed },
+    });
     q.start();
-    const job = q.enqueue('test.transient', 'Vorübergehend');
+    const job = q.enqueue('test.transient', { label: 'Vorübergehend' });
 
     await tick(15);
     const waiting = q.get(job.id);
@@ -96,13 +95,15 @@ describe('Retry with backoff', () => {
     for (let retryBaseDelayMs = 1; retryBaseDelayMs <= 8; retryBaseDelayMs += 1) {
       const q = await makeQueue(retryBaseDelayMs);
       let calls = 0;
-      q.register('test.flaky', async () => {
-        calls += 1;
-        if (calls === 1) throw transient();
-        return 'ok';
+      q.register('test.flaky', {
+        handler: async () => {
+          calls += 1;
+          if (calls === 1) throw transient();
+          return 'ok';
+        },
       });
       q.start();
-      const job = q.enqueue('test.flaky', `Wartezeit ${retryBaseDelayMs} ms`);
+      const job = q.enqueue('test.flaky', { label: `Wartezeit ${retryBaseDelayMs} ms` });
       await vi.waitFor(() => expect(q.get(job.id)).toMatchObject({ status: 'succeeded', attempts: 2 }), { timeout: 2_000, interval: 5 });
       await q.stop();
     }
@@ -112,16 +113,15 @@ describe('Retry with backoff', () => {
     const q = await makeQueue(40);
     const onFailed = vi.fn();
     let calls = 0;
-    q.register(
-      'test.permanent',
-      async () => {
+    q.register('test.permanent', {
+      handler: async () => {
         calls += 1;
         throw new AppError('validation_error', 'Ungültig');
       },
-      { onFailed },
-    );
+      hooks: { onFailed },
+    });
     q.start();
-    const job = q.enqueue('test.permanent', 'Dauerhaft');
+    const job = q.enqueue('test.permanent', { label: 'Dauerhaft' });
     await q.whenIdle(5_000);
     expect(calls).toBe(1);
     expect(q.get(job.id).status).toBe('failed');
@@ -133,16 +133,15 @@ describe('Retry with backoff', () => {
     const onCancelled = vi.fn();
     const onFailed = vi.fn();
     let calls = 0;
-    q.register(
-      'test.transient',
-      async () => {
+    q.register('test.transient', {
+      handler: async () => {
         calls += 1;
         throw transient();
       },
-      { onCancelled, onFailed },
-    );
+      hooks: { onCancelled, onFailed },
+    });
     q.start();
-    const job = q.enqueue('test.transient', 'Wartet auf Wiederholung');
+    const job = q.enqueue('test.transient', { label: 'Wartet auf Wiederholung' });
     await tick();
     expect(q.get(job.id).status).toBe('pending');
 
@@ -153,7 +152,7 @@ describe('Retry with backoff', () => {
     expect(onFailed).not.toHaveBeenCalled();
 
     // a manual retry starts right away again (no leftover wait)
-    q.register('test.transient', async () => 'ok');
+    q.register('test.transient', { handler: async () => 'ok' });
     q.retry(job.id);
     await q.whenIdle(1_000);
     expect(q.get(job.id).status).toBe('succeeded');
@@ -164,16 +163,15 @@ describe('Cancelling', () => {
   it('aborts the signal of a running job; the job ends as "cancelled"', async () => {
     const q = await makeQueue(0);
     const onCancelled = vi.fn();
-    q.register(
-      'test.wait',
-      (job) =>
+    q.register('test.wait', {
+      handler: (job) =>
         new Promise((_resolve, reject) => {
           job.signal.addEventListener('abort', () => reject(new Error('Anfrage abgebrochen')), { once: true });
         }),
-      { onCancelled },
-    );
+      hooks: { onCancelled },
+    });
     q.start();
-    const job = q.enqueue('test.wait', 'Wartet auf Abbruch');
+    const job = q.enqueue('test.wait', { label: 'Wartet auf Abbruch' });
     await tick();
     expect(q.get(job.id).status).toBe('running');
     expect(q.cancel(job.id).cancelRequested).toBe(true);
@@ -185,10 +183,10 @@ describe('Cancelling', () => {
 
   it('cancelAll cancels queued and running jobs', async () => {
     const q = await makeQueue(0);
-    q.register('test.wait', (job) => new Promise((_r, reject) => job.signal.addEventListener('abort', () => reject(new Error('abgebrochen')))));
+    q.register('test.wait', { handler: (job) => new Promise((_r, reject) => job.signal.addEventListener('abort', () => reject(new Error('abgebrochen')))) });
     q.start();
-    const a = q.enqueue('test.wait', 'Läuft');
-    const b = q.enqueue('test.wait', 'Wartet');
+    const a = q.enqueue('test.wait', { label: 'Läuft' });
+    const b = q.enqueue('test.wait', { label: 'Wartet' });
     await tick();
     expect(q.cancelAll()).toBe(2);
     await q.whenIdle(1_000);

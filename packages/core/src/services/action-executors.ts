@@ -41,8 +41,8 @@ const mergeNotesOrEvents =
     const opts = { actor: 'user' as const, trigger: TRIGGER };
     const result =
       type === 'merge_notes'
-        ? d.noteEventDuplicates.mergeNotes(params.keepId, params.duplicateId, opts)
-        : d.noteEventDuplicates.mergeEvents(params.keepId, params.duplicateId, opts);
+        ? d.noteEventDuplicates.mergeNotes({ keepId: params.keepId, duplicateId: params.duplicateId }, opts)
+        : d.noteEventDuplicates.mergeEvents({ keepId: params.keepId, duplicateId: params.duplicateId }, opts);
     return `„${result.duplicateTitle}“ als Duplikat von „${result.keepTitle}“ verworfen${takenOverNote(result.takenOver)}.`;
   };
 
@@ -99,7 +99,7 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   },
   supersede_decision: (d, p) => {
     const params = ActionParamSchemas.supersede_decision.parse(p);
-    d.decisions.supersede(params.oldDecisionId, params.newDecisionId, { confirmed: true, trigger: TRIGGER });
+    d.decisions.supersede({ oldId: params.oldDecisionId, newId: params.newDecisionId, confirmed: true, trigger: TRIGGER });
     return 'Ältere Entscheidung als überholt markiert.';
   },
   revoke_decision: (d, p) => {
@@ -109,7 +109,8 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   },
   resolve_contradiction: (d, p) => {
     const params = ActionParamSchemas.resolve_contradiction.parse(p);
-    d.contradictions.resolve(params.contradictionId, params.resolution, {
+    d.contradictions.resolve(params.contradictionId, {
+      resolution: params.resolution,
       confirmed: true,
       supersedeOldDecisionId: params.supersedeOldDecisionId,
       supersedeNewDecisionId: params.supersedeNewDecisionId,
@@ -118,7 +119,7 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   },
   close_open_item: (d, p) => {
     const params = ActionParamSchemas.close_open_item.parse(p);
-    d.openItems.close(params.openItemId, params.status, { confirmed: true, trigger: TRIGGER, resolutionNote: params.resolutionNote });
+    d.openItems.close(params.openItemId, { status: params.status, confirmed: true, trigger: TRIGGER, resolutionNote: params.resolutionNote });
     return 'Offener Punkt geschlossen.';
   },
   merge_topics: async (d, p) => {
@@ -136,19 +137,19 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   confirm_relation: (d, p) => {
     const params = ActionParamSchemas.confirm_relation.parse(p);
     // the user's decision, undoable in the change log (#283)
-    d.graph.decideRelation(params.relationId, 'confirmed', { trigger: TRIGGER });
+    d.graph.decideRelation(params.relationId, { status: 'confirmed', trigger: TRIGGER });
     return 'Beziehung bestätigt.';
   },
   link_entities: (d, p) => {
     const params = ActionParamSchemas.link_entities.parse(p);
-    d.graph.linkEntries(params.sourceId, params.targetId, params.relationType, { status: 'confirmed', trigger: TRIGGER });
+    d.graph.linkEntries({ sourceId: params.sourceId, targetId: params.targetId, relationType: params.relationType }, { status: 'confirmed', trigger: TRIGGER });
     const source = d.graph.getEntity(params.sourceId)?.name ?? params.sourceId;
     const target = d.graph.getEntity(params.targetId)?.name ?? params.targetId;
     return `„${source}“ mit „${target}“ verknüpft.`;
   },
   reject_relation: (d, p) => {
     const params = ActionParamSchemas.reject_relation.parse(p);
-    d.graph.setRelationStatus(params.relationId, 'rejected');
+    d.graph.setRelationStatus(params.relationId, { status: 'rejected' });
     d.audit.log({ action: 'relation.reject', actor: 'user', trigger: TRIGGER, confirmed: true, entityIds: [params.relationId] });
     return 'Beziehung abgelehnt.';
   },
@@ -159,7 +160,7 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   },
   create_category: (d, p) => {
     const params = ActionParamSchemas.create_category.parse(p);
-    d.archive.createCategory(params.path, true);
+    d.archive.createCategory(params.path, { confirmed: true });
     return 'Kategorie angelegt.';
   },
   set_reminder: (d, p) => {
@@ -170,12 +171,12 @@ const EXECUTORS: Record<AgentActionType, Executor> = {
   create_open_item: createOpenItem,
   add_open_item_source: (d, p) => {
     const { openItemId, documentId, ...extra } = ActionParamSchemas.add_open_item_source.parse(p);
-    d.openItems.addSource(openItemId, documentId, extra, { actor: 'agent', trigger: TRIGGER });
+    d.openItems.addSource(openItemId, { sourceId: documentId, extra, origin: { actor: 'agent', trigger: TRIGGER } });
     return 'Offener Punkt um Quelle ergänzt.';
   },
   merge_open_items: (d, p) => {
     const params = ActionParamSchemas.merge_open_items.parse(p);
-    const result = d.openItemDuplicates.merge(params.keepId, params.duplicateId, { trigger: TRIGGER });
+    const result = d.openItemDuplicates.merge({ keepId: params.keepId, duplicateId: params.duplicateId }, { trigger: TRIGGER });
     return `„${result.duplicate.title}“ als Duplikat von „${result.keep.title}“ verworfen${takenOverNote(result.takenOver)}.`;
   },
   undo_change: async (d, p) => {

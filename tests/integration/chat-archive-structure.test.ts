@@ -200,7 +200,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
       const { ids, other } = await scatteredArchive();
       const before = ids.map(folderOf);
 
-      const report = await app.services.consistency.run('test');
+      const report = await app.services.consistency.run({ trigger: 'test' });
 
       expect(report.byKind.scattered_documents).toBe(1);
       const [insight] = scattered();
@@ -218,8 +218,8 @@ describe('Chat: checking the filing and putting documents into one directory', (
     it('creates no duplicates on further runs', async () => {
       await scatteredArchive();
 
-      await app.services.consistency.run('test');
-      await app.services.consistency.run('test');
+      await app.services.consistency.run({ trigger: 'test' });
+      await app.services.consistency.run({ trigger: 'test' });
 
       expect(scattered()).toHaveLength(1);
       expect(app.services.actions.list('proposed').filter((a) => a.actionType === 'relocate_documents')).toHaveLength(1);
@@ -227,11 +227,11 @@ describe('Chat: checking the filing and putting documents into one directory', (
 
     it('after the proposal is confirmed, the hint resolves itself on the next run', async () => {
       const { ids } = await scatteredArchive();
-      await app.services.consistency.run('test');
+      await app.services.consistency.run({ trigger: 'test' });
       const action = app.services.actions.get(scattered()[0]!.recommendedActionId!);
 
-      const done = await app.services.actions.resolve(action.id, 'approve', { confirmed: true });
-      await app.services.consistency.run('test');
+      const done = await app.services.actions.resolve(action.id, { decision: 'approve', confirmed: true });
+      await app.services.consistency.run({ trigger: 'test' });
 
       expect(done.status).toBe('executed');
       expect(new Set(ids.map(folderOf))).toEqual(new Set(['private/bildungsurlaub/2026']));
@@ -243,7 +243,7 @@ describe('Chat: checking the filing and putting documents into one directory', (
       await archived('B', 'work/a');
       await archived('C', 'work/b', 'Anderes Thema');
 
-      const report = await app.services.consistency.run('test');
+      const report = await app.services.consistency.run({ trigger: 'test' });
 
       expect(report.byKind.scattered_documents).toBeUndefined();
       expect(scattered()).toHaveLength(0);

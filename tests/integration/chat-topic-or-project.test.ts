@@ -81,7 +81,7 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
   });
 
   it('does not ask when the name is already known as a project, and saves the decision with the project', async () => {
-    app.services.graph.ensureEntity('project', 'prod-plat');
+    app.services.graph.ensureEntity({ type: 'project', name: 'prod-plat' });
     app.llm.on('ChatIntent', () => complete());
     const r = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
     expect(r.assistantMessage.content).not.toMatch(question);
@@ -92,7 +92,7 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
   });
 
   it('does not ask when the name is already known as a topic', async () => {
-    app.services.graph.ensureEntity('topic', 'prod-plat');
+    app.services.graph.ensureEntity({ type: 'topic', name: 'prod-plat' });
     app.llm.on('ChatIntent', () => complete());
     const r = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
     expect(r.assistantMessage.content).not.toMatch(question);

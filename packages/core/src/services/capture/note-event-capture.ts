@@ -8,7 +8,7 @@ import type { CaptureDeps, CaptureRequest } from './capture-deps';
 export async function captureNote(deps: CaptureDeps, request: CaptureRequest): Promise<Reply> {
   const { text, intent, state } = request;
   const content = (intent.note ?? text).trim();
-  const topic = intent.topic ? deps.graph.ensureEntity('topic', intent.topic) : null;
+  const topic = intent.topic ? deps.graph.ensureEntity({ type: 'topic', name: intent.topic }) : null;
   const { note } = await deps.notes.createUnlessExists({
     content,
     links: topic ? [{ targetId: topic.id, relationType: 'relates_to', confidence: 0.8 }] : [],

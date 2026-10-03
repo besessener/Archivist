@@ -84,7 +84,10 @@ describe('Merging topics (#33)', () => {
     const oldTopic = graph().findByName('topic', 'Altthema')!;
     const newTopic = graph().findByName('topic', 'Neuthema')!;
     // a duplicate relation (doc relates to both topics) is combined: confirmed beats rejected, sources are unioned, max confidence
-    const dup = graph().link(otherDoc, oldTopic.id, 'relates_to', { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] })!;
+    const dup = graph().link(
+      { sourceId: otherDoc, targetId: oldTopic.id, relationType: 'relates_to' },
+      { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] },
+    )!;
     const kept = graph()
       .relationsOf(otherDoc)
       .find((r) => r.targetEntityId === newTopic.id && r.relationType === 'relates_to')!;
@@ -129,7 +132,7 @@ describe('Merging topics (#33)', () => {
     const oldTopic = graph().findByName('topic', 'Altthema')!;
     const newTopic = graph().findByName('topic', 'Neuthema')!;
     graph().addAlias(oldTopic.id, 'Altes Thema');
-    graph().link(otherDoc, oldTopic.id, 'relates_to', { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] });
+    graph().link({ sourceId: otherDoc, targetId: oldTopic.id, relationType: 'relates_to' }, { status: 'rejected', confidence: 0.3, sourceIds: ['q1'] });
     await waitFor(() => indexed(dec.id).includes('Thema: Altthema') && indexed(ev.id).includes('Thema: Altthema'));
     const before = state();
 
@@ -149,7 +152,7 @@ describe('Merging topics (#33)', () => {
 
   it('refuses to undo with an understandable message when something was changed since', async () => {
     const dec = await decision('Wir starten Altthema', { topic: 'Altthema' });
-    const newTopic = graph().ensureEntity('topic', 'Neuthema');
+    const newTopic = graph().ensureEntity({ type: 'topic', name: 'Neuthema' });
     const oldTopic = graph().findByName('topic', 'Altthema')!;
     const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
 
@@ -162,10 +165,10 @@ describe('Merging topics (#33)', () => {
   });
 
   it('refuses to undo when the old name has since been created again', async () => {
-    const newTopic = graph().ensureEntity('topic', 'Neuthema');
-    const oldTopic = graph().ensureEntity('topic', 'Altthema');
+    const newTopic = graph().ensureEntity({ type: 'topic', name: 'Neuthema' });
+    const oldTopic = graph().ensureEntity({ type: 'topic', name: 'Altthema' });
     const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
-    graph().ensureEntity('topic', 'Altthema');
+    graph().ensureEntity({ type: 'topic', name: 'Altthema' });
 
     const u = await app.ok('audit:undo', { auditId: r.auditId });
     expect(u.undone).toBe(false);
@@ -173,9 +176,9 @@ describe('Merging topics (#33)', () => {
   });
 
   it('rejects unequal types without approval and entries that cannot be merged', async () => {
-    const topic = graph().ensureEntity('topic', 'prod-plat');
-    const project = graph().ensureEntity('project', 'Prod Plat');
-    const person = graph().ensureEntity('person', 'Anna');
+    const topic = graph().ensureEntity({ type: 'topic', name: 'prod-plat' });
+    const project = graph().ensureEntity({ type: 'project', name: 'Prod Plat' });
+    const person = graph().ensureEntity({ type: 'person', name: 'Anna' });
     await expect(graph().merge({ sourceIds: [topic.id], targetId: project.id })).rejects.toThrow('Nur gleichartige Einträge');
     await expect(graph().merge({ sourceIds: [person.id], targetId: project.id, allowCrossType: true })).rejects.toThrow('Nur gleichartige Einträge');
     const dec = await decision('Etwas', { topic: 'prod-plat' });
@@ -289,8 +292,8 @@ describe('Multiple merges in one run (#33)', () => {
   });
 
   it('performs none of them when an error occurs in the run', async () => {
-    const a = graph().ensureEntity('topic', 'A-Thema');
-    const b = graph().ensureEntity('topic', 'B-Thema');
+    const a = graph().ensureEntity({ type: 'topic', name: 'A-Thema' });
+    const b = graph().ensureEntity({ type: 'topic', name: 'B-Thema' });
     const before = state();
     await expect(
       graph().mergeMany([
@@ -306,7 +309,7 @@ describe('Agent actions for merging (#33)', () => {
   it('merge_topics can be undone', async () => {
     const ev = await app.ok('events:create', { title: 'Treffen', occurredAt: '2026-09-04', topic: 'Altthema', sourceIds: [] });
     const oldTopic = graph().findByName('topic', 'Altthema')!;
-    const newTopic = graph().ensureEntity('topic', 'Neuthema');
+    const newTopic = graph().ensureEntity({ type: 'topic', name: 'Neuthema' });
     const before = state();
     const action = await app.ok('knowledge:proposeMerge', { sourceTopicId: oldTopic.id, targetTopicId: newTopic.id });
     const done = await app.ok('actions:resolve', { decision: 'approve', actionId: action.id, confirmed: true } as never);
@@ -320,9 +323,9 @@ describe('Agent actions for merging (#33)', () => {
   });
 
   it('merge_entities merges several entries, also across topic/project', async () => {
-    const topic = graph().ensureEntity('topic', 'prod-plat');
-    const project = graph().ensureEntity('project', 'Prod Plat');
-    const other = graph().ensureEntity('project', 'Produktplattform');
+    const topic = graph().ensureEntity({ type: 'topic', name: 'prod-plat' });
+    const project = graph().ensureEntity({ type: 'project', name: 'Prod Plat' });
+    const other = graph().ensureEntity({ type: 'project', name: 'Produktplattform' });
     const action = app.services.actions.propose({
       actionType: 'merge_entities',
       label: 'Zusammenführen',
@@ -332,7 +335,7 @@ describe('Agent actions for merging (#33)', () => {
       requiredConfirmation: 'confirm',
       proposedParameters: { sourceIds: [topic.id, other.id], targetId: project.id, allowCrossType: true },
     });
-    const done = await app.services.actions.resolve(action.id, 'approve', { confirmed: true });
+    const done = await app.services.actions.resolve(action.id, { decision: 'approve', confirmed: true });
     expect(done.status).toBe('executed');
     expect(done.result).toContain('„prod-plat“, „Produktplattform“ mit „Prod Plat“ zusammengeführt');
     expect(graph().getEntity(project.id)!.aliases).toEqual(['Produktplattform']);

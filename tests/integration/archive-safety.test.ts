@@ -208,7 +208,7 @@ describe('Archive state and processing status', () => {
     fs.unlinkSync(res.items[0]!.targetPath!);
     expect((await app.ok('archive:verify', {})).missingFiles).toHaveLength(1);
     // the consistency check reports the missing file
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect((await app.ok('insights:list', {})).some((i) => i.kind === 'misplaced_file' && i.title.includes('fehlt'))).toBe(true);
   });
 

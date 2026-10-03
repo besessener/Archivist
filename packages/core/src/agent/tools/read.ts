@@ -104,7 +104,10 @@ export function readTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const hits = filterDocuments({ deps, ctx }, a);
         if (!hits.length) return { content: 'Keine Dokumente gefunden.', summary: 'keine gefunden' };
-        return { content: pageOf({ deps, ctx }, hits, { number: a.page ?? 1, size: a.pageSize ?? PAGE_SIZE }), summary: `${hits.length} gefunden` };
+        return {
+          content: pageOf({ deps, ctx }, { docs: hits, page: { number: a.page ?? 1, size: a.pageSize ?? PAGE_SIZE } }),
+          summary: `${hits.length} gefunden`,
+        };
       },
     }),
     defineTool({

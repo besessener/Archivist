@@ -40,21 +40,28 @@ const NEIGHBOR_LIST: Partial<Record<string, keyof ChatContext>> = { topic: 'topi
 
 const emptyContext = (): Required<ChatContext> => ({ topics: [], projects: [], persons: [], decisions: [], openItems: [], documents: [], contradictions: [] });
 
+export interface KnowledgeAnswerServiceDeps {
+  settings: SettingsService;
+  llm: LlmService;
+  decisions: DecisionService;
+  openItems: OpenItemService;
+  search: SearchService;
+  graph: KnowledgeGraphService;
+  docs: DocumentService;
+  privacy: PrivacyService;
+  events: EventService;
+}
+
 /** Verified knowledge answers (#307) for the agent and the chat: only from numbered sources, each statement checked, non-shareable sources cited locally. */
 export class KnowledgeAnswerService {
   private readonly gatherer: SourceGatherer;
 
-  constructor(
-    settings: SettingsService,
-    private readonly llm: LlmService,
-    decisions: DecisionService,
-    openItems: OpenItemService,
-    search: SearchService,
-    private readonly graph: KnowledgeGraphService,
-    docs: DocumentService,
-    privacy: PrivacyService,
-    events: EventService,
-  ) {
+  private readonly llm: LlmService;
+  private readonly graph: KnowledgeGraphService;
+
+  constructor(deps: KnowledgeAnswerServiceDeps) {
+    ({ llm: this.llm, graph: this.graph } = deps);
+    const { settings, decisions, openItems, search, graph, docs, privacy, events } = deps;
     const reader = new SourceReader({ settings, decisions, openItems, search, docs, privacy, events });
     this.gatherer = new SourceGatherer({ search, graph }, reader);
   }

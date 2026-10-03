@@ -41,25 +41,55 @@ type ApplyResult = { item: OpenItem; created: OpenItem[]; noteId: string | null 
 
 const abortedError = () => new AppError('llm_error', 'Die Erzeugung des Lösungsvorschlags wurde abgebrochen. Es wurde nichts geändert.');
 
+export interface SolutionServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  llm: LlmService;
+  privacy: PrivacyService;
+  openItems: OpenItemService;
+  decisions: DecisionService;
+  documents: DocumentService;
+  eventRecords: EventService;
+  graph: KnowledgeGraphService;
+  search: SearchService;
+  audit: AuditService;
+  notes: NoteService;
+}
+
 /** Solution proposals: gathers sources from the archive, sends them – respecting privacy – to the LLM and stores the result. */
 export class SolutionService {
   /** running generations per item (for cancellation) */
   private readonly running = new Map<string, AbortController>();
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly llm: LlmService,
-    private readonly privacy: PrivacyService,
-    private readonly openItems: OpenItemService,
-    private readonly decisions: DecisionService,
-    private readonly documents: DocumentService,
-    private readonly eventRecords: EventService,
-    private readonly graph: KnowledgeGraphService,
-    private readonly search: SearchService,
-    private readonly audit: AuditService,
-    private readonly notes: NoteService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly llm: LlmService;
+  private readonly privacy: PrivacyService;
+  private readonly openItems: OpenItemService;
+  private readonly decisions: DecisionService;
+  private readonly documents: DocumentService;
+  private readonly eventRecords: EventService;
+  private readonly graph: KnowledgeGraphService;
+  private readonly search: SearchService;
+  private readonly audit: AuditService;
+  private readonly notes: NoteService;
+
+  constructor(deps: SolutionServiceDeps) {
+    ({
+      ctx: this.ctx,
+      settings: this.settings,
+      llm: this.llm,
+      privacy: this.privacy,
+      openItems: this.openItems,
+      decisions: this.decisions,
+      documents: this.documents,
+      eventRecords: this.eventRecords,
+      graph: this.graph,
+      search: this.search,
+      audit: this.audit,
+      notes: this.notes,
+    } = deps);
+  }
 
   /** Reason why no proposal can (currently) be generated for this item – or null. */
   private blocked(item: OpenItem): { category: ErrorCategory; message: string } | null {
@@ -238,7 +268,7 @@ export class SolutionService {
     if (!solution) throw new AppError('validation_error', 'Zu diesem Punkt gibt es noch keinen Lösungsvorschlag.');
     if (input.target === 'description') {
       const description = [item.description?.trim(), formatSolution(solution)].filter(Boolean).join('\n\n');
-      return { item: this.openItems.update(item.id, { description }), created: [], noteId: null };
+      return { item: this.openItems.update(item.id, { patch: { description } }), created: [], noteId: null };
     }
     if (input.target === 'items') return this.createSteps(item, { ...input, solution });
     return this.createNote(item, solution);
@@ -262,7 +292,7 @@ export class SolutionService {
         },
         { actor: 'user', trigger: 'ui' },
       );
-      this.graph.link(child.id, item.id, 'results_from', { confidence: 0.9, status: 'confirmed', sourceIds: [item.id] });
+      this.graph.link({ sourceId: child.id, targetId: item.id, relationType: 'results_from' }, { confidence: 0.9, status: 'confirmed', sourceIds: [item.id] });
       return child;
     });
     return { item: this.openItems.get(item.id), created, noteId: null };

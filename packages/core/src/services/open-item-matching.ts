@@ -74,11 +74,15 @@ export function scoreHintTokens(wanted: string[], item: { title: string; descrip
 }
 
 /** Ranks open items against a hint word by word, fuzzy only last; close best hits are ambiguous, weak ones no hit. */
-export function matchOpenItems<T extends { title: string; description?: string | null }>(
-  hint: string,
-  items: T[],
-  opts: { threshold?: number } = {},
-): { status: 'match'; item: T } | { status: 'ambiguous'; items: T[] } | { status: 'none' } {
+export function matchOpenItems<T extends { title: string; description?: string | null }>({
+  hint,
+  items,
+  ...opts
+}: {
+  hint: string;
+  items: T[];
+  threshold?: number;
+}): { status: 'match'; item: T } | { status: 'ambiguous'; items: T[] } | { status: 'none' } {
   const wanted = hintTokens(hint);
   if (!wanted.length) return { status: 'none' };
   const scored = items

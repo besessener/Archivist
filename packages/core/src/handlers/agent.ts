@@ -23,7 +23,7 @@ function runBackground(services: Services, kind: 'inbox' | 'archive_check' | 'li
     return { jobId: null, message: 'Hintergrund-Läufe brauchen den Agentenmodus, ein LLM mit Werkzeugaufrufen und den Datenschutzmodus „automatisch“.' };
   const docIds = kind === 'inbox' ? services.documents.list({ statuses: ['proposed'], limit: 500 }).map((document) => document.id) : [];
   if (kind === 'inbox' && !docIds.length) return { jobId: null, message: 'Im Eingang liegt nichts zum Einsortieren.' };
-  const job = services.jobs.enqueue('agent.background', 'Hintergrund-Agent (manuell)', { kind, docIds }, { maxAttempts: 1 });
+  const job = services.jobs.enqueue('agent.background', { label: 'Hintergrund-Agent (manuell)', payload: { kind, docIds }, maxAttempts: 1 });
   return { jobId: job.id, message: 'Gestartet.' };
 }
 

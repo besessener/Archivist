@@ -73,6 +73,8 @@ interface Waiting {
   fail: (err: unknown) => void;
 }
 
+export type AgentFileJobsDeps = { jobs: JobQueueService; archive: ArchiveService; runs: AgentRunService };
+
 /** Large file operations of the agent as jobs under the run id and step (#304): live progress, „Stopp“ between chunks, resume after restart. */
 export class AgentFileJobs {
   private readonly waiting = new Map<string, Waiting>();
@@ -80,20 +82,25 @@ export class AgentFileJobs {
   threshold = FILE_JOB_THRESHOLD;
   chunk = FILE_CHUNK;
 
-  constructor(
-    private readonly jobs: JobQueueService,
-    private readonly archive: ArchiveService,
-    private readonly runs: AgentRunService,
-  ) {}
+  private readonly jobs: JobQueueService;
+  private readonly archive: ArchiveService;
+  private readonly runs: AgentRunService;
+
+  constructor(deps: AgentFileJobsDeps) {
+    ({ jobs: this.jobs, archive: this.archive, runs: this.runs } = deps);
+  }
 
   register(): void {
-    this.jobs.register<FileJobPayload>(FILE_JOB_TYPE, (job) => this.handle(job), {
-      // cancelled before it ran (e.g. still waiting behind other jobs): the tool gets what is done – nothing
-      onCancelled: (job) => this.release(job.id, { resumes: false }),
-      onFailed: (job, err) => {
-        const waiter = this.waiting.get(job.id);
-        this.waiting.delete(job.id);
-        waiter?.fail(err);
+    this.jobs.register<FileJobPayload>(FILE_JOB_TYPE, {
+      handler: (job) => this.handle(job),
+      hooks: {
+        // cancelled before it ran (e.g. still waiting behind other jobs): the tool gets what is done – nothing
+        onCancelled: (job) => this.release(job.id, { resumes: false }),
+        onFailed: (job, err) => {
+          const waiter = this.waiting.get(job.id);
+          this.waiting.delete(job.id);
+          waiter?.fail(err);
+        },
       },
     });
   }
@@ -106,11 +113,19 @@ export class AgentFileJobs {
   }
 
   /** In chunks; above the threshold as a job of its own, except in a background run that is a job itself. */
-  async run(
-    op: FileOp,
-    items: FileItem[],
-    options: { signal: AbortSignal; label: string; inJob: boolean; report?: (p: number, m: string) => void; consent?: ArchiveConsent },
-  ): Promise<FileOpResult> {
+  async run({
+    op,
+    items,
+    ...options
+  }: {
+    op: FileOp;
+    items: FileItem[];
+    signal: AbortSignal;
+    label: string;
+    inJob: boolean;
+    report?: (p: number, m: string) => void;
+    consent?: ArchiveConsent;
+  }): Promise<FileOpResult> {
     const scope = currentRun();
     if (scope && !options.inJob && items.length > this.threshold) return this.asJob(scope, { op, items, ...options });
     const result = emptyResult();
@@ -151,7 +166,7 @@ export class AgentFileJobs {
         items,
         ...(consent ? { consent } : {}),
       };
-      const job = this.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, work.label, payload, { maxAttempts: 1 });
+      const job = this.jobs.enqueue<FileJobPayload>(FILE_JOB_TYPE, { label: work.label, payload, maxAttempts: 1 });
       const onAbort = () => {
         // quitting: the queue interrupts the job, it continues after the next start – the run reports what is done
         if (signal.reason instanceof AgentShutdownError) this.release(job.id, { resumes: true });

@@ -87,9 +87,8 @@ function findCase({ deps, ctx }: ToolScope, ref: string): GraphEntity | undefine
 
 function updateDocuments(deps: ToolDeps, update: { ids: string[]; args: SetMetadata; addPersons: string[]; date: string | null | undefined }): number {
   const { args, addPersons, date } = update;
-  const result = deps.docs.bulkUpdate(
-    update.ids,
-    {
+  const result = deps.docs.bulkUpdate(update.ids, {
+    patch: {
       ...(args.title ? { title: args.title } : {}),
       ...(args.topic !== undefined ? { topic: args.topic } : {}),
       ...(args.project !== undefined ? { project: args.project } : {}),
@@ -100,12 +99,12 @@ function updateDocuments(deps: ToolDeps, update: { ids: string[]; args: SetMetad
       ...(args.docType !== undefined ? { docType: args.docType } : {}),
       ...(date !== undefined ? { documentDate: date } : {}),
     },
-    { trigger: 'agent' },
-  );
+    trigger: 'agent',
+  });
   return result.updated.length;
 }
 
-type FurtherPatch = Parameters<ToolDeps['subjects']['bulkAssign']>[1];
+type FurtherPatch = Parameters<ToolDeps['subjects']['bulkAssign']>[1]['patch'];
 
 /** Further topics/projects, a case and tags of entries without a tag column: added, ONE undo step each (#287, #291). */
 async function assignFurther(deps: ToolDeps, assignment: { ids: string[]; others: string[]; args: SetMetadata; caseId?: string }): Promise<number> {
@@ -114,7 +113,7 @@ async function assignFurther(deps: ToolDeps, assignment: { ids: string[]; others
   const otherEntries = others.filter((id) => !noteIds.includes(id));
   const assign = async (targets: string[], patch: FurtherPatch) => {
     if (!targets.length || (!patch.topics?.length && !patch.projects?.length && !patch.tags?.length && !patch.caseId)) return 0;
-    return (await deps.subjects.bulkAssign(targets, patch, { trigger: 'agent' })).updated;
+    return (await deps.subjects.bulkAssign(targets, { patch, trigger: 'agent' })).updated;
   };
   return (
     (await assign(ids, { topics: args.addTopics ?? [], projects: args.addProjects ?? [], caseId })) +
@@ -148,7 +147,7 @@ async function setMetadata(scope: ToolScope, args: SetMetadata): Promise<ToolOut
   if (added) changed.push(`${added} Zuordnung(en) ergänzt`);
   const removed =
     args.removeTopics?.length || args.removeProjects?.length
-      ? deps.subjects.removeFurther(ids, { topics: args.removeTopics ?? [], projects: args.removeProjects ?? [] }, { trigger: 'agent' })
+      ? deps.subjects.removeFurther(ids, { patch: { topics: args.removeTopics ?? [], projects: args.removeProjects ?? [] }, trigger: 'agent' })
       : 0;
   if (removed) changed.push(`${removed} weitere(s) Thema/Projekt entfernt`);
   const what = describeChange(args, date);
@@ -185,7 +184,10 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const existing = graph.findByNameOrAlias(a.type, a.name);
         if (existing) return { content: `${ctx.refs.entry(existing.id)} ${TYPE_LABEL[a.type]} „${existing.name}“ gibt es schon.`, summary: 'gab es schon' };
-        const entity = a.type === 'person' ? deps.persons.resolve(a.name, { create: true }).entity : graph.ensureEntity(a.type, a.name, a.description);
+        const entity =
+          a.type === 'person'
+            ? deps.persons.resolve(a.name, { create: true }).entity
+            : graph.ensureEntity({ type: a.type, name: a.name, description: a.description });
         if (!entity) return { content: `„${a.name}“ ist kein Personenname.`, isError: true };
         deps.audit.log({
           action: 'entity.create',
@@ -253,7 +255,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
       label: (a) => (a.excluded ? 'Schließe Dokumente von der LLM-Analyse aus' : 'Gebe Dokumente für die LLM-Analyse frei'),
       run: async (a, ctx) => {
         const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
-        for (const d of docs) deps.docs.setLlmExcluded(d.id, a.excluded);
+        for (const d of docs) deps.docs.setLlmExcluded(d.id, { excluded: a.excluded });
         return {
           content: `${docs.length} Dokument(e) ${a.excluded ? 'von der LLM-Analyse ausgeschlossen' : 'wieder freigegeben'}.${unknownNote(unknown)}`,
           summary: `${docs.length} geändert`,

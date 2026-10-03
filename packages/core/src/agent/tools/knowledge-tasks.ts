@@ -33,10 +33,10 @@ const UpdateArgs = z.object({
 
 async function createOpenItem(scope: ToolScope, args: z.output<typeof CreateArgs>): Promise<ToolOutput> {
   const { deps, ctx } = scope;
-  const result = await deps.capture.forAgent(
-    ctx.conversationId,
-    [args.title, args.description].filter(Boolean).join(' – '),
-    {
+  const result = await deps.capture.forAgent({
+    conversationId: ctx.conversationId,
+    text: [args.title, args.description].filter(Boolean).join(' – '),
+    intent: {
       ...agentIntent('open_item_new', args.title),
       topic: args.topic,
       project: args.project,
@@ -52,11 +52,11 @@ async function createOpenItem(scope: ToolScope, args: z.output<typeof CreateArgs
         resolutionNote: null,
       },
     },
-    { force: args.ifDuplicate === 'create' },
-  );
+    force: args.ifDuplicate === 'create',
+  });
   if (result.openItemId)
     for (const docId of ctx.refs.resolveMany(args.sources ?? []).ids)
-      deps.openItems.addSource(result.openItemId, docId, {}, { actor: 'agent', trigger: 'agent' });
+      deps.openItems.addSource(result.openItemId, { sourceId: docId, extra: {}, origin: { actor: 'agent', trigger: 'agent' } });
   return {
     content: `${entryRef(ctx, result.openItemId)} ${result.content}${followUpQuestion(result)}${await linkHint(scope, result.openItemId)}`,
     summary: result.openItemId ? 'angelegt' : 'nicht angelegt',
@@ -163,7 +163,7 @@ export function taskTools(deps: ToolDeps): AgentTool[] {
         if (!id) return { content: `Unbekannte ID „${a.id}“.`, isError: true };
         const patch = openItemPatch(a, deps.openItems.get(id).description);
         if (!Object.keys(patch).length) return { content: 'Nichts zu ändern angegeben.', isError: true };
-        const openItem = deps.openItems.update(id, patch, { trigger: 'agent' });
+        const openItem = deps.openItems.update(id, { patch, trigger: 'agent' });
         return {
           content: `${ctx.refs.entry(openItem.id)} „${openItem.title}“ geändert (${Object.keys(patch).join(', ')}).`,
           summary: 'geändert',
@@ -180,7 +180,7 @@ export function taskTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const id = ctx.refs.resolve(a.id);
         if (!id) return { content: `Unbekannte ID „${a.id}“.`, isError: true };
-        const openItem = deps.openItems.close(id, a.status, { confirmed: true, trigger: 'agent', resolutionNote: a.note });
+        const openItem = deps.openItems.close(id, { status: a.status, confirmed: true, trigger: 'agent', resolutionNote: a.note });
         return {
           content: `${ctx.refs.entry(openItem.id)} „${openItem.title}“ ist jetzt ${a.status === 'resolved' ? 'erledigt' : 'verworfen'}.`,
           summary: 'geschlossen',

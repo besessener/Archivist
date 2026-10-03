@@ -6,11 +6,11 @@ import type { WiredServices } from './domain-services';
 /** The agent and its file jobs; large file operations of a run are jobs of their own under the run id (#304). */
 export function createAgent(services: WiredServices, enqueueConsistency: (trigger: string) => Job) {
   const { ctx, jobs, archive, agentRuns, llm, appState, memory } = services;
-  const agentFileJobs = new AgentFileJobs(jobs, archive, agentRuns);
+  const agentFileJobs = new AgentFileJobs({ jobs, archive, runs: agentRuns });
   agentFileJobs.register();
-  const agent = new AgentService(
+  const agent = new AgentService({
     ctx,
-    {
+    tools: {
       paths: services.paths,
       settings: services.settings,
       docs: services.documents,
@@ -47,9 +47,9 @@ export function createAgent(services: WiredServices, enqueueConsistency: (trigge
       enqueueConsistency,
     },
     llm,
-    agentRuns,
+    runs: agentRuns,
     appState,
     memory,
-  );
+  });
   return { agent, agentFileJobs };
 }

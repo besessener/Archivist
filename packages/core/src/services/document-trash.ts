@@ -95,7 +95,7 @@ export class DocumentTrash {
 
   list(): TrashEntry[] {
     return this.deps.audit
-      .list(1000, true)
+      .list({ limit: 1000, onlyUndoable: true })
       .filter((entry) => entry.action === TRASH_ACTION)
       .map((entry) => ({
         auditId: entry.id,

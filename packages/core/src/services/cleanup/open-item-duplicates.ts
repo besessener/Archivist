@@ -121,16 +121,26 @@ function duplicateInsight(pair: DuplicatePair & { key: string; takenOver: string
   };
 }
 
+export interface OpenItemDuplicateServiceDeps {
+  ctx: AppContext;
+  openItems: OpenItemService;
+  graph: KnowledgeGraphService;
+  audit: AuditService;
+  undo: UndoService;
+  insights: InsightService;
+}
+
 /** Duplicate open items: the archive check proposes keeping the first one and discarding the other (undoable, never deleted). */
 export class OpenItemDuplicateService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly openItems: OpenItemService,
-    private readonly graph: KnowledgeGraphService,
-    private readonly audit: AuditService,
-    undo: UndoService,
-    private readonly insights: InsightService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly openItems: OpenItemService;
+  private readonly graph: KnowledgeGraphService;
+  private readonly audit: AuditService;
+  private readonly insights: InsightService;
+
+  constructor(deps: OpenItemDuplicateServiceDeps) {
+    ({ ctx: this.ctx, openItems: this.openItems, graph: this.graph, audit: this.audit, insights: this.insights } = deps);
+    const { undo } = deps;
     undo.register(OPEN_ITEM_MERGE_UNDO_TYPE, {
       check: async (data) => this.undoConflicts(data as MergeUndoData),
       run: async (data) => this.undoMerge(data as MergeUndoData),
@@ -216,7 +226,10 @@ export class OpenItemDuplicateService {
       .from(relations)
       .where(and(eq(relations.sourceEntityId, link.from), eq(relations.targetEntityId, link.to), eq(relations.relationType, link.type)))
       .get();
-    const relation = this.graph.link(link.from, link.to, link.type, { confidence: opts.confidence, status: 'confirmed', sourceIds: opts.sourceIds });
+    const relation = this.graph.link(
+      { sourceId: link.from, targetId: link.to, relationType: link.type },
+      { confidence: opts.confidence, status: 'confirmed', sourceIds: opts.sourceIds },
+    );
     return !exists && relation ? [relation.id] : [];
   }
 
@@ -248,7 +261,7 @@ export class OpenItemDuplicateService {
   }
 
   /** Keeps `keepId`, takes over what it lacks (reminders moved too) and dismisses the duplicate; one undoable audit entry. */
-  merge(keepId: string, duplicateId: string, origin: Origin = {}): OpenItemMergeResult {
+  merge({ keepId, duplicateId }: { keepId: string; duplicateId: string }, origin: Origin = {}): OpenItemMergeResult {
     const stale = this.staleReason(keepId, duplicateId);
     if (stale) throw new AppError('validation_error', stale);
     const keep = this.row(keepId)!;
@@ -277,7 +290,7 @@ export class OpenItemDuplicateService {
     if (moved.length) this.db.update(reminders).set({ targetId: keep.id }).where(inArray(reminders.id, moved)).run();
     syncReminderAt(this.db, keep.id);
     syncReminderAt(this.db, duplicate.id);
-    if (patch.description !== undefined) this.graph.registerNode('task', keep.id, keep.title, patch.description);
+    if (patch.description !== undefined) this.graph.registerNode({ type: 'task', id: keep.id, name: keep.title, description: patch.description });
     const data: MergeUndoData = {
       keepId: keep.id,
       duplicateId: duplicate.id,
@@ -339,7 +352,8 @@ export class OpenItemDuplicateService {
       if (undoData.movedReminderIds.length)
         this.db.update(reminders).set({ targetId: undoData.duplicateId }).where(inArray(reminders.id, undoData.movedReminderIds)).run();
       if (undoData.createdRelationIds.length) this.db.delete(relations).where(inArray(relations.id, undoData.createdRelationIds)).run();
-      if ('description' in undoData.keepBefore) this.graph.registerNode('task', undoData.keepId, keep.title, undoData.keepBefore.description ?? null);
+      if ('description' in undoData.keepBefore)
+        this.graph.registerNode({ type: 'task', id: undoData.keepId, name: keep.title, description: undoData.keepBefore.description ?? null });
       syncReminderAt(this.db, undoData.keepId);
       syncReminderAt(this.db, undoData.duplicateId);
     });

@@ -4,21 +4,8 @@ import { toErrorInfo } from '../util/errors';
 import { collectCreated, type CreatedEntry } from '../util/origin-scope';
 import type { ActionService } from './actions';
 import type { ArchiveService } from './archive';
-import type { CaptureService } from './capture';
 import { mergeReplies, type ConvState, type Reply } from './chat-state';
-import type { ContradictionService } from './contradictions';
-import type { DecisionService } from './decisions';
-import type { DocumentService } from './documents';
-import type { InsightService } from './insights';
-import type { JobQueueService } from './jobs';
-import type { KnowledgeAnswerService } from './knowledge-answers';
-import type { KnowledgeGraphService } from './knowledge-graph';
-import { llmCancelScope, type LlmService } from './llm';
-import type { OpenItemService } from './open-items';
-import type { ScannerService } from './scanner';
-import type { SearchService } from './search';
-import type { SettingsService } from './settings';
-import type { TimelineService } from './timeline';
+import { llmCancelScope } from './llm';
 import type { AgentService } from '../agent/service';
 import { ConversationStore } from './chat/conversation-store';
 import { ChatDispatcher } from './chat/dispatch';
@@ -31,6 +18,8 @@ import { errorDetails, WorkRunner, type ProgressLog } from './chat/work-runner';
 
 type CreatedTogether = (entries: CreatedEntry[], message: { id: string; text: string }) => void;
 type SuggestLinks = (entries: CreatedEntry[], reply: { messageId: string; conversationId: string }) => void;
+
+export type ChatServiceDeps = Omit<ChatDeps, 'actions' | 'archive'>;
 
 /** The chat: persistence, cancellation and replies – by the agent with a tool-calling LLM (#294), else by the rule-based flow in `chat/`. */
 export class ChatService {
@@ -46,26 +35,10 @@ export class ChatService {
   /** Running requests per conversation; `cancel` aborts their LLM calls and the requests not started yet (#151). */
   private readonly running = new Map<string, AbortController>();
 
-  constructor(
-    ctx: AppContext,
-    settings: SettingsService,
-    llm: LlmService,
-    decisions: DecisionService,
-    openItems: OpenItemService,
-    search: SearchService,
-    graph: KnowledgeGraphService,
-    docs: DocumentService,
-    scanner: ScannerService,
-    contradictions: ContradictionService,
-    insights: InsightService,
-    timeline: TimelineService,
-    jobs: JobQueueService,
-    capture: CaptureService,
-    answers: KnowledgeAnswerService,
-  ) {
-    this.services = { ctx, settings, llm, decisions, openItems, search, graph, docs, scanner, contradictions, insights, timeline, jobs, capture, answers };
-    this.store = new ConversationStore(ctx, () => this.actions);
-    this.rules = new RuleBasedIntents(graph);
+  constructor(services: ChatServiceDeps) {
+    this.services = services;
+    this.store = new ConversationStore(services.ctx, () => this.actions);
+    this.rules = new RuleBasedIntents(services.graph);
   }
 
   wire(deps: {
@@ -115,7 +88,7 @@ export class ChatService {
   }
 
   /** Posts a message of Archivist into a conversation of its own (weekly review, #314); creates it when missing. */
-  postAssistant(title: string, content: string, existingId: string | null): string {
+  postAssistant({ title, content, existingId }: { title: string; content: string; existingId: string | null }): string {
     const conversationId = this.store.exists(existingId) ? existingId : this.store.create(title).id;
     this.store.saveAssistantMessage(conversationId, { intent: 'weekly_review', content });
     this.store.touch(conversationId);
@@ -216,7 +189,7 @@ export class ChatService {
   private async agentReply({ conversationId, text, state }: ChatTurn): Promise<Reply | null> {
     // an open question of the rule-based flow (from before the agent mode) is still answered by that flow
     if (!this.agent || state.pending || !(await this.agent.ensureCapable())) return null;
-    const result = await this.agent.chat(conversationId, text, state.agent ?? {});
+    const result = await this.agent.chat(conversationId, { text, state: state.agent ?? {} });
     return {
       intent: 'agent',
       content: result.content,

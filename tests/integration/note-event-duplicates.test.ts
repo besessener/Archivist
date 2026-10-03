@@ -17,8 +17,8 @@ const duplicateInsights = (status: 'open' | 'accepted' | 'rejected' = 'open') =>
 const insightFor = (id: string, status: 'open' | 'accepted' | 'rejected' = 'open') => duplicateInsights(status).find((i) => i.sourceIds.includes(id));
 const accept = (id: string) => app.ok('insights:respond', { response: 'accept', id, confirmed: true, strongConfirmed: false });
 const reject = (id: string) => app.ok('insights:respond', { response: 'reject', id });
-const lastAudit = (action: string) => app.services.audit.list(50).find((a) => a.action === action)!;
-const check = () => app.services.consistency.run('manual');
+const lastAudit = (action: string) => app.services.audit.list({ limit: 50 }).find((a) => a.action === action)!;
+const check = () => app.services.consistency.run({ trigger: 'manual' });
 
 /** Records created in the same millisecond have no order; the older one is kept. */
 const tick = () => new Promise((r) => setTimeout(r, 5));
@@ -52,8 +52,8 @@ describe('Notes in the chat (#32, criterion 1)', () => {
 
 describe('Duplicate notes (archive check)', () => {
   it('detects identical notes, proposes merging and allows undoing it', async () => {
-    const topic = app.services.graph.ensureEntity('topic', 'Sommerfest');
-    const person = app.services.graph.ensureEntity('person', 'Anna Berg');
+    const topic = app.services.graph.ensureEntity({ type: 'topic', name: 'Sommerfest' });
+    const person = app.services.graph.ensureEntity({ type: 'person', name: 'Anna Berg' });
     // the more complete note is kept
     const first = await app.services.notes.create({
       content: 'Zelte beim Sportverein nebenan ausleihen',
@@ -110,13 +110,13 @@ describe('Duplicate notes (archive check)', () => {
     const b = await app.services.notes.create({ content: 'Steuerunterlagen bis Ende Mai sammeln!' });
     // merge and change within the same millisecond: the timestamp alone does not show the change
     vi.useFakeTimers({ toFake: ['Date'] });
-    const r = app.services.noteEventDuplicates.mergeNotes(a.id, b.id);
-    app.services.graph.registerNode('note', b.id, b.name, 'Steuerunterlagen bis Ende Mai sammeln – erledigt');
+    const r = app.services.noteEventDuplicates.mergeNotes({ keepId: a.id, duplicateId: b.id });
+    app.services.graph.registerNode({ type: 'note', id: b.id, name: b.name, description: 'Steuerunterlagen bis Ende Mai sammeln – erledigt' });
     vi.useRealTimers();
     const res = await app.ok('audit:undo', { auditId: r.auditId });
     expect(res.undone).toBe(false);
     expect(res.conflicts.join(' ')).toMatch(/verändert/);
-    expect(() => app.services.noteEventDuplicates.mergeNotes(a.id, b.id)).toThrow(/bereits als Duplikat/);
+    expect(() => app.services.noteEventDuplicates.mergeNotes({ keepId: a.id, duplicateId: b.id })).toThrow(/bereits als Duplikat/);
   });
 
   it('„Verschieden“ (reject) is remembered permanently', async () => {
@@ -133,9 +133,9 @@ describe('Duplicate notes (archive check)', () => {
     expect(insightFor(a.id, 'rejected')?.id).toBe(insight.id);
 
     // the pair temporarily disappears (one note is edited) and comes back: still not asked again
-    app.services.graph.registerNode('note', b.id, b.name, 'Ganz anderer Inhalt über den Garten');
+    app.services.graph.registerNode({ type: 'note', id: b.id, name: b.name, description: 'Ganz anderer Inhalt über den Garten' });
     await check();
-    app.services.graph.registerNode('note', b.id, b.name, 'Angebot vom Dachdekcer vergleichen');
+    app.services.graph.registerNode({ type: 'note', id: b.id, name: b.name, description: 'Angebot vom Dachdekcer vergleichen' });
     await check();
     expect(insightFor(a.id)).toBeUndefined();
     expect(insightFor(a.id, 'rejected')?.id).toBe(insight.id);
@@ -196,9 +196,9 @@ describe('Duplicate events (archive check)', () => {
     const a = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', sourceIds: [] });
     const b = app.services.eventRecords.create({ title: 'Kickoff Projekt Nord', occurredAt: '2026-05-04', description: 'mit Kunde', sourceIds: [] });
     vi.useFakeTimers({ toFake: ['Date'] });
-    const r = app.services.noteEventDuplicates.mergeEvents(a.id, b.id);
+    const r = app.services.noteEventDuplicates.mergeEvents({ keepId: a.id, duplicateId: b.id });
     expect(r.takenOver).toEqual(['Beschreibung']);
-    app.services.eventRecords.update(a.id, { title: 'Kickoff Projekt Nord (verschoben)' });
+    app.services.eventRecords.update(a.id, { patch: { title: 'Kickoff Projekt Nord (verschoben)' } });
     vi.useRealTimers();
     const res = await app.ok('audit:undo', { auditId: r.auditId });
     expect(res.undone).toBe(false);

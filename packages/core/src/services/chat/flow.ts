@@ -68,9 +68,9 @@ export class ChatFlow {
         return chosen ? this.resume(turn, { text: pending.text, intent: { ...pending.intent, topic: chosen, project: null, query: null } }) : null;
       }
       case 'open_item_duplicate':
-        return this.helpers.capture.answerOpenItemDuplicate(conversationId, text, pending, state);
+        return this.helpers.capture.answerOpenItemDuplicate({ conv: conversationId, text, state }, pending);
       case 'supersede_choice':
-        return this.helpers.capture.answerSupersedeChoice(conversationId, text, pending, state);
+        return this.helpers.capture.answerSupersedeChoice({ conv: conversationId, text, state }, pending);
     }
   }
 

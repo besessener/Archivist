@@ -62,7 +62,7 @@ export function createLinkProposalNotifier(services: {
 
 /** A check that is still queued or running covers a new request (startup, interval and manual triggers can meet). */
 export function linkRunEnqueuer(jobs: JobQueueService) {
-  return (trigger: string) => jobs.enqueue(LINK_RUN_JOB, 'Verknüpfungslauf (rückwirkend)', { trigger }, { maxAttempts: 2, sameAs: () => true });
+  return (trigger: string) => jobs.enqueue(LINK_RUN_JOB, { label: 'Verknüpfungslauf (rückwirkend)', payload: { trigger }, maxAttempts: 2, sameAs: () => true });
 }
 
 /** What the chat reports after capturing entries: links between them, and link suggestions in a job (#283). */
@@ -74,7 +74,7 @@ export function chatLinkCallbacks(services: WiredServices, notifyLinkProposals: 
         notifyLinkProposals(links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] }));
     },
     suggestLinks: (entries: Array<{ id: string; type: EntityType }>, reply: { messageId: string; conversationId: string }) => {
-      if (settings.get().links.autoPropose) jobs.enqueue(CHAT_LINKS_JOB, 'Verknüpfungen anbieten', { entries, ...reply }, { maxAttempts: 1 });
+      if (settings.get().links.autoPropose) jobs.enqueue(CHAT_LINKS_JOB, { label: 'Verknüpfungen anbieten', payload: { entries, ...reply }, maxAttempts: 1 });
     },
   };
 }
@@ -104,16 +104,21 @@ function addEntryTriggers(services: WiredServices, notifyLinkProposals: LinkProp
   search.onIndexed(({ id }) => {
     if (!settings.get().links.autoPropose || !links.queueSimilar([id])) return;
     // a job that has not started yet takes the entry along; a running one picks it up before it ends
-    jobs.enqueue(LINK_SIMILAR_JOB, 'Verknüpfungen für neue Einträge suchen', {}, { maxAttempts: 2, sameAs: (_p, status) => status === 'pending' });
+    jobs.enqueue(LINK_SIMILAR_JOB, {
+      label: 'Verknüpfungen für neue Einträge suchen',
+      payload: {},
+      maxAttempts: 2,
+      sameAs: (_p, status) => status === 'pending',
+    });
   });
   const enqueueNoteAnalysis = (entry: { id: string; type: string }) => {
     if (entry.type !== 'note' || !settings.get().links.autoPropose) return;
-    jobs.enqueue(
-      NOTE_ANALYZE_JOB,
-      'Notiz analysieren',
-      { noteId: entry.id },
-      { maxAttempts: 2, sameAs: (p, status) => status === 'pending' && p.noteId === entry.id },
-    );
+    jobs.enqueue(NOTE_ANALYZE_JOB, {
+      label: 'Notiz analysieren',
+      payload: { noteId: entry.id },
+      maxAttempts: 2,
+      sameAs: (p, status) => status === 'pending' && p.noteId === entry.id,
+    });
   };
   events.on('entry:created', enqueueNoteAnalysis);
   events.on('entry:updated', enqueueNoteAnalysis);
@@ -198,18 +203,22 @@ async function runLinkBackfill(services: WiredServices, job: JobContext<{ trigge
 
 function registerLinkJobs(services: WiredServices, notifyLinkProposals: LinkProposalNotifier): void {
   const { jobs, links, noteAnalysis, settings } = services;
-  jobs.register<ChatLinksPayload>(CHAT_LINKS_JOB, (job) => suggestChatLinks(services, job));
-  jobs.register<{ trigger?: string }>(LINK_RUN_JOB, (job) => runLinkBackfill(services, job));
-  jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, async (job) => {
-    const analysis = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
-    notifyLinkProposals(analysis?.proposed ?? 0);
-    return { summary: analysis ? `${analysis.proposed} Verknüpfungen vorgeschlagen, ${analysis.outdated} veraltet` : 'Notiz nicht (mehr) vorhanden' };
+  jobs.register<ChatLinksPayload>(CHAT_LINKS_JOB, { handler: (job) => suggestChatLinks(services, job) });
+  jobs.register<{ trigger?: string }>(LINK_RUN_JOB, { handler: (job) => runLinkBackfill(services, job) });
+  jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, {
+    handler: async (job) => {
+      const analysis = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
+      notifyLinkProposals(analysis?.proposed ?? 0);
+      return { summary: analysis ? `${analysis.proposed} Verknüpfungen vorgeschlagen, ${analysis.outdated} veraltet` : 'Notiz nicht (mehr) vorhanden' };
+    },
   });
-  jobs.register(LINK_SIMILAR_JOB, async (job) => {
-    const similar = await links.runPendingSimilar({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
-    notifyLinkProposals(similar.proposed);
-    job.throwIfCancelled();
-    return { summary: `${similar.processed} Einträge geprüft, ${similar.proposed} Verknüpfungen vorgeschlagen` };
+  jobs.register(LINK_SIMILAR_JOB, {
+    handler: async (job) => {
+      const similar = await links.runPendingSimilar({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
+      notifyLinkProposals(similar.proposed);
+      job.throwIfCancelled();
+      return { summary: `${similar.processed} Einträge geprüft, ${similar.proposed} Verknüpfungen vorgeschlagen` };
+    },
   });
 }
 

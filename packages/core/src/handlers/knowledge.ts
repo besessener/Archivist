@@ -52,7 +52,7 @@ function createGraphEntity(services: Services, input: { type: 'topic' | 'project
   // a merged-away name (alias) also counts as existing
   const existing = services.graph.findByNameOrAlias(input.type, input.name);
   if (existing) return { entity: existing, created: false };
-  const entity = services.graph.ensureEntity(input.type, input.name, input.description?.trim() || null);
+  const entity = services.graph.ensureEntity({ type: input.type, name: input.name, description: input.description?.trim() || null });
   services.audit.log({
     action: `${input.type}.create`,
     actor: 'user',
@@ -68,7 +68,7 @@ async function createEntity(services: Services, input: CreateEntityInput): Promi
   if (input.type === 'event') return createEvent(services, input);
   if (input.type === 'note') return createNote(services, input);
   if (input.type === 'case') {
-    const result = services.cases.create(input.name, input.description, { trigger: UI_TRIGGER });
+    const result = services.cases.create({ name: input.name, description: input.description, trigger: UI_TRIGGER });
     return { entity: result.case, created: result.created };
   }
   if (input.type === 'person') return createPerson(services, input);
@@ -101,14 +101,17 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
     'knowledge:link': (input) => {
       const type = RelationType.safeParse(input.relationType);
       if (!type.success) throw new AppError('validation_error', 'Unbekannte Art der Beziehung.');
-      return services.graph.linkEntries(input.sourceId, input.targetId, type.data, {
-        status: 'confirmed',
-        trigger: UI_TRIGGER,
-        method: input.method,
-        evidence: input.evidence,
-      }).relation;
+      return services.graph.linkEntries(
+        { sourceId: input.sourceId, targetId: input.targetId, relationType: type.data },
+        {
+          status: 'confirmed',
+          trigger: UI_TRIGGER,
+          method: input.method,
+          evidence: input.evidence,
+        },
+      ).relation;
     },
-    'knowledge:updateNote': (input) => services.notes.update(input.id, { title: input.title, content: input.content }, { trigger: UI_TRIGGER }),
+    'knowledge:updateNote': (input) => services.notes.update(input.id, { patch: { title: input.title, content: input.content }, trigger: UI_TRIGGER }),
     'knowledge:unlink': (input) => {
       services.graph.unlinkEntries(input.relationId, { trigger: UI_TRIGGER });
       return { ok: true as const };
@@ -120,9 +123,10 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
     'knowledge:wikiResolve': (input) => services.notes.wiki.resolveAll(input.names, input.noteId),
     'knowledge:resolveRelation': (input) => {
       // confirming and rejecting are undoable decisions (#280); other statuses are only logged
-      if (input.status === 'confirmed' || input.status === 'rejected') services.graph.decideRelation(input.relationId, input.status, { trigger: UI_TRIGGER });
+      if (input.status === 'confirmed' || input.status === 'rejected')
+        services.graph.decideRelation(input.relationId, { status: input.status, trigger: UI_TRIGGER });
       else {
-        services.graph.setRelationStatus(input.relationId, input.status);
+        services.graph.setRelationStatus(input.relationId, { status: input.status });
         services.audit.log({ action: `relation.${input.status}`, actor: 'user', trigger: UI_TRIGGER, confirmed: true, entityIds: [input.relationId] });
       }
       return { ok: true as const };
@@ -153,22 +157,28 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
       services.audit.log({ action: 'links.thresholds.reset', actor: 'user', trigger: UI_TRIGGER, confirmed: true, entityIds: [] });
       return { ok: true as const };
     },
-    'links:decide': (input) => ({ decided: services.graph.decideRelations(input.relationIds, input.decision, { trigger: UI_TRIGGER }) }),
-    'links:decideGroup': (input) => ({ decided: services.links.decideGroup(input.groupBy, input.key, input.decision, { trigger: UI_TRIGGER }) }),
+    'links:decide': (input) => ({ decided: services.graph.decideRelations(input.relationIds, { status: input.decision, trigger: UI_TRIGGER }) }),
+    'links:decideGroup': (input) => ({
+      decided: services.links.decideGroup({ groupBy: input.groupBy, key: input.key }, { status: input.decision, trigger: UI_TRIGGER }),
+    }),
 
     'subjects:of': (input) => services.subjects.ofMany(input.ids),
-    'subjects:setExtras': (input) => services.subjects.setExtras(input.id, { topics: input.topics, projects: input.projects }, { trigger: UI_TRIGGER }),
+    'subjects:setExtras': (input) => services.subjects.setExtras(input.id, { patch: { topics: input.topics, projects: input.projects }, trigger: UI_TRIGGER }),
     'entries:bulkAssign': (input) =>
-      services.subjects.bulkAssign(
-        input.ids,
-        { topics: input.topic ? [input.topic] : [], projects: input.project ? [input.project] : [], tags: input.tag ? [input.tag] : [], caseId: input.caseId },
-        { trigger: UI_TRIGGER },
-      ),
+      services.subjects.bulkAssign(input.ids, {
+        patch: {
+          topics: input.topic ? [input.topic] : [],
+          projects: input.project ? [input.project] : [],
+          tags: input.tag ? [input.tag] : [],
+          caseId: input.caseId,
+        },
+        trigger: UI_TRIGGER,
+      }),
 
     'cases:list': (input) => services.cases.list(input),
     'cases:detail': (input) => services.cases.detail(input.id),
-    'cases:create': (input) => services.cases.create(input.name, input.description, { trigger: UI_TRIGGER }),
-    'cases:assign': (input) => ({ assigned: services.cases.assign(input.entryIds, input.caseId, { trigger: UI_TRIGGER }) }),
-    'cases:setStatus': (input) => services.graph.setCaseStatus(input.id, input.status, { trigger: UI_TRIGGER }),
+    'cases:create': (input) => services.cases.create({ name: input.name, description: input.description, trigger: UI_TRIGGER }),
+    'cases:assign': (input) => ({ assigned: services.cases.assign({ entryIds: input.entryIds, caseId: input.caseId, trigger: UI_TRIGGER }) }),
+    'cases:setStatus': (input) => services.graph.setCaseStatus(input.id, { status: input.status, trigger: UI_TRIGGER }),
   };
 }

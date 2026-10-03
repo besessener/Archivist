@@ -33,15 +33,25 @@ export const ACTIVE_DECISION_STATUSES: DecisionStatus[] = ['confirmed', 'active'
 
 const today = () => toIsoDate(new Date());
 
+export interface DecisionServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  persons: PersonService;
+  search: SearchService;
+  audit: AuditService;
+  undo: UndoService;
+}
+
 export class DecisionService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly persons: PersonService,
-    private readonly search: SearchService,
-    private readonly audit: AuditService,
-    undo: UndoService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly persons: PersonService;
+  private readonly search: SearchService;
+  private readonly audit: AuditService;
+
+  constructor(deps: DecisionServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, persons: this.persons, search: this.search, audit: this.audit } = deps);
+    const { ctx, graph, undo } = deps;
     registerDecisionUndo(undo, { ctx, graph, reindex: (id) => this.reindex(id) });
   }
 
@@ -82,8 +92,8 @@ export class DecisionService {
     const conditions = [];
     if (opts.status) conditions.push(eq(decisions.status, opts.status));
     // the main topic/project or a further one (#287)
-    if (opts.topicId) conditions.push(withSubject(decisions.id, decisions.topicId, opts.topicId));
-    if (opts.projectId) conditions.push(withSubject(decisions.id, decisions.projectId, opts.projectId));
+    if (opts.topicId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.topicId, subjectId: opts.topicId }));
+    if (opts.projectId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.projectId, subjectId: opts.projectId }));
     return this.mapMany(
       this.db
         .select()
@@ -95,7 +105,7 @@ export class DecisionService {
   }
 
   /** Active decisions on a topic or project (for the contradiction/superseded check). */
-  activeFor(topicId: string | null, projectId: string | null, excludeId?: string): Decision[] {
+  activeFor({ topicId, projectId, excludeId }: { topicId: string | null; projectId: string | null; excludeId?: string }): Decision[] {
     const all = this.list().filter((d) => ACTIVE_DECISION_STATUSES.includes(d.status) && d.id !== excludeId);
     return all.filter((d) => (topicId && d.topicId === topicId) || (!topicId && projectId && d.projectId === projectId));
   }
@@ -142,8 +152,8 @@ export class DecisionService {
 
   private newRow(input: DecisionInput, opts: { personContext: PersonMentionContext; trigger?: string }): DecisionRow {
     const now = nowIso();
-    const topic = input.topic?.trim() ? this.graph.ensureEntity('topic', input.topic) : null;
-    const project = input.project?.trim() ? this.graph.ensureEntity('project', input.project) : null;
+    const topic = input.topic?.trim() ? this.graph.ensureEntity({ type: 'topic', name: input.topic }) : null;
+    const project = input.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: input.project }) : null;
     const decidedAt = checkedDecisionDate(input.decidedAt, today());
     const participants = this.persons.resolveNames(input.participants, { context: opts.personContext }).names;
     const missing = computeMissingFields({ ...input, decidedAt, topic: topic?.name ?? null, participants });
@@ -174,7 +184,7 @@ export class DecisionService {
   }
 
   /** Partial update of the fields in `patch`; `unknownFields` is replaced, `sourceIds` are added (supersede/revoke have own actions). */
-  update(id: string, patch: DecisionPatch, opts: { trigger?: string } = {}): Decision {
+  update(id: string, { patch, ...opts }: { patch: DecisionPatch; trigger?: string }): Decision {
     const current = this.row(id);
     // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
     assertEditableStatusChange(current.status as DecisionStatus, patch.status);
@@ -215,29 +225,32 @@ export class DecisionService {
   private patchColumns(current: DecisionRow, { patch, personContext }: { patch: DecisionPatch; personContext: PersonMentionContext }): Partial<DecisionRow> {
     const set: Partial<DecisionRow> = {};
     if (patch.decidedAt !== undefined) set.decidedAt = checkedDecisionDate(patch.decidedAt, today());
-    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity('topic', patch.topic).id : null;
-    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity('project', patch.project).id : null;
+    if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? this.graph.ensureEntity({ type: 'topic', name: patch.topic }).id : null;
+    if (patch.project !== undefined) set.projectId = patch.project?.trim() ? this.graph.ensureEntity({ type: 'project', name: patch.project }).id : null;
     if (patch.participants !== undefined) set.participants = this.persons.resolveNames(patch.participants, { context: personContext }).names;
     return { ...plainPatchColumns(current, patch), ...set };
   }
 
   private syncGraph(row: DecisionRow, personContext: PersonMentionContext): void {
     const link = { confidence: row.confidence, status: 'confirmed' as const, sourceIds: row.sourceIds };
-    this.graph.registerNode('decision', row.id, row.title, row.decisionText);
-    if (row.topicId) this.graph.link(row.id, row.topicId, 'concerns', link);
-    if (row.projectId) this.graph.link(row.id, row.projectId, 'affects', link);
+    this.graph.registerNode({ type: 'decision', id: row.id, name: row.title, description: row.decisionText });
+    if (row.topicId) this.graph.link({ sourceId: row.id, targetId: row.topicId, relationType: 'concerns' }, link);
+    if (row.projectId) this.graph.link({ sourceId: row.id, targetId: row.projectId, relationType: 'affects' }, link);
     const personIds: string[] = [];
     for (const person of this.persons.resolveNames(row.participants, { context: personContext }).entities) {
       personIds.push(person.id);
-      this.graph.link(person.id, row.id, 'participated_in', link);
+      this.graph.link({ sourceId: person.id, targetId: row.id, relationType: 'participated_in' }, link);
     }
     // relations to a previous topic, project or participant no longer apply
-    this.graph.unlinkSystemRelations(row.id, 'concerns', row.topicId ? [row.topicId] : [], { otherType: 'topic' });
-    this.graph.unlinkSystemRelations(row.id, 'affects', row.projectId ? [row.projectId] : [], { otherType: 'project' });
-    this.graph.unlinkSystemRelations(row.id, 'participated_in', personIds, { direction: 'in', otherType: 'person' });
+    this.graph.unlinkSystemRelations({ entityId: row.id, relationType: 'concerns', keepIds: row.topicId ? [row.topicId] : [], otherType: 'topic' });
+    this.graph.unlinkSystemRelations({ entityId: row.id, relationType: 'affects', keepIds: row.projectId ? [row.projectId] : [], otherType: 'project' });
+    this.graph.unlinkSystemRelations({ entityId: row.id, relationType: 'participated_in', keepIds: personIds, direction: 'in', otherType: 'person' });
     for (const sourceId of row.sourceIds) {
       if (this.graph.getEntity(sourceId)?.type === 'document')
-        this.graph.link(sourceId, row.id, 'supports', { confidence: Math.min(row.confidence, 0.8), status: 'proposed', sourceIds: [sourceId] });
+        this.graph.link(
+          { sourceId, targetId: row.id, relationType: 'supports' },
+          { confidence: Math.min(row.confidence, 0.8), status: 'proposed', sourceIds: [sourceId] },
+        );
     }
   }
 
@@ -251,7 +264,7 @@ export class DecisionService {
   }
 
   /** Stage 2: marks an older decision as superseded (only after confirmation by the user). */
-  supersede(oldId: string, newId: string, opts: { confirmed: boolean; trigger?: string }): { old: Decision; new: Decision } {
+  supersede({ oldId, newId, ...opts }: { oldId: string; newId: string; confirmed: boolean; trigger?: string }): { old: Decision; new: Decision } {
     if (!opts.confirmed) throw new AppError('permission_error', 'Eine Entscheidung darf nur nach ausdrücklicher Bestätigung als überholt markiert werden.');
     if (oldId === newId) throw new AppError('validation_error', 'Eine Entscheidung kann sich nicht selbst ersetzen.');
     const oldRow = this.db.select().from(decisions).where(eq(decisions.id, oldId)).get();
@@ -267,7 +280,7 @@ export class DecisionService {
       this.db.transaction(() => {
         this.db.update(decisions).set({ status: 'superseded', updatedAt: now }).where(eq(decisions.id, oldId)).run();
         this.db.update(decisions).set({ supersedesDecisionId: oldId, updatedAt: now }).where(eq(decisions.id, newId)).run();
-        this.graph.link(newId, oldId, 'supersedes', { confidence: 0.95, status: 'confirmed' });
+        this.graph.link({ sourceId: newId, targetId: oldId, relationType: 'supersedes' }, { confidence: 0.95, status: 'confirmed' });
       }),
     );
     const statusChange = (row: DecisionRow) => ({ id: row.id, status: row.status, supersedesDecisionId: row.supersedesDecisionId, afterUpdatedAt: now });

@@ -61,7 +61,10 @@ const noteOrEventMerge =
   (type: 'merge_notes' | 'merge_events'): Revalidator =>
   (deps, params) => {
     const p = ActionParamSchemas[type].parse(params);
-    return unlessStale(deps.noteEventDuplicates.staleReason(type === 'merge_notes' ? 'note' : 'event', p.keepId, p.duplicateId), params);
+    return unlessStale(
+      deps.noteEventDuplicates.staleReason(type === 'merge_notes' ? 'note' : 'event', { keepId: p.keepId, duplicateId: p.duplicateId }),
+      params,
+    );
   };
 
 const REVALIDATORS: Partial<Record<AgentActionType, Revalidator>> = {

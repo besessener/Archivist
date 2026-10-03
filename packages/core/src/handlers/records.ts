@@ -39,12 +39,13 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'actions:list': (input) => services.actions.list(input.status),
     'actions:resolve': (input) =>
       input.decision === 'approve'
-        ? services.actions.resolve(input.actionId, 'approve', {
+        ? services.actions.resolve(input.actionId, {
+            decision: 'approve',
             confirmed: input.confirmed,
             strongConfirmed: input.strongConfirmed,
             overrides: input.parameterOverrides,
           })
-        : services.actions.resolve(input.actionId, 'reject', {}),
+        : services.actions.resolve(input.actionId, { decision: 'reject' }),
 
     'decisions:create': async (input) => {
       const decision = services.decisions.create(input, { actor: 'user', trigger: UI_TRIGGER });
@@ -52,7 +53,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       return decision;
     },
     'decisions:update': async (input) => {
-      const decision = services.decisions.update(input.id, input.patch, { trigger: UI_TRIGGER });
+      const decision = services.decisions.update(input.id, { patch: input.patch, trigger: UI_TRIGGER });
       if (decision.status === 'active') await services.contradictions.checkDecision(decision.id);
       return decision;
     },
@@ -61,7 +62,12 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'decisions:search': (input) => services.decisions.searchDecisions(input.query, input.limit),
     'decisions:proposeSupersede': (input) => proposeSupersede(services, input),
     'decisions:supersede': (input) => {
-      const superseded = services.decisions.supersede(input.oldDecisionId, input.newDecisionId, { confirmed: input.confirmed, trigger: UI_TRIGGER });
+      const superseded = services.decisions.supersede({
+        oldId: input.oldDecisionId,
+        newId: input.newDecisionId,
+        confirmed: input.confirmed,
+        trigger: UI_TRIGGER,
+      });
       // replacing by hand settles the pair's contradiction just like the confirmed proposal (#168)
       services.contradictions.settlePair(input.oldDecisionId, input.newDecisionId);
       return superseded;
@@ -89,13 +95,14 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'insights:respond': async (input) => {
       if (input.response === 'accept') return services.insights.accept(input.id, { strongConfirmed: input.strongConfirmed });
       if (input.response === 'reject') return services.insights.reject(input.id);
-      if (input.response === 'choose') return services.insights.choose(input.id, input.choiceId, { strongConfirmed: input.strongConfirmed });
+      if (input.response === 'choose') return services.insights.choose(input.id, { choiceId: input.choiceId, strongConfirmed: input.strongConfirmed });
       return services.insights.remindLater(input.id, input.remindAt);
     },
     'consistency:run': () => ({ jobId: services.enqueueConsistency('manual').id }),
     'contradictions:list': (input) => services.contradictions.list(input.status),
     'contradictions:resolve': (input) =>
-      services.contradictions.resolve(input.id, input.resolution, {
+      services.contradictions.resolve(input.id, {
+        resolution: input.resolution,
         confirmed: input.confirmed,
         supersedeOldDecisionId: input.supersedeOldDecisionId,
         supersedeNewDecisionId: input.supersedeNewDecisionId,
@@ -111,9 +118,9 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
 
     'openItems:list': (input) => services.openItems.list(input),
     'openItems:create': (input) => services.openItems.create(input, { actor: 'user', trigger: UI_TRIGGER }),
-    'openItems:update': (input) => services.openItems.update(input.id, input.patch),
+    'openItems:update': (input) => services.openItems.update(input.id, { patch: input.patch }),
     'openItems:close': (input) =>
-      services.openItems.close(input.id, input.status, { confirmed: input.confirmed, trigger: UI_TRIGGER, resolutionNote: input.resolutionNote }),
+      services.openItems.close(input.id, { status: input.status, confirmed: input.confirmed, trigger: UI_TRIGGER, resolutionNote: input.resolutionNote }),
     'openItems:solutionPreview': (input) => services.solutions.preview(input.id),
     'openItems:generateSolution': (input) => services.solutions.generate(input.id, { confirmed: input.confirmed }),
     'openItems:cancelSolution': (input) => ({ cancelled: services.solutions.cancel(input.id) }),
@@ -121,7 +128,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
 
     'events:list': (input) => services.eventRecords.list(input),
     'events:create': (input) => services.eventRecords.create(input),
-    'events:update': (input) => services.eventRecords.update(input.id, input.patch),
+    'events:update': (input) => services.eventRecords.update(input.id, { patch: input.patch }),
     'events:delete': (input) => {
       services.eventRecords.delete(input.id, { confirmed: input.confirmed });
       return { ok: true as const };
@@ -130,7 +137,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'timeline:get': (input) => services.reader.run('timeline', input),
     'search:global': (input) => services.search.search(input.query, { types: input.types, limit: input.limit }),
 
-    'audit:list': (input) => services.audit.list(input.limit, input.onlyUndoable),
+    'audit:list': (input) => services.audit.list({ limit: input.limit, onlyUndoable: input.onlyUndoable }),
     'audit:undo': (input) => services.undo.undo(input.auditId),
   };
 }

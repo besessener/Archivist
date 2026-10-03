@@ -10,7 +10,7 @@ const DAY = 86_400_000;
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T12:00:00Z`) + n * DAY).toISOString().slice(0, 10);
 
 /** Posts a message as Archivist into a conversation of its own (weekly review); returns the conversation id. */
-export type PostToConversation = (title: string, content: string, existingId: string | null) => string;
+export type PostToConversation = (message: { title: string; content: string; existingId: string | null }) => string;
 
 interface Deps {
   settings: SettingsService;
@@ -164,7 +164,7 @@ export class DeadlineWatcher {
     const last = this.deps.appState.get('agent.review.lastDay');
     if (last && last > addDays(today, -6)) return null;
     const { text, listed } = this.reviewText(now);
-    const conv = this.deps.post('Wochenrückblick', text, this.deps.appState.get('agent.review.conversation'));
+    const conv = this.deps.post({ title: 'Wochenrückblick', content: text, existingId: this.deps.appState.get('agent.review.conversation') });
     this.deps.appState.set('agent.review.conversation', conv);
     this.deps.appState.set('agent.review.lastDay', today);
     this.deps.appState.set('agent.review.listed', JSON.stringify(listed));

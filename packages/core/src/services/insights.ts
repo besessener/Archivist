@@ -198,7 +198,7 @@ export class InsightService {
   }
 
   /** Closes an open insight whose matter was decided elsewhere; its open proposal is withdrawn. */
-  settle(dedupeKey: string, status: 'accepted' | 'rejected', reason: string): void {
+  settle(dedupeKey: string, { status, reason }: { status: 'accepted' | 'rejected'; reason: string }): void {
     const r = this.db.select().from(insights).where(eq(insights.dedupeKey, dedupeKey)).get();
     if (!r || (r.status !== 'open' && r.status !== 'snoozed')) return;
     this.db.update(insights).set({ status, snoozedUntil: null, updatedAt: nowIso() }).where(eq(insights.id, r.id)).run();
@@ -253,7 +253,7 @@ export class InsightService {
     const i = this.get(id);
     if (i.recommendedActionId) {
       try {
-        await this.actions.resolve(i.recommendedActionId, 'reject', {});
+        await this.actions.resolve(i.recommendedActionId, { decision: 'reject' });
       } catch (error) {
         this.ctx.logger.info('insights', 'Recommended action not rejected, probably decided already', { error });
       }
@@ -271,8 +271,8 @@ export class InsightService {
   }
 
   /** Answers a question insight with one of its `choices`; the proposals of the other answers are withdrawn. */
-  async choose(id: string, choiceId: string, opts: { strongConfirmed?: boolean } = {}): Promise<Insight> {
-    return this.answers.choose(id, { choiceId, ...opts });
+  async choose(id: string, choice: { choiceId: string; strongConfirmed?: boolean }): Promise<Insight> {
+    return this.answers.choose(id, choice);
   }
 
   remindLater(id: string, remindAt: string): Insight {

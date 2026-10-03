@@ -64,7 +64,7 @@ async function moveToSubfolder(scope: ToolScope, move: { treatment: Treatment; a
   const target = deps.categories.canonical(`${folder ? `${folder}/` : ''}${move.as === 'duplicate' ? 'Duplikate' : 'Ältere Versionen'}`);
   const main = deps.categories.needsApproval(target);
   if (main) return { lines: [`Der Hauptordner „${main}“ existiert nicht – nicht verschoben. Neue Hauptordner legt nur der Benutzer an.`], change: '' };
-  deps.categories.create(target, true);
+  deps.categories.create(target, { confirmed: true });
   const result = await deps.archive.relocate(
     targets.map((d) => ({ documentId: d.id, categoryPath: target })),
     { confirmed: true, trigger: 'agent' },
@@ -85,13 +85,13 @@ async function markDuplicates(scope: ToolScope, mark: { treatment: Treatment; ar
   const { keep, keepRef, refs, targets, unknown } = treatment;
   const tag = args.as === 'duplicate' ? 'Duplikat' : 'ältere Version';
   for (const d of targets) {
-    if (args.as === 'duplicate') deps.graph.linkEntries(d.id, keep.id, 'duplicate_of', { status: 'confirmed', trigger: 'agent' });
-    else deps.graph.linkEntries(keep.id, d.id, 'supersedes', { status: 'confirmed', trigger: 'agent' });
+    if (args.as === 'duplicate')
+      deps.graph.linkEntries({ sourceId: d.id, targetId: keep.id, relationType: 'duplicate_of' }, { status: 'confirmed', trigger: 'agent' });
+    else deps.graph.linkEntries({ sourceId: keep.id, targetId: d.id, relationType: 'supersedes' }, { status: 'confirmed', trigger: 'agent' });
   }
   const { auditId } = deps.docs.bulkUpdate(
     targets.map((d) => d.id),
-    { addTags: [tag] },
-    { trigger: 'agent' },
+    { patch: { addTags: [tag] }, trigger: 'agent' },
   );
   const lines = [`${targets.length} Dokument(e) als ${tag} von ${keepRef} markiert (${refs}), Schlagwort „${tag}“ gesetzt.`];
   let change = `${targets.length} Dokument(e) als ${tag} markiert`;
@@ -130,10 +130,11 @@ async function markDifferent({ deps, ctx }: ToolScope, args: { a: string; b: str
   const existing = graph.relationsOf(a, { types: ['duplicate_of'] }).filter((r) => r.sourceEntityId === b || r.targetEntityId === b);
   let relationId: string | null = null;
   for (const r of existing) {
-    if (r.status !== 'rejected') graph.setRelationStatus(r.id, 'rejected', 'user');
+    if (r.status !== 'rejected') graph.setRelationStatus(r.id, { status: 'rejected', by: 'user' });
     relationId = r.id;
   }
-  relationId ??= graph.link(a, b, 'duplicate_of', { status: 'rejected', resolvedByUser: true, origin: 'user' })?.id ?? null;
+  relationId ??=
+    graph.link({ sourceId: a, targetId: b, relationType: 'duplicate_of' }, { status: 'rejected', resolvedByUser: true, origin: 'user' })?.id ?? null;
   deps.audit.log({
     action: 'relation.markDifferent',
     actor: 'user',
@@ -161,9 +162,9 @@ async function mergeInto(
 ): Promise<{ takenOver: string[] } | { error: string }> {
   const { kind, keepId, duplicateId } = merge;
   const options = { actor: 'agent' as const, trigger: 'agent' };
-  if (kind === 'open_item') return deps.openItemDuplicates.merge(keepId, duplicateId, options);
-  if (kind === 'note') return deps.noteEventDuplicates.mergeNotes(keepId, duplicateId, options);
-  if (kind === 'event') return deps.noteEventDuplicates.mergeEvents(keepId, duplicateId, options);
+  if (kind === 'open_item') return deps.openItemDuplicates.merge({ keepId, duplicateId }, options);
+  if (kind === 'note') return deps.noteEventDuplicates.mergeNotes({ keepId, duplicateId }, options);
+  if (kind === 'event') return deps.noteEventDuplicates.mergeEvents({ keepId, duplicateId }, options);
   const type = SUBJECT_TYPE[kind];
   if (deps.graph.getEntity(keepId)?.type !== type || deps.graph.getEntity(duplicateId)?.type !== type)
     return { error: `Beide Einträge müssen vom Typ ${MERGE_LABEL[kind]} sein.` };

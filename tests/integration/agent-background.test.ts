@@ -25,7 +25,7 @@ const watcher = () =>
       actions: app.services.actions,
       insights: app.services.insights,
     },
-    post: (title, content, existing) => app.services.chat.postAssistant(title, content, existing),
+    post: (message) => app.services.chat.postAssistant(message),
   });
 
 describe('Background agent (#313)', () => {

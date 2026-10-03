@@ -29,9 +29,9 @@ const commonFields = (change: EntryChange) => ({
 });
 
 type EntryPatch =
-  | { kind: 'decision'; fields: Parameters<ToolDeps['decisions']['update']>[1] }
-  | { kind: 'openItem'; fields: Parameters<ToolDeps['openItems']['update']>[1] }
-  | { kind: 'event'; fields: Parameters<ToolDeps['events']['update']>[1] }
+  | { kind: 'decision'; fields: Parameters<ToolDeps['decisions']['update']>[1]['patch'] }
+  | { kind: 'openItem'; fields: Parameters<ToolDeps['openItems']['update']>[1]['patch'] }
+  | { kind: 'event'; fields: Parameters<ToolDeps['events']['update']>[1]['patch'] }
   | { kind: 'none' };
 
 function decisionPatch(deps: ToolDeps, entry: { id: string; change: EntryChange }): EntryPatch {
@@ -78,9 +78,9 @@ function entryPatch(deps: ToolDeps, entry: { entity: GraphEntity; change: EntryC
 
 function savePatch(deps: ToolDeps, entry: { id: string; patch: EntryPatch }): void {
   const { id, patch } = entry;
-  if (patch.kind === 'decision') deps.decisions.update(id, patch.fields, { trigger: 'agent' });
-  else if (patch.kind === 'openItem') deps.openItems.update(id, patch.fields, { trigger: 'agent' });
-  else if (patch.kind === 'event') deps.events.update(id, patch.fields, { trigger: 'agent' });
+  if (patch.kind === 'decision') deps.decisions.update(id, { patch: patch.fields, trigger: 'agent' });
+  else if (patch.kind === 'openItem') deps.openItems.update(id, { patch: patch.fields, trigger: 'agent' });
+  else if (patch.kind === 'event') deps.events.update(id, { patch: patch.fields, trigger: 'agent' });
 }
 
 const isEmpty = (patch: EntryPatch) => patch.kind === 'none' || !Object.keys(patch.fields).length;

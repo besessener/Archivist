@@ -11,7 +11,7 @@ afterEach(async () => {
 
 const graph = () => app.services.graph;
 const sqlite = () => app.services.database.sqlite;
-const check = () => app.services.consistency.run('test');
+const check = () => app.services.consistency.run({ trigger: 'test' });
 const duplicates = (status?: 'open' | 'accepted' | 'rejected' | 'snoozed') => app.services.insights.list(status).filter((i) => i.kind === 'similar_entities');
 const forPair = (a: string, b: string) => duplicates().filter((i) => [a, b].every((id) => i.sourceIds.includes(id)));
 const hintCalls = () => app.llm.calls.filter((c) => c.schema === 'DuplicateHints');
@@ -36,12 +36,12 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     await start();
     const g = graph();
     const pairs = [
-      [g.ensureEntity('topic', 'prod-plat'), g.ensureEntity('topic', 'ProdPlat')],
-      [g.ensureEntity('project', 'Rechnung'), g.ensureEntity('project', 'Rechnungen')],
-      [g.ensureEntity('tag', 'Steuererklärung'), g.ensureEntity('tag', 'Steuererklärnug')],
-      [g.ensureEntity('topic', 'Urlaub'), g.ensureEntity('topic', 'Urlaub 2026')],
+      [g.ensureEntity({ type: 'topic', name: 'prod-plat' }), g.ensureEntity({ type: 'topic', name: 'ProdPlat' })],
+      [g.ensureEntity({ type: 'project', name: 'Rechnung' }), g.ensureEntity({ type: 'project', name: 'Rechnungen' })],
+      [g.ensureEntity({ type: 'tag', name: 'Steuererklärung' }), g.ensureEntity({ type: 'tag', name: 'Steuererklärnug' })],
+      [g.ensureEntity({ type: 'topic', name: 'Urlaub' }), g.ensureEntity({ type: 'topic', name: 'Urlaub 2026' })],
     ];
-    g.ensureEntity('topic', 'Hauskauf');
+    g.ensureEntity({ type: 'topic', name: 'Hauskauf' });
 
     const report = await check();
 
@@ -74,8 +74,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it('leaves topic/project pairs of the same name to the cross-type check', async () => {
     await start();
-    graph().ensureEntity('topic', 'prod-plat');
-    graph().ensureEntity('project', 'Prod Plat');
+    graph().ensureEntity({ type: 'topic', name: 'prod-plat' });
+    graph().ensureEntity({ type: 'project', name: 'Prod Plat' });
     await check();
     expect(duplicates()).toHaveLength(0);
   });
@@ -111,8 +111,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it('prefers the cleaner name when both are referenced equally often', async () => {
     await start();
-    const lower = graph().ensureEntity('topic', 'mueller umzug');
-    const clean = graph().ensureEntity('topic', 'Müller Umzug');
+    const lower = graph().ensureEntity({ type: 'topic', name: 'mueller umzug' });
+    const clean = graph().ensureEntity({ type: 'topic', name: 'Müller Umzug' });
     await check();
     const [insight] = forPair(lower.id, clean.id);
     expect(app.services.actions.get(insight!.recommendedActionId!).proposedParameters).toMatchObject({ sourceIds: [lower.id], targetId: clean.id });
@@ -121,8 +121,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it('counts tagged documents as evidence for tags', async () => {
     await start();
-    const tag = graph().ensureEntity('tag', 'Rechnungen');
-    const other = graph().ensureEntity('tag', 'Rechnung');
+    const tag = graph().ensureEntity({ type: 'tag', name: 'Rechnungen' });
+    const other = graph().ensureEntity({ type: 'tag', name: 'Rechnung' });
     const now = new Date().toISOString();
     const insert = sqlite().prepare(
       `INSERT INTO documents (id, title, original_name, ext, mime, size, sha256, status, tags, created_at, updated_at) VALUES (?, ?, ?, 'txt', 'text/plain', 1, ?, 'archived', ?, ?, ?)`,
@@ -136,8 +136,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it('creates no duplicate insights and retires the former topic-only check', async () => {
     await start();
-    const a = graph().ensureEntity('topic', 'Marketing');
-    const b = graph().ensureEntity('topic', 'Marketings');
+    const a = graph().ensureEntity({ type: 'topic', name: 'Marketing' });
+    const b = graph().ensureEntity({ type: 'topic', name: 'Marketings' });
     // a pending question of the former check (merge_topics, key similar-topics:)
     const legacyAction = app.services.actions.propose({
       actionType: 'merge_topics',
@@ -171,8 +171,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it('remembers „Verschieden“ permanently, also after a rename', async () => {
     await start();
-    const a = graph().ensureEntity('project', 'Hauskauf');
-    const b = graph().ensureEntity('project', 'Hauskauf Finanzierung');
+    const a = graph().ensureEntity({ type: 'project', name: 'Hauskauf' });
+    const b = graph().ensureEntity({ type: 'project', name: 'Hauskauf Finanzierung' });
     await check();
     const [insight] = forPair(a.id, b.id);
     await app.ok('insights:respond', { response: 'choose', id: insight!.id, choiceId: 'different', confirmed: true });
@@ -188,8 +188,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it('respects a rejection of the former topic-only check', async () => {
     await start();
-    const a = graph().ensureEntity('topic', 'Budget');
-    const b = graph().ensureEntity('topic', 'Budgets');
+    const a = graph().ensureEntity({ type: 'topic', name: 'Budget' });
+    const b = graph().ensureEntity({ type: 'topic', name: 'Budgets' });
     const legacy = app.services.insights.upsert({
       kind: 'similar_topics',
       title: 'Ähnliche Themen',
@@ -206,8 +206,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it('withdraws a question whose entities no longer exist', async () => {
     await start();
-    const a = graph().ensureEntity('topic', 'Infrastruktur');
-    const b = graph().ensureEntity('topic', 'Infrastrucktur');
+    const a = graph().ensureEntity({ type: 'topic', name: 'Infrastruktur' });
+    const b = graph().ensureEntity({ type: 'topic', name: 'Infrastrucktur' });
     await check();
     const [insight] = forPair(a.id, b.id);
     graph().removeNode(b.id);
@@ -251,8 +251,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
     await start();
     await event('Release', { topic: 'Kundenportal' });
     const a = graph().findByName('topic', 'Kundenportal')!;
-    const b = graph().ensureEntity('topic', 'Kunden-Portal');
-    const c = graph().ensureEntity('topic', 'Kundenportale');
+    const b = graph().ensureEntity({ type: 'topic', name: 'Kunden-Portal' });
+    const c = graph().ensureEntity({ type: 'topic', name: 'Kundenportale' });
     await check();
     expect(duplicates('open')).toHaveLength(3);
     const [bc] = forPair(b.id, c.id);
@@ -270,8 +270,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
   it('adds an optional LLM hint with names only in privacy mode „auto“', async () => {
     await start();
     app.llm.on('DuplicateHints', () => ({ pairs: [{ nr: 1, verdict: 'same', reason: 'Gleiches Wort, andere Schreibweise.' }] }));
-    const a = graph().ensureEntity('topic', 'Kundenportal');
-    const b = graph().ensureEntity('topic', 'Kunden-Portal');
+    const a = graph().ensureEntity({ type: 'topic', name: 'Kundenportal' });
+    const b = graph().ensureEntity({ type: 'topic', name: 'Kunden-Portal' });
     await check();
     expect(hintCalls()).toHaveLength(1);
     expect(hintCalls()[0]!.input).toMatch(/^1\. Thema: „(Kundenportal|Kunden-Portal)“ \/ „(Kundenportal|Kunden-Portal)“$/);
@@ -286,8 +286,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
   it('still asks without a hint when the LLM fails', async () => {
     await start();
     app.llm.down = true;
-    graph().ensureEntity('topic', 'Kundenportal');
-    graph().ensureEntity('topic', 'Kunden-Portal');
+    graph().ensureEntity({ type: 'topic', name: 'Kundenportal' });
+    graph().ensureEntity({ type: 'topic', name: 'Kunden-Portal' });
     await check();
     expect(duplicates('open')).toHaveLength(1);
     expect(duplicates('open')[0]!.explanation).not.toContain('Hinweis des Sprachmodells');
@@ -295,8 +295,8 @@ describe('duplicate detection for topics, projects and tags (#30)', () => {
 
   it.each(['confirm', 'local_only'] as const)('sends nothing to the LLM in privacy mode %s', async (privacy) => {
     await start({ privacy });
-    graph().ensureEntity('topic', 'Kundenportal');
-    graph().ensureEntity('topic', 'Kunden-Portal');
+    graph().ensureEntity({ type: 'topic', name: 'Kundenportal' });
+    graph().ensureEntity({ type: 'topic', name: 'Kunden-Portal' });
     await check();
     expect(duplicates('open')).toHaveLength(1);
     expect(hintCalls()).toHaveLength(0);

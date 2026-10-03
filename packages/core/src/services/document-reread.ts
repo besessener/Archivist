@@ -54,7 +54,7 @@ export class DocumentRereader {
     const row = this.deps.documents.findRow(id);
     if (!row || !isArchivedStatus(row.status)) return false;
     const file = row.status === 'indexed_only' ? row.sourcePath : this.deps.documents.archivePath(row.archiveRelPath);
-    if (!file || !fs.existsSync(file)) throw fsError('Die Datei des Dokuments ist nicht mehr vorhanden.', undefined, false);
+    if (!file || !fs.existsSync(file)) throw fsError('Die Datei des Dokuments ist nicht mehr vorhanden.', { retryable: false });
     const parsed = await extractFile(this.deps, file);
     opts.signal?.throwIfAborted();
     const updated = this.db

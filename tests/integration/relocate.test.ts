@@ -227,7 +227,7 @@ describe('Relocating archived documents', () => {
 
     it('keeps a rejected relation to the old category through relocate and its undo', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
-      app.services.graph.setRelationStatus(categoryRelation(id, 'work/hr')!.id, 'rejected');
+      app.services.graph.setRelationStatus(categoryRelation(id, 'work/hr')!.id, { status: 'rejected' });
       const rejected = categoryRelation(id, 'work/hr')!;
 
       const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
@@ -244,9 +244,12 @@ describe('Relocating archived documents', () => {
 
     it('confirms an earlier rejected relation to the target category and restores it exactly on undo', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
-      const target = app.services.graph.ensureEntity('category', 'work/neu');
-      const link = app.services.graph.link(id, target.id, 'belongs_to', { confidence: 0.4, status: 'proposed', sourceIds: [id] })!;
-      app.services.graph.setRelationStatus(link.id, 'rejected');
+      const target = app.services.graph.ensureEntity({ type: 'category', name: 'work/neu' });
+      const link = app.services.graph.link(
+        { sourceId: id, targetId: target.id, relationType: 'belongs_to' },
+        { confidence: 0.4, status: 'proposed', sourceIds: [id] },
+      )!;
+      app.services.graph.setRelationStatus(link.id, { status: 'rejected' });
       const rejected = app.services.graph.getRelation(link.id)!;
 
       const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
@@ -264,7 +267,7 @@ describe('Relocating archived documents', () => {
     it('refuses when the user decided on the new category relation after relocating', async () => {
       const id = await archived('antrag.txt', 'Antrag', 'work/hr');
       const res = await relocate([{ documentId: id, categoryPath: 'work/neu' }]);
-      app.services.graph.setRelationStatus(categoryRelation(id, 'work/neu')!.id, 'rejected');
+      app.services.graph.setRelationStatus(categoryRelation(id, 'work/neu')!.id, { status: 'rejected' });
 
       const undo = await app.ok('audit:undo', { auditId: res.items[0]!.auditId! });
 

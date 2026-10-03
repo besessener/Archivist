@@ -10,7 +10,7 @@ afterEach(async () => {
 const graph = () => app.services.graph;
 const note = async (name: string) => (await app.services.notes.create({ title: name, content: `${name} – Inhalt` })).id;
 const propose = (a: string, b: string, method: RelationMethod, type: RelationType = 'related_to', evidence = `Beleg ${method}`) =>
-  graph().link(a, b, type, { status: 'proposed', method, evidence, confidence: 0.7 })!;
+  graph().link({ sourceId: a, targetId: b, relationType: type }, { status: 'proposed', method, evidence, confidence: 0.7 })!;
 const statusOf = (id: string) => graph().getRelation(id)!.status;
 const lastAudit = async (action: string) => (await app.ok('audit:list', { limit: 50 })).find((a) => a.action === action)!;
 
@@ -23,9 +23,9 @@ describe('Link proposals reviewed in one place (#280)', () => {
     propose(c, d, 'co_origin');
     propose(b, d, 'date_person');
     // not listed: a field mirror, a contradiction (own flow), a confirmed relation
-    graph().link(a, graph().ensureEntity('topic', 'Haus').id, 'relates_to', { status: 'proposed' });
+    graph().link({ sourceId: a, targetId: graph().ensureEntity({ type: 'topic', name: 'Haus' }).id, relationType: 'relates_to' }, { status: 'proposed' });
     propose(b, c, 'analysis', 'contradicts');
-    graph().link(a, d, 'related_to', { status: 'confirmed', resolvedByUser: true, method: 'manual' });
+    graph().link({ sourceId: a, targetId: d, relationType: 'related_to' }, { status: 'confirmed', resolvedByUser: true, method: 'manual' });
 
     const all = await app.ok('links:proposals', { groupBy: 'method', limit: 50, offset: 0 });
     expect(all.total).toBe(4);

@@ -34,7 +34,7 @@ const sql = (query: string, ...params: unknown[]) => app.services.database.sqlit
 
 /** Leaves a job behind as `running` with `attempts` used, as a crash of the app would. */
 function crashedJob(q: JobQueueService, type: string, attempts: number, maxAttempts: number): string {
-  const id = q.enqueue(type, `${type} ${attempts}/${maxAttempts}`, {}, { maxAttempts }).id;
+  const id = q.enqueue(type, { label: `${type} ${attempts}/${maxAttempts}`, payload: {}, maxAttempts }).id;
   sql("UPDATE jobs SET status = 'running', attempts = ? WHERE id = ?", attempts, id);
   return id;
 }
@@ -44,7 +44,7 @@ describe('jobs left running by a crash', () => {
     const q = await nextStartQueue();
     const onFailed = vi.fn();
     const runs: string[] = [];
-    q.register('test.crash', async (job) => void runs.push(job.id), { onFailed });
+    q.register('test.crash', { handler: async (job) => void runs.push(job.id), hooks: { onFailed } });
     const resumeOnce = crashedJob(q, 'test.crash', 1, 1); // one resume after a crash, even with maxAttempts 1
     const crashedTwice = crashedJob(q, 'test.crash', 2, 1);
     const withRetries = crashedJob(q, 'test.crash', 2, 3);
@@ -79,14 +79,14 @@ describe('finished jobs', () => {
   it(`are removed ${JOB_RETENTION_DAYS} days after they ended; running, waiting and recent ones stay`, async () => {
     const q = await nextStartQueue();
     const day = 86_400_000;
-    const ids = ['succeeded', 'failed', 'cancelled', 'recent', 'pending'].map((label) => q.enqueue('test.none', label).id);
+    const ids = ['succeeded', 'failed', 'cancelled', 'recent', 'pending'].map((label) => q.enqueue('test.none', { label }).id);
     const ago = (days: number) => new Date(Date.now() - days * day).toISOString();
     sql("UPDATE jobs SET status = 'succeeded', finished_at = ? WHERE id = ?", ago(JOB_RETENTION_DAYS + 1), ids[0]);
     sql("UPDATE jobs SET status = 'failed', finished_at = ? WHERE id = ?", ago(JOB_RETENTION_DAYS + 5), ids[1]);
     sql("UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ?", ago(JOB_RETENTION_DAYS + 1), ids[2]);
     sql("UPDATE jobs SET status = 'succeeded', finished_at = ? WHERE id = ?", ago(1), ids[3]);
     sql('UPDATE jobs SET created_at = ? WHERE id = ?', ago(JOB_RETENTION_DAYS + 9), ids[4]);
-    q.register('test.none', async () => undefined);
+    q.register('test.none', { handler: async () => undefined });
     q.start();
     await q.whenIdle(5_000);
     const left = new Set(q.list(1000).map((j) => j.id));
@@ -147,24 +147,26 @@ describe('a batch analysis that runs again', () => {
     const blocked = new Promise<void>((r) => (release = r));
     const scanner = app.services.scanner;
     let checkpoints = 0;
-    q.register<{ fileIds: string[] }>('scanner.analyze', async (job) => {
-      const ctx: JobContext = {
-        ...job,
-        saveCheckpoint: (data) => {
-          job.saveCheckpoint(data);
-          checkpoints += 1;
-          if (checkpoints === 1) throw Object.assign(new Error('Absturz'), { simulatedCrash: true });
-        },
-      };
-      if (job.attempts === 1)
-        return scanner.analyzeFiles(job.payload.fileIds, true, ctx).catch(async (err: { simulatedCrash?: boolean }) => {
-          if (err.simulatedCrash) await blocked; // the process "dies" here: the job stays running
-          throw err;
-        });
-      return scanner.analyzeFiles(job.payload.fileIds, true, job);
+    q.register<{ fileIds: string[] }>('scanner.analyze', {
+      handler: async (job) => {
+        const ctx: JobContext = {
+          ...job,
+          saveCheckpoint: (data) => {
+            job.saveCheckpoint(data);
+            checkpoints += 1;
+            if (checkpoints === 1) throw Object.assign(new Error('Absturz'), { simulatedCrash: true });
+          },
+        };
+        if (job.attempts === 1)
+          return scanner.analyzeFiles(job.payload.fileIds, { confirmLlm: true, job: ctx }).catch(async (err: { simulatedCrash?: boolean }) => {
+            if (err.simulatedCrash) await blocked; // the process "dies" here: the job stays running
+            throw err;
+          });
+        return scanner.analyzeFiles(job.payload.fileIds, { confirmLlm: true, job });
+      },
     });
     q.start();
-    const job = q.enqueue('scanner.analyze', 'Analysiere 3 Datei(en)', { fileIds: ids, confirmLlm: true }, { maxAttempts: 1 });
+    const job = q.enqueue('scanner.analyze', { label: 'Analysiere 3 Datei(en)', payload: { fileIds: ids, confirmLlm: true }, maxAttempts: 1 });
     await vi.waitFor(() => expect(checkpoints).toBe(1));
     expect(classifications()).toBe(1);
     expect(q.get(job.id).status).toBe('running');
@@ -172,7 +174,7 @@ describe('a batch analysis that runs again', () => {
     // next start: the job continues with the remaining two files only
     const next = new JobQueueService(app.services.ctx, { concurrency: 1, retryBaseDelayMs: 0 });
     queues.push(next);
-    next.register<{ fileIds: string[] }>('scanner.analyze', (j) => scanner.analyzeFiles(j.payload.fileIds, true, j));
+    next.register<{ fileIds: string[] }>('scanner.analyze', { handler: (j) => scanner.analyzeFiles(j.payload.fileIds, { confirmLlm: true, job: j }) });
     expect(next.start()).toBe(1);
     await next.whenIdle(5_000);
     expect(next.get(job.id).status).toBe('succeeded');

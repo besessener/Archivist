@@ -33,6 +33,7 @@ export interface EventDuplicatePair {
 }
 
 type Origin = { actor?: 'user' | 'agent'; trigger?: string };
+type MergePair = { keepId: string; duplicateId: string };
 
 function chooseKeptNote(a: EntityRow, b: EntityRow): { keep: EntityRow; duplicate: EntityRow } {
   const lengthA = words(noteText(a)).length;
@@ -44,20 +45,27 @@ function chooseKeptNote(a: EntityRow, b: EntityRow): { keep: EntityRow; duplicat
 /** Both notes filed under topics/projects, but under different ones: not the same note. */
 const filedApart = (a: Set<string>, b: Set<string>) => a.size > 0 && b.size > 0 && ![...a].some((subject) => b.has(subject));
 
+export interface NoteEventDuplicateServiceDeps {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  notes: NoteService;
+  eventRecords: EventService;
+  audit: AuditService;
+  undo: UndoService;
+  insights: InsightService;
+}
+
 /** Duplicate notes and events: the archive check proposes a merge as an insight; „Verschieden“ is remembered via its key. */
 export class NoteEventDuplicateService {
   private readonly links: MergeLinks;
   private readonly merger: NoteEventMerger;
 
-  constructor(
-    private readonly ctx: AppContext,
-    graph: KnowledgeGraphService,
-    notes: NoteService,
-    eventRecords: EventService,
-    audit: AuditService,
-    undo: UndoService,
-    private readonly insights: InsightService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly insights: InsightService;
+
+  constructor(deps: NoteEventDuplicateServiceDeps) {
+    ({ ctx: this.ctx, insights: this.insights } = deps);
+    const { ctx, graph, notes, eventRecords, audit, undo } = deps;
     this.links = new MergeLinks(ctx, graph);
     this.merger = new NoteEventMerger({ ctx, graph, links: this.links, notes, eventRecords, audit }, undo);
   }
@@ -163,15 +171,15 @@ export class NoteEventDuplicateService {
   }
 
   /** Why a proposed merge can no longer be executed (record gone or already discarded), or null. */
-  staleReason(kind: 'note' | 'event', keepId: string, duplicateId: string): string | null {
-    return this.merger.staleReason(kind, { keepId, duplicateId });
+  staleReason(kind: 'note' | 'event', pair: MergePair): string | null {
+    return this.merger.staleReason(kind, pair);
   }
 
-  mergeNotes(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
-    return this.merger.mergeNotes({ keepId, duplicateId }, origin);
+  mergeNotes(pair: MergePair, origin: Origin = {}): RecordMergeResult {
+    return this.merger.mergeNotes(pair, origin);
   }
 
-  mergeEvents(keepId: string, duplicateId: string, origin: Origin = {}): RecordMergeResult {
-    return this.merger.mergeEvents({ keepId, duplicateId }, origin);
+  mergeEvents(pair: MergePair, origin: Origin = {}): RecordMergeResult {
+    return this.merger.mergeEvents(pair, origin);
   }
 }

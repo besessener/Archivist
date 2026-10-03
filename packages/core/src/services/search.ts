@@ -34,19 +34,33 @@ const REMOTE_QUERY_EMBEDDING_TIMEOUT_MS = 2500;
 
 type IndexedListener = (entry: { id: string; type: EntityType }) => void;
 
+export interface SearchServiceDeps {
+  ctx: AppContext;
+  embedding: EmbeddingService;
+  pool: WorkerPool;
+  remoteAllowed?: () => boolean;
+  remoteQueryTimeoutMs?: number;
+}
+
 /** Hybrid search: FTS5 (BM25) + vector similarity (cosine, computed in the worker thread), fused via RRF. */
 export class SearchService {
   private readonly vectors: VectorIndex;
   private readonly indexedListeners: IndexedListener[] = [];
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly embedding: EmbeddingService,
-    pool: WorkerPool,
-    private readonly remoteAllowed: () => boolean = () => false,
-    private readonly remoteQueryTimeoutMs = REMOTE_QUERY_EMBEDDING_TIMEOUT_MS,
-  ) {
-    this.vectors = new VectorIndex(() => this.ctx.database.sqlite, pool);
+  private readonly ctx: AppContext;
+  private readonly embedding: EmbeddingService;
+  private readonly remoteAllowed: () => boolean;
+  private readonly remoteQueryTimeoutMs: number;
+
+  constructor(deps: SearchServiceDeps) {
+    ({
+      ctx: this.ctx,
+      embedding: this.embedding,
+      remoteAllowed: this.remoteAllowed = () => false,
+      remoteQueryTimeoutMs: this.remoteQueryTimeoutMs = REMOTE_QUERY_EMBEDDING_TIMEOUT_MS,
+    } = deps);
+    const { pool } = deps;
+    this.vectors = new VectorIndex({ sqlite: () => this.ctx.database.sqlite, pool });
   }
 
   private get sqlite() {

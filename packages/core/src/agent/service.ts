@@ -64,6 +64,16 @@ const SERIAL = new Map<string, Promise<unknown>>();
 
 const TAINTED_NOTE = 'Ein Dokument enthielt Anweisungen an den Agenten; sie wurden ignoriert.';
 
+export interface AgentServiceDeps {
+  ctx: AppContext;
+  /** The services the agent's tools work with. */
+  tools: ToolDeps;
+  llm: LlmService;
+  runs: AgentRunService;
+  appState: AppStateService;
+  memory: MemoryService;
+}
+
 /** Agent mode (Epic #294): chat and background runs with modes, exceptions, run log with undo, privacy filter and limits. */
 export class AgentService {
   private readonly registry: ToolRegistry;
@@ -75,14 +85,16 @@ export class AgentService {
   private readonly humanizer: RefHumanizer;
   private readonly corrections: CorrectionLearner;
 
-  constructor(
-    ctx: AppContext,
-    private readonly deps: ToolDeps,
-    private readonly llm: LlmService,
-    private readonly runs: AgentRunService,
-    appState: AppStateService,
-    private readonly memory: MemoryService,
-  ) {
+  private readonly deps: ToolDeps;
+  private readonly llm: LlmService;
+  private readonly runs: AgentRunService;
+  private readonly memory: MemoryService;
+
+  constructor({ ctx, tools: deps, llm, runs, appState, memory }: AgentServiceDeps) {
+    this.deps = deps;
+    this.llm = llm;
+    this.runs = runs;
+    this.memory = memory;
     registerSettingUndo(deps);
     registerToolUndo(deps);
     const tools = [
@@ -176,9 +188,9 @@ export class AgentService {
 
   // ---------- chat ----------
   /** Runs one message of a conversation through the agent. Requests of one conversation run one after another (#251). */
-  chat(conversationId: string, text: string, state: AgentChatState): Promise<AgentChatReply> {
+  chat(conversationId: string, message: { text: string; state: AgentChatState }): Promise<AgentChatReply> {
     const previous = SERIAL.get(conversationId) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(() => this.chatNow(conversationId, text, state));
+    const next = previous.catch(() => undefined).then(() => this.chatNow(conversationId, message));
     SERIAL.set(conversationId, next);
     void next.finally(() => {
       if (SERIAL.get(conversationId) === next) SERIAL.delete(conversationId);
@@ -186,7 +198,7 @@ export class AgentService {
     return next;
   }
 
-  private async chatNow(conversationId: string, text: string, state: AgentChatState): Promise<AgentChatReply> {
+  private async chatNow(conversationId: string, { text, state }: { text: string; state: AgentChatState }): Promise<AgentChatReply> {
     const override = modeOverrideIn(text) ?? state.mode ?? null;
     const refs = new RefStore(state.refs ?? { ids: {}, sets: {} });
     const history = this.history.replayable(conversationId, refs);

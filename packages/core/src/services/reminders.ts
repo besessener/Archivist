@@ -46,15 +46,19 @@ export function syncReminderAt(db: Db, openItemId: string): void {
     .run();
 }
 
+export type ReminderServiceDeps = { ctx: AppContext; notifications: NotificationService; settings: SettingsService };
+
 /** Reminders are stored locally and fired on schedule while the app runs (no notification while it is closed). */
 export class ReminderService {
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly notifications: NotificationService,
-    private readonly settings: SettingsService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly notifications: NotificationService;
+  private readonly settings: SettingsService;
+
+  constructor(deps: ReminderServiceDeps) {
+    ({ ctx: this.ctx, notifications: this.notifications, settings: this.settings } = deps);
+  }
 
   private get db() {
     return this.ctx.database.db;

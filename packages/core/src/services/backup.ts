@@ -51,17 +51,21 @@ async function realpathOrSelf(p: string): Promise<string> {
   return fsp.realpath(p).catch(() => path.resolve(p));
 }
 
+export type BackupServiceDeps = { ctx: AppContext; settings: SettingsService; audit: AuditService; archive: ArchiveService };
+
 /** Backups: SQLite snapshot via the online backup API plus settings (never the API key), optionally the archive; retention per kind. */
 export class BackupService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly audit: AuditService,
-    private readonly archive: ArchiveService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly audit: AuditService;
+  private readonly archive: ArchiveService;
+
+  constructor(deps: BackupServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, audit: this.audit, archive: this.archive } = deps);
+  }
 
   /** Creates a backup; the manifest is written last, so an interrupted backup never counts and never pushes a complete one out. */
-  async create(includeArchive: boolean, trigger: 'manual' | 'startup' = 'manual'): Promise<BackupInfo> {
+  async create({ includeArchive, trigger = 'manual' }: { includeArchive: boolean; trigger?: 'manual' | 'startup' }): Promise<BackupInfo> {
     const current = this.settings.get();
     if (includeArchive) await this.assertArchiveReachable(current.archiveRoot);
     // archive file operations are blocked while the archive is copied, so the database snapshot matches the files
@@ -111,7 +115,7 @@ export class BackupService {
       return archiveFiles;
     } catch (err) {
       await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
-      throw fsError('Das Backup ist fehlgeschlagen.', err);
+      throw fsError('Das Backup ist fehlgeschlagen.', { cause: err });
     }
   }
 
@@ -149,7 +153,7 @@ export class BackupService {
         await fsp.mkdir(dir);
         return { name, dir };
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || i >= 100) throw fsError('Das Backup ist fehlgeschlagen.', err);
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || i >= 100) throw fsError('Das Backup ist fehlgeschlagen.', { cause: err });
       }
     }
   }

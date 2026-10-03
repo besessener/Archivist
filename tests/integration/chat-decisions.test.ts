@@ -205,7 +205,7 @@ describe('Contradictions and replacing only after confirmation', () => {
     app.llm.down = true;
     const a = await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const b = await app.ok('decisions:create', mk('prod-plat wird eingestellt.', '2026-03-01'));
-    const act = await app.services.actions.resolve((await app.ok('actions:list', { status: 'proposed' }))[0]!.id, 'approve', { confirmed: true });
+    const act = await app.services.actions.resolve((await app.ok('actions:list', { status: 'proposed' }))[0]!.id, { decision: 'approve', confirmed: true });
     expect(act.status).toBe('executed');
     const entry = (await app.ok('audit:list', { limit: 20, onlyUndoable: true })).find((e) => e.action === 'decision.supersede')!;
     const res = await app.ok('audit:undo', { auditId: entry.id });

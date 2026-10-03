@@ -31,6 +31,19 @@ const mapExclusion = (row: typeof scanExclusions.$inferSelect): ScanExclusion =>
   createdAt: row.createdAt,
 });
 
+export interface ScannerServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  pool: WorkerPool;
+  docs: DocumentService;
+  graph: KnowledgeGraphService;
+  privacy: PrivacyService;
+  notifications: NotificationService;
+  insights: InsightService;
+  audit: AuditService;
+  jobs: JobQueueService;
+}
+
 /** Controlled scan of explicitly approved directories; a plain file scan never sends content to the LLM, originals stay untouched. */
 export class ScannerService {
   /** Periodic scan; armed by startSchedule(), re-applied by applySettings() on every relevant change */
@@ -41,18 +54,25 @@ export class ScannerService {
   /** Upper bound of files collected per scan root (lowered in tests). */
   maxFilesPerRoot = SCAN_MAX_FILES;
 
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    pool: WorkerPool,
-    private readonly docs: DocumentService,
-    graph: KnowledgeGraphService,
-    privacy: PrivacyService,
-    private readonly notifications: NotificationService,
-    private readonly insights: InsightService,
-    private readonly audit: AuditService,
-    private readonly jobs: JobQueueService,
-  ) {
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly docs: DocumentService;
+  private readonly notifications: NotificationService;
+  private readonly insights: InsightService;
+  private readonly audit: AuditService;
+  private readonly jobs: JobQueueService;
+
+  constructor(deps: ScannerServiceDeps) {
+    ({
+      ctx: this.ctx,
+      settings: this.settings,
+      docs: this.docs,
+      notifications: this.notifications,
+      insights: this.insights,
+      audit: this.audit,
+      jobs: this.jobs,
+    } = deps);
+    const { ctx, settings, pool, docs, graph, privacy, notifications } = deps;
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
     this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });
@@ -101,7 +121,7 @@ export class ScannerService {
   }
 
   // ---------- Directories ----------
-  async addDirectory(dir: string, recursive = true): Promise<ScanRoot> {
+  async addDirectory(dir: string, { recursive = true }: { recursive?: boolean } = {}): Promise<ScanRoot> {
     if (!path.isAbsolute(dir) || dir.includes('\0')) throw validationError('Bitte einen absoluten Verzeichnispfad angeben.');
     let real: string;
     try {
@@ -222,12 +242,12 @@ export class ScannerService {
     const roots = this.listDirectories().filter((root) => root.enabled && (!rootId || root.id === rootId));
     if (roots.length === 0) throw validationError('Es ist kein freigegebenes Scan-Verzeichnis vorhanden.');
     // a queued or running scan of the same folder (or of all) covers this one: two scans of a folder would collide on its rows
-    return this.jobs.enqueue<{ rootId: string | null; trigger: string }>(
-      'scanner.scan',
-      rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
-      { rootId: rootId ?? null, trigger },
-      { maxAttempts: 1, sameAs: (active) => active.rootId === null || active.rootId === (rootId ?? null) },
-    );
+    return this.jobs.enqueue<{ rootId: string | null; trigger: string }>('scanner.scan', {
+      label: rootId ? `Scan ${path.basename(roots[0]!.path)}` : 'Scan aller freigegebenen Verzeichnisse',
+      payload: { rootId: rootId ?? null, trigger },
+      maxAttempts: 1,
+      sameAs: (active) => active.rootId === null || active.rootId === (rootId ?? null),
+    });
   }
 
   runScan(rootId: string | null, job?: JobContext): Promise<ScanSummary[]> {
@@ -283,8 +303,8 @@ export class ScannerService {
 
   // ---------- Content analysis ----------
   /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
-  async analyzeFiles(fileIds: string[], confirmLlm: boolean, job?: JobContext): Promise<{ analyzed: string[]; skipped: string[] }> {
-    const result = await this.analysis.analyzeFiles(fileIds, { confirmLlm, job });
+  async analyzeFiles(fileIds: string[], options: { confirmLlm: boolean; job?: JobContext }): Promise<{ analyzed: string[]; skipped: string[] }> {
+    const result = await this.analysis.analyzeFiles(fileIds, options);
     this.buildProposals(result.analyzed);
     this.ctx.events.changed('scanner', 'documents', 'status');
     return result;

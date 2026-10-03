@@ -37,9 +37,9 @@ async function importedDoc(title: string): Promise<string> {
 async function monikaArchive() {
   const spellings = ['Monika Lor-Zade', 'Monika Lor-Zade (chefin)', 'Monika Lor-Zade (Führungskraft)', 'Lor-Zade, Monika', 'Dr. Monika Lor-Zade'];
   // legacy data: the entries were created before mentions were resolved centrally
-  const ids = Object.fromEntries(spellings.map((n) => [n, graph().ensureEntity('person', n).id]));
-  const monika = graph().ensureEntity('person', 'Monika');
-  const ich = graph().ensureEntity('person', 'ich');
+  const ids = Object.fromEntries(spellings.map((n) => [n, graph().ensureEntity({ type: 'person', name: n }).id]));
+  const monika = graph().ensureEntity({ type: 'person', name: 'Monika' });
+  const ich = graph().ensureEntity({ type: 'person', name: 'ich' });
   const dec = await app.ok('decisions:create', {
     decisionText: 'Wir verschieben den Launch.',
     title: 'Launch verschoben',
@@ -54,7 +54,7 @@ async function monikaArchive() {
   sqlite()
     .prepare('UPDATE decisions SET participants = ? WHERE id = ?')
     .run(JSON.stringify(['Monika Lor-Zade (chefin)', 'Lor-Zade, Monika', 'Anna']), dec.id);
-  graph().link(ids['Lor-Zade, Monika']!, dec.id, 'participated_in', { status: 'confirmed', confidence: 0.9 });
+  graph().link({ sourceId: ids['Lor-Zade, Monika']!, targetId: dec.id, relationType: 'participated_in' }, { status: 'confirmed', confidence: 0.9 });
   const item = await app.ok('openItems:create', { title: 'Budget klären', priority: 'normal', sourceIds: [], confidence: 0.9 });
   sqlite().prepare('UPDATE open_items SET responsible_person_id = ? WHERE id = ?').run(ids['Dr. Monika Lor-Zade'], item.id);
   const doc = await importedDoc('Protokoll');
@@ -69,7 +69,7 @@ describe('Automatically merging person duplicates (#26)', () => {
     const { ids, monika, ich, dec, item, doc } = await monikaArchive();
     expect(persons()).toHaveLength(7 + 1); // + „Anna“
 
-    const report = await app.services.consistency.run('manual');
+    const report = await app.services.consistency.run({ trigger: 'manual' });
 
     const target = graph().getEntity(ids['Monika Lor-Zade']!)!;
     expect(target.name).toBe('Monika Lor-Zade');
@@ -104,7 +104,7 @@ describe('Automatically merging person duplicates (#26)', () => {
   it('„Rückgängig“ restores the 4 merged entries exactly and does not merge them again afterwards', async () => {
     const { ids } = await monikaArchive();
     const before = state();
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(state()).not.toEqual(before);
 
     const insight = app.services.insights.list('open').find((i) => i.kind === 'persons_merged')!;
@@ -115,18 +115,18 @@ describe('Automatically merging person duplicates (#26)', () => {
     expect(restored).toHaveLength(4);
     for (const id of restored) expect(graph().getEntity(id)).toBeDefined();
 
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     expect(state()).toEqual(before);
     expect(app.services.insights.list('open').filter((i) => i.kind === 'persons_merged')).toHaveLength(0);
   });
 
   it('„Behalten“ keeps the merge; later runs find nothing more', async () => {
     await monikaArchive();
-    await app.services.consistency.run('manual');
+    await app.services.consistency.run({ trigger: 'manual' });
     const insight = app.services.insights.list('open').find((i) => i.kind === 'persons_merged')!;
     await app.ok('insights:respond', { response: 'reject', id: insight.id });
 
-    const again = await app.services.consistency.run('manual');
+    const again = await app.services.consistency.run({ trigger: 'manual' });
     expect(again.byKind.persons_merged).toBeUndefined();
     expect(
       persons()
@@ -136,9 +136,9 @@ describe('Automatically merging person duplicates (#26)', () => {
   });
 
   it('picks the cleanest spelling as the name, even when no entry carries it', async () => {
-    const a = graph().ensureEntity('person', 'monika lor zade (chefin)');
-    const b = graph().ensureEntity('person', 'Lor-Zade, Monika');
-    await app.services.consistency.run('manual');
+    const a = graph().ensureEntity({ type: 'person', name: 'monika lor zade (chefin)' });
+    const b = graph().ensureEntity({ type: 'person', name: 'Lor-Zade, Monika' });
+    await app.services.consistency.run({ trigger: 'manual' });
     const left = persons();
     expect(left).toHaveLength(1);
     expect(left[0]).toMatchObject({ name: 'Monika Lor-Zade', roles: ['Chefin'] });
@@ -148,7 +148,7 @@ describe('Automatically merging person duplicates (#26)', () => {
   it('can be switched off', async () => {
     await monikaArchive();
     app.services.settings.update({ consistency: { autoMergePersons: false } });
-    const report = await app.services.consistency.run('manual');
+    const report = await app.services.consistency.run({ trigger: 'manual' });
     expect(report.byKind.persons_merged).toBeUndefined();
     expect(persons()).toHaveLength(8);
   });

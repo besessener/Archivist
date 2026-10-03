@@ -13,14 +13,14 @@ describe('Topic hierarchy: subtopics instead of merging (#282)', () => {
     app = await createTestApp({ configured: false });
     const urlaub = await topic('Urlaub');
     const u26 = await topic('Urlaub 2026');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const q = app.services.insights.list('open').find((i) => i.kind === 'similar_entities')!;
     await app.ok('insights:respond', { response: 'choose', id: q.id, choiceId: 'subtopic', confirmed: true });
 
     expect(await app.ok('knowledge:hierarchy', {})).toEqual([{ childId: u26.id, parentId: urlaub.id }]);
     expect(app.services.graph.getEntity(u26.id)).toBeDefined();
     // no new duplicate question for a pair already ordered
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(app.services.insights.list('open').filter((i) => i.kind === 'similar_entities')).toEqual([]);
 
     const entry = (await app.ok('audit:list', {})).find((e) => e.action === 'relation.link')!;

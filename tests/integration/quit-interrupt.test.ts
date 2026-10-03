@@ -46,18 +46,17 @@ describe('Job queue on quit', () => {
     const { app, q } = await makeQueue();
     const onCancelled = vi.fn();
     const onFailed = vi.fn();
-    q.register(
-      'test.cooperative',
-      async (job) => {
+    q.register('test.cooperative', {
+      handler: async (job) => {
         await new Promise<void>((resolve) => job.signal.addEventListener('abort', () => resolve(), { once: true }));
         job.throwIfCancelled();
         return 'nie';
       },
-      { onCancelled, onFailed },
-    );
+      hooks: { onCancelled, onFailed },
+    });
     q.start();
-    const job = q.enqueue('test.cooperative', 'Kooperativ');
-    const waiting = q.enqueue('test.cooperative', 'Wartet', {}, { maxAttempts: 1 });
+    const job = q.enqueue('test.cooperative', { label: 'Kooperativ' });
+    const waiting = q.enqueue('test.cooperative', { label: 'Wartet', payload: {}, maxAttempts: 1 });
     await waitFor(() => q.get(job.id).status === 'running');
 
     const res = await q.interrupt(2_000);
@@ -71,7 +70,7 @@ describe('Job queue on quit', () => {
     // next start (a new queue on the same database, like after a restart)
     const q2 = new JobQueueService(app.services.ctx, { concurrency: 1 });
     queues.push(q2);
-    q2.register('test.cooperative', async () => 'fertig');
+    q2.register('test.cooperative', { handler: async () => 'fertig' });
     q2.start();
     await q2.whenIdle();
     expect(q2.get(job.id).status).toBe('succeeded');
@@ -83,18 +82,17 @@ describe('Job queue on quit', () => {
     let finish!: () => void;
     const gate = new Promise<void>((r) => (finish = r));
     const onFailed = vi.fn();
-    q.register(
-      'test.stubborn',
-      async (job) => {
+    q.register('test.stubborn', {
+      handler: async (job) => {
         job.report(0.3, 'zäh');
         await gate;
         job.report(0.9, 'nach dem Beenden'); // ignored: the job was given up
         throw new Error('Worker-Pool beendet');
       },
-      { onFailed },
-    );
+      hooks: { onFailed },
+    });
     q.start();
-    const job = q.enqueue('test.stubborn', 'Stur', {}, { maxAttempts: 1 });
+    const job = q.enqueue('test.stubborn', { label: 'Stur', payload: {}, maxAttempts: 1 });
     await waitFor(() => q.get(job.id).status === 'running');
 
     const t0 = Date.now();
@@ -111,7 +109,7 @@ describe('Job queue on quit', () => {
 
     const q2 = new JobQueueService(app.services.ctx, { concurrency: 1 });
     queues.push(q2);
-    q2.register('test.stubborn', async () => 'fertig');
+    q2.register('test.stubborn', { handler: async () => 'fertig' });
     q2.start();
     await q2.whenIdle();
     expect(q2.get(job.id)).toMatchObject({ status: 'succeeded', attempts: 1 });
@@ -121,9 +119,8 @@ describe('Job queue on quit', () => {
     const { q } = await makeQueue();
     const onFailed = vi.fn();
     let thrown: unknown;
-    q.register(
-      'test.aborting',
-      async (job) => {
+    q.register('test.aborting', {
+      handler: async (job) => {
         await new Promise<void>((resolve) => job.signal.addEventListener('abort', () => resolve(), { once: true }));
         try {
           job.signal.throwIfAborted();
@@ -132,10 +129,10 @@ describe('Job queue on quit', () => {
         }
         throw new Error('Die LLM-Anfrage wurde abgebrochen.');
       },
-      { onFailed },
-    );
+      hooks: { onFailed },
+    });
     q.start();
-    const job = q.enqueue('test.aborting', 'Abbruch', {}, { maxAttempts: 1 });
+    const job = q.enqueue('test.aborting', { label: 'Abbruch', payload: {}, maxAttempts: 1 });
     await waitFor(() => q.get(job.id).status === 'running');
     await q.interrupt(2_000);
     expect(isJobInterrupted(thrown)).toBe(true);
@@ -148,12 +145,14 @@ describe('Job queue on quit', () => {
     const { q } = await makeQueue();
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    q.register('test.long', async (job) => {
-      await gate;
-      job.throwIfCancelled();
+    q.register('test.long', {
+      handler: async (job) => {
+        await gate;
+        job.throwIfCancelled();
+      },
     });
     q.start();
-    const job = q.enqueue('test.long', 'Lang');
+    const job = q.enqueue('test.long', { label: 'Lang' });
     await waitFor(() => q.get(job.id).status === 'running');
     q.cancel(job.id);
     const stopping = q.interrupt(2_000);

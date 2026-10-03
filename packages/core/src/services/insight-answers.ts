@@ -19,7 +19,7 @@ export interface InsightRecords {
 interface AnswerActions {
   getMany(ids: string[]): StoredAgentAction[];
   repropose(id: string): StoredAgentAction;
-  resolve(id: string, decision: 'approve', opts: { confirmed: boolean; strongConfirmed: boolean }): Promise<StoredAgentAction>;
+  resolve(id: string, request: { decision: 'approve'; confirmed: boolean; strongConfirmed: boolean }): Promise<StoredAgentAction>;
 }
 
 const OUTDATED = 'Die nächste Archivprüfung bewertet die Lage neu.';
@@ -57,7 +57,7 @@ export class InsightAnswers {
       const result =
         action.status === 'withdrawn'
           ? action
-          : await actions.resolve(action.id, 'approve', { confirmed: true, strongConfirmed: opts.strongConfirmed ?? false });
+          : await actions.resolve(action.id, { decision: 'approve', confirmed: true, strongConfirmed: opts.strongConfirmed ?? false });
       if (result.status === 'failed') throw new AppError('validation_error', result.result ?? 'Die Aktion ist fehlgeschlagen.');
       if (result.status === 'withdrawn') {
         this.db.delete(insights).where(eq(insights.id, id)).run();
@@ -119,7 +119,7 @@ export class InsightAnswers {
   private async resolveAnswering(insightId: string, approval: { actionId: string; strongConfirmed: boolean }): Promise<StoredAgentAction> {
     this.answering.add(insightId);
     try {
-      return await this.helpers.actions.resolve(approval.actionId, 'approve', { confirmed: true, strongConfirmed: approval.strongConfirmed });
+      return await this.helpers.actions.resolve(approval.actionId, { decision: 'approve', confirmed: true, strongConfirmed: approval.strongConfirmed });
     } finally {
       this.answering.delete(insightId);
     }

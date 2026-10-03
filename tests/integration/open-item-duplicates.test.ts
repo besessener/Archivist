@@ -45,7 +45,7 @@ describe('Duplicate open items in the archive check (#35)', () => {
     );
     await item({ title: 'Zahnarzt anrufen' }, '2026-01-02T00:00:00.000Z');
 
-    const report = await app.services.consistency.run('test');
+    const report = await app.services.consistency.run({ trigger: 'test' });
     expect(report.byKind.duplicate_open_item).toBe(1);
     const [insight] = await dupInsights();
     expect(insight).toMatchObject({ status: 'open', recommendedActionLabel: 'Zusammenführen' });
@@ -57,7 +57,7 @@ describe('Duplicate open items in the archive check (#35)', () => {
     expect(action).toMatchObject({ actionType: 'merge_open_items', proposedParameters: { keepId: a.id, duplicateId: b.id } });
 
     // a second run neither duplicates the insight nor proposes the action again
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(await dupInsights()).toHaveLength(1);
     expect(app.services.actions.list('proposed').filter((x) => x.actionType === 'merge_open_items')).toHaveLength(1);
   });
@@ -73,7 +73,7 @@ describe('Duplicate open items in the archive check (#35)', () => {
     await item({ title: 'Steuererklärung abgeben' }, '2026-01-08T00:00:00.000Z');
     await app.ok('openItems:close', { id: done.id, status: 'resolved', confirmed: true });
 
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(await dupInsights()).toHaveLength(0);
   });
 
@@ -104,7 +104,7 @@ describe('Duplicate open items in the archive check (#35)', () => {
     );
     const reminder = await app.ok('reminders:create', { targetType: 'open_item', targetId: b.id, title: b.title, remindAt: '2099-01-01T08:00:00.000Z' });
 
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const [insight] = await dupInsights();
     expect(insight!.explanation).toContain('Erinnerungen');
     await app.ok('insights:respond', { response: 'accept', id: insight!.id, confirmed: true });
@@ -134,7 +134,7 @@ describe('Duplicate open items in the archive check (#35)', () => {
     expect(rel).toEqual({ status: 'confirmed' });
 
     // the cause is gone: the next run closes the hint and proposes nothing new
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(await dupInsights()).toHaveLength(0);
     expect(app.services.actions.list('proposed').filter((x) => x.actionType === 'merge_open_items')).toHaveLength(0);
   });
@@ -148,7 +148,7 @@ describe('Duplicate open items in the archive check (#35)', () => {
     await app.ok('reminders:create', { targetType: 'open_item', targetId: b.id, title: b.title, remindAt: '2099-01-01T08:00:00.000Z' });
     const before = state([a.id, b.id]);
 
-    const r = app.services.openItemDuplicates.merge(a.id, b.id);
+    const r = app.services.openItemDuplicates.merge({ keepId: a.id, duplicateId: b.id });
     expect(r.takenOver).toEqual(['Beschreibung', 'Verantwortlicher', 'Thema', 'Erinnerungen']);
     const entry = (await app.ok('audit:list', {})).find((e) => e.id === r.auditId)!;
     expect(entry).toMatchObject({ action: 'open_item.merge_duplicate', undoable: true });
@@ -162,7 +162,7 @@ describe('Duplicate open items in the archive check (#35)', () => {
   it('undo refuses with a hint when an item was changed since the merge', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     const b = await item({ title: 'Angebot Müller prüfen', description: 'er wollte Rabatt' }, '2026-02-01T00:00:00.000Z');
-    const r = app.services.openItemDuplicates.merge(a.id, b.id);
+    const r = app.services.openItemDuplicates.merge({ keepId: a.id, duplicateId: b.id });
     await new Promise((res) => setTimeout(res, 5));
     await app.ok('openItems:update', { id: a.id, patch: { description: 'neu formuliert' } });
 
@@ -175,41 +175,41 @@ describe('Duplicate open items in the archive check (#35)', () => {
   it('only active, distinct items can be merged', async () => {
     const a = await item({ title: 'Angebot prüfen' }, '2026-01-01T00:00:00.000Z');
     const b = await item({ title: 'Angebot prüfen' }, '2026-01-02T00:00:00.000Z');
-    expect(() => app.services.openItemDuplicates.merge(a.id, a.id)).toThrow(/mit sich selbst/);
+    expect(() => app.services.openItemDuplicates.merge({ keepId: a.id, duplicateId: a.id })).toThrow(/mit sich selbst/);
     await app.ok('openItems:close', { id: b.id, status: 'resolved', confirmed: true });
-    expect(() => app.services.openItemDuplicates.merge(a.id, b.id)).toThrow(/Nur aktive/);
+    expect(() => app.services.openItemDuplicates.merge({ keepId: a.id, duplicateId: b.id })).toThrow(/Nur aktive/);
   });
 
   it('„Verschieden“ (reject) is remembered permanently – also after a rename', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     await item({ title: 'Angebot Müller prüfen' }, '2026-02-01T00:00:00.000Z');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const [insight] = await dupInsights();
     await app.ok('insights:respond', { response: 'reject', id: insight!.id });
     expect(app.services.actions.get(insight!.recommendedActionId!).status).toBe('rejected');
 
     await app.ok('openItems:update', { id: a.id, patch: { title: 'Angebot von Müller prüfen' } });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect((await dupInsights()).map((i) => i.status)).toEqual(['rejected']);
     expect((await app.ok('openItems:list', { onlyActive: true })).length).toBe(2);
 
     // still remembered after the pair was temporarily not detected (closed and reopened)
     await app.ok('openItems:close', { id: a.id, status: 'resolved', confirmed: true });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const closed = (await app.ok('audit:list', {})).find((e) => e.action === 'open_item.close' && e.entityIds.includes(a.id))!;
     expect((await app.ok('audit:undo', { auditId: closed.id })).undone).toBe(true);
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect((await dupInsights()).map((i) => i.status)).toEqual(['rejected']);
   });
 
   it('an open hint disappears when the cause is gone', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     await item({ title: 'Angebot Müller prüfen' }, '2026-02-01T00:00:00.000Z');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(await dupInsights()).toHaveLength(1);
     const [insight] = await dupInsights();
     await app.ok('openItems:close', { id: a.id, status: 'resolved', confirmed: true });
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     expect(await dupInsights()).toHaveLength(0);
     expect(app.services.actions.get(insight!.recommendedActionId!).status).toBe('withdrawn');
   });
@@ -217,11 +217,11 @@ describe('Duplicate open items in the archive check (#35)', () => {
   it('an outdated proposal is not executed but withdrawn', async () => {
     const a = await item({ title: 'Angebot für Müller prüfen' }, '2026-01-01T00:00:00.000Z');
     const b = await item({ title: 'Angebot Müller prüfen', description: 'er wollte Rabatt' }, '2026-02-01T00:00:00.000Z');
-    await app.services.consistency.run('test');
+    await app.services.consistency.run({ trigger: 'test' });
     const [insight] = await dupInsights();
     await app.ok('openItems:close', { id: b.id, status: 'dismissed', confirmed: true });
 
-    const res = await app.services.actions.resolve(insight!.recommendedActionId!, 'approve', { confirmed: true });
+    const res = await app.services.actions.resolve(insight!.recommendedActionId!, { decision: 'approve', confirmed: true });
     expect(res.status).toBe('withdrawn');
     expect(res.result).toContain('Nur aktive offene Punkte');
     const items = await app.ok('openItems:list', {});
@@ -254,7 +254,7 @@ describe('Duplicate check when creating in the chat (#35)', () => {
   });
 
   it('recognizes the responsible person via an alias too', async () => {
-    const anna = app.services.graph.ensureEntity('person', 'Anna Schmidt');
+    const anna = app.services.graph.ensureEntity({ type: 'person', name: 'Anna Schmidt' });
     app.services.graph.addAlias(anna.id, 'Anna');
     await item({ title: 'Präsentation vorbereiten', responsible: 'Anna Schmidt' }, '2026-01-01T00:00:00.000Z');
     app.llm.on('ChatIntent', () => intent({ intent: 'open_item_new', openItem: { title: 'Präsentation vorbereiten', responsible: 'Anna' } }));

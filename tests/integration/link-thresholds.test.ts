@@ -28,8 +28,8 @@ describe('Learning from rejections, gently (#275)', () => {
     const decide = async (n: number, decision: 'confirmed' | 'rejected') => {
       for (let i = 0; i < n; i += 1) {
         const other = await note(`${decision} ${i} ${Math.random()}`);
-        const r = graph.link(hub, other, 'related_to', { status: 'proposed', method: 'similarity', evidence: 'x' })!;
-        graph.decideRelation(r.id, decision);
+        const r = graph.link({ sourceId: hub, targetId: other, relationType: 'related_to' }, { status: 'proposed', method: 'similarity', evidence: 'x' })!;
+        graph.decideRelation(r.id, { status: decision });
       }
     };
     const similarity = () => linkThresholds.list().find((t) => t.method === 'similarity')!;
@@ -71,7 +71,9 @@ describe('Learning from rejections, gently (#275)', () => {
     for (let i = 0; i < 20; i += 1) {
       const x = await note(`Abgelehnt ${i}`, `Etwas ganz anderes Nummer ${i}`);
       const y = await note(`Auch abgelehnt ${i}`, `Wieder etwas anderes ${i}`);
-      graph.decideRelation(graph.link(x, y, 'related_to', { status: 'proposed', method: 'similarity' })!.id, 'rejected');
+      graph.decideRelation(graph.link({ sourceId: x, targetId: y, relationType: 'related_to' }, { status: 'proposed', method: 'similarity' })!.id, {
+        status: 'rejected',
+      });
     }
     await app.services.jobs.whenIdle();
     const after = (await links.candidates(a, { limit: 5 })).filter((c) => c.method === 'similarity');

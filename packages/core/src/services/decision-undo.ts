@@ -73,7 +73,7 @@ function undoUpdate({ ctx, graph, reindex }: DecisionUndoDeps, undoData: Decisio
       .where(eq(decisions.id, undoData.id))
       .run();
     const row = db.select().from(decisions).where(eq(decisions.id, undoData.id)).get();
-    if (row) graph.registerNode('decision', row.id, row.title, row.decisionText);
+    if (row) graph.registerNode({ type: 'decision', id: row.id, name: row.title, description: row.decisionText });
     graph.revertRelationChanges(undoData.relations);
   });
   void reindex(undoData.id);

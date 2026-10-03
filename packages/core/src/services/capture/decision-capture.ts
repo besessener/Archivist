@@ -8,7 +8,7 @@ import type { DecisionSupersede } from './decision-supersede';
 
 type Extracted = NonNullable<ChatIntent['decision']>;
 type DecisionPending = Extract<Pending, { kind: 'decision' }>;
-type DecisionPatch = Parameters<DecisionService['update']>[1];
+type DecisionPatch = Parameters<DecisionService['update']>[1]['patch'];
 
 /** A capture request plus whether the LLM understood it (then all missing fields are asked at once). */
 type DecisionRequest = CaptureRequest & { viaLlm: boolean };
@@ -169,7 +169,7 @@ export class DecisionCapture {
         confidence: 0.4,
         state: { ...state, last: { ...(state.last ?? {}), decisionId: target.id } },
       });
-    const updated = this.deps.decisions.update(target.id, patch, { trigger: 'chat' });
+    const updated = this.deps.decisions.update(target.id, { patch, trigger: 'chat' });
     // „Thema oder Projekt?“ stays asked until it is answered (or another topic was named)
     const unanswered = extracted.topicIsProject === null || extracted.topicIsProject === undefined;
     const sameTopic = !fields.topic || normalizeName(fields.topic) === normalizeName(pending?.clarifyTopic ?? '');

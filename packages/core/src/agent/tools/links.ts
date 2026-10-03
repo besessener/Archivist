@@ -56,13 +56,13 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
         const target = ctx.refs.resolve(a.b);
         if (!source || !target) return { content: `Unbekannte ID(s).${unknownNote([a.a, a.b].filter((r) => !ctx.refs.resolve(r)))}`, isError: true };
         const status = a.onUserRequest && userAsked(ctx) ? 'confirmed' : 'proposed';
-        const rejected = graph.rejectedBetween(source, target);
+        const rejected = graph.rejectedBetween({ a: source, b: target });
         if (rejected && status === 'proposed')
           return {
             content: `${entryName(source)} und ${entryName(target)} wurden vom Benutzer als „gehört nicht zusammen“ abgelehnt – kein neuer Vorschlag.`,
             summary: 'abgelehnt',
           };
-        const linked = graph.linkEntries(source, target, a.relationType, { status, trigger: 'agent' });
+        const linked = graph.linkEntries({ sourceId: source, targetId: target, relationType: a.relationType }, { status, trigger: 'agent' });
         const confirmed = linked.relation.status === 'confirmed';
         return {
           content: `${entryName(source)} – ${entryName(target)}: ${a.relationType}, ${confirmed ? 'bestätigt' : 'als Vorschlag'}${linked.created ? ' (neu)' : ''}.`,
@@ -112,7 +112,7 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
         if ('error' in found) return { content: found.error, isError: true };
         const { proposals } = found;
         if (!proposals.length) return { content: 'Keine offenen Verknüpfungsvorschläge gefunden.', summary: 'keine' };
-        for (const r of proposals) graph.decideRelation(r.id, a.decision === 'confirm' ? 'confirmed' : 'rejected', { trigger: 'agent' });
+        for (const r of proposals) graph.decideRelation(r.id, { status: a.decision === 'confirm' ? 'confirmed' : 'rejected', trigger: 'agent' });
         return {
           content: `${proposals.length} Vorschlag/Vorschläge ${a.decision === 'confirm' ? 'bestätigt' : 'abgelehnt'}:\n${proposals
             .slice(0, 30)
@@ -132,7 +132,7 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
       label: (a) => `Lege den Vorgang „${truncate(a.name, 40)}“ an`,
       run: async (a, ctx) => {
         const existed = graph.findByNameOrAlias('case', a.name);
-        const caseEntity = existed ?? graph.ensureEntity('case', a.name, a.description);
+        const caseEntity = existed ?? graph.ensureEntity({ type: 'case', name: a.name, description: a.description });
         if (!existed)
           deps.audit.log({
             action: 'case.create',
@@ -143,7 +143,8 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
             after: { name: caseEntity.name },
           });
         const { ids, unknown } = ctx.refs.resolveMany(a.entries ?? []);
-        for (const id of ids) graph.linkEntries(id, caseEntity.id, 'belongs_to', { status: 'confirmed', trigger: 'agent' });
+        for (const id of ids)
+          graph.linkEntries({ sourceId: id, targetId: caseEntity.id, relationType: 'belongs_to' }, { status: 'confirmed', trigger: 'agent' });
         return {
           content: `${ctx.refs.entry(caseEntity.id)} Vorgang „${caseEntity.name}“ ${existed ? 'gab es schon' : 'angelegt'}${ids.length ? `, ${ids.length} Einträge zugeordnet` : ''}.${unknownNote(unknown)}`,
           summary: existed ? 'vorhanden' : 'angelegt',
@@ -164,7 +165,7 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
         if (!caseId || graph.getEntity(caseId)?.type !== 'case')
           return { content: `„${a.case}“ ist kein Vorgang – list_entries kind=case zeigt sie.`, isError: true };
         const { ids, unknown } = ctx.refs.resolveMany(a.entries);
-        for (const id of ids) graph.linkEntries(id, caseId, 'belongs_to', { status: 'confirmed', trigger: 'agent' });
+        for (const id of ids) graph.linkEntries({ sourceId: id, targetId: caseId, relationType: 'belongs_to' }, { status: 'confirmed', trigger: 'agent' });
         return {
           content: `${ids.length} Einträge ${entryName(caseId)} zugeordnet.${unknownNote(unknown)}`,
           summary: `${ids.length} zugeordnet`,
@@ -215,7 +216,7 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const caseId = ctx.refs.resolve(a.case);
         if (!caseId) return { content: `Unbekannte ID „${a.case}“.`, isError: true };
-        const caseEntity = graph.setCaseStatus(caseId, a.reopen ? 'open' : 'closed', { trigger: 'agent' });
+        const caseEntity = graph.setCaseStatus(caseId, { status: a.reopen ? 'open' : 'closed', trigger: 'agent' });
         return {
           content: `Vorgang „${caseEntity.name}“ ist ${a.reopen ? 'wieder offen' : 'abgeschlossen'}.`,
           summary: a.reopen ? 'geöffnet' : 'abgeschlossen',

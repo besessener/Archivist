@@ -67,15 +67,19 @@ const VERDICT_TEXT = { same: 'wahrscheinlich dieselbe Person', different: 'wahrs
 
 const counted = (n: number, [one, many]: [string, string]) => `${n} ${n === 1 ? one : many}`;
 
+export type PersonQuestionServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; insights: InsightService; llm: LlmService; privacy: PrivacyService };
+
 /** Archive check step: asks instead of guessing when two person entries might be the same person; answers are remembered. */
 export class PersonQuestionService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly graph: KnowledgeGraphService,
-    private readonly insights: InsightService,
-    private readonly llm: LlmService,
-    private readonly privacy: PrivacyService,
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly graph: KnowledgeGraphService;
+  private readonly insights: InsightService;
+  private readonly llm: LlmService;
+  private readonly privacy: PrivacyService;
+
+  constructor(deps: PersonQuestionServiceDeps) {
+    ({ ctx: this.ctx, graph: this.graph, insights: this.insights, llm: this.llm, privacy: this.privacy } = deps);
+  }
 
   private get db() {
     return this.ctx.database.db;
@@ -135,7 +139,7 @@ export class PersonQuestionService {
           sourceIds: [shortId, c],
           dedupeKey: key,
         });
-        this.insights.settle(key, 'rejected', 'Als verschiedene Personen beantwortet.');
+        this.insights.settle(key, { status: 'rejected', reason: 'Als verschiedene Personen beantwortet.' });
       }
     }
     for (const r of rejected(PERSON_PAIR_KEY_PREFIX)) if (r.sourceIds.length === 2 && r.sourceIds.every((id) => exists.has(id))) keys.add(r.dedupeKey);

@@ -92,7 +92,7 @@ async function archived(name: string, content: string, opts: { loc?: string; dat
 }
 
 const row = (id: string) => app.services.documents.findRow(id);
-const lastAudit = (action: string) => app.services.audit.list(50).find((e) => e.action === action);
+const lastAudit = (action: string) => app.services.audit.list({ limit: 50 }).find((e) => e.action === action);
 
 describe('agent duplicate tools', () => {
   it('finds exact duplicates, near duplicates and versions with reason and newest document', async () => {
@@ -130,7 +130,7 @@ describe('agent duplicate tools', () => {
 
     const marked = await call('mark_different', { a: ctx.refs.doc(v1), b: ctx.refs.doc(v2) });
     expect(marked.content).toContain('sind verschieden');
-    expect(app.services.graph.rejectedBetween(v1, v2, { includeDuplicateOf: true })?.relationType).toBe('duplicate_of');
+    expect(app.services.graph.rejectedBetween({ a: v1, b: v2, includeDuplicateOf: true })?.relationType).toBe('duplicate_of');
     expect(lastAudit('relation.markDifferent')).toMatchObject({ undoable: false });
 
     const again = await call('find_duplicates', { kinds: ['versions'] });
@@ -191,7 +191,7 @@ describe('agent duplicate tools', () => {
   it('moves duplicates into the trash, never the kept document; undo brings them back', async () => {
     const keep = await archived('Foto-Liste.txt', 'Liste A', { title: 'Foto-Liste' });
     const dup = await archived('Foto-Liste Kopie.txt', 'Liste A Kopie', { title: 'Foto-Liste Kopie' });
-    app.services.graph.link(dup, keep, 'duplicate_of', { status: 'proposed' });
+    app.services.graph.link({ sourceId: dup, targetId: keep, relationType: 'duplicate_of' }, { status: 'proposed' });
 
     const out = await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup), ctx.refs.doc(keep)], action: 'delete' });
 
@@ -208,8 +208,8 @@ describe('agent duplicate tools', () => {
   });
 
   it('merges duplicate topics through the existing merge flow', async () => {
-    const keep = app.services.graph.ensureEntity('topic', 'Küche');
-    const dup = app.services.graph.ensureEntity('topic', 'Kueche neu');
+    const keep = app.services.graph.ensureEntity({ type: 'topic', name: 'Küche' });
+    const dup = app.services.graph.ensureEntity({ type: 'topic', name: 'Kueche neu' });
 
     const out = await call('merge_entries', { kind: 'topic', keep: ctx.refs.entry(keep.id), duplicate: ctx.refs.entry(dup.id) });
 

@@ -113,13 +113,13 @@ async function pdfBundle(scope: ToolScope, { overview, withOverview }: Bundle): 
 function assignCase(scope: ToolScope, assignment: { name: string; docs: DocumentRecord[] }): { info: string; change: string } {
   const { deps, ctx } = scope;
   const existed = deps.graph.findByName('case', assignment.name);
-  const caseEntity = deps.graph.ensureEntity('case', assignment.name);
+  const caseEntity = deps.graph.ensureEntity({ type: 'case', name: assignment.name });
   if (!existed)
     deps.audit.log({ action: 'case.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [caseEntity.id], after: { name: caseEntity.name } });
   let linked = 0;
   for (const d of assignment.docs) {
     try {
-      deps.graph.linkEntries(d.id, caseEntity.id, 'belongs_to', { status: 'confirmed', trigger: 'agent' });
+      deps.graph.linkEntries({ sourceId: d.id, targetId: caseEntity.id, relationType: 'belongs_to' }, { status: 'confirmed', trigger: 'agent' });
       linked += 1;
     } catch {
       // a document without a graph node cannot be linked; it is still in the bundle

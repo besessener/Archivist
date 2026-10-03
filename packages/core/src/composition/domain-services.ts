@@ -41,25 +41,25 @@ export type WiredServices = BaseServices & DomainServices & LinkingServices;
 /** Records, archive, consistency checks and chat, in dependency order. */
 export function createDomainServices(base: BaseServices) {
   const { ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo, reminders, self } = base;
-  const documents = new DocumentService(ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo);
-  const decisions = new DecisionService(ctx, graph, persons, search, audit, undo);
-  const openItems = new OpenItemService(ctx, graph, persons, search, audit, undo);
-  const eventRecords = new EventService(ctx, graph, search, audit, persons, undo);
-  const notes = new NoteService(ctx, graph, search, audit, undo);
-  const noteAnalysis = new NoteAnalysisService(ctx, graph, persons, llm, privacy);
+  const documents = new DocumentService({ ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo });
+  const decisions = new DecisionService({ ctx, graph, persons, search, audit, undo });
+  const openItems = new OpenItemService({ ctx, graph, persons, search, audit, undo });
+  const eventRecords = new EventService({ ctx, graph, search, audit, persons, undo });
+  const notes = new NoteService({ ctx, graph, search, audit, undo });
+  const noteAnalysis = new NoteAnalysisService({ ctx, graph, persons, llm, privacy });
   const memory = new MemoryService(ctx);
-  const agentRuns = new AgentRunService(ctx, audit, undo);
-  registerCreatedUndo(ctx, undo, graph, search);
+  const agentRuns = new AgentRunService({ ctx, audit, undo });
+  registerCreatedUndo({ ctx, undo, graph, search });
   const insights = new InsightService(ctx);
   const actions = new ActionService(ctx);
-  const contradictions = new ContradictionService(ctx, decisions, graph, insights, notifications, llm);
-  const archive = new ArchiveService(ctx, settings, documents, categories, graph, persons, audit, notifications, pool, undo);
-  const archiveRoot = new ArchiveRootService(ctx, settings, archive, audit, notifications, jobs, undo);
-  const scanner = new ScannerService(ctx, settings, pool, documents, graph, privacy, notifications, insights, audit, jobs);
+  const contradictions = new ContradictionService({ ctx, decisions, graph, insights, notifications, llm });
+  const archive = new ArchiveService({ ctx, settings, docs: documents, categories, graph, persons, audit, notifications, pool, undo });
+  const archiveRoot = new ArchiveRootService({ ctx, settings, archive, audit, notifications, jobs, undo });
+  const scanner = new ScannerService({ ctx, settings, pool, docs: documents, graph, privacy, notifications, insights, audit, jobs });
   const timeline = new TimelineService(ctx);
-  const entityDuplicates = new EntityDuplicateCheck(ctx, insights, actions, llm, privacy);
+  const entityDuplicates = new EntityDuplicateCheck({ ctx, insights, actions, llm, privacy });
   const appState = new AppStateService(ctx);
-  const consistency = new ConsistencyService(
+  const consistency = new ConsistencyService({
     ctx,
     settings,
     decisions,
@@ -69,27 +69,27 @@ export function createDomainServices(base: BaseServices) {
     insights,
     notifications,
     entityDuplicates,
-    appState.lastRunStore('consistency.lastRunAt'),
-  );
-  const backup = new BackupService(ctx, settings, audit, archive);
-  const openItemDuplicates = new OpenItemDuplicateService(ctx, openItems, graph, audit, undo, insights);
+    lastRun: appState.lastRunStore('consistency.lastRunAt'),
+  });
+  const backup = new BackupService({ ctx, settings, audit, archive });
+  const openItemDuplicates = new OpenItemDuplicateService({ ctx, openItems, graph, audit, undo, insights });
   consistency.addCheck((count) => {
     openItemDuplicates.check(count);
   });
-  const personDuplicates = new PersonDuplicateService(ctx, settings, graph, insights, () => self.ownNameKeys());
+  const personDuplicates = new PersonDuplicateService({ ctx, settings, graph, insights, ownNameKeys: () => self.ownNameKeys() });
   consistency.setIndexRefresher((id, signal) => documents.refreshIndexedOnly(id, { signal }));
   consistency.addCheck((count) => personDuplicates.check(count));
-  const personQuestions = new PersonQuestionService(ctx, graph, insights, llm, privacy);
+  const personQuestions = new PersonQuestionService({ ctx, graph, insights, llm, privacy });
   consistency.addCheck((count) => personQuestions.check(count));
-  const noteEventDuplicates = new NoteEventDuplicateService(ctx, graph, notes, eventRecords, audit, undo, insights);
+  const noteEventDuplicates = new NoteEventDuplicateService({ ctx, graph, notes, eventRecords, audit, undo, insights });
   consistency.addCheck((count) => {
     noteEventDuplicates.check(count);
   });
-  const solutions = new SolutionService(ctx, settings, llm, privacy, openItems, decisions, documents, eventRecords, graph, search, audit, notes);
+  const solutions = new SolutionService({ ctx, settings, llm, privacy, openItems, decisions, documents, eventRecords, graph, search, audit, notes });
   // one module each for capturing knowledge and verified answers, shared by the agent tools and the rule-based chat (#307)
-  const capture = new CaptureService(ctx, settings, decisions, openItems, reminders, graph, persons, contradictions, insights, notes, eventRecords);
-  const answers = new KnowledgeAnswerService(settings, llm, decisions, openItems, search, graph, documents, privacy, eventRecords);
-  const chat = new ChatService(
+  const capture = new CaptureService({ ctx, settings, decisions, openItems, reminders, graph, persons, contradictions, insights, notes, events: eventRecords });
+  const answers = new KnowledgeAnswerService({ settings, llm, decisions, openItems, search, graph, docs: documents, privacy, events: eventRecords });
+  const chat = new ChatService({
     ctx,
     settings,
     llm,
@@ -97,7 +97,7 @@ export function createDomainServices(base: BaseServices) {
     openItems,
     search,
     graph,
-    documents,
+    docs: documents,
     scanner,
     contradictions,
     insights,
@@ -105,7 +105,7 @@ export function createDomainServices(base: BaseServices) {
     jobs,
     capture,
     answers,
-  );
+  });
   return {
     documents,
     decisions,
@@ -139,12 +139,12 @@ export function createDomainServices(base: BaseServices) {
 /** The fixed link methods (Epic #269): the same functions for the UI and the agent tools (#313). */
 export function createLinkingServices(services: BaseServices & DomainServices) {
   const { ctx, graph, audit, undo, search, insights, appState, llm, privacy, documents, contradictions, noteAnalysis } = services;
-  const cases = new CaseService(ctx, graph, audit);
-  const subjects = new SubjectService(ctx, graph, audit, undo);
+  const cases = new CaseService({ ctx, graph, audit });
+  const subjects = new SubjectService({ ctx, graph, audit, undo });
   const linkThresholds = new LinkThresholds(ctx, appState);
-  const links = new LinkMethodsService(ctx, graph, search, insights, appState, linkThresholds);
-  const topicNamer = new TopicNamer(ctx, llm, privacy, documents);
-  const refiner = new RelationRefiner(ctx, graph, llm, privacy, documents, insights, contradictions, appState);
+  const links = new LinkMethodsService({ ctx, graph, search, insights, appState, thresholds: linkThresholds });
+  const topicNamer = new TopicNamer({ ctx, llm, privacy, docs: documents });
+  const refiner = new RelationRefiner({ ctx, graph, llm, privacy, docs: documents, insights, contradictions, appState });
   links.setTopicNamer((cluster, signal) =>
     topicNamer.name(cluster, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((topic) => topic.name), signal }),
   );

@@ -135,7 +135,11 @@ export class FileAnalysis {
     // the document was archived in the meantime – nothing to propose
     if (result.skipped) return SKIPPED;
     // a proposal only: the user decides whether the new version really replaces the archived one
-    if (replaced) this.deps.graph.link(doc.id, replaced.id, 'supersedes', { confidence: 0.9, status: 'proposed', sourceIds: [doc.id] });
+    if (replaced)
+      this.deps.graph.link(
+        { sourceId: doc.id, targetId: replaced.id, relationType: 'supersedes' },
+        { confidence: 0.9, status: 'proposed', sourceIds: [doc.id] },
+      );
     const updated = this.deps.docs.getRow(doc.id);
     this.db
       .update(scanFiles)

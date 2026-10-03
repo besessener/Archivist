@@ -78,6 +78,6 @@ export class LinkProposalList {
   decideGroup(group: { groupBy: ProposalGrouping; key: string }, decision: { status: 'confirmed' | 'rejected'; trigger?: string }): number {
     const query = proposalSql(group.groupBy);
     const ids = (this.sqlite.prepare(`SELECT r.id AS id ${query.from} AND ${query.key} = ?`).all(group.key) as Array<{ id: string }>).map((row) => row.id);
-    return this.deps.graph.decideRelations(ids, decision.status, { trigger: decision.trigger });
+    return this.deps.graph.decideRelations(ids, { status: decision.status, trigger: decision.trigger });
   }
 }

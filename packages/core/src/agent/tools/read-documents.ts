@@ -98,7 +98,7 @@ export function filterDocuments({ deps, ctx }: ToolScope, args: FindFilter): Doc
 }
 
 /** Lines of one page of a document list, with total and result set (#222). */
-export function pageOf(scope: ToolScope, docs: DocumentRecord[], page: { number: number; size: number }): string {
+export function pageOf(scope: ToolScope, { docs, page }: { docs: DocumentRecord[]; page: { number: number; size: number } }): string {
   const set = scope.ctx.refs.set(docs.map((d) => d.id));
   const pages = Math.max(1, Math.ceil(docs.length / page.size));
   const shown = docs.slice((page.number - 1) * page.size, page.number * page.size);

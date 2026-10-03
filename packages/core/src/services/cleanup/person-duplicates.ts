@@ -41,16 +41,26 @@ function spellingScore(c: Candidate): number {
   return score;
 }
 
+export interface PersonDuplicateServiceDeps {
+  ctx: AppContext;
+  settings: SettingsService;
+  graph: KnowledgeGraphService;
+  insights: InsightService;
+  /** Comparison keys of the user's name and nicknames (own identity); persons with these names join the own person. */
+  ownNameKeys?: () => Set<string>;
+}
+
 /** Archive check step: merges persons with equal comparison keys ({@link parsePersonName}) in one undoable step; undone groups never again. */
 export class PersonDuplicateService {
-  constructor(
-    private readonly ctx: AppContext,
-    private readonly settings: SettingsService,
-    private readonly graph: KnowledgeGraphService,
-    private readonly insights: InsightService,
-    /** Comparison keys of the user's name and nicknames (own identity); persons with these names join the own person. */
-    private readonly ownNameKeys: () => Set<string> = () => new Set(),
-  ) {}
+  private readonly ctx: AppContext;
+  private readonly settings: SettingsService;
+  private readonly graph: KnowledgeGraphService;
+  private readonly insights: InsightService;
+  private readonly ownNameKeys: () => Set<string>;
+
+  constructor(deps: PersonDuplicateServiceDeps) {
+    ({ ctx: this.ctx, settings: this.settings, graph: this.graph, insights: this.insights, ownNameKeys: this.ownNameKeys = () => new Set() } = deps);
+  }
 
   private get db() {
     return this.ctx.database.db;

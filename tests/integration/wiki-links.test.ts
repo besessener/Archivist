@@ -47,7 +47,7 @@ describe('Wiki links [[Name]] in notes (#285)', () => {
     app = await createTestApp();
     const project = await create('project', 'Hausbau');
     const note = await create('note', 'Baustelle', 'Siehe [[Hausbau]].');
-    await app.services.graph.rename(project.id, 'Neubau Gartenstraße');
+    await app.services.graph.rename({ id: project.id, name: 'Neubau Gartenstraße' });
     await app.ok('knowledge:updateNote', { id: note.id, content: 'Siehe [[Hausbau]], Stand Oktober.' });
     expect(targets(note.id)).toEqual([project.id]);
     expect((await app.ok('knowledge:wikiResolve', { names: ['Hausbau'], noteId: note.id }))[0]!.entity?.id).toBe(project.id);

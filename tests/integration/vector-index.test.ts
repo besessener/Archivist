@@ -30,7 +30,7 @@ describe('VectorIndex (#163)', () => {
     add('c2', 'decision', 'x1', unit([0.9, 0.1, 0, 0]));
     add('c3', 'document', 'd2', unit([0, 1, 0, 0]));
     const prepare = vi.spyOn(db, 'prepare');
-    const index = new VectorIndex(() => db, new WorkerPool(null));
+    const index = new VectorIndex({ sqlite: () => db, pool: new WorkerPool(null) });
     const q = unit([1, 0, 0, 0]);
     const first = await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5 });
     expect(first.map((h) => h.entityId)).toEqual(['d1', 'x1']);
@@ -46,7 +46,7 @@ describe('VectorIndex (#163)', () => {
     const { db, add } = memoryDb();
     add('c1', 'document', 'd1', unit([1, 0, 0, 0]));
     add('c2', 'decision', 'x1', unit([0.9, 0.1, 0, 0]));
-    const index = new VectorIndex(() => db, new WorkerPool(null));
+    const index = new VectorIndex({ sqlite: () => db, pool: new WorkerPool(null) });
     const q = unit([1, 0, 0, 0]);
     expect((await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5, types: ['decision'] })).map((h) => h.entityId)).toEqual(['x1']);
     expect(await index.search({ model: 'm', vector: q }, { k: 10, minScore: 0.5, types: ['note'] })).toEqual([]);
@@ -67,7 +67,7 @@ describe('VectorIndex (#163)', () => {
     for (let i = 0; i < 25; i += 1) add(`c${i}`, 'document', `d${i}`, unit([1, i / 10, 0, 0]));
     const pool = new WorkerPool(null);
     const run = vi.spyOn(pool, 'run');
-    const index = new VectorIndex(() => db, pool, 4);
+    const index = new VectorIndex({ sqlite: () => db, pool, maxSegmentRows: 4 });
     const hits = await index.search({ model: 'm', vector: unit([1, 0, 0, 0]) }, { k: 3, minScore: 0 });
     expect(hits.map((h) => h.entityId)).toEqual(['d0', 'd1', 'd2']);
     expect(run).toHaveBeenCalledTimes(7);
@@ -120,7 +120,7 @@ describe('vector search in real worker threads', () => {
     for (let i = 0; i < 10; i += 1) add(`c${i}`, i % 2 ? 'note' : 'document', `e${i}`, unit([1, i, 0, 0]));
     const pool = new WorkerPool(workerFile, 2);
     try {
-      const index = new VectorIndex(() => db, pool, 3);
+      const index = new VectorIndex({ sqlite: () => db, pool, maxSegmentRows: 3 });
       const hits = await index.search({ model: 'm', vector: unit([1, 0, 0, 0]) }, { k: 2, minScore: 0, types: ['document'] });
       expect(hits.map((h) => h.entityId)).toEqual(['e0', 'e2']);
     } finally {

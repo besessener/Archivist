@@ -72,7 +72,7 @@ export class ChatProposals {
         confidence: 0.5,
         state,
       };
-    const resolved = await this.actions.resolve(action.id, confirm ? 'approve' : 'reject', { confirmed: true, strongConfirmed: false });
+    const resolved = await this.actions.resolve(action.id, { decision: confirm ? 'approve' : 'reject', confirmed: true, strongConfirmed: false });
     return {
       intent: confirm ? 'proposal_confirm' : 'proposal_reject',
       content: confirm ? approvedText(action, resolved) : `Verstanden, ich habe den Vorschlag abgelehnt: ${action.label}.`,

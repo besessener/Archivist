@@ -20,8 +20,11 @@ describe('Deleting an event with undo', () => {
       topic: 'Konferenzbeitrag',
       project: 'Testing Day',
     });
-    const person = app.services.graph.ensureEntity('person', 'Anna Schmidt');
-    app.services.graph.link(person.id, ev.id, 'participated_in', { confidence: 0.7, status: 'confirmed', resolvedByUser: true });
+    const person = app.services.graph.ensureEntity({ type: 'person', name: 'Anna Schmidt' });
+    app.services.graph.link(
+      { sourceId: person.id, targetId: ev.id, relationType: 'participated_in' },
+      { confidence: 0.7, status: 'confirmed', resolvedByUser: true },
+    );
     const before = app.services.graph.getDetail(ev.id);
 
     await app.ok('events:delete', { id: ev.id, confirmed: true });
