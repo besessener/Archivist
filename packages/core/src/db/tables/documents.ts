@@ -68,6 +68,13 @@ export const documentLshBands = sqliteTable(
   (t) => [primaryKey({ columns: [t.documentId, t.band] }), index('document_lsh_bucket_idx').on(t.band, t.bucket)],
 );
 
+/** A pending proposal of new metadata for an archived document (#220); applying it is a confirmed, undoable change. */
+export const documentReanalysis = sqliteTable('document_reanalysis', {
+  documentId: text('document_id').primaryKey(),
+  proposal: text('proposal', { mode: 'json' }).$type<ArchivistJson>().notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
 export const categories = sqliteTable('categories', {
   id: text('id').primaryKey(),
   path: text('path').notNull().unique(),
