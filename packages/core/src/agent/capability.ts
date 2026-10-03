@@ -117,8 +117,10 @@ export class AgentCapabilityService {
   async ensureCapable(): Promise<boolean> {
     if (!this.isActive()) return false;
     if (this.capability()) return true;
-    this.probing ??= this.probeConfigured();
-    const capability = await this.probing;
+    const probing = (this.probing ??= this.probeConfigured());
+    const capability = await probing;
+    // cleared here, not inside the probe: a probe failing synchronously would otherwise leave its result cached for good
+    if (this.probing === probing) this.probing = null;
     return Boolean(capability?.toolCalling);
   }
 
@@ -128,8 +130,6 @@ export class AgentCapabilityService {
     } catch (err) {
       this.deps.ctx.logger.warn('agent', 'Tool-calling probe failed', { error: err });
       return null;
-    } finally {
-      this.probing = null;
     }
   }
 
