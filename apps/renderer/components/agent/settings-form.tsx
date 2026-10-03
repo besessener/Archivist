@@ -140,7 +140,7 @@ export function AgentSettingsForm({ settings, reload }: TabProps) {
       </Section>
 
       {error && (
-        <Notice tone="warning" role="alert">
+        <Notice tone="warning" role="alert" data-testid="agent-settings-error">
           {error}
         </Notice>
       )}

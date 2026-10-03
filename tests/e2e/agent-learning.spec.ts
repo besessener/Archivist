@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
 
@@ -58,8 +57,10 @@ test.describe('agent settings: limits per background task and learned entries', 
     await expect(settings.locators.memory.dialog.field('Absender enthält')).toHaveValue('Stadtwerke');
     await expect(settings.locators.memory.dialog.field('Schlagwörter (mit Komma getrennt)')).toHaveValue('Strom, Energie');
     await settings.locators.memory.dialog.field('Ablageordner').fill('private/finanzen/energie');
+    await settings.locators.memory.dialog.content.fill('Rechnungen der Stadtwerke immer nach private/finanzen/energie');
     await settings.locators.memory.dialog.save.click();
     await settings.locators.memory.dialog.root.waitFor({ state: 'hidden' });
+    await expect(settings.locators.memory.entry(rule)).toContainText('private/finanzen/energie');
     await settings.locators.memory.edit(rule).click();
     await expect(settings.locators.memory.dialog.field('Ablageordner')).toHaveValue('private/finanzen/energie');
     await page.keyboard.press('Escape');
@@ -82,8 +83,7 @@ test.describe('agent settings: limits per background task and learned entries', 
     await settings.locators.memory.use(rule).click();
     await expect(settings.locators.memory.entry(rule)).toContainText('aus');
 
-    const [download] = await Promise.all([page.waitForEvent('download'), settings.locators.memory.exportButton.click()]);
-    const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8')) as Array<{ name: string; enabled: boolean; data: unknown }>;
+    const exported = JSON.parse(await settings.do.exportLearned()) as Array<{ name: string; enabled: boolean; data: unknown }>;
     expect(exported.map((e) => e.name).sort()).toEqual([rule, 'Steuer-Mappe']);
     expect(exported.find((e) => e.name === rule)).toMatchObject({
       enabled: false,

@@ -49,7 +49,7 @@ export function initSettings(page: Page) {
       kindLimit: (trigger: string, field: 'Runden' | 'Tokens' | 'Minuten') =>
         page.getByTestId('agent-kind-limits').getByRole('group', { name: trigger }).getByLabel(field),
       save: page.getByTestId('agent-settings-save'),
-      validation: page.getByRole('alert'),
+      validation: page.getByTestId('agent-settings-error'),
     },
     memory: {
       newEntry: page.getByTestId('memory-new'),
@@ -119,6 +119,20 @@ export function initSettings(page: Page) {
       for (const [label, value] of Object.entries({ ...rule.when, ...rule.then })) await dialog.field(label).fill(value);
       await dialog.save.click();
       await dialog.root.waitFor({ state: 'hidden' });
+    },
+    /** Clicks „Exportieren“ and returns the JSON text of the export file (Electron gives the page no download event). */
+    exportLearned: async () => {
+      await page.evaluate(() => {
+        const exported: Blob[] = [];
+        const create = URL.createObjectURL.bind(URL);
+        URL.createObjectURL = (blob: Blob | MediaSource) => {
+          exported.push(blob as Blob);
+          return create(blob);
+        };
+        Object.assign(window, { exportedBlobs: exported });
+      });
+      await locators.memory.exportButton.click();
+      return page.evaluate(() => (window as unknown as { exportedBlobs: Blob[] }).exportedBlobs.at(-1)!.text());
     },
     openNotifications: async () => {
       await locators.tabs.notifications.click();
