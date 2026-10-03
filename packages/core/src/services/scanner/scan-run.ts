@@ -95,7 +95,9 @@ export class ScanRun {
     let cursor: Pick<ScanDirectoryInput, 'after' | 'visited'> = {};
     do {
       job?.throwIfCancelled();
-      const walked = await this.deps.pool.run('scanDirectory', this.walkInput(root, { realPath, exclusions: scope.exclusions, cursor }), { signal: job?.signal });
+      const walked = await this.deps.pool.run('scanDirectory', this.walkInput(root, { realPath, exclusions: scope.exclusions, cursor }), {
+        signal: job?.signal,
+      });
       if (summary.errors.length < 20) summary.errors.push(...walked.errors.slice(0, 20 - summary.errors.length));
       summary.skipped += walked.skipped.length;
       unreadable.push(...walked.unreadable);
