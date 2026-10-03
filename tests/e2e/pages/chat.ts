@@ -16,6 +16,8 @@ export function initChat(page: Page) {
     /** „Archivist denkt nach …“ while a request is running. */
     thinking: root.getByTestId('chat-loading'),
     sources: root.getByTestId('chat-source'),
+    /** „Details“ next to a document source: opens the document page instead of the file (#174). */
+    sourceDetails: root.getByTestId('chat-source-details'),
     /** In-app links in an answer (weekly review, agent answers). */
     appLinks: root.getByTestId('app-link'),
     conversationSelect: root.getByTestId('conversation-select'),

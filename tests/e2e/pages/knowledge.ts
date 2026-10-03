@@ -9,6 +9,8 @@ export function initKnowledge(page: Page) {
       create: page.getByTestId('knowledge-create'),
       save: page.getByTestId('knowledge-new-save'),
       saveEvent: page.getByTestId('event-save'),
+      deleteNote: page.getByTestId('note-delete'),
+      confirmDelete: page.getByTestId('confirm-dialog-confirm'),
     },
     inputs: {
       type: page.getByTestId('knowledge-new-type'),

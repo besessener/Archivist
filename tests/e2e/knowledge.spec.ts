@@ -29,6 +29,21 @@ test.describe('knowledge: create new', () => {
     await expect(app.timeline.entry('German Testing Day')).toHaveAttribute('data-kind', 'event');
   });
 
+  test('deletes a note after confirmation and removes it from the list (#248)', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.do.create({ type: 'note', name: 'Mietvertrag Hauptstraße', description: 'Mietvertrag Hauptstraße' });
+    await expect(k.heading()).toHaveText('Mietvertrag Hauptstraße');
+
+    await k.locators.buttons.deleteNote.click();
+    await k.locators.buttons.confirmDelete.click();
+
+    await expect(k.locators.toasts.filter({ hasText: 'Notiz gelöscht.' })).toBeVisible();
+    await expect(k().filter({ hasText: 'Mietvertrag Hauptstraße' })).toHaveCount(0);
+  });
+
   test('shows the own person with the badge „Du“ (name from the setup)', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.locators.inputs.profileName.fill('Monika Lor-Zade');
