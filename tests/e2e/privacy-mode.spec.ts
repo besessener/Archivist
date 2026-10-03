@@ -53,7 +53,7 @@ test.describe('privacy mode', () => {
 
     await expect(app.settings.locators.privacy.maskPersonal).toBeChecked();
     await expect(app.settings.locators.privacy.maskNote).toContainText('Gesundheitsdaten');
-    await expect(app.settings.locators.privacy.maskNote).toContainText('nicht maskiert');
+    await expect(app.settings.locators.privacy.maskNote).toContainText('Nicht maskiert');
     await expectNoSeriousA11yViolations(page, testInfo);
 
     await app.settings.locators.privacy.maskPersonal.click();
