@@ -3,7 +3,7 @@ import type { RestorePaths, RestoreSource } from '@archivist/core';
 
 export interface RecoveryDeps {
   paths: RestorePaths;
-  findNewestRestore: (backups: string) => RestoreSource | null;
+  findNewestRestore: (paths: RestorePaths) => RestoreSource | null;
   /** Marks the restore for the next start; only called after the user agreed. */
   scheduleRestore: (paths: RestorePaths, name: string) => void;
   /** Shows the offer; true when the user wants the restore. */
@@ -27,7 +27,7 @@ export function recoverFromDamagedDatabase(deps: RecoveryDeps, problem: string):
 }
 
 function offerRestore(deps: RecoveryDeps, problem: string): void {
-  const source = deps.findNewestRestore(deps.paths.backups);
+  const source = deps.findNewestRestore(deps.paths);
   if (!source) {
     deps.showError(
       START_FAILED,

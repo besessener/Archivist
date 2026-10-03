@@ -169,4 +169,21 @@ describe('backups: a full backup needs the archive (issue #236)', () => {
     app.services.archive.beginRootChange()();
     await app.cleanup();
   });
+
+  it('never removes a database a restore set aside, however low `keep` is', async () => {
+    const app = await createTestApp({ configured: false });
+    await app.ok('settings:update', { backups: { keep: 1 } });
+    const aside = path.join(app.services.paths.database, 'vor-wiederherstellung-2026-10-01T10-00-00-000');
+    fs.mkdirSync(aside, { recursive: true });
+    fs.writeFileSync(path.join(aside, 'archivist.db'), 'x');
+    for (let i = 0; i < 3; i++) {
+      await app.ok('backup:create', { includeArchive: false });
+      await app.ok('backup:create', { includeArchive: true });
+    }
+
+    expect(fs.existsSync(path.join(aside, 'archivist.db'))).toBe(true);
+    const list = await app.ok('backup:list', {});
+    expect(list.filter((b) => b.kind === 'before_restore').map((b) => b.name)).toEqual(['vor-wiederherstellung-2026-10-01T10-00-00-000']);
+    await app.cleanup();
+  });
 });

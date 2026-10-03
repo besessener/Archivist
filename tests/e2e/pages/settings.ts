@@ -114,6 +114,7 @@ export function initSettings(page: Page) {
       createMetadata: page.getByTestId('backup-metadata'),
       rows: page.getByTestId('backup-row'),
       restore: page.getByTestId('backup-restore'),
+      beforeRestoreRow: page.getByTestId('backup-row').filter({ hasText: 'Stand vor der Wiederherstellung vom' }),
       confirmRestore: page.getByTestId('backup-restore-confirm'),
       restartNotice: page.getByTestId('backup-restart-notice'),
     },

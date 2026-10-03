@@ -1,5 +1,4 @@
 import fsp from 'node:fs/promises';
-import { scheduleRestore } from './backup-restore';
 import path from 'node:path';
 import type { BackupInfo, Settings } from '@archivist/shared';
 import { and, count, eq, isNotNull } from 'drizzle-orm';
@@ -7,11 +6,12 @@ import type { AppContext } from '../context';
 import { documents } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
 import { isInside } from '../util/paths';
+import { findRestoreSource, restoreSources, scheduleRestore } from './backup-restore';
 import type { ArchiveService } from './archive';
 import type { AuditService } from './audit';
 import type { SettingsService } from './settings';
 
-type BackupKind = BackupInfo['kind'];
+type BackupKind = Exclude<BackupInfo['kind'], 'before_restore'>;
 
 /** Total size of all files below `dir` (recursive; symlinks are counted by their own size, not followed). */
 async function dirSize(dir: string): Promise<number> {
@@ -172,7 +172,7 @@ export class BackupService {
   /** Removes the oldest backups of `kind` beyond `backups.keep`. Never removes `current`; failures are only logged. */
   private async applyRetention(kind: BackupKind, current: string): Promise<void> {
     const keep = Math.max(1, this.settings.get().backups.keep);
-    const sameKind = (await this.entries()).filter((b) => b.kind === kind && b.name !== current);
+    const sameKind = (await this.entries()).filter((b) => b.kind === kind && b.name !== current); // databases set aside by a restore never match
     const removed: string[] = [];
     for (const b of sameKind.slice(Math.max(0, keep - 1))) {
       try {
@@ -197,7 +197,7 @@ export class BackupService {
     return { ...m, sizeBytes: await dirSize(m.path) };
   }
 
-  /** Valid backups (with a readable manifest) without sizes, newest first. */
+  /** Valid backups (with a readable manifest) and the databases set aside by restores, without sizes, newest first. */
   private async entries(): Promise<Omit<BackupInfo, 'sizeBytes'>[]> {
     const out: Omit<BackupInfo, 'sizeBytes'>[] = [];
     for (const e of await fsp.readdir(this.ctx.paths.backups, { withFileTypes: true }).catch(() => [])) {
@@ -208,18 +208,21 @@ export class BackupService {
         /* not a valid backup */
       }
     }
+    for (const aside of restoreSources(this.ctx.paths).filter((source) => source.kind === 'before_restore'))
+      out.push({ name: aside.name, path: aside.path, kind: 'before_restore', createdAt: aside.createdAt });
     return out.sort((a, b) => compareDescending(a.createdAt, b.createdAt) || compareDescending(a.name, b.name));
   }
 
   /** Schedules the restore of a backup for the next start; the current database is kept next to the restored one. */
   requestRestore(name: string): void {
     scheduleRestore(this.ctx.paths, name);
+    const source = findRestoreSource(this.ctx.paths, name)!;
     this.audit.log({
       action: 'backup.restore',
       actor: 'user',
       trigger: 'manual',
       confirmed: true,
-      paths: [path.join(this.ctx.paths.backups, name)],
+      paths: [source.path],
       after: { name },
     });
   }

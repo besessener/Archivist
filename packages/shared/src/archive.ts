@@ -87,7 +87,8 @@ export type CategoryMigrationResult = z.infer<typeof CategoryMigrationResult>;
 export const BackupInfo = z.object({
   name: z.string(),
   path: z.string(),
-  kind: z.enum(['metadata', 'full']),
+  /** `before_restore`: the database a restore replaced; createdAt is the time of that restore. */
+  kind: z.enum(['metadata', 'full', 'before_restore']),
   createdAt: IsoDate,
   sizeBytes: z.number(),
 });
