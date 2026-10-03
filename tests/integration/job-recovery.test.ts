@@ -12,7 +12,7 @@ let queues: JobQueueService[] = [];
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto', scanEnabled: true });
   app.llm.on('DocumentClassification', (_s, input) =>
-    classification({ title: input.includes('Zweite') ? 'Zweite' : 'Datei', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Scan' }),
+    classification({ title: input.includes('Zweite') ? 'Zweite' : 'Datei', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: 'Scan' }),
   );
 });
 afterEach(async () => {

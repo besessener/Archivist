@@ -8,8 +8,14 @@ import { hasChecksum } from './archive-files';
 import { archivePathOf, archiveRootOf } from './archive-model';
 import type { ArchiveDeps } from './archive-deps';
 
-/** Regular files below `dir` that `known` does not contain (unreadable folders are skipped). */
+const pathKey = (file: string) => path.resolve(file).toLowerCase();
+
+/** Regular files below `dir` that `known` does not contain; names compare case-insensitively like NTFS (#244), unreadable folders are skipped. */
 export async function untrackedFiles(dir: string, known: Set<string>): Promise<string[]> {
+  return collectUntracked(dir, new Set([...known].map(pathKey)));
+}
+
+async function collectUntracked(dir: string, knownKeys: Set<string>): Promise<string[]> {
   let entries: fs.Dirent[];
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -19,8 +25,8 @@ export async function untrackedFiles(dir: string, known: Set<string>): Promise<s
   const found: string[] = [];
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) found.push(...(await untrackedFiles(full, known)));
-    else if (entry.isFile() && !known.has(path.resolve(full))) found.push(full);
+    if (entry.isDirectory()) found.push(...(await collectUntracked(full, knownKeys)));
+    else if (entry.isFile() && !knownKeys.has(pathKey(full))) found.push(full);
   }
   return found;
 }

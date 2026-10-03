@@ -34,14 +34,14 @@ async function restart(app: TestApp): Promise<TestApp> {
 
 async function archived(app: TestApp, name: string, content: string): Promise<string> {
   app.llm.on('DocumentClassification', () =>
-    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'private/belege', mainTopic: null }),
+    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'Privat/belege', mainTopic: null }),
   );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
   const res = await app.ok('documents:archive', {
-    items: [{ documentId: imp.imported[0]!.id, mode: 'copy', categoryPath: 'private/belege' }],
+    items: [{ documentId: imp.imported[0]!.id, mode: 'copy', categoryPath: 'Privat/belege' }],
     confirmed: true,
-    approveNewCategories: ['private'],
+    approveNewCategories: ['Privat'],
     confirmMove: false,
   } as never);
   expect(res.success).toBe(1);

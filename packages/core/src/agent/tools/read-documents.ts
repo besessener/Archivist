@@ -12,7 +12,7 @@ export const SECTION_CHARS = 6_000;
 export const FindArgs = z.object({
   ext: list.nullish().describe('Dateiendung(en), z. B. ["pptx","ppt"]'),
   name: optText.describe('Teil von Titel oder Dateiname'),
-  folder: optText.describe('Ordner im Archiv bzw. dessen Anfang, z. B. "work/hr"'),
+  folder: optText.describe('Ordner im Archiv bzw. dessen Anfang, z. B. "Arbeit/Personal"'),
   topic: optText,
   project: optText,
   docType: optText.describe('z. B. "Rechnung", "Vertrag", "Präsentation"'),

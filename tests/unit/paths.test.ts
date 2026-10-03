@@ -7,6 +7,7 @@ import {
   ensureDirSync,
   isForbiddenScanRoot,
   isInside,
+  isWithinCategoryFolder,
   normalizeFsPath,
   realpathDeepest,
   resolveInside,
@@ -439,5 +440,15 @@ describe('names with ". " inside (issue #69)', () => {
     expect(sanitizeFileName('con.tar.gz')).toBe('_con.tar.gz');
     expect(sanitizeFolderName('aux.alt')).toBe('_aux.alt');
     expect(sanitizeFolderName('auxiliar')).toBe('auxiliar');
+  });
+});
+
+describe('isWithinCategoryFolder (#244)', () => {
+  it('matches whole segments only, case-insensitively', () => {
+    expect(isWithinCategoryFolder('Work/Sub', 'work/sub')).toBe(true);
+    expect(isWithinCategoryFolder('work/sub/deeper', 'work/sub')).toBe(true);
+    expect(isWithinCategoryFolder('work/sub2', 'work/sub')).toBe(false);
+    expect(isWithinCategoryFolder('work', 'work/sub')).toBe(false);
+    expect(isWithinCategoryFolder('work\\sub', 'work/sub')).toBe(true);
   });
 });

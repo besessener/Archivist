@@ -47,7 +47,7 @@ export async function archived(
 
 /** Imports a text file and leaves it analyzed in the inbox. */
 export async function inInbox(app: TestApp, file: TextFile & { folder?: string }): Promise<string> {
-  const { name, folder = 'private/eingang' } = file;
+  const { name, folder = 'Privat/eingang' } = file;
   app.llm.on('DocumentClassification', () =>
     classification({ title: name.replace(/\.\w+$/, ''), summary: `Zusammenfassung ${name}`, categoryPath: folder, docType: 'Rechnung' }),
   );

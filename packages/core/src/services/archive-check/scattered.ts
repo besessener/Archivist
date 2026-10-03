@@ -1,5 +1,5 @@
 import { truncate } from '../../util/text';
-import { chooseTargetFolder, folderLabel, splitSubjects } from '../archive-structure';
+import { chooseTargetFolder, folderChoiceText, folderLabel, splitSubjects } from '../archive-structure';
 import type { CheckedDocument } from './documents';
 import type { CheckRun } from './findings';
 
@@ -8,9 +8,11 @@ type PlacedDocument = Subject['groups'][number]['docs'][number];
 
 /** The relocation proposal into the folder that holds most of the subject's documents, if one is clear. */
 function relocation(subject: Subject) {
-  const target = chooseTargetFolder(subject.groups);
-  const movable = target ? subject.groups.filter((group) => group.folder !== target).flatMap((group) => group.docs) : [];
-  if (!target || !movable.length) return undefined;
+  const choice = chooseTargetFolder(subject.groups);
+  if (choice.kind !== 'chosen') return undefined;
+  const target = choice.folder;
+  const movable = subject.groups.filter((group) => group.folder !== target).flatMap((group) => group.docs);
+  if (!movable.length) return undefined;
   const label = (document: PlacedDocument) => ({ type: 'document' as const, id: document.id, label: document.title });
   return {
     label: 'In einen Ordner verschieben',
@@ -28,8 +30,17 @@ function relocation(subject: Subject) {
   };
 }
 
-const explanationOf = (subject: Subject) =>
-  `${subject.groups.map((group) => `• ${folderLabel(group.folder)} (${group.docs.length}): ${group.docs.map((document) => truncate(document.title, 50)).join('; ')}`).join('\n')}\n\nDas Verschieben erfordert deine Bestätigung; nichts wird überschrieben, und es lässt sich rückgängig machen.`;
+function explanationOf(subject: Subject): string {
+  const lines = subject.groups.map(
+    (group) => `• ${folderLabel(group.folder)} (${group.docs.length}): ${group.docs.map((document) => truncate(document.title, 50)).join('; ')}`,
+  );
+  const choice = chooseTargetFolder(subject.groups);
+  const closing =
+    choice.kind === 'tied'
+      ? `In ${folderChoiceText(choice.folders)} liegen gleich viele Dokumente. Entscheide du, wohin sie gehören; z. B. im Chat: „leg die Dokumente zu ${subject.name} in einen Ordner“.`
+      : 'Das Verschieben erfordert deine Bestätigung; nichts wird überschrieben, und es lässt sich rückgängig machen.';
+  return `${lines.join('\n')}\n\n${closing}`;
+}
 
 /** Documents of the same topic or project that lie in different archive directories: hint plus relocation proposal. */
 export function checkScatteredDocuments(run: CheckRun, archived: CheckedDocument[]): void {

@@ -21,7 +21,7 @@ async function analyze(text: string) {
     classification({
       title: 'Langes Protokoll',
       summary: 'x',
-      categoryPath: 'private/haus',
+      categoryPath: 'Privat/haus',
       decisions: input.includes(DECISION) ? [{ title: 'Fassade', decisionText: DECISION, kind: 'decided', evidence: DECISION, participants: [] }] : [],
     }),
   );
@@ -80,7 +80,7 @@ describe('Long documents are read in parts (#190)', () => {
     app.llm.on('DocumentClassification', () => {
       calls += 1;
       if (calls > 1) throw new Error('Endpunkt nicht erreichbar');
-      return classification({ title: 'Protokoll', summary: 'x', categoryPath: 'private/haus', mainTopic: 'Haus' });
+      return classification({ title: 'Protokoll', summary: 'x', categoryPath: 'Privat/haus', mainTopic: 'Haus' });
     });
     const imported = await app.ok('documents:import', { paths: [app.file('in/lang.txt', filler(60))] });
     await app.services.jobs.whenIdle();

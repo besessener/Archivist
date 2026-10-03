@@ -71,7 +71,7 @@ async function call(name: string, args: unknown): Promise<ToolOutput> {
 const LONG = 'Angebot für die neue Küche mit Einbaugeräten, Arbeitsplatte aus Eiche und Montage durch die Firma Holzbau. '.repeat(4);
 
 async function archived(name: string, content: string, opts: { loc?: string; date?: string | null; title?: string } = {}): Promise<string> {
-  const loc = opts.loc ?? 'private/haus';
+  const loc = opts.loc ?? 'Privat/haus';
   app.llm.on('DocumentClassification', () =>
     classification({
       title: opts.title ?? name.replace(/\.\w+$/, ''),
@@ -174,20 +174,20 @@ describe('agent duplicate tools', () => {
   });
 
   it('marks older versions and moves them into a subfolder next to the kept document', async () => {
-    const keep = await archived('Vertrag final.txt', 'Vertrag neu', { loc: 'private/vertraege', title: 'Vertrag final' });
-    const old = await archived('Vertrag Entwurf.txt', 'Vertrag alt', { loc: 'private/vertraege', title: 'Vertrag Entwurf' });
+    const keep = await archived('Vertrag final.txt', 'Vertrag neu', { loc: 'Privat/vertraege', title: 'Vertrag final' });
+    const old = await archived('Vertrag Entwurf.txt', 'Vertrag alt', { loc: 'Privat/vertraege', title: 'Vertrag Entwurf' });
 
     const out = await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(old)], as: 'older_version', action: 'subfolder' });
 
-    expect(out.content).toContain('Nach „private/vertraege/Ältere Versionen“ verschoben: 1 erfolgreich');
-    expect(row(old)!.archiveRelPath).toBe('private/vertraege/Ältere Versionen/Vertrag Entwurf.txt');
+    expect(out.content).toContain('Nach „Privat/vertraege/Ältere Versionen“ verschoben: 1 erfolgreich');
+    expect(row(old)!.archiveRelPath).toBe('Privat/vertraege/Ältere Versionen/Vertrag Entwurf.txt');
     expect(row(old)!.tags).toContain('ältere Version');
     expect(app.services.graph.relationsOf(keep, { types: ['supersedes'] })[0]).toMatchObject({
       sourceEntityId: keep,
       targetEntityId: old,
       status: 'confirmed',
     });
-    expect(row(keep)!.archiveRelPath).toBe('private/vertraege/Vertrag final.txt');
+    expect(row(keep)!.archiveRelPath).toBe('Privat/vertraege/Vertrag final.txt');
   });
 
   it('moves duplicates into the trash, never the kept document; undo brings them back', async () => {
@@ -250,15 +250,15 @@ describe('agent duplicate tools: undo and merges', () => {
   });
 
   it('undoes the move into the subfolder', async () => {
-    const keep = await archived('Vertrag final.txt', 'Vertrag neu', { loc: 'private/vertraege', title: 'Vertrag final' });
-    const old = await archived('Vertrag Entwurf.txt', 'Vertrag alt', { loc: 'private/vertraege', title: 'Vertrag Entwurf' });
+    const keep = await archived('Vertrag final.txt', 'Vertrag neu', { loc: 'Privat/vertraege', title: 'Vertrag final' });
+    const old = await archived('Vertrag Entwurf.txt', 'Vertrag alt', { loc: 'Privat/vertraege', title: 'Vertrag Entwurf' });
     await call('mark_duplicates', { keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(old)], as: 'older_version', action: 'subfolder' });
-    expect(row(old)!.archiveRelPath).toBe('private/vertraege/Ältere Versionen/Vertrag Entwurf.txt');
+    expect(row(old)!.archiveRelPath).toBe('Privat/vertraege/Ältere Versionen/Vertrag Entwurf.txt');
 
     const result = await app.services.undo.undo(lastAudit('archive.relocate')!.id);
 
     expect(result.undone).toBe(true);
-    expect(row(old)!.archiveRelPath).toBe('private/vertraege/Vertrag Entwurf.txt');
+    expect(row(old)!.archiveRelPath).toBe('Privat/vertraege/Vertrag Entwurf.txt');
   });
 
   it('merges open items, notes, events and persons and undoes each merge', async () => {

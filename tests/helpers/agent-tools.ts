@@ -70,7 +70,7 @@ export interface ArchivedFile {
 
 /** Imports a file and archives it (copy) into `loc`, with a scripted classification. */
 export async function archiveFile(app: TestApp, file: ArchivedFile): Promise<string> {
-  const loc = file.loc ?? 'private/finanzen';
+  const loc = file.loc ?? 'Privat/finanzen';
   app.llm.on('DocumentClassification', () =>
     classification({
       title: file.title ?? file.name.replace(/\.\w+$/, ''),

@@ -48,8 +48,8 @@ describe('backups: retention, size and archive above the data directory (issue #
   it('computes the size of a full backup recursively', async () => {
     const app = await createTestApp({ configured: false });
     const archive = app.services.settings.get().archiveRoot;
-    fs.mkdirSync(path.join(archive, 'work', 'deep', 'deeper'), { recursive: true });
-    fs.writeFileSync(path.join(archive, 'work', 'deep', 'deeper', 'big.bin'), Buffer.alloc(200_000, 1));
+    fs.mkdirSync(path.join(archive, 'Arbeit', 'deep', 'deeper'), { recursive: true });
+    fs.writeFileSync(path.join(archive, 'Arbeit', 'deep', 'deeper', 'big.bin'), Buffer.alloc(200_000, 1));
     const full = await app.ok('backup:create', { includeArchive: true });
     const topLevelFiles = fs
       .readdirSync(full.path, { withFileTypes: true })
@@ -65,13 +65,13 @@ describe('backups: retention, size and archive above the data directory (issue #
     const app = await createTestApp({ configured: false });
     // the data directory is <root>/Archivist, so <root> is a parent of it
     await app.ok('settings:update', { archiveRoot: app.root });
-    fs.mkdirSync(path.join(app.root, 'work'), { recursive: true });
-    fs.writeFileSync(path.join(app.root, 'work', 'vertrag.txt'), 'Vertrag');
+    fs.mkdirSync(path.join(app.root, 'Arbeit'), { recursive: true });
+    fs.writeFileSync(path.join(app.root, 'Arbeit', 'vertrag.txt'), 'Vertrag');
     const first = await app.ok('backup:create', { includeArchive: true });
     const second = await app.ok('backup:create', { includeArchive: true });
     for (const b of [first, second]) {
       const copied = path.join(b.path, 'archive');
-      expect(fs.readFileSync(path.join(copied, 'work', 'vertrag.txt'), 'utf8')).toBe('Vertrag');
+      expect(fs.readFileSync(path.join(copied, 'Arbeit', 'vertrag.txt'), 'utf8')).toBe('Vertrag');
       expect(fs.readdirSync(copied)).not.toContain('Archivist');
     }
     await app.cleanup();
@@ -80,12 +80,12 @@ describe('backups: retention, size and archive above the data directory (issue #
   it('backs up an archive that is the data directory itself without copying the backups folder', async () => {
     const app = await createTestApp({ configured: false });
     await app.ok('settings:update', { archiveRoot: app.services.paths.root });
-    fs.mkdirSync(path.join(app.services.paths.root, 'work'), { recursive: true });
-    fs.writeFileSync(path.join(app.services.paths.root, 'work', 'a.txt'), 'A');
+    fs.mkdirSync(path.join(app.services.paths.root, 'Arbeit'), { recursive: true });
+    fs.writeFileSync(path.join(app.services.paths.root, 'Arbeit', 'a.txt'), 'A');
     await app.ok('backup:create', { includeArchive: true });
     const b = await app.ok('backup:create', { includeArchive: true });
     const copied = fs.readdirSync(path.join(b.path, 'archive'));
-    expect(copied).toContain('work');
+    expect(copied).toContain('Arbeit');
     expect(copied).not.toContain('backups');
     await app.cleanup();
   });
@@ -96,8 +96,8 @@ describe('backups: a full backup needs the archive (issue #236)', () => {
     const app = await createTestApp({ configured: false });
     await app.ok('settings:update', { backups: { keep: 2 } });
     const archive = app.services.settings.get().archiveRoot;
-    fs.mkdirSync(path.join(archive, 'work'), { recursive: true });
-    fs.writeFileSync(path.join(archive, 'work', 'vertrag.txt'), 'Vertrag');
+    fs.mkdirSync(path.join(archive, 'Arbeit'), { recursive: true });
+    fs.writeFileSync(path.join(archive, 'Arbeit', 'vertrag.txt'), 'Vertrag');
     const good = [await app.ok('backup:create', { includeArchive: true }), await app.ok('backup:create', { includeArchive: true })];
 
     // the archive drive is gone
@@ -109,7 +109,7 @@ describe('backups: a full backup needs the archive (issue #236)', () => {
     }
     const list = await app.ok('backup:list', {});
     expect(list.map((b) => b.name)).toEqual([good[1]!.name, good[0]!.name]);
-    for (const b of good) expect(fs.readFileSync(path.join(b.path, 'archive', 'work', 'vertrag.txt'), 'utf8')).toBe('Vertrag');
+    for (const b of good) expect(fs.readFileSync(path.join(b.path, 'archive', 'Arbeit', 'vertrag.txt'), 'utf8')).toBe('Vertrag');
     const audit = await app.ok('audit:list', {});
     expect(audit.filter((a) => a.action === 'backup.create')).toHaveLength(2);
     expect(audit.some((a) => a.action === 'backup.prune')).toBe(false);
@@ -128,7 +128,7 @@ describe('backups: a full backup needs the archive (issue #236)', () => {
 
     const imp = await app.ok('documents:import', { paths: [app.file('in/a.txt', 'Inhalt')] });
     await app.services.jobs.whenIdle();
-    app.services.database.sqlite.prepare("UPDATE documents SET status = 'archived', archive_rel_path = 'work/a.txt' WHERE id = ?").run(imp.imported[0]!.id);
+    app.services.database.sqlite.prepare("UPDATE documents SET status = 'archived', archive_rel_path = 'Arbeit/a.txt' WHERE id = ?").run(imp.imported[0]!.id);
     const r = await app.call('backup:create', { includeArchive: true });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.message).toMatch(/leer, obwohl 1 Dokument\(e\) archiviert sind/);
@@ -140,9 +140,9 @@ describe('backups: a full backup needs the archive (issue #236)', () => {
     const app = await createTestApp({ configured: false });
     await app.ok('settings:update', { backups: { keep: 1 } });
     const archive = app.services.settings.get().archiveRoot;
-    fs.mkdirSync(path.join(archive, 'work', 'sub'), { recursive: true });
-    fs.writeFileSync(path.join(archive, 'work', 'a.txt'), 'A');
-    fs.writeFileSync(path.join(archive, 'work', 'sub', 'b.txt'), 'B');
+    fs.mkdirSync(path.join(archive, 'Arbeit', 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(archive, 'Arbeit', 'a.txt'), 'A');
+    fs.writeFileSync(path.join(archive, 'Arbeit', 'sub', 'b.txt'), 'B');
     const full = await app.ok('backup:create', { includeArchive: true });
     const manifest = JSON.parse(fs.readFileSync(path.join(full.path, 'manifest.json'), 'utf8')) as { archiveFiles: number };
     expect(manifest.archiveFiles).toBe(2);

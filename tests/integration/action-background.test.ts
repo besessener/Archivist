@@ -15,7 +15,7 @@ afterEach(async () => {
 
 async function importDocuments(count: number): Promise<string[]> {
   app.llm.on('DocumentClassification', (_schema, input) =>
-    classification({ title: `Dokument ${input.length}`, summary: 'Zusammenfassung', categoryPath: 'private/notizen' }),
+    classification({ title: `Dokument ${input.length}`, summary: 'Zusammenfassung', categoryPath: 'Privat/notizen' }),
   );
   const paths = Array.from({ length: count }, (_, i) => app.file(`in/doc-${i}.txt`, `Inhalt des Dokuments Nummer ${i}`));
   const imported = await app.ok('documents:import', { paths });
@@ -23,7 +23,7 @@ async function importDocuments(count: number): Promise<string[]> {
   return imported.imported.map((d) => d.id);
 }
 
-const propose = (ids: string[], categoryPath = 'private/notizen') =>
+const propose = (ids: string[], categoryPath = 'Privat/notizen') =>
   app.services.actions.propose({
     actionType: 'archive_documents',
     label: `${ids.length} Dokumente nach ${categoryPath} archivieren`,
@@ -45,7 +45,7 @@ const jobOf = (label: string) => app.services.jobs.list().find((job) => job.type
 async function bigRelocation({ conflicting }: { conflicting: boolean }) {
   const [target, ...ids] = await importDocuments(11);
   await approve(propose(ids).id);
-  await approve(propose([target!], 'private/ziel').id);
+  await approve(propose([target!], 'Privat/ziel').id);
   if (conflicting) for (const id of ids) fs.appendFileSync(archivedFile(id), ' – bearbeitet');
   return app.services.actions.propose({
     actionType: 'relocate_documents',
@@ -54,7 +54,7 @@ async function bigRelocation({ conflicting }: { conflicting: boolean }) {
     confidence: 0.8,
     affectedEntities: [],
     requiredConfirmation: 'confirm',
-    proposedParameters: { items: ids.map((documentId) => ({ documentId, categoryPath: 'private/ziel' })) },
+    proposedParameters: { items: ids.map((documentId) => ({ documentId, categoryPath: 'Privat/ziel' })) },
   });
 }
 

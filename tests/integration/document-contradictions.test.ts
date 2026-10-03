@@ -25,7 +25,7 @@ const setScope = (id: string, scope: { topicId?: string | null; projectId?: stri
 const found = (status = 'detected') => app.services.contradictions.list(status as never);
 
 const offer = (name: string, amount: string) =>
-  archived(app, { name, content: `Angebot Dachsanierung Haus: Das Budget für die Dachsanierung beträgt ${amount} Euro.`, folder: 'private/misc' });
+  archived(app, { name, content: `Angebot Dachsanierung Haus: Das Budget für die Dachsanierung beträgt ${amount} Euro.`, folder: 'Privat/misc' });
 
 async function twoOffers(scope: { topicId?: string; projectId?: string } = { topicId: 'topic-dach' }) {
   const first = await offer('angebot-a.txt', '5000');
@@ -81,8 +81,8 @@ describe('Contradictions between documents (#179)', () => {
 
   it('does not compare documents that have nothing in common', async () => {
     app.llm.on('ContradictionProposal', verdict(true));
-    const first = await archived(app, { name: 'a.txt', content: 'Der Vorstand trifft sich im Gemeindehaus.', folder: 'private/misc' });
-    const second = await archived(app, { name: 'b.txt', content: 'Rechnung der Stadtwerke für den Strom.', folder: 'private/misc' });
+    const first = await archived(app, { name: 'a.txt', content: 'Der Vorstand trifft sich im Gemeindehaus.', folder: 'Privat/misc' });
+    const second = await archived(app, { name: 'b.txt', content: 'Rechnung der Stadtwerke für den Strom.', folder: 'Privat/misc' });
     setScope(first, { topicId: 'topic-x' });
     setScope(second, { topicId: 'topic-x' });
 
@@ -168,9 +168,9 @@ describe('Contradictions between documents (#179)', () => {
     const first = await archived(app, {
       name: 'a.txt',
       content: 'Das Budget der Dachsanierung beträgt 5000 Euro. Kontakt: anna@example.org',
-      folder: 'private/misc',
+      folder: 'Privat/misc',
     });
-    const second = await archived(app, { name: 'b.txt', content: 'Das Budget der Dachsanierung beträgt 8000 Euro.', folder: 'private/misc' });
+    const second = await archived(app, { name: 'b.txt', content: 'Das Budget der Dachsanierung beträgt 8000 Euro.', folder: 'Privat/misc' });
     setScope(first, { topicId: 'topic-dach' });
     setScope(second, { topicId: 'topic-dach' });
 

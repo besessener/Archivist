@@ -38,7 +38,7 @@ describe('File operations on the same document at the same time (#240)', () => {
   it('two archive requests for one document: one archives, the other reports a conflict – no orphan copy', async () => {
     const id = await inInbox(app, { name: 'brief.txt', content: 'Ein Brief' });
     const request = () =>
-      app.services.archive.execute([{ documentId: id, mode: 'copy', categoryPath: 'private/post' }], {
+      app.services.archive.execute([{ documentId: id, mode: 'copy', categoryPath: 'Privat/post' }], {
         confirmed: true,
         approveNewCategories: [],
         confirmMove: false,
@@ -48,14 +48,14 @@ describe('File operations on the same document at the same time (#240)', () => {
     const outcomes = [first.items[0]!.outcome, second.items[0]!.outcome].toSorted();
     expect(outcomes).toEqual(['conflict', 'success']);
     const root = app.services.settings.get().archiveRoot;
-    expect(filesIn(path.join(root, 'private', 'post'))).toHaveLength(1);
+    expect(filesIn(path.join(root, 'Privat', 'post'))).toHaveLength(1);
     expect(app.services.documents.getRow(id).status).toBe('archived');
   });
 });
 
 describe('Database and file system stay in step (#221, #238)', () => {
   it('rename: if the database refuses, the file goes back to its old name', async () => {
-    const id = await archived(app, { name: 'scan001.txt', content: 'Rechnung', folder: 'private/post' });
+    const id = await archived(app, { name: 'scan001.txt', content: 'Rechnung', folder: 'Privat/post' });
     const before = app.services.documents.getRow(id).archiveRelPath!;
     failNextAudit('archive.rename');
     const res = await app.services.archive.rename([{ documentId: id, fileName: 'Rechnung Stadtwerke' }], { confirmed: true, trigger: 'agent' });
@@ -63,11 +63,11 @@ describe('Database and file system stay in step (#221, #238)', () => {
     const root = app.services.settings.get().archiveRoot;
     expect(app.services.documents.getRow(id).archiveRelPath).toBe(before);
     expect(fs.existsSync(path.join(root, ...before.split('/')))).toBe(true);
-    expect(filesIn(path.join(root, 'private', 'post'))).toEqual([path.posix.basename(before)]);
+    expect(filesIn(path.join(root, 'Privat', 'post'))).toEqual([path.posix.basename(before)]);
   });
 
   it('undo of a rename: if the database refuses, the file stays where the database points – and the undo can be retried', async () => {
-    const id = await archived(app, { name: 'scan002.txt', content: 'Rechnung', folder: 'private/post' });
+    const id = await archived(app, { name: 'scan002.txt', content: 'Rechnung', folder: 'Privat/post' });
     const res = await app.services.archive.rename([{ documentId: id, fileName: 'Rechnung Wasser' }], { confirmed: true, trigger: 'agent' });
     const renamed = app.services.documents.getRow(id).archiveRelPath!;
     const root = app.services.settings.get().archiveRoot;

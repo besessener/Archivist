@@ -36,9 +36,9 @@ test.describe('agent settings: limits per background task and learned entries', 
     const rule = 'Stadtwerke → Energie';
     await settings.do.addRule({
       name: rule,
-      content: 'Rechnungen der Stadtwerke immer nach private/energie',
+      content: 'Rechnungen der Stadtwerke immer nach Privat/energie',
       when: { 'Absender enthält': 'Stadtwerke' },
-      then: { Ablageordner: 'private/energie', 'Schlagwörter (mit Komma getrennt)': 'Strom, Energie' },
+      then: { Ablageordner: 'Privat/energie', 'Schlagwörter (mit Komma getrennt)': 'Strom, Energie' },
     });
     await expect(settings.locators.memory.entry(rule)).toBeVisible();
 
@@ -56,13 +56,13 @@ test.describe('agent settings: limits per background task and learned entries', 
     await settings.locators.memory.edit(rule).click();
     await expect(settings.locators.memory.dialog.field('Absender enthält')).toHaveValue('Stadtwerke');
     await expect(settings.locators.memory.dialog.field('Schlagwörter (mit Komma getrennt)')).toHaveValue('Strom, Energie');
-    await settings.locators.memory.dialog.field('Ablageordner').fill('private/finanzen/energie');
-    await settings.locators.memory.dialog.content.fill('Rechnungen der Stadtwerke immer nach private/finanzen/energie');
+    await settings.locators.memory.dialog.field('Ablageordner').fill('Privat/finanzen/energie');
+    await settings.locators.memory.dialog.content.fill('Rechnungen der Stadtwerke immer nach Privat/finanzen/energie');
     await settings.locators.memory.dialog.save.click();
     await settings.locators.memory.dialog.root.waitFor({ state: 'hidden' });
-    await expect(settings.locators.memory.entry(rule)).toContainText('private/finanzen/energie');
+    await expect(settings.locators.memory.entry(rule)).toContainText('Privat/finanzen/energie');
     await settings.locators.memory.edit(rule).click();
-    await expect(settings.locators.memory.dialog.field('Ablageordner')).toHaveValue('private/finanzen/energie');
+    await expect(settings.locators.memory.dialog.field('Ablageordner')).toHaveValue('Privat/finanzen/energie');
     await page.keyboard.press('Escape');
 
     // a workflow with a weekday names the nightly run; with the nightly run off it warns
@@ -87,7 +87,7 @@ test.describe('agent settings: limits per background task and learned entries', 
     expect(exported.map((e) => e.name).sort()).toEqual([rule, 'Steuer-Mappe']);
     expect(exported.find((e) => e.name === rule)).toMatchObject({
       enabled: false,
-      data: { when: { sender: 'Stadtwerke' }, then: { folder: 'private/finanzen/energie' } },
+      data: { when: { sender: 'Stadtwerke' }, then: { folder: 'Privat/finanzen/energie' } },
     });
 
     await settings.locators.memory.remove(rule).click();

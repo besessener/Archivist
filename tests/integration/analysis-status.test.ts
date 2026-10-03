@@ -9,7 +9,7 @@ let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Neu klassifiziert', summary: 'Zusammenfassung', categoryPath: 'work/neu', mainTopic: 'Test' }),
+    classification({ title: 'Neu klassifiziert', summary: 'Zusammenfassung', categoryPath: 'Arbeit/neu', mainTopic: 'Test' }),
   );
 });
 afterEach(async () => {
@@ -19,7 +19,7 @@ afterEach(async () => {
 
 const archive = (documentId: string, mode: 'copy' | 'move' | 'index_only') =>
   app.ok('documents:archive', {
-    items: [{ documentId, mode, categoryPath: 'work/notes' }],
+    items: [{ documentId, mode, categoryPath: 'Arbeit/notes' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: mode === 'move',
@@ -65,7 +65,7 @@ describe('Analysis does not reopen archived documents', () => {
     expect(after.status).toBe('archived');
     expect(after.archiveRelPath).toBe(archived.archiveRelPath);
     expect(after.title).toBe(archived.title);
-    expect(after.categoryPath).toBe('work/notes');
+    expect(after.categoryPath).toBe('Arbeit/notes');
     expect(analyzeJobs()[0]!.status).toBe('succeeded');
     // no second archiving possible
     const plan = await app.ok('documents:previewArchive', { items: [{ documentId: id, mode: 'copy' }] });
@@ -107,7 +107,7 @@ describe('Analysis does not reopen archived documents', () => {
 
     const after = await app.ok('documents:get', { id });
     expect(after.status).toBe('archived');
-    expect(after.categoryPath).toBe('work/notes');
+    expect(after.categoryPath).toBe('Arbeit/notes');
     expect(after.title).not.toBe('Neu klassifiziert');
     expect(analyzeJobs()[0]!.status).toBe('succeeded');
   });

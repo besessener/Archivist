@@ -213,7 +213,7 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
 
     const chosen = groups[0]!.documentIds.slice(0, 2);
     const plan = await app.ok('documents:previewArchive', { items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })) });
-    expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('work', 'projects', 'Hauskauf')))).toBe(true);
+    expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('Arbeit', 'projects', 'Hauskauf')))).toBe(true);
     const res = await app.ok('documents:archive', {
       items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })),
       confirmed: true,

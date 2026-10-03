@@ -62,6 +62,28 @@ export type ArchiveResult = z.infer<typeof ArchiveResult>;
 export const Category = z.object({ id: Id, path: z.string(), approved: z.boolean(), createdAt: IsoDate });
 export type Category = z.infer<typeof Category>;
 
+/** What renaming the English main categories (`work`, `private`) to the German ones would do (#233). */
+export const CategoryMigrationPlan = z.object({
+  renames: z.array(z.object({ from: z.string(), to: z.string() })),
+  /** Archive files that move into the renamed folder. */
+  documentsToMove: z.number().int().min(0),
+  /** Category entries (folders without or with files) that get the new main category. */
+  categoryEntries: z.number().int().min(0),
+  /** Files that stay where they are: target name taken, file changed or missing; nothing is overwritten or merged. */
+  notMoved: z.array(z.object({ documentId: Id, title: z.string(), from: z.string().nullable(), reason: z.string() })),
+  /** Documents without an archive file keep their old path and their old main category stays for them. */
+  withoutFile: z.number().int().min(0),
+});
+export type CategoryMigrationPlan = z.infer<typeof CategoryMigrationPlan>;
+
+export const CategoryMigrationResult = z.object({
+  moved: z.number().int().min(0),
+  notMoved: CategoryMigrationPlan.shape.notMoved,
+  categoryEntriesRenamed: z.number().int().min(0),
+  failed: z.number().int().min(0),
+});
+export type CategoryMigrationResult = z.infer<typeof CategoryMigrationResult>;
+
 export const BackupInfo = z.object({
   name: z.string(),
   path: z.string(),

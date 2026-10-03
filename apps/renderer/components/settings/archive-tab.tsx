@@ -13,6 +13,7 @@ import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { IpcOutput } from '@archivist/shared';
 import { ArchiveRootSection } from './archive-root';
+import { CategoryMigrationSection } from './category-migration-section';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 import { TrashSection } from './trash-section';
 
@@ -82,6 +83,8 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           </Button>
         </div>
       </Section>
+
+      <CategoryMigrationSection />
 
       <Section title="Archivzustand" description="Prüft, ob alle archivierten Dateien noch an ihrem Platz und unverändert sind.">
         <div className="flex flex-wrap gap-2">

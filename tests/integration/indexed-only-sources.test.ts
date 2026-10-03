@@ -9,7 +9,7 @@ import { classification } from '../helpers/document-classifications';
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto', scanEnabled: true });
-  app.llm.on('DocumentClassification', () => classification({ title: 'Reiseplanung', summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Reiseplanung', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes' }));
 });
 afterEach(async () => {
   await app.cleanup();
@@ -23,7 +23,7 @@ const docs = () => app.services.database.sqlite.prepare("SELECT id, status FROM 
 
 async function archive(id: string, mode: 'index_only' | 'copy') {
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode, categoryPath: 'work/notes' }],
+    items: [{ documentId: id, mode, categoryPath: 'Arbeit/notes' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

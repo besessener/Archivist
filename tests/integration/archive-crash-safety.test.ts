@@ -10,7 +10,7 @@ import { classification } from '../helpers/document-classifications';
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.on('DocumentClassification', () => classification({ title: 'Testdokument', summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Testdokument', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes' }));
 });
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -42,7 +42,7 @@ async function imported(name: string, content: string) {
 
 const archive = (documentId: string) =>
   app.ok('documents:archive', {
-    items: [{ documentId, mode: 'copy', categoryPath: 'work/notes' }],
+    items: [{ documentId, mode: 'copy', categoryPath: 'Arbeit/notes' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

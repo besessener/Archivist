@@ -42,7 +42,7 @@ export function specialTaskTools(deps: ToolDeps): AgentTool[] {
       name: 'file_mail_thread',
       description:
         'Legt einen E-Mail-Verlauf (D…/S… aus email_threads) zusammen ab: die Nachrichten werden mit der ersten verknüpft (bestätigt) und in einen gemeinsamen Ordner verschoben. Rückgängig mit dem Lauf. Eine neue Hauptkategorie fragt immer nach.',
-      schema: z.object({ documents: list, folder: z.string().min(1).describe('gemeinsamer Zielordner, z. B. "private/korrespondenz/angebot-kueche"') }),
+      schema: z.object({ documents: list, folder: z.string().min(1).describe('gemeinsamer Zielordner, z. B. "Privat/Korrespondenz/Angebot-Küche"') }),
       risk: (a) => (newMainCategory(deps, a.folder) ? 'critical' : 'write'),
       count: (a, ctx) => affectedCount(ctx, a.documents),
       label: (a) => `Lege einen E-Mail-Verlauf in ${a.folder} ab`,

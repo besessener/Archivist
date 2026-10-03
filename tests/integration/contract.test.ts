@@ -15,7 +15,7 @@ beforeAll(async () => {
     persons: ['Anna'],
     dates: [{ date: '2026-05-04', label: null }],
     tags: ['jf'],
-    location: { categoryPath: 'work/meetings/2026', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.8 },
+    location: { categoryPath: 'Arbeit/meetings/2026', fileName: null, newMainCategory: false, rationale: 'x', confidence: 0.8 },
     decisions: [{ title: 'Pause', decisionText: 'Nordlicht wird pausiert.', decidedAt: '2026-05-04', participants: [] }],
     openItems: [{ title: 'Budget klären', description: 'Budget muss noch geklärt werden', dueAt: null }],
     confidence: 0.8,

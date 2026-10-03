@@ -18,25 +18,25 @@ const relationsBetween = (a: string, b: string) =>
 
 describe('Agent runs: undo (#299)', () => {
   it('undoes a run with mixed changes (move, metadata, open item, note, link) completely and in reverse order', async () => {
-    const a = await archived(app, { name: 'steuer.md', content: 'Steuerunterlagen 2025', folder: 'work/misc' });
-    const other = await archived(app, { name: 'quittung.md', content: 'Quittung', folder: 'work/misc' });
+    const a = await archived(app, { name: 'steuer.md', content: 'Steuerunterlagen 2025', folder: 'Arbeit/misc' });
+    const other = await archived(app, { name: 'quittung.md', content: 'Quittung', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'steuer' } }] },
       {
         calls: [
-          { name: 'move_documents', args: { documents: ['D1'], folder: 'work/steuer' } },
+          { name: 'move_documents', args: { documents: ['D1'], folder: 'Arbeit/steuer' } },
           { name: 'set_metadata', args: { targets: ['D1'], topic: 'Steuer', addTags: ['2025'] } },
           { name: 'create_open_item', args: { title: 'Steuererklärung 2025 abgeben', dueAt: '2026-12-31' } },
-          { name: 'record_note', args: { content: 'Die Steuerunterlagen 2025 liegen jetzt in work/steuer.' } },
+          { name: 'record_note', args: { content: 'Die Steuerunterlagen 2025 liegen jetzt in Arbeit/steuer.' } },
           { name: 'link', args: { a: 'D1', b: 'K1', relationType: 'relates_to', onUserRequest: true } },
         ],
       },
       // the same document moved once more: undo must go back step by step
-      { calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: 'work/steuer/2025' } }] },
+      { calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: 'Arbeit/steuer/2025' } }] },
       { text: 'Erledigt.' },
     );
     const res = await app.ok('chat:send', {
-      text: 'Verschiebe die Steuerdatei nach work/steuer, setz Thema Steuer, leg einen offenen Punkt an, notier das und verknüpfe das Dokument mit dem Punkt',
+      text: 'Verschiebe die Steuerdatei nach Arbeit/steuer, setz Thema Steuer, leg einen offenen Punkt an, notier das und verknüpfe das Dokument mit dem Punkt',
     });
     const runId = res.assistantMessage.runId!;
     let run = await app.ok('agent:run', { id: runId });
@@ -49,11 +49,11 @@ describe('Agent runs: undo (#299)', () => {
       ['link', 'ok'],
       ['move_documents', 'ok'],
     ]);
-    expect(folderOf(app, a)).toBe('work/steuer/2025');
+    expect(folderOf(app, a)).toBe('Arbeit/steuer/2025');
     expect(doc(a).topicName).toBe('Steuer');
     expect(doc(a).tags).toContain('2025');
     expect(await openItemTitles()).toContain('Steuererklärung 2025 abgeben');
-    expect(noteTexts()).toContain('Die Steuerunterlagen 2025 liegen jetzt in work/steuer.');
+    expect(noteTexts()).toContain('Die Steuerunterlagen 2025 liegen jetzt in Arbeit/steuer.');
     const item = (await app.ok('openItems:list', {})).find((o) => o.title === 'Steuererklärung 2025 abgeben')!;
     expect(relationsBetween(a, item.id).map((r) => r.status)).toEqual(['confirmed']);
     // every change carries the run id
@@ -67,12 +67,12 @@ describe('Agent runs: undo (#299)', () => {
     expect(undo).toMatchObject({ failed: 0, conflicts: [] });
     expect(undo.undone).toBe(run.undoable);
     expect(undo.message).toBe(`${run.undoable} Änderung(en) rückgängig gemacht.`);
-    expect(folderOf(app, a)).toBe('work/misc');
-    expect(folderOf(app, other)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
+    expect(folderOf(app, other)).toBe('Arbeit/misc');
     expect(doc(a).topicName).toBeNull();
     expect(doc(a).tags).not.toContain('2025');
     expect(await openItemTitles()).not.toContain('Steuererklärung 2025 abgeben');
-    expect(noteTexts()).not.toContain('Die Steuerunterlagen 2025 liegen jetzt in work/steuer.');
+    expect(noteTexts()).not.toContain('Die Steuerunterlagen 2025 liegen jetzt in Arbeit/steuer.');
     expect(relationsBetween(a, item.id)).toEqual([]);
     run = await app.ok('agent:run', { id: runId });
     expect(run.undoable).toBe(0);
@@ -82,38 +82,38 @@ describe('Agent runs: undo (#299)', () => {
   });
 
   it('several changes of one document in the same instant are still undone newest first', async () => {
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       {
         calls: [
-          { name: 'move_documents', args: { documents: ['D1'], folder: 'work/eins' } },
-          { name: 'move_documents', args: { documents: ['D1'], folder: 'work/zwei' } },
-          { name: 'move_documents', args: { documents: ['D1'], folder: 'work/drei' } },
+          { name: 'move_documents', args: { documents: ['D1'], folder: 'Arbeit/eins' } },
+          { name: 'move_documents', args: { documents: ['D1'], folder: 'Arbeit/zwei' } },
+          { name: 'move_documents', args: { documents: ['D1'], folder: 'Arbeit/drei' } },
         ],
       },
       { text: 'ok' },
     );
     const res = await app.ok('chat:send', { text: 'Verschiebe a.md dreimal' });
-    expect(folderOf(app, a)).toBe('work/drei');
+    expect(folderOf(app, a)).toBe('Arbeit/drei');
     const runId = res.assistantMessage.runId!;
     // the log has millisecond resolution: give all entries of the run the same instant
     app.services.database.sqlite.prepare('UPDATE audit_log SET at = ? WHERE run_id = ?').run('2026-10-02T10:00:00.000Z', runId);
     const undo = await app.ok('agent:undoRun', { runId });
     expect(undo).toMatchObject({ undone: 3, failed: 0 });
-    expect(folderOf(app, a)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
   });
 
   it('a conflict (the user edited the metadata after the run) blocks exactly that change; the others are undone', async () => {
-    const a = await archived(app, { name: 'vertrag.md', content: 'Vertrag', folder: 'work/misc' });
-    const b = await archived(app, { name: 'angebot.md', content: 'Angebot', folder: 'work/misc' });
+    const a = await archived(app, { name: 'vertrag.md', content: 'Vertrag', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'angebot.md', content: 'Angebot', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'vertrag' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'angebot' } }] },
       {
         calls: [
           { name: 'set_metadata', args: { targets: ['D1'], topic: 'Verträge' } },
-          { name: 'move_documents', args: { documents: ['D2'], folder: 'work/angebote' } },
+          { name: 'move_documents', args: { documents: ['D2'], folder: 'Arbeit/angebote' } },
           { name: 'create_open_item', args: { title: 'Vertrag unterschreiben' } },
         ],
       },
@@ -122,7 +122,7 @@ describe('Agent runs: undo (#299)', () => {
     const res = await app.ok('chat:send', { text: 'Ordne den Vertrag zu, verschiebe das Angebot und leg einen Punkt an' });
     const runId = res.assistantMessage.runId!;
     expect(doc(a).topicName).toBe('Verträge');
-    expect(folderOf(app, b)).toBe('work/angebote');
+    expect(folderOf(app, b)).toBe('Arbeit/angebote');
     const before = (await app.ok('agent:run', { id: runId })).undoable ?? 0;
 
     // the user changes the document by hand afterwards
@@ -136,29 +136,29 @@ describe('Agent runs: undo (#299)', () => {
     // the user's edit and the change it depends on stay
     expect(doc(a).title).toBe('Mietvertrag (von Hand)');
     expect(doc(a).topicName).toBe('Verträge');
-    expect(folderOf(app, b)).toBe('work/misc');
+    expect(folderOf(app, b)).toBe('Arbeit/misc');
     expect(await openItemTitles()).not.toContain('Vertrag unterschreiben');
     expect((await app.ok('agent:run', { id: runId })).undoable).toBe(1);
   });
 
   it('undoStep undoes exactly one step', async () => {
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
-    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'b' } }] },
-      { calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: 'work/x' } }] },
+      { calls: [{ name: 'move_documents', args: { documents: ['D1'], folder: 'Arbeit/x' } }] },
       { calls: [{ name: 'set_metadata', args: { targets: ['D2'], topic: 'Bauen' } }] },
       { text: 'ok' },
     );
-    const res = await app.ok('chat:send', { text: 'Verschiebe a nach work/x und ordne b dem Thema Bauen zu' });
+    const res = await app.ok('chat:send', { text: 'Verschiebe a nach Arbeit/x und ordne b dem Thema Bauen zu' });
     const runId = res.assistantMessage.runId!;
     const run = await app.ok('agent:run', { id: runId });
     const move = run.steps.find((s) => s.tool === 'move_documents')!;
     expect(move.auditIds).toHaveLength(1);
     const undo = await app.ok('agent:undoStep', { runId, stepId: move.id });
     expect(undo).toMatchObject({ undone: 1, failed: 0 });
-    expect(folderOf(app, a)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
     expect(doc(b).topicName).toBe('Bauen');
     expect((await app.ok('agent:run', { id: runId })).undoable).toBe((run.undoable ?? 0) - 1);
     // a second time there is nothing left for this step
@@ -170,9 +170,9 @@ describe('Agent runs: undo (#299)', () => {
 
 describe('Agent runs: relations (#270, #306)', () => {
   it('relations created in a run carry origin agent and the run id; explicit request → confirmed, own accord → proposed', async () => {
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
-    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
-    const c = await archived(app, { name: 'c.md', content: 'C', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'Arbeit/misc' });
+    const c = await archived(app, { name: 'c.md', content: 'C', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'b' } }] },
@@ -198,8 +198,8 @@ describe('Agent runs: relations (#270, #306)', () => {
   });
 
   it('in the background even an „explicit“ link stays a proposal', async () => {
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
-    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { name: 'a' } }] },
       { calls: [{ name: 'find_documents', args: { name: 'b' } }] },
@@ -212,8 +212,8 @@ describe('Agent runs: relations (#270, #306)', () => {
   });
 
   it('a pair the user rejected is never proposed again', async () => {
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
-    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'Arbeit/misc' });
     const linkScript = (onUserRequest: boolean) =>
       scriptedTurns(
         { calls: [{ name: 'find_documents', args: { name: 'a' } }] },

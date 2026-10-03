@@ -11,10 +11,10 @@ test.describe('open document file', () => {
   test('a missing archive copy is reported instead of opening a changed original', async ({ on, page, workspace }, testInfo) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const archivedFile = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
+    const archivedFile = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await app.inbox.do.openArchivePlan();
     await app.inbox.do.confirmArchive();
     await app.inbox.locators.archivePlan.close.click();

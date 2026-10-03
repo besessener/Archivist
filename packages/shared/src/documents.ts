@@ -12,7 +12,7 @@ export type ArchiveMode = z.infer<typeof ArchiveMode>;
 export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'xlsx', 'txt', 'md', 'markdown', 'eml', 'png', 'jpg', 'jpeg'] as const;
 
 export const ArchiveLocationProposal = z.object({
-  categoryPath: z.string().min(1).describe('Relativer, menschenlesbarer Ordnerpfad, z. B. work/projects/prod-plat'),
+  categoryPath: z.string().min(1).describe('Relativer, menschenlesbarer Ordnerpfad, z. B. Arbeit/Projekte/prod-plat'),
   fileName: z.string().nullish(),
   newMainCategory: z.boolean().default(false),
   rationale: z.string().default(''),
