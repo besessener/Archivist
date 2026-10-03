@@ -60,9 +60,10 @@ export class IntentClassifier {
   }
 
   private promptInput(turn: ChatTurn, refs: PromptRefs): string {
+    const query = new Set(tokenize(turn.text));
+    // names sharing words with the message come first; the rest stay alphabetical (#197)
     const known = (type: 'topic' | 'project') =>
-      this.deps.graph
-        .listEntities({ type, limit: 40, confirmedOnly: true })
+      mostRelevant(this.deps.graph.listEntities({ type, limit: 500, confirmedOnly: true }), { query, keyOf: (e) => e.name, limit: 40 })
         .map((e) => e.name)
         .join(', ') || '–';
     return `Heutiges Datum: ${promptNow(new Date())}\nOffene Rückfrage: ${pendingHint(turn.state.pending, this.deps)}\nZuletzt gezeigte Dokumente: ${turn.state.last?.documentIds?.length ?? 0}\n${refs.text}\nBekannte Themen: ${known('topic')}\nBekannte Projekte: ${known('project')}\n\n${historyHint(this.helpers.store.history(turn.conversationId))}Nachricht des Benutzers:\n${turn.text}`;
