@@ -50,10 +50,12 @@ test.describe('token use and thinking depth (#153, #154)', () => {
     await effort.selectOption('max');
     await save.click();
     await expect.poll(() => savedLlm(workspace.dataDir).reasoningEffort).toBe('max');
+    await expect(save).toBeEnabled();
 
     await effort.selectOption('none');
     await save.click();
     await expect.poll(() => savedLlm(workspace.dataDir).reasoningEffort).toBe('none');
+    await expect(save).toBeEnabled();
 
     await effort.selectOption('');
     await save.click();
