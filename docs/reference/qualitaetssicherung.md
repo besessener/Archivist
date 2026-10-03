@@ -4,7 +4,7 @@
 
 Unit- und Integrationstests laufen gegen eine echte SQLite-Datenbank und einen Fake-LLM-Endpunkt. Abgedeckt sind u. a.:
 
-Decision-Rückfragen, Agentenläufe gegen beide Anbieter-Formate (OpenAI Responses, Anthropic Messages), Zod-Validierung von LLM-Ausgaben, IPC-Eingabevalidierung, Pfadnormalisierung, Path-Traversal, Symlink-Ausbruch, Scan-Bereichsgrenzen, Datei-Ausschlüsse, Duplikaterkennung, Bestätigungsworkflows, Archivieren durch Kopieren/Verschieben, Undo (inkl. Konflikte), Datenbankmigrationen, Job-Queue nach Neustart, Widerspruchserkennung mit kontrollierten Beispielen, Maskierung von Schlüsseln in Logs, Verhalten bei nicht erreichbarem LLM, Worker-Threads, Backups, Renderer-Auslieferung/CSP.
+Decision-Rückfragen, Agentenläufe gegen beide Anbieter-Formate (OpenAI Responses, Anthropic Messages), Zod-Validierung von LLM-Ausgaben, IPC-Eingabevalidierung, Pfadnormalisierung, Path-Traversal, Symlink-Ausbruch, Scan-Bereichsgrenzen, Datei-Ausschlüsse, Duplikaterkennung, Bestätigungsworkflows, Archivieren durch Kopieren/Verschieben, Undo (inkl. Konflikte), Datenbankmigrationen (inkl. Konsistenz von Journal, SQL-Dateien und Snapshots, siehe [Datenbankschema ändern](../how-to/datenbankschema-aendern.md)), Job-Queue nach Neustart, Widerspruchserkennung mit kontrollierten Beispielen, Maskierung von Schlüsseln in Logs, Verhalten bei nicht erreichbarem LLM, Worker-Threads, Backups, Renderer-Auslieferung/CSP.
 
 **Coverage**: `npm run test:coverage` (Bericht in `coverage/`). Die Schwellen in `vitest.config.mts` liegen knapp unter dem Ist-Wert und werden nur angehoben, nie gesenkt.
 
