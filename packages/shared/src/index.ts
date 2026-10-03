@@ -16,5 +16,6 @@ export * from './scan';
 export * from './status';
 export * from './settings';
 export * from './llm';
+export * from './llm-base-url';
 export * from './agent';
 export * from './ipc';

@@ -13,17 +13,19 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 | Modellname | `llm.model` |
 | Reasoning effort (optional) | `llm.reasoningEffort` |
 | Timeout | `llm.timeoutMs` |
-| maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben) |
+| maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben; für Embeddings gilt sie als Obergrenze je Eintrag, siehe [Anfragen](#anfragen)) |
 | Embedding-Modell (optional) | `llm.embeddingModel` |
 
 ## Anfragen
 
 - Verwendet wird die OpenAI-kompatible **Responses API**: `POST {baseUrl}/responses`, z. B. mit `https://<resource>.openai.azure.com/openai/v1`.
-- Authentifizierung wird als `Authorization: Bearer` **und** `api-key` gesendet.
+- Authentifizierung: Der API-Key geht in genau **einem** Header. Hosts unter `azure.com` (auch `azure.us`, `azure.cn`) bekommen `api-key`, jeder andere Endpunkt `Authorization: Bearer`. Die Anthropic Messages API geht über das offizielle SDK und damit mit dessen Header. Ein Azure-Endpunkt hinter einer eigenen Domain (z. B. API-Gateway) wird nicht als Azure erkannt und bekommt `Authorization: Bearer`.
+- Base URL: `https://` ist immer erlaubt, `http://` nur für den eigenen Rechner (`localhost`, `127.0.0.0/8`, `[::1]`), z. B. ein lokaler Ollama-Server. Jede andere `http://`-Adresse – auch `http://localhost.example.com` oder `http://127.0.0.1.example.com` – wird abgelehnt, weil sonst der API-Key und Dokumentinhalte im Klartext durchs Netz gehen. Leer bedeutet „nicht konfiguriert“.
+- Die Regel gilt in der Oberfläche (Meldung am Feld, Speichern und Verbindungstest gesperrt), beim Speichern der Einstellungen im Hauptprozess (die Oberfläche kann das nicht umgehen) und in jedem LLM-Aufruf, auch im Verbindungstest. Steht aus einer älteren Version noch eine nicht erlaubte Adresse in `settings.json`, startet Archivist normal; jeder Aufruf scheitert dann ohne etwas zu senden mit der Fehlermeldung (Kategorie `validation_error`), bis du die Adresse korrigierst.
 - Gesendet wird mit `store: false`.
 - Lehnt ein kompatibler Endpunkt einen optionalen Parameter ab, wird nur genau dieser weggelassen (und für Endpunkt + Modell gemerkt). `store: false` entfällt nur, wenn der Endpunkt `store` selbst ablehnt.
 - Embeddings über `/embeddings`, sofern ein Embedding-Modell konfiguriert ist und der Datenschutzmodus es erlaubt. Gesendet werden maskierte Abschnitte freigegebener Dokumente und – nur im Modus `auto` – deine Entscheidungen, Notizen, offenen Punkte und Ereignisse sowie Suchanfragen; jede Übertragung steht im Übertragungsprotokoll.
-
+- Was ein Eintrag an `/embeddings` schickt, ist auf `llm.maxInputChars` Zeichen **insgesamt** begrenzt (Standard 24 000), gezählt vor der Maskierung. Ein Dokument wird in Abschnitte von rund 900 Zeichen geteilt, jeder Abschnitt mit dem Titel davor; gesendet werden die Abschnitte von vorn, solange sie vollständig in die Grenze passen. Alles dahinter – bei langen Dokumenten der größte Teil – geht nicht an den Endpunkt. Diese Abschnitte bekommen nur den lokalen Vektor, bleiben also über die Volltext- und die lokale Vektorsuche auffindbar. Ist schon der erste Abschnitt länger als die Grenze, wird er gekürzt. Im Übertragungsprotokoll steht die tatsächlich gesendete Größe.
 - Die Diagnose des Agenten (`diagnose`) schickt im Modus „automatisch“ einmal `POST {baseUrl}/embeddings` mit dem festen Text „Verbindungstest“ (ohne Dokument-IDs), um die Antwortzeit zu messen; sie steht im Übertragungsprotokoll mit Zweck „Diagnose: Embedding-Endpunkt“. Das Protokoll, das `read_logs` liest, geht als Werkzeugergebnis (maskiert, ohne ausgeschlossene Dateien) mit der Agentenanfrage hinaus ([Agentenmodus](agentenmodus.md#archivist-untersuchen)).
 
 ## Strukturierte Ausgaben

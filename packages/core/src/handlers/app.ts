@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { AppStatus } from '@archivist/shared';
 import type { Services } from '../create-services';
+import type { DocRow } from '../services/document-model';
 import { enqueueReembedding } from '../services/reembedding';
 import { AppError, permissionError } from '../util/errors';
 import { isInside } from '../util/paths';
@@ -45,20 +46,35 @@ function appStatus(services: Services, host: HostApi): AppStatus {
   };
 }
 
+const ARCHIVE_COPY_MISSING =
+  'Die Archivkopie dieses Dokuments fehlt und es gibt keine unveränderte Kopie an anderer Stelle. Wurde sie umbenannt oder verschoben, ordne sie unter Einstellungen → Archiv mit „Archivzustand prüfen“ und „Verschobene Dateien neu verknüpfen“ wieder zu.';
+
+/** Archived documents open their archive copy, or another file only if it still has the stored checksum; others take inbox, then original. */
+async function locateFile(services: Services, document: DocRow, archiveRoot: string): Promise<string> {
+  const others = [document.stagedPath, document.sourcePath].filter(
+    (candidate): candidate is string => candidate !== null && services.scanner.fileExists(candidate),
+  );
+  if (!document.archiveRelPath) {
+    if (others.length === 0) throw new AppError('filesystem_error', 'Die Datei wurde nicht gefunden (verschoben oder gelöscht?).');
+    return others[0]!;
+  }
+  const archived = path.join(archiveRoot, ...document.archiveRelPath.split('/'));
+  if (services.scanner.fileExists(archived)) return archived;
+  for (const candidate of others) {
+    const checksum = await services.pool.run('hashFile', { path: candidate }).catch(() => null);
+    if (checksum === document.sha256) return candidate;
+  }
+  throw new AppError('filesystem_error', ARCHIVE_COPY_MISSING);
+}
+
 /** The existing file of a document, only at a location Archivist itself knows: archive, inbox or the original document. */
-function documentPath(services: Services, request: { documentId: string; allowQuarantine?: boolean }): string {
+async function documentPath(services: Services, request: { documentId: string; allowQuarantine?: boolean }): Promise<string> {
   const document = services.documents.getRow(request.documentId);
   // a quarantined file is suspicious: never open it, only reveal it in the file manager
   if (document.status === 'quarantined' && !request.allowQuarantine)
     throw permissionError('Dateien in Quarantäne werden nicht geöffnet. Nutze „Ordner öffnen“, um sie im Dateimanager zu prüfen.');
   const archiveRoot = services.settings.get().archiveRoot;
-  const candidates = [
-    document.archiveRelPath ? path.join(archiveRoot, ...document.archiveRelPath.split('/')) : null,
-    document.stagedPath,
-    document.sourcePath,
-  ].filter((candidate): candidate is string => Boolean(candidate));
-  const found = candidates.find((candidate) => services.scanner.fileExists(candidate));
-  if (!found) throw new AppError('filesystem_error', 'Die Datei wurde nicht gefunden (verschoben oder gelöscht?).');
+  const found = await locateFile(services, document, archiveRoot);
   const roots = [archiveRoot, services.paths.inbox, ...(request.allowQuarantine ? [services.paths.quarantine] : [])];
   const allowed = roots.some((root) => isInside(root, found)) || found === document.sourcePath;
   if (!allowed) throw permissionError('Dieser Pfad darf nicht geöffnet werden.');
@@ -79,22 +95,22 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
       return { ok: true as const };
     },
     'app:selectDirectory': async (input) => ({ path: await host.selectDirectory(input.title) }),
-    'app:openPath': async (input) => openWithHost(host, documentPath(services, { documentId: input.documentId })),
-    'app:revealPath': (input) => {
-      host.revealPath(documentPath(services, { documentId: input.documentId, allowQuarantine: true }));
+    'app:openPath': async (input) => openWithHost(host, await documentPath(services, { documentId: input.documentId })),
+    'app:revealPath': async (input) => {
+      host.revealPath(await documentPath(services, { documentId: input.documentId, allowQuarantine: true }));
       return { ok: true as const };
     },
     'app:openScanFile': async (input) => openWithHost(host, services.scanner.assertOpenable(services.scanner.getFile(input.scanFileId))),
 
     'settings:get': () => ({ settings: services.settings.get(), hasApiKey: services.secrets.hasApiKey() }),
     'settings:update': (input) => {
-      const before = services.settings.get().archiveRoot;
       const embeddingBefore = services.settings.get().llm.embeddingModel;
-      if (input.archiveRoot !== undefined && services.archive.isRootChangeActive())
-        throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
+      if (input.archiveRoot !== undefined) {
+        if (services.archive.isRootChangeActive())
+          throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
+        services.archiveRoot.assertDirectChangeAllowed(input.archiveRoot);
+      }
       const settings = services.settings.update(input);
-      // a direct path change (without moving the archive) warns when archived documents are not found there
-      if (settings.archiveRoot !== before) services.archiveRoot.warnUnreachable(settings.archiveRoot);
       // vectors of another model are useless for the new one: move the entries over in the background (#173)
       if (settings.llm.embeddingModel !== embeddingBefore) enqueueReembedding(services.jobs);
       return { settings };

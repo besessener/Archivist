@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Settings, SettingsPatch } from '@archivist/shared';
+import { Settings, SettingsPatch, checkLlmBaseUrl } from '@archivist/shared';
 import type { EventBus } from '../context';
 import type { NotificationInput } from './notifications';
 import { AppError, validationError } from '../util/errors';
@@ -181,9 +181,14 @@ export class SettingsService {
     return this.get();
   }
 
-  /** The absolute archive path (empty means the default), created if missing and checked for write access. */
+  /** The absolute archive path; empty means the default. */
+  resolveArchiveRoot(archiveRoot: string): string {
+    return path.resolve(archiveRoot.trim() ? archiveRoot : this.defaultArchiveRoot);
+  }
+
+  /** The absolute archive path, created if missing and checked for write access. */
   private writableArchiveRoot(archiveRoot: string): string {
-    const root = path.resolve(archiveRoot.trim() ? archiveRoot : this.defaultArchiveRoot);
+    const root = this.resolveArchiveRoot(archiveRoot);
     try {
       fs.mkdirSync(root, { recursive: true });
       fs.accessSync(root, fs.constants.W_OK);
@@ -194,18 +199,11 @@ export class SettingsService {
   }
 }
 
-/** The trimmed base URL without trailing slashes; it must be http(s) unless empty. */
+/** The trimmed base URL without trailing slashes; https:// (or http:// on this machine only) unless empty. */
 function checkedBaseUrl(baseUrl: string): string {
+  const check = checkLlmBaseUrl(baseUrl);
+  if (!check.ok) throw validationError(check.message);
   let url = baseUrl.trim();
-  if (url && !isHttpUrl(url)) throw validationError('Die Base URL muss mit http:// oder https:// beginnen.');
   while (url.endsWith('/')) url = url.slice(0, -1);
   return url;
-}
-
-function isHttpUrl(url: string): boolean {
-  try {
-    return /^https?:$/.test(new URL(url).protocol);
-  } catch {
-    return false;
-  }
 }

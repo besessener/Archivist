@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import type { IpcOutput } from '@archivist/shared';
+import { checkLlmBaseUrl, type IpcOutput } from '@archivist/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useApp } from '@/lib/app-context';
@@ -161,7 +161,7 @@ export function SetupWizard() {
               </Button>
             )}
             {step === 'llm' && (
-              <Button onClick={() => void saveLlmAndNext()} disabled={busy} data-testid="setup-next">
+              <Button onClick={() => void saveLlmAndNext()} disabled={busy || !checkLlmBaseUrl(baseUrl).ok} data-testid="setup-next">
                 {busy && <Loader2 className="animate-spin" aria-hidden />}
                 {test?.ok ? 'Weiter' : 'Ohne Test weiter'}
               </Button>

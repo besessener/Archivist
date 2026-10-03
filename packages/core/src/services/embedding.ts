@@ -1,4 +1,5 @@
 import type { LlmService } from './llm';
+import { withinCharBudget } from './llm/embedding-budget';
 import type { SettingsService } from './settings';
 import type { Logger } from '../util/logger';
 import { stripDiacritics, tokenize } from '../util/text';
@@ -61,14 +62,18 @@ export class EmbeddingService {
     return allowRemote && llmSettings.embeddingModel && this.llm.isConfigured() ? llmSettings.embeddingModel : LOCAL_MODEL;
   }
 
-  /** `allowRemote=false` forces local vectors (e.g. for documents excluded from external analysis). */
+  /**
+   * `allowRemote=false` forces local vectors (e.g. for documents excluded from external analysis).
+   * A remote request carries at most `maxInputChars` characters in total: texts beyond that get no vector (`vectors` is then shorter than `texts`).
+   */
   async embed(texts: string[], opts: { allowRemote: boolean; purpose: string; documentIds?: string[] }): Promise<EmbedResult> {
     const model = this.currentModel({ allowRemote: opts.allowRemote });
     if (model !== LOCAL_MODEL) {
       try {
+        const sent = withinCharBudget(texts, this.settings.get().llm.maxInputChars);
         const out: number[][] = [];
-        for (let i = 0; i < texts.length; i += 32)
-          out.push(...(await this.llm.embeddings(texts.slice(i, i + 32), { purpose: opts.purpose, documentIds: opts.documentIds })));
+        for (let i = 0; i < sent.length; i += 32)
+          out.push(...(await this.llm.embeddings(sent.slice(i, i + 32), { purpose: opts.purpose, documentIds: opts.documentIds })));
         const vectors = out.map((v) => {
           const f = Float32Array.from(v);
           let n = 0;

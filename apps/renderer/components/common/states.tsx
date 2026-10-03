@@ -87,12 +87,15 @@ export function Field({
   label,
   hint,
   htmlFor,
+  error,
   children,
   className,
 }: {
   label: string;
   hint?: React.ReactNode;
   htmlFor?: string;
+  /** Shown below the field as `${htmlFor}-error`; the input points to it with `aria-describedby`. */
+  error?: string;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -103,6 +106,11 @@ export function Field({
       </label>
       {children}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {error && htmlFor && (
+        <p id={`${htmlFor}-error`} className="text-xs text-destructive" data-testid={`${htmlFor}-error`}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }
