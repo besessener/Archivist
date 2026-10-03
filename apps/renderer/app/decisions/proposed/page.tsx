@@ -34,7 +34,11 @@ export default function ProposedDecisionsPage() {
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
       {data && data.length === 0 && (
-        <EmptyState icon={<Gavel />} title="Keine offenen Vorschläge" description="Wenn ich in einem archivierten Dokument eine Entscheidung finde, erscheint sie hier." />
+        <EmptyState
+          icon={<Gavel />}
+          title="Keine offenen Vorschläge"
+          description="Wenn ich in einem archivierten Dokument eine Entscheidung finde, erscheint sie hier."
+        />
       )}
       <ul className="flex flex-col gap-3" data-testid="proposed-decision-list">
         {(data ?? []).map((action) => (

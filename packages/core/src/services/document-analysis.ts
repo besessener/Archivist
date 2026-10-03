@@ -7,6 +7,7 @@ import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
 import { classifyLocally } from './classifier';
 import { classificationRequest, mergeLlmClassification, type Classification, type KnownSubjects } from './document-classification';
+import { MAX_LLM_PARTS, mergeParts, partSize, splitIntoParts } from './document-parts';
 import { ARCHIVED_STATUSES, extractFile, extractedColumns, type DocRow, type DocumentDeps } from './document-model';
 import { isJobCancelled, isJobInterrupted } from './jobs';
 import type { PrivacyDecision } from './privacy';
@@ -29,7 +30,11 @@ interface ClassifiedText {
   classification: Classification;
   usedLlm: boolean;
   warning: string | null;
+  /** What the LLM read of the text: characters and requests (both 0 without LLM). */
+  read: { chars: number; parts: number };
 }
+
+const NOTHING_READ = { chars: 0, parts: 0 };
 
 const skipped = (): AnalysisResult => ({ usedLlm: false, warning: null, skipped: true });
 
@@ -155,7 +160,9 @@ export class DocumentAnalyzer {
       }),
       fileNameHint: null,
     };
-    const classified = canUseLlm ? await this.classifyWithLlm(row, { local, text, known, signal }) : { classification: local, usedLlm: false, warning: null };
+    const classified = canUseLlm
+      ? await this.classifyWithLlm(row, { local, text, known, signal })
+      : { classification: local, usedLlm: false, warning: null, read: NOTHING_READ };
     signal?.throwIfAborted(); // last checkpoint: after this the proposal is stored
     return this.storeProposal(row, { parsed, classified, decision });
   }
@@ -167,10 +174,9 @@ export class DocumentAnalyzer {
   ): Promise<ClassifiedText> {
     const { local, text, known, signal } = input;
     try {
-      const confirmed = { topics: this.knownNames('topic', { confirmedOnly: true }), projects: this.knownNames('project', { confirmedOnly: true }) };
-      const request = classificationRequest(row, { text, mainCategories: this.deps.categories.mainCategories(), confirmed });
-      const result = await this.deps.llm.completeJson(DocumentClassification, { ...request, signal });
-      return { classification: mergeLlmClassification(local, { result, text, known }), usedLlm: true, warning: null };
+      const { results, read } = await this.classifyInParts(row, { text, signal });
+      const merged = mergeParts(results);
+      return { classification: mergeLlmClassification(local, { result: merged, text, known }), usedLlm: true, warning: null, read };
     } catch (err) {
       signal?.throwIfAborted(); // a cancelled request is no LLM problem – stop instead of falling back
       const warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
@@ -183,12 +189,43 @@ export class DocumentAnalyzer {
         proposedActions: [{ label: 'Einstellungen öffnen', kind: 'navigate', target: '/settings/' }],
         dedupeKey: `llm-error:${Math.floor(Date.now() / 600_000)}`,
       });
-      return { classification: local, usedLlm: false, warning };
+      return { classification: local, usedLlm: false, warning, read: NOTHING_READ };
     }
   }
 
+  /** A long text is read in consecutive parts, each its own checked, masked and logged request; a failing later part keeps what was read so far. */
+  private async classifyInParts(
+    row: DocRow,
+    input: { text: string; signal?: AbortSignal },
+  ): Promise<{ results: [DocumentClassification, ...DocumentClassification[]]; read: ClassifiedText['read'] }> {
+    const { text, signal } = input;
+    const confirmed = { topics: this.knownNames('topic', { confirmedOnly: true }), projects: this.knownNames('project', { confirmedOnly: true }) };
+    const context = { mainCategories: this.deps.categories.mainCategories(), confirmed };
+    const promptChars = classificationRequest(row, { ...context, text: '', part: { number: MAX_LLM_PARTS, of: MAX_LLM_PARTS } }).input.length;
+    const parts = splitIntoParts(text, partSize({ maxInputChars: this.deps.settings.get().llm.maxInputChars, promptChars }));
+    const complete = (part: string, number: number) =>
+      this.deps.llm.completeJson(DocumentClassification, {
+        ...classificationRequest(row, { ...context, text: part, part: parts.length > 1 ? { number, of: parts.length } : undefined }),
+        signal,
+      });
+    const results: [DocumentClassification, ...DocumentClassification[]] = [await complete(parts[0]!, 1)];
+    let chars = parts[0]!.length;
+    for (const [index, part] of parts.slice(1).entries()) {
+      signal?.throwIfAborted();
+      try {
+        results.push(await complete(part, index + 2));
+        chars += part.length;
+      } catch (err) {
+        signal?.throwIfAborted();
+        this.deps.ctx.logger.warn('documents', 'LLM analysis of a later part failed', { documentId: row.id, part: index + 2, error: err });
+        break;
+      }
+    }
+    return { results, read: { chars, parts: results.length } };
+  }
+
   private async storeProposal(row: DocRow, result: { parsed: ParsedDocument; classified: ClassifiedText; decision: PrivacyDecision }): Promise<AnalysisResult> {
-    const { usedLlm, warning } = result.classified;
+    const { usedLlm, warning, read } = result.classified;
     const c = result.classified.classification;
     const columns = extractedColumns(result.parsed);
     const proposal: DocumentProposal = {
@@ -207,6 +244,7 @@ export class DocumentAnalyzer {
       possibleOpenItems: c.possibleOpenItems,
       duplicateOfDocumentId: this.textDuplicateOf(row.id, columns.textHash),
       analyzedBy: usedLlm ? 'llm' : 'local',
+      coverage: { textChars: result.parsed.text.length, llmChars: read.chars, llmParts: read.parts, extractionTruncated: result.parsed.truncated },
     };
     const title = c.title.slice(0, 200);
     // document, graph node and notice change together: a failure in between leaves none of them

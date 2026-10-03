@@ -51,14 +51,14 @@ function DecisionsInner() {
               <Gavel aria-hidden /> Vorgeschlagene Entscheidungen
             </Button>
             <Button
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-            data-testid="decision-new"
-          >
-            <Plus aria-hidden /> Entscheidung festhalten
-          </Button>
+              onClick={() => {
+                setEditing(null);
+                setFormOpen(true);
+              }}
+              data-testid="decision-new"
+            >
+              <Plus aria-hidden /> Entscheidung festhalten
+            </Button>
           </>
         }
       />

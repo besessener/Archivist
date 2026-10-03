@@ -47,7 +47,10 @@ describe('Local analysis builds a graph without an LLM (#196)', () => {
   });
 
   it('still reads German minutes and does not take a generic folder as a topic', async () => {
-    const id = await archiveOffline('in/Downloads/protokoll.txt', 'Protokoll\nTeilnehmer: Dora Klein, Emil Voss\nWir haben beschlossen, den Termin zu verschieben.');
+    const id = await archiveOffline(
+      'in/Downloads/protokoll.txt',
+      'Protokoll\nTeilnehmer: Dora Klein, Emil Voss\nWir haben beschlossen, den Termin zu verschieben.',
+    );
 
     const doc = await app.ok('documents:get', { id });
     expect(doc.persons).toEqual(['Dora Klein', 'Emil Voss']);

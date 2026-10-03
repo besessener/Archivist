@@ -35,6 +35,6 @@ Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `dia
 
 ## Prüfen, was gesendet wurde
 
-Unter **Einstellungen → Datenschutz → An die KI übertragene Inhalte** steht jede Übertragung mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und einer gekürzten, maskierten Vorschau. Bei Agentenläufen zählt die Anzahl alle bis dahin im Lauf maskierten Stellen – in deiner Nachricht, in der Systemanweisung (Gelerntes, Profil) und in Werkzeugergebnissen.
+Unter **Einstellungen → Datenschutz → An die KI übertragene Inhalte** steht jede Übertragung mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und einer gekürzten, maskierten Vorschau. Ein langes Dokument erscheint mit einem Eintrag je gelesenem Teil („Teil 2 von 4“), jeder maskiert und mit der Dokument-ID. Bei Agentenläufen zählt die Anzahl alle bis dahin im Lauf maskierten Stellen – in deiner Nachricht, in der Systemanweisung (Gelerntes, Profil) und in Werkzeugergebnissen.
 
 Hintergrund: [Sicherheits- und Datenschutzmodell](../explanation/sicherheitsmodell.md).
