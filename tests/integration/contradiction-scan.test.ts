@@ -71,7 +71,7 @@ describe('Contradiction scan with an LLM (#179)', () => {
     app.llm.down = true;
     await decision('Wir führen das Projekt weiter.', '2026-01-10', { topic: 'Planung', project: 'Haus' });
     await decision('Wir stoppen das Projekt.', '2026-03-01', { topic: 'Finanzen', project: 'Haus' });
-    await decision('Wir stoppen das Projekt.', '2026-03-02', { topic: 'Finanzen', project: 'Garten' });
+    await decision('Wir stoppen das Vorhaben.', '2026-03-02', { topic: 'Finanzen', project: 'Garten' });
 
     const [found] = contradictionsWith('detected');
     expect(contradictionsWith('detected')).toHaveLength(1);
@@ -277,9 +277,25 @@ describe('„Möglicherweise überholt“ needs a common subject (#186)', () => 
     ['undated', null],
   ])('flags identical %s decisions as a duplicate', async (_name, decidedAt) => {
     app.llm.down = true;
-    const same = { unknownFields: ['decidedAt'] };
-    await decision('Das Meeting findet dienstags statt.', decidedAt, same);
-    await decision('Das Meeting findet dienstags statt.', decidedAt, same);
+    // rows from before the duplicate check at creation exist, so they are written past it
+    const legacy = () =>
+      app.services.decisions.create(
+        {
+          title: 'Meeting',
+          decisionText: 'Das Meeting findet dienstags statt.',
+          topic: 'prod-plat',
+          decidedAt,
+          participants: ['Anna'],
+          alternatives: [],
+          unknownFields: ['decidedAt'],
+          sourceIds: [],
+          confidence: 0.9,
+          asDraft: false,
+        },
+        { actor: 'user', trigger: 'test' },
+      );
+    legacy();
+    legacy();
 
     await app.services.consistency.run({ trigger: 'test' });
 
