@@ -93,6 +93,23 @@ test.describe('analysing selected files in the privacy mode „automatisch“', 
   });
 });
 
+test('without a configured LLM, „automatisch“ offers only a local analysis and sends nothing', async ({ llm, on, page, workspace }) => {
+  const { setup, navigation, scan } = on(page);
+  await setup.do.completeWithoutLlm('auto');
+  await navigation.do.open('scan');
+  await scan.do.allowDirectory(path.basename(workspace.downloads));
+  workspace.addDownload('urlaub.txt', 'Urlaubsantrag für den 12.06.2026, bitte genehmigen.');
+  await scan.do.scan();
+  await expect(scan.locators.fileRows).toHaveCount(1, { timeout: 30_000 });
+
+  await scan.do.openAnalysis('urlaub.txt');
+  await expect(scan.locators.buttons.confirmAnalysis).toHaveText('Nur lokal analysieren');
+  await scan.locators.buttons.confirmAnalysis.click();
+  await expect(scan.locators.toasts.filter({ hasText: 'Lokale Analyse gestartet.' })).toBeVisible();
+  await expect(scan.locators.analyzedRows).toHaveCount(1, { timeout: 30_000 });
+  expect(llm.calls).toHaveLength(0);
+});
+
 test.describe('analysing all new files at once (#228)', () => {
   test.beforeEach(async ({ llm, on, page, workspace }) => {
     const app = on(page);

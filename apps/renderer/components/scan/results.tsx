@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox, CheckboxField } from '@/components/ui/checkbox';
 import { Select } from '@/components/ui/select';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
+import { useApp } from '@/lib/app-context';
 import { call } from '@/lib/ipc';
 import { LLM_STATUS_LABELS, SCAN_STATUS_LABELS } from '@/lib/labels';
 import { formatBytes, formatDateTime, formatNumber } from '@/lib/format';
@@ -52,6 +53,7 @@ export function ScanResults() {
   const first = paged.pages?.[0];
   const roots = useQuery('scanner:listDirectories', {}, { scopes: ['scanner'] });
   const { settings } = useSettings();
+  const { status } = useApp();
   const { run } = useRun();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
@@ -68,7 +70,9 @@ export function ScanResults() {
   const llmFiles = selectedFiles.filter((f) => llmAllowedRoots.has(f.rootId) && f.llmStatus !== 'excluded');
   const mode = settings?.privacy.llmMode ?? 'confirm';
   const automatic = mode === 'auto';
-  const sendsToLlm = automatic ? llmFiles.length > 0 : llmOk;
+  // while the status loads, assume configured: claiming „lokal“ for files that are sent would be the worse mistake
+  const llmConfigured = status ? status.llm.configured : true;
+  const sendsToLlm = llmConfigured && (automatic ? llmFiles.length > 0 : llmOk);
   const toggle = (file: ScanFileRecord, checked: boolean) => setSelected((previous) => withMembership(previous, { value: file.id, present: checked }));
 
   return (

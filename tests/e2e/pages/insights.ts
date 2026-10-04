@@ -19,6 +19,7 @@ export function initInsights(page: Page) {
     resolveDialog: {
       root: page.getByTestId('confirm-dialog'),
       supersede: page.getByTestId('contradiction-supersede'),
+      orderUnknown: page.getByTestId('contradiction-order-unknown'),
     },
     buttons: {
       runCheck: page.getByTestId('consistency-run'),

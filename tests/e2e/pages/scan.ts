@@ -19,6 +19,7 @@ export function initScan(page: Page) {
     allowLlm: page.getByTestId('scan-llm-checkbox'),
     /** The analysis dialog's note that „automatisch“ sends without asking. */
     automaticNote: page.getByTestId('scan-llm-automatic'),
+    toasts: page.getByTestId('toast'),
     proposals: page.getByTestId('scan-proposal'),
     /** The archive dialog of a proposal group. */
     archiveDialog: {

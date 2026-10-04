@@ -18,16 +18,19 @@ test.describe('contradictions: resolving a pair of decisions', () => {
     await app.insights.locators.contradictions.resolve.click();
     const dialog = app.insights.locators.resolveDialog;
     await expect(dialog.supersede).toBeChecked();
+    await expect(dialog.orderUnknown).toHaveCount(0);
     await expect(dialog.root).toContainText(/Neu: Wir führen das Projekt Nordlicht weiter.*Alt: Wir pausieren das Projekt Nordlicht/s);
   });
 
-  test('two decisions of the same day do not pre-select which one supersedes the other', async ({ on, page }) => {
+  test('two decisions of the same day do not pre-select which one supersedes the other and say the order is unknown', async ({ on, page }) => {
     const app = on(page);
     await app.decisions.do.create({ text: PAUSE, isoDate: '2026-05-01', topic: 'Nordlicht', participants: 'Anna' });
     await app.decisions.do.create({ text: CONTINUE, isoDate: '2026-05-01', topic: 'Nordlicht', participants: 'Anna' });
 
     await app.navigation.do.open('insights');
     await app.insights.locators.contradictions.resolve.click();
-    await expect(app.insights.locators.resolveDialog.supersede).not.toBeChecked();
+    const dialog = app.insights.locators.resolveDialog;
+    await expect(dialog.supersede).not.toBeChecked();
+    await expect(dialog.orderUnknown).toContainText('Welche Entscheidung neuer ist, ist unbekannt');
   });
 });

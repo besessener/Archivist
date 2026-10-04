@@ -129,7 +129,7 @@ export function DecisionFormDialog({
     setDraft(checked);
     if (!decision || !isEditableDecisionStatus(status)) return;
     if (checked) setStatus('draft');
-    else if (status === 'draft') setStatus('confirmed');
+    else if (status === 'draft') setStatus(decision.status === 'draft' ? 'confirmed' : decision.status);
   }
 
   function setFieldUnknown(field: DecisionField, isUnknown: boolean) {
