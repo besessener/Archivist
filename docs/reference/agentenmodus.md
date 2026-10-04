@@ -62,6 +62,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 
 - Jeder Lauf hat eine Lauf-ID mit Auslöser, Anbieter und Modell, Werkzeugaufrufen (gekürzte Ergebnisse), Tokens und geschätzten Kosten, Dauer und Ergebnis.
 - Jede Änderung trägt die Lauf-ID (Änderungsprotokoll, Beziehungen mit Herkunft `agent`).
+- Zum Lauf gehören nur die Änderungen seiner Werkzeuge und ihrer Dateiaufträge (siehe [Große Dateiaktionen](#große-dateiaktionen)). Andere Jobs, die währenddessen laufen – auch die von dir eingereihten –, tragen keine Lauf-ID; „Lauf rückgängig“ nimmt sie nicht zurück.
 - „Lauf rückgängig“ setzt alle Änderungen in umgekehrter Reihenfolge mit Konfliktprüfung zurück, einzelne Schritte ebenso.
 - Entfernt werden nur Einträge, die der Lauf selbst angelegt hat: Eine schon vorhandene identische Notiz, die `record_note` wiederverwendet, bleibt erhalten.
 - Ansicht unter Einstellungen → Agent.

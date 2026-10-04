@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Job } from '@archivist/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
@@ -42,6 +43,8 @@ export class JobQueueService {
   private readonly retryBaseDelayMs: number;
   private readonly retryMaxDelayMs: number;
   private readonly outcomes: AttemptOutcomes;
+  /** Runs a job in the queue's own async context: the scope of whoever queued it (agent run, chat cancel) must not leak in. */
+  private readonly inQueueContext = AsyncLocalStorage.snapshot();
 
   constructor(
     private readonly ctx: AppContext,
@@ -286,7 +289,7 @@ export class JobQueueService {
       if (!next) break;
       this.retryWaits.delete(next.id);
       this.running.add(next.id);
-      const execution = this.execute(next).finally(() => {
+      const execution = this.inQueueContext(() => this.execute(next)).finally(() => {
         this.running.delete(next.id);
         this.active.delete(next.id);
         this.kick();
