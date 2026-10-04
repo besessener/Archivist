@@ -112,7 +112,7 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'categories:list': () => services.categories.list(),
     'categories:create': (input) => services.archive.createCategory(input.path, { confirmed: input.confirmed }),
     'categories:previewMigration': () => services.categoryMigration.preview(),
-    'categories:migrate': (input) => services.categoryMigration.migrate({ confirmed: input.confirmed }),
+    'categories:migrate': (input) => ({ jobId: services.categoryMigration.enqueue({ confirmed: input.confirmed, strongConfirmed: input.strongConfirmed }).id }),
     'backup:create': (input) => services.backup.create({ includeArchive: input.includeArchive }),
     'backup:list': () => services.backup.list(),
     'backup:storage': () => services.backup.storage(),

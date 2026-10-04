@@ -122,8 +122,9 @@ export function initSettings(page: Page) {
     categoryMigration: {
       plan: page.getByTestId('category-migration-plan'),
       start: page.getByTestId('category-migration-start'),
+      confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
       confirm: page.getByTestId('category-migration-confirm'),
-      result: page.getByTestId('category-migration-result'),
+      job: page.getByTestId('category-migration-job'),
     },
     ocr: {
       languages: page.getByTestId('settings-ocr-languages'),

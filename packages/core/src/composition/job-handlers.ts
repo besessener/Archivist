@@ -1,6 +1,7 @@
 import type { EntityType } from '@archivist/shared';
 import { SCAN_ANALYZE_ALL_JOB, type BulkPayload } from '../services/scanner/bulk-analysis';
 import { ARCHIVE_ALL_JOB, type ArchiveAllPayload } from '../services/archive-batch';
+import { CATEGORY_MIGRATION_JOB } from '../services/category-migration';
 import { REEMBED_JOB } from '../services/search';
 import { ACTION_EXECUTE_JOB } from '../services/actions';
 import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
@@ -127,6 +128,7 @@ export function registerJobHandlers(services: JobServices): void {
   jobs.register<ImportFolderPayload>(DOCUMENT_IMPORT_FOLDER_JOB, { handler: (job) => services.documents.folderImport.run(job) });
   jobs.register<Record<string, never>>(DOCUMENT_REINDEX_JOB, { handler: (job) => services.documents.indexRepair.rebuild(job) });
   jobs.register<ArchiveAllPayload>(ARCHIVE_ALL_JOB, { handler: (job) => services.archiveAll.run(job) });
+  jobs.register<Record<string, never>>(CATEGORY_MIGRATION_JOB, { handler: (job) => services.categoryMigration.run(job) });
   jobs.register<ReprocessPayload>(DOCUMENT_REPROCESS_JOB, { handler: (job) => services.reprocessing.run(job) });
   jobs.register<{ documentIds: string[] }>(DOCUMENT_REREAD_JOB, { handler: (job) => rereadArchived(services, job) });
   // one job per trigger, cancellable, resumed after a restart
