@@ -14,10 +14,10 @@ describe('overlapping rules', () => {
   });
 
   it('names what the rules would do differently with the same document', () => {
-    const existing = rule({ sender: 'Stadtwerke' }, { folder: 'private/energie' });
-    expect(ruleClash(existing, rule({ sender: 'Stadtwerke', docType: 'Rechnung' }, { folder: 'private/rechnungen' }))).toContain('private/energie');
-    expect(ruleClash(existing, rule({ sender: 'Stadtwerke' }, { folder: 'Private/Energie' }))).toBeNull();
-    expect(ruleClash(existing, rule({ sender: 'Telekom' }, { folder: 'private/telefon' }))).toBeNull();
+    const existing = rule({ sender: 'Stadtwerke' }, { folder: 'privat/energie' });
+    expect(ruleClash(existing, rule({ sender: 'Stadtwerke', docType: 'Rechnung' }, { folder: 'privat/rechnungen' }))).toContain('privat/energie');
+    expect(ruleClash(existing, rule({ sender: 'Stadtwerke' }, { folder: 'Privat/Energie' }))).toBeNull();
+    expect(ruleClash(existing, rule({ sender: 'Telekom' }, { folder: 'privat/telefon' }))).toBeNull();
     expect(ruleClash(rule({ docType: 'Rechnung' }, { topic: 'Energie' }), rule({ docType: 'Rechnung' }, { topic: 'Wohnen' }))).toContain('Thema');
     expect(ruleClash(rule({ docType: 'Rechnung' }, { tags: ['a'] }), rule({ docType: 'Rechnung' }, { folder: 'x' }))).toBeNull();
   });

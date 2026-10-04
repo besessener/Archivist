@@ -20,13 +20,15 @@ afterEach(async () => {
 });
 
 async function archivedDocument(content: string) {
-  app.llm.on('DocumentClassification', () => classification({ title: 'Archiviert', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: null }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: 'Archiviert', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: null }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file('in/archiviert.txt', content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   const inbox = path.dirname(app.services.documents.getRow(id).stagedPath!);
   const res = await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'work/notes', topic: null }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Arbeit/notes', topic: null }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,
@@ -79,7 +81,7 @@ describe('Inbox orphans', () => {
   });
 
   it('keeps an old file that a document still refers to', async () => {
-    app.llm.on('DocumentClassification', () => classification({ title: 'Offen', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: null }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Offen', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: null }));
     const imp = await app.ok('documents:import', { paths: [app.file('in/offen.txt', 'Noch im Eingang')] });
     await app.services.jobs.whenIdle();
     const staged = app.services.documents.getRow(imp.imported[0]!.id).stagedPath!;
@@ -102,13 +104,13 @@ describe('Inbox orphans', () => {
   });
 
   it('leaves the copy a running undo has just restored, before the undo commits it to the document', async () => {
-    app.llm.on('DocumentClassification', () => classification({ title: 'Undo', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: null }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Undo', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: null }));
     const imp = await app.ok('documents:import', { paths: [app.file('in/undo.txt', 'Inhalt im Undo')] });
     await app.services.jobs.whenIdle();
     const id = imp.imported[0]!.id;
     const staged = app.services.documents.getRow(id).stagedPath!;
     const res = await app.ok('documents:archive', {
-      items: [{ documentId: id, mode: 'copy', categoryPath: 'work/notes', topic: null }],
+      items: [{ documentId: id, mode: 'copy', categoryPath: 'Arbeit/notes', topic: null }],
       confirmed: true,
       approveNewCategories: [],
       confirmMove: false,

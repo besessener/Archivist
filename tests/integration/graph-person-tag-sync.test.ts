@@ -25,13 +25,13 @@ const lastAudit = async (action: string) => (await app.ok('audit:list', {})).fin
 
 async function archived(persons: string[], tags: string[]): Promise<string> {
   app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Protokoll', summary: 'Zusammenfassung', categoryPath: 'work/notes', docType: 'Protokoll', persons, tags }),
+    classification({ title: 'Protokoll', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', docType: 'Protokoll', persons, tags }),
   );
   const imp = await app.ok('documents:import', { paths: [app.file('in/protokoll.txt', 'Protokoll der Sitzung')] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'work/notes' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Arbeit/notes' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

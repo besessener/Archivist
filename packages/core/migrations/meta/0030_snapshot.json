@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ca12cb55-ee1d-4952-84e7-fcebcfd549ab",
+  "id": "2109897a-04e8-420c-a84e-2e34994f9626",
   "prevId": "e160b811-a1a6-49c7-9886-061e9cf234a3",
   "tables": {
     "entities": {
@@ -324,14 +324,6 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
         },
         "text": {
           "name": "text",
@@ -1719,6 +1711,14 @@
             "dedupe_key"
           ],
           "isUnique": true
+        },
+        "insights_status_updated_idx": {
+          "name": "insights_status_updated_idx",
+          "columns": [
+            "status",
+            "updated_at"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {},

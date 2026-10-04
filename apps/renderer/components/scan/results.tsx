@@ -112,11 +112,6 @@ export function ScanResults() {
           {formatNumber(summary.scanned)} Dateien geprüft: <strong>{formatNumber(summary.newFiles)} neu</strong>, {formatNumber(summary.changedFiles)} geändert,{' '}
           {formatNumber(summary.unchanged)} unverändert, {formatNumber(summary.duplicates)} Duplikate, {formatNumber(summary.excluded)} ausgeschlossen,{' '}
           {formatNumber(summary.skipped)} übersprungen.
-          {summary.limitReached && (
-            <p className="mt-1 text-destructive" data-testid="scan-limit-reached">
-              Das Dateilimit wurde erreicht: Weitere Dateien wurden nicht geprüft. Bitte Unterordner ausschließen oder kleinere Verzeichnisse einzeln freigeben.
-            </p>
-          )}
           {summary.errors.length > 0 && (
             <ul className="mt-1 list-disc pl-5 text-destructive">
               {summary.errors.slice(0, 5).map((e, i) => (
@@ -230,7 +225,7 @@ export function ScanResults() {
       )}
       {files.length > 0 && files.length < total && (
         <div className="flex flex-col items-center gap-2" data-testid="scan-more">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground" data-testid="scan-results-count">
             {formatNumber(files.length)} von {formatNumber(total)} Dateien angezeigt.
           </p>
           <Button variant="outline" onClick={paged.loadMore} disabled={loading} data-testid="scan-load-more">

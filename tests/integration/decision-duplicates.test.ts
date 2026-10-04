@@ -26,7 +26,7 @@ async function archived(name: string): Promise<string> {
     classification({
       title: name,
       summary: `Zusammenfassung ${name}`,
-      categoryPath: 'private/haus',
+      categoryPath: 'Privat/haus',
       docType: 'Protokoll',
       mainTopic: 'Hausverwaltung',
       decisions: [FASSADE],
@@ -36,7 +36,7 @@ async function archived(name: string): Promise<string> {
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'private/haus' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/haus' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

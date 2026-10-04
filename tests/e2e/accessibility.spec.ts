@@ -60,7 +60,7 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
         name: 'Stadtwerke',
         content: 'Rechnungen nach energie',
         when: { 'Absender enthält': 'Stadtwerke' },
-        then: { Ablageordner: 'private/energie' },
+        then: { Ablageordner: 'Privat/energie' },
       });
       await expect(settings.locators.memory.entry('Stadtwerke')).toBeVisible();
       await expectNoSeriousA11yViolations(page, testInfo);

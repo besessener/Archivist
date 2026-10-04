@@ -51,6 +51,8 @@ export interface DocumentAccess {
   folderLlmAllowedFor(p: string): boolean;
   readablePath(r: DocRow): string;
   indexDocument(id: string): Promise<void>;
+  /** Re-indexes in the background, a few at a time (bulk changes). */
+  indexDocumentsInBackground(ids: string[]): void;
   archivePath(rel: string | null): string | null;
 }
 
@@ -73,15 +75,16 @@ export interface DocumentDeps {
 }
 
 /** Extracts the text of a file in the worker (with OCR as configured). */
-export function extractFile(deps: Pick<DocumentDeps, 'ctx' | 'settings' | 'pool'>, file: string): Promise<ParsedDocument> {
-  return deps.pool.run('extractDocument', {
+export function extractFile(deps: Pick<DocumentDeps, 'ctx' | 'settings' | 'pool'>, file: string, signal?: AbortSignal): Promise<ParsedDocument> {
+  const payload = {
     path: file,
     options: {
       ocrEnabled: deps.settings.get().ocr.enabled,
       ocrLanguages: deps.settings.get().ocr.languages,
       tessdataDir: path.join(deps.ctx.paths.index, 'tessdata'),
     },
-  });
+  };
+  return deps.pool.run('extractDocument', payload, { signal });
 }
 
 /** Hash of the normalized text for duplicate detection; null for texts too short to compare. */

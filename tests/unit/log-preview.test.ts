@@ -1,17 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { retentionCutoff, TRANSMISSION_RETENTION_DAYS } from '../../packages/core/src/services/llm/transmission-retention';
 import { previewOf } from '../../packages/core/src/services/llm/prompt-text';
-
-describe('transmission retention', () => {
-  it('keeps 90 days by default', () => {
-    expect(TRANSMISSION_RETENTION_DAYS).toBe(90);
-    expect(retentionCutoff(new Date('2026-10-03T12:00:00.000Z'))).toBe('2026-07-05T12:00:00.000Z');
-  });
-
-  it('counts the given number of days back', () => {
-    expect(retentionCutoff(new Date('2026-10-03T00:00:00.000Z'), 1)).toBe('2026-10-02T00:00:00.000Z');
-  });
-});
 
 describe('log preview', () => {
   const masking = { personalData: true };

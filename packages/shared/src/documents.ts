@@ -12,7 +12,7 @@ export type ArchiveMode = z.infer<typeof ArchiveMode>;
 export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'xlsx', 'txt', 'md', 'markdown', 'eml', 'png', 'jpg', 'jpeg'] as const;
 
 export const ArchiveLocationProposal = z.object({
-  categoryPath: z.string().min(1).describe('Relativer, menschenlesbarer Ordnerpfad, z. B. work/projects/prod-plat'),
+  categoryPath: z.string().min(1).describe('Relativer, menschenlesbarer Ordnerpfad, z. B. Arbeit/Projekte/prod-plat'),
   fileName: z.string().nullish(),
   newMainCategory: z.boolean().default(false),
   rationale: z.string().default(''),
@@ -30,6 +30,8 @@ export const AnalysisCoverage = z.object({
   llmParts: z.number().int().min(0),
   /** The extraction itself stopped at its limit (400,000 characters or 300 PDF pages): the rest is neither analysed nor searchable. */
   extractionTruncated: z.boolean(),
+  /** Scanned PDF pages left without OCR because of the page limit (0 for rows stored before this field existed, #226). */
+  ocrPagesSkipped: z.number().int().min(0).default(0),
 });
 export type AnalysisCoverage = z.infer<typeof AnalysisCoverage>;
 

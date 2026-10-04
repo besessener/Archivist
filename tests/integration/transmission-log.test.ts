@@ -35,7 +35,7 @@ function insertEntry(values: { at: Date; purpose?: string; documentIds?: string[
 
 describe('transmission log (#211)', () => {
   it('shows the question and the source titles instead of the prompt frame, masked', async () => {
-    const id = await archived(app, { name: 'Angebot Dachdecker Kowalski.md', content: 'Angebot Dachdecker Kowalski: 4.800 Euro.', folder: 'private/haus' });
+    const id = await archived(app, { name: 'Angebot Dachdecker Kowalski.md', content: 'Angebot Dachdecker Kowalski: 4.800 Euro.', folder: 'Privat/haus' });
 
     await app.ok('chat:send', { text: 'Was kostet der Dachdecker Kowalski? Meine PIN 4711' });
 
@@ -47,14 +47,14 @@ describe('transmission log (#211)', () => {
   });
 
   it('shows the file name and the text start for the analysis of a document and a plain preview without the frame otherwise', async () => {
-    await archived(app, { name: 'Rechnung.txt', content: 'Rechnung Nr. 17 über 300 Euro', folder: 'private/haus' });
+    await archived(app, { name: 'Rechnung.txt', content: 'Rechnung Nr. 17 über 300 Euro', folder: 'Privat/haus' });
 
     const classification = (await app.ok('llm:transmissions', {})).find((entry) => entry.purpose.startsWith('Dokumentklassifikation'));
     expect(classification?.preview).toBe('Datei: Rechnung.txt | Textanfang: Rechnung Nr. 17 über 300 Euro');
   });
 
   it('names the documents of an entry and marks a document that is gone', async () => {
-    const id = await archived(app, { name: 'Mietvertrag.txt', content: 'Mietvertrag', folder: 'private/haus' });
+    const id = await archived(app, { name: 'Mietvertrag.txt', content: 'Mietvertrag', folder: 'Privat/haus' });
     const entry = insertEntry({ at: new Date(), documentIds: [id, 'weg'] });
 
     const listed = (await app.ok('llm:transmissions', {})).find((transmission) => transmission.id === entry);
@@ -76,20 +76,21 @@ describe('transmission log (#211)', () => {
     expect([...first, ...second, ...third].map((entry) => entry.id)).toEqual(ids);
   });
 
-  it('deletes entries older than 90 days and keeps the rest', () => {
-    const now = new Date('2026-10-03T12:00:00Z');
-    const old = insertEntry({ at: new Date(now.getTime() - 91 * DAY_MS) });
-    const recent = insertEntry({ at: new Date(now.getTime() - 89 * DAY_MS) });
+  it('deletes entries older than the given number of days and keeps the rest', () => {
+    const now = Date.now();
+    const old = insertEntry({ at: new Date(now - 91 * DAY_MS) });
+    const recent = insertEntry({ at: new Date(now - 89 * DAY_MS) });
 
-    expect(app.services.llm.pruneTransmissions(now)).toBe(1);
+    expect(app.services.llm.pruneTransmissions(90)).toBe(1);
 
     const remaining = app.services.database.db.select({ id: llmTransmissions.id }).from(llmTransmissions).all();
     expect(remaining.map((row) => row.id)).toEqual([recent]);
     expect(app.services.database.db.select().from(llmTransmissions).where(eq(llmTransmissions.id, old)).all()).toEqual([]);
   });
 
-  it('prunes when the application starts', () => {
-    insertEntry({ at: new Date(Date.now() - 120 * DAY_MS) });
+  it('prunes by `logs.retentionDays` when the application starts', () => {
+    app.services.settings.update({ logs: { retentionDays: 30 } });
+    insertEntry({ at: new Date(Date.now() - 45 * DAY_MS) });
 
     app.services.start();
 

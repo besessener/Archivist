@@ -11,10 +11,10 @@ type LifecycleServices = WiredServices & {
   enqueueLinkRun: (trigger: string) => Job;
 };
 
-const TRANSMISSION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
 /** Longest wait on running archive file operations when quitting; stays below the desktop's 10 s quit deadline (QUIT_DEADLINE_MS). */
 const ARCHIVE_DRAIN_TIMEOUT_MS = 8_000;
+
+const RETENTION_INTERVAL_MS = 24 * 60 * 60_000;
 
 const BACKGROUND_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
 
@@ -74,6 +74,15 @@ function signExistingDocuments({ appState, jobs }: LifecycleServices): void {
   jobs.enqueue(NEAR_DUPLICATE_BACKFILL_JOB, { label: 'Dokumente auf ähnlichen Inhalt vergleichen', sameAs: () => true });
 }
 
+/** Log files, LLM transmission entries and old read notifications live for `logs.retentionDays`; the audit log, chat and agent actions are never pruned. */
+export function pruneByRetention({ logger, settings, llm, notifications }: WiredServices): void {
+  const days = settings.get().logs.retentionDays;
+  logger.prune(days);
+  const transmissions = llm.pruneTransmissions(days);
+  const readNotifications = notifications.pruneRead(days);
+  if (transmissions || readNotifications) logger.info('retention', 'Old entries removed', { transmissions, readNotifications });
+}
+
 function startAgent({ agent, jobs, chat }: LifecycleServices): void {
   agent.start({
     enqueue: (kind, docIds) =>
@@ -90,22 +99,14 @@ function startupBackup({ settings, backup, logger }: WiredServices): void {
 }
 
 export function createLifecycle(services: LifecycleServices) {
-  const { logger, settings, llm, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, reader, database } = services;
-  let pruneTimer: NodeJS.Timeout | null = null;
-  const pruneTransmissions = () => {
-    try {
-      llm.pruneTransmissions();
-    } catch (err) {
-      logger.warn('llm', 'Pruning the transmission log failed', { error: err });
-    }
-  };
+  let retentionTimer: NodeJS.Timeout | undefined;
+  const { logger, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, searchPool, reader, database } = services;
   return {
     /** Starts background work (only while the application runs). */
     start(): void {
-      logger.prune(settings.get().logs.retentionDays);
-      pruneTransmissions();
-      pruneTimer = setInterval(pruneTransmissions, TRANSMISSION_PRUNE_INTERVAL_MS);
-      pruneTimer.unref();
+      pruneByRetention(services);
+      retentionTimer = setInterval(() => pruneByRetention(services), RETENTION_INTERVAL_MS);
+      retentionTimer.unref();
       // before the queue resumes: documents stuck in `analyzing` without a job become `failed` (reprocessable)
       documents.recoverInterruptedAnalyses();
       jobs.start();
@@ -127,7 +128,7 @@ export function createLifecycle(services: LifecycleServices) {
 
     /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (8 s) were awaited. */
     async shutdown(options: { jobTimeoutMs?: number; archiveTimeoutMs?: number } = {}): Promise<void> {
-      if (pruneTimer) clearInterval(pruneTimer);
+      clearInterval(retentionTimer);
       reminders.stop();
       agent.stop();
       scanner.stop();
@@ -135,7 +136,7 @@ export function createLifecycle(services: LifecycleServices) {
       const drained = archive.drain(options.archiveTimeoutMs ?? ARCHIVE_DRAIN_TIMEOUT_MS);
       await jobs.interrupt(options.jobTimeoutMs);
       if (!(await drained)) logger.warn('archive', 'Quit while archive file operations were still running');
-      await pool.close();
+      await Promise.all([pool.close(), searchPool.close()]);
       await reader.close();
       database.close();
       await logger.close();

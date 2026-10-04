@@ -7,7 +7,7 @@ test.describe('sources in the chat', () => {
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await app.inbox.do.openArchivePlan();
     await app.inbox.do.confirmArchive();
     await app.inbox.locators.archivePlan.close.click();

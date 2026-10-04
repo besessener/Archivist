@@ -34,13 +34,13 @@ async function decision(title: string, text: string): Promise<string> {
 /** Import a document, let the (fake) LLM classify it and archive it. */
 async function archivedDoc(name: string, content: string): Promise<string> {
   app.llm.on('DocumentClassification', () =>
-    classification({ title: name, summary: `Zusammenfassung: ${content}`, categoryPath: 'private/haus', docType: 'Angebot', mainTopic: 'Hausrenovierung' }),
+    classification({ title: name, summary: `Zusammenfassung: ${content}`, categoryPath: 'Privat/haus', docType: 'Angebot', mainTopic: 'Hausrenovierung' }),
   );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, content)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'private/haus' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/haus' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

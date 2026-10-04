@@ -58,6 +58,26 @@ export const RELATION_METHOD_LABELS: Record<RelationMethod, string> = {
   refinement: 'genauere Art (KI-Hinweis)',
 };
 
+/** The type of a relation in words (UI and server-written texts). */
+export const RELATION_TYPE_LABELS: Record<RelationType, string> = {
+  belongs_to: 'gehört zu',
+  relates_to: 'hängt zusammen mit',
+  supports: 'unterstützt',
+  contradicts: 'widerspricht',
+  participated_in: 'beteiligt an',
+  responsible_for: 'verantwortlich für',
+  concerns: 'betrifft',
+  affects: 'wirkt auf',
+  supersedes: 'ersetzt',
+  blocks: 'blockiert',
+  results_from: 'ergibt sich aus',
+  produced: 'hat erzeugt',
+  mentioned_in: 'erwähnt in',
+  duplicate_of: 'Duplikat von',
+  related_to: 'verwandt mit',
+  subtopic_of: 'Unterthema von',
+};
+
 /** Who stands behind a relation (#270, #189); a field mirror counts as user-confirmed only if the user really confirmed it. */
 export type RelationProvenance = 'manual' | 'user_confirmed' | 'user_rejected' | 'auto';
 export function relationProvenance(r: Pick<GraphRelation, 'origin' | 'method' | 'resolvedByUser' | 'status'>): RelationProvenance {

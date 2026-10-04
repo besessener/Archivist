@@ -12,6 +12,8 @@ import {
   BackupInfo,
   BackupStorage,
   Category,
+  CategoryMigrationPlan,
+  CategoryMigrationResult,
   RelinkResult,
   VerifyReport,
 } from './archive';
@@ -37,7 +39,7 @@ import {
   NeighborhoodGraph,
   RelatedPage,
 } from './links';
-import { AppNotification, Contradiction, Insight, Reminder } from './notifications';
+import { AppNotification, Contradiction, Insight, InsightKind, Reminder } from './notifications';
 import { OpenItem, OpenItemInput, OpenItemPatch, OpenItemStatus, SolutionPreview } from './open-items';
 import { ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from './scan';
 import { AppStatus, LlmTestResult } from './status';
@@ -53,6 +55,39 @@ import {
   MemoryEntry,
   MemoryInput,
 } from './agent';
+
+/** Paging of list channels: the window starts at `offset`; a caller that sends none gets the first `LIST_MAX_LIMIT` rows. */
+export const LIST_MAX_LIMIT = 1000;
+const Paging = {
+  limit: z.number().int().min(1).max(LIST_MAX_LIMIT).default(LIST_MAX_LIMIT),
+  offset: z.number().int().min(0).default(0),
+};
+
+const DecisionListFilter = z.object({
+  status: DecisionStatus.optional(),
+  /** several statuses at once (e.g. the valid ones a decision can be replaced by) */
+  statuses: z.array(DecisionStatus).min(1).optional(),
+  ids: z.array(Id).min(1).max(100).optional(),
+  topicId: z.string().optional(),
+  projectId: z.string().optional(),
+});
+const InsightListFilter = z.object({
+  status: z.enum(['open', 'accepted', 'rejected', 'snoozed']).optional(),
+  kind: InsightKind.optional(),
+  /** only insights that concern this entry (it is one of the affected ones) */
+  entityId: Id.optional(),
+});
+const ContradictionListFilter = z.object({
+  status: z.enum(['detected', 'acknowledged', 'resolved', 'false_positive']).optional(),
+  /** only contradictions that concern this entry */
+  entityId: Id.optional(),
+});
+const OpenItemListFilter = z.object({
+  status: OpenItemStatus.optional(),
+  topicId: z.string().optional(),
+  projectId: z.string().optional(),
+  onlyActive: z.boolean().default(false),
+});
 
 const NullableText = z.string().nullish();
 
@@ -90,7 +125,9 @@ export const ipcContract = {
   // --- Chat ---
   'chat:send': channel(z.object({ conversationId: Id.optional(), text: z.string().min(1).max(20000) }), ChatSendResult),
   'chat:cancel': channel(z.object({ conversationId: Id.optional() }), z.object({ cancelled: z.number().int() })),
-  'chat:history': channel(z.object({ conversationId: Id }), z.array(ChatMessage)),
+  /** A page of a conversation counted from its newest message (offset 0 = the newest `limit`); each page is ordered oldest first. */
+  'chat:history': channel(z.object({ conversationId: Id, ...Paging }), z.array(ChatMessage)),
+  'chat:historyCount': channel(z.object({ conversationId: Id }), z.number().int()),
   'chat:conversations': channel(Empty, z.array(Conversation)),
   'chat:newConversation': channel(Empty, Conversation),
   'chat:renameConversation': channel(z.object({ id: Id, title: z.string().trim().min(1).max(120) }), Conversation),
@@ -168,10 +205,9 @@ export const ipcContract = {
     Decision,
   ),
   'decisions:get': channel(z.object({ id: Id }), Decision),
-  'decisions:list': channel(
-    z.object({ status: DecisionStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional() }),
-    z.array(Decision),
-  ),
+  'decisions:list': channel(DecisionListFilter.extend(Paging), z.array(Decision)),
+  /** Number of decisions matching a list filter (without paging). */
+  'decisions:count': channel(DecisionListFilter, z.number().int()),
   'decisions:search': channel(z.object({ query: z.string().min(1), limit: z.number().int().min(1).max(100).default(20) }), z.array(Decision)),
   'decisions:proposeSupersede': channel(z.object({ oldDecisionId: Id, newDecisionId: Id }), StoredAgentAction),
   /** Superseding is a stage-2 action: explicit confirmation required, with an undo entry. */
@@ -247,7 +283,10 @@ export const ipcContract = {
     }),
     DocumentRecord,
   ),
-  'documents:ignore': channel(z.object({ id: Id }), DocumentRecord),
+  /** Ignoring is undoable (`audit:undo` with the returned `auditId`). */
+  'documents:ignore': channel(z.object({ id: Id }), z.object({ document: DocumentRecord, auditId: Id })),
+  /** Takes an ignored document back into the inbox, restoring its previous status. */
+  'documents:unignore': channel(z.object({ id: Id }), DocumentRecord),
   /** Bulk assignment for a multi-selection (#291): ONE undo step. */
   'documents:bulkUpdate': channel(
     z.object({
@@ -373,7 +412,8 @@ export const ipcContract = {
   'notifications:snooze': channel(z.object({ id: Id, remindAt: IsoDate }), Reminder),
 
   // --- Insights / consistency / contradictions ---
-  'insights:list': channel(z.object({ status: z.enum(['open', 'accepted', 'rejected', 'snoozed']).optional() }), z.array(Insight)),
+  'insights:list': channel(InsightListFilter.extend(Paging), z.array(Insight)),
+  'insights:count': channel(InsightListFilter, z.number().int()),
   'insights:respond': channel(
     z.discriminatedUnion('response', [
       z.object({ response: z.literal('accept'), id: Id, confirmed: Confirmed, strongConfirmed: z.boolean().default(false) }),
@@ -385,7 +425,8 @@ export const ipcContract = {
     Insight,
   ),
   'consistency:run': channel(Empty, z.object({ jobId: Id })),
-  'contradictions:list': channel(z.object({ status: z.enum(['detected', 'acknowledged', 'resolved', 'false_positive']).optional() }), z.array(Contradiction)),
+  'contradictions:list': channel(ContradictionListFilter.extend(Paging), z.array(Contradiction)),
+  'contradictions:count': channel(ContradictionListFilter, z.number().int()),
   'contradictions:resolve': channel(
     z.object({
       id: Id,
@@ -412,10 +453,9 @@ export const ipcContract = {
   'reminders:list': channel(z.object({ status: z.enum(['pending', 'fired', 'dismissed']).optional() }), z.array(Reminder)),
 
   // --- Open items ---
-  'openItems:list': channel(
-    z.object({ status: OpenItemStatus.optional(), topicId: z.string().optional(), projectId: z.string().optional(), onlyActive: z.boolean().default(false) }),
-    z.array(OpenItem),
-  ),
+  'openItems:list': channel(OpenItemListFilter.extend(Paging), z.array(OpenItem)),
+  /** Number of open items matching a list filter (without paging). */
+  'openItems:count': channel(OpenItemListFilter, z.number().int()),
   'openItems:create': channel(OpenItemInput, OpenItem),
   'openItems:update': channel(
     z.object({
@@ -605,6 +645,10 @@ export const ipcContract = {
   // --- Categories, backup, archive check ---
   'categories:list': channel(Empty, z.array(Category)),
   'categories:create': channel(z.object({ path: z.string().min(1), confirmed: Confirmed }), Category),
+  /** Preview (changes nothing): what renaming `work`/`private` to `Arbeit`/`Privat` would move (#233). */
+  'categories:previewMigration': channel(Empty, CategoryMigrationPlan),
+  /** Level 2: renames the English main categories and moves their files; every move is logged and undoable (#233). */
+  'categories:migrate': channel(z.object({ confirmed: Confirmed }), CategoryMigrationResult),
   'backup:create': channel(z.object({ includeArchive: z.boolean().default(false) }), BackupInfo),
   'backup:list': channel(Empty, z.array(BackupInfo)),
   'backup:storage': channel(Empty, BackupStorage),

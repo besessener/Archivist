@@ -7,8 +7,8 @@ let ids: string[];
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'local_only' });
   ids = [
-    await archived(app, { name: 'eins.txt', content: 'Erstes Dokument über die Heizungswartung im Haus Musterstraße.', folder: 'private/haus' }),
-    await archived(app, { name: 'zwei.txt', content: 'Zweites Dokument über die Steuererklärung des vergangenen Jahres.', folder: 'private/steuern' }),
+    await archived(app, { name: 'eins.txt', content: 'Erstes Dokument über die Heizungswartung im Haus Musterstraße.', folder: 'Privat/haus' }),
+    await archived(app, { name: 'zwei.txt', content: 'Zweites Dokument über die Steuererklärung des vergangenen Jahres.', folder: 'Privat/steuern' }),
   ];
 });
 afterEach(async () => app.cleanup());

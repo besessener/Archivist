@@ -107,7 +107,7 @@ describe('Own identity (#29)', () => {
     expect(graph().getEntity(other.id)).toBeDefined();
     expect(graph().getEntity(me.id)).toMatchObject({ name: 'Monika Lor-Zade', isSelf: true, roles: ['Chefin'] });
     expect(graph().getEntity(me.id)!.aliases).toEqual(expect.arrayContaining(['ich', 'Moni', 'Monika Lor-Zade (Chefin)']));
-    const insight = app.services.insights.list('open').find((i) => i.kind === 'persons_merged')!;
+    const insight = app.services.insights.list({ status: 'open' }).find((i) => i.kind === 'persons_merged')!;
     expect(insight.title).toBe('4 Einträge zu „Monika Lor-Zade“ zusammengeführt');
     expect(selves()).toHaveLength(1);
   });

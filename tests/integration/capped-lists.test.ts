@@ -16,12 +16,14 @@ afterEach(async () => {
 const send = (text: string) => app.ok('chat:send', { text });
 
 async function archived(name: string, topic: string | null): Promise<string> {
-  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'work/notes', mainTopic: topic }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'Arbeit/notes', mainTopic: topic }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}.txt`, `Inhalt von ${name}`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'work/notes', topic }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Arbeit/notes', topic }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,

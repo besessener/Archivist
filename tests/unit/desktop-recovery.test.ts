@@ -1,8 +1,17 @@
+import type { RestoreSource } from '@archivist/core';
 import { describe, expect, it, vi } from 'vitest';
 import { recoverFromDamagedDatabase, type RecoveryDeps } from '../../apps/desktop/src/recovery';
 
 const paths = { appData: '/data', database: '/data/database', backups: '/data/backups' };
-const source = { name: 'metadaten-2026-10-01', databaseFile: '/data/backups/x/archivist.db', createdAt: '2026-10-01T08:00:00.000Z', archive: null };
+const source: RestoreSource = {
+  name: 'metadaten-2026-10-01',
+  path: '/data/backups/x',
+  databaseFile: '/data/backups/x/archivist.db',
+  walFile: null,
+  createdAt: '2026-10-01T08:00:00.000Z',
+  kind: 'backup',
+  archive: null,
+};
 
 function setup(overrides: Partial<RecoveryDeps> = {}) {
   const deps: RecoveryDeps = {
@@ -24,7 +33,7 @@ describe('start with a damaged database', () => {
 
     recoverFromDamagedDatabase(deps, 'Die Datenbank ist beschädigt.');
 
-    expect(deps.findNewestRestore).toHaveBeenCalledWith(paths.backups);
+    expect(deps.findNewestRestore).toHaveBeenCalledWith(paths);
     expect(deps.scheduleRestore).toHaveBeenCalledWith(paths, source.name);
     expect(deps.askToRestore).toHaveBeenCalledWith(expect.objectContaining({ backupName: source.name, message: expect.stringContaining('2026-10-01') }));
     expect(deps.relaunch).toHaveBeenCalledTimes(1);

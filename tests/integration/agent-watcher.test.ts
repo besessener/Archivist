@@ -26,7 +26,7 @@ const watcher = () => deadlineWatcher(app);
 const notifications = async (type: string) => (await app.ok('notifications:list', {})).filter((n) => n.type === type);
 const openItem = (title: string, dueAt?: string) => app.services.openItems.create({ title, dueAt, priority: 'normal', sourceIds: [], confidence: 0.9 });
 const warranty = (name: string, until = '15.10.2026') =>
-  archived(app, { name, content: `Küchengerät\nGarantie bis ${until}`, folder: 'private/garantien', documentDate: '2026-01-10' });
+  archived(app, { name, content: `Küchengerät\nGarantie bis ${until}`, folder: 'Privat/garantien', documentDate: '2026-01-10' });
 
 describe('weekly review (#314)', () => {
   async function fillWeek() {
@@ -51,7 +51,7 @@ describe('weekly review (#314)', () => {
       confidence: 0.8,
       affectedEntities: [],
       requiredConfirmation: 'confirm',
-      proposedParameters: { items: [{ documentId: doc, categoryPath: 'private/ziel' }] },
+      proposedParameters: { items: [{ documentId: doc, categoryPath: 'Privat/ziel' }] },
     });
     app.services.insights.upsert({ kind: 'orphan_document', title: 'Dokument ohne Verknüpfung', explanation: 'test', confidence: 0.8, dedupeKey: 'orphan:1' });
     await app.ok('knowledge:createEntity', { type: 'topic', name: 'Küche' });

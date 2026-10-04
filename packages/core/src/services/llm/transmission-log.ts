@@ -3,7 +3,6 @@ import { desc, inArray, lt } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { documents, llmTransmissions } from '../../db/schema';
 import { newId, nowIso } from '../../util/ids';
-import { retentionCutoff } from './transmission-retention';
 
 export type Transmission = Omit<LlmTransmission, 'id' | 'at' | 'documents'>;
 
@@ -32,12 +31,10 @@ export class TransmissionLog {
     return rows.map((row) => ({ ...row, documents: row.documentIds.map((id) => ({ id, title: titles.get(id) ?? null })) }));
   }
 
-  /** Deletes the entries older than the retention period; returns how many. */
-  prune(now: Date): number {
-    return this.ctx.database.db
-      .delete(llmTransmissions)
-      .where(lt(llmTransmissions.at, retentionCutoff(now)))
-      .run().changes;
+  /** Deletes entries older than `days` days; returns how many. */
+  prune(days: number): number {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    return this.ctx.database.db.delete(llmTransmissions).where(lt(llmTransmissions.at, cutoff)).run().changes;
   }
 
   private titlesOf(ids: string[]): Map<string, string> {

@@ -85,6 +85,12 @@ export function isOcrLanguageList(value: string): boolean {
   return value.split('+').every((code) => OCR_LANGUAGE_CODE.test(code));
 }
 
+/** Languages whose Tesseract data ships with the app (@tesseract.js-data/*); the settings offer exactly these, in this order. */
+export const OCR_LANGUAGE_CHOICES = [
+  { code: 'deu', label: 'Deutsch' },
+  { code: 'eng', label: 'Englisch' },
+] as const;
+
 const OcrSettings = z.object({
   enabled: z.boolean().default(true),
   languages: z.string().refine(isOcrLanguageList, { message: 'Ungültige OCR-Sprachcodes (Beispiel: deu+eng oder deu+chi_sim).' }).default('deu+eng'),

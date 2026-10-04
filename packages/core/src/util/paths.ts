@@ -25,6 +25,13 @@ export const isInside = insideFor(path);
 const isInsidePosix = insideFor(path.posix);
 const isInsideWindows = insideFor(path.win32);
 
+/** true if `folder` is the category folder or lies below it; whole segments, case-insensitive like NTFS (#244). */
+export function isWithinCategoryFolder(folder: string, categoryPath: string): boolean {
+  const normalize = (value: string) => value.toLowerCase().split(SEPARATOR).filter(Boolean);
+  const folderParts = normalize(folder);
+  return normalize(categoryPath).every((part, i) => folderParts[i] === part);
+}
+
 /** Resolves a relative path strictly inside `root` (no path traversal, no absolute paths). */
 export function resolveInside(root: string, relativePath: string): string {
   if (relativePath.includes('\0')) throw validationError('Ungültiger Pfad (Nullbyte).');
@@ -112,7 +119,7 @@ export function sanitizeFolderName(name: string, fallback = 'Ordner'): string {
   return finishBase(cleanNamePart(name), fallback);
 }
 
-/** Cleans a relative category path (e.g. "work/projects/prod-plat"); throws on traversal. */
+/** Cleans a relative category path (e.g. "Arbeit/Projekte/prod-plat"); throws on traversal. */
 export function sanitizeCategoryPath(input: string): string {
   if (input.includes('\0')) throw validationError('Ungültiger Ordnerpfad.');
   if (path.isAbsolute(input) || /^[A-Za-z]:/.test(input)) throw permissionError('Der Zielordner muss relativ zum Archiv sein.', input);

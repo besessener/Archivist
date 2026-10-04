@@ -124,7 +124,7 @@ function groupBlocks(scope: ToolScope, groupings: KindGroups[]): string[] {
 /** Open duplicate hints of the archive check; details only when every affected document may be shared. */
 function duplicateHints({ deps, ctx }: ToolScope): string[] {
   return deps.insights
-    .list('open')
+    .list({ status: 'open' })
     .filter((i) => i.kind.includes('duplicate'))
     .slice(0, 20)
     .map((i) => {

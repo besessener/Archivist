@@ -3,6 +3,13 @@ import { Confidence, EntityType, Id, IsoDate, patchSchema } from './common';
 
 export const OpenItemStatus = z.enum(['open', 'waiting', 'blocked', 'resolved', 'dismissed']);
 export type OpenItemStatus = z.infer<typeof OpenItemStatus>;
+export const OPEN_ITEM_STATUS_LABELS: Record<OpenItemStatus, string> = {
+  open: 'Offen',
+  waiting: 'Wartet',
+  blocked: 'Blockiert',
+  resolved: 'Erledigt',
+  dismissed: 'Verworfen',
+};
 export const Priority = z.enum(['low', 'normal', 'high']);
 
 /** A claim of a solution proposal; `uncertain` if there is no valid source citation. */

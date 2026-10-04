@@ -15,11 +15,21 @@ export function initInbox(page: Page) {
     proposals: page.getByTestId('inbox-proposal'),
     /** What the analysis did not see of a long document. */
     coverage: page.getByTestId('document-coverage'),
+    /** Badge for how far the text of the file was read („Text gelesen“, „Text teilweise gelesen“ …). */
+    processingStatus: page.getByTestId('inbox-processing-status'),
     llmStatus: page.getByTestId('inbox-llm-status'),
     folderLocked: page.getByTestId('inbox-folder-locked'),
     fields: {
       topic: page.getByTestId('inbox-topic'),
       project: page.getByTestId('inbox-project'),
+    },
+    /** Ignoring (#232): the toast offers „Rückgängig“; ignored documents are listed under the filter „Ignoriert“. */
+    ignore: {
+      button: page.getByTestId('inbox-ignore'),
+      toast: page.getByTestId('toast'),
+      filter: page.getByTestId('inbox-filter-ignored'),
+      allFilter: page.getByTestId('inbox-filter-all'),
+      takeBack: page.getByTestId('inbox-unignore'),
     },
     buttons: {
       archive: page.getByTestId('inbox-archive'),
@@ -93,6 +103,10 @@ export function initInbox(page: Page) {
       if (consent.allowLlm) await locators.reprocessDialog.allowLlm.check();
       await locators.reprocessDialog.confirm.click();
       await expect(locators.reprocessDialog.root).toBeHidden();
+    },
+    /** „Ignorieren“ on the first entry. */
+    ignoreFirst: async () => {
+      await locators.ignore.button.first().click();
     },
     openArchivePlan: async () => {
       await locators.buttons.archive.first().click();

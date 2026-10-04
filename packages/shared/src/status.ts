@@ -14,6 +14,8 @@ export const AppStatus = z.object({
   setupCompleted: z.boolean(),
   llm: z.object({
     configured: z.boolean(),
+    /** Privacy mode „nur lokal“: nothing is sent to the LLM, whatever `configured` and `status` say. */
+    localOnly: z.boolean(),
     hasApiKey: z.boolean(),
     status: z.enum(['unknown', 'ok', 'error']),
     lastError: z.string().nullable(),

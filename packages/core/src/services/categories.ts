@@ -6,12 +6,21 @@ import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { sanitizeCategoryPath } from '../util/paths';
 
-const SEED_CATEGORIES = ['work', 'private'];
+const SEED_CATEGORIES = ['Arbeit', 'Privat'];
+
+/** English main categories of earlier versions and their German replacements (#233). */
+export const LEGACY_MAIN_CATEGORIES: Readonly<Record<string, string>> = { work: 'Arbeit', private: 'Privat' };
 
 /** Categories (relative folder paths in the archive); new main categories (first segment) need explicit confirmation. */
 export class CategoryService {
   constructor(private readonly ctx: AppContext) {
-    for (const seed of SEED_CATEGORIES) this.insertIfMissing(seed);
+    const present = new Set(this.list().map((c) => c.path.toLowerCase()));
+    // an archive that still has the English main category gets the German one only through the migration
+    for (const seed of SEED_CATEGORIES) if (!present.has(seed.toLowerCase()) && !this.hasLegacyCounterpart(seed, present)) this.insertIfMissing(seed);
+  }
+
+  private hasLegacyCounterpart(seed: string, present: Set<string>): boolean {
+    return Object.entries(LEGACY_MAIN_CATEGORIES).some(([legacy, german]) => german === seed && present.has(legacy));
   }
 
   private get db() {
@@ -69,7 +78,7 @@ export class CategoryService {
 
   /** Creates the path including intermediate levels. New main categories only with `confirmed`. */
   create(rawPath: string, { confirmed }: { confirmed: boolean }): Category {
-    const p = sanitizeCategoryPath(rawPath);
+    const p = this.canonical(rawPath);
     const main = this.needsApproval(p);
     if (main && !confirmed) throw new AppError('permission_error', `Die neue Hauptkategorie „${main}“ muss ausdrücklich bestätigt werden.`);
     const parts = p.split('/');

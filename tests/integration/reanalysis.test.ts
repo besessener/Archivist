@@ -11,14 +11,14 @@ beforeEach(async () => {
   id = await archived(app, {
     name: 'schreiben.txt',
     content: 'Schreiben der Hausverwaltung zur Nebenkostenabrechnung 2025 für die Wohnung in der Musterstraße 1.',
-    folder: 'private/wohnen',
+    folder: 'Privat/wohnen',
     topic: 'Wohnen',
   });
   app.llm.on('DocumentClassification', () =>
     classification({
       title: 'Nebenkostenabrechnung 2025',
       summary: 'Die Hausverwaltung rechnet die Nebenkosten ab.',
-      categoryPath: 'private/steuern',
+      categoryPath: 'Privat/steuern',
       docType: 'Abrechnung',
       mainTopic: 'Nebenkosten',
       persons: ['Maria Beispiel'],
@@ -93,7 +93,7 @@ describe('Metadata-only re-analysis of archived documents (#220)', () => {
     expect(applied.persons).toContain('Maria Beispiel');
     expect(applied.topicName).toBe('Nebenkosten');
     expect(applied.archiveRelPath).toBe((await app.ok('documents:get', { id })).archiveRelPath);
-    expect(applied.categoryPath).toBe('private/wohnen');
+    expect(applied.categoryPath).toBe('Privat/wohnen');
     expect(await app.ok('documents:reanalysis', { id })).toBeNull();
     const entry = await lastAudit('document.applyReanalysis');
     expect(entry).toMatchObject({ confirmed: true, actor: 'user' });
@@ -112,7 +112,7 @@ describe('Metadata-only re-analysis of archived documents (#220)', () => {
   });
 
   it('never clears an existing topic when the proposal names none', async () => {
-    app.llm.on('DocumentClassification', () => classification({ title: 'Anderer Titel', summary: 'x', categoryPath: 'private/wohnen', mainTopic: null }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Anderer Titel', summary: 'x', categoryPath: 'Privat/wohnen', mainTopic: null }));
     await reprocess();
 
     const applied = await app.ok('documents:applyReanalysis', { id, confirmed: true });
@@ -151,7 +151,7 @@ describe('Metadata-only re-analysis of archived documents (#220)', () => {
   });
 
   it('summarises a run in one notification and counts documents it could not process', async () => {
-    const other = await archived(app, { name: 'zweites.txt', content: 'Zweites Dokument mit ausreichend Text für eine Neuanalyse.', folder: 'private/wohnen' });
+    const other = await archived(app, { name: 'zweites.txt', content: 'Zweites Dokument mit ausreichend Text für eine Neuanalyse.', folder: 'Privat/wohnen' });
     app.llm.status = 400;
     app.services.database.sqlite.prepare("UPDATE documents SET extracted_text = '' WHERE id = ?").run(other);
 

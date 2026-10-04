@@ -14,24 +14,24 @@ const lastAssistant = async (conversationId: string) => (await app.ok('chat:hist
 
 describe('Agent in the chat (#295, #303, #304)', () => {
   it('„Verschiebe alle md nach presentations“: finds by extension, moves all, logs the run and undoes it as a whole', async () => {
-    const a = await archived(app, { name: 'folien-q1.md', content: '# Q1', folder: 'work/misc' });
-    const b = await archived(app, { name: 'folien-q2.md', content: '# Q2', folder: 'work/misc' });
-    const other = await archived(app, { name: 'notiz.txt', content: 'Notiz', folder: 'work/misc' });
+    const a = await archived(app, { name: 'folien-q1.md', content: '# Q1', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'folien-q2.md', content: '# Q2', folder: 'Arbeit/misc' });
+    const other = await archived(app, { name: 'notiz.txt', content: 'Notiz', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: ['md'] } }] },
       ({ body }) => {
         // the result set of the previous call stands for ALL hits
         expect(JSON.stringify(body.input)).toContain('Ergebnismenge S1');
-        return { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'work/presentations' } }] };
+        return { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'Arbeit/presentations' } }] };
       },
-      { text: 'Ich habe 2 Dateien nach work/presentations verschoben.' },
+      { text: 'Ich habe 2 Dateien nach Arbeit/presentations verschoben.' },
     );
     const res = await app.ok('chat:send', { text: 'Verschiebe alle md nach presentations' });
     expect(res.assistantMessage.content).toContain('2 Dateien');
     expect(res.assistantMessage.runId).toBeTruthy();
-    expect(folderOf(app, a)).toBe('work/presentations');
-    expect(folderOf(app, b)).toBe('work/presentations');
-    expect(folderOf(app, other)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/presentations');
+    expect(folderOf(app, b)).toBe('Arbeit/presentations');
+    expect(folderOf(app, other)).toBe('Arbeit/misc');
 
     const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
     expect(run.status).toBe('done');
@@ -46,13 +46,13 @@ describe('Agent in the chat (#295, #303, #304)', () => {
 
     const undo = await app.ok('agent:undoRun', { runId: run.id });
     expect(undo.undone).toBe(2);
-    expect(folderOf(app, a)).toBe('work/misc');
-    expect(folderOf(app, b)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
+    expect(folderOf(app, b)).toBe('Arbeit/misc');
   });
 
   it('a folder structure plan is always a proposal, one item per group, and can be confirmed in parts (#304)', async () => {
-    const a = await archived(app, { name: 'rechnung.md', content: 'Rechnung', folder: 'work/misc' });
-    const b = await archived(app, { name: 'vertrag.md', content: 'Vertrag', folder: 'work/misc' });
+    const a = await archived(app, { name: 'rechnung.md', content: 'Rechnung', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'vertrag.md', content: 'Vertrag', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       {
         calls: [
@@ -66,8 +66,8 @@ describe('Agent in the chat (#295, #303, #304)', () => {
             name: 'propose_structure',
             args: {
               groups: [
-                { documents: ['S1'], folder: 'work/finanzen/rechnungen' },
-                { documents: ['S2'], folder: 'work/vertraege' },
+                { documents: ['S1'], folder: 'Arbeit/finanzen/rechnungen' },
+                { documents: ['S2'], folder: 'Arbeit/vertraege' },
               ],
             },
           },
@@ -75,74 +75,74 @@ describe('Agent in the chat (#295, #303, #304)', () => {
       },
       { text: 'So würde ich es ordnen.' },
     );
-    const res = await app.ok('chat:send', { text: 'Wie würdest du work/misc ordnen? Schlag mir eine Struktur vor.' });
-    expect(folderOf(app, a)).toBe('work/misc');
+    const res = await app.ok('chat:send', { text: 'Wie würdest du Arbeit/misc ordnen? Schlag mir eine Struktur vor.' });
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
     const card = res.assistantMessage.actions.find((x) => x.actionType === 'agent_batch')!;
     const items = (card.proposedParameters as { items: Array<{ tool: string }> }).items;
     expect(items.map((i) => i.tool)).toEqual(['move_documents', 'move_documents']);
     await app.ok('actions:resolve', { decision: 'approve', actionId: card.id, confirmed: true, parameterOverrides: { selected: [1] } });
-    expect(folderOf(app, a)).toBe('work/misc');
-    expect(folderOf(app, b)).toBe('work/vertraege');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
+    expect(folderOf(app, b)).toBe('Arbeit/vertraege');
     await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
-    expect(folderOf(app, b)).toBe('work/misc');
+    expect(folderOf(app, b)).toBe('Arbeit/misc');
   });
 
   it('mode „Fragen“: prepares the change as one proposal card and executes it after confirmation', async () => {
     app.services.settings.update({ agent: { mode: 'ask' } });
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: 'md' } }] },
-      { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'work/slides' } }] },
+      { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'Arbeit/slides' } }] },
       { text: 'Vorschlag ist vorbereitet.' },
     );
-    const res = await app.ok('chat:send', { text: 'Verschieb die md-Dateien nach work/slides' });
-    expect(folderOf(app, a)).toBe('work/misc');
+    const res = await app.ok('chat:send', { text: 'Verschieb die md-Dateien nach Arbeit/slides' });
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
     const card = res.assistantMessage.actions.find((x) => x.actionType === 'agent_batch')!;
     expect(card).toBeTruthy();
     const tool = JSON.stringify(app.llm.agentRequests.at(-1)!.input);
     expect(tool).toContain('NICHT AUSGEFÜHRT');
     const done = await app.ok('actions:resolve', { decision: 'approve', actionId: card.id, confirmed: true });
     expect(done.status).toBe('executed');
-    expect(folderOf(app, a)).toBe('work/slides');
+    expect(folderOf(app, a)).toBe('Arbeit/slides');
     // the executed proposal belongs to the run: undo of the run covers it
     const undo = await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
     expect(undo.undone).toBe(1);
-    expect(folderOf(app, a)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
   });
 
   it('„frag mich diesmal vorher“ switches only this conversation to „Fragen“', async () => {
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'move_documents', args: { documents: ['S9'], folder: 'work/x' } }] }, { text: 'ok' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'move_documents', args: { documents: ['S9'], folder: 'Arbeit/x' } }] }, { text: 'ok' });
     const res = await app.ok('chat:send', { text: 'Frag mich diesmal vorher: räum die md auf' });
     const state = await app.ok('agent:conversation', { conversationId: res.conversationId });
     expect(state.override).toBe('ask');
     expect(state.mode).toBe('ask');
     expect(app.services.settings.get().agent.mode).toBe('auto');
-    expect(folderOf(app, a)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
     const other = await app.ok('agent:conversation', {});
     expect(other.mode).toBe('auto');
   });
 
   it('critical exceptions ask even in „Auto“: a new main category and mass actions above the threshold', async () => {
-    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'work/misc' });
-    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'work/misc' });
+    const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
+    const b = await archived(app, { name: 'b.md', content: 'B', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: 'md' } }] },
       { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'neu/praesentationen' } }] },
       { text: 'Bitte bestätigen.' },
     );
     const res = await app.ok('chat:send', { text: 'Verschiebe alle md nach neu/praesentationen' });
-    expect(folderOf(app, a)).toBe('work/misc');
+    expect(folderOf(app, a)).toBe('Arbeit/misc');
     expect(res.assistantMessage.actions.some((x) => x.actionType === 'agent_batch')).toBe(true);
 
     app.services.settings.update({ agent: { massActionThreshold: 1 } });
     app.llm.agent = scriptedTurns(
       { calls: [{ name: 'find_documents', args: { ext: 'md' } }] },
-      { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'work/slides' } }] },
+      { calls: [{ name: 'move_documents', args: { documents: ['S1'], folder: 'Arbeit/slides' } }] },
       { text: 'Massenaktion – bitte bestätigen.' },
     );
-    const res2 = await app.ok('chat:send', { conversationId: res.conversationId, text: 'Dann nach work/slides' });
-    expect(folderOf(app, b)).toBe('work/misc');
+    const res2 = await app.ok('chat:send', { conversationId: res.conversationId, text: 'Dann nach Arbeit/slides' });
+    expect(folderOf(app, b)).toBe('Arbeit/misc');
     const run = await app.ok('agent:run', { id: res2.assistantMessage.runId! });
     expect(run.steps.find((s) => s.tool === 'move_documents')?.outcome).toBe('proposed');
   });
@@ -173,7 +173,7 @@ describe('Agent in the chat (#295, #303, #304)', () => {
   });
 
   it('refs in the answer are shown as titles; documents not shared stay anonymous', async () => {
-    await archived(app, { name: 'mietvertrag.md', content: 'Mietvertrag Wohnung', folder: 'private/wohnen' });
+    await archived(app, { name: 'mietvertrag.md', content: 'Mietvertrag Wohnung', folder: 'Privat/wohnen' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'find_documents', args: { name: 'mietvertrag' } }] }, { text: 'Gefunden: D1.' });
     const res = await app.ok('chat:send', { text: 'Wo ist der Mietvertrag?' });
     expect(res.assistantMessage.content).toBe('Gefunden: „mietvertrag“.');

@@ -7,7 +7,7 @@ let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Mietvertrag Wohnung', summary: 'Ein Vertrag.', categoryPath: 'private/wohnen', docType: 'Vertrag' }),
+    classification({ title: 'Mietvertrag Wohnung', summary: 'Ein Vertrag.', categoryPath: 'Privat/wohnen', docType: 'Vertrag' }),
   );
 });
 afterEach(async () => {
@@ -22,7 +22,7 @@ const importOne = async (name = 'vertrag.txt') => {
   return result.imported[0]!.id;
 };
 const analyzeJob = () => app.services.jobs.list().find((job) => job.type === 'document.analyze')!;
-const llmFailures = () => app.services.notifications.list().filter((n) => n.title === 'LLM-Analyse fehlgeschlagen');
+const llmFailures = () => app.services.notifications.list().filter((n) => n.title === 'KI-Analyse fehlgeschlagen');
 
 describe('A rate limit or an outage re-queues the analysis instead of downgrading it (#220)', () => {
   it('keeps the document pending and analyses it with the LLM once the endpoint answers again', async () => {

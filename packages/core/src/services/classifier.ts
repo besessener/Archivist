@@ -48,50 +48,50 @@ function keywordMatcher(keywords: string[], excludedEndings: string[] = []): (te
 const RULES: Array<{ matches: (text: string) => boolean; path: (year: string) => string; type: string; weight: number }> = [
   {
     matches: keywordMatcher(['urlaub', 'reise', 'anreise', 'abreise', 'flug', 'hotel', 'buchungsbest'], ['preise', 'kreise']),
-    path: (y) => `private/vacation/${y}`,
+    path: (y) => `Privat/Urlaub/${y}`,
     type: 'Urlaub/Reise',
     weight: 0.7,
   },
   {
     matches: keywordMatcher(['steuer', 'finanzamt', 'steuererkl'], ['umsatzsteuer', 'mehrwertsteuer', 'vorsteuer']),
-    path: (y) => `private/finance/taxes/${y}`,
+    path: (y) => `Privat/Finanzen/Steuern/${y}`,
     type: 'Steuerdokument',
     weight: 0.75,
   },
-  { matches: keywordMatcher(['versicherung', 'police', 'schadenmeldung']), path: () => 'private/insurance', type: 'Versicherung', weight: 0.7 },
+  { matches: keywordMatcher(['versicherung', 'police', 'schadenmeldung']), path: () => 'Privat/Versicherungen', type: 'Versicherung', weight: 0.7 },
   {
     matches: keywordMatcher(['miete', 'mietvertrag', 'hauskauf', 'immobilie', 'nebenkosten', 'grundbuch', 'baufinanz']),
-    path: () => 'private/housing',
+    path: () => 'Privat/Wohnen',
     type: 'Wohnen',
     weight: 0.7,
   },
   {
     matches: keywordMatcher(['arzt', 'diagnose', 'rezept', 'krankenkasse', 'befund', 'gesundheit'], ['fehlerdiagnose', 'kochrezept', 'backrezept']),
-    path: () => 'private/health',
+    path: () => 'Privat/Gesundheit',
     type: 'Gesundheit',
     weight: 0.7,
   },
   {
     matches: keywordMatcher(['protokoll', 'meeting', 'jour\\s?fixe', 'besprechung', 'agenda', 'teilnehmer']),
-    path: (y) => `work/meetings/${y}`,
+    path: (y) => `Arbeit/Besprechungen/${y}`,
     type: 'Protokoll',
     weight: 0.65,
   },
   {
     matches: keywordMatcher(['vertrag', 'vereinbarung', 'kündigungsfrist', 'vertragspartner', 'auftragnehmer']),
-    path: () => 'work/contracts',
+    path: () => 'Arbeit/Verträge',
     type: 'Vertrag',
     weight: 0.6,
   },
   {
     matches: keywordMatcher(['architektur', 'systemdesign', 'schnittstelle', 'komponenten', 'adr(?![\\p{L}\\p{N}])', 'technische\\s+konzept']),
-    path: () => 'work/architecture',
+    path: () => 'Arbeit/Architektur',
     type: 'Architektur',
     weight: 0.6,
   },
   {
     matches: keywordMatcher(['rechnung', 'invoice', 'zahlungsziel', 'rechnungsnummer'], ['berechnung', 'hochrechnung', 'verrechnung']),
-    path: (y) => `private/finance/invoices/${y}`,
+    path: (y) => `Privat/Finanzen/Rechnungen/${y}`,
     type: 'Rechnung',
     weight: 0.6,
   },
@@ -202,7 +202,7 @@ export function classifyLocally(input: {
   let confidence: number;
   let rationale: string;
   if (project) {
-    categoryPath = `work/projects/${project}`;
+    categoryPath = `Arbeit/Projekte/${project}`;
     docType = rule?.type ?? docType;
     confidence = 0.6;
     rationale = `Der Projektname „${project}“ kommt im Dokument vor.`;
@@ -212,7 +212,7 @@ export function classifyLocally(input: {
     confidence = rule.weight;
     rationale = `Typische Begriffe für „${rule.type}“ gefunden.`;
   } else {
-    categoryPath = 'private/unsortiert';
+    categoryPath = 'Privat/unsortiert';
     rationale = 'Keine eindeutigen Hinweise gefunden – bitte Zielordner prüfen.';
     confidence = 0.25;
   }

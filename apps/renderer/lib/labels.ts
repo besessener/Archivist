@@ -1,14 +1,13 @@
 import type {
   ArchiveMode,
   DecisionStatus,
+  DocumentStatus,
   InsightKind,
   JobStatus,
   LlmStatus,
   LlmTestResult,
   NotificationType,
-  OpenItemStatus,
   RelationStatus,
-  RelationType,
   ScanFileStatus,
 } from '@archivist/shared';
 
@@ -50,18 +49,12 @@ export const DECISION_STATUS_HINTS: Record<DecisionStatus, string> = {
   revoked: 'Du hast sie widerrufen.',
 };
 
-export const OPEN_ITEM_STATUS_LABELS: Record<OpenItemStatus, string> = {
-  open: 'Offen',
-  waiting: 'Wartet',
-  blocked: 'Blockiert',
-  resolved: 'Erledigt',
-  dismissed: 'Verworfen',
-};
+export { OPEN_ITEM_STATUS_LABELS } from '@archivist/shared';
 
 export const LLM_STATUS_LABELS: Record<LlmStatus, string> = {
   local_only: 'nur lokal gescannt',
-  pending: 'zur LLM-Analyse vorgesehen',
-  analyzed: 'per LLM analysiert',
+  pending: 'zur KI-Analyse vorgesehen',
+  analyzed: 'per KI analysiert',
   excluded: 'von externer Analyse ausgeschlossen',
 };
 
@@ -104,24 +97,7 @@ export const RELATION_STATUS_LABELS: Record<RelationStatus, string> = {
   outdated: 'Veraltet',
 };
 
-export const RELATION_TYPE_LABELS: Record<RelationType, string> = {
-  belongs_to: 'gehört zu',
-  relates_to: 'hängt zusammen mit',
-  supports: 'unterstützt',
-  contradicts: 'widerspricht',
-  participated_in: 'beteiligt an',
-  responsible_for: 'verantwortlich für',
-  concerns: 'betrifft',
-  affects: 'wirkt auf',
-  supersedes: 'ersetzt',
-  blocks: 'blockiert',
-  results_from: 'ergibt sich aus',
-  produced: 'hat erzeugt',
-  mentioned_in: 'erwähnt in',
-  duplicate_of: 'Duplikat von',
-  related_to: 'verwandt mit',
-  subtopic_of: 'Unterthema von',
-};
+export { RELATION_TYPE_LABELS } from '@archivist/shared';
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   open_item_due: 'Fälliger Punkt',
@@ -158,3 +134,14 @@ export const connectionTone = (test: LlmTestResult) => (!test.ok ? 'danger' : st
 
 export const connectionTitle = (test: LlmTestResult) =>
   !test.ok ? 'Verbindung fehlgeschlagen' : structuredFailed(test) ? 'Verbindung steht, strukturierte Antworten fehlgeschlagen' : 'Verbindung erfolgreich';
+
+export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
+  staged: 'Wartet auf Analyse',
+  analyzing: 'Wird analysiert',
+  proposed: 'Vorschlag liegt in der Inbox',
+  archived: 'Archiviert',
+  indexed_only: 'Nur indexiert',
+  ignored: 'Ignoriert',
+  failed: 'Fehlgeschlagen',
+  quarantined: 'In Quarantäne',
+};

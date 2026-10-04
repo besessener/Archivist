@@ -255,6 +255,9 @@ export class AnthropicAdapter implements ProviderAdapter {
           throw mapError(err, req.signal);
         }
       }
+    } catch (err) {
+      this.config.fail(err, req.signal);
+      throw err;
     } finally {
       this.config.log({
         purpose: req.purpose,

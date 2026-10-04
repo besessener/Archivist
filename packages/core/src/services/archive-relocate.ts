@@ -5,7 +5,7 @@ import { documents, relations } from '../db/schema';
 import { AppError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
-import { assertRealInside, resolveInside, sanitizeCategoryPath, uniquePath } from '../util/paths';
+import { assertRealInside, resolveInside, uniquePath } from '../util/paths';
 import { pruneEmptyDirs } from './archive-files';
 import {
   archiveRootOf,
@@ -39,7 +39,7 @@ interface RelationEdits {
   relationsChanged: RelationRow[];
 }
 
-const sameDir = (a: string, b: string) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+const sameDir = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 const errorText = (err: unknown, fallback: string) => (err instanceof AppError ? err.message : fallback);
 
@@ -77,12 +77,13 @@ export class ArchiveRelocator {
       return block('Nur archivierte Dokumente mit einer Datei im Archiv lassen sich umlagern.');
     let categoryPath: string;
     try {
-      categoryPath = sanitizeCategoryPath(req.categoryPath);
+      categoryPath = this.deps.categories.canonical(req.categoryPath);
     } catch (err) {
       return block(errorText(err, 'Ungültiger Zielordner.'));
     }
     const main = this.deps.categories.needsApproval(categoryPath);
-    if (main) return block(`Die Hauptkategorie „${main}“ gibt es noch nicht. Neue Hauptkategorien müssen vorher ausdrücklich angelegt werden.`);
+    if (main && main.toLowerCase() !== req.confirmedMainCategory?.toLowerCase())
+      return block(`Die Hauptkategorie „${main}“ gibt es noch nicht. Neue Hauptkategorien müssen vorher ausdrücklich angelegt werden.`);
     const root = archiveRootOf(this.deps);
     let file: string;
     let dir: string;

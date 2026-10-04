@@ -22,7 +22,7 @@ const archiveAll = async (source: 'inbox' | 'scan' = 'inbox', extra: Record<stri
 async function fillInbox(count: number) {
   const ids: string[] = [];
   for (let n = 1; n <= count; n += 1)
-    ids.push(await inInbox(app, { name: `brief${n}.txt`, content: `Brief ${n} mit ausreichend Text für die Analyse.`, folder: `private/ordner${n % 2}` }));
+    ids.push(await inInbox(app, { name: `brief${n}.txt`, content: `Brief ${n} mit ausreichend Text für die Analyse.`, folder: `Privat/ordner${n % 2}` }));
   return ids;
 }
 
@@ -34,7 +34,7 @@ describe('„Alle Vorschläge archivieren“ (#228)', () => {
 
     expect(preview).toMatchObject({ count: 4, blocked: 0, moreFolders: 0 });
     expect(preview.folders.map((folder) => folder.count).reduce((sum, count) => sum + count, 0)).toBe(4);
-    expect(preview.folders.map((folder) => folder.path).sort()).toEqual(['private/ordner0', 'private/ordner1']);
+    expect(preview.folders.map((folder) => folder.path).sort()).toEqual(['Privat/ordner0', 'Privat/ordner1']);
     expect(await statuses()).toEqual(['proposed', 'proposed', 'proposed', 'proposed']);
   });
 
@@ -71,7 +71,7 @@ describe('„Alle Vorschläge archivieren“ (#228)', () => {
 
   it('never overwrites: a file already at the target stays, the document gets another name', async () => {
     const [id] = await fillInbox(1);
-    const target = path.join(app.services.settings.get().archiveRoot, 'private', 'ordner1');
+    const target = path.join(app.services.settings.get().archiveRoot, 'Privat', 'ordner1');
     fs.mkdirSync(target, { recursive: true });
     fs.writeFileSync(path.join(target, 'brief1.txt'), 'bereits da');
 
@@ -100,7 +100,7 @@ describe('„Alle Vorschläge archivieren“ (#228)', () => {
   it('takes only the documents of the scan’s assignment groups for the source „scan“', async () => {
     await fillInbox(2);
     app.file('Downloads/scan.txt', 'Ein gescanntes Dokument mit ausreichend Text für die Analyse.');
-    app.llm.on('DocumentClassification', () => classification({ title: 'Gescannt', summary: 'Gescannt.', categoryPath: 'private/gescannt' }));
+    app.llm.on('DocumentClassification', () => classification({ title: 'Gescannt', summary: 'Gescannt.', categoryPath: 'Privat/gescannt' }));
     await app.ok('scanner:addDirectory', { path: path.join(app.home, 'Downloads'), recursive: true });
     await app.ok('scanner:start', {});
     await app.services.jobs.whenIdle();
@@ -160,7 +160,7 @@ describe('„Alle Vorschläge archivieren“ archives what the preview showed (#
   it('archives only the previewed documents and skips those that stopped being proposals since', async () => {
     const [first, second] = await fillInbox(2);
     const { previewId } = await app.ok('documents:archiveAllPreview', { source: 'inbox' });
-    await inInbox(app, { name: 'spaeter.txt', content: 'Kam nach der Vorschau dazu, mit genug Text für die Analyse.', folder: 'private/spaeter' });
+    await inInbox(app, { name: 'spaeter.txt', content: 'Kam nach der Vorschau dazu, mit genug Text für die Analyse.', folder: 'Privat/spaeter' });
     await app.ok('documents:archive', {
       items: [{ documentId: first!, mode: 'ignore' }],
       confirmed: true,

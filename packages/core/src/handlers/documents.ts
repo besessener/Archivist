@@ -55,6 +55,7 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'documents:previewRename': (input) => services.archive.previewRename(renameByPattern(services, input)),
     'documents:rename': (input) => services.archive.rename(renameByPattern(services, input), { confirmed: true, trigger: UI_TRIGGER }),
     'documents:ignore': (input) => services.documents.ignore(input.id),
+    'documents:unignore': (input) => services.documents.unignore(input.id),
     'documents:forTopic': (input) => {
       const subject = services.graph.getEntity(input.topicId);
       return services.documents.list({ [subject?.type === 'project' ? 'projectId' : 'topicId']: input.topicId, limit: 500 });
@@ -110,6 +111,8 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
 
     'categories:list': () => services.categories.list(),
     'categories:create': (input) => services.archive.createCategory(input.path, { confirmed: input.confirmed }),
+    'categories:previewMigration': () => services.categoryMigration.preview(),
+    'categories:migrate': (input) => services.categoryMigration.migrate({ confirmed: input.confirmed }),
     'backup:create': (input) => services.backup.create({ includeArchive: input.includeArchive }),
     'backup:list': () => services.backup.list(),
     'backup:storage': () => services.backup.storage(),

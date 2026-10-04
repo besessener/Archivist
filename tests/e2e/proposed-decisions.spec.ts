@@ -9,7 +9,7 @@ const NOTIFICATION = 'Dokument enthält 1 mögliche Entscheidung(en)';
 async function archiveDocumentWithDecision(app: PageTree, file: string) {
   await app.inbox.do.importFile(file);
   await app.navigation.do.open('inbox');
-  await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+  await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
   await app.inbox.do.openArchivePlan();
   await app.inbox.do.confirmArchive();
   await app.inbox.locators.archivePlan.close.click();

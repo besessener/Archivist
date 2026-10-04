@@ -6,8 +6,9 @@ import { useQuery } from '@/lib/use-query';
 
 /** Open contradictions and „möglicherweise überholt“ hints of the archive check that concern this decision – a valid-looking status alone says nothing about them. */
 export function DecisionHints({ id }: { id: string }) {
-  const contradictions = useQuery('contradictions:list', { status: 'detected' }, { scopes: ['contradictions'] });
-  const insights = useQuery('insights:list', { status: 'open' }, { scopes: ['insights'] });
+  // only what concerns this decision: a handful of rows, never the whole list
+  const contradictions = useQuery('contradictions:list', { status: 'detected', entityId: id, limit: 50 }, { scopes: ['contradictions'] });
+  const insights = useQuery('insights:list', { status: 'open', kind: 'possibly_superseded', entityId: id, limit: 50 }, { scopes: ['insights'] });
   const conflicts = (contradictions.data ?? []).filter((contradiction) => contradiction.affectedEntityIds.includes(id));
   const outdated = (insights.data ?? []).filter((insight) => insight.kind === 'possibly_superseded' && insight.affected[0]?.id === id);
   if (conflicts.length === 0 && outdated.length === 0) return null;

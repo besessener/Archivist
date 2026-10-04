@@ -105,8 +105,13 @@ export class ChatService {
     return this.store.rename(id, title);
   }
 
-  history(conversationId: string): ChatMessage[] {
-    return this.store.history(conversationId);
+  /** The conversation (or, with `page`, the window of the newest messages the page names), oldest first. */
+  history(conversationId: string, page?: { limit: number; offset: number }): ChatMessage[] {
+    return page ? this.store.page(conversationId, page) : this.store.history(conversationId);
+  }
+
+  historyCount(conversationId: string): number {
+    return this.store.count(conversationId);
   }
 
   /** Emergency fallback without LLM (only if the endpoint is unreachable or not configured). */

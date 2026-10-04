@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { ArchivistJson } from '../../util/json';
 import { jsonArr } from './columns';
 
@@ -42,7 +42,7 @@ export const insights = sqliteTable(
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
-  (t) => [uniqueIndex('insights_dedupe_idx').on(t.dedupeKey)],
+  (t) => [uniqueIndex('insights_dedupe_idx').on(t.dedupeKey), index('insights_status_updated_idx').on(t.status, t.updatedAt)],
 );
 
 export const contradictions = sqliteTable(

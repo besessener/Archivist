@@ -17,7 +17,7 @@ export class RuleBasedIntents {
 
   classify(text: string, state: ConvState): ChatIntent {
     const trimmed = text.trim();
-    const base = { confidence: 0.45, rationale: 'Regelbasierte Erkennung (LLM nicht verfügbar).' };
+    const base = { confidence: 0.45, rationale: 'Regelbasierte Erkennung (KI nicht verfügbar).' };
     const generic: ChatIntent = { ...base, ...this.intentOf(trimmed) };
     // the message only counts as an answer to the follow-up question if it has no recognizable request of its own
     const answer = state.pending && generic.intent === 'note_capture' ? answerToPending(trimmed, state.pending) : null;

@@ -40,7 +40,7 @@ export function initSettings(page: Page) {
       transmissions: {
         rows: page.getByTestId('transmission-row'),
         preview: page.getByTestId('transmission-preview'),
-        retentionNote: page.getByText('nach 90 Tagen automatisch gelöscht'),
+        retentionNote: page.getByText('Tagen automatisch gelöscht'),
       },
       maskPersonal: page.getByTestId('privacy-mask-personal'),
       maskNote: page.getByTestId('privacy-mask-note'),
@@ -113,6 +113,22 @@ export function initSettings(page: Page) {
         save: page.getByTestId('memory-save'),
       },
     },
+    categories: {
+      list: page.getByTestId('category-list'),
+      newPath: page.getByTestId('category-new'),
+      create: page.getByTestId('category-create'),
+      confirmCreate: page.getByTestId('category-confirm'),
+    },
+    categoryMigration: {
+      plan: page.getByTestId('category-migration-plan'),
+      start: page.getByTestId('category-migration-start'),
+      confirm: page.getByTestId('category-migration-confirm'),
+      result: page.getByTestId('category-migration-result'),
+    },
+    ocr: {
+      languages: page.getByTestId('settings-ocr-languages'),
+      language: (code: 'deu' | 'eng') => page.getByTestId(`settings-ocr-language-${code}`),
+    },
     archiveCheck: {
       verify: page.getByTestId('archive-verify'),
       report: page.getByTestId('verify-report'),
@@ -124,6 +140,7 @@ export function initSettings(page: Page) {
       createMetadata: page.getByTestId('backup-metadata'),
       rows: page.getByTestId('backup-row'),
       restore: page.getByTestId('backup-restore'),
+      beforeRestoreRow: page.getByTestId('backup-row').filter({ hasText: 'Stand vor der Wiederherstellung vom' }),
       confirmRestore: page.getByTestId('backup-restore-confirm'),
       restartNotice: page.getByTestId('backup-restart-notice'),
       storage: page.getByTestId('backup-storage'),
@@ -150,6 +167,13 @@ export function initSettings(page: Page) {
     /** Opens the preview of the transmission log entry in the given row. */
     openTransmissionPreview: async (row: number) => {
       await locators.privacy.transmissions.rows.nth(row).getByRole('button', { name: 'Vorschau' }).click();
+    },
+    /** Creates a category through the form and its confirmation dialog. */
+    createCategory: async (categoryPath: string) => {
+      await locators.categories.newPath.fill(categoryPath);
+      await locators.categories.create.click();
+      await locators.categories.confirmCreate.click();
+      await expect(locators.categories.list).toContainText(categoryPath);
     },
     selectMode: async (mode: PrivacyMode) => {
       await locators.privacy.mode(mode).check();

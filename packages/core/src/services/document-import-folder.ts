@@ -8,13 +8,13 @@ import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from './document
 import { folderRefusal, importWalkRules } from './document-import-guard';
 import type { DocumentDeps } from './document-model';
 import type { JobContext } from './jobs';
-import { SCAN_MAX_FILES } from '../workers/tasks';
+import { SCAN_PAGE_SIZE } from '../workers/tasks';
 
 /** Job type that copies the supported files of a dropped folder (and its subfolders) into the inbox (#228). */
 export const DOCUMENT_IMPORT_FOLDER_JOB = 'documents.importFolder';
 
 /** Files one folder import takes; more are left out with a clear message (the walk is the same as the scanner's). */
-export const IMPORT_FOLDER_MAX_FILES = SCAN_MAX_FILES;
+export const IMPORT_FOLDER_MAX_FILES = 20_000;
 const COPY_CHUNK = 50;
 /** The checkpoint is saved again after a tenth more files, so 20.000 files write it about 40 times, not 400. */
 const CHECKPOINT_GROWTH = 10;
@@ -59,16 +59,29 @@ export class FolderImport {
     if (refusal) throw permissionError(refusal, job.payload.path);
     const saved = job.checkpoint as Partial<FolderCheckpoint> | null;
     const progress: FolderCheckpoint = { startedAt: nowIso(), copied: 0, imported: 0, duplicates: 0, rejected: 0, importedIds: [], ...saved };
-    const walked = await this.deps.pool.run('scanDirectory', {
-      root: await fsp.realpath(job.payload.path),
-      recursive: true,
-      ...importWalkRules(this.deps),
-      maxSizeBytes: MAX_IMPORT_BYTES,
-      maxFiles: this.maxFiles,
-    });
-    const files = walked.entries.map((entry) => entry.path);
+    const { files, limitReached } = await this.walk(await fsp.realpath(job.payload.path));
     await this.copyFiles(files, { job, progress });
-    return { summary: this.queueAnalysis({ job, progress, limitReached: walked.limitReached }) };
+    return { summary: this.queueAnalysis({ job, progress, limitReached }) };
+  }
+
+  /** Collects the supported files page by page up to `maxFiles`; `limitReached` when more matching files follow. */
+  private async walk(root: string): Promise<{ files: string[]; limitReached: boolean }> {
+    const files: string[] = [];
+    let resume: { after: string; visited: string[] } | undefined;
+    for (;;) {
+      const page = await this.deps.pool.run('scanDirectory', {
+        root,
+        recursive: true,
+        ...importWalkRules(this.deps),
+        maxSizeBytes: MAX_IMPORT_BYTES,
+        pageSize: Math.min(SCAN_PAGE_SIZE, this.maxFiles - files.length),
+        ...resume,
+      });
+      files.push(...page.entries.map((entry) => entry.path));
+      if (!page.nextCursor) return { files, limitReached: false };
+      if (files.length >= this.maxFiles) return { files, limitReached: true };
+      resume = { after: page.nextCursor, visited: page.visited };
+    }
   }
 
   private async copyFiles(files: string[], run: { job: JobContext<ImportFolderPayload>; progress: FolderCheckpoint }): Promise<void> {

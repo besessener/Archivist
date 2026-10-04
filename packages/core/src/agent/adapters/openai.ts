@@ -212,6 +212,9 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         usage = result.usage;
         return result;
       }
+    } catch (err) {
+      this.config.fail(err, req.signal);
+      throw err;
     } finally {
       this.config.log({
         purpose: req.purpose,

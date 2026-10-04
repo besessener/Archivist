@@ -12,7 +12,7 @@ async function threeItems() {
     await app.ok('openItems:create', { title: t, description: flatText(t) });
   await app.services.jobs.whenIdle();
 }
-const clusterHints = () => app.services.insights.list('open').filter((i) => i.kind === 'topic_cluster');
+const clusterHints = () => app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'topic_cluster');
 
 describe('New topics from groups of similar entries in the archive check (#281)', () => {
   it('the archive check proposes the topic with an LLM name in mode „automatisch“; only titles are sent, as data', async () => {

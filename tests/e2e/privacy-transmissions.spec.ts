@@ -13,14 +13,14 @@ test.describe('transmission log', () => {
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.');
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
 
     await app.navigation.do.open('settings');
     await app.settings.do.openPrivacy();
 
     const row = app.settings.locators.privacy.transmissions.rows.first();
     await expect(row).toContainText('Dokumentklassifikation');
-    await expect(row).toContainText('jour-fixe');
+    await expect(row).toContainText('Jour Fixe Nordlicht');
     await app.settings.do.openTransmissionPreview(0);
     await expect(app.settings.locators.privacy.transmissions.preview).toContainText('Datei: jour-fixe.txt | Textanfang: Jour Fixe Nordlicht');
     await expect(app.settings.locators.privacy.transmissions.preview).not.toContainText('Antworte als JSON');

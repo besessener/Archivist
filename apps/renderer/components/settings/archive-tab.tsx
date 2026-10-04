@@ -14,6 +14,8 @@ import { useRun } from '@/lib/use-run';
 import type { IpcOutput } from '@archivist/shared';
 import { ArchiveRootSection } from './archive-root';
 import { IndexSection } from './index-section';
+import { CategoryMigrationSection } from './category-migration-section';
+import { OcrLanguages } from './ocr-languages';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 import { TrashSection } from './trash-section';
 
@@ -83,6 +85,8 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           </Button>
         </div>
       </Section>
+
+      <CategoryMigrationSection />
 
       <Section title="Archivzustand" description="Prüft, ob alle archivierten Dateien noch an ihrem Platz und unverändert sind.">
         <div className="flex flex-wrap gap-2">
@@ -175,6 +179,7 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           <SwitchRow label="Texterkennung in Bildern (OCR)" hint="Liest Text aus Bildern und gescannten PDFs – lokal, ohne Internet.">
             <Switch checked={settings.ocr.enabled} onCheckedChange={(v) => void save({ ocr: { enabled: v } })} aria-label="OCR" data-testid="settings-ocr" />
           </SwitchRow>
+          <OcrLanguages languages={settings.ocr.languages} disabled={busy} onChange={(languages) => void save({ ocr: { languages } })} />
           <Field label="Prüfung alle … Stunden" htmlFor="s-interval-h" hint="0 = nur beim Start / manuell.">
             <Input id="s-interval-h" type="number" min={0} value={intervalH} onChange={(e) => setIntervalH(e.target.value)} />
           </Field>

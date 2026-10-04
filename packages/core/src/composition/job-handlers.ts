@@ -15,6 +15,7 @@ import type { AgentService, BackgroundKind } from '../agent/service';
 import type { WiredServices } from './domain-services';
 import { reembedEntries } from '../services/reembedding';
 import { backfillNearDuplicates, NEAR_DUPLICATE_BACKFILL_JOB } from '../services/near-duplicates';
+import { REINDEX_REFS_JOB, reindexRefs, type ReindexRefs } from '../services/reindex-refs';
 
 type JobServices = WiredServices & { agent: AgentService };
 
@@ -158,6 +159,21 @@ export function registerJobHandlers(services: JobServices): void {
     },
   });
   jobs.register<Record<string, never>>(NEAR_DUPLICATE_BACKFILL_JOB, { handler: (job) => backfillNearDuplicates(services.documents.nearDuplicates, job) });
+  jobs.register<ReindexRefs>(REINDEX_REFS_JOB, {
+    handler: (job) =>
+      reindexRefs(
+        {
+          reindexers: {
+            documents: (id) => services.documents.indexDocument(id),
+            decisions: (id) => services.decisions.reindex(id),
+            openItems: (id) => services.openItems.reindex(id),
+            events: (id) => services.eventRecords.reindex(id),
+          },
+          logger: services.ctx.logger,
+        },
+        job,
+      ),
+  });
   jobs.register<Record<string, never>>(CONTRADICTION_SCAN_JOB, {
     handler: async (job) => {
       job.report(null, 'Prüfe Entscheidungen auf Widersprüche');

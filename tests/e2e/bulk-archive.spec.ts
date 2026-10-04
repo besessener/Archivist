@@ -20,18 +20,18 @@ test.describe('archiving all proposals at once (#228)', () => {
     await inbox.locators.archiveAll.open.click();
 
     await expect(inbox.locators.archiveAll.preview).toContainText('Deine Originale bleiben unverändert');
-    await expect(inbox.locators.archiveAll.folders).toContainText('work/projects/Nordlicht/');
+    await expect(inbox.locators.archiveAll.folders).toContainText('Arbeit/Projekte/Nordlicht/');
     await expect(inbox.locators.archiveAll.folders).toContainText('3 Dokumente');
     await expect(inbox.locators.archiveAll.confirm).toContainText('3 Dokumente archivieren');
     await expect(inbox.locators.archiveAll.confirm, 'needs the review confirmation first').toBeDisabled();
     await expectNoSeriousA11yViolations(page, testInfo);
-    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'work')), 'nothing is archived before the confirmation').toBe(false);
+    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'Arbeit')), 'nothing is archived before the confirmation').toBe(false);
 
     await inbox.locators.archiveAll.reviewed.check();
     await inbox.locators.archiveAll.confirm.click();
 
     await expect(inbox.locators.items).toHaveCount(0, { timeout: 30_000 });
-    expect(fs.readdirSync(path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht')).sort()).toEqual([
+    expect(fs.readdirSync(path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht')).sort()).toEqual([
       'jour-fixe-1.txt',
       'jour-fixe-2.txt',
       'jour-fixe-3.txt',
@@ -60,7 +60,7 @@ test.describe('archiving all proposals: new main categories (#228)', () => {
     await inbox.locators.archiveAll.confirm.click();
 
     await expect(inbox.locators.items).toHaveCount(1, { timeout: 30_000 });
-    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe-1.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe-1.txt'))).toBe(true);
     expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'sonderfall')), 'the unapproved folder is not created').toBe(false);
   });
 

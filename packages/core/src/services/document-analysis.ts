@@ -170,7 +170,7 @@ export class DocumentAnalyzer {
     const { signal } = opts;
     const file = this.deps.documents.readablePath(row);
     signal?.throwIfAborted();
-    const parsed = await extractFile(this.deps, file);
+    const parsed = await extractFile(this.deps, file, signal);
     signal?.throwIfAborted();
     const { classified, decision } = await this.classifyText(row, { text: parsed.text, opts, privacyRow: { ...row, sourcePath: row.sourcePath ?? file } });
     signal?.throwIfAborted(); // last checkpoint: after this the proposal is stored
@@ -220,7 +220,7 @@ export class DocumentAnalyzer {
       const warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
       this.deps.ctx.logger.warn('documents', 'LLM classification failed', { documentId: row.id, error: err });
       this.deps.notifications.create({
-        title: 'LLM-Analyse fehlgeschlagen',
+        title: 'KI-Analyse fehlgeschlagen',
         description: warning,
         type: 'system',
         priority: 'normal',
@@ -289,7 +289,13 @@ export class DocumentAnalyzer {
       possibleOpenItems: c.possibleOpenItems,
       duplicateOfDocumentId: this.textDuplicateOf(row.id, columns.textHash),
       analyzedBy: usedLlm ? 'llm' : 'local',
-      coverage: { textChars: result.parsed.text.length, llmChars: read.chars, llmParts: read.parts, extractionTruncated: result.parsed.truncated },
+      coverage: {
+        textChars: result.parsed.text.length,
+        llmChars: read.chars,
+        llmParts: read.parts,
+        extractionTruncated: result.parsed.truncated,
+        ocrPagesSkipped: Number(result.parsed.meta.ocrPagesSkipped ?? 0),
+      },
     };
     const title = c.title.slice(0, 200);
     // document, graph node and notice change together: a failure in between leaves none of them

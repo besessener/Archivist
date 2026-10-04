@@ -20,43 +20,18 @@ import { ResponsesRunner } from './llm/responses-runner';
 import { waitFor } from './llm/retry-wait';
 import { structuredAnswer } from './llm/structured';
 import { TokenLedger } from './llm/token-ledger';
-import { TransmissionLog, type Transmission } from './llm/transmission-log';
+import { TransmissionLog } from './llm/transmission-log';
 import { UsageTally } from './llm/usage';
 
 export type { FetchLike } from '../agent/adapters/common';
 export type { LlmOverrides, LlmRequest } from './llm/request-types';
 import type { LlmOverrides, LlmRequest } from './llm/request-types';
+import type { Connection, PreparedRequest, Transfer } from './llm/transfer-types';
 
 export { abortedError } from '../util/llm-errors';
 
 /** Every LLM request inside `llmCancelScope.run(signal, …)` uses this signal unless it brings its own (also nested services). */
 export const llmCancelScope = new AsyncLocalStorage<AbortSignal>();
-
-interface Connection {
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-}
-
-/** A request after the privacy gate: input and instructions are cut and masked, ready to send. */
-interface PreparedRequest {
-  connection: Connection;
-  request: LlmRequest;
-  sent: string;
-  instructions: string;
-  redactions: number;
-  personalRedactions: number;
-  preview: string;
-  signal?: AbortSignal;
-}
-
-/** One logged transmission: its attempts (retried while `maxAttempts` allows) share one log entry. */
-interface Transfer {
-  transmission: Omit<Transmission, 'success' | 'requests' | 'note' | 'inputTokens' | 'outputTokens' | 'cacheReadTokens'>;
-  signal?: AbortSignal;
-  attempt: (tally: UsageTally) => Promise<string>;
-  maxAttempts: (err: unknown) => number;
-}
 
 const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
@@ -122,7 +97,8 @@ export class LlmService {
     const apiKey = overrides.apiKey ?? this.deps.secrets.getApiKey();
     if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
     assertSecureBaseUrl(baseUrl);
-    return { baseUrl, model, apiKey };
+    const saved = baseUrl === llm.baseUrl.trim() && model === llm.model.trim() && apiKey === this.deps.secrets.getApiKey();
+    return { baseUrl, model, apiKey, source: saved ? 'saved' : 'unsaved' };
   }
 
   private post(request: PostRequest): Promise<PostResponse> {
@@ -180,10 +156,10 @@ export class LlmService {
     try {
       const text = await this.withRetries(transfer, tally);
       success = true;
-      this.health.markReachable();
+      if (transfer.source === 'saved') this.health.markReachable();
       return text;
     } catch (err) {
-      this.health.markFailed(err, transfer.signal);
+      if (transfer.source === 'saved') this.health.markFailed(err, transfer.signal);
       throw err;
     } finally {
       this.transmissions.record({ ...transfer.transmission, ...tally.columns(), success });
@@ -226,6 +202,7 @@ export class LlmService {
     });
     return this.transfer({
       transmission: this.transmissionOf(prepared, call.url),
+      source: connection.source,
       signal,
       // a hanging endpoint is asked at most twice (each attempt waits the full timeout), other transient errors three times
       maxAttempts: (err) => (isTimeout(err) ? 2 : 3),
@@ -240,7 +217,8 @@ export class LlmService {
 
   /** Connection data for the agent adapters; every transmission goes into the transmission log. */
   adapterConfig(overrides: LlmOverrides = {}): AdapterConfig {
-    const { baseUrl, model, apiKey } = this.connection(overrides);
+    const { baseUrl, model, apiKey, source } = this.connection(overrides);
+    const saved = source === 'saved';
     return {
       baseUrl,
       model,
@@ -249,7 +227,10 @@ export class LlmService {
       fetchImpl: this.fetchImpl,
       log: (transmission) => {
         this.transmissions.record(transmission);
-        if (transmission.success) this.health.markReachable();
+        if (saved && transmission.success) this.health.markReachable();
+      },
+      fail: (err, signal) => {
+        if (saved) this.health.markFailed(err, signal);
       },
       warn: (message, data) => this.deps.ctx.logger.warn('llm', message, data),
     };
@@ -264,9 +245,10 @@ export class LlmService {
   private completeViaClaude(prepared: PreparedRequest): Promise<string> {
     const { connection, request, signal } = prepared;
     const config = this.adapterConfig(connection);
-    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined });
+    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined, fail: () => undefined });
     return this.transfer({
       transmission: this.transmissionOf(prepared, `${connection.baseUrl} (Messages API)`),
+      source: connection.source,
       signal,
       maxAttempts: () => 3,
       attempt: async (tally) => {
@@ -299,6 +281,10 @@ export class LlmService {
       {
         complete: (llmRequest) => this.complete(llmRequest, overrides),
         warn: (message, data) => this.deps.ctx.logger.warn('llm', message, data),
+        // the transport succeeded, but the endpoint is not usable for structured answers
+        malformed: (error, signal) => {
+          if (this.connection(overrides).source === 'saved') this.health.markFailed(error, signal ?? llmCancelScope.getStore());
+        },
       },
     );
   }
@@ -324,6 +310,8 @@ export class LlmService {
         post: (request) => this.post(request),
         record: (transmission) => this.transmissions.record(transmission),
         assertWithinCap: () => this.ledger.assertWithinCap(),
+        markReachable: () => this.health.markReachable(),
+        markFailed: (err) => this.health.markFailed(err),
       },
     );
   }
@@ -336,12 +324,11 @@ export class LlmService {
     return runStructuredTest((schema, request) => this.completeJson(schema, request, overrides));
   }
 
-  listTransmissions(limit = 100, offset = 0): LlmTransmission[] {
-    return this.transmissions.list({ limit, offset });
+  pruneTransmissions(days: number): number {
+    return this.transmissions.prune(days);
   }
 
-  /** Deletes transmission log entries past the retention period; returns how many. */
-  pruneTransmissions(now = new Date()): number {
-    return this.transmissions.prune(now);
+  listTransmissions(limit = 100, offset = 0): LlmTransmission[] {
+    return this.transmissions.list({ limit, offset });
   }
 }

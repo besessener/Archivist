@@ -20,8 +20,8 @@ const signatureCount = () => (app.services.ctx.database.sqlite.prepare('SELECT c
 
 describe('Near-duplicate detection (#230)', () => {
   it('reports an edited copy as similar, not as identical', async () => {
-    await archived(app, { name: 'brief.txt', content: letter(), folder: 'private/haus' });
-    await archived(app, { name: 'brief-entwurf.txt', content: letter('Punkt 20: Geändert – der Preis steht noch nicht fest.'), folder: 'private/haus' });
+    await archived(app, { name: 'brief.txt', content: letter(), folder: 'Privat/haus' });
+    await archived(app, { name: 'brief-entwurf.txt', content: letter('Punkt 20: Geändert – der Preis steht noch nicht fest.'), folder: 'Privat/haus' });
 
     await app.services.consistency.run();
 
@@ -32,8 +32,8 @@ describe('Near-duplicate detection (#230)', () => {
   });
 
   it('reports an exact copy only as identical', async () => {
-    await archived(app, { name: 'brief.txt', content: letter(), folder: 'private/haus' });
-    await archived(app, { name: 'brief-kopie.txt', content: `${letter()} `, folder: 'private/haus' });
+    await archived(app, { name: 'brief.txt', content: letter(), folder: 'Privat/haus' });
+    await archived(app, { name: 'brief-kopie.txt', content: `${letter()} `, folder: 'Privat/haus' });
 
     await app.services.consistency.run();
 
@@ -42,7 +42,7 @@ describe('Near-duplicate detection (#230)', () => {
   });
 
   it('includes documents still in the inbox', async () => {
-    await archived(app, { name: 'brief.txt', content: letter(), folder: 'private/haus' });
+    await archived(app, { name: 'brief.txt', content: letter(), folder: 'Privat/haus' });
     await inInbox(app, { name: 'brief-neu.txt', content: letter('Punkt 20: Neu formuliert, mit anderem Inhalt für diesen Punkt.') });
 
     await app.services.consistency.run();
@@ -51,15 +51,15 @@ describe('Near-duplicate detection (#230)', () => {
   });
 
   it('does not report different texts or a pair the user marked as different', async () => {
-    const first = await archived(app, { name: 'a.txt', content: letter(), folder: 'private/haus' });
+    const first = await archived(app, { name: 'a.txt', content: letter(), folder: 'Privat/haus' });
     await archived(app, {
       name: 'b.txt',
       content: SENTENCES.map((s) => s.replaceAll('Punkt', 'Posten').replaceAll('Kowalski', 'Meier'))
         .join(' ')
         .replaceAll(/\d+/g, (n) => `${Number(n) + 900}`),
-      folder: 'private/haus',
+      folder: 'Privat/haus',
     });
-    const similar = await archived(app, { name: 'c.txt', content: letter('Punkt 20: Etwas ganz anderes.'), folder: 'private/haus' });
+    const similar = await archived(app, { name: 'c.txt', content: letter('Punkt 20: Etwas ganz anderes.'), folder: 'Privat/haus' });
     const relation = app.services.graph.link({ sourceId: similar, targetId: first, relationType: 'duplicate_of' }, { status: 'proposed', method: 'analysis' })!;
     app.services.graph.decideRelation(relation.id, { status: 'rejected' });
 
@@ -69,11 +69,11 @@ describe('Near-duplicate detection (#230)', () => {
   });
 
   it('closes the hint when the similar document is trashed', async () => {
-    await archived(app, { name: 'brief.txt', content: letter(), folder: 'private/haus' });
+    await archived(app, { name: 'brief.txt', content: letter(), folder: 'Privat/haus' });
     const draft = await archived(app, {
       name: 'entwurf.txt',
       content: letter('Punkt 20: Entwurf, noch nicht abgestimmt mit dem Kunden.'),
-      folder: 'private/haus',
+      folder: 'Privat/haus',
     });
     await app.services.consistency.run();
     expect(await duplicateInsights()).toHaveLength(1);
@@ -86,8 +86,8 @@ describe('Near-duplicate detection (#230)', () => {
 
   it('gives documents without a signature one in a job that continues after the last id', async () => {
     const ids = [
-      await archived(app, { name: 'a.txt', content: letter(), folder: 'private/haus' }),
-      await archived(app, { name: 'b.txt', content: letter('Punkt 20: Anders.'), folder: 'private/haus' }),
+      await archived(app, { name: 'a.txt', content: letter(), folder: 'Privat/haus' }),
+      await archived(app, { name: 'b.txt', content: letter('Punkt 20: Anders.'), folder: 'Privat/haus' }),
     ];
     expect(signatureCount()).toBe(2);
     app.services.ctx.database.sqlite.exec('DELETE FROM document_minhash; DELETE FROM document_lsh_bands');
@@ -101,8 +101,8 @@ describe('Near-duplicate detection (#230)', () => {
   });
 
   it('lets a near-duplicate take no second answer slot', async () => {
-    const original = await archived(app, { name: 'angebot.md', content: letter(), folder: 'private/haus' });
-    const draft = await archived(app, { name: 'angebot-entwurf.md', content: letter('Punkt 20: Entwurf mit offenem Preis.'), folder: 'private/haus' });
+    const original = await archived(app, { name: 'angebot.md', content: letter(), folder: 'Privat/haus' });
+    const draft = await archived(app, { name: 'angebot-entwurf.md', content: letter('Punkt 20: Entwurf mit offenem Preis.'), folder: 'Privat/haus' });
     app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: 'Dachdecker Kowalski Ziegel Rechnung' }));
     app.llm.on('KnowledgeAnswer', () => ({
       answer: 'Antwort.',

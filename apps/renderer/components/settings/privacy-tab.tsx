@@ -132,7 +132,9 @@ export function PrivacyTab({ settings, reload }: TabProps) {
             </Button>
           </div>
         )}
-        <p className="text-xs text-muted-foreground">Einträge werden nach 90 Tagen automatisch gelöscht.</p>
+        <p className="text-xs text-muted-foreground">
+          Einträge werden nach {settings.logs.retentionDays} Tagen automatisch gelöscht (Aufbewahrung unter „Protokolle“).
+        </p>
       </Section>
     </div>
   );

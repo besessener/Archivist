@@ -2,6 +2,7 @@ import { ActionService } from '../services/actions';
 import { AppStateService } from '../services/app-state';
 import { ArchiveService } from '../services/archive';
 import { ArchiveRootService } from '../services/archive-root';
+import { CategoryMigrationService } from '../services/category-migration';
 import { BackupService } from '../services/backup';
 import { CaptureService } from '../services/capture';
 import { CaseService } from '../services/cases';
@@ -59,6 +60,7 @@ export function createDomainServices(base: BaseServices) {
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService({ ctx, decisions, graph, insights, notifications, llm, privacy, docs: documents });
   const archive = new ArchiveService({ ctx, settings, docs: documents, categories, graph, persons, audit, notifications, pool, undo });
+  const categoryMigration = new CategoryMigrationService({ ctx, settings, categories, archive, audit });
   const archiveRoot = new ArchiveRootService({ ctx, settings, archive, audit, notifications, jobs, undo });
   const scanner = new ScannerService({ ctx, settings, pool, docs: documents, graph, privacy, llm, notifications, insights, audit, jobs });
   const archiveAll = new ArchiveAll({ ctx, archive, jobs, notifications, scanDocumentIds: () => scanner.proposals().flatMap((group) => group.documentIds) });
@@ -133,6 +135,7 @@ export function createDomainServices(base: BaseServices) {
     contradictions,
     archive,
     archiveAll,
+    categoryMigration,
     archiveRoot,
     scanner,
     timeline,

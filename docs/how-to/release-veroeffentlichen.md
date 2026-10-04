@@ -38,8 +38,6 @@ Installer *und* portable EXE werden per Authenticode (SHA-256, RFC-3161-Zeitstem
 
 Ohne Zertifikat bleiben die Pakete unsigniert und SmartScreen zeigt eine Warnung – der Normalfall für Pull Requests aus Forks. Ein selbstsigniertes Zertifikat ist nur auf Rechnern vertrauenswürdig, in deren Zertifikatsspeicher es importiert wurde; gegen die SmartScreen-Warnung helfen nur ein Zertifikat einer öffentlichen CA bzw. Azure Trusted Signing.
 
-## Die gepackte App testen
+## Die gepackte App prüfen
 
-```bash
-npm run pack -w archivist && ARCHIVIST_E2E_PACKAGED=1 xvfb-run -a npx playwright test
-```
+`npm run pack -w archivist` baut die App ohne Installer nach `apps/desktop/release/`. Die E2E-Tests laufen nur gegen den ungepackten Build: Die Test-Umgebungsvariablen (`ARCHIVIST_TEST_MODE`, `ARCHIVIST_TEST_PICK_DIR`) wirken in einer gepackten App bewusst nicht. Den Start der gepackten App prüfst du von Hand.

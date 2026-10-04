@@ -14,7 +14,7 @@ afterEach(async () => app.cleanup());
 
 async function imported(name: string, content: string): Promise<{ id: string; source: string }> {
   app.llm.on('DocumentClassification', () =>
-    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'private/belege', mainTopic: null }),
+    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'Privat/belege', mainTopic: null }),
   );
   const source = app.file(`in/${name}`, content);
   const res = await app.ok('documents:import', { paths: [source] });
@@ -25,9 +25,9 @@ async function imported(name: string, content: string): Promise<{ id: string; so
 async function archived(name: string, content: string): Promise<{ id: string; source: string; file: string }> {
   const doc = await imported(name, content);
   const res = await app.ok('documents:archive', {
-    items: [{ documentId: doc.id, mode: 'copy', categoryPath: 'private/belege' }],
+    items: [{ documentId: doc.id, mode: 'copy', categoryPath: 'Privat/belege' }],
     confirmed: true,
-    approveNewCategories: ['private'],
+    approveNewCategories: ['Privat'],
     confirmMove: false,
   } as never);
   expect(res.success).toBe(1);

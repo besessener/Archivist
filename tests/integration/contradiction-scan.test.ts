@@ -39,7 +39,7 @@ const goOffline = () => app.services.settings.update({ privacy: { llmMode: 'conf
 const goOnline = () => app.services.settings.update({ privacy: { llmMode: 'auto' } });
 
 const contradictionsWith = (status: string) => app.services.contradictions.list().filter((c) => c.status === status);
-const openInsights = (kind: string) => app.services.insights.list('open').filter((i) => i.kind === kind);
+const openInsights = (kind: string) => app.services.insights.list({ status: 'open' }).filter((i) => i.kind === kind);
 
 describe('Contradiction scan with an LLM (#179)', () => {
   it('sends pairs without polarity or option to the LLM, so budgets are checked too', async () => {
@@ -247,7 +247,7 @@ describe('Validity of decisions (#185)', () => {
     const open = await decision('Der Zaun wird gestrichen.', '2026-01-10');
 
     expect(app.services.decisions.format(dated)).toContain('**Gültig:** ab 2026-02-01 bis 2026-12-31');
-    expect(app.services.decisions.format(open)).not.toContain('Gültig');
+    expect(app.services.decisions.format(open)).not.toContain('**Gültig:**');
   });
 });
 

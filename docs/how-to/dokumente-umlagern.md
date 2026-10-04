@@ -18,7 +18,7 @@ Archivist zeigt, in welchen Verzeichnissen die Dokumente eines Themas oder Proje
 
    > Können die nicht alle ins selbe Verzeichnis?
 
-   Optional mit Zielordner. Ohne Angabe schlägt Archivist den Ordner vor, in dem schon die meisten Dokumente liegen.
+   Optional mit Zielordner. Ohne Angabe schlägt Archivist den Ordner vor, in dem schon die meisten Dokumente liegen. Liegen in zwei Ordnern gleich viele, schlägt Archivist keinen vor, sondern nennt beide und fragt dich nach dem Zielordner; die Archivprüfung legt dann keinen Verschiebe-Vorschlag an.
 2. Archivist zeigt eine **Aktionskarte** mit Quell- und Zielpfaden. Prüf sie.
 3. Bestätige mit **ja** oder über die Karte. Erst jetzt wird verschoben.
 

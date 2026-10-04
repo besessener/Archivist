@@ -18,6 +18,7 @@ const CATEGORY_TITLES: Record<ErrorCategory, string> = {
   scan_error: 'Fehler bei der Dokumentensuche',
   archive_conflict: 'Konflikt beim Archivieren',
   native_module_error: 'Fehler in einer Systemkomponente',
+  internal_error: 'Unerwarteter Fehler',
 };
 
 export class IpcError extends Error {

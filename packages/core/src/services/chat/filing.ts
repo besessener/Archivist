@@ -3,7 +3,7 @@ import type { DocumentRecord } from '@archivist/shared';
 import { toErrorInfo } from '../../util/errors';
 import { isInside, sanitizeCategoryPath } from '../../util/paths';
 import { truncate } from '../../util/text';
-import { chooseTargetFolder, folderLabel, folderOf, groupByFolder, splitSubjects, type FolderGroup } from '../archive-structure';
+import { chooseTargetFolder, folderChoiceText, folderLabel, folderOf, groupByFolder, splitSubjects, type FolderGroup } from '../archive-structure';
 import type { ConvState, Reply } from '../chat-state';
 import { archivedWithFile, FilingSubjects } from './filing-subjects';
 import type { ChatDeps, ChatRequest } from './types';
@@ -60,9 +60,15 @@ export class FilingReplies {
     const what = subject ? `„${subject}“` : 'diesen Dokumenten';
     const shown = shownDocuments(docs, { subject, state: request.state });
     if (groups.length === 1) return reply(`Alle ${docs.length} Dokument(e) zu ${what} liegen im selben Verzeichnis:\n\n${describeGroups(groups)}`, shown);
-    const target = chooseTargetFolder(groups);
+    const choice = chooseTargetFolder(groups);
+    const suggestion =
+      choice.kind === 'chosen'
+        ? ` – ich würde „${choice.folder}“ vorschlagen, dort liegen schon die meisten`
+        : choice.kind === 'tied'
+          ? ` – in ${folderChoiceText(choice.folders)} liegen gleich viele, nenne mir bitte den Ordner, den du willst`
+          : '';
     return reply(
-      `Die ${docs.length} Dokument(e) zu ${what} liegen in ${groups.length} verschiedenen Verzeichnissen:\n\n${describeGroups(groups)}\n\nDas ist nicht konsistent abgelegt. Sag mir z. B. „leg alle in einen Ordner“${target ? ` – ich würde „${target}“ vorschlagen, dort liegen schon die meisten` : ''}. Verschoben wird erst nach deiner Bestätigung.`,
+      `Die ${docs.length} Dokument(e) zu ${what} liegen in ${groups.length} verschiedenen Verzeichnissen:\n\n${describeGroups(groups)}\n\nDas ist nicht konsistent abgelegt. Sag mir z. B. „leg alle in einen Ordner“${suggestion}. Verschoben wird erst nach deiner Bestätigung.`,
       shown,
     );
   }
@@ -135,18 +141,22 @@ export class FilingReplies {
 
   /** The directory named in the request (inside the archive), otherwise the one most documents are in already. */
   private targetFolder(asked: string | undefined, docs: DocumentRecord[]): { folder: string } | { error: string } {
-    let folder: string | null;
-    if (asked) {
-      const root = this.deps.settings.get().archiveRoot;
-      const relative = path.isAbsolute(asked) && isInside(root, asked) ? path.relative(root, asked).split(path.sep).join('/') : asked;
-      try {
-        folder = sanitizeCategoryPath(relative);
-      } catch (err) {
-        return { error: `Das Zielverzeichnis „${asked}“ kann ich nicht verwenden: ${toErrorInfo(err).message}` };
-      }
-    } else folder = chooseTargetFolder(groupByFolder(docs));
-    if (folder) return { folder };
-    return { error: 'Ich weiß nicht, in welches Verzeichnis die Dokumente sollen. Nenne mir bitte einen Zielordner, z. B. „private/bildungsurlaub/2026“.' };
+    if (!asked) return this.mostUsedFolder(docs);
+    const root = this.deps.settings.get().archiveRoot;
+    const relative = path.isAbsolute(asked) && isInside(root, asked) ? path.relative(root, asked).split(path.sep).join('/') : asked;
+    try {
+      return { folder: sanitizeCategoryPath(relative) };
+    } catch (err) {
+      return { error: `Das Zielverzeichnis „${asked}“ kann ich nicht verwenden: ${toErrorInfo(err).message}` };
+    }
+  }
+
+  private mostUsedFolder(docs: DocumentRecord[]): { folder: string } | { error: string } {
+    const choice = chooseTargetFolder(groupByFolder(docs));
+    if (choice.kind === 'chosen') return { folder: choice.folder };
+    if (choice.kind === 'tied')
+      return { error: `In ${folderChoiceText(choice.folders)} liegen gleich viele Dokumente. Nenne mir bitte den Zielordner, den du willst.` };
+    return { error: 'Ich weiß nicht, in welches Verzeichnis die Dokumente sollen. Nenne mir bitte einen Zielordner, z. B. „Privat/Bildungsurlaub/2026“.' };
   }
 
   private proposeRelocation(

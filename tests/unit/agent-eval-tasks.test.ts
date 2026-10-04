@@ -76,7 +76,7 @@ describe('agent evaluation: archive builder', () => {
 
     const s = snapshot(app.services);
     const doc = (key: string) => s.docs[ids[key]!]!;
-    expect(doc('folien-q1').archiveRelPath).toMatch(/^arbeit\/allgemein\/.*\.pptx$/);
+    expect(doc('folien-q1').archiveRelPath).toMatch(/^Arbeit\/allgemein\/.*\.pptx$/);
     expect(app.services.documents.getRow(ids['folien-q1']!).extractedText).toContain('Umsatz +4 %');
     expect(doc('rechnung-maler-2025')).toMatchObject({ status: 'archived', docType: 'Rechnung', topic: 'Handwerker' });
     expect(doc('rechnung-maler-2025').documentDate?.slice(0, 10)).toBe('2025-03-14');

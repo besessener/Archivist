@@ -64,7 +64,7 @@ function classification(input: string) {
     dates: [{ date: vacation ? '2026-06-12' : '2026-05-04', label: null }],
     tags: vacation ? ['urlaub'] : ['jour-fixe'],
     location: {
-      categoryPath: fresh ? 'sonderfall/akten' : vacation ? 'private/vacation/2026' : 'work/projects/Nordlicht',
+      categoryPath: fresh ? 'sonderfall/akten' : vacation ? 'Privat/Urlaub/2026' : 'Arbeit/Projekte/Nordlicht',
       fileName: null,
       newMainCategory: false,
       rationale: vacation ? 'Urlaubsantrag vom 12.06.2026' : 'Das Dokument nennt das Projekt Nordlicht.',
@@ -89,6 +89,7 @@ function classification(input: string) {
 
 function chatIntent(input: string) {
   const text = userMessage(input);
+  if (/^ja[.!]?$/i.test(text.trim())) return { intent: 'proposal_confirm', confidence: 0.9, rationale: 'e2e' };
   if (/Archiviere alle/.test(text)) return { intent: 'archive_execute', confidence: 0.9, rationale: 'e2e' };
   if (/Wann haben wir/.test(text)) return { intent: 'knowledge_question', confidence: 0.9, rationale: 'e2e', query: 'Nordlicht pausiert Entscheidung' };
   if (/Am 4\. Mai/.test(text))

@@ -23,7 +23,13 @@ export async function requestEmbeddings(
     documentIds: string[];
     masking: RedactionOptions;
   },
-  deps: { post: (request: PostRequest) => Promise<PostResponse>; record: (transmission: Transmission) => void; assertWithinCap: () => void },
+  deps: {
+    post: (request: PostRequest) => Promise<PostResponse>;
+    record: (transmission: Transmission) => void;
+    assertWithinCap: () => void;
+    markReachable: () => void;
+    markFailed: (err: unknown) => void;
+  },
 ): Promise<number[][]> {
   const { url, apiKey, model, timeoutMs, texts, purpose, documentIds, masking } = request;
   const redacted = texts.map((text) => {
@@ -41,7 +47,11 @@ export async function requestEmbeddings(
     const parsed = embeddingsSchema.safeParse(JSON.parse(response.text));
     if (!parsed.success || parsed.data.data.length !== texts.length) throw new AppError('llm_error', 'Unerwartete Embedding-Antwort.');
     success = true;
+    deps.markReachable();
     return parsed.data.data.map((entry) => entry.embedding);
+  } catch (err) {
+    deps.markFailed(err);
+    throw err;
   } finally {
     deps.record({
       purpose,

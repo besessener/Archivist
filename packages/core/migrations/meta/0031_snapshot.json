@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9bc66dd1-bf29-401f-94ac-83615b6f1740",
-  "prevId": "ca12cb55-ee1d-4952-84e7-fcebcfd549ab",
+  "id": "e50254bf-37bd-42bc-8e96-a362a9d676fa",
+  "prevId": "2109897a-04e8-420c-a84e-2e34994f9626",
   "tables": {
     "entities": {
       "name": "entities",
@@ -371,109 +371,6 @@
           "isUnique": false
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "document_lsh_bands": {
-      "name": "document_lsh_bands",
-      "columns": {
-        "document_id": {
-          "name": "document_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "band": {
-          "name": "band",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bucket": {
-          "name": "bucket",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "document_lsh_bucket_idx": {
-          "name": "document_lsh_bucket_idx",
-          "columns": [
-            "band",
-            "bucket"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "document_lsh_bands_document_id_band_pk": {
-          "columns": [
-            "document_id",
-            "band"
-          ],
-          "name": "document_lsh_bands_document_id_band_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "document_minhash": {
-      "name": "document_minhash",
-      "columns": {
-        "document_id": {
-          "name": "document_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "signature": {
-          "name": "signature",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "document_reanalysis": {
-      "name": "document_reanalysis",
-      "columns": {
-        "document_id": {
-          "name": "document_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "proposal": {
-          "name": "proposal",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -1822,6 +1719,14 @@
             "dedupe_key"
           ],
           "isUnique": true
+        },
+        "insights_status_updated_idx": {
+          "name": "insights_status_updated_idx",
+          "columns": [
+            "status",
+            "updated_at"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {},
@@ -2883,14 +2788,6 @@
           "autoincrement": false,
           "default": 0
         },
-        "personal_redactions": {
-          "name": "personal_redactions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
         "document_ids": {
           "name": "document_ids",
           "type": "text",
@@ -2935,32 +2832,9 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "requests": {
-          "name": "requests",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
-      "indexes": {
-        "llm_transmissions_at_idx": {
-          "name": "llm_transmissions_at_idx",
-          "columns": [
-            "at"
-          ],
-          "isUnique": false
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

@@ -1,4 +1,12 @@
-import { isEditableOpenItemStatus, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
+import {
+  isEditableOpenItemStatus,
+  OPEN_ITEM_STATUS_LABELS,
+  OpenItemSolution,
+  type OpenItem,
+  type OpenItemInput,
+  type OpenItemPatch,
+  type OpenItemStatus,
+} from '@archivist/shared';
 import type { openItems } from '../db/schema';
 import { AppError } from '../util/errors';
 import { normalizeDateInput } from '../util/dates';
@@ -97,7 +105,7 @@ export function openItemIndexContent(item: OpenItem): string {
     item.projectName && `Projekt: ${item.projectName}`,
     item.responsibleName && `Verantwortlich: ${item.responsibleName}`,
     item.dueAt && `Fällig: ${item.dueAt.slice(0, 10)}`,
-    `Status: ${item.status}`,
+    `Status: ${OPEN_ITEM_STATUS_LABELS[item.status]}`,
     item.resolutionNote && `${item.status === 'dismissed' ? 'Verworfen' : 'Erledigt'}: ${item.resolutionNote}`,
   ]
     .filter(Boolean)

@@ -17,6 +17,13 @@ import { useRun } from '@/lib/use-run';
 import { assessBackupSize, type BackupInfo } from '@archivist/shared';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 
+const BADGE_VARIANTS = { full: 'info', metadata: 'secondary', before_restore: 'warning' } as const;
+
+function kindLabel(backup: BackupInfo): string {
+  if (backup.kind === 'before_restore') return `Stand vor der Wiederherstellung vom ${formatDateTime(backup.createdAt)}`;
+  return backup.kind === 'full' ? 'Vollständig' : 'Nur Metadaten';
+}
+
 export function BackupsTab({ settings, reload }: TabProps) {
   const { save } = useSaveSettings(reload);
   const { run } = useRun();
@@ -144,7 +151,7 @@ export function BackupsTab({ settings, reload }: TabProps) {
                 <TR key={b.path} data-testid="backup-row">
                   <TD className="whitespace-nowrap">{formatDateTime(b.createdAt)}</TD>
                   <TD>
-                    <Badge variant={b.kind === 'full' ? 'info' : 'secondary'}>{b.kind === 'full' ? 'Vollständig' : 'Nur Metadaten'}</Badge>
+                    <Badge variant={BADGE_VARIANTS[b.kind]}>{kindLabel(b)}</Badge>
                   </TD>
                   <TD className="whitespace-nowrap">{formatBytes(b.sizeBytes)}</TD>
                   <TD className="text-xs text-muted-foreground">
@@ -182,7 +189,15 @@ export function BackupsTab({ settings, reload }: TabProps) {
       >
         {restoring && (
           <p className="text-sm">
-            Backup vom <strong>{formatDateTime(restoring.createdAt)}</strong> ({restoring.kind === 'full' ? 'vollständig' : 'nur Metadaten'})
+            {restoring.kind === 'before_restore' ? (
+              <>
+                Stand vor der Wiederherstellung vom <strong>{formatDateTime(restoring.createdAt)}</strong>
+              </>
+            ) : (
+              <>
+                Backup vom <strong>{formatDateTime(restoring.createdAt)}</strong> ({kindLabel(restoring).toLowerCase()})
+              </>
+            )}
           </p>
         )}
       </ConfirmDialog>

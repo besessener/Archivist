@@ -32,6 +32,20 @@ test.describe('scanning allowed directories', () => {
 
     await expect(scan.locators.proposals.first()).toBeVisible({ timeout: 30_000 });
   });
+
+  test('shows the first 500 files and loads the rest on request', async ({ on, page, workspace }) => {
+    const scan = on(page).scan;
+    for (let index = 0; index < 501; index += 1)
+      workspace.addDownload(`datei-${String(index).padStart(3, '0')}.txt`, `Datei Nummer ${index} mit eigenem Inhalt.`);
+
+    await scan.do.scan();
+    await expect(scan.locators.fileRows).toHaveCount(500, { timeout: 60_000 });
+    await expect(scan.locators.resultsCount).toContainText('500 von 501');
+
+    await scan.locators.buttons.loadMore.click();
+    await expect(scan.locators.fileRows).toHaveCount(501);
+    await expect(scan.locators.buttons.loadMore).toHaveCount(0);
+  });
 });
 
 test.describe('analysing all new files at once (#228)', () => {

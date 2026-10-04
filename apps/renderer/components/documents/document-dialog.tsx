@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { call } from '@/lib/ipc';
-import { LLM_STATUS_LABELS } from '@/lib/labels';
+import { DOCUMENT_STATUS_LABELS, LLM_STATUS_LABELS } from '@/lib/labels';
 import { formatBytes } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
@@ -48,11 +48,6 @@ export function DocumentDialog({ id, onClose, onChanged }: { id: string | null; 
       </DialogContent>
     </Dialog>
   );
-}
-
-function statusLabel(status: DocRecord['status']): string {
-  if (status === 'indexed_only') return 'Nur indexiert';
-  return status === 'archived' ? 'Archiviert' : status;
 }
 
 function DocumentDetail({ doc, onChanged, onTrashed }: { doc: DocRecord; onChanged: () => void; onTrashed: () => void }) {
@@ -118,7 +113,7 @@ function DocumentDetail({ doc, onChanged, onTrashed }: { doc: DocRecord; onChang
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-wrap gap-1.5">
-        <Badge variant="secondary">{statusLabel(doc.status)}</Badge>
+        <Badge variant="secondary">{DOCUMENT_STATUS_LABELS[doc.status]}</Badge>
         <Badge variant="outline">{LLM_STATUS_LABELS[doc.llmStatus]}</Badge>
         <ConfidenceBadge value={doc.confidence} />
       </div>

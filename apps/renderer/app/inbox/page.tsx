@@ -30,6 +30,7 @@ const FILTERS: Array<{ id: DocumentStatus | 'all'; label: string }> = [
   { id: 'proposed', label: 'Vorschlag bereit' },
   { id: 'failed', label: 'Fehlgeschlagen' },
   { id: 'quarantined', label: 'Quarantäne' },
+  { id: 'ignored', label: 'Ignoriert' },
 ];
 
 function InboxContent() {

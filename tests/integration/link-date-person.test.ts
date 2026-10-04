@@ -47,7 +47,7 @@ describe('Same day and same person (#278)', () => {
     const doc = await archived(app, {
       name: 'protokoll.md',
       content: 'Protokoll der Baubesprechung.',
-      folder: 'private/haus',
+      folder: 'Privat/haus',
       persons: ['Anna Berger'],
       documentDate: '2026-08-15',
     });

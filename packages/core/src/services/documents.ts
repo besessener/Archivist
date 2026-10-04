@@ -5,12 +5,14 @@ import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
 import { AppError, fsError } from '../util/errors';
+import { runBounded } from '../util/bounded';
 import { newId, nowIso } from '../util/ids';
 import { LLM_ANALYSIS_ATTEMPTS } from './analysis-retry';
 import type { AuditService } from './audit';
 import { DocumentAnalyzer, QUARANTINE_NOT_ANALYZED, type AnalysisResult, type AnalyzeOptions } from './document-analysis';
 import type { BulkPatch } from './document-bulk';
 import { DocumentBatchAnalysis } from './document-batch';
+import { DocumentIgnore } from './document-ignore';
 import { DocumentImporter, type ImportResult } from './document-import';
 import { FolderPermission } from './document-folder-permission';
 import { FolderImport } from './document-import-folder';
@@ -26,6 +28,7 @@ import type { JobQueueService } from './jobs';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import { NearDuplicateIndex } from './near-duplicates';
 import type { DocumentPrivacyFields, PrivacyService } from './privacy';
+import { REINDEX_CONCURRENCY } from './reindex-refs';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
 import type { UndoService } from './undo';
@@ -49,6 +52,8 @@ export class DocumentService {
   readonly folderImport: FolderImport;
   readonly indexRepair: DocumentIndexRepair;
   private readonly folderPermission: FolderPermission;
+  private readonly ignoring: DocumentIgnore;
+  private readonly undo: UndoService;
   private fileLock: FileOperationLock = { guardedFor: (_documentId, operation) => operation() };
 
   private readonly ctx: AppContext;
@@ -60,6 +65,7 @@ export class DocumentService {
   private readonly jobs: JobQueueService;
 
   constructor({ undo, ...services }: DocumentServiceDeps) {
+    this.undo = undo;
     ({ ctx: this.ctx, settings: this.settings, graph: this.graph, search: this.search, privacy: this.privacy, audit: this.audit, jobs: this.jobs } = services);
     this.nearDuplicates = new NearDuplicateIndex(services.ctx);
     this.deps = { ...services, documents: this, nearDuplicates: this.nearDuplicates };
@@ -81,6 +87,8 @@ export class DocumentService {
     this.reanalysis = new DocumentReanalysis(this.deps, { analyzer: this.analyzer, metadata: this.metadata });
     this.trash = new DocumentTrash(this.deps, () => this.fileLock);
     this.trash.registerUndo(undo);
+    this.ignoring = new DocumentIgnore(this.deps);
+    this.ignoring.registerUndo(undo);
   }
 
   private get db() {
@@ -234,20 +242,14 @@ export class DocumentService {
     return this.metadata.bulkUpdate(ids, change);
   }
 
-  ignore(id: string): DocumentRecord {
-    const row = this.getRow(id);
-    if (row.status === 'archived') throw new AppError('validation_error', 'Archivierte Dokumente können nicht ignoriert werden.');
-    this.db.update(documents).set({ status: 'ignored', archiveMode: 'ignore', updatedAt: nowIso() }).where(eq(documents.id, id)).run();
-    this.audit.log({
-      action: 'document.ignore',
-      actor: 'user',
-      trigger: 'manual',
-      confirmed: true,
-      entityIds: [id],
-      before: { status: row.status },
-      after: { status: 'ignored' },
-    });
-    this.ctx.events.changed('documents', 'status');
+  ignore(id: string): { document: DocumentRecord; auditId: string } {
+    const { auditId } = this.ignoring.ignore(id);
+    return { document: this.get(id), auditId };
+  }
+
+  /** Takes an ignored document back into the inbox (the undo of ignoring). */
+  async unignore(id: string): Promise<DocumentRecord> {
+    await this.ignoring.restore(id, this.undo);
     return this.get(id);
   }
 
@@ -296,6 +298,11 @@ export class DocumentService {
     } catch (err) {
       this.ctx.logger.warn('documents', 'Indexing failed', { documentId: id, error: err });
     }
+  }
+
+  /** Bulk re-indexing without waiting: at most `REINDEX_CONCURRENCY` documents at the same time (#224). */
+  indexDocumentsInBackground(ids: string[]): void {
+    void runBounded(ids, { limit: REINDEX_CONCURRENCY }, (id) => this.indexDocument(id));
   }
 
   /** Whether indexing would give the document remote vectors now (#173); false for an unknown id. */

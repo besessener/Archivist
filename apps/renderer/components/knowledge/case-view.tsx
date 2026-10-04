@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { call } from '@/lib/ipc';
 import { formatDate } from '@/lib/format';
+import type { OpenItemStatus } from '@archivist/shared';
 import { OPEN_ITEM_STATUS_LABELS } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
@@ -54,7 +55,7 @@ export function CaseView({ id }: { id: string }) {
             {openItems.map((e) => (
               <li key={e.id} className="flex flex-wrap items-center gap-2">
                 <EntityChip type={e.type} id={e.id} label={e.name} />
-                {e.status && <Badge variant="outline">{OPEN_ITEM_STATUS_LABELS[e.status as keyof typeof OPEN_ITEM_STATUS_LABELS] ?? e.status}</Badge>}
+                {e.status && e.status in OPEN_ITEM_STATUS_LABELS && <Badge variant="outline">{OPEN_ITEM_STATUS_LABELS[e.status as OpenItemStatus]}</Badge>}
                 {e.date && <span className="text-xs text-muted-foreground">fällig {formatDate(e.date)}</span>}
               </li>
             ))}

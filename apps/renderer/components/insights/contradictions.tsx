@@ -85,7 +85,11 @@ export function ResolveContradictionDialog({
   const { run } = useRun();
   const [resolution, setResolution] = useState<Resolution>('resolved');
   const [supersede, setSupersede] = useState(true);
-  const decisions = useQuery('decisions:list', {}, { enabled: contradiction !== null });
+  const decisions = useQuery(
+    'decisions:list',
+    { ids: contradiction?.affectedEntityIds.slice(0, 100) ?? [], limit: 100 },
+    { enabled: contradiction !== null && contradiction.affectedEntityIds.length > 0 },
+  );
   const involved = useMemo(() => {
     if (!contradiction) return [];
     return (decisions.data ?? [])

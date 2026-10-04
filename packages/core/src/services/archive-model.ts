@@ -73,6 +73,8 @@ export interface RenamePlanItem {
 export interface RelocateRequest {
   documentId: string;
   categoryPath: string;
+  /** Main category the caller has already had confirmed by the user, so a preview does not block on it. */
+  confirmedMainCategory?: string;
 }
 
 export interface RelocatePlanItem {

@@ -1,5 +1,5 @@
 import type { AppNotification, NotificationType } from '@archivist/shared';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { notifications } from '../db/schema';
 import { AppError } from '../util/errors';
@@ -192,6 +192,15 @@ export class NotificationService {
     const now = nowIso();
     for (const n of stale) this.db.update(notifications).set({ resolvedAt: now }).where(eq(notifications.id, n.id)).run();
     if (stale.length) this.ctx.events.changed('notifications', 'status');
+  }
+
+  /** Deletes notifications that were read more than `days` days ago; returns how many. */
+  pruneRead(days: number): number {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    return this.db
+      .delete(notifications)
+      .where(and(isNotNull(notifications.readAt), lt(notifications.readAt, cutoff)))
+      .run().changes;
   }
 
   /** Reopens a resolved notification (after "Später erinnern") as new and unread; null if it no longer exists. */

@@ -27,7 +27,7 @@ const storedBytes = () =>
     .join('\n');
 /** An archived document whose text also sits in its summary, its proposal and the preview of a logged transmission. */
 async function archivedWithTraces(name: string, text: string): Promise<string> {
-  const id = await archived(app, { name, content: text, folder: 'private/post' });
+  const id = await archived(app, { name, content: text, folder: 'Privat/post' });
   const { db } = app.services.database;
   db.update(documents)
     .set({ summary: `Zusammenfassung: ${text}`, proposal: { reason: text } })
@@ -86,7 +86,7 @@ describe('emptying the trash removes the extracted text from Archivist', () => {
     const id = await archivedWithTraces('Neuanalyse.txt', `Altbestand: ${MARKER} zur Neuanalyse.`);
     app.services.database.sqlite.prepare('UPDATE documents SET proposal = NULL WHERE id = ?').run(id);
     app.llm.on('DocumentClassification', () =>
-      classification({ title: 'Neu benannt', summary: 'Neue Zusammenfassung.', categoryPath: 'private/post', docType: 'Brief' }),
+      classification({ title: 'Neu benannt', summary: 'Neue Zusammenfassung.', categoryPath: 'Privat/post', docType: 'Brief' }),
     );
     await app.ok('documents:reprocess', { ids: [id], reread: false, reanalyze: true, confirmLlm: true });
     await app.services.jobs.whenIdle();

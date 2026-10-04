@@ -19,10 +19,10 @@ export class DocumentRereader {
     const row = this.deps.documents.findRow(id);
     if (!row || row.status !== 'indexed_only' || !row.sourcePath) return false;
     const source = row.sourcePath;
-    const sha = await this.deps.pool.run('hashFile', { path: source });
+    const sha = await this.deps.pool.run('hashFile', { path: source }, { signal: opts.signal });
     if (sha === row.sha256) return false;
     opts.signal?.throwIfAborted();
-    const [stat, parsed] = await Promise.all([fsp.stat(source), extractFile(this.deps, source)]);
+    const [stat, parsed] = await Promise.all([fsp.stat(source), extractFile(this.deps, source, opts.signal)]);
     opts.signal?.throwIfAborted();
     const updated = this.db
       .update(documents)
@@ -56,7 +56,7 @@ export class DocumentRereader {
     if (!row || !isArchivedStatus(row.status)) return false;
     const file = row.status === 'indexed_only' ? row.sourcePath : this.deps.documents.archivePath(row.archiveRelPath);
     if (!file || !fs.existsSync(file)) throw fsError('Die Datei des Dokuments ist nicht mehr vorhanden.', { retryable: false });
-    const parsed = await extractFile(this.deps, file);
+    const parsed = await extractFile(this.deps, file, opts.signal);
     opts.signal?.throwIfAborted();
     const updated = this.db
       .update(documents)

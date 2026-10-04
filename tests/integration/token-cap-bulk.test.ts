@@ -15,7 +15,7 @@ const titles = () => app.services.notifications.list().map((notification) => not
 
 async function setup() {
   app = await createTestApp({ privacy: 'auto', scanEnabled: true });
-  app.llm.on('DocumentClassification', () => classification({ title: 'Notiz', summary: 'Eine Notiz.', categoryPath: 'private/notizen' }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Notiz', summary: 'Eine Notiz.', categoryPath: 'Privat/notizen' }));
 }
 
 /** Sets the daily limit so that exactly `calls` more classifications fit into today's tokens. */
@@ -141,7 +141,7 @@ describe('daily token limit in bulk jobs (#153, #228)', () => {
     await setup();
     const ids = [];
     for (const name of ['x.txt', 'y.txt', 'z.txt'])
-      ids.push(await archived(app, { name, content: `Inhalt von ${name} mit genug Text für die Analyse.`, folder: 'private/wohnen' }));
+      ids.push(await archived(app, { name, content: `Inhalt von ${name} mit genug Text für die Analyse.`, folder: 'Privat/wohnen' }));
     await capAfter(1);
 
     await app.ok('documents:reprocess', { ids, reread: false, reanalyze: true, confirmLlm: true });

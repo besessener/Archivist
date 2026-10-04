@@ -28,7 +28,11 @@ const formatName = (schemaName: string) => schemaName.replace(/[^\w-]/g, '_').sl
 export async function structuredAnswer<T extends z.ZodType>(
   schema: T,
   request: StructuredRequest,
-  deps: { complete: (request: CompletionRequest) => Promise<string>; warn: (message: string, data: Record<string, unknown>) => void },
+  deps: {
+    complete: (request: CompletionRequest) => Promise<string>;
+    warn: (message: string, data: Record<string, unknown>) => void;
+    malformed: (error: AppError, signal?: AbortSignal) => void;
+  },
 ): Promise<z.output<T>> {
   const instructions = structuredInstructions(request, JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' })));
   const strict = toStrictJsonSchema(schema);
@@ -47,7 +51,9 @@ export async function structuredAnswer<T extends z.ZodType>(
     }
     deps.warn('Invalid structured LLM output', { schema: request.schemaName, issues: lastIssues, attempt });
   }
-  throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
+  const error = new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
     details: `${request.schemaName}: ${lastIssues}; Auszug: ${lastRaw.slice(0, 160)}`,
   });
+  deps.malformed(error, request.signal);
+  throw error;
 }
