@@ -53,6 +53,37 @@ describe('Chat: cancelling a running request (#151)', () => {
     expect(await app.ok('openItems:list', {})).toHaveLength(0);
   });
 
+  it('a cancel after an answered duplicate question keeps the answer and does not ask it again', async () => {
+    app.llm.on('ChatIntent', (_s, input) => {
+      const text = JSON.stringify(input);
+      if (/Zaun/.test(text))
+        return {
+          intents: [
+            intent({ intent: 'open_item_new', segment: 'Angebot Müller prüfen.', openItem: { title: 'Angebot Müller prüfen' } }),
+            intent({ intent: 'knowledge_question', segment: 'Was gilt für den Zaun?', query: 'Zaun' }),
+            intent({ intent: 'note_capture', segment: 'Notiz: Kaffee kaufen', note: 'Kaffee kaufen' }),
+          ],
+        };
+      return /Angebot/.test(text) ? intent({ intent: 'open_item_new', openItem: { title: 'Angebot Müller prüfen' } }) : intent({ intent: 'smalltalk' });
+    });
+    await app.services.notes.create({ title: 'Zaun', content: 'Der Zaun wird grün gestrichen.' });
+    const first = await app.ok('chat:send', { text: 'Angebot Müller prüfen' });
+    const conversationId = first.conversationId;
+    await app.ok('chat:send', { text: 'Angebot Müller prüfen. Was gilt für den Zaun? Notiz: Kaffee kaufen', conversationId });
+    app.llm.on('KnowledgeAnswer', () => new Promise(() => {}));
+
+    const pending = app.ok('chat:send', { text: 'Neu anlegen', conversationId });
+    await waitFor(() => app.llm.calls.some((c) => c.schema === 'KnowledgeAnswer'));
+    await app.ok('chat:cancel', { conversationId });
+    const res = await pending;
+
+    expect(res.assistantMessage.content).toContain('Offenen Punkt angelegt');
+    expect(res.assistantMessage.content).toContain('Den Rest habe ich abgebrochen.');
+    expect(await app.ok('openItems:list', {})).toHaveLength(2);
+    await app.ok('chat:send', { text: 'Neu anlegen', conversationId });
+    expect(await app.ok('openItems:list', {})).toHaveLength(2);
+  });
+
   it('cancelling without a running request does nothing', async () => {
     expect(await app.ok('chat:cancel', {})).toEqual({ cancelled: 0 });
   });

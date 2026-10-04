@@ -173,6 +173,7 @@ export class ChatFlow {
     const { first, after, work } = step;
     const optional = optionalQuestion(after.pending);
     if (!work.length || (after.pending && !optional)) return { ...first, state: { ...after, queue: [...(after.queue ?? []), ...work] } };
+    this.helpers.runner.recordDone(turn.conversationId, { reply: first, state: after });
     const more = await this.helpers.runner.run({
       conversationId: turn.conversationId,
       fresh: work,

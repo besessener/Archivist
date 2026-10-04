@@ -123,6 +123,14 @@ export class WorkRunner {
     this.recordProgress(run, reply);
   }
 
+  /** Before a further run: `reply` is all this message did so far (an answered question and what ran after it), kept on cancel or error. */
+  recordDone(conversationId: string, step: { reply: Reply; state: ConvState }): void {
+    const done = this.helpers.progress.get(conversationId);
+    if (!done) return;
+    done.replies = [step.reply];
+    done.state = step.state;
+  }
+
   private recordProgress(run: WorkRun, reply: Reply): void {
     const done = this.helpers.progress.get(run.input.conversationId);
     if (!done) return;
