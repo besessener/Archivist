@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { documents } from '../../packages/core/src/db/schema';
 import { agentApp, archived, inInbox } from '../helpers/agent';
+import { classification } from '../helpers/document-classifications';
 import type { TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -92,5 +93,73 @@ describe('ignoring a document (#232)', () => {
     expect(row(id).status).toBe('ignored');
     expect(classifications()).toBe(callsBefore);
     expect((await app.ok('audit:undo', { auditId })).undone).toBe(true);
+  });
+
+  describe('a document whose queued analysis was skipped while ignored', () => {
+    const classifications = () => app.llm.calls.filter((c) => c.schema === 'DocumentClassification').length;
+    beforeEach(() => {
+      app.llm.on('DocumentClassification', () =>
+        classification({ title: 'Rechnung', summary: 'Rechnung', categoryPath: 'Privat/eingang', docType: 'Rechnung' }),
+      );
+    });
+
+    async function ignoredWhileQueued(): Promise<{ id: string; auditId: string }> {
+      await app.services.jobs.stop();
+      const result = await app.ok('documents:import', { paths: [app.file('in/ofen/Rechnung Ofen.txt', 'Rechnung Ofen 120 Euro')] });
+      const id = result.imported[0]!.id;
+      const { auditId } = await app.ok('documents:ignore', { id });
+      app.services.jobs.start();
+      await app.services.jobs.whenIdle();
+      expect(row(id).status).toBe('ignored');
+      return { id, auditId };
+    }
+
+    it('is analysed again after "Wieder aufnehmen"', async () => {
+      const { id } = await ignoredWhileQueued();
+
+      await app.ok('documents:unignore', { id });
+      await app.services.jobs.whenIdle();
+
+      expect(row(id).status).toBe('proposed');
+      expect(classifications()).toBe(1);
+    });
+
+    it('is analysed again after undoing the ignore', async () => {
+      const { id, auditId } = await ignoredWhileQueued();
+
+      expect((await app.ok('audit:undo', { auditId })).undone).toBe(true);
+      await app.services.jobs.whenIdle();
+
+      expect(row(id).status).toBe('proposed');
+      expect(classifications()).toBe(1);
+    });
+
+    it('is analysed once when taken back before its queued analysis ran', async () => {
+      await app.services.jobs.stop();
+      const result = await app.ok('documents:import', { paths: [app.file('in/heizung/Heizung.txt', 'Heizung Wartung')] });
+      const id = result.imported[0]!.id;
+      await app.ok('documents:ignore', { id });
+      await app.ok('documents:unignore', { id });
+
+      app.services.jobs.start();
+      await app.services.jobs.whenIdle();
+
+      expect(row(id).status).toBe('proposed');
+      expect(app.services.jobs.list().filter((job) => job.type === 'document.analyze')).toHaveLength(1);
+    });
+
+    it('is left to its import batch when taken back before the batch ran', async () => {
+      await app.services.jobs.stop();
+      const paths = [app.file('in/batch/Strom.txt', 'Strom Abschlag'), app.file('in/batch/Wasser.txt', 'Wasser Abschlag')];
+      const id = (await app.ok('documents:import', { paths })).imported[0]!.id;
+      await app.ok('documents:ignore', { id });
+      await app.ok('documents:unignore', { id });
+
+      app.services.jobs.start();
+      await app.services.jobs.whenIdle();
+
+      expect(row(id).status).toBe('proposed');
+      expect(app.services.jobs.list().filter((job) => job.type === 'document.analyze')).toHaveLength(0);
+    });
   });
 });
