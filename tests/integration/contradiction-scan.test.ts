@@ -295,6 +295,21 @@ describe('„Möglicherweise überholt“ needs a common subject (#186)', () => 
   });
 
   it.each([
+    ['the project when only that is shared', { topic: 'Termine', project: 'Verein' }, 'Zum Projekt „Verein“'],
+    ['the topic when that is shared', { topic: 'Planung', project: 'Garten' }, 'Zum Thema „Planung“'],
+  ])('names %s', async (_name, newerScope, phrase) => {
+    app.llm.down = true;
+    await decision('Das Meeting findet dienstags statt.', '2026-01-10', { topic: 'Planung', project: 'Verein' });
+    await decision('Das Meeting findet donnerstags statt.', '2026-03-01', newerScope);
+
+    await app.services.consistency.run({ trigger: 'test' });
+
+    const [hint] = openInsights('possibly_superseded');
+    expect(hint!.explanation).toMatch(new RegExp(`^${phrase} existiert eine neuere aktive Entscheidung`));
+    expect(app.services.actions.get(hint!.recommendedActionId!).rationale).toBe(`${phrase} gibt es eine neuere Entscheidung.`);
+  });
+
+  it.each([
     ['dated', '2026-03-01'],
     ['undated', null],
   ])('flags identical %s decisions as a duplicate', async (_name, decidedAt) => {

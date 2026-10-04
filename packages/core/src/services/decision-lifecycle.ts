@@ -1,7 +1,7 @@
 import { ACTIVE_DECISION_STATUSES, type Decision, type DecisionStatus } from '@archivist/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { decisions } from '../db/schema';
+import { decisions, relations } from '../db/schema';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
 import type { AuditService } from './audit';
@@ -118,8 +118,8 @@ export class DecisionLifecycle {
     const current = this.row(id);
     if (current.status !== 'draft' && current.status !== 'unclear')
       throw new AppError('validation_error', 'Gelöscht werden nur Entwürfe und unklare Entscheidungen. Eine gültige Entscheidung widerrufst du.');
-    if (this.db.select({ id: decisions.id }).from(decisions).where(eq(decisions.supersedesDecisionId, id)).get())
-      throw new AppError('validation_error', 'Eine andere Entscheidung ersetzt diese. Sie lässt sich deshalb nicht löschen.');
+    if (this.replacedAnother(current))
+      throw new AppError('validation_error', 'Diese Entscheidung hat eine andere ersetzt. Sie lässt sich deshalb nicht löschen.');
     const undoData: DecisionDeleteUndo = { decision: current, node: this.graph.snapshotNode(id) };
     this.db.transaction(() => {
       this.db.delete(decisions).where(eq(decisions.id, id)).run();
@@ -137,5 +137,17 @@ export class DecisionLifecycle {
     });
     this.ctx.events.changed('decisions', 'knowledge', 'status');
     return auditId;
+  }
+
+  /** Via the `supersedes` column (the first one replaced) or a confirmed `supersedes` relation to another decision (further ones). */
+  private replacedAnother(row: DecisionRow): boolean {
+    if (row.supersedesDecisionId) return true;
+    const replaced = this.db
+      .select({ id: relations.id })
+      .from(relations)
+      .innerJoin(decisions, eq(decisions.id, relations.targetEntityId))
+      .where(and(eq(relations.sourceEntityId, row.id), eq(relations.relationType, 'supersedes'), eq(relations.status, 'confirmed')))
+      .get();
+    return replaced !== undefined;
   }
 }

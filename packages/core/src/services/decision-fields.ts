@@ -123,12 +123,12 @@ function orUnknown(d: Decision, { field, value }: { field: DecisionField; value:
   return d.unknownFields.includes(field) ? CONFIRMED_UNKNOWN : 'offen';
 }
 
-/** Human-readable rendering (when/topic/participants/…). */
 const validityLine = (d: Decision): string[] =>
   d.validFrom || d.validUntil
     ? [`**Gültig:** ${[d.validFrom && `ab ${d.validFrom.slice(0, 10)}`, d.validUntil && `bis ${d.validUntil.slice(0, 10)}`].filter(Boolean).join(' ')}`]
     : [];
 
+/** Human-readable rendering (when/topic/participants/…). */
 export function formatDecision(d: Decision): string {
   const project = d.projectName && d.projectName !== d.topicName ? ` (Projekt: ${d.projectName})` : '';
   return [

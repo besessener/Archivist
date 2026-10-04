@@ -49,7 +49,8 @@ export { ACTIVE_DECISION_STATUSES };
 const today = () => toIsoDate(new Date());
 
 /** Chat and form mentions of „ich“ are the user; whatever stems from a document is the author's „ich“. */
-function decisionMentionContext(trigger: string | undefined, fromDocument: boolean): PersonMentionContext {
+function decisionMentionContext(trigger: string | undefined, decision: { origin?: string | null; sourceIds?: string[] }): PersonMentionContext {
+  const fromDocument = decision.origin === 'document' || (decision.sourceIds?.length ?? 0) > 0;
   return mentionContext(trigger, fromDocument ? 'document' : 'decision');
 }
 
@@ -163,7 +164,7 @@ export class DecisionService {
 
   /** Creates a decision; with open required fields (not confirmed as unknown) it is saved as a draft. */
   create(input: DecisionInput, opts: { actor?: 'user' | 'agent'; trigger?: string; status?: Exclude<EditableDecisionStatus, 'draft'> } = {}): Decision {
-    const personContext = decisionMentionContext(opts.trigger, input.origin === 'document' || input.sourceIds.length > 0);
+    const personContext = decisionMentionContext(opts.trigger, input);
     const row = this.newRow(input, { personContext, trigger: opts.trigger, status: opts.status });
     this.db.transaction(() => {
       this.db.insert(decisions).values(row).run();
@@ -224,7 +225,7 @@ export class DecisionService {
     const current = this.row(id);
     // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
     assertEditableStatusChange(current.status as DecisionStatus, patch.status);
-    const personContext = decisionMentionContext(opts.trigger, current.origin === 'document' || (patch.sourceIds?.length ?? 0) > 0);
+    const personContext = decisionMentionContext(opts.trigger, { origin: current.origin, sourceIds: patch.sourceIds });
     const set: Partial<DecisionRow> = { updatedAt: nowIso(), ...this.patchColumns(current, { patch, personContext }) };
     const merged = { ...current, ...set };
     const missing = computeMissingFields({
