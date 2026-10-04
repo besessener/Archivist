@@ -1,7 +1,8 @@
 import type { AuditEntry } from '@archivist/shared';
 import { formatLongDate } from './format';
-import { ARCHIVE_MODE_SHORT, RELATION_STATUS_LABELS } from './labels';
+import { ARCHIVE_MODE_SHORT, DECISION_STATUS_LABELS, RELATION_STATUS_LABELS } from './labels';
 import { ENTITY_TYPE_LABELS } from './nav';
+import { settingLabel, settingValueText } from './setting-labels';
 
 const ACTION_LABELS: Record<string, string> = {
   'decision.create': 'Entscheidung angelegt',
@@ -128,18 +129,40 @@ function shown(field: string, value: unknown): string {
   if (value === null || value === undefined || value === '') return '–';
   if (field === 'sourceIds' && Array.isArray(value)) return `${value.length} Quelle(n)`;
   if (DATE_FIELDS.has(field) && typeof value === 'string') return formatLongDate(value);
+  if (field === 'status' && typeof value === 'string' && value in DECISION_STATUS_LABELS)
+    return DECISION_STATUS_LABELS[value as keyof typeof DECISION_STATUS_LABELS];
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH)} …` : text;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const sameValue = (first: unknown, second: unknown) => JSON.stringify(first ?? null) === JSON.stringify(second ?? null);
+
+function decisionChangeLines(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  return Object.keys(after)
+    .filter((field) => field !== 'missing' && !sameValue(before[field], after[field]))
+    .map((field) => `${FIELD_LABELS[field] ?? field}: ${shown(field, before[field])} → ${shown(field, after[field])}`);
+}
+
+/** Dotted leaf paths of a settings change; a record entry added or removed as a whole is split into its fields. */
+function leafValues(value: unknown, path: string, into: Map<string, unknown>): Map<string, unknown> {
+  if (!isRecord(value)) return into.set(path, value);
+  for (const [key, child] of Object.entries(value)) leafValues(child, path ? `${path}.${key}` : key, into);
+  return into;
+}
+
+function settingChangeLines(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  const old = leafValues(before, '', new Map());
+  const current = leafValues(after, '', new Map());
+  return [...new Set([...current.keys(), ...old.keys()])]
+    .filter((path) => !sameValue(old.get(path), current.get(path)))
+    .map((path) => `${settingLabel(path)}: ${settingValueText(path, old.get(path))} → ${settingValueText(path, current.get(path))}`);
+}
 
 /** What an edit of a decision or a setting changed, as „Feld: vorher → nachher“; other entries show no values. */
 export function auditChangeLines(entry: AuditEntry): string[] {
-  if (!(entry.action === 'decision.update' || entry.action === 'settings.change') || !isRecord(entry.before) || !isRecord(entry.after)) return [];
-  const before = entry.before;
-  const after = entry.after;
-  return Object.keys(after)
-    .filter((field) => field !== 'missing' && JSON.stringify(before[field]) !== JSON.stringify(after[field]))
-    .map((field) => `${FIELD_LABELS[field] ?? field}: ${shown(field, before[field])} → ${shown(field, after[field])}`);
+  if (!isRecord(entry.before) || !isRecord(entry.after)) return [];
+  if (entry.action === 'decision.update') return decisionChangeLines(entry.before, entry.after);
+  if (entry.action === 'settings.change') return settingChangeLines(entry.before, entry.after);
+  return [];
 }

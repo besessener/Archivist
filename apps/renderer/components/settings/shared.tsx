@@ -7,15 +7,22 @@ import { useRun } from '@/lib/use-run';
 export interface TabProps {
   settings: Settings;
   hasApiKey: boolean;
-  reload: () => void;
+  /** Resolves once the reloaded settings are in place. */
+  reload: () => Promise<void>;
 }
 
-/** Saves a settings patch with toast feedback. */
-export function useSaveSettings(reload: () => void) {
+/** Saves a settings patch with toast feedback; `busy` lasts until the reloaded settings arrived, so no edit lands on a form about to be replaced. */
+export function useSaveSettings(reload: TabProps['reload']) {
   const { run, busy } = useRun();
   async function save(patch: SettingsPatch, success = 'Einstellungen gespeichert.'): Promise<boolean> {
-    const out = await run(() => call('settings:update', patch), { success });
-    if (out) reload();
+    const out = await run(
+      async () => {
+        const saved = await call('settings:update', patch);
+        await reload();
+        return saved;
+      },
+      { success },
+    );
     return !!out;
   }
   return { save, busy };

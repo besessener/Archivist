@@ -9,13 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { formatDateTime } from '@/lib/format';
+import { WEEKDAY_NAMES } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { AgentCapabilityNote } from './capability-note';
 import type { LimitsForm, PriceRow } from './settings-parse';
 
 type Background = AgentSettings['background'];
-
-const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
 
 let rowCounter = 0;
 
@@ -191,7 +190,7 @@ export function BackgroundSection({
             value={String(background.weeklyReviewDay)}
             onChange={(e) => onChange({ ...background, weeklyReviewDay: Number(e.target.value) })}
           >
-            {WEEKDAYS.map((day, i) => (
+            {WEEKDAY_NAMES.map((day, i) => (
               <option key={day} value={i}>
                 {day}
               </option>

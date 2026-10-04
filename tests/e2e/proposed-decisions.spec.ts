@@ -1,4 +1,5 @@
 import { expectNoSeriousA11yViolations } from './axe';
+import { seedProposedDecisions } from './helpers';
 import { expect, test } from './fixture';
 import type { PageTree } from './pages';
 
@@ -69,5 +70,36 @@ test.describe('decisions found in documents', () => {
 
     await expect(app.notifications.locators.actionDialog).toBeVisible();
     await expect(app.notifications.locators.actionDialog).toContainText(DECISION);
+  });
+});
+
+/** More proposals than one IPC request may return (`limit` ≤ 200): only paging by offset reaches the oldest. */
+const PROPOSALS = 205;
+const manyProposals = test.extend({
+  workspace: async ({ workspace }, provide) => {
+    seedProposedDecisions(workspace.dataDir, PROPOSALS);
+    await provide(workspace);
+  },
+});
+
+manyProposals.describe('many proposed decisions', () => {
+  manyProposals('„Weitere anzeigen“ pages past 200 proposals, and confirming one keeps the pages shown', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('decisions');
+    await app.decisions.locators.proposed.open.click();
+    const proposed = app.decisions.locators.proposed;
+
+    for (let shown = 20; shown < PROPOSALS; shown += 20) {
+      await expect(proposed.cards).toHaveCount(shown);
+      await proposed.more.click();
+    }
+
+    await expect(proposed.cards).toHaveCount(PROPOSALS);
+    await expect(proposed.cards.filter({ hasText: 'Wir beschließen Vorschlag 1.' })).toHaveCount(1);
+    await expect(proposed.more).toBeHidden();
+
+    await app.decisions.do.confirmProposed('Wir beschließen Vorschlag 1.');
+    await expect(proposed.cards).toHaveCount(PROPOSALS - 1);
   });
 });

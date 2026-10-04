@@ -20,7 +20,7 @@ const TABS = ['llm', 'agent', 'archive', 'privacy', 'profile', 'notifications', 
 
 function SettingsInner() {
   const { settings, hasApiKey, loading, error, refetch } = useSettings();
-  const reload = () => void refetch();
+  const reload = refetch;
   const [tab, setTab] = useState('llm');
   const [focusRunId, setFocusRunId] = useState<string | null>(null);
 
@@ -37,7 +37,7 @@ function SettingsInner() {
   return (
     <Page>
       <PageHeader title="Einstellungen" />
-      {error && !settings && <ErrorNote error={error} onRetry={reload} />}
+      {error && !settings && <ErrorNote error={error} onRetry={() => void reload()} />}
       {!settings && loading && <Loading />}
       {settings && (
         <Tabs value={tab} onValueChange={setTab}>

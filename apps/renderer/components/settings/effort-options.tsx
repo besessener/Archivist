@@ -1,14 +1,7 @@
-import type { ReasoningEffort } from '@archivist/shared';
+import { ReasoningEffort } from '@archivist/shared';
+import { REASONING_EFFORT_LABELS } from '@/lib/labels';
 
-export const EFFORT_OPTIONS: Array<{ value: ReasoningEffort; label: string }> = [
-  { value: 'none', label: 'keine (wird gesendet)' },
-  { value: 'minimal', label: 'minimal' },
-  { value: 'low', label: 'niedrig' },
-  { value: 'medium', label: 'mittel' },
-  { value: 'high', label: 'hoch' },
-  { value: 'xhigh', label: 'sehr hoch' },
-  { value: 'max', label: 'maximal' },
-];
+const EFFORT_OPTIONS = ReasoningEffort.options.map((value) => ({ value, label: REASONING_EFFORT_LABELS[value] }));
 
 /** Options of the thinking-depth select; „Standard des Modells“ sends nothing. */
 export function EffortOptions() {
