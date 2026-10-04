@@ -17,7 +17,15 @@ export function initScan(page: Page) {
     summary: page.getByTestId('scan-summary'),
     resultsCount: page.getByTestId('scan-results-count'),
     allowLlm: page.getByTestId('scan-llm-checkbox'),
+    /** The analysis dialog's note that „automatisch“ sends without asking. */
+    automaticNote: page.getByTestId('scan-llm-automatic'),
     proposals: page.getByTestId('scan-proposal'),
+    /** The archive dialog of a proposal group. */
+    archiveDialog: {
+      confirm: page.getByTestId('archive-confirm'),
+      result: page.getByTestId('archive-result'),
+      close: page.getByTestId('archive-close'),
+    },
     /** Paging over all results and „erneut analysieren“. */
     paging: {
       info: page.getByTestId('scan-more'),
@@ -58,6 +66,18 @@ export function initScan(page: Page) {
       await locators.buttons.analyze.click();
       await locators.allowLlm.check();
       await locators.buttons.confirmAnalysis.click();
+    },
+    /** Selects files and opens the analysis dialog. */
+    openAnalysis: async (...names: string[]) => {
+      for (const name of names) await fileRow(name).getByTestId('scan-file-checkbox').check();
+      await locators.buttons.analyze.click();
+    },
+    /** Archives the selected documents of a proposal group through the archive dialog. */
+    archiveProposal: async (label: string) => {
+      await locators.proposals.filter({ hasText: label }).getByTestId('scan-proposal-archive').click();
+      await locators.archiveDialog.confirm.click();
+      await expect(locators.archiveDialog.result).toContainText(/erfolgreich|archiviert/i);
+      await locators.archiveDialog.close.click();
     },
     /** Opens the consent dialog of „Alle neuen Dateien analysieren“. */
     openAnalyzeAll: async () => {

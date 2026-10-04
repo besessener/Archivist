@@ -67,6 +67,8 @@ export function ScanResults() {
   const analyzedFiles = selectedFiles.filter((f) => f.status === 'analyzed');
   const llmFiles = selectedFiles.filter((f) => llmAllowedRoots.has(f.rootId) && f.llmStatus !== 'excluded');
   const mode = settings?.privacy.llmMode ?? 'confirm';
+  const automatic = mode === 'auto';
+  const sendsToLlm = automatic ? llmFiles.length > 0 : llmOk;
   const toggle = (file: ScanFileRecord, checked: boolean) => setSelected((previous) => withMembership(previous, { value: file.id, present: checked }));
 
   return (
@@ -238,7 +240,7 @@ export function ScanResults() {
         open={analyzeOpen}
         onOpenChange={setAnalyzeOpen}
         title={`${selectedFiles.length} Datei${selectedFiles.length === 1 ? '' : 'en'} analysieren`}
-        confirmLabel={llmOk ? 'Mit KI analysieren' : 'Nur lokal analysieren'}
+        confirmLabel={sendsToLlm ? 'Mit KI analysieren' : 'Nur lokal analysieren'}
         confirmTestId="scan-analyze-confirm"
         onConfirm={async () => {
           const ids = selectedFiles.map((f) => f.id);
@@ -248,7 +250,7 @@ export function ScanResults() {
                 await call('scanner:analyze', { fileIds: ids.slice(start, start + ANALYZE_CHUNK), confirmLlm: llmOk, reanalyze });
               return true;
             },
-            { success: llmOk ? 'Analyse mit KI gestartet.' : 'Lokale Analyse gestartet.' },
+            { success: sendsToLlm ? 'Analyse mit KI gestartet.' : 'Lokale Analyse gestartet.' },
           );
           if (out) {
             setAnalyzeOpen(false);
@@ -258,9 +260,12 @@ export function ScanResults() {
         }}
       >
         <div className="flex flex-col gap-3 text-sm">
-          <p>
-            <strong>Lokal</strong> liest Archivist die Texte nur auf diesem Computer und schlägt einfache Zuordnungen vor. Dabei verlässt nichts deinen Rechner.
-          </p>
+          {!automatic && (
+            <p>
+              <strong>Lokal</strong> liest Archivist die Texte nur auf diesem Computer und schlägt einfache Zuordnungen vor. Dabei verlässt nichts deinen
+              Rechner.
+            </p>
+          )}
           <Notice tone="warning" title="Was bei einer KI-Analyse gesendet wird" data-testid="scan-llm-explain">
             <p>
               Der extrahierte <strong>Textinhalt</strong> der ausgewählten Dateien (gekürzt, erkannte Passwörter und Schlüssel werden maskiert) sowie Dateiname
@@ -282,6 +287,11 @@ export function ScanResults() {
             {mode === 'local_only' && (
               <p className="mt-1 font-medium text-foreground">Dein Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.</p>
             )}
+            {automatic && (
+              <p className="mt-1 font-medium text-foreground" data-testid="scan-llm-automatic">
+                Dein Datenschutzmodus ist „Automatisch“ – die erlaubten Dateien gehen ohne weitere Rückfrage an die KI.
+              </p>
+            )}
           </Notice>
           {analyzedFiles.length > 0 && (
             <CheckboxField
@@ -291,13 +301,15 @@ export function ScanResults() {
               data-testid="scan-reanalyze"
             />
           )}
-          <CheckboxField
-            checked={llmOk}
-            disabled={mode === 'local_only'}
-            onCheckedChange={(v) => setLlmOk(v === true)}
-            label="Ja, ich erlaube, dass die Textinhalte dieser Dateien an den KI-Dienst gesendet werden."
-            data-testid="scan-llm-checkbox"
-          />
+          {!automatic && (
+            <CheckboxField
+              checked={llmOk}
+              disabled={mode === 'local_only'}
+              onCheckedChange={(v) => setLlmOk(v === true)}
+              label="Ja, ich erlaube, dass die Textinhalte dieser Dateien an den KI-Dienst gesendet werden."
+              data-testid="scan-llm-checkbox"
+            />
+          )}
         </div>
       </ConfirmDialog>
 

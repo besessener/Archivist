@@ -207,6 +207,8 @@ Hybrid: FTS5-Stichwortsuche + Vektorähnlichkeit (Cosine, im Worker-Thread), per
 - **Bereits analysierte Dateien** (`scanner:analyze`): Dateien mit dem Status „Analysiert“ werden übersprungen, damit eine erneute Auswahl nicht noch einmal Tokens kostet. Im Analyse-Dialog wählst du bewusst **„erneut analysieren“** (`reanalyze`); geänderte Dateien haben den Status „Geändert“ und werden normal analysiert.
 - Ausschlüsse; Auslösung manuell, beim Start oder periodisch (nur bei laufender App).
 - Die lokale Dokumentensuche ist **standardmäßig deaktiviert**.
+- **„Ausgewählte analysieren“** (Scan-Ansicht): Der Dialog nennt, was an das LLM geht und wie viele der ausgewählten Dateien laut deinen Einstellungen gesendet werden dürfen. Im Modus „vorher fragen“ geht ein Text nur mit dem Häkchen hinaus, sonst wird lokal analysiert („Nur lokal analysieren“). In „automatisch“ gibt es kein Häkchen: Der Dialog sagt, dass die erlaubten Dateien ohne weitere Rückfrage an das LLM gehen, und heißt „Mit KI analysieren“. In „nur lokal“ geht nichts hinaus.
+- **Zuordnungsvorschläge** gruppieren die analysierten Dateien nach vorgeschlagenem Projekt, sonst nach Thema, sonst nach Kategorie. Beim Archivieren einer Projektgruppe (Gruppen-Dialog oder Hinweis „Alle kopieren und archivieren“) behält jedes Dokument sein eigenes vorgeschlagenes Thema; nur das Projekt ist das der Gruppe.
 - Wird eine Archivierung rückgängig gemacht, kehrt die Scan-Datei in die Zuordnungsvorschläge zurück.
 
 Grenzen und Schutzregeln: [Aktionsstufen und Schutzregeln – Scans](aktionsstufen.md#scans).
