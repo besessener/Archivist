@@ -133,6 +133,57 @@ describe('Knowledge questions search more than one wording (#164)', () => {
     expect(knowledgeInput()).toContain('Zaun gestrichen');
     expect(r.assistantMessage.uncertainties.join(' ')).toMatch(/Im genannten Zeitraum .* nichts gefunden/);
   });
+
+  it('keeps notes and open items created in the time range', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const old = app.services.eventRecords.create({ title: 'Zaun gestrichen', occurredAt: '2019-05-01', sourceIds: [] });
+    await app.services.eventRecords.reindex(old.id);
+    await app.services.notes.create({ title: 'Zaun Farbe', content: 'Der Zaun soll grün werden.' });
+    await app.ok('openItems:create', { title: 'Zaun Angebot einholen' });
+    app.llm.on('ChatIntent', () => ({
+      intent: 'knowledge_question',
+      confidence: 0.9,
+      rationale: 'test',
+      query: 'Zaun',
+      timeRange: { from: today, to: null },
+    }));
+
+    const r = await app.ok('chat:send', { text: 'Was gibt es seit heute zum Zaun?' });
+
+    expect(knowledgeInput()).toContain('Zaun Farbe');
+    expect(knowledgeInput()).toContain('Zaun Angebot einholen');
+    expect(knowledgeInput()).not.toContain('Zaun gestrichen');
+    expect(r.assistantMessage.uncertainties.join(' ')).not.toMatch(/Zeitraum/);
+  });
+
+  it('keeps an open item due in the time range', async () => {
+    const old = app.services.eventRecords.create({ title: 'Zaun gestrichen', occurredAt: '2019-05-01', sourceIds: [] });
+    await app.services.eventRecords.reindex(old.id);
+    await app.ok('openItems:create', { title: 'Zaun Angebot einholen', dueAt: '2020-06-01' });
+    app.llm.on('ChatIntent', () => ({
+      intent: 'knowledge_question',
+      confidence: 0.9,
+      rationale: 'test',
+      query: 'Zaun',
+      timeRange: { from: '2020-01-01', to: '2020-12-31' },
+    }));
+
+    await app.ok('chat:send', { text: 'Was war 2020 mit dem Zaun?' });
+
+    expect(knowledgeInput()).toContain('Zaun Angebot einholen');
+    expect(knowledgeInput()).not.toContain('Zaun gestrichen');
+  });
+
+  it('lists open items of the named topic first', async () => {
+    const other = app.services.eventRecords.create({ title: 'Zaun Zaun Zaun gestrichen', occurredAt: '2019-05-01', sourceIds: [] });
+    await app.services.eventRecords.reindex(other.id);
+    await app.ok('openItems:create', { title: 'Zaun Angebot einholen', topic: 'Garten' });
+    app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: 'Zaun', topic: 'Garten' }));
+
+    await app.ok('chat:send', { text: 'Was gibt es im Thema Garten zum Zaun?' });
+
+    expect(knowledgeInput()).toMatch(/\[S1\] \(task, [^)]*\) Zaun Angebot einholen/);
+  });
 });
 
 describe('Decision sources are part of the answer (#165)', () => {

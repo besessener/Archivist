@@ -107,6 +107,7 @@ export class SourceReader {
           date: hit.date,
           score: hit.score,
           _text: truncate(hit.passage, PASSAGE_CHARS),
+          _dates: hit.date ? [hit.date] : [],
         };
     }
   }
@@ -192,6 +193,8 @@ export class SourceReader {
       dateKind: 'created',
       score: hit.score,
       _text: `Offener Punkt: ${i.title}. ${i.description ?? ''} Status: ${i.status}. Fällig: ${i.dueAt?.slice(0, 10) ?? 'unbekannt'}. Verantwortlich: ${i.responsibleName ?? 'unbekannt'}.`,
+      _topics: subjectIds(i.topicId, i.projectId),
+      _dates: i.dueAt ? [i.createdAt, i.dueAt] : [i.createdAt],
     };
   }
 
