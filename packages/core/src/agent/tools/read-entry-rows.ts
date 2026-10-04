@@ -124,7 +124,10 @@ function entryFilter(args: EntryArgs): EntryFilter {
   return {
     args,
     matches: (...values) => !query || values.some((v) => lower(v).includes(query)),
-    inRange: (date) => (!args.from || (date ?? '') >= args.from) && (!args.to || (date ?? '9999') <= args.to),
+    inRange: (date) => {
+      const day = date?.slice(0, 10);
+      return (!args.from || (day ?? '') >= args.from) && (!args.to || (day ?? '9999') <= args.to);
+    },
     inSubject: (topicName, projectName) =>
       (!args.topic || lower(topicName).includes(args.topic.toLowerCase())) && (!args.project || lower(projectName).includes(args.project.toLowerCase())),
   };
