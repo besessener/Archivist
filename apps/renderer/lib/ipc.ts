@@ -57,7 +57,7 @@ export async function call<C extends IpcChannel>(channel: C, input?: IpcInput<C>
     result = await bridge.invoke(channel, input ?? ({} as IpcInput<C>));
   } catch (err) {
     throw new IpcError({
-      category: 'native_module_error',
+      category: 'internal_error',
       message: err instanceof Error ? err.message : 'Unbekannter Fehler bei der Kommunikation mit der App.',
       retryable: true,
     });

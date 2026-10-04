@@ -81,6 +81,18 @@ describe('partial updates keep all other fields', () => {
     expect(decisionFields(again)).toEqual({ ...decisionFields(after), alternatives: ['Oracle'] });
   });
 
+  it('decision: an unrelated edit keeps a legacy topic named like the project', async () => {
+    const created = await fullDecision();
+    const topic = app.services.graph.ensureEntity({ type: 'topic', name: 'Plattform' });
+    app.services.database.sqlite.prepare('UPDATE decisions SET topic_id = ? WHERE id = ?').run(topic.id, created.id);
+    const before = await app.ok('decisions:get', { id: created.id });
+
+    const after = await app.ok('decisions:update', { id: before.id, patch: { rationale: 'Erprobt' } });
+
+    expect(decisionFields(after)).toEqual({ ...decisionFields(before), rationale: 'Erprobt' });
+    expect(after.topicId).toBe(topic.id);
+  });
+
   it('open item: changing the title keeps priority, status, responsible, due date and the rest', async () => {
     const before = await fullOpenItem();
     expect(before.priority).toBe('high');

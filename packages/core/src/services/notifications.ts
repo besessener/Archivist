@@ -1,7 +1,7 @@
 import type { AppNotification, NotificationType } from '@archivist/shared';
-import { and, desc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, lt, notExists, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { notifications } from '../db/schema';
+import { notifications, reminders } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 
@@ -194,12 +194,16 @@ export class NotificationService {
     if (stale.length) this.ctx.events.changed('notifications', 'status');
   }
 
-  /** Deletes notifications that were read more than `days` days ago; returns how many. */
+  /** Deletes notifications that were read more than `days` days ago, except snoozed ones still waiting to come back (#79); returns how many. */
   pruneRead(days: number): number {
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    const snoozed = this.db
+      .select({ id: reminders.id })
+      .from(reminders)
+      .where(and(eq(reminders.targetType, 'notification'), eq(reminders.targetId, notifications.id), eq(reminders.status, 'pending')));
     return this.db
       .delete(notifications)
-      .where(and(isNotNull(notifications.readAt), lt(notifications.readAt, cutoff)))
+      .where(and(isNotNull(notifications.readAt), lt(notifications.readAt, cutoff), notExists(snoozed)))
       .run().changes;
   }
 

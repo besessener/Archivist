@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { documents } from '../../packages/core/src/db/schema';
+import { decisions, documents } from '../../packages/core/src/db/schema';
 import { archived } from '../helpers/agent';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
@@ -15,8 +15,9 @@ afterEach(async () => {
 const verdict = (isContradiction: boolean) => () => ({ isContradiction, confidence: 0.9, description: 'Die Beträge widersprechen sich.' });
 const llmQuestions = () => app.llm.calls.filter((call) => call.schema === 'ContradictionProposal').length;
 
-const decision = (decisionText: string, decidedAt: string, extra: Record<string, unknown> = {}) =>
-  app.ok('decisions:create', {
+// saving queues the contradiction check as a job: wait for it
+const decision = async (decisionText: string, decidedAt: string, extra: Record<string, unknown> = {}) => {
+  const saved = await app.ok('decisions:create', {
     title: decisionText.slice(0, 40),
     decisionText,
     topic: 'prod-plat',
@@ -29,8 +30,12 @@ const decision = (decisionText: string, decidedAt: string, extra: Record<string,
     asDraft: false,
     ...extra,
   });
+  await app.services.jobs.whenIdle();
+  return saved;
+};
 
 const contradictionsWith = (status: string) => app.services.contradictions.list().filter((c) => c.status === status);
+const openContradictionNotices = () => app.services.notifications.list().filter((n) => n.type === 'contradiction');
 const goOffline = () => app.services.settings.update({ privacy: { llmMode: 'confirm' } });
 const goOnline = () => app.services.settings.update({ privacy: { llmMode: 'auto' } });
 
@@ -158,6 +163,21 @@ describe('Reopening after an undone supersede', () => {
     expect(app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'contradiction')).toHaveLength(1);
   });
 
+  it('raises the contradiction notification again, offering the new proposal', async () => {
+    goOffline();
+    const older = await decision('Wir führen prod-plat weiter.', '2026-01-10');
+    const newer = await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
+    await app.ok('decisions:supersede', { oldDecisionId: older.id, newDecisionId: newer.id, confirmed: true });
+    expect(openContradictionNotices()).toHaveLength(0);
+
+    await undoSupersede();
+
+    const [notice] = openContradictionNotices();
+    const target = notice?.proposedActions.find((a) => a.kind === 'confirm_action')?.target;
+    expect(notice).toMatchObject({ readAt: null, resolvedAt: null });
+    expect((await app.ok('actions:get', { id: target! })).status).toBe('proposed');
+  });
+
   it('leaves a contradiction the user resolved by hand, without superseding, resolved', async () => {
     goOffline();
     const older = await decision('Wir führen prod-plat weiter.', '2026-01-10');
@@ -170,5 +190,56 @@ describe('Reopening after an undone supersede', () => {
 
     expect(contradictionsWith('resolved')).toHaveLength(1);
     expect(contradictionsWith('detected')).toHaveLength(0);
+  });
+});
+
+describe('Reopening after a decision is active again', () => {
+  const revokeAndScan = async (id: string) => {
+    await app.ok('decisions:revoke', { id, confirmed: true });
+    await app.services.contradictions.scanAll();
+    expect(contradictionsWith('resolved')).toHaveLength(1);
+  };
+
+  it('reopens a contradiction closed by the scan when the revoke is undone', async () => {
+    goOffline();
+    await decision('Wir führen prod-plat weiter.', '2026-01-10');
+    const newer = await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
+    await revokeAndScan(newer.id);
+
+    const entry = app.services.audit.list({ limit: 50 }).find((e) => e.action === 'decision.revoke')!;
+    await app.ok('audit:undo', { auditId: entry.id });
+
+    expect(contradictionsWith('detected')).toHaveLength(1);
+    expect(openContradictionNotices()).toHaveLength(1);
+    expect(app.services.insights.list({ status: 'open' }).filter((i) => i.kind === 'contradiction')).toHaveLength(1);
+  });
+
+  it('reopens it in the next scan when the decision became active another way', async () => {
+    goOffline();
+    await decision('Wir führen prod-plat weiter.', '2026-01-10');
+    const newer = await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
+    await revokeAndScan(newer.id);
+    app.services.database.db.update(decisions).set({ status: 'active' }).where(eq(decisions.id, newer.id)).run();
+
+    await app.services.contradictions.scanAll();
+
+    expect(contradictionsWith('detected')).toHaveLength(1);
+    expect(openContradictionNotices()).toHaveLength(1);
+  });
+
+  it('leaves a contradiction the user resolved by hand resolved when a decision is active again', async () => {
+    goOffline();
+    await decision('Wir führen prod-plat weiter.', '2026-01-10');
+    const newer = await decision('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
+    const [found] = contradictionsWith('detected');
+    await app.ok('contradictions:resolve', { id: found!.id, resolution: 'resolved', confirmed: true });
+    await app.ok('decisions:revoke', { id: newer.id, confirmed: true });
+    const entry = app.services.audit.list({ limit: 50 }).find((e) => e.action === 'decision.revoke')!;
+
+    await app.ok('audit:undo', { auditId: entry.id });
+    await app.services.contradictions.scanAll();
+
+    expect(contradictionsWith('resolved')).toHaveLength(1);
+    expect(openContradictionNotices()).toHaveLength(0);
   });
 });

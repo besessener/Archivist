@@ -153,7 +153,8 @@ export class ArchiveFileOps {
     try {
       await fsp.link(temporary, dest);
     } catch (err) {
-      await this.removeCreated(temporary);
+      if (!(await this.removeCreated(temporary)))
+        throw fsError(`${withCode('Die Datei konnte nicht kopiert werden', err)} ${leftoverNote('Eine temporäre Kopie', temporary)}`, { cause: err });
       if (errorCode(err) === 'EEXIST') return false; // someone else's file: never touch it, try the next free name
       return this.copyDirect(source, dest); // no hard links on this file system
     }

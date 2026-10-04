@@ -23,6 +23,8 @@ export function initKnowledge(page: Page) {
       mergeTarget: page.getByTestId('merge-target'),
     },
     mergeAction: page.getByTestId('merge-action'),
+    /** „Bestätigen“ on the merge proposal of the shown entry. */
+    approveMerge: page.getByTestId('merge-action').getByTestId('action-approve'),
     eventForm: page.getByTestId('event-form'),
     items: page.getByTestId('knowledge-item'),
     detail: page.getByTestId('entity-detail'),

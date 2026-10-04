@@ -27,18 +27,19 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
       const { decisions, navigation } = on(page);
       await navigation.do.open('decisions');
       await decisions.locators.proposed.open.click();
-      await expect(page.getByRole('heading', { name: 'Vorgeschlagene Entscheidungen' })).toBeVisible();
+      await expect(decisions.locators.proposed.heading).toBeVisible();
       await expect(decisions.locators.proposed.back).toBeVisible();
 
       await expectNoSeriousA11yViolations(page, testInfo);
     });
 
     test('the agent settings (runs, link run) have no serious or critical violations', async ({ on, page }, testInfo) => {
-      await on(page).navigation.do.open('settings');
-      await page.getByTestId('tab-agent').click();
-      await page.getByTestId('agent-tab-runs').click();
-      await expect(page.getByTestId('links-start-run')).toBeVisible();
-      await expect(page.getByTestId('links-unlinked-count')).toHaveText('Alle Einträge sind verknüpft.');
+      const { navigation, settings } = on(page);
+      await navigation.do.open('settings');
+      await settings.do.openAgent();
+      await settings.locators.agent.runsTab.click();
+      await expect(settings.locators.links.startRun).toBeVisible();
+      await expect(settings.locators.links.unlinkedCount).toHaveText('Alle Einträge sind verknüpft.');
 
       await expectNoSeriousA11yViolations(page, testInfo);
     });

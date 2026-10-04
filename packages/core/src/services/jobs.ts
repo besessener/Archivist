@@ -4,6 +4,7 @@ import type { AppContext } from '../context';
 import { jobs } from '../db/schema';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
+import type { ArchivistJson } from '../util/json';
 import { AttemptOutcomes, type Outcome } from './jobs/attempt-outcome';
 import { pruneFinishedJobs, recoverCrashedJobs } from './jobs/job-maintenance';
 import { createJobContext } from './jobs/job-context';
@@ -115,6 +116,15 @@ export class JobQueueService {
   /** The payload a job was queued with. */
   payloadOf<P>(id: string): P | undefined {
     return this.row(id)?.payload as P | undefined;
+  }
+
+  /** Replaces the payload of a job, e.g. a consent given while it waits or runs; the handler reads it again where it needs it. */
+  updatePayload<P>(id: string, payload: P): void {
+    this.db
+      .update(jobs)
+      .set({ payload: payload as ArchivistJson })
+      .where(eq(jobs.id, id))
+      .run();
   }
 
   getResult(id: string): unknown {

@@ -45,8 +45,9 @@ async function scattered() {
 
 const relocate = (documentId: string, categoryPath: string) => app.services.archive.relocate([{ documentId, categoryPath }], { confirmed: true });
 
-const decision = (decisionText: string, decidedAt: string | null, extra: Record<string, unknown> = {}) =>
-  app.ok('decisions:create', {
+// saving queues the contradiction check as a job: wait for it
+const decision = async (decisionText: string, decidedAt: string | null, extra: Record<string, unknown> = {}) => {
+  const saved = await app.ok('decisions:create', {
     title: decisionText.slice(0, 40),
     decisionText,
     topic: 'prod-plat',
@@ -59,6 +60,9 @@ const decision = (decisionText: string, decidedAt: string | null, extra: Record<
     asDraft: false,
     ...extra,
   });
+  await app.services.jobs.whenIdle();
+  return saved;
+};
 
 describe('Archive check: withdrawn hints withdraw their action too', () => {
   it('when the cause goes away, the hint disappears and its action becomes "withdrawn" (not "proposed")', async () => {

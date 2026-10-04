@@ -101,7 +101,7 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
     app.services.audit.amend(entry, { after: { done: true }, undo: { type: 'composite', data: { steps: [] } } });
 
     const result = await app.ok('audit:verify', {});
-    expect(result.brokenEntryId).toBeNull();
+    expect(result.chain).toBe('intact');
     expect(result.checked).toBe(ids().length);
   });
 
@@ -109,14 +109,14 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
     entries(4);
     const [, second] = ids();
     sql('UPDATE audit_log SET action = ? WHERE id = ?', 'test.forged', second);
-    expect(await app.ok('audit:verify', {})).toMatchObject({ brokenEntryId: second });
+    expect(await app.ok('audit:verify', {})).toMatchObject({ chain: 'broken', brokenEntryId: second });
   });
 
   it('notices a removed entry in the middle and an inserted one', async () => {
     entries(4);
     const [, second, third] = ids();
     sql('DELETE FROM audit_log WHERE id = ?', second);
-    expect((await app.ok('audit:verify', {})).brokenEntryId).toBe(third);
+    expect(await app.ok('audit:verify', {})).toMatchObject({ chain: 'broken', brokenEntryId: third });
 
     sql(
       'INSERT INTO audit_log (id, at, action, actor, trigger, confirmed, entity_ids, paths, success) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1)',
@@ -128,7 +128,7 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
       '[]',
       '[]',
     );
-    expect((await app.ok('audit:verify', {})).brokenEntryId).toBe(third);
+    expect(await app.ok('audit:verify', {})).toMatchObject({ chain: 'broken', brokenEntryId: third });
   });
 
   it('does not cover entries from before the chain, and starts at the first chained one', async () => {
@@ -145,16 +145,16 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
       '[]',
     );
     entries(2);
-    expect(await app.ok('audit:verify', {})).toEqual({ checked: 2, brokenEntryId: null, truncated: false });
+    expect(await app.ok('audit:verify', {})).toEqual({ chain: 'intact', checked: 2, truncated: false });
   });
 
   it('notices entries cut off the newest end, even after the log grew again', async () => {
     entries(4);
     const [, , third, fourth] = ids();
     sql('DELETE FROM audit_log WHERE id = ?', fourth);
-    expect(await app.ok('audit:verify', {})).toMatchObject({ brokenEntryId: null, truncated: true });
+    expect(await app.ok('audit:verify', {})).toMatchObject({ chain: 'intact', truncated: true });
     entries(1);
-    expect(await app.ok('audit:verify', {})).toMatchObject({ brokenEntryId: null, truncated: true });
+    expect(await app.ok('audit:verify', {})).toMatchObject({ chain: 'intact', truncated: true });
     expect(ids()).toContain(third);
   });
 
@@ -163,14 +163,14 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
     sql('DELETE FROM audit_log WHERE id = ?', ids()[0]);
     expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: true });
     sql('DELETE FROM audit_log');
-    expect(await app.ok('audit:verify', {})).toEqual({ checked: 0, brokenEntryId: null, truncated: true });
+    expect(await app.ok('audit:verify', {})).toEqual({ chain: 'intact', checked: 0, truncated: true });
   });
 
   it('notices hashes nulled after the first chained entry', async () => {
     entries(3);
     const [first, second] = ids();
     sql('UPDATE audit_log SET hash = NULL, prev_hash = NULL WHERE id = ?', second);
-    expect(await app.ok('audit:verify', {})).toMatchObject({ brokenEntryId: second });
+    expect(await app.ok('audit:verify', {})).toMatchObject({ chain: 'broken', brokenEntryId: second });
     sql('UPDATE audit_log SET hash = NULL, prev_hash = NULL WHERE id = ?', first);
     expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: true });
   });
@@ -205,15 +205,18 @@ describe('Tamper evidence of the audit log (#193, REL-16)', () => {
     expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: true });
   });
 
-  it('seeds a missing anchor on verify', async () => {
+  it('only reads on verify: a missing anchor is seeded by the next entry, not by the check', async () => {
+    const anchorRow = () => app.services.database.sqlite.prepare("SELECT value FROM app_state WHERE key = 'audit.chainAnchor'").get();
     entries(3);
     sql("DELETE FROM app_state WHERE key = 'audit.chainAnchor'");
     expect(await app.ok('audit:verify', {})).toMatchObject({ truncated: false });
-    expect(app.services.database.sqlite.prepare("SELECT value FROM app_state WHERE key = 'audit.chainAnchor'").get()).toBeDefined();
+    expect(anchorRow()).toBeUndefined();
+    entries(1);
+    expect(anchorRow()).toBeDefined();
   });
 
   it('an empty log is intact', async () => {
-    expect(await app.ok('audit:verify', {})).toEqual({ checked: 0, brokenEntryId: null, truncated: false });
+    expect(await app.ok('audit:verify', {})).toEqual({ chain: 'intact', checked: 0, truncated: false });
   });
 });
 

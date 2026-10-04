@@ -43,7 +43,7 @@ test.describe('privacy mode', () => {
 
     await expect(app.navigation.locators.llmStatus).toHaveAccessibleName('Verbindung zur KI: Nur lokal');
     await app.navigation.locators.llmStatus.click();
-    await expect(page.getByText('Der Datenschutzmodus „nur lokal“ ist aktiv')).toBeVisible();
+    await expect(app.navigation.locators.llmDetails).toContainText('Der Datenschutzmodus „nur lokal“ ist aktiv');
 
     await app.settings.do.selectMode('auto');
 

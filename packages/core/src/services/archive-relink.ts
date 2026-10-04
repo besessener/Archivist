@@ -65,7 +65,7 @@ export class ArchiveRelinker {
   private async findCopy(row: MissingDocument, search: { candidates: Array<{ file: string; size: number }>; taken: Set<string> }): Promise<string | null> {
     for (const { file, size } of search.candidates) {
       if (search.taken.has(file) || size !== row.size) continue;
-      const hash = await this.deps.pool.run('hashFile', { path: file }).catch((err: unknown) => {
+      const hash = await this.deps.pool.run('hashFile', { path: file }, { priority: 'user' }).catch((err: unknown) => {
         this.deps.ctx.logger.warn('archive', 'Relink candidate could not be hashed', { path: file, error: err });
         return null;
       });

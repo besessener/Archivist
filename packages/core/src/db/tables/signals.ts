@@ -62,6 +62,8 @@ export const contradictions = sqliteTable(
     resolvedAt: text('resolved_at'),
     /** Resolved by superseding one decision: only undoing that supersede raises the contradiction again. */
     resolvedBySupersede: integer('resolved_by_supersede', { mode: 'boolean' }).notNull().default(false),
+    /** Resolved only because a decision was no longer active: it is raised again once both are active. */
+    resolvedByDeactivation: integer('resolved_by_deactivation', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [uniqueIndex('contradictions_dedupe_idx').on(t.dedupeKey)],
 );

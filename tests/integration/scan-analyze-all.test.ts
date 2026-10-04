@@ -80,6 +80,35 @@ describe('„Alle neuen Dateien analysieren“ (#228)', () => {
     expect((await app.ok('documents:list', {})).every((d) => d.proposal?.analyzedBy === 'local')).toBe(true);
   });
 
+  it('gives a queued run without consent the consent of a later request instead of dropping it', async () => {
+    await scanned('confirm');
+    await app.services.jobs.stop();
+    const withoutConsent = await app.ok('scanner:analyzeAll', { confirmLlm: false });
+
+    const withConsent = await app.ok('scanner:analyzeAll', { confirmLlm: true });
+    app.services.jobs.start();
+    await app.services.jobs.whenIdle();
+
+    expect(withConsent.jobId).toBe(withoutConsent.jobId);
+    expect(app.llm.calls.filter((call) => call.schema === 'DocumentClassification')).toHaveLength(5);
+  });
+
+  it('applies a consent given while the run is working to the files it has not reached yet', async () => {
+    await scanned('confirm');
+    let consented = false;
+    app.services.events.on('job:updated', (job: { type: string; progressMessage: string | null }) => {
+      if (consented || job.type !== 'scanner.analyzeAll' || job.progressMessage !== '1 von 5 analysiert') return;
+      consented = true;
+      app.services.scanner.bulk.enqueue({ confirmLlm: true });
+    });
+
+    await app.ok('scanner:analyzeAll', { confirmLlm: false });
+    await app.services.jobs.whenIdle();
+
+    expect(app.services.jobs.list().filter((job) => job.type === 'scanner.analyzeAll')).toHaveLength(1);
+    expect(app.llm.calls.filter((call) => call.schema === 'DocumentClassification')).toHaveLength(4);
+  });
+
   it('keeps honouring exclusions: files of a locked folder stay local', async () => {
     const files = await scanned('auto');
     const root = (await app.ok('scanner:listDirectories', {}))[0]!;

@@ -17,17 +17,17 @@ const ANALYZE_ALL_JOB = 'scanner.analyzeAll';
 /** „Alle N neuen Dateien analysieren“: one job for every new file, one consent where the privacy mode asks for it (#228). */
 export function AnalyzeAll() {
   const estimate = useQuery('scanner:analyzeAllPreview', {}, { scopes: ['scanner', 'documents'], jobs: true });
-  const jobs = useQuery('jobs:list', { limit: 50 }, { scopes: ['jobs'], jobs: true });
+  const jobs = useQuery('jobs:list', { limit: 1, type: ANALYZE_ALL_JOB, activeOnly: true }, { scopes: ['jobs'], jobs: true });
   const { settings } = useSettings();
   const { run, busy } = useRun();
   const [open, setOpen] = useState(false);
   const [llmOk, setLlmOk] = useState(false);
-  const running = (jobs.data ?? []).find((job) => job.type === ANALYZE_ALL_JOB && (job.status === 'running' || job.status === 'pending'));
+  const running = jobs.data?.[0];
   const total = estimate.data?.total ?? 0;
   const mode = settings?.privacy.llmMode ?? 'confirm';
   const asksConsent = mode === 'confirm' && (estimate.data?.llmEligible ?? 0) > 0;
 
-  async function start(confirmLlm: boolean) {
+  async function start({ confirmLlm }: { confirmLlm: boolean }) {
     const out = await run(() => call('scanner:analyzeAll', { confirmLlm }), {
       success: 'Analyse aller neuen Dateien gestartet.',
       errorTitle: 'Analyse konnte nicht gestartet werden',
@@ -54,7 +54,7 @@ export function AnalyzeAll() {
               onClick={() => {
                 setLlmOk(false);
                 if (asksConsent) setOpen(true);
-                else void start(false);
+                else void start({ confirmLlm: false });
               }}
             >
               <Layers aria-hidden /> Alle {plural(total, ['neue Datei', 'neuen Dateien'])} analysieren
@@ -70,7 +70,7 @@ export function AnalyzeAll() {
           description="Die Analyse läuft in einem Auftrag im Hintergrund, in Blöcken zu 500 Dateien. Du gibst die Einwilligung nur einmal für alle."
           confirmLabel={llmOk ? 'Mit KI analysieren' : 'Nur lokal analysieren'}
           confirmTestId="scan-analyze-all-confirm"
-          onConfirm={() => start(llmOk)}
+          onConfirm={() => start({ confirmLlm: llmOk })}
         >
           <BulkConsent estimate={estimate.data} noun={['Datei', 'Dateien']} checked={llmOk} onCheckedChange={setLlmOk} testId="scan-analyze-all-llm" />
         </ConfirmDialog>

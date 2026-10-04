@@ -22,6 +22,8 @@ export interface RunnerOptions {
   limits: AgentLimits;
   maxRetries: number;
   retryDelayMs: number;
+  /** Throws the daily token limit error before each request (#153). */
+  assertWithinCap: () => void;
   effort: AgentEffort;
   maxOutputTokens?: number;
   massThreshold: number;
@@ -266,6 +268,7 @@ export class AgentRunner {
     const { signal } = this.options.ctx;
     for (let attempt = 0; ; attempt += 1) {
       if (signal.aborted) return null;
+      this.options.assertWithinCap();
       const timeout = this.runTimeout();
       try {
         const result = await this.options.adapter.turn(this.request(maxOutputTokens, timeout.signal), (event) => {

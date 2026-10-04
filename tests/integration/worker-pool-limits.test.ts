@@ -11,7 +11,7 @@ import { createTestApp } from '../helpers/harness';
 let dir: string;
 let workerFile: string;
 
-// A worker that answers hashFile with the path, hangs on "hang" and exits cleanly on "exit" (the pool cannot time out inline).
+// A worker that answers with the path, hangs on "hang", answers "slow" after 100 ms and exits cleanly on "exit" (the pool cannot time out inline).
 beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-pool-'));
   workerFile = path.join(dir, 'fake-worker.cjs');
@@ -21,6 +21,7 @@ beforeAll(() => {
 parentPort.on('message', ({ id, payload }) => {
   if (payload.path === 'hang') return;
   if (payload.path === 'exit') process.exit(0);
+  if (payload.path === 'slow') return setTimeout(() => parentPort.postMessage({ id, ok: true, result: payload.path }), 100);
   parentPort.postMessage({ id, ok: true, result: payload.path });
 });`,
   );
@@ -44,7 +45,8 @@ describe('worker pool limits (#205)', () => {
 
   it('keeps a slow task from blocking the tasks queued behind it', async () => {
     const pool = poolWith({ hashFile: 150 });
-    const [hung, next] = await Promise.allSettled([pool.run('hashFile', { path: 'hang' }), pool.run('hashFile', { path: 'second' })]);
+    // the next task has the default limit: its replacement worker may start slowly under load
+    const [hung, next] = await Promise.allSettled([pool.run('hashFile', { path: 'hang' }), pool.run('extractDocument', { path: 'second' })]);
     expect(hung.status).toBe('rejected');
     expect(next).toEqual({ status: 'fulfilled', value: 'second' });
     await pool.close();
@@ -97,6 +99,27 @@ describe('worker pool limits (#205)', () => {
     expect((exited as AppError).message).toMatch(/Worker-Thread/);
     expect(await pool.run('hashFile', { path: 'ok' })).toBe('ok');
     await pool.close();
+  });
+
+  it('serves a user task before the background tasks queued ahead of it', async () => {
+    const pool = poolWith();
+    const finished: string[] = [];
+    const track = (name: string, run: Promise<unknown>) => run.then(() => finished.push(name));
+    const busy = track('busy', pool.run('hashFile', { path: 'slow' }));
+    const background = ['b1', 'b2', 'b3'].map((name) => track(name, pool.run('hashFile', { path: name })));
+    const user = track('user', pool.run('hashFile', { path: 'user' }, { priority: 'user' }));
+    await Promise.all([busy, user, ...background]);
+    expect(finished).toEqual(['busy', 'user', 'b1', 'b2', 'b3']);
+    await pool.close();
+  });
+
+  it('keeps one slot free for short tasks while extractions run', async () => {
+    const pool = poolWith({}, 2);
+    const extractions = [1, 2, 3].map(() => pool.run('extractDocument', { path: 'hang' }).catch(() => undefined));
+    const blocked = new Promise((resolve) => setTimeout(() => resolve('blockiert'), 2000));
+    expect(await Promise.race([pool.run('hashFile', { path: 'kurz' }), blocked])).toBe('kurz');
+    await pool.close();
+    await Promise.all(extractions);
   });
 
   it('rejects pending tasks on close', async () => {

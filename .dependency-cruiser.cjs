@@ -19,7 +19,7 @@ module.exports = {
       name: 'no-type-only-service-cycles',
       severity: 'warn',
       comment:
-        'Type-only cycles between services are resolved at runtime via wire() (see create-services.ts); calling a wired service before wire() throws. The known cycles are frozen in scripts/type-only-cycles.baseline.json (npm run depcruise:cycles); new ones fail there.',
+        'Type-only cycles between services are resolved at runtime via wire() (see composition/wiring.ts); calling a wired service before wire() throws. The known cycles are frozen in scripts/type-only-cycles.baseline.json (checked by npm run depcruise); new ones fail there.',
       from: { path: '^packages/core/src/services/' },
       to: { path: '^packages/core/src/services/', circular: true, dependencyTypes: ['type-only'] },
     },

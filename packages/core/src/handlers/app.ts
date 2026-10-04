@@ -20,6 +20,7 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     archiveRoot: settings.archiveRoot,
     archiveSyncProvider: detectSyncFolder(settings.archiveRoot),
     dataSyncProvider: detectSyncFolder(services.paths.root),
+    appStateInDataRoot: services.paths.appData === services.paths.root,
     platform: host.platform,
     setupCompleted: settings.setupCompleted,
     llm: {
@@ -66,7 +67,7 @@ async function locateFile(services: Services, document: DocRow, archiveRoot: str
   const archived = path.join(archiveRoot, ...document.archiveRelPath.split('/'));
   if (services.scanner.fileExists(archived)) return archived;
   for (const candidate of others) {
-    const checksum = await services.pool.run('hashFile', { path: candidate }).catch(() => null);
+    const checksum = await services.pool.run('hashFile', { path: candidate }, { priority: 'user' }).catch(() => null);
     if (checksum === document.sha256) return candidate;
   }
   throw new AppError('filesystem_error', ARCHIVE_COPY_MISSING);

@@ -16,8 +16,9 @@ afterEach(async () => {
 const graph = () => app.services.graph;
 const relationsOf = (id: string) => graph().relationsOf(id);
 
-const decision = (decisionText: string, decidedAt: string, extra: Record<string, unknown> = {}) =>
-  app.ok('decisions:create', {
+// saving queues the contradiction check as a job: wait for it
+const decision = async (decisionText: string, decidedAt: string, extra: Record<string, unknown> = {}) => {
+  const saved = await app.ok('decisions:create', {
     title: decisionText.slice(0, 40),
     decisionText,
     topic: 'prod-plat',
@@ -30,6 +31,9 @@ const decision = (decisionText: string, decidedAt: string, extra: Record<string,
     asDraft: false,
     ...extra,
   });
+  await app.services.jobs.whenIdle();
+  return saved;
+};
 
 describe('topics and projects resolve via aliases (#188)', () => {
   it('naming an alias uses the existing topic or project instead of creating a new one', async () => {

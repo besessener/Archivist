@@ -174,7 +174,8 @@ test.describe('older notifications (#228)', () => {
 
     await notifications.locators.loadOlder.click();
 
-    await expect(notifications.locators.items).not.toHaveCount(50);
+    await expect(notifications.locators.items).toHaveCount(52);
+    await expect(notifications.item('Klassifikation bereit'), 'one notification per imported file').toHaveCount(52);
     await expect(notifications.locators.loadOlder).toBeHidden();
   });
 });

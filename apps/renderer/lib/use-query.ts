@@ -47,7 +47,7 @@ export function useQuery<C extends IpcChannel>(channel: C, input: IpcInput<C> | 
       setError(null);
     } catch (err) {
       if (id !== requestId.current) return;
-      setError(err instanceof IpcError ? err : new IpcError({ category: 'native_module_error', message: String(err), retryable: true }));
+      setError(err instanceof IpcError ? err : new IpcError({ category: 'internal_error', message: String(err), retryable: true }));
     } finally {
       if (id === requestId.current) setLoading(false);
     }

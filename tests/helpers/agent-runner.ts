@@ -187,6 +187,7 @@ export function setupRunner(script: Step[], options: RunnerSetupOptions = {}) {
     limits: { ...LIMITS, ...options.limits },
     maxRetries: 2,
     retryDelayMs: 0,
+    assertWithinCap: () => undefined,
     effort: 'high',
     massThreshold: 100,
     ctx,

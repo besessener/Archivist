@@ -1,4 +1,5 @@
 import type { Services } from '../create-services';
+import { queueContradictionCheck } from '../services/contradiction-check-job';
 import { AppError } from '../util/errors';
 import { UI_TRIGGER, type HandlerGroup } from './types';
 
@@ -49,7 +50,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
           })
         : services.actions.resolve(input.actionId, { decision: 'reject' }),
 
-    'decisions:create': async (input) => {
+    'decisions:create': (input) => {
       const duplicate = services.decisions.findDuplicate({ decisionText: input.decisionText, topic: input.topic, project: input.project });
       if (duplicate)
         throw new AppError(
@@ -57,12 +58,12 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
           `Diese Entscheidung ist schon erfasst („${duplicate.title}“). Öffne sie unter „Entscheidungen“ und ergänze sie dort.`,
         );
       const decision = services.decisions.create(input, { actor: 'user', trigger: UI_TRIGGER });
-      await services.contradictions.checkDecision(decision.id); // contradictions only as a hint, and only for active decisions
+      queueContradictionCheck(services.jobs, decision); // only a hint: saving never waits for the LLM's reviews
       return decision;
     },
-    'decisions:update': async (input) => {
+    'decisions:update': (input) => {
       const decision = services.decisions.update(input.id, { patch: input.patch, trigger: UI_TRIGGER });
-      await services.contradictions.checkDecision(decision.id);
+      queueContradictionCheck(services.jobs, decision);
       return decision;
     },
     'decisions:get': (input) => services.decisions.get(input.id),

@@ -30,7 +30,6 @@ interface ContradictionResolver {
     },
   ): unknown;
   settlePair(oldId: string, newId: string): void;
-  checkDecision(decisionId: string): Promise<unknown>;
 }
 
 type MergePair = { keepId: string; duplicateId: string };

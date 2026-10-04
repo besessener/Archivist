@@ -4,7 +4,7 @@ const SAMPLE_CHARS = 30_000;
 const MIN_WORD_LENGTH = 3;
 
 /** The `limit` names that fit a text best (shared words, a name as a whole first); the rest keeps its order, so a short list never hides a matching name. */
-export function relevantNames(names: string[], text: string, limit: number): string[] {
+export function relevantNames(names: string[], { text, limit }: { text: string; limit: number }): string[] {
   if (names.length <= limit) return names;
   const haystack = ` ${normalizeName(text.slice(0, SAMPLE_CHARS))} `;
   const words = new Set(haystack.split(' '));

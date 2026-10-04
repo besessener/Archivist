@@ -17,7 +17,7 @@ import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { INSIGHT_KIND_LABELS } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
-import { usePagedQuery, usePageWindow } from '@/lib/use-page-window';
+import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { InsightRecord } from '@/lib/types';
@@ -39,10 +39,10 @@ function groupByKind(insights: InsightRecord[]): Array<[InsightKind, InsightReco
 export default function InsightsPage() {
   const [status, setStatus] = useState<InsightStatus>('open');
   const insightWindow = usePageWindow(status);
-  const insights = usePagedQuery('insights:list', { status }, insightWindow.window, { scopes: ['insights'] });
+  const insights = useWindowedQuery('insights:list', { filter: { status }, window: insightWindow.window, scopes: ['insights'] });
   const insightTotal = useQuery('insights:count', { status }, { scopes: ['insights'] });
   const contradictionWindow = usePageWindow('contradictions');
-  const contradictions = usePagedQuery('contradictions:list', {}, contradictionWindow.window, { scopes: ['contradictions'] });
+  const contradictions = useWindowedQuery('contradictions:list', { filter: {}, window: contradictionWindow.window, scopes: ['contradictions'] });
   const contradictionTotal = useQuery('contradictions:count', {}, { scopes: ['contradictions'] });
   const { run, busy } = useRun();
   const [accepting, setAccepting] = useState<InsightRecord | null>(null);

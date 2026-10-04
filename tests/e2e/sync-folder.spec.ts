@@ -10,6 +10,10 @@ test.describe('archive inside a cloud-synced folder (#207)', () => {
       const app = on(page);
       await expect(app.setup.locators.texts.syncWarning).toContainText('OneDrive');
       await expect(app.setup.locators.texts.syncWarning).toContainText('Datenordner');
+      // with ARCHIVIST_DATA_DIR the data folder holds the application state too
+      await expect(app.setup.locators.texts.syncWarning).toContainText(
+        'Im Datenordner liegen Eingang, Quarantäne, Papierkorb, Datenbank, Einstellungen und Backups.',
+      );
       await expectNoSeriousA11yViolations(page, testInfo);
 
       await app.setup.do.complete(llm.url);

@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { auditActionLabel, auditChangeLines } from '@/lib/audit-labels';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatNumber } from '@/lib/format';
 import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
@@ -23,7 +23,7 @@ const MAX_ENTRIES = 5000;
 function ChainStatus() {
   const verification = useQuery('audit:verify', {}, { scopes: ['audit'] });
   if (!verification.data) return null;
-  if (verification.data.brokenEntryId === null && !verification.data.truncated)
+  if (verification.data.chain === 'intact' && !verification.data.truncated)
     return (
       <p className="text-xs text-muted-foreground" data-testid="audit-chain-ok">
         {verification.data.checked} Einträge wurden seit dem Schreiben nicht verändert.
@@ -31,12 +31,29 @@ function ChainStatus() {
     );
   return (
     <Notice tone="danger" title="Das Änderungsprotokoll wurde nachträglich verändert" data-testid="audit-chain-broken">
-      {verification.data.brokenEntryId !== null && (
-        <>Ein Eintrag wurde nach dem Schreiben geändert, entfernt oder eingefügt (erster betroffener Eintrag: {verification.data.brokenEntryId}). </>
+      {verification.data.chain === 'broken' && (
+        <>
+          Ein Eintrag wurde nach dem Schreiben geändert, entfernt oder eingefügt
+          <BrokenEntry id={verification.data.brokenEntryId} />.{' '}
+        </>
       )}
       {verification.data.truncated && <>Es fehlen Einträge am Anfang oder Ende des Protokolls. </>}
       Prüfe, ob andere Programme auf die Datenbank von Archivist zugegriffen haben.
     </Notice>
+  );
+}
+
+/** The first entry that no longer fits the chain, by time and action; the newest entries are searched, as far as the log lists them. */
+function BrokenEntry({ id }: { id: string }) {
+  const entries = useQuery('audit:list', { limit: MAX_ENTRIES, onlyUndoable: false }, { scopes: ['audit'] });
+  if (!entries.data) return null;
+  const entry = entries.data.find((candidate) => candidate.id === id);
+  if (!entry) return <> (erster betroffener Eintrag: älter als die neuesten {formatNumber(MAX_ENTRIES)})</>;
+  return (
+    <>
+      {' '}
+      (erster betroffener Eintrag: {formatDateTime(entry.at)}, „{auditActionLabel(entry.action)}“)
+    </>
   );
 }
 

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseService, type MigrationStatus } from '../db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from '../context';
+import { AppStateService } from '../services/app-state';
 import { AuditService } from '../services/audit';
 import { applyPendingRestore } from '../services/backup-restore';
 import { migrateLegacyLayout, traceLayoutStep } from '../services/data-layout-migration';
@@ -71,7 +72,8 @@ export function createBaseServices(options: CreateServicesOptions) {
   const ctx: AppContext = { paths, database, logger, events };
 
   const secrets = new SecretService({ file: path.join(paths.config, 'llm-api-key.enc'), cipher: options.cipher, logger });
-  const audit = new AuditService(ctx);
+  const appState = new AppStateService(ctx);
+  const audit = new AuditService(ctx, appState);
   audit.seedAnchor();
   // the request was logged in the database that is now set aside: the restored one records that it took over
   if (restore) audit.log({ action: 'backup.restore', actor: 'user', trigger: 'startup', confirmed: true, after: { ...restore } });
@@ -109,6 +111,7 @@ export function createBaseServices(options: CreateServicesOptions) {
     settings,
     secrets,
     database,
+    appState,
     audit,
     undo,
     pool,

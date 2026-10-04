@@ -17,19 +17,21 @@ export function usePageWindow(resetKey: string) {
   return { window: pages * PAGE_SIZE, more };
 }
 
-type PagedChannel = 'chat:history' | 'decisions:list' | 'insights:list' | 'contradictions:list' | 'openItems:list';
+type WindowedChannel = 'chat:history' | 'decisions:list' | 'insights:list' | 'contradictions:list' | 'openItems:list';
 
-interface PagedQueryOptions extends Omit<UseQueryOptions, 'load' | 'loadKey'> {
+interface WindowedQueryOptions<C extends WindowedChannel> extends Omit<UseQueryOptions, 'load' | 'loadKey'> {
+  /** The list filter without paging; undefined waits like `useQuery`'s input. */
+  filter: Omit<IpcInput<C>, 'limit' | 'offset'> | undefined;
+  /** How many rows from the start of the list to read (see `usePageWindow`). */
+  window: number;
   /** Which end of the list the first page holds when the pages are joined: `backward` puts later pages in front (chat history). */
   direction?: 'forward' | 'backward';
 }
 
 /** A list channel read through its first `window` rows, paged by `offset` beyond the IPC limit of one request. */
-export function usePagedQuery<C extends PagedChannel>(
+export function useWindowedQuery<C extends WindowedChannel>(
   channel: C,
-  filter: Omit<IpcInput<C>, 'limit' | 'offset'> | undefined,
-  window: number,
-  { direction = 'forward', ...options }: PagedQueryOptions = {},
+  { filter, window, direction = 'forward', ...options }: WindowedQueryOptions<C>,
 ): QueryState<IpcOutput<C>> {
   const load = useCallback(
     async (input: IpcInput<C>) => {

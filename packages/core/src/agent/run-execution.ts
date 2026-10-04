@@ -172,6 +172,7 @@ export class AgentRunExecutor {
       limits: kind === 'background' ? backgroundLimitsFor(agent, options.trigger) : agent.chatLimits,
       maxRetries: agent.maxRetries,
       retryDelayMs: this.deps.llm.retryDelay,
+      assertWithinCap: () => this.deps.llm.assertWithinCap(),
       effort: agent.effort,
       massThreshold: agent.massActionThreshold,
       ctx,

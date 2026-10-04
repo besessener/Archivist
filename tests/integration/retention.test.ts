@@ -62,6 +62,25 @@ describe('Retention of bookkeeping tables (#208)', () => {
     expect(notificationTitles()).toEqual(['kürzlich gelesen', 'ungelesen']);
   });
 
+  it('keeps a notification snoozed for longer than the retention period, so it comes back as itself (#79)', async () => {
+    app.services.settings.update({ logs: { retentionDays: 30 } });
+    const snoozed = app.services.notifications.create({
+      title: 'Frist prüfen',
+      description: 'x',
+      type: 'scan_done',
+      proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
+    });
+    notification('alt und gelesen', { readDaysAgo: 40 });
+    await app.ok('notifications:snooze', { id: snoozed.id, remindAt: new Date(Date.now() + 60 * DAY_MS).toISOString() });
+    sqlite().prepare('UPDATE notifications SET read_at = ? WHERE id = ?').run(daysAgo(40), snoozed.id);
+
+    pruneByRetention(app.services);
+    app.services.reminders.checkDue(new Date(Date.now() + 61 * DAY_MS));
+
+    expect(notificationTitles()).toEqual(['Frist prüfen']);
+    expect(app.services.notifications.get(snoozed.id)).toMatchObject({ readAt: null, resolvedAt: null, proposedActions: [{ label: 'Inbox öffnen' }] });
+  });
+
   it('leaves the audit log, chat messages and agent actions alone', async () => {
     app.services.settings.update({ logs: { retentionDays: 1 } });
     sqlite().prepare('UPDATE audit_log SET at = ?').run(daysAgo(400));

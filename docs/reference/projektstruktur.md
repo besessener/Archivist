@@ -122,4 +122,4 @@ Electron-Spezifisches (safeStorage, Dialoge, `shell`) wird über kleine Schnitts
 
 Jeder IPC-Aufruf liefert ein `Result`. Fehler tragen eine dieser Kategorien:
 
-`validation_error`, `database_error`, `filesystem_error`, `parser_error`, `llm_error`, `network_error`, `permission_error`, `scan_error`, `archive_conflict`, `native_module_error`.
+`validation_error`, `database_error`, `database_corrupt`, `filesystem_error`, `parser_error`, `llm_error`, `network_error`, `permission_error`, `scan_error`, `archive_conflict`, `native_module_error`, `internal_error` (unerwarteter Fehler ohne passende Kategorie, z. B. ein abgebrochener IPC-Aufruf).

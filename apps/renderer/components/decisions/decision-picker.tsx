@@ -27,19 +27,21 @@ export function DecisionPicker({ excludeId, open, value, onChange, selectId, tes
   const query = useDebounced(search.trim(), 300);
   const recent = useQuery('decisions:list', { statuses: ACTIVE_DECISION_STATUSES, limit: RECENT_COUNT }, { scopes: ['decisions'], enabled: open && !query });
   const found = useQuery('decisions:search', { query: query || 'x', limit: SEARCH_COUNT }, { scopes: ['decisions'], enabled: open && !!query });
-  const options = (query ? found : recent).data ?? [];
+  const listed = ((query ? found : recent).data ?? []).filter((decision) => decision.id !== excludeId && ACTIVE_DECISION_STATUSES.includes(decision.status));
+  // the picked decision stays an option when a new search no longer finds it, so the select never hides the value it holds
+  const missing = value !== '' && !listed.some((decision) => decision.id === value);
+  const picked = useQuery('decisions:get', missing ? { id: value } : undefined, { scopes: ['decisions'], enabled: open && missing });
+  const options = missing && picked.data?.id === value ? [picked.data, ...listed] : listed;
   return (
     <div className="flex flex-col gap-2">
       <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Entscheidungen durchsuchen …" aria-label="Entscheidungen durchsuchen" />
       <Select id={selectId} value={value} onChange={(e) => onChange(e.target.value)} data-testid={testId}>
         <option value="">Entscheidung wählen …</option>
-        {options
-          .filter((decision) => decision.id !== excludeId && ACTIVE_DECISION_STATUSES.includes(decision.status))
-          .map((decision) => (
-            <option key={decision.id} value={decision.id}>
-              {(decision.title || decision.decisionText).slice(0, 80)} ({formatLongDate(decision.decidedAt, 'ohne Datum')})
-            </option>
-          ))}
+        {options.map((decision) => (
+          <option key={decision.id} value={decision.id}>
+            {(decision.title || decision.decisionText).slice(0, 80)} ({formatLongDate(decision.decidedAt, 'ohne Datum')})
+          </option>
+        ))}
       </Select>
     </div>
   );

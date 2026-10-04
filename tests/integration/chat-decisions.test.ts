@@ -158,6 +158,7 @@ describe('Contradictions and replacing only after confirmation', () => {
     app.llm.down = true; // purely lexical check with controlled sample data
     const a = await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const b = await app.ok('decisions:create', mk('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01'));
+    await app.services.jobs.whenIdle(); // the contradiction check runs as a job
     const list = await app.ok('contradictions:list', {});
     expect(list).toHaveLength(1);
     expect(list[0]!.status).toBe('detected');
@@ -196,6 +197,7 @@ describe('Contradictions and replacing only after confirmation', () => {
     app.llm.down = true;
     const a = await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     const b = await app.ok('decisions:create', mk('prod-plat wird eingestellt.', '2026-03-01'));
+    await app.services.jobs.whenIdle(); // the contradiction check runs as a job
     const act = await app.services.actions.resolve((await app.ok('actions:list', { status: 'proposed' }))[0]!.id, { decision: 'approve', confirmed: true });
     expect(act.status).toBe('executed');
     const entry = (await app.ok('audit:list', { limit: 20, onlyUndoable: true })).find((e) => e.action === 'decision.supersede')!;

@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { CheckCircle2, FolderPlus, Save, Trash2 } from 'lucide-react';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
@@ -10,12 +10,11 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
 import { formatBytes, formatDateTime, formatNumber } from '@/lib/format';
-import { useQuery } from '@/lib/use-query';
+import { uniqueById, usePagedQuery } from '@/lib/use-paged-query';
 import { useRun } from '@/lib/use-run';
 import { cn, parseList } from '@/lib/utils';
 import { MaskingSection } from './masking-section';
 import { Section, useSaveSettings, type TabProps } from './shared';
-import { TRANSMISSION_PAGE_SIZE, useTransmissionPages } from './use-transmission-pages';
 import { UsageSection } from './usage-section';
 
 type Mode = 'auto' | 'confirm' | 'local_only';
@@ -33,9 +32,13 @@ const MODES: Array<{ id: Mode; title: string; text: string }> = [
   { id: 'local_only', title: 'Nur lokal', text: 'Es wird nie etwas an die KI gesendet. Vorschläge sind weniger genau.' },
 ];
 
+const TRANSMISSION_PAGE_SIZE = 100;
+
 export function PrivacyTab({ settings, reload }: TabProps) {
-  const tx = useQuery('llm:transmissions', { limit: TRANSMISSION_PAGE_SIZE }, { scopes: ['audit'] });
-  const pages = useTransmissionPages(tx.data);
+  // „Mehr laden“ adds a page; a change reloads every page shown, so an entry pushed down by new ones stays in the list
+  const tx = usePagedQuery('llm:transmissions', {}, { pageSize: TRANSMISSION_PAGE_SIZE, scopes: ['audit'] });
+  const rows = useMemo(() => uniqueById(tx.pages), [tx.pages]);
+  const canLoadMore = (tx.pages?.at(-1)?.length ?? 0) >= TRANSMISSION_PAGE_SIZE;
   const [open, setOpen] = useState<string | null>(null);
   const { llmMode, neverAnalyzeDirs, neverAnalyzeExtensions, neverAnalyzeFiles } = settings.privacy;
 
@@ -51,10 +54,10 @@ export function PrivacyTab({ settings, reload }: TabProps) {
         title="An die KI übertragene Inhalte"
         description="Protokoll aller Übertragungen. „Maskiert“ zeigt, wie viele Geheimnisse (z. B. Passwörter) und, falls eingeschaltet, persönliche Daten (z. B. IBAN) vor dem Senden unkenntlich gemacht wurden."
       >
-        {tx.error && !tx.data && <ErrorNote error={tx.error} onRetry={() => void tx.refetch()} />}
-        {!tx.data && tx.loading && <Loading />}
-        {tx.data && pages.rows.length === 0 && <EmptyState title="Noch nichts übertragen" description="Bisher wurden keine Inhalte an die KI gesendet." />}
-        {tx.data && pages.rows.length > 0 && (
+        {tx.error && !tx.pages && <ErrorNote error={tx.error} onRetry={() => void tx.refetch()} />}
+        {!tx.pages && tx.loading && <Loading />}
+        {tx.pages && rows.length === 0 && <EmptyState title="Noch nichts übertragen" description="Bisher wurden keine Inhalte an die KI gesendet." />}
+        {tx.pages && rows.length > 0 && (
           <Table data-testid="transmissions-table">
             <THead>
               <tr>
@@ -70,7 +73,7 @@ export function PrivacyTab({ settings, reload }: TabProps) {
               </tr>
             </THead>
             <TBody>
-              {pages.rows.map((t) => (
+              {rows.map((t) => (
                 <Fragment key={t.id}>
                   <TR data-testid="transmission-row">
                     <TD className="whitespace-nowrap">{formatDateTime(t.at)}</TD>
@@ -125,9 +128,9 @@ export function PrivacyTab({ settings, reload }: TabProps) {
             </TBody>
           </Table>
         )}
-        {pages.canLoadMore && (
+        {canLoadMore && (
           <div>
-            <Button variant="outline" disabled={pages.loading} onClick={() => void pages.loadMore()} data-testid="transmissions-more">
+            <Button variant="outline" disabled={tx.loading} onClick={tx.loadMore} data-testid="transmissions-more">
               Mehr laden
             </Button>
           </div>

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -19,7 +19,7 @@ const verdict = (isContradiction: boolean) => () => ({
 });
 const llmQuestions = (target: TestApp = app) => target.llm.calls.filter((call) => call.schema === 'ContradictionProposal').length;
 
-const decision = (decisionText: string, decidedAt: string | null, extra: Record<string, unknown> = {}) =>
+const save = (decisionText: string, decidedAt: string | null, extra: Record<string, unknown> = {}) =>
   app.ok('decisions:create', {
     title: decisionText.slice(0, 40),
     decisionText,
@@ -33,6 +33,12 @@ const decision = (decisionText: string, decidedAt: string | null, extra: Record<
     asDraft: false,
     ...extra,
   });
+// saving queues the contradiction check as a job; most tests look at its outcome
+const decision = async (...args: Parameters<typeof save>) => {
+  const saved = await save(...args);
+  await app.services.jobs.whenIdle();
+  return saved;
+};
 
 // no background use of the LLM (privacy mode „vorher fragen“), without the circuit breaker of an unreachable endpoint
 const goOffline = () => app.services.settings.update({ privacy: { llmMode: 'confirm' } });
@@ -113,6 +119,7 @@ describe('Vetoes of the LLM survive a restart (#180)', () => {
         });
       await create('Wir führen prod-plat weiter.', '2026-01-10');
       await create('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01');
+      await first.services.jobs.whenIdle();
       expect(llmQuestions(first)).toBe(1);
       await first.services.shutdown();
 
@@ -295,6 +302,21 @@ describe('„Möglicherweise überholt“ needs a common subject (#186)', () => 
   });
 
   it.each([
+    ['the project when only that is shared', { topic: 'Termine', project: 'Verein' }, 'Zum Projekt „Verein“'],
+    ['the topic when that is shared', { topic: 'Planung', project: 'Garten' }, 'Zum Thema „Planung“'],
+  ])('names %s', async (_name, newerScope, phrase) => {
+    app.llm.down = true;
+    await decision('Das Meeting findet dienstags statt.', '2026-01-10', { topic: 'Planung', project: 'Verein' });
+    await decision('Das Meeting findet donnerstags statt.', '2026-03-01', newerScope);
+
+    await app.services.consistency.run({ trigger: 'test' });
+
+    const [hint] = openInsights('possibly_superseded');
+    expect(hint!.explanation).toMatch(new RegExp(`^${phrase} existiert eine neuere aktive Entscheidung`));
+    expect(app.services.actions.get(hint!.recommendedActionId!).rationale).toBe(`${phrase} gibt es eine neuere Entscheidung.`);
+  });
+
+  it.each([
     ['dated', '2026-03-01'],
     ['undated', null],
   ])('flags identical %s decisions as a duplicate', async (_name, decidedAt) => {
@@ -337,6 +359,7 @@ describe('Immediate contradiction check (#191)', () => {
     expect(contradictionsWith('detected')).toHaveLength(0);
 
     const completed = await app.ok('decisions:update', { id: draft.id, patch: { decidedAt: '2026-03-01', participants: ['Anna'], status: 'confirmed' } });
+    await app.services.jobs.whenIdle();
 
     expect(completed.status).toBe('confirmed');
     expect(contradictionsWith('detected')).toHaveLength(1);
@@ -362,7 +385,81 @@ describe('Immediate contradiction check (#191)', () => {
     });
 
     await app.ok('actions:resolve', { decision: 'approve', actionId: proposal.id, confirmed: true, strongConfirmed: false });
+    await app.services.jobs.whenIdle();
 
     expect(contradictionsWith('detected')).toHaveLength(1);
+  });
+});
+
+describe('Contradiction check of a saved decision in the background', () => {
+  const gate = () => {
+    let open = () => {};
+    const opened = new Promise<void>((resolve) => (open = resolve));
+    return { opened, open };
+  };
+  const settlesWithin = (pending: Promise<unknown>, ms: number) =>
+    Promise.race([pending.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms))]);
+  const activeChecks = () => app.services.jobs.list(100, { type: 'contradiction.check', activeOnly: true });
+
+  it('saving does not wait for slow LLM reviews; the contradiction appears once the job ran', async () => {
+    const reviews = gate();
+    app.llm.on('ContradictionProposal', async () => {
+      await reviews.opened;
+      return verdict(true)();
+    });
+    await decision('Das Budget beträgt 5000 Euro.', '2026-01-10');
+
+    expect(await settlesWithin(save('Das Budget beträgt 8000 Euro.', '2026-03-01'), 2_000)).toBe(true);
+    await vi.waitFor(() => expect(llmQuestions()).toBe(1));
+    expect(contradictionsWith('detected')).toHaveLength(0);
+
+    reviews.open();
+    await app.services.jobs.whenIdle();
+    expect(contradictionsWith('detected')).toHaveLength(1);
+  });
+
+  it('cancelling the check aborts its pending LLM request', async () => {
+    app.llm.on('ContradictionProposal', () => new Promise(() => {}));
+    await decision('Das Budget beträgt 5000 Euro.', '2026-01-10');
+    await save('Das Budget beträgt 8000 Euro.', '2026-03-01');
+    await vi.waitFor(() => expect(llmQuestions()).toBe(1));
+
+    const [check] = activeChecks();
+    app.services.jobs.cancel(check!.id);
+    await app.services.jobs.whenIdle(5_000);
+
+    expect(app.services.jobs.get(check!.id).status).toBe('cancelled');
+    expect(app.services.contradictions.list()).toHaveLength(0);
+  });
+
+  it('edits while a check of the decision waits join that check', async () => {
+    const reviews = gate();
+    app.llm.on('ContradictionProposal', async () => {
+      await reviews.opened;
+      return verdict(false)();
+    });
+    await decision('Das Budget beträgt 5000 Euro.', '2026-01-10');
+    const second = await save('Das Budget beträgt 8000 Euro.', '2026-03-01');
+    await vi.waitFor(() => expect(llmQuestions()).toBe(1));
+
+    await app.ok('decisions:update', { id: second.id, patch: { rationale: 'Erstens.' } });
+    await app.ok('decisions:update', { id: second.id, patch: { rationale: 'Zweitens.' } });
+
+    expect(activeChecks().map((job) => job.status)).toEqual(expect.arrayContaining(['running', 'pending']));
+    expect(activeChecks()).toHaveLength(2);
+    reviews.open();
+    await app.services.jobs.whenIdle();
+    expect(llmQuestions()).toBe(1);
+  });
+
+  it('a draft queues no check; a check whose decision was deleted meanwhile ends without a finding', async () => {
+    await save('Wir führen prod-plat weiter.', null, { asDraft: true, participants: [] });
+    expect(activeChecks()).toHaveLength(0);
+
+    app.services.jobs.enqueue('contradiction.check', { label: 'Prüfen', payload: { decisionId: 'gone' } });
+    await app.services.jobs.whenIdle();
+
+    const [check] = app.services.jobs.list(100, { type: 'contradiction.check' });
+    expect(check!.status).toBe('succeeded');
   });
 });

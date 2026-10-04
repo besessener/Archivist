@@ -130,7 +130,7 @@ export class ArchiveMaintenance {
       const abs = archivePathOf(root, row.archiveRelPath);
       known.add(path.resolve(abs));
       if (!fs.existsSync(abs)) report.missingFiles.push({ documentId: row.id, title: row.title, path: abs });
-      else if ((await this.deps.pool.run('hashFile', { path: abs })) !== row.sha256)
+      else if ((await this.deps.pool.run('hashFile', { path: abs }, { priority: 'user' })) !== row.sha256)
         report.changedFiles.push({ documentId: row.id, title: row.title, path: abs });
     }
     report.untrackedFiles.push(...(await untrackedFiles(root, known)));

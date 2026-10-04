@@ -19,7 +19,7 @@ const GO = [
 ];
 const NEGATION = /\b(?:nicht|kein\w*|niemals|nie)\b/i;
 const HIRE_OBJECT = String.raw`(?:einen|eine|einem|zwei|drei|vier|fünf|\d+|neue[nrms]?|weitere[nrms]?)\s+(?:\p{L}+\s+)?(?:mitarbeiter|entwickler|personal|fachkraft|fachkräfte|praktikant|bewerber|werkstudent|azubi)\p{L}*`;
-const ORDER_OBJECT = String.raw`(?:(?:eine|die|neue)\s+)?(?:bestell|anzeige|annonce|inserat|gepäck)\p{L}*|(?:einen|zwei|drei|neue[nr]?)\s+auftr\p{L}+`;
+const ORDER_OBJECT = String.raw`(?:(?:eine|die|neue)\s+)?(?:bestell|anzeige|annonce|inserat|gepäck)\p{L}*|(?:einen|zwei|drei|neue[nr]?)\s+(?:\p{L}+e[nrms]?\s+){0,2}auftr\p{L}+`;
 /** Hiring ("einen Entwickler einstellen") and ordering ("eine Bestellung aufgeben") use stop verbs without stopping anything. */
 const NOT_A_STOP = [
   new RegExp(String.raw`\b${HIRE_OBJECT}\s+ein(?:ge)?stell\p{L}*`, 'iu'),

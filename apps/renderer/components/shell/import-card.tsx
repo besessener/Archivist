@@ -17,9 +17,12 @@ import { basename } from '@/lib/utils';
 /** Imported files whose status the card follows (one list request); the rest is only counted (#222). */
 const TRACKED = 1000;
 
+const IMPORT_FOLDER_JOB = 'documents.importFolder';
+
 /** The jobs that import dropped folders: copying, then analysing, with the progress line of the job. */
 function FolderImports({ folders }: { folders: ImportedFolder[] }) {
-  const jobs = useQuery('jobs:list', { limit: 100 }, { scopes: ['jobs'], jobs: true });
+  // finished ones stay listed: the card shows how the import ended
+  const jobs = useQuery('jobs:list', { limit: 100, type: IMPORT_FOLDER_JOB }, { scopes: ['jobs'], jobs: true });
   const byId = new Map((jobs.data ?? []).map((job) => [job.id, job]));
   return (
     <div data-testid="import-folders">

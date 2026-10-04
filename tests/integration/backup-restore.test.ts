@@ -75,6 +75,7 @@ describe('Restoring a backup', () => {
     expect(asides).toHaveLength(1);
     expect(fs.existsSync(path.join(root, 'Archivist', 'database', asides[0]!, 'archivist.db'))).toBe(true);
     expect(fs.existsSync(path.join(root, 'Archivist', 'restore-pending.json'))).toBe(false);
+    expect(fs.readdirSync(path.join(root, 'Archivist', 'database')).filter((f) => f.includes('.restoring'))).toEqual([]);
     await restart(app); // the next start does not restore again
     expect(fs.readdirSync(path.join(root, 'Archivist', 'database')).filter((f) => f.startsWith('vor-wiederherstellung-'))).toHaveLength(1);
   });
@@ -138,6 +139,23 @@ describe('Restoring a backup', () => {
 
     expect(result).toMatchObject({ ok: false, error: { category: 'database_corrupt' } });
     expect(fs.existsSync(path.join(root, 'Archivist', 'restore-pending.json'))).toBe(false);
+  });
+
+  it('a backup that cannot be copied for the check is reported as a disk problem, not as damaged', async () => {
+    const app = await startApp();
+    const backup = await app.ok('backup:create', { includeArchive: false });
+    const realCopy = fs.copyFileSync.bind(fs);
+    vi.spyOn(fs, 'copyFileSync').mockImplementation((from, to, mode) => {
+      if (String(to).endsWith('.restoring')) throw Object.assign(new Error('ENOSPC: no space left on device, copyfile'), { code: 'ENOSPC' });
+      realCopy(from, to, mode);
+    });
+
+    const result = await app.call('backup:restore', { name: backup.name, confirmed: true });
+
+    expect(result).toMatchObject({ ok: false, error: { category: 'filesystem_error', message: expect.stringContaining('nicht genug Speicherplatz') } });
+    expect(() => newestIntactSource(app.services.paths)).toThrow(/nicht genug Speicherplatz/);
+    expect(fs.existsSync(path.join(root, 'Archivist', 'restore-pending.json'))).toBe(false);
+    expect(fs.readdirSync(app.services.paths.database).filter((f) => f.includes('.restoring'))).toEqual([]);
   });
 
   it('needs the explicit confirmation', async () => {

@@ -12,6 +12,7 @@ import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from './document
 import { DOCUMENT_IMPORT_FOLDER_JOB, type ImportFolderPayload } from './document-import-folder';
 import { folderRefusal } from './document-import-guard';
 import type { DocumentDeps } from './document-model';
+import type { TaskPriority } from '../workers/pool';
 
 const MAX_IMPORT_BYTES = 500 * 1024 * 1024;
 const NAME_ATTEMPTS = 5;
@@ -46,6 +47,8 @@ interface ImportBatch {
   autoLlm: boolean;
   /** Several files in one go: no notification per file, the batch reports once. */
   quiet: boolean;
+  /** `user` when the user picked or dropped the files, `background` for a folder import job. */
+  priority: TaskPriority;
   out: ImportResult;
 }
 
@@ -102,7 +105,12 @@ export class DocumentImporter {
   /** Imports the paths: files are copied now, folders become a job each. One file is analysed by its own job, several by one batch job. */
   async importPaths(inputPaths: string[], opts: { allowLlm?: boolean } = {}): Promise<ImportResult> {
     const allowLlm = opts.allowLlm ?? this.deps.privacy.mode() === 'auto';
-    const batch: ImportBatch = { autoLlm: allowLlm, quiet: inputPaths.length > 1, out: { imported: [], duplicates: [], rejected: [], folders: [] } };
+    const batch: ImportBatch = {
+      autoLlm: allowLlm,
+      quiet: inputPaths.length > 1,
+      priority: 'user',
+      out: { imported: [], duplicates: [], rejected: [], folders: [] },
+    };
     for (const input of inputPaths) await this.importOne(input, batch);
     this.queueAnalysis(batch);
     this.deps.ctx.events.changed('documents', 'status');
@@ -111,14 +119,18 @@ export class DocumentImporter {
 
   /** Copies the files without notifications or analysis jobs; the caller (a folder import) reports and analyses once. */
   async importQuietly(files: string[], opts: { allowLlm: boolean }): Promise<ImportResult> {
-    const batch: ImportBatch = { autoLlm: opts.allowLlm, quiet: true, out: { imported: [], duplicates: [], rejected: [], folders: [] } };
+    const batch: ImportBatch = {
+      autoLlm: opts.allowLlm,
+      quiet: true,
+      priority: 'background',
+      out: { imported: [], duplicates: [], rejected: [], folders: [] },
+    };
     for (const input of files) await this.importOne(input, batch);
     return batch.out;
   }
 
-  private enqueueFolder(folder: string, allowLlm: boolean): string {
-    const payload: ImportFolderPayload = { path: folder, allowLlm };
-    return this.deps.jobs.enqueue(DOCUMENT_IMPORT_FOLDER_JOB, { label: `Importiere Ordner ${path.basename(folder)}`, payload, maxAttempts: 1 }).id;
+  private enqueueFolder(payload: ImportFolderPayload): string {
+    return this.deps.jobs.enqueue(DOCUMENT_IMPORT_FOLDER_JOB, { label: `Importiere Ordner ${path.basename(payload.path)}`, payload, maxAttempts: 1 }).id;
   }
 
   private queueAnalysis(batch: ImportBatch): void {
@@ -171,17 +183,17 @@ export class DocumentImporter {
       return;
     }
     if (checked.kind === 'folder') {
-      out.folders.push({ path: input, jobId: this.enqueueFolder(checked.real, state.batch.autoLlm) });
+      out.folders.push({ path: input, jobId: this.enqueueFolder({ path: checked.real, allowLlm: state.batch.autoLlm }) });
       return;
     }
     if (!(await contentMatchesExtension(checked.real, checked.ext))) {
-      await this.quarantine(checked, { notify: !state.batch.quiet });
+      await this.quarantine(checked, state.batch);
       out.rejected.push({ path: input, reason: 'Der Dateiinhalt passt nicht zur Endung – Kopie in die Quarantäne gelegt (Inbox, Filter „Quarantäne“).' });
       return;
     }
     const staged = await copyToFolder({ source: checked.real, dir: this.deps.ctx.paths.inbox, fileName: sanitizeFileName(path.basename(checked.real)) });
     state.staging.path = staged;
-    const sha = await this.deps.pool.run('hashFile', { path: staged });
+    const sha = await this.deps.pool.run('hashFile', { path: staged }, { priority: state.batch.priority });
     const duplicate = this.deps.documents.findDuplicates(sha)[0];
     if (duplicate) {
       await fsp.unlink(staged); // our own temporary copy
@@ -241,8 +253,8 @@ export class DocumentImporter {
   }
 
   /** Records a copy of a file whose content does not match its extension as `quarantined` (once per content), unparsed. */
-  private async quarantine(file: CheckedFile, options: { notify: boolean }): Promise<void> {
-    const sha = await this.deps.pool.run('hashFile', { path: file.real });
+  private async quarantine(file: CheckedFile, batch: Pick<ImportBatch, 'quiet' | 'priority'>): Promise<void> {
+    const sha = await this.deps.pool.run('hashFile', { path: file.real }, { priority: batch.priority });
     const existing = this.db
       .select()
       .from(documents)
@@ -271,7 +283,7 @@ export class DocumentImporter {
       paths: [file.real, copy],
       success: true,
     });
-    if (!options.notify) return;
+    if (batch.quiet) return;
     this.deps.notifications.create({
       title: 'Datei in Quarantäne',
       description: `„${doc.originalName}“: ${quarantineReason(file.ext)} Die Datei wurde nicht importiert.`,
@@ -290,7 +302,7 @@ export class DocumentImporter {
     const file = row.stagedPath;
     if (!file || !isInside(this.deps.ctx.paths.quarantine, file) || !fs.existsSync(file))
       throw fsError('Die Datei in der Quarantäne ist nicht mehr vorhanden.', { retryable: false });
-    const sha = await this.deps.pool.run('hashFile', { path: file });
+    const sha = await this.deps.pool.run('hashFile', { path: file }, { priority: 'user' });
     if (sha !== row.sha256) throw new AppError('validation_error', 'Die Datei in der Quarantäne wurde seither verändert und wird nicht importiert.');
     const duplicate = this.deps.documents.findDuplicates(sha, id)[0];
     if (duplicate) throw new AppError('validation_error', `Die Datei entspricht bereits dem Dokument „${duplicate.title}“.`);

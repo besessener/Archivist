@@ -29,7 +29,7 @@ test.describe('decisions found in documents', () => {
     await expect(app.notifications.item(NOTIFICATION)).toBeVisible();
 
     await app.notifications.locators.actions.navigate.click();
-    await expect(page.getByRole('heading', { name: 'Vorgeschlagene Entscheidungen' })).toBeVisible();
+    await expect(app.decisions.locators.proposed.heading).toBeVisible();
     await expect(app.decisions.locators.proposed.cards).toHaveCount(1);
     await expectNoSeriousA11yViolations(page, testInfo);
 

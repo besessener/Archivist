@@ -41,9 +41,15 @@ export function pageOfActions(db: Db, query: { status?: AgentActionStatus; actio
 }
 
 /** Document notifications („Dokument enthält …“) are done once every proposal they offer is decided; the proposals stay on the page. */
-export function resolveSettledNotifications(notifications: ActionDeps['notifications'], statusOf: (actionId: string) => AgentActionStatus): void {
-  for (const notification of notifications.openByDedupePrefix(EXTRACTED_NOTIFICATION_PREFIX)) {
-    const targets = notification.proposedActions.flatMap((a) => (a.kind === 'confirm_action' && a.target ? [a.target] : []));
-    if (targets.every((target) => statusOf(target) !== 'proposed')) notifications.resolve(notification.id);
-  }
+export function resolveSettledNotifications(notifications: ActionDeps['notifications'], actionsOf: (actionIds: string[]) => StoredAgentAction[]): void {
+  const open = notifications.openByDedupePrefix(EXTRACTED_NOTIFICATION_PREFIX);
+  const targetsOf = (notification: (typeof open)[number]) =>
+    notification.proposedActions.flatMap((a) => (a.kind === 'confirm_action' && a.target ? [a.target] : []));
+  // one lookup for the targets of all notifications, not one per target (a bulk approval resolves many actions in a row)
+  const undecided = new Set(
+    actionsOf([...new Set(open.flatMap(targetsOf))])
+      .filter((action) => action.status === 'proposed')
+      .map((action) => action.id),
+  );
+  for (const notification of open) if (!targetsOf(notification).some((target) => undecided.has(target))) notifications.resolve(notification.id);
 }

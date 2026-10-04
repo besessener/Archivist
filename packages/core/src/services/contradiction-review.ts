@@ -22,11 +22,20 @@ export interface ReviewBudget {
   left: number;
 }
 
+/** One check's budget and the signal that cancels it. */
+export interface ReviewRun {
+  budget: ReviewBudget;
+  signal?: AbortSignal;
+}
+
 export interface ReviewVerdict {
   isContradiction: boolean;
   confidence: number;
   description: string;
 }
+
+/** A stored or fresh verdict, or why the LLM could not be asked. */
+export type Review = { status: 'verdict'; verdict: ReviewVerdict } | { status: 'unavailable'; reason: 'not_allowed' | 'budget_spent' | 'failed' };
 
 type DecisionPair = [Decision, Decision];
 
@@ -96,11 +105,12 @@ export class ContradictionReviewer {
     );
   }
 
-  /** Stored or fresh verdict; null when the LLM cannot be asked (offline, privacy mode, excluded source, budget used up, error). */
-  async review(pair: DecisionPair, budget: ReviewBudget, signal?: AbortSignal): Promise<ReviewVerdict | null> {
+  /** Stored or fresh verdict; unavailable when the LLM cannot be asked (offline, privacy mode, excluded source), the budget is used up or it failed. */
+  async review(pair: DecisionPair, { budget, signal }: ReviewRun): Promise<Review> {
     const known = this.stored(pair);
-    if (known !== undefined) return { isContradiction: known, confidence: known ? 0.5 : 1, description: '' };
-    if (budget.left <= 0 || !this.mayAsk(pair)) return null;
+    if (known !== undefined) return { status: 'verdict', verdict: { isContradiction: known, confidence: known ? 0.5 : 1, description: '' } };
+    if (budget.left <= 0) return { status: 'unavailable', reason: 'budget_spent' };
+    if (!this.mayAsk(pair)) return { status: 'unavailable', reason: 'not_allowed' };
     budget.left -= 1;
     const [a, b] = pair;
     try {
@@ -113,11 +123,11 @@ export class ContradictionReviewer {
         signal,
       });
       this.remember(pair, verdict.isContradiction);
-      return { isContradiction: verdict.isContradiction, confidence: verdict.confidence, description: verdict.description };
+      return { status: 'verdict', verdict: { isContradiction: verdict.isContradiction, confidence: verdict.confidence, description: verdict.description } };
     } catch (err) {
       signal?.throwIfAborted();
       this.ctx.logger.warn('contradictions', 'LLM check not possible, using the lexical result', { error: err });
-      return null;
+      return { status: 'unavailable', reason: 'failed' };
     }
   }
 }

@@ -14,7 +14,7 @@ import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useApp } from '@/lib/app-context';
-import { usePagedQuery, usePageWindow } from '@/lib/use-page-window';
+import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
@@ -31,7 +31,7 @@ function groupItems(items: OpenItemRecord[]): Record<OpenItemGroup, OpenItemReco
 
 export default function OpenItemsPage() {
   const paging = usePageWindow('open-items');
-  const { data, loading, error, refetch } = usePagedQuery('openItems:list', {}, paging.window, { scopes: ['openItems', 'reminders'] });
+  const { data, loading, error, refetch } = useWindowedQuery('openItems:list', { filter: {}, window: paging.window, scopes: ['openItems', 'reminders'] });
   const total = useQuery('openItems:count', {}, { scopes: ['openItems', 'reminders'] });
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<OpenItemRecord | null>(null);

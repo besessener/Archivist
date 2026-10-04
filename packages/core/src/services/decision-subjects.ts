@@ -11,12 +11,13 @@ export interface SubjectIds {
   projectId: string | null;
 }
 
-/** Topic/project columns for the given names (left out = unchanged); a name given as both is the project, the topic is dropped, as after a topic-to-project merge. */
+/** Topic/project columns for the given names (left out = unchanged); once topic or project is given, a name used for both is the project and the topic is dropped, as after a topic-to-project merge. */
 export function subjectColumns(
   graph: KnowledgeGraphService,
   names: SubjectNames,
   current: SubjectIds = { topicId: null, projectId: null },
 ): Partial<SubjectIds> {
+  if (names.topic === undefined && names.project === undefined) return {};
   const nameOf = (given: string | null | undefined, currentId: string | null) =>
     given === undefined ? (graph.getEntity(currentId ?? '')?.name ?? '') : (given?.trim() ?? '');
   const topicName = nameOf(names.topic, current.topicId);

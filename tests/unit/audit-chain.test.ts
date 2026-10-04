@@ -57,21 +57,21 @@ describe('audit hash chain', () => {
   });
 
   it('accepts an intact chain, an empty one and one that starts after unchained entries', () => {
-    expect(verifyChain([])).toEqual({ checked: 0, brokenEntryId: null });
+    expect(verifyChain([])).toEqual({ chain: 'intact', checked: 0 });
     const rows = chain(fields('a'), fields('b'), fields('c'));
-    expect(verifyChain(rows)).toEqual({ checked: 3, brokenEntryId: null });
+    expect(verifyChain(rows)).toEqual({ chain: 'intact', checked: 3 });
     const legacy: ChainedRow = { ...fields('old'), hash: null, prevHash: null };
-    expect(verifyChain([legacy, ...rows])).toEqual({ checked: 3, brokenEntryId: null });
+    expect(verifyChain([legacy, ...rows])).toEqual({ chain: 'intact', checked: 3 });
   });
 
   it('names the entry that was changed, removed before it, reordered or left unchained', () => {
     const [a, b, c] = chain(fields('a'), fields('b'), fields('c'));
-    expect(verifyChain([a!, { ...b!, action: 'forged' }, c!])).toEqual({ checked: 2, brokenEntryId: 'b' });
-    expect(verifyChain([a!, c!])).toEqual({ checked: 2, brokenEntryId: 'c' });
-    expect(verifyChain([a!, c!, b!])).toEqual({ checked: 2, brokenEntryId: 'c' });
-    expect(verifyChain([a!, { ...b!, hash: null }, c!])).toEqual({ checked: 2, brokenEntryId: 'b' });
-    expect(verifyChain([a!, { ...fields('x'), hash: null, prevHash: null }])).toEqual({ checked: 2, brokenEntryId: 'x' });
-    expect(verifyChain([{ ...a!, hash: 'tampered' }])).toEqual({ checked: 1, brokenEntryId: 'a' });
+    expect(verifyChain([a!, { ...b!, action: 'forged' }, c!])).toEqual({ chain: 'broken', brokenEntryId: 'b', checked: 2 });
+    expect(verifyChain([a!, c!])).toEqual({ chain: 'broken', brokenEntryId: 'c', checked: 2 });
+    expect(verifyChain([a!, c!, b!])).toEqual({ chain: 'broken', brokenEntryId: 'c', checked: 2 });
+    expect(verifyChain([a!, { ...b!, hash: null }, c!])).toEqual({ chain: 'broken', brokenEntryId: 'b', checked: 2 });
+    expect(verifyChain([a!, { ...fields('x'), hash: null, prevHash: null }])).toEqual({ chain: 'broken', brokenEntryId: 'x', checked: 2 });
+    expect(verifyChain([{ ...a!, hash: 'tampered' }])).toEqual({ chain: 'broken', brokenEntryId: 'a', checked: 1 });
   });
 });
 
@@ -82,7 +82,7 @@ describe('audit chain anchor', () => {
   it('accepts the log the anchor describes, and any log while there is no anchor', () => {
     expect(isTruncated(rows, anchor)).toBe(false);
     expect(isTruncated([], null)).toBe(false);
-    expect(verifyAuditLog(rows, anchor)).toEqual({ checked: 3, brokenEntryId: null, truncated: false });
+    expect(verifyAuditLog(rows, anchor)).toEqual({ chain: 'intact', checked: 3, truncated: false });
   });
 
   it('notices removed newest rows, removed oldest rows, and an emptied log', () => {

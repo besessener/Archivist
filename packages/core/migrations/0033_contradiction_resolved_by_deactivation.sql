@@ -1,0 +1,1 @@
+ALTER TABLE `contradictions` ADD `resolved_by_deactivation` integer DEFAULT false NOT NULL;

@@ -21,6 +21,23 @@ test.describe('coverage of long documents', () => {
     await expectNoSeriousA11yViolations(page, testInfo);
   });
 
+  test('keeps the coverage note in the detail of the archived document', async ({ on, page, workspace }, testInfo) => {
+    const app = on(page);
+    await app.inbox.do.importFile(workspace.addDownload('langes-protokoll.txt', `Jour Fixe Nordlicht\n${PARAGRAPH.repeat(5000)}`));
+    await app.navigation.do.open('inbox');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
+    await app.inbox.do.openArchivePlan();
+    await app.inbox.do.confirmArchive();
+    await app.inbox.locators.archivePlan.close.click();
+
+    await app.navigation.do.open('documents');
+    await app.documents.do.open(0);
+
+    await expect(app.documents.locators.dialog.coverage).toContainText('länger als die Grenze beim Einlesen');
+    await expect(app.documents.locators.dialog.coverage).toContainText('Die KI hat nur die ersten');
+    await expectNoSeriousA11yViolations(page, testInfo);
+  });
+
   test('says nothing about coverage for a short document', async ({ on, page, workspace }) => {
     const app = on(page);
 
@@ -29,5 +46,12 @@ test.describe('coverage of long documents', () => {
     await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
 
     await expect(app.inbox.locators.coverage).toHaveCount(0);
+    await app.inbox.do.openArchivePlan();
+    await app.inbox.do.confirmArchive();
+    await app.inbox.locators.archivePlan.close.click();
+    await app.navigation.do.open('documents');
+    await app.documents.do.open(0);
+    await expect(app.documents.locators.dialog.root).toContainText('Jour Fixe Nordlicht');
+    await expect(app.documents.locators.dialog.coverage).toHaveCount(0);
   });
 });

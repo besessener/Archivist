@@ -27,8 +27,10 @@ export function chainHash(fields: ChainedFields, prevHash: string | null): strin
   return sha256Text(JSON.stringify([prevHash, id, at, action, actor, trigger, confirmed, entityIds, paths, before ?? null, success, runId]));
 }
 
+type ChainVerdict = { chain: 'intact'; checked: number } | { chain: 'broken'; brokenEntryId: string; checked: number };
+
 /** Walks the rows in write order and reports the first entry that no longer fits the chain. */
-export function verifyChain(rows: ChainedRow[]): Pick<AuditVerification, 'checked' | 'brokenEntryId'> {
+export function verifyChain(rows: ChainedRow[]): ChainVerdict {
   let expectedPrev: string | null = null;
   let started = false;
   let checked = 0;
@@ -37,10 +39,10 @@ export function verifyChain(rows: ChainedRow[]): Pick<AuditVerification, 'checke
     started = true;
     checked += 1;
     const intact = row.hash !== null && row.prevHash === expectedPrev && row.hash === chainHash(row, expectedPrev);
-    if (!intact) return { checked, brokenEntryId: row.id };
+    if (!intact) return { chain: 'broken', brokenEntryId: row.id, checked };
     expectedPrev = row.hash;
   }
-  return { checked, brokenEntryId: null };
+  return { chain: 'intact', checked };
 }
 
 /** Entry count and newest chained hash, kept apart from the log so that cutting entries off its ends shows. */

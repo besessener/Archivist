@@ -5,7 +5,7 @@ import { contradictions, documents } from '../db/schema';
 import { newId, nowIso } from '../util/ids';
 import { truncate } from '../util/text';
 import { announceDocuments, type ContradictionRow } from './contradiction-notices';
-import type { ContradictionReviewer, ReviewBudget } from './contradiction-review';
+import type { ContradictionReviewer, ReviewBudget, ReviewRun } from './contradiction-review';
 import {
   documentPairHash,
   documentPairKey,
@@ -39,6 +39,10 @@ interface Candidate extends DocumentCandidate {
 }
 
 type CandidatePair = [Candidate, Candidate];
+
+type Answer = { answered: true; verdict: ContradictionProposal } | { answered: false };
+
+const storedAnswer = (isContradiction: boolean): Answer => ({ answered: true, verdict: ContradictionProposal.parse({ isContradiction, confidence: 0.5 }) });
 
 /** Contradictions between documents of one topic or project, found by the LLM in the background and never for excluded documents. */
 export class DocumentContradictionScanner {
@@ -104,15 +108,15 @@ export class DocumentContradictionScanner {
       signal?.throwIfAborted();
       const known = stored.get(documentPairHash(pair[0].statement, pair[1].statement));
       if (known === undefined && budget.left <= 0) break;
-      const verdict = known === undefined ? await this.ask(pair, budget, signal) : ContradictionProposal.parse({ isContradiction: known, confidence: 0.5 });
-      if (!verdict) break; // the LLM failed: further questions would fail alike
-      if (verdict.isContradiction) created.push(...this.record(pair, verdict));
+      const answer = known === undefined ? await this.ask(pair, { budget, signal }) : storedAnswer(known);
+      if (!answer.answered) break; // the LLM failed: further questions would fail alike
+      if (answer.verdict.isContradiction) created.push(...this.record(pair, answer.verdict));
     }
     return created;
   }
 
-  /** A fresh verdict; null when the LLM failed (cancelling rethrows). */
-  private async ask([a, b]: CandidatePair, budget: ReviewBudget, signal?: AbortSignal): Promise<ContradictionProposal | null> {
+  /** A fresh verdict, or none when the LLM failed (cancelling rethrows). */
+  private async ask([a, b]: CandidatePair, { budget, signal }: ReviewRun): Promise<Answer> {
     budget.left -= 1;
     try {
       const proposal = await this.deps.llm.completeJson(ContradictionProposal, {
@@ -125,11 +129,11 @@ export class DocumentContradictionScanner {
         signal,
       });
       this.deps.reviewer.rememberByHash(documentPairHash(a.statement, b.statement), proposal.isContradiction);
-      return proposal;
+      return { answered: true, verdict: proposal };
     } catch (err) {
       signal?.throwIfAborted();
       this.deps.ctx.logger.warn('contradictions', 'LLM check of two documents not possible', { error: err });
-      return null;
+      return { answered: false };
     }
   }
 
@@ -154,6 +158,7 @@ export class DocumentContradictionScanner {
       createdAt: nowIso(),
       resolvedAt: null,
       resolvedBySupersede: false,
+      resolvedByDeactivation: false,
     };
     this.db.insert(contradictions).values(row).run();
     announceDocuments(this.deps, row, pair);

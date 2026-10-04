@@ -1,6 +1,5 @@
-import { maskingOf } from '../util/redact';
 import path from 'node:path';
-import { DocumentClassification, type DocumentProposal, type LlmStatus } from '@archivist/shared';
+import type { DocumentProposal, LlmStatus } from '@archivist/shared';
 import { and, eq, inArray, ne, notInArray } from 'drizzle-orm';
 import { documents, scanFiles } from '../db/schema';
 import type { ParsedDocument } from '../parsers/parsed-document';
@@ -9,8 +8,9 @@ import { nowIso } from '../util/ids';
 import { isTokenCapError } from '../util/token-cap';
 import { LlmAnalysisRetry, mayRetryLlm } from './analysis-retry';
 import { classifyLocally } from './classifier';
-import { classificationRequest, mergeLlmClassification, type Classification, type KnownSubjects } from './document-classification';
-import { MAX_LLM_PARTS, cutKeepsMasking, mergeParts, partSize, splitIntoParts } from './document-parts';
+import { mergeLlmClassification, type Classification, type KnownSubjects } from './document-classification';
+import { mergeParts } from './document-parts';
+import { classifyInParts } from './document-part-reading';
 import { ARCHIVED_STATUSES, extractFile, extractedColumns, type DocRow, type DocumentDeps } from './document-model';
 import { isJobCancelled, isJobInterrupted } from './jobs';
 import type { PrivacyDecision } from './privacy';
@@ -162,8 +162,8 @@ export class DocumentAnalyzer {
     return covered;
   }
 
-  private knownNames(type: 'topic' | 'project', opts: { confirmedOnly?: boolean } = {}): string[] {
-    return this.deps.graph.entityNames({ type, ...opts });
+  private knownNames(type: 'topic' | 'project'): string[] {
+    return this.deps.graph.entityNames({ type });
   }
 
   private async runAnalysis(row: DocRow, opts: AnalyzeOptions): Promise<AnalysisResult> {
@@ -210,7 +210,7 @@ export class DocumentAnalyzer {
   ): Promise<ClassifiedText> {
     const { local, text, known, signal } = input;
     try {
-      const { results, read } = await this.classifyInParts(row, { text, signal });
+      const { results, read } = await classifyInParts(this.deps, { row, text, signal });
       const merged = mergeParts(results);
       return { classification: mergeLlmClassification(local, { result: merged, text, known }), usedLlm: true, warning: null, read };
     } catch (err) {
@@ -229,41 +229,6 @@ export class DocumentAnalyzer {
       });
       return { classification: local, usedLlm: false, warning, read: NOTHING_READ };
     }
-  }
-
-  /** A long text is read in consecutive parts, each its own checked, masked and logged request; a failing later part keeps what was read so far. */
-  private async classifyInParts(
-    row: DocRow,
-    input: { text: string; signal?: AbortSignal },
-  ): Promise<{ results: [DocumentClassification, ...DocumentClassification[]]; read: ClassifiedText['read'] }> {
-    const { text, signal } = input;
-    const confirmed = { topics: this.knownNames('topic', { confirmedOnly: true }), projects: this.knownNames('project', { confirmedOnly: true }) };
-    const context = { mainCategories: this.deps.categories.mainCategories(), confirmed };
-    const promptChars = classificationRequest(row, { ...context, text: '', part: { number: MAX_LLM_PARTS, of: MAX_LLM_PARTS } }).input.length;
-    const masking = maskingOf(this.deps.settings.get());
-    const parts = splitIntoParts(text, partSize({ maxInputChars: this.deps.settings.get().llm.maxInputChars, promptChars }), (whole, position) =>
-      cutKeepsMasking(whole, position, masking),
-    );
-    const complete = (part: string, number: number) =>
-      this.deps.llm.completeJson(DocumentClassification, {
-        ...classificationRequest(row, { ...context, text: part, part: parts.length > 1 ? { number, of: parts.length } : undefined }),
-        signal,
-      });
-    const results: [DocumentClassification, ...DocumentClassification[]] = [await complete(parts[0]!, 1)];
-    let chars = parts[0]!.length;
-    for (const [index, part] of parts.slice(1).entries()) {
-      signal?.throwIfAborted();
-      try {
-        results.push(await complete(part, index + 2));
-        chars += part.length;
-      } catch (err) {
-        signal?.throwIfAborted();
-        if (isTokenCapError(err)) throw err;
-        this.deps.ctx.logger.warn('documents', 'LLM analysis of a later part failed', { documentId: row.id, part: index + 2, error: err });
-        break;
-      }
-    }
-    return { results, read: { chars, parts: results.length } };
   }
 
   private async storeProposal(

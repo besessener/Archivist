@@ -23,6 +23,8 @@ export function initSettings(page: Page) {
       chainOk: page.getByTestId('audit-chain-ok'),
       chainBroken: page.getByTestId('audit-chain-broken'),
       undo: page.getByTestId('audit-undo'),
+      /** „Rückgängig“ in the row of the entry containing `text`. */
+      undoOf: (text: string) => page.getByTestId('audit-row').filter({ hasText: text }).getByTestId('audit-undo'),
       confirmUndo: page.getByTestId('audit-undo-confirm'),
     },
     llm: {
@@ -40,6 +42,7 @@ export function initSettings(page: Page) {
       transmissions: {
         rows: page.getByTestId('transmission-row'),
         preview: page.getByTestId('transmission-preview'),
+        more: page.getByTestId('transmissions-more'),
         retentionNote: page.getByText('Tagen automatisch gelöscht'),
       },
       maskPersonal: page.getByTestId('privacy-mask-personal'),
@@ -77,12 +80,16 @@ export function initSettings(page: Page) {
       items: page.getByTestId('trash-item'),
       restore: page.getByTestId('trash-restore'),
       empty: page.getByTestId('trash-empty'),
+      confirmDialog: page.getByTestId('confirm-dialog'),
+      cancelEmpty: page.getByTestId('confirm-dialog').getByRole('button', { name: 'Abbrechen' }),
+      compactionWarning: page.getByTestId('trash-compaction-warning'),
       confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
       confirmEmpty: page.getByTestId('trash-empty-confirm'),
     },
     agent: {
       settingsTab: page.getByTestId('agent-tab-settings'),
       memoryTab: page.getByTestId('agent-tab-memory'),
+      runsTab: page.getByTestId('agent-tab-runs'),
       nightlyHour: page.getByLabel('Nachtlauf (Archivprüfung, Verknüpfungen und geplante Abläufe)'),
       kindLimits: page.getByTestId('agent-kind-limits'),
       /** Field of one background trigger's own limits, e.g. („Archivprüfung auswerten“, „Tokens“). */
@@ -90,6 +97,11 @@ export function initSettings(page: Page) {
         page.getByTestId('agent-kind-limits').getByRole('group', { name: trigger }).getByLabel(field),
       save: page.getByTestId('agent-settings-save'),
       validation: page.getByTestId('agent-settings-error'),
+    },
+    /** The link run under „Agent“ → „Läufe“. */
+    links: {
+      startRun: page.getByTestId('links-start-run'),
+      unlinkedCount: page.getByTestId('links-unlinked-count'),
     },
     memory: {
       newEntry: page.getByTestId('memory-new'),
@@ -143,6 +155,7 @@ export function initSettings(page: Page) {
       restore: page.getByTestId('backup-restore'),
       beforeRestoreRow: page.getByTestId('backup-row').filter({ hasText: 'Stand vor der Wiederherstellung vom' }),
       confirmRestore: page.getByTestId('backup-restore-confirm'),
+      confirmDialog: page.getByTestId('confirm-dialog'),
       restartNotice: page.getByTestId('backup-restart-notice'),
       storage: page.getByTestId('backup-storage'),
       sizeWarning: page.getByTestId('backup-size-warning'),

@@ -11,6 +11,8 @@ export function initNavigation(page: Page) {
     link: (section: Section) => root.getByTestId(`nav-${section}`),
     /** The connection indicator in the header; its accessible name carries the state. */
     llmStatus: page.getByTestId('llm-status'),
+    /** The popover the connection indicator opens. */
+    llmDetails: page.getByRole('dialog').filter({ hasText: 'Verbindung zur KI' }),
   };
   const interactions = {
     open: async (section: Section) => {
