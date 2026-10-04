@@ -24,4 +24,24 @@ describe('tool-calling probe before the first agent run', () => {
 
     expect(app.services.agent.capability()).not.toBeNull();
   });
+
+  it('probes again after a rate limit instead of switching agent mode off for good', async () => {
+    app.llm.failing = { count: 1, status: 429, retryAfter: null };
+
+    expect(await app.services.agent.ensureCapable()).toBe(false);
+    expect(app.services.agent.capability()).toBeNull();
+    expect(app.services.agent.isActive()).toBe(true);
+
+    expect(await app.services.agent.ensureCapable()).toBe(true);
+    expect(app.services.agent.capability()?.toolCalling).toBe(true);
+  });
+
+  it('keeps a rejected probe, so agent mode stays off for that endpoint', async () => {
+    app.llm.failing = { count: 1, status: 400, retryAfter: null };
+
+    expect(await app.services.agent.ensureCapable()).toBe(false);
+
+    expect(app.services.agent.capability()?.toolCalling).toBe(false);
+    expect(app.services.agent.isActive()).toBe(false);
+  });
 });

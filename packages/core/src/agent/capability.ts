@@ -3,7 +3,7 @@ import type { AppContext } from '../context';
 import type { AppStateService } from '../services/app-state';
 import type { LlmOverrides, LlmService } from '../services/llm';
 import type { SettingsService } from '../services/settings';
-import { toErrorInfo } from '../util/errors';
+import { AppError, toErrorInfo } from '../util/errors';
 import { nowIso } from '../util/ids';
 import { anthropicEndpointFor, createAdapter, detectAdapter, looksLikeClaude, type AdapterConfig } from './adapters';
 import type { AgentMessage, ProviderAdapter, TurnResult } from './types';
@@ -26,11 +26,20 @@ const PROBE_TOOLS = [
     parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
   },
 ];
+
+/** A probe that failed for a transient reason (rate limit, server or network) says nothing about tool calling and is not stored. */
+interface ProbeOutcome {
+  capability: AgentCapability;
+  transient: boolean;
+}
+
+const isTransient = (err: unknown) => err instanceof AppError && err.retryable;
+
 const PROBE_SYSTEM =
   'Du bist ein Verbindungstest. Rufe das Werkzeug echo genau einmal mit text="archivist" auf. Nachdem du das Ergebnis erhalten hast, antworte mit dem Wort OK.';
 
 /** Real tool call with result round trip and streaming (#296): the connection test of the agent. */
-async function probeToolCalling(adapter: ProviderAdapter, endpoint: Endpoint): Promise<AgentCapability> {
+async function probeToolCalling(adapter: ProviderAdapter, endpoint: Endpoint): Promise<ProbeOutcome> {
   const history: AgentMessage[] = [{ role: 'user', content: 'Starte den Test.' }];
   const base = {
     system: PROBE_SYSTEM,
@@ -42,7 +51,7 @@ async function probeToolCalling(adapter: ProviderAdapter, endpoint: Endpoint): P
   };
   const suggested = adapter.id === 'openai' && looksLikeClaude(endpoint.model) ? anthropicEndpointFor(endpoint.baseUrl) : null;
   const name = adapter.id === 'anthropic' ? 'Claude (Anthropic Messages API)' : 'OpenAI Responses API';
-  const fail = (message: string): AgentCapability => ({
+  const unsupported = (message: string): AgentCapability => ({
     adapter: adapter.id,
     toolCalling: false,
     streaming: false,
@@ -52,11 +61,12 @@ async function probeToolCalling(adapter: ProviderAdapter, endpoint: Endpoint): P
     suggestedBaseUrl: suggested,
     checkedAt: nowIso(),
   });
+  const fail = (message: string, err?: unknown): ProbeOutcome => ({ capability: unsupported(message), transient: isTransient(err) });
   let first: TurnResult;
   try {
     first = await adapter.turn({ ...base, messages: history });
   } catch (err) {
-    return fail(`Werkzeugaufrufe über ${name} schlugen fehl: ${toErrorInfo(err).message}`);
+    return fail(`Werkzeugaufrufe über ${name} schlugen fehl: ${toErrorInfo(err).message}`, err);
   }
   if (!first.toolCalls.some((c) => c.name === 'echo'))
     return fail(`Das Modell hat über ${name} kein Werkzeug aufgerufen – natives Tool-Calling wird über diesen Endpunkt offenbar nicht unterstützt.`);
@@ -68,7 +78,7 @@ async function probeToolCalling(adapter: ProviderAdapter, endpoint: Endpoint): P
   try {
     const second = await adapter.turn({ ...base, messages: history });
     const streaming = first.streamed || second.streamed;
-    return {
+    const ready: AgentCapability = {
       adapter: adapter.id,
       toolCalling: true,
       streaming,
@@ -76,8 +86,9 @@ async function probeToolCalling(adapter: ProviderAdapter, endpoint: Endpoint): P
       suggestedBaseUrl: null,
       checkedAt: nowIso(),
     };
+    return { capability: ready, transient: false };
   } catch (err) {
-    return fail(`Das Werkzeugergebnis konnte nicht zurückgegeben werden: ${toErrorInfo(err).message}`);
+    return fail(`Das Werkzeugergebnis konnte nicht zurückgegeben werden: ${toErrorInfo(err).message}`, err);
   }
 }
 
@@ -148,7 +159,8 @@ export class AgentCapabilityService {
   }
 
   private async probeAndStore(config: AdapterConfig): Promise<AgentCapability> {
-    const capability = await probeToolCalling(createAdapter(detectAdapter(config.baseUrl, this.settings.agent.adapter), config), config);
+    const { capability, transient } = await probeToolCalling(createAdapter(detectAdapter(config.baseUrl, this.settings.agent.adapter), config), config);
+    if (transient) return capability;
     this.deps.appState.set(CAPABILITY_KEY, JSON.stringify({ key: this.capabilityKey(config), cap: capability }));
     this.deps.ctx.events.changed('settings', 'status');
     return capability;

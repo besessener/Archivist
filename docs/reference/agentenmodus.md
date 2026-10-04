@@ -12,7 +12,7 @@ Code: `packages/core/src/agent/`.
 - Ungültige Argumente gehen als Fehler-Ergebnis an das Modell zurück.
 - Lesende Aufrufe einer Runde laufen parallel.
 - Rückfragen (`ask_user`) sind ein eigener Ausgang; die Antwort setzt den Lauf mit vollem Kontext fort.
-- **Grenzen** statt fester Schrittzahl: Token-Budget, Notbremse für Runden, Zeitlimit, Schleifenerkennung und „Stopp“. An einer Grenze fasst der Agent zusammen, was erledigt ist und was fehlt. Einstellbar unter Einstellungen → Agent → Erweitert (`chatLimits`, `backgroundLimits`). Für Hintergrundaufgaben gibt es dort außerdem eigene Grenzen je Auslöser (`backgroundKindLimits`: Einsortieren, Archivprüfung, Verknüpfungen, geplante Abläufe); leere Felder gelten wie `backgroundLimits`.
+- **Grenzen** statt fester Schrittzahl: Token-Budget, Notbremse für Runden, Zeitlimit, Schleifenerkennung und „Stopp“. An einer Grenze fasst der Agent zusammen, was erledigt ist und was fehlt – auch wenn das Zeitlimit mitten in einer Modellanfrage abläuft. „Stopp“, das Zeitlimit des Laufs und das Zeitlimit der LLM-Einstellungen greifen auch, während eine Antwort noch gestreamt wird. Einstellbar unter Einstellungen → Agent → Erweitert (`chatLimits`, `backgroundLimits`). Für Hintergrundaufgaben gibt es dort außerdem eigene Grenzen je Auslöser (`backgroundKindLimits`: Einsortieren, Archivprüfung, Verknüpfungen, geplante Abläufe); leere Felder gelten wie `backgroundLimits`.
 
 ## Anbieter
 
@@ -23,6 +23,7 @@ Code: `packages/core/src/agent/`.
 
 - Der Adapter wird aus der Base URL erkannt (`api.anthropic.com` bzw. `…/anthropic` → Claude, sonst Responses) und lässt sich unter Einstellungen → Agent → Erweitert überschreiben.
 - Der Verbindungstest prüft eine Textantwort, eine strukturierte (JSON-)Antwort, wie sie fast jede Funktion braucht, und einen echten Werkzeugaufruf mit Rückgabe und Streaming.
+- Vor dem ersten Lauf prüft Archivist den Werkzeugaufruf einmal je Endpunkt, Modell und Adapter und merkt sich das Ergebnis. Scheitert die Prüfung nur vorübergehend (Limit, Serverfehler, Zeitüberschreitung, Endpunkt nicht erreichbar), merkt er sich nichts: Für diese eine Chatnachricht gilt dann die regelbasierte Auswertung, der nächste Lauf prüft erneut.
 - Claude-Modelle auf Foundry bieten natives Tool-Calling am Anthropic-Endpunkt derselben Ressource (`https://<resource>.services.ai.azure.com/anthropic`) – der Dialog schlägt ihn vor.
 - **Claude**: Thinking ist immer an und wird nur über `effort` gesteuert (Standard `high`); Werkzeugaufrufe werden nie erzwungen (`tool_choice: auto`); Systemanweisung und Werkzeugliste werden gecacht; Task-Budget (nur Claude API) und Kompaktierung werden genutzt, wo verfügbar, und abgeschaltet, wenn ein Endpunkt sie ablehnt.
 - Der Verlauf wird anbieterneutral gespeichert – ein Wechsel des Anbieters braucht keinen Neustart.

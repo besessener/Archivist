@@ -247,6 +247,34 @@ describe('OpenAI Responses adapter (#297)', () => {
     expect(t.sent).toHaveLength(0);
   });
 
+  /** One text delta, then the stream stalls until the request is aborted (as fetch errors the body then). */
+  const stallingStream: typeof fetch = async (_url, init) => {
+    const signal = init!.signal!;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sse([{ type: 'response.output_text.delta', delta: 'Hal' }])));
+        signal.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+
+  it('„Stopp“ still cancels the request while the answer is streaming', async () => {
+    const controller = new AbortController();
+    const { config } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: stallingStream });
+    const err = (await new OpenAiResponsesAdapter(config)
+      .turn(request([user('x')], { signal: controller.signal }), () => controller.abort())
+      .catch((e: unknown) => e)) as AppError;
+    expect(err.message).toBe('Die LLM-Anfrage wurde abgebrochen.');
+  });
+
+  it('the timeout still applies while the answer is streaming', async () => {
+    const { config } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: stallingStream });
+    const err = (await new OpenAiResponsesAdapter({ ...config, timeoutMs: 50 }).turn(request([user('x')])).catch((e: unknown) => e)) as AppError;
+    expect(err.message).toMatch(/Zeitüberschreitung/);
+    expect(err.retryable).toBe(true);
+  });
+
   it('refusal and incomplete/max_output_tokens', async () => {
     const refusal = fakeFetch(json(completed([{ type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Dabei helfe ich nicht.' }] }])));
     const r = await new OpenAiResponsesAdapter(adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: refusal.fetchImpl }).config).turn(

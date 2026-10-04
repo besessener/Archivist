@@ -1,4 +1,6 @@
 import type { LlmTransmission } from '@archivist/shared';
+import { AppError } from '../../util/errors';
+import { abortedError } from '../../util/llm-errors';
 import type { AgentMessage } from '../types';
 
 export type FetchLike = typeof fetch;
@@ -15,6 +17,24 @@ export interface AdapterConfig {
   /** A failed request (not a cancellation by the user) feeds the endpoint status. */
   fail: (err: unknown, signal?: AbortSignal) => void;
   warn: (message: string, data?: Record<string, unknown>) => void;
+}
+
+/** Aborts a request on „Stopp“ or after `timeoutMs`; armed until disposed, so it also covers reading a streamed body. */
+export function requestAbort(signal: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; error: () => AppError; dispose: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  const timedOut = () =>
+    new AppError('network_error', `Zeitüberschreitung nach ${Math.round(timeoutMs / 1000)} s – der LLM-Endpunkt antwortet nicht.`, { retryable: true });
+  return {
+    signal: controller.signal,
+    error: () => (signal?.aborted ? abortedError() : timedOut()),
+    dispose: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    },
+  };
 }
 
 const AZURE_HOST = /\.azure\.(com|us|cn)$/i;
