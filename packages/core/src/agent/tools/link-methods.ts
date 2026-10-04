@@ -40,7 +40,7 @@ export async function linkHint(scope: ToolScope, id: string | null): Promise<str
 
 /** The fixed link methods of Epic #269 as tools (#313): they only ever propose – confirming stays with the user. */
 export function linkMethodTools(deps: ToolDeps): AgentTool[] {
-  const { graph, links } = deps;
+  const { graph, links, settings } = deps;
 
   return [
     defineTool({
@@ -193,6 +193,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const result = await links.backfill({
           maxEntries: a.maxEntries,
+          max: settings.get().links.maxProposalsPerEntry,
           signal: ctx.signal,
           onProgress: (done, total) => ctx.job?.report(done / total, `${done} von ${total} Einträgen geprüft`),
         });

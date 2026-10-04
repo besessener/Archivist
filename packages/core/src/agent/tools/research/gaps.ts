@@ -13,9 +13,11 @@ export function monthGaps(days: string[]): { first: string | null; last: string 
 
 /** Sequence number in a name: „Nr. 12“, „Auszug 3“, „#7“ (number) or „2025-07“ (month). */
 export function sequenceNumber(name: string): { kind: 'number'; n: number } | { kind: 'month'; month: string } | null {
-  const labelled = /(?:\bnr|\bno|\bnummer|\bauszug|\bkontoauszug|\bteil|\bheft|\bausgabe|\brechnung|#)\.?\s?[:#]?\s?(\d{1,6})\b/i.exec(name);
+  const labelled = /(?:\bnr|\bno|\bnummer|\bauszug|\bkontoauszug|\bteil|\bheft|\bausgabe|\brechnung|#)\.?\s?[:#]?\s?(?!(?:19|20)\d{2}[-_.]\d)(\d{1,6})\b/i.exec(
+    name,
+  );
   if (labelled) return { kind: 'number', n: Number(labelled[1]) };
-  const month = /\b(20\d{2}|19\d{2})[-_.](0[1-9]|1[0-2])\b/.exec(name);
+  const month = /(?<!\d)(20\d{2}|19\d{2})[-_.](0[1-9]|1[0-2])(?!\d)/.exec(name);
   if (month) return { kind: 'month', month: `${month[1]}-${month[2]}` };
   const trailing = /(?:^|[\s_-])(\d{1,4})(?:\D*)$/.exec(name);
   return trailing ? { kind: 'number', n: Number(trailing[1]) } : null;

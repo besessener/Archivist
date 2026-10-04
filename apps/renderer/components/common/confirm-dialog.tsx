@@ -38,15 +38,13 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const changeOpen = (next: boolean) => {
+    if (!next) setChecked(false);
+    onOpenChange(next);
+  };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) setChecked(false);
-        onOpenChange(o);
-      }}
-    >
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent data-testid="confirm-dialog">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -63,7 +61,7 @@ export function ConfirmDialog({
           <CheckboxField checked={checked} onCheckedChange={(v) => setChecked(v === true)} label={requireCheckbox} data-testid="confirm-dialog-checkbox" />
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+          <Button variant="outline" onClick={() => changeOpen(false)} disabled={busy}>
             {cancelLabel}
           </Button>
           <Button

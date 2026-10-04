@@ -247,6 +247,62 @@ describe('OpenAI Responses adapter (#297)', () => {
     expect(t.sent).toHaveLength(0);
   });
 
+  /** One text delta, then the stream stalls until the request is aborted (as fetch errors the body then). */
+  const stallingStream: typeof fetch = async (_url, init) => {
+    const signal = init!.signal!;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sse([{ type: 'response.output_text.delta', delta: 'Hal' }])));
+        signal.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+
+  it('„Stopp“ still cancels the request while the answer is streaming', async () => {
+    const controller = new AbortController();
+    const { config } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: stallingStream });
+    const err = (await new OpenAiResponsesAdapter(config)
+      .turn(request([user('x')], { signal: controller.signal }), () => controller.abort())
+      .catch((e: unknown) => e)) as AppError;
+    expect(err.message).toBe('Die LLM-Anfrage wurde abgebrochen.');
+  });
+
+  it('the timeout still applies while the answer is streaming', async () => {
+    const { config } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: stallingStream });
+    const err = (await new OpenAiResponsesAdapter({ ...config, timeoutMs: 50 }).turn(request([user('x')])).catch((e: unknown) => e)) as AppError;
+    expect(err.message).toMatch(/Zeitüberschreitung/);
+    expect(err.retryable).toBe(true);
+  });
+
+  it('the timeout bounds a pause in the stream, not the whole answer', async () => {
+    const events = [
+      ...Array.from({ length: 50 }, () => ({ type: 'response.output_text.delta', delta: 'a' })),
+      {
+        type: 'response.completed',
+        response: completed([{ type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'a'.repeat(50) }] }]),
+      },
+    ];
+    const slowStream: typeof fetch = async (_url, init) => {
+      let next = 0;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init!.signal!.addEventListener('abort', () => controller.error(init!.signal!.reason), { once: true });
+        },
+        async pull(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          if (next < events.length) controller.enqueue(new TextEncoder().encode(sse([events[next++]])));
+          else controller.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    };
+    const { config } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: slowStream });
+    // 50 chunks 25 ms apart outlast the 1 s timeout as a whole, while no single pause comes near it
+    const result = await new OpenAiResponsesAdapter({ ...config, timeoutMs: 1_000 }).turn(request([user('x')]));
+    expect(result.text).toBe('a'.repeat(50));
+  });
+
   it('refusal and incomplete/max_output_tokens', async () => {
     const refusal = fakeFetch(json(completed([{ type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Dabei helfe ich nicht.' }] }])));
     const r = await new OpenAiResponsesAdapter(adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: refusal.fetchImpl }).config).turn(

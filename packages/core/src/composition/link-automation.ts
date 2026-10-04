@@ -172,13 +172,14 @@ function linkRunDescription(proposed: number, topics: number): string {
 
 /** The retroactive link run (#279) and topic proposals from groups (#281): local, resumable, ONE notification at the end. */
 async function runLinkBackfill(services: WiredServices, job: JobContext<{ trigger?: string }>) {
-  const { links, notifications } = services;
+  const { links, notifications, settings } = services;
   let processed = 0;
   let proposed = 0;
   for (;;) {
     job.throwIfCancelled();
     const step = await links.backfill({
       maxEntries: 100,
+      max: settings.get().links.maxProposalsPerEntry,
       signal: job.signal,
       onProgress: (done, total) => job.report(null, `${processed + done} Einträge geprüft (dieser Abschnitt: ${done} von ${total})`),
     });

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { truncate } from '../../util/text';
 import { defineTool, list, optText, type AgentTool, type ToolOutput } from '../registry';
-import { docDay, docLine, resolveDocs, unknownNote, type ToolDeps, type ToolScope } from './common';
+import { affectedCount, docDay, docLine, resolveDocs, unknownNote, type ToolDeps, type ToolScope } from './common';
 import { exportBundle } from './exports/bundle';
 import { CSV_COLUMNS, toCsv, type CsvColumn } from './exports/csv';
 import { collectItems, writeExport } from './exports/files';
@@ -82,7 +82,7 @@ export function exportTools(deps: ToolDeps): AgentTool[] {
       }),
       risk: 'write',
       label: (a) => `Stelle Mappe „${truncate(a.title, 60)}“ als ${a.format.toUpperCase()} zusammen`,
-      count: () => 1,
+      count: (a, ctx) => (a.saveAsCase ? affectedCount(ctx, a.documents) : 1),
       run: (a, ctx) => exportBundle({ deps, ctx }, a),
     }),
     defineTool({

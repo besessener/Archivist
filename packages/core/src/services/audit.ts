@@ -1,5 +1,5 @@
 import type { AuditEntry, AuditVerification } from '@archivist/shared';
-import { and, asc, desc, eq, inArray, isNotNull, like, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import type { Db } from '../db/database';
 import { auditLog, entities } from '../db/schema';
@@ -210,6 +210,18 @@ export class AuditService {
     const titles = this.titlesOf(rows);
     const entries = rows.map((r) => this.toEntry(r, titles));
     return (onlyUndoable ? entries.filter((e) => e.undoable) : entries).slice(0, limit);
+  }
+
+  /** Every still undoable entry of `action`, newest first; unlike `list` without a window over the newest rows. */
+  undoableOf(action: string): AuditEntry[] {
+    const rows = this.ctx.database.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.action, action), isNotNull(auditLog.undoType), isNull(auditLog.undoneAt), eq(auditLog.success, true)))
+      .orderBy(desc(auditLog.at), sql`rowid desc`)
+      .all();
+    const titles = this.titlesOf(rows);
+    return rows.map((r) => this.toEntry(r, titles));
   }
 
   /** Changes of one agent run, newest first (undo of a whole run goes through them in this order). */

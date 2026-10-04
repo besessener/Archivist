@@ -151,6 +151,20 @@ describe('Other read tools (#303)', () => {
     expect(timeline).toContain('Küche');
   });
 
+  it('list_entries keeps entries with a time on the last day of the from/to range', async () => {
+    const note = await app.services.notes.create({ title: 'Zaun', content: 'Der Zaun wird grün gestrichen.' });
+    await app.ok('events:create', { title: 'Einbau Wärmepumpe', occurredAt: '2026-02-20T14:30:00', sourceIds: [] });
+    const today = note.createdAt.slice(0, 10);
+    const [notes, events, before] = await call(
+      { name: 'list_entries', args: { kind: 'note', from: today, to: today } },
+      { name: 'list_entries', args: { kind: 'event', from: '2026-02-20', to: '2026-02-20' } },
+      { name: 'list_entries', args: { kind: 'event', to: '2026-02-19' } },
+    );
+    expect(notes).toContain('Zaun');
+    expect(events).toContain('Wärmepumpe');
+    expect(before).toBe('Keine Einträge gefunden.');
+  });
+
   it('timeline of a case interleaves its documents, decisions, open items and events chronologically', async () => {
     const contract = await archived(app, { name: 'vertrag.txt', content: 'Vertrag Heizung', folder: 'Privat/haus', documentDate: '2026-02-10' });
     const decision = await app.ok('decisions:create', {

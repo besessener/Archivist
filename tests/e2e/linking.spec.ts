@@ -80,6 +80,43 @@ test.describe('linking knowledge (Epic #269)', () => {
     await expect(page.getByTestId('wiki-unknown')).toContainText('„Unbekannt“ als Notiz anlegen');
   });
 
+  test('choosing a wiki suggestion before another link on the same line keeps that link', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.do.create({ type: 'project', name: 'Hausbau' });
+
+    await k.locators.buttons.create.click();
+    await k.locators.inputs.type.selectOption('note');
+    await k.locators.inputs.name.fill('Baustelle');
+    await k.locators.inputs.description.fill('Termin mit  und [[Anna]] morgen');
+    await k.locators.inputs.description.evaluate((field: HTMLTextAreaElement) => field.setSelectionRange(11, 11));
+    await k.locators.inputs.description.pressSequentially('[[Haus');
+    await page.getByTestId('wiki-suggestion').filter({ hasText: 'Hausbau' }).click();
+
+    await expect(k.locators.inputs.description).toHaveValue('Termin mit [[Hausbau]] und [[Anna]] morgen');
+  });
+
+  test('the unlink dialog of an incoming link states it in its stored direction', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.do.create({ type: 'case', name: 'Autokauf' });
+    await k.do.create({ type: 'note', name: 'Probefahrt' });
+    await expect(k.heading()).toHaveText('Probefahrt');
+    await page.getByTestId('knowledge-case').click();
+    await page.getByTestId('case-assign-choice').selectOption({ label: 'Autokauf (0 Einträge)' });
+    await page.getByTestId('case-assign-save').click();
+    await expect(k.locators.toasts.filter({ hasText: 'Zum Vorgang hinzugefügt' })).toBeVisible();
+
+    await k().filter({ hasText: 'Autokauf' }).click();
+    await expect(k.heading()).toHaveText('Autokauf');
+    await page.getByTestId('relation-row').filter({ hasText: 'Probefahrt' }).getByTestId('relation-unlink').click();
+    await expect(page.getByTestId('confirm-dialog')).toContainText('„Probefahrt“ gehört zu „Autokauf“');
+  });
+
   test('bulk assignment of open items and the linkage metrics under Insights (#291, #292)', async ({ llm, on, page }, testInfo) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);

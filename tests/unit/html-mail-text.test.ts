@@ -37,6 +37,18 @@ describe('visibleHtmlText', () => {
     expect(text.split(/\n+/)).toEqual(['Zeile 1', 'Zeile 2', 'Zeile 3', 'Klein']);
   });
 
+  it('decodes named entities such as umlauts, ß and €', () => {
+    expect(visibleHtmlText('<p>Gr&uuml;&szlig;e f&uuml;r &Auml;rger &uuml;ber 5&nbsp;&euro; &ndash; &copy;</p>')).toBe('Grüße für Ärger über 5 € – ©');
+  });
+
+  it('decodes each entity once, so an escaped entity stays literal', () => {
+    expect(visibleHtmlText('&amp;lt;b&amp;gt; &#38;lt; &amp;uuml;')).toBe('&lt;b&gt; &lt; &uuml;');
+  });
+
+  it('replaces an out-of-range numeric reference instead of throwing', () => {
+    expect(visibleHtmlText('a&#99999999;b&#x110000;c')).toBe('a\uFFFDb\uFFFDc');
+  });
+
   it('does not treat a non-zero size as hidden', () => {
     expect(visibleHtmlText('<span style="font-size:0.8em;opacity:0.5">Text</span>')).toBe('Text');
   });
@@ -60,6 +72,24 @@ describe('HTML-only e-mails', () => {
     const r = await parseDocument(eml);
     expect(r.text).toContain('Ihre Rechnung über 120 €.');
     expect(r.text).not.toContain('Assistenten');
+  });
+  it('named entities of an HTML-only mail are decoded in the extracted text', async () => {
+    const eml = path.join(dir, 'entities.eml');
+    fs.writeFileSync(
+      eml,
+      [
+        'From: a@example.org',
+        'To: b@example.org',
+        'Subject: Rechnung',
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=utf-8',
+        '',
+        '<html><body><p>Rechnung f&uuml;r M&auml;rz &uuml;ber 120&nbsp;&euro;.</p><p>Mit freundlichen Gr&uuml;&szlig;en</p></body></html>',
+      ].join('\r\n'),
+    );
+    const r = await parseDocument(eml);
+    expect(r.text).toContain('Rechnung für März über 120 €.');
+    expect(r.text).toContain('Mit freundlichen Grüßen');
   });
 });
 

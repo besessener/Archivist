@@ -12,7 +12,7 @@ Code: `packages/core/src/agent/`.
 - Ungültige Argumente gehen als Fehler-Ergebnis an das Modell zurück.
 - Lesende Aufrufe einer Runde laufen parallel.
 - Rückfragen (`ask_user`) sind ein eigener Ausgang; die Antwort setzt den Lauf mit vollem Kontext fort.
-- **Grenzen** statt fester Schrittzahl: Token-Budget, Notbremse für Runden, Zeitlimit, Schleifenerkennung und „Stopp“. An einer Grenze fasst der Agent zusammen, was erledigt ist und was fehlt. Einstellbar unter Einstellungen → Agent → Erweitert (`chatLimits`, `backgroundLimits`). Für Hintergrundaufgaben gibt es dort außerdem eigene Grenzen je Auslöser (`backgroundKindLimits`: Einsortieren, Archivprüfung, Verknüpfungen, geplante Abläufe); leere Felder gelten wie `backgroundLimits`.
+- **Grenzen** statt fester Schrittzahl: Token-Budget, Notbremse für Runden, Zeitlimit, Schleifenerkennung und „Stopp“. An einer Grenze fasst der Agent zusammen, was erledigt ist und was fehlt – auch wenn das Zeitlimit mitten in einer Modellanfrage abläuft. „Stopp“ und das Zeitlimit des Laufs greifen auch, während eine Antwort noch gestreamt wird. Das Zeitlimit der LLM-Einstellungen (für Agentenanfragen mindestens 2 Minuten) begrenzt bei beiden Anbietern das Warten auf die erste Antwort; über die Responses API beendet es außerdem einen Datenstrom, der so lange gar nichts mehr liefert – eine lange, aber laufende Antwort bricht es nicht ab. Einstellbar unter Einstellungen → Agent → Erweitert (`chatLimits`, `backgroundLimits`). Für Hintergrundaufgaben gibt es dort außerdem eigene Grenzen je Auslöser (`backgroundKindLimits`: Einsortieren, Archivprüfung, Verknüpfungen, geplante Abläufe); leere Felder gelten wie `backgroundLimits`.
 
 ## Anbieter
 
@@ -23,6 +23,7 @@ Code: `packages/core/src/agent/`.
 
 - Der Adapter wird aus der Base URL erkannt (`api.anthropic.com` bzw. `…/anthropic` → Claude, sonst Responses) und lässt sich unter Einstellungen → Agent → Erweitert überschreiben.
 - Der Verbindungstest prüft eine Textantwort, eine strukturierte (JSON-)Antwort, wie sie fast jede Funktion braucht, und einen echten Werkzeugaufruf mit Rückgabe und Streaming.
+- Vor dem ersten Lauf prüft Archivist den Werkzeugaufruf einmal je Endpunkt, Modell und Adapter und merkt sich das Ergebnis. Scheitert die Prüfung nur vorübergehend (Limit, Serverfehler, Zeitüberschreitung, Endpunkt nicht erreichbar), merkt er sich nichts und schreibt eine Warnung ins Log: Für diese eine Chatnachricht gilt dann die regelbasierte Auswertung, der nächste Lauf prüft erneut. Jeder andere Fehler, etwa eine unvollständige Antwort oder ein abgebrochener Datenstrom, wird wie ein fehlender Werkzeugaufruf gespeichert und im Status angezeigt.
 - Claude-Modelle auf Foundry bieten natives Tool-Calling am Anthropic-Endpunkt derselben Ressource (`https://<resource>.services.ai.azure.com/anthropic`) – der Dialog schlägt ihn vor.
 - **Claude**: Thinking ist immer an und wird nur über `effort` gesteuert (Standard `high`); Werkzeugaufrufe werden nie erzwungen (`tool_choice: auto`); Systemanweisung und Werkzeugliste werden gecacht; Task-Budget (nur Claude API) und Kompaktierung werden genutzt, wo verfügbar, und abgeschaltet, wenn ein Endpunkt sie ablehnt.
 - Der Verlauf wird anbieterneutral gespeichert – ein Wechsel des Anbieters braucht keinen Neustart.
@@ -56,13 +57,15 @@ Pro Gespräch umschaltbar, auch per „frag mich diesmal vorher“.
 - neuen Hauptkategorien,
 - Massenaktionen über der Schwelle (Standard: mehr als 100 Einträge in einem Lauf).
 
-Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rules` ohne Auswahl alle archivierten Dokumente, auf die eine Regel passt, `merge_subjects` die zusammengeführten Einträge, `decide_link_proposals` die betroffenen Vorschläge. Eine Verknüpfung „auf Wunsch des Benutzers“ (`onUserRequest`) gilt nur als bestätigt, wenn deine eigene Nachricht eine Änderung verlangt oder du auf die Rückfrage „ja“ gesagt hast – sonst bleibt sie ein Vorschlag.
+Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rules` ohne Auswahl alle archivierten Dokumente, auf die eine Regel passt, `merge_subjects` die zusammengeführten Einträge, `decide_link_proposals` die betroffenen Vorschläge, `create_case` die zugeordneten Einträge, `export_bundle` mit `saveAsCase` die zugeordneten Dokumente. Eine Verknüpfung „auf Wunsch des Benutzers“ (`onUserRequest`) gilt nur als bestätigt, wenn deine eigene Nachricht eine Änderung verlangt oder du auf die Rückfrage „ja“ gesagt hast – sonst bleibt sie ein Vorschlag.
 
 ## Agentenläufe
 
 - Jeder Lauf hat eine Lauf-ID mit Auslöser, Anbieter und Modell, Werkzeugaufrufen (gekürzte Ergebnisse), Tokens und geschätzten Kosten, Dauer und Ergebnis.
 - Jede Änderung trägt die Lauf-ID (Änderungsprotokoll, Beziehungen mit Herkunft `agent`).
+- Zum Lauf gehören nur die Änderungen seiner Werkzeuge und ihrer Dateiaufträge (siehe [Große Dateiaktionen](#große-dateiaktionen)). Andere Jobs, die währenddessen laufen – auch die von dir eingereihten –, tragen keine Lauf-ID; „Lauf rückgängig“ nimmt sie nicht zurück.
 - „Lauf rückgängig“ setzt alle Änderungen in umgekehrter Reihenfolge mit Konfliktprüfung zurück, einzelne Schritte ebenso.
+- Entfernt werden nur Einträge, die der Lauf selbst angelegt hat: Eine schon vorhandene identische Notiz, die `record_note` wiederverwendet, bleibt erhalten.
 - Ansicht unter Einstellungen → Agent.
 
 ## Große Dateiaktionen
@@ -80,7 +83,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 - `move_documents`, `rename_documents` (einzeln oder nach Schema, erst Vorschau), `create_folder`, `rename_folder`, `remove_empty_folders`, `archive_inbox`, `exclude_from_scan`.
 - `propose_structure`: eine neue Ordnerstruktur als Plan. Er erscheint immer als Vorschlagskarte mit einem Punkt je Gruppe und lässt sich ganz oder teilweise bestätigen.
 - Rückgängig gibt es für jede Änderung – auch für angelegte Ordner (solange nichts darin liegt), entfernte leere Ordner und Scan-Ausschlüsse.
-- `exclude_from_scan` nimmt nur absolute Pfade innerhalb der freigegebenen Scan-Ordner an.
+- `exclude_from_scan` nimmt nur absolute Pfade innerhalb der freigegebenen Scan-Ordner an. Ist der Pfad schon ausgeschlossen, ändert der Aufruf nichts – „Lauf rückgängig“ lässt deinen Ausschluss deshalb stehen.
 - `reanalyze`: Dokumente im Eingang werden neu analysiert; archivierte und nur indexierte werden in **einem** Auftrag neu gelesen (Text, OCR, Suchindex) – Titel, Typ, Zuordnungen und Verknüpfungen bleiben.
 - Umbenennen nach Schema steht mit derselben Funktion in der Dokumentliste (Mehrfachauswahl → „Umbenennen“).
 
@@ -102,7 +105,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 
 Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nur das Ergebnis. Dokumentzeilen als Fundstelle stehen als Daten markiert mit der D-ID. Nicht freigegebene Dokumente werden übersprungen und gezählt.
 
-- `sum_amounts`: Belegliste mit Datum, Betrag und Fundstelle, Summe und Anzahl; Dokumente ohne erkennbaren Betrag werden genannt.
+- `sum_amounts`: Belegliste mit Datum, Betrag und Fundstelle, Summe und Anzahl; Dokumente ohne erkennbaren Betrag werden genannt. Als Betrag gilt die Gesamtbetragszeile (Zwischensumme, Netto und Steuer zählen nicht), sonst der größte Betrag im Dokument. `export_csv` (Spalte `betrag`) und `export_bundle` übernehmen nur die Gesamtbetragszeile; Dokumente ohne sie (etwa Verträge oder Angebote) bleiben dort ohne Betrag und zählen nicht zur Summe.
 - `find_gaps`: Lücken in einer Serie nach Monat (`by: month`) oder laufender Nummer (`by: number`); erstes und letztes Dokument der Serie stehen mit der Fundstelle (Zeile mit dem Datum bzw. der Nummer) im Ergebnis.
 - `compare_documents`: vergleicht zeilenweise. Geänderte Zeilen stehen in einer Tabelle „In A (alt) | In B (neu) | Änderung“ (z. B. „Miete 800 € → 850 €“), danach Zeilen nur in A und nur in B. Mit `weitere` wird das erste Dokument mit jedem weiteren verglichen (B1, B2, …). Alle Dokumente müssen freigegeben sein.
 - `find_deadlines`: Fristen und Ablaufdaten mit Rechenweg und Fundstelle; nennt bestehende Erinnerungen.
@@ -116,6 +119,7 @@ Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nu
 - Die Erfassungswerkzeuge des Agenten und der regelbasierte Chat rufen dasselbe Modul auf. Rückfragen stellt der Agent über `ask_user`, der regelbasierte Chat über seine Rückfrage im Gespräch.
 - `chat.ts` enthält nur noch den Gesprächsablauf und den regelbasierten Rückfall (Absicht-Klassifikation und `dispatch()`).
 - Ist beim Ersetzen nicht eindeutig, welche ältere Entscheidung gemeint ist, nennt `record_decision` die Kandidaten mit ihren K-IDs; nach der Rückfrage legt `supersede_decision` die Vorschlagskarte an. Als überholt markiert wird erst nach deiner Bestätigung.
+- `create_subject` legt nur an, was es noch nicht gibt. Eine Person erkennt es auch ohne Titel oder Rolle („Dr. Thomas Müller“) und unter deinem Profilnamen oder Spitznamen als dich selbst; dann meldet es den vorhandenen Eintrag, und „Lauf rückgängig“ löscht ihn nicht.
 - `set_metadata` ändert bei Entscheidungen, offenen Punkten und Ereignissen auch Titel, Personen (Beteiligte bzw. Verantwortliche) und Datum (Entscheidungsdatum, Fälligkeit, Ereignisdatum).
 - Datumsangaben ohne Jahr: „31.10.“ ist bei einer Entscheidung der letzte 31. Oktober, bei einer Erinnerung oder Fälligkeit der nächste.
 
@@ -138,7 +142,7 @@ Weitere Werkzeuge für die Verknüpfungen:
 | --- | --- |
 | `set_metadata` | `topic`/`project` ersetzen das Hauptthema bzw. -projekt (Ablage). `addTopics`/`addProjects` ergänzen weitere – wer noch keins hat, bekommt es als Hauptthema –, `removeTopics`/`removeProjects` entfernen weitere; `case` ordnet einem vorhandenen Vorgang zu; `addTags` gilt für alle Arten von Einträgen. Ergänzungen sind wie die Sammelzuordnung ein Rückgängig-Schritt |
 | `link` | auch `subtopic_of`: ein Thema oder Projekt unter ein anderes einordnen (keine Kreise) |
-| `update_note` | Titel und Text einer Notiz ändern (nur auf Wunsch); `[[Name]]` verlinkt, unbekannte Namen meldet das Werkzeug zum Anlegen |
+| `update_note` | Titel und Text einer Notiz ändern (nur auf Wunsch); ohne neuen Titel bleibt der bisherige. `[[Name]]` verlinkt, unbekannte Namen meldet das Werkzeug zum Anlegen |
 | `case_overview` | ein Vorgang mit Status, offenen Punkten und Verlauf (nur lesen; Dokumentnamen nur mit Freigabe) |
 | `list_subjects` | zeigt bei Unterthemen das Oberthema |
 

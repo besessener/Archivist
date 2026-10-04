@@ -19,6 +19,8 @@ export interface WorkInput {
   state: ConvState;
   viaLlm: boolean;
   clarification: string | null;
+  /** an optional question asked before the run; the run's own ones are combined with it */
+  optional: Pending | null;
 }
 
 /** State of one run through the requests of a message. */
@@ -55,7 +57,7 @@ export class WorkRunner {
       replies: [],
       current: { ...input.state, pending: null, queue: [] },
       deferred: [],
-      optional: null,
+      optional: input.optional,
       clarification: input.clarification,
     };
     for (let i = 0; i < run.work.length; i += 1) {
@@ -113,11 +115,20 @@ export class WorkRunner {
       return;
     }
     run.replies.push(reply);
-    run.current = { ...(reply.state ?? run.current), queue: [] };
+    // capture handlers return only the fields they change, so the rest of the conversation state stays
+    run.current = { ...run.current, ...reply.state, queue: [] };
     // an old follow-up question returned unchanged is settled, not a new one
     if (run.current.pending === run.old) run.current = { ...run.current, pending: null };
     holdOptional(run);
     this.recordProgress(run, reply);
+  }
+
+  /** Before a further run: `reply` is all this message did so far (an answered question and what ran after it), kept on cancel or error. */
+  recordDone(conversationId: string, step: { reply: Reply; state: ConvState }): void {
+    const done = this.helpers.progress.get(conversationId);
+    if (!done) return;
+    done.replies = [step.reply];
+    done.state = step.state;
   }
 
   private recordProgress(run: WorkRun, reply: Reply): void {

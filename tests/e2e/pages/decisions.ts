@@ -32,6 +32,7 @@ export function initDecisions(page: Page) {
       topic: page.getByTestId('decision-topic'),
       participants: page.getByTestId('decision-participants'),
       status: page.getByTestId('decision-status'),
+      draft: page.getByTestId('decision-draft'),
       supersededBy: page.getByTestId('decision-superseded-by'),
       supersededBySearch: form.getByRole('textbox', { name: 'Entscheidungen durchsuchen' }),
     },

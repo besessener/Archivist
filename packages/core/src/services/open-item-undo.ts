@@ -51,7 +51,7 @@ function updateConflicts({ ctx, graph }: OpenItemUndoDeps, undoData: OpenItemUpd
   return [...conflicts, ...graph.relationChangeConflicts(undoData.relations)];
 }
 
-function undoStatus(ctx: AppContext, undoData: OpenItemStatusUndo): string {
+function undoStatus({ ctx, reindex }: OpenItemUndoDeps, undoData: OpenItemStatusUndo): string {
   const db = ctx.database.db;
   db.transaction(() => {
     db.update(openItems)
@@ -61,7 +61,8 @@ function undoStatus(ctx: AppContext, undoData: OpenItemStatusUndo): string {
     for (const reminder of undoData.reminders ?? []) db.update(reminders).set({ status: reminder.status }).where(eq(reminders.id, reminder.id)).run();
     syncReminderAt(db, undoData.id);
   });
-  ctx.events.changed('openItems', 'reminders');
+  void reindex(undoData.id);
+  ctx.events.changed('openItems', 'status', 'reminders');
   return 'Status des offenen Punkts wiederhergestellt.';
 }
 
@@ -85,7 +86,7 @@ function undoUpdate({ ctx, graph, reindex }: OpenItemUndoDeps, undoData: OpenIte
 export function registerOpenItemUndo(undo: UndoService, deps: OpenItemUndoDeps): void {
   undo.register(OPEN_ITEM_STATUS_UNDO_TYPE, {
     check: async (data) => statusConflicts(deps.ctx, data as OpenItemStatusUndo),
-    run: async (data) => undoStatus(deps.ctx, data as OpenItemStatusUndo),
+    run: async (data) => undoStatus(deps, data as OpenItemStatusUndo),
   });
   undo.register(OPEN_ITEM_UPDATE_UNDO_TYPE, {
     check: async (data) => updateConflicts(deps, data as OpenItemUpdateUndo),

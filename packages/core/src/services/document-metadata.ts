@@ -276,6 +276,7 @@ export class DocumentMetadataEditor {
         this.db.update(documents).set(set).where(eq(documents.id, id)).run();
         if (set.title) this.deps.graph.registerNode({ type: 'document', id, name: set.title, description: row.summary });
         this.syncAssignment(id, set);
+        if (isArchivedStatus(row.status)) this.syncPersonsAndTags(id, set);
         for (const [target, type] of changes.extra)
           this.deps.graph.link(
             { sourceId: id, targetId: target, relationType: type },

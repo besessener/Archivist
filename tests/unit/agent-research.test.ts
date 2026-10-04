@@ -59,6 +59,22 @@ describe('research helpers of the agent', () => {
       expect(numberGaps([1, 2, 4, 7])).toEqual([3, 5, 6]);
       expect(numberGaps([5])).toEqual([]);
     });
+
+    it('reads a year-month after a label or with underscores as the month, not as a number', () => {
+      expect(sequenceNumber('Kontoauszug 2025-07')).toEqual({ kind: 'month', month: '2025-07' });
+      expect(sequenceNumber('Kontoauszug_2025-07.pdf')).toEqual({ kind: 'month', month: '2025-07' });
+      expect(sequenceNumber('Rechnung_2025_07.pdf')).toEqual({ kind: 'month', month: '2025-07' });
+      expect(sequenceNumber('Rechnung 2025-001')).toEqual({ kind: 'number', n: 1 });
+      expect(sequenceNumber('Teil 2.pdf')).toEqual({ kind: 'number', n: 2 });
+    });
+
+    it('keeps a labelled number that is followed by a separator and a year', () => {
+      expect(sequenceNumber('Kontoauszug Nr. 3/2025')).toEqual({ kind: 'number', n: 3 });
+      expect(sequenceNumber('Kontoauszug 3/2025.pdf')).toEqual({ kind: 'number', n: 3 });
+      expect(sequenceNumber('Kontoauszug 07-2025')).toEqual({ kind: 'number', n: 7 });
+      expect(sequenceNumber('Kontoauszug 07.2025')).toEqual({ kind: 'number', n: 7 });
+      expect(sequenceNumber('Heft 3.1')).toEqual({ kind: 'number', n: 3 });
+    });
   });
 
   describe('diff', () => {

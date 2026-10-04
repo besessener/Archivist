@@ -63,8 +63,8 @@ function archiveProposal(group: RowGroup, label: string) {
     documentId: row.id,
     mode: 'copy' as const,
     categoryPath: proposalOf(row)?.location.categoryPath ?? row.categoryPath ?? undefined,
-    // null would mean "explicitly without topic/project"; a group without one only leaves it open.
-    topic: group.topic ?? undefined,
+    // null would mean "explicitly without topic/project"; a project group keeps each document's own topic.
+    topic: (group.project ? proposalOf(row)?.topic : group.topic) ?? undefined,
     project: group.project ?? undefined,
   }));
   return {

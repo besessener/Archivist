@@ -35,6 +35,9 @@ export interface RelationChangeSet {
   changed: Array<{ id: string; before: RelationState; after: RelationState }>;
 }
 
+/** A relation a wiki link was written over (#285), as it was before; undoing the note edit restores it. */
+export type AdoptedRelation = Pick<GraphRelation, 'id' | 'status' | 'confidence' | 'resolvedByUser' | 'origin' | 'runId' | 'method' | 'evidence' | 'updatedAt'>;
+
 export interface SystemUnlink {
   entityId: string;
   relationType: RelationType;
@@ -108,6 +111,13 @@ export class GraphRelations {
     const confidence = Math.max(existing.confidence, link.options.confidence ?? 0);
     // origin and evidence of the first finding are kept; a relation without them takes them over
     const kept = { method: existing.method ?? link.method, evidence: existing.evidence ?? link.evidence };
+    // nothing changes: updatedAt stays, it marks the user's decision for its undo
+    if (
+      sameState(stateOf(existing), { status: status as RelationStatus, confidence, sourceIds }) &&
+      kept.method === existing.method &&
+      kept.evidence === existing.evidence
+    )
+      return { ...mapRelation(existing), created: false };
     const updatedAt = nowIso();
     this.db
       .update(relations)
@@ -175,6 +185,38 @@ export class GraphRelations {
       .run();
     this.ctx.events.changed('knowledge');
     return { ...relation, status: change.status };
+  }
+
+  /** Takes a relation over as a confirmed wiki link with the link text as evidence (#285); inside an agent run it is the agent's. */
+  adoptAsWikiLink(id: string, evidence: string): void {
+    const run = currentRun();
+    const origin = run ? 'agent' : 'user';
+    this.db
+      .update(relations)
+      .set({ status: 'confirmed', confidence: 1, resolvedByUser: true, origin, runId: run?.runId ?? null, method: 'wikilink', evidence, updatedAt: nowIso() })
+      .where(eq(relations.id, id))
+      .run();
+    this.ctx.events.changed('knowledge');
+  }
+
+  /** Restores relations {@link adoptAsWikiLink} took over, unless they are no wiki link any more. */
+  restoreAdopted(adopted: readonly AdoptedRelation[]): void {
+    for (const { id, status, confidence, resolvedByUser, origin, runId, method, evidence, updatedAt } of adopted)
+      this.db
+        .update(relations)
+        .set({
+          status,
+          confidence,
+          resolvedByUser: resolvedByUser ?? false,
+          origin: origin ?? null,
+          runId: runId ?? null,
+          method: method ?? null,
+          evidence: evidence ?? null,
+          updatedAt,
+        })
+        .where(and(eq(relations.id, id), eq(relations.method, 'wikilink')))
+        .run();
+    if (adopted.length) this.ctx.events.changed('knowledge');
   }
 
   of(entityId: string, filter: { statuses?: RelationStatus[]; types?: RelationType[] }): GraphRelation[] {

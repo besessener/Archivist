@@ -7,7 +7,7 @@ import type { AgentTool, ToolContext } from '../../packages/core/src/agent/regis
 import type { ToolDeps } from '../../packages/core/src/agent/tools/common';
 import { exportTools } from '../../packages/core/src/agent/tools/exports';
 import { csvCell } from '../../packages/core/src/agent/tools/exports/csv';
-import { monthGaps, parseAmount } from '../../packages/core/src/agent/tools/exports/items';
+import { monthGaps } from '../../packages/core/src/agent/tools/exports/items';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { classification } from '../helpers/document-classifications';
 import { emptyToolContext } from '../helpers/agent';
@@ -117,10 +117,7 @@ async function setup() {
 }
 
 describe('agent export tools (#311)', () => {
-  it('parses amounts and month gaps', () => {
-    expect(parseAmount('Netto 100,00 €\nGesamtsumme 1.190,00 €\nDanke')).toBe(1190);
-    expect(parseAmount('Betrag: 12,30 EUR')).toBe(12.3);
-    expect(parseAmount('nichts')).toBeNull();
+  it('finds month gaps and escapes CSV cells', () => {
     expect(monthGaps(['2026-01-15', '2026-04-10', '2026-02-01'])).toEqual(['2026-03']);
     expect(monthGaps(['2025-11-01', '2026-02-01'])).toEqual(['2025-12', '2026-01']);
     expect(csvCell('Rechnung "Mai"; Teil 1')).toBe('"Rechnung ""Mai""; Teil 1"');
@@ -193,6 +190,21 @@ describe('agent export tools (#311)', () => {
       '2026-04-10;Strom April;100,44;Privat/finanzen/strom',
     ]);
     expect(out.content).toContain('3 Zeile(n)');
+  });
+
+  it('exports the invoice total, not a subtotal, and no amount for a document without a total line', async () => {
+    const contract = await archived('miete.txt', 'Mietvertrag\nKaution 2.550,00 €\nMiete 850,00 € monatlich\n', 'Privat/wohnen', 'Mietvertrag', '2026-03-01');
+    const id = await archived(
+      'maler.txt',
+      'Rechnung Malerarbeiten\nZwischensumme 100,00 €\nMwSt 19 % 19,00 €\nRechnungsbetrag 119,00 €\n',
+      'Privat/finanzen/haus',
+      'Maler',
+      '2026-03-02',
+    );
+    const ctx = emptyToolContext();
+    await run('export_csv', { documents: [ctx.refs.doc(contract), ctx.refs.doc(id)], columns: ['titel', 'betrag'] }, ctx);
+    const lines = fs.readFileSync(ctx.files[0]!, 'utf8').slice(1).trimEnd().split('\r\n');
+    expect(lines).toEqual(['Titel;Betrag', 'Mietvertrag;', 'Maler;119,00']);
   });
 
   it('keeps titles of non-shareable documents out of the tool result (the local file is complete)', async () => {

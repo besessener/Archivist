@@ -31,6 +31,21 @@ describe('Local vectors next to remote ones (#173)', () => {
     expect(hits.map((hit) => hit.id)).toContain(note.id);
   });
 
+  it('similar entries of an entry with remote vectors include entries that only have local vectors', async () => {
+    const text = 'Mietvertrag Hauptstrasse Wohnung Kaution';
+    for (const [id, allowRemoteEmbedding] of [
+      ['note-A', true],
+      ['note-B', false],
+    ] as const) {
+      app.services.graph.registerNode({ type: 'note', id, name: 'Mietvertrag', description: text });
+      await app.services.search.index({ type: 'note', id, title: 'Mietvertrag', content: text, allowRemoteEmbedding });
+    }
+    const similar = (id: string) => app.services.search.similarTo(id, { types: ['note'], limit: 5, minScore: { local: 0.5, embeddings: 0.45 } });
+
+    expect((await similar('note-B')).map((hit) => [hit.id, hit.local])).toEqual([['note-A', true]]);
+    expect((await similar('note-A')).map((hit) => [hit.id, hit.local])).toEqual([['note-B', true]]);
+  });
+
   it('adds the missing local vector to older remote entries in a job queued on startup', async () => {
     const note = await app.services.notes.create({ title: 'Notiz', content: 'Inhalt der Notiz' });
     await app.services.jobs.whenIdle();

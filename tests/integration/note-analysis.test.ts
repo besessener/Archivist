@@ -114,6 +114,22 @@ describe('Notes are analysed like documents (#273)', () => {
     ]);
   });
 
+  it('analysing an edited note again that finds the same relation keeps the undo of the user decision on it possible', async () => {
+    app = await createTestApp({ privacy: 'confirm', autoLinks: true });
+    graph().ensureEntity({ type: 'project', name: 'Hausbau' });
+    const id = await createNote('Hausbau', 'Heute am Hausbau weitergemacht.');
+    const proposal = graph().relationsOf(id, { statuses: ['proposed'] })[0]!;
+    await app.ok('links:decide', { relationIds: [proposal.id], decision: 'confirmed', confirmed: true });
+
+    await app.ok('knowledge:updateNote', { id, content: 'Heute am Hausbau weitergemacht. Noch ein Satz.' });
+    await app.services.jobs.whenIdle();
+    expect(assigned(id)).toEqual(['project:Hausbau belongs_to confirmed']);
+
+    const audit = (await app.ok('audit:list', { limit: 20 })).find((a) => a.action === 'relation.confirmMany')!;
+    expect(await app.ok('audit:undo', { auditId: audit.id })).toMatchObject({ undone: true });
+    expect(assigned(id)).toEqual(['project:Hausbau belongs_to proposed']);
+  });
+
   it('notes captured in the chat are analysed as well', async () => {
     app = await createTestApp({ privacy: 'confirm', autoLinks: true });
     graph().ensureEntity({ type: 'project', name: 'Hausbau' });

@@ -6,7 +6,7 @@ import { expect, test } from './fixture';
 test.describe('scanning allowed directories', () => {
   test.beforeEach(async ({ llm, on, page, workspace }) => {
     const app = on(page);
-    await app.setup.do.complete(llm.url);
+    await app.setup.do.complete(llm.url, 'confirm');
     await app.navigation.do.open('scan');
     await app.scan.do.allowDirectory(path.basename(workspace.downloads));
   });
@@ -47,6 +47,67 @@ test.describe('scanning allowed directories', () => {
     await expect(scan.locators.fileRows).toHaveCount(501);
     await expect(scan.locators.buttons.loadMore).toHaveCount(0);
   });
+});
+
+test.describe('analysing selected files in the privacy mode „automatisch“', () => {
+  test.beforeEach(async ({ llm, on, page, workspace }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url, 'auto');
+    await app.navigation.do.open('scan');
+    await app.scan.do.allowDirectory(path.basename(workspace.downloads));
+  });
+
+  test('says that the selection goes to the AI instead of offering a local-only analysis', async ({ llm, on, page, workspace }, testInfo) => {
+    const scan = on(page).scan;
+    workspace.addDownload('urlaub.txt', 'Urlaubsantrag für den 12.06.2026, bitte genehmigen.');
+    await scan.do.scan();
+    await expect(scan.locators.fileRows).toHaveCount(1, { timeout: 30_000 });
+
+    await scan.do.openAnalysis('urlaub.txt');
+
+    await expect(scan.locators.automaticNote).toBeVisible();
+    await expect(scan.locators.allowLlm).toHaveCount(0);
+    await expect(scan.locators.buttons.confirmAnalysis).toHaveText('Mit KI analysieren');
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await scan.locators.buttons.confirmAnalysis.click();
+    await expect(scan.locators.analyzedRows).toHaveCount(1, { timeout: 30_000 });
+    expect(llm.calls.filter((call) => call.schema === 'DocumentClassification')).toHaveLength(1);
+  });
+
+  test('archives a project group with each document keeping its own topic', async ({ on, page, workspace }) => {
+    const { scan, navigation, documents } = on(page);
+    workspace.addDownload('jourfixe.txt', 'Protokoll des Jour Fixe zum Projekt Nordlicht.');
+    workspace.addDownload('budget.txt', 'Budgetplanung für das Projekt Nordlicht.');
+    await scan.do.scan();
+    await expect(scan.locators.fileRows).toHaveCount(2, { timeout: 30_000 });
+    await scan.do.openAnalysis('jourfixe.txt', 'budget.txt');
+    await scan.locators.buttons.confirmAnalysis.click();
+    await expect(scan.locators.analyzedRows).toHaveCount(2, { timeout: 30_000 });
+
+    await scan.do.archiveProposal('Nordlicht');
+
+    await navigation.do.open('documents');
+    await expect(documents.locators.rows).toHaveCount(2);
+    const topics = async () => [await documents.locators.cell(0, 'Thema').innerText(), await documents.locators.cell(1, 'Thema').innerText()].sort();
+    await expect.poll(topics).toEqual(['Budget', 'Nordlicht']);
+  });
+});
+
+test('without a configured LLM, „automatisch“ offers only a local analysis and sends nothing', async ({ llm, on, page, workspace }) => {
+  const { setup, navigation, scan } = on(page);
+  await setup.do.completeWithoutLlm('auto');
+  await navigation.do.open('scan');
+  await scan.do.allowDirectory(path.basename(workspace.downloads));
+  workspace.addDownload('urlaub.txt', 'Urlaubsantrag für den 12.06.2026, bitte genehmigen.');
+  await scan.do.scan();
+  await expect(scan.locators.fileRows).toHaveCount(1, { timeout: 30_000 });
+
+  await scan.do.openAnalysis('urlaub.txt');
+  await expect(scan.locators.buttons.confirmAnalysis).toHaveText('Nur lokal analysieren');
+  await scan.locators.buttons.confirmAnalysis.click();
+  await expect(scan.locators.toasts.filter({ hasText: 'Lokale Analyse gestartet.' })).toBeVisible();
+  await expect(scan.locators.analyzedRows).toHaveCount(1, { timeout: 30_000 });
+  expect(llm.calls).toHaveLength(0);
 });
 
 test.describe('analysing all new files at once (#228)', () => {

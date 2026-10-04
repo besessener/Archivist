@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { agentRunScope } from '../../packages/core/src/agent/scope';
 import { createTestApp, type TestApp } from '../helpers/harness';
+import { flatText } from '../helpers/link-texts';
 
 let app: TestApp;
 afterEach(async () => {
@@ -44,6 +46,61 @@ describe('Retroactive link run with all methods (#279)', () => {
     expect(app.services.graph.relationsOf(e.id).some((r) => r.method === 'date_person' && [r.sourceEntityId, r.targetEntityId].includes(d.id))).toBe(true);
     expect(app.llm.calls.filter((c) => c.schema === 'NoteAnalysis')).toHaveLength(1);
     expect((await app.ok('notifications:list', {})).filter((n) => n.title === 'Verknüpfungsvorschläge')).toHaveLength(1);
+  });
+
+  it('similarity proposals keep the cap per entry and are no audit entries of the user', async () => {
+    app = await createTestApp({ autoLinks: false });
+    app.services.settings.update({ links: { maxProposalsPerEntry: 1 } });
+    const notes: string[] = [];
+    for (const what of ['Mietvertrag', 'Nebenkosten', 'Kündigung', 'Übergabe', 'Kaution', 'Schlüssel'])
+      notes.push((await app.services.notes.create({ title: what, content: flatText(what) })).id);
+    await app.services.jobs.whenIdle();
+
+    await app.ok('links:startRun', {});
+    await app.services.jobs.whenIdle();
+    expect(byMethod().similarity).toBeGreaterThan(0);
+    const openSimilarity = (id: string) =>
+      app.services.graph.relationsOf(id, { statuses: ['proposed'] }).filter((r) => r.method === 'similarity' && r.relationType === 'related_to');
+    for (const id of notes) expect(openSimilarity(id).length).toBeLessThanOrEqual(1);
+    expect((await app.ok('audit:list', { limit: 100 })).filter((e) => e.action === 'relation.link')).toEqual([]);
+  });
+
+  it('inside an agent run a failing pair skips only itself: the other similar entries are still proposed and counted', async () => {
+    app = await createTestApp({ autoLinks: false });
+    for (const what of ['Mietvertrag', 'Nebenkosten', 'Kündigung']) await app.services.notes.create({ title: what, content: flatText(what) });
+    await app.services.jobs.whenIdle();
+    const { graph } = app.services;
+    const linkEntries = graph.linkEntries.bind(graph);
+    let failed = false;
+    vi.spyOn(graph, 'linkEntries').mockImplementation((key, options) => {
+      if (failed) return linkEntries(key, options);
+      failed = true;
+      throw new Error('entry removed meanwhile');
+    });
+
+    const result = await agentRunScope.run({ runId: 'run-1', explicit: false, auditIds: [] }, () => app.services.links.backfill({ maxEntries: 1 }));
+    expect(failed).toBe(true);
+    expect(result.proposed).toBe(1);
+    expect(byMethod().similarity).toBe(1);
+  });
+
+  it('outside an agent run a failing pair skips only itself: the other similar entries are still proposed and counted', async () => {
+    app = await createTestApp({ autoLinks: false });
+    for (const what of ['Mietvertrag', 'Nebenkosten', 'Kündigung']) await app.services.notes.create({ title: what, content: flatText(what) });
+    await app.services.jobs.whenIdle();
+    const { graph } = app.services;
+    const link = graph.link.bind(graph);
+    let failed = false;
+    vi.spyOn(graph, 'link').mockImplementation((key, options) => {
+      if (failed || options?.method !== 'similarity' || key.relationType !== 'related_to') return link(key, options);
+      failed = true;
+      throw new Error('entry removed meanwhile');
+    });
+
+    const result = await app.services.links.backfill({ maxEntries: 1 });
+    expect(failed).toBe(true);
+    expect(result.proposed).toBe(1);
+    expect(byMethod().similarity).toBe(1);
   });
 
   it('continues where it stopped – a note analysed by the language model is not paid for again', async () => {

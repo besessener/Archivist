@@ -54,6 +54,24 @@ test.describe('trash', () => {
     expect(fs.existsSync(note), "the user's original stays").toBe(true);
   });
 
+  test('cancelling the emptying forgets the ticked confirmation', async ({ on, page, workspace }) => {
+    const app = on(page);
+    const trash = app.settings.locators.trash;
+    await trashArchivedNote(app, workspace);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openArchive();
+
+    await trash.empty.click();
+    await trash.confirmCheckbox.click();
+    await expect(trash.confirmEmpty).toBeEnabled();
+    await trash.cancelEmpty.click();
+    await expect(trash.confirmDialog).toBeHidden();
+
+    await trash.empty.click();
+    await expect(trash.confirmCheckbox).not.toBeChecked();
+    await expect(trash.confirmEmpty).toBeDisabled();
+  });
+
   test('emptying says what is lost for good and warns when the database could not be compacted (#206)', async ({ on, page, workspace }, testInfo) => {
     const app = on(page);
     const trash = app.settings.locators.trash;

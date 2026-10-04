@@ -96,7 +96,9 @@ export const OpenItemInput = z.object({
   topic: z.string().nullish(),
   project: z.string().nullish(),
   responsible: z.string().nullish(),
+  responsibleUnknown: z.boolean().optional(),
   dueAt: IsoDate.nullish(),
+  dueUnknown: z.boolean().optional(),
   priority: Priority.default('normal'),
   sourceIds: z.array(z.string()).default([]),
   confidence: Confidence.default(0.9),
@@ -111,7 +113,5 @@ export const isEditableOpenItemStatus = (s: OpenItemStatus): s is EditableOpenIt
 /** Partial update of an open item: only the given fields change (no defaults, see `patchSchema`). */
 export const OpenItemPatch = patchSchema(OpenItemInput).extend({
   status: EditableOpenItemStatus.optional(),
-  responsibleUnknown: z.boolean().optional(),
-  dueUnknown: z.boolean().optional(),
 });
 export type OpenItemPatch = z.infer<typeof OpenItemPatch>;

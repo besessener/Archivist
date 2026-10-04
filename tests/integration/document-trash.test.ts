@@ -123,4 +123,22 @@ describe('trash: deleting with a safety net', () => {
     expect(entries.find((entry) => entry.id === auditId)?.undoable).toBe(false);
     expect(entries.find((entry) => entry.action === 'trash.empty')).toMatchObject({ paths: [trashed], confirmed: true });
   });
+
+  it('keeps listing and emptying a trashed document after thousands of newer audit entries', async () => {
+    const id = await archived(app, { name: 'Alt.txt', content: 'Alter Brief', folder: 'Privat/post' });
+    const { auditId } = await app.ok('documents:trash', { id, confirmed: true });
+    const [trashed] = trashDir()[0]!.files;
+    app.services.database.transaction(() => {
+      for (let index = 0; index < 5001; index++) {
+        const undo = index % 2 === 0 ? { type: 'test_noop', data: {} } : undefined;
+        app.services.audit.log({ action: 'test.change', actor: 'user', trigger: 'manual', confirmed: true, undo });
+      }
+    });
+
+    expect((await app.ok('trash:list')).map((entry) => entry.auditId)).toEqual([auditId]);
+    expect(await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true })).toMatchObject({ deletedFiles: 1, documents: 1 });
+
+    expect(fs.existsSync(trashed!)).toBe(false);
+    expect(await app.ok('trash:list')).toEqual([]);
+  });
 });

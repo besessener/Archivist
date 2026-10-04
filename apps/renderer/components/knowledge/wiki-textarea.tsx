@@ -76,7 +76,8 @@ export function WikiTextarea({
     const el = ref.current;
     if (!link || !el) return;
     const cursor = el.selectionStart;
-    const rest = value.slice(cursor).replace(/^[^\]\n]*\]\]/, '');
+    // drop only the rest of this link; a following `[[` already starts the next one
+    const rest = value.slice(cursor).replace(/^[^[\]\n]*\]\]/, '');
     const next = `${value.slice(0, link.start)}[[${s.name}]]${rest}`;
     pendingCursor.current = link.start + s.name.length + 4;
     onChange(next);

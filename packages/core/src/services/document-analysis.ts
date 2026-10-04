@@ -53,6 +53,16 @@ function llmStatusAfter(row: DocRow, outcome: { usedLlm: boolean; decision: Priv
   return outcome.decision.status === 'excluded' && folderLockOnly ? 'local_only' : (outcome.decision.status ?? 'local_only');
 }
 
+/** Documents a pending or running `document.analyze` or `scanner.analyze` job will analyse. */
+export function documentsWithActiveJobs({ ctx, jobs }: Pick<DocumentDeps, 'ctx' | 'jobs'>): Set<string | undefined> {
+  const covered = new Set(jobs.activePayloads<{ documentId?: string }>('document.analyze').map((p) => p.documentId));
+  const fileIds = jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((p) => p.fileIds ?? []);
+  if (fileIds.length)
+    for (const f of ctx.database.db.select({ documentId: scanFiles.documentId }).from(scanFiles).where(inArray(scanFiles.id, fileIds)).all())
+      covered.add(f.documentId ?? undefined);
+  return covered;
+}
+
 /** Content analysis: extract locally, optionally classify via LLM, propose a target folder – the file is not touched. */
 export class DocumentAnalyzer {
   constructor(private readonly deps: DocumentDeps) {}
@@ -64,14 +74,14 @@ export class DocumentAnalyzer {
   async analyze(id: string, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const row = this.deps.documents.getRow(id);
     if (row.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
-    // Claim the document atomically: an archived or index-only document (e.g. archived while queued) stays untouched.
+    // Claim the document atomically: an archived, index-only or ignored document (e.g. while queued) stays untouched.
     const claimed = this.db
       .update(documents)
       .set({ status: 'analyzing', updatedAt: nowIso() })
-      .where(and(eq(documents.id, id), notInArray(documents.status, ARCHIVED_STATUSES)))
+      .where(and(eq(documents.id, id), notInArray(documents.status, [...ARCHIVED_STATUSES, 'ignored'])))
       .run();
     if (!claimed.changes) {
-      this.deps.ctx.logger.info('documents', 'Analysis skipped: document is already archived', { documentId: id, status: row.status });
+      this.deps.ctx.logger.info('documents', 'Analysis skipped: document is archived or ignored', { documentId: id, status: row.status });
       return skipped();
     }
     this.deps.ctx.events.changed('documents');
@@ -139,7 +149,7 @@ export class DocumentAnalyzer {
   recoverInterruptedAnalyses(): number {
     const stuck = this.db.select({ id: documents.id }).from(documents).where(eq(documents.status, 'analyzing')).all();
     if (!stuck.length) return 0;
-    const covered = this.documentsWithActiveJobs();
+    const covered = documentsWithActiveJobs(this.deps);
     const orphaned = stuck.map((d) => d.id).filter((id) => !covered.has(id));
     if (!orphaned.length) return 0;
     this.db
@@ -150,16 +160,6 @@ export class DocumentAnalyzer {
     this.deps.ctx.logger.info('documents', 'Reset interrupted analyses', { count: orphaned.length });
     this.deps.ctx.events.changed('documents', 'status');
     return orphaned.length;
-  }
-
-  private documentsWithActiveJobs(): Set<string | undefined> {
-    const { jobs } = this.deps;
-    const covered = new Set(jobs.activePayloads<{ documentId?: string }>('document.analyze').map((p) => p.documentId));
-    const fileIds = jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((p) => p.fileIds ?? []);
-    if (fileIds.length)
-      for (const f of this.db.select({ documentId: scanFiles.documentId }).from(scanFiles).where(inArray(scanFiles.id, fileIds)).all())
-        covered.add(f.documentId ?? undefined);
-    return covered;
   }
 
   private knownNames(type: 'topic' | 'project'): string[] {

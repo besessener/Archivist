@@ -54,11 +54,12 @@ function classification(input: string) {
   const vacation = /urlaub/i.test(name);
   const decided = /beschluss/i.test(name);
   const fresh = /neuordner/i.test(name);
+  const budget = /budget/i.test(name);
   return {
     docType: vacation ? 'Urlaubsantrag' : 'Protokoll',
     title: vacation ? 'Urlaubsantrag Juni 2026' : 'Jour Fixe Nordlicht',
     summary: vacation ? 'Urlaubsantrag für den 12.06.2026.' : 'Protokoll des Jour Fixe zum Projekt Nordlicht.',
-    mainTopic: vacation ? null : 'Nordlicht',
+    mainTopic: vacation ? null : budget ? 'Budget' : 'Nordlicht',
     project: vacation ? null : 'Nordlicht',
     persons: vacation ? [] : ['Anna', 'Ben'],
     dates: [{ date: vacation ? '2026-06-12' : '2026-05-04', label: null }],

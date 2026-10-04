@@ -14,6 +14,12 @@ export function initInsights(page: Page) {
       cards: page.getByTestId('contradiction-card'),
       capped: page.getByTestId('contradictions-capped'),
       loadMore: page.getByTestId('contradictions-load-more'),
+      resolve: page.getByTestId('contradiction-resolve'),
+    },
+    resolveDialog: {
+      root: page.getByTestId('confirm-dialog'),
+      supersede: page.getByTestId('contradiction-supersede'),
+      orderUnknown: page.getByTestId('contradiction-order-unknown'),
     },
     buttons: {
       runCheck: page.getByTestId('consistency-run'),

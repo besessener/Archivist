@@ -94,7 +94,7 @@ describe('The agent controls the linking features of Epic #269', () => {
       },
     );
     await app.ok('chat:send', { text: 'Ergänze in der Notiz Baustelle einen Link auf Hausbau und Herr Kalt.' });
-    expect(app.services.graph.getEntity(note.id)!.description).toContain('[[Hausbau]]');
+    expect(app.services.graph.getEntity(note.id)).toMatchObject({ name: 'Baustelle', description: expect.stringContaining('[[Hausbau]]') });
     expect(
       app.services.graph
         .relationsOf(note.id)
@@ -113,6 +113,33 @@ describe('The agent controls the linking features of Epic #269', () => {
       (out) => expect(out).toContain('ist keine Notiz'),
     );
     await app.ok('chat:send', { text: 'Ändere das.' });
+  });
+
+  it('update_note with only new text keeps the title of a note created with only a name', async () => {
+    const note = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Probefahrt' })).entity;
+    app.llm.agent = ask(listNotesAndItems, () => [{ name: 'update_note', args: { note: refOf('Probefahrt'), content: 'Termin am Samstag um 10 Uhr.' } }]);
+    await app.ok('chat:send', { text: 'Schreib in die Notiz Probefahrt den Termin am Samstag um 10 Uhr.' });
+    expect(app.services.graph.getEntity(note.id)).toMatchObject({ name: 'Probefahrt', description: 'Termin am Samstag um 10 Uhr.' });
+  });
+
+  it("update_note never revives a rejected pair; a proposal its [[Name]] takes over is the agent's link of the run", async () => {
+    const rejectedTopic = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Finanzen' })).entity;
+    const proposedTopic = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Steuern' })).entity;
+    const note = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Bank', description: 'Kreditgespräch bei der Bank.' })).entity;
+    const propose = (targetId: string) =>
+      app.services.graph.link({ sourceId: note.id, targetId, relationType: 'relates_to' }, { status: 'proposed', method: 'analysis' })!;
+    const rejected = propose(rejectedTopic.id);
+    app.services.graph.setRelationStatus(rejected.id, { status: 'rejected' });
+    const proposal = propose(proposedTopic.id);
+    app.llm.agent = ask(listNotesAndItems, () => [
+      { name: 'update_note', args: { note: refOf('Kreditgespräch'), content: 'Kreditgespräch bei der Bank zu [[Finanzen]] und [[Steuern]].' } },
+    ]);
+    await app.ok('chat:send', { text: 'Verlinke in der Notiz Bank Finanzen und Steuern.' });
+
+    expect(app.services.graph.getRelation(rejected.id)).toMatchObject({ status: 'rejected', method: 'analysis', origin: rejected.origin, runId: null });
+    const runId = (await app.ok('audit:list', {})).find((e) => e.action === 'note.update')!.runId;
+    expect(runId).toBeTruthy();
+    expect(app.services.graph.getRelation(proposal.id)).toMatchObject({ status: 'confirmed', method: 'wikilink', origin: 'agent', runId });
   });
 
   it('linkage_report, case_overview and the topic tree in list_subjects; resetting learned thresholds always asks', async () => {

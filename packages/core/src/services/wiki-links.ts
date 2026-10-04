@@ -1,5 +1,7 @@
 import type { EntityType, GraphEntity, GraphRelation } from '@archivist/shared';
 import type { AppContext } from '../context';
+import { currentRun } from '../agent/scope';
+import type { AdoptedRelation } from './graph/relations';
 import { normalizeName } from '../util/text';
 import type { KnowledgeGraphService } from './knowledge-graph';
 
@@ -116,13 +118,32 @@ export class WikiLinks {
     return relation ? this.graph.getEntity(relation.targetEntityId) : undefined;
   }
 
-  /** New links are created as the user's own, removed ones deleted; an unresolved name keeps a relation that carries it. */
-  sync(noteId: string, text: string): { linked: number; removed: number; unknown: string[] } {
+  /** The note's relation to the target unless it is a wiki link. */
+  private otherRelation(noteId: string, targetId: string): GraphRelation | undefined {
+    return this.graph
+      .relationsOf(noteId, { types: ['relates_to'] })
+      .find((relation) => relation.sourceEntityId === noteId && relation.targetEntityId === targetId && relation.method !== 'wikilink');
+  }
+
+  /** Takes the note's relation to the target over as a wiki link unless it already is one; returns its former state. */
+  private adopt(link: { noteId: string; targetId: string; name: string }): AdoptedRelation[] {
+    const before = this.otherRelation(link.noteId, link.targetId);
+    if (!before || (before.resolvedByUser && before.status === 'confirmed')) return [];
+    // only the user's own edit overrides their rejection, never an agent run
+    if (before.status === 'rejected' && currentRun()) return [];
+    this.graph.adoptAsWikiLink(before.id, evidenceOf(link.name));
+    return [before];
+  }
+
+  /** Links become the user's own (a name new against `previous` also over a proposal or, outside an agent run, a rejection; `adopted` for undo), removed ones are deleted; an unresolved name keeps its relation. */
+  sync(noteId: string, edit: { text: string; previous?: string }): { linked: number; removed: number; unknown: string[]; adopted: AdoptedRelation[] } {
     const kept = this.current(noteId);
+    const linkedBefore = new Set(wikiNames(edit.previous ?? '').map(normalizeName));
     const keep = new Set<string>();
     const unknown: string[] = [];
+    const adopted: AdoptedRelation[] = [];
     let linked = 0;
-    for (const name of wikiNames(text)) {
+    for (const name of wikiNames(edit.text)) {
       const target = this.resolve(name, noteId);
       if (!target) {
         const previous = keptLinkOf(kept, name);
@@ -130,6 +151,9 @@ export class WikiLinks {
         else unknown.push(name);
         continue;
       }
+      // a link already in the text leaves any other relation to its target as it is, also when an edit is undone
+      if (linkedBefore.has(normalizeName(name)) && this.otherRelation(noteId, target.id)) continue;
+      adopted.push(...this.adopt({ noteId, targetId: target.id, name }));
       const result = this.graph.link(
         { sourceId: noteId, targetId: target.id, relationType: 'relates_to' },
         {
@@ -150,6 +174,6 @@ export class WikiLinks {
       this.graph.deleteRelation(relation.id);
       removed += 1;
     }
-    return { linked, removed, unknown };
+    return { linked, removed, unknown, adopted };
   }
 }

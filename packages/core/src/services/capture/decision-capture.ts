@@ -139,28 +139,28 @@ export class DecisionCapture {
     const duplicate = this.deps.decisions.findDuplicate({ decisionText, topic: fields.topic, project: fields.project });
     // an incomplete draft continues with its follow-up question instead
     if (duplicate && !supersedes && duplicate.missingFields.length === 0) return Promise.resolve(this.duplicateReply(request, duplicate));
-    const created =
-      duplicate ??
-      this.deps.decisions.create(
-        {
-          title: extracted.title?.trim() || undefined,
-          decisionText,
-          decidedAt: normalizeDecisionDate(extracted.decidedAt ?? null) ?? undefined,
-          topic: fields.topic,
-          project: fields.project,
-          participants: extracted.participants ?? [],
-          rationale: extracted.rationale,
-          consequences: extracted.consequences,
-          alternatives: extracted.alternatives ?? [],
-          validFrom: extracted.validFrom,
-          validUntil: extracted.validUntil,
-          unknownFields: [...fields.unknownFields],
-          sourceIds: [],
-          confidence: extracted.confidence ?? 0.8,
-          asDraft: false,
-        },
-        { actor: 'user', trigger: 'chat', status: request.status },
-      );
+    const created = duplicate
+      ? this.fillDraft(duplicate, { extracted, fields, status: request.status })
+      : this.deps.decisions.create(
+          {
+            title: extracted.title?.trim() || undefined,
+            decisionText,
+            decidedAt: normalizeDecisionDate(extracted.decidedAt ?? null) ?? undefined,
+            topic: fields.topic,
+            project: fields.project,
+            participants: extracted.participants ?? [],
+            rationale: extracted.rationale,
+            consequences: extracted.consequences,
+            alternatives: extracted.alternatives ?? [],
+            validFrom: extracted.validFrom,
+            validUntil: extracted.validUntil,
+            unknownFields: [...fields.unknownFields],
+            sourceIds: [],
+            confidence: extracted.confidence ?? 0.8,
+            asDraft: false,
+          },
+          { actor: 'user', trigger: 'chat', status: request.status },
+        );
     const namedAsProject = extracted.topicIsProject === true && fields.topic && fields.project && normalizeName(fields.topic) === normalizeName(fields.project);
     return this.afterChange(request, {
       decision: created,
@@ -169,6 +169,16 @@ export class DecisionCapture {
       supersedesId: supersedes ? (extracted.supersedesId ?? null) : null,
       topicMerge: namedAsProject ? this.proposeTopicMerge(request.conv, fields.project!) : NO_PROPOSALS,
     });
+  }
+
+  /** A re-stated incomplete draft takes the details the new statement names. */
+  private fillDraft(draft: Decision, addition: { extracted: Extracted; fields: DecisionFields; status?: 'unclear' }): Decision {
+    // an unreviewed background capture is no request of the user's, so it does not change the user's draft
+    if (draft.missingFields.length === 0 || addition.status === 'unclear') return draft;
+    const { extracted, fields } = addition;
+    const decidedAt = normalizeDecisionDate(extracted.decidedAt ?? null);
+    const patch: DecisionPatch = { ...(decidedAt ? { decidedAt } : {}), ...detailPatch(draft, { extracted, unknownFields: fields.unknownFields }) };
+    return Object.keys(patch).length ? this.deps.decisions.update(draft.id, { patch, trigger: 'chat' }) : draft;
   }
 
   /** The same decision (text and topic) is already stored: it is not recorded twice. */

@@ -3,7 +3,7 @@ import { abortedError, mapHttpError } from '../../util/llm-errors';
 import { parseRetryAfter } from '../../util/retry-after';
 import { AppError } from '../../util/errors';
 import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
-import { authHeaders, previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
+import { authHeaders, previewOf, rejectedFeatures, replayRaw, requestAbort, uniqueSources, userTimeZone, type AdapterConfig } from './common';
 
 /** Output item of the Responses API as far as the adapter reads it. */
 interface OutputItem {
@@ -129,8 +129,14 @@ async function readJson(response: Response): Promise<ResponseBody> {
   }
 }
 
+/** What reading the answer reports: stream events, and each received chunk as a sign of life. */
+interface ReadHooks {
+  onEvent?: (e: StreamEvent) => void;
+  onActivity: () => void;
+}
+
 /** Reads a server-sent event stream; returns the final response object. */
-async function readStream(response: Response, onEvent?: (e: StreamEvent) => void): Promise<ResponseBody> {
+async function readStream(response: Response, { onEvent, onActivity }: ReadHooks): Promise<ResponseBody> {
   const reader = response.body?.getReader();
   if (!reader) throw new AppError('llm_error', 'Der LLM-Endpunkt lieferte keinen Datenstrom.', { retryable: true });
   const decoder = new TextDecoder();
@@ -156,6 +162,7 @@ async function readStream(response: Response, onEvent?: (e: StreamEvent) => void
   for (;;) {
     const { done, value } = (await reader.read()) as { done: boolean; value?: Uint8Array };
     if (done) break;
+    onActivity();
     // line endings may be CRLF (proxies); events are separated by an empty line
     buffer += decoder.decode(value, { stream: true }).replaceAll('\r\n', '\n');
     let separator: number;
@@ -197,20 +204,25 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
       for (let fallback = 0; ; fallback += 1) {
         const json = JSON.stringify(this.body(req, rejected));
         sent.bytes = Buffer.byteLength(json, 'utf8');
-        const response = await this.post(json, req.signal);
-        if (response.status === 400 && fallback < OPTIONAL.length) {
-          const text = await response.text();
-          const named = rejectedParams(text, rejected);
-          if (!named.length) throw mapHttpError(response.status, text);
-          for (const param of named) rejected.add(param);
-          this.config.warn('Endpoint rejected optional agent parameters – retrying without them', { params: named });
-          continue;
+        if (req.signal?.aborted) throw abortedError();
+        const abort = requestAbort(req.signal, this.config.timeoutMs);
+        try {
+          const response = await this.post(json, abort.signal);
+          abort.keepAlive();
+          if (response.status === 400 && fallback < OPTIONAL.length) {
+            await this.dropRejected(response, rejected);
+            continue;
+          }
+          if (response.status >= 400) throw mapHttpError(response.status, await response.text(), retryAfterOf(response));
+          const result = await this.readResult(response, { onEvent, onActivity: abort.keepAlive });
+          success = true;
+          usage = result.usage;
+          return result;
+        } catch (err) {
+          throw abort.signal.aborted ? abort.error() : err;
+        } finally {
+          abort.dispose();
         }
-        if (response.status >= 400) throw mapHttpError(response.status, await response.text(), retryAfterOf(response));
-        const result = await this.readResult(response, onEvent);
-        success = true;
-        usage = result.usage;
-        return result;
       }
     } catch (err) {
       this.config.fail(err, req.signal);
@@ -231,6 +243,15 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         cacheReadTokens: usage?.cacheReadTokens ?? null,
       });
     }
+  }
+
+  /** Leaves out the optional parameters a 400 answer names as unsupported; any other 400 is an error. */
+  private async dropRejected(response: Response, rejected: Set<string>): Promise<void> {
+    const text = await response.text();
+    const named = rejectedParams(text, rejected);
+    if (!named.length) throw mapHttpError(response.status, text);
+    for (const param of named) rejected.add(param);
+    this.config.warn('Endpoint rejected optional agent parameters – retrying without them', { params: named });
   }
 
   /** The request without the parameters this endpoint rejected. */
@@ -258,12 +279,12 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
     return body;
   }
 
-  private async readResult(response: Response, onEvent?: (e: StreamEvent) => void): Promise<TurnResult> {
+  private async readResult(response: Response, hooks: ReadHooks): Promise<TurnResult> {
     const streamed = (response.headers.get('content-type') ?? '').includes('text/event-stream');
-    const parsed = streamed ? await readStream(response, onEvent) : await readJson(response);
+    const parsed = streamed ? await readStream(response, hooks) : await readJson(response);
     if (parsed.error?.message) throw new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Fehler.', { details: parsed.error.message });
     const result = this.toResult(parsed, streamed);
-    if (!streamed && result.text) onEvent?.({ type: 'text', delta: result.text });
+    if (!streamed && result.text) hooks.onEvent?.({ type: 'text', delta: result.text });
     return result;
   }
 
@@ -296,12 +317,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
     };
   }
 
-  private async post(body: string, signal?: AbortSignal): Promise<Response> {
-    if (signal?.aborted) throw abortedError();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
-    const onAbort = () => controller.abort();
-    signal?.addEventListener('abort', onAbort, { once: true });
+  private async post(body: string, signal: AbortSignal): Promise<Response> {
     try {
       return await this.config.fetchImpl(this.url, {
         method: 'POST',
@@ -311,21 +327,15 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
           ...authHeaders(this.url, this.config.apiKey),
         },
         body,
-        signal: controller.signal,
+        signal,
       });
     } catch (err) {
-      if (signal?.aborted) throw abortedError();
-      if (controller.signal.aborted)
-        throw new AppError('network_error', `Zeitüberschreitung nach ${Math.round(this.config.timeoutMs / 1000)} s – der LLM-Endpunkt antwortet nicht.`, {
-          retryable: true,
-        });
+      // turn() reports an aborted request as cancellation or timeout
+      if (signal.aborted) throw err;
       throw new AppError('network_error', 'Der LLM-Endpunkt ist nicht erreichbar (Netzwerk oder Base URL prüfen).', {
         retryable: true,
         details: (err as Error).message,
       });
-    } finally {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
     }
   }
 }

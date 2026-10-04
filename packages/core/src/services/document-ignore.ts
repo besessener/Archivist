@@ -3,6 +3,9 @@ import { eq } from 'drizzle-orm';
 import { documents } from '../db/schema';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
+import { LLM_ANALYSIS_ATTEMPTS } from './analysis-retry';
+import { documentsWithActiveJobs } from './document-analysis';
+import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from './document-batch';
 import type { DocRow, DocumentDeps } from './document-model';
 import type { UndoService } from './undo';
 
@@ -46,6 +49,7 @@ export class DocumentIgnore {
     if (entry && (await undo.undo(entry.id)).undone) return;
     // no undo entry, or the document changed since: the logged restore to the state its proposal implies
     this.changeStatus(row, { action: 'document.unignore', status: row.proposal ? 'proposed' : 'staged', archiveMode: null });
+    this.requeueAnalysis(id);
   }
 
   private changeStatus(row: DocRow, change: { action: string; status: DocumentStatus; archiveMode: string | null }): string {
@@ -83,7 +87,26 @@ export class DocumentIgnore {
       .set({ status: data.previousStatus, archiveMode: data.previousArchiveMode, updatedAt: nowIso() })
       .where(eq(documents.id, data.id))
       .run();
+    this.requeueAnalysis(data.id);
     this.deps.ctx.events.changed('documents', 'status');
     return 'Status des Dokuments wiederhergestellt.';
+  }
+
+  /** A document back without a pending analysis (skipped, or its result discarded while ignored) is queued for analysis like a single import. */
+  private requeueAnalysis(id: string): void {
+    const row = this.deps.documents.getRow(id);
+    const stranded = row.status === 'analyzing' || (row.status === 'staged' && !row.proposal);
+    if (!stranded || this.analysisQueued(id)) return;
+    if (row.status === 'analyzing') this.db.update(documents).set({ status: 'staged', updatedAt: nowIso() }).where(eq(documents.id, id)).run();
+    this.deps.jobs.enqueue('document.analyze', {
+      label: `Analysiere ${row.originalName}`,
+      payload: { documentId: id, allowLlm: this.deps.privacy.mode() === 'auto' },
+      maxAttempts: LLM_ANALYSIS_ATTEMPTS,
+    });
+  }
+
+  private analysisQueued(id: string): boolean {
+    const batches = this.deps.jobs.activePayloads<AnalyzeBatchPayload>(DOCUMENT_ANALYZE_BATCH_JOB);
+    return documentsWithActiveJobs(this.deps).has(id) || batches.some((batch) => batch.documentIds.includes(id));
   }
 }

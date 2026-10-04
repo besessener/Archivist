@@ -48,6 +48,11 @@ export function initSetupWizard(page: Page) {
       await interactions.connectLlm(baseUrl);
       await interactions.finish(mode);
     },
+    /** Finishes the setup with the LLM step left empty. */
+    completeWithoutLlm: async (mode: PrivacyMode = 'auto') => {
+      await locators.buttons.next.click();
+      await interactions.finish(mode);
+    },
   };
   return pageObject({ root, locators, actions: interactions });
 }

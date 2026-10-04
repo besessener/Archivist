@@ -14,6 +14,8 @@ Im [Agentenmodus](agentenmodus.md#modi) führt der Modus „Auto“ Änderungen 
 
 **Stufe 2 technisch**: Der Agent erzeugt *Vorschläge* (`agent_actions`) mit Begründung, Confidence und betroffenen Objekten. Ausführen kann sie nur `actions:resolve` mit `confirmed: true` – auf IPC-Ebene als `z.literal(true)` erzwungen.
 
+**Häkchen im Bestätigungsdialog**: Ein Dialog, der ein Häkchen verlangt, öffnet sich immer ohne Häkchen – auch nachdem du ihn mit „Abbrechen“ geschlossen hast. Jede zweite Bestätigung setzt du also für genau diesen Dialog neu.
+
 **Stufe 3 im Einzelnen**
 
 - **Umlagern ab 20 Dokumenten**: Karte „Besonders folgenreich“; ausgeführt erst nach einer zweiten, ausdrücklichen Bestätigung im Dialog – ein „ja“ im Chat genügt nicht. Umlagern ist nur für ausdrücklich genannte Dokumente möglich und wird immer vorher bestätigt.

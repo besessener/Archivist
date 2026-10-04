@@ -62,13 +62,13 @@ export class ChatFlow {
     };
   }
 
-  /** The answer to a choice („Welchen Vorschlag meinst du?“, „Meinst du ‚A‘ oder ‚B‘?“ …); null when the message is no answer. */
+  /** The answer to a choice („Welchen Vorschlag meinst du?“, „Meinst du ‚A‘ oder ‚B‘?“ …), then the deferred requests; null when the message is no answer. */
   private async answerChoice(pending: ChoicePending, turn: ChatTurn): Promise<Reply | null> {
     const { conversationId, text, state } = turn;
     switch (pending.kind) {
       case 'proposal_choice': {
         const chosen = this.helpers.dispatcher.proposals.answerChoice(text, pending);
-        return chosen ? this.helpers.dispatcher.proposals.resolve(chosen, state) : null;
+        return chosen ? this.continueDeferred(turn, await this.helpers.dispatcher.proposals.resolve(chosen, state)) : null;
       }
       case 'open_item_choice': {
         const chosen = this.helpers.capture.answerOpenItemChoice(text, pending);
@@ -78,10 +78,14 @@ export class ChatFlow {
         const chosen = chosenSubject(text, pending);
         return chosen ? this.resume(turn, { text: pending.text, intent: { ...pending.intent, topic: chosen, project: null, query: null } }) : null;
       }
-      case 'open_item_duplicate':
-        return this.helpers.capture.answerOpenItemDuplicate({ conv: conversationId, text, state }, pending);
-      case 'supersede_choice':
-        return this.helpers.capture.answerSupersedeChoice({ conv: conversationId, text, state }, pending);
+      case 'open_item_duplicate': {
+        const reply = await this.helpers.capture.answerOpenItemDuplicate({ conv: conversationId, text, state }, pending);
+        return reply ? this.continueDeferred(turn, reply) : null;
+      }
+      case 'supersede_choice': {
+        const reply = this.helpers.capture.answerSupersedeChoice({ conv: conversationId, text, state }, pending);
+        return reply ? this.continueDeferred(turn, reply) : null;
+      }
     }
   }
 
@@ -94,6 +98,7 @@ export class ChatFlow {
       state: { ...turn.state, queue: [] },
       viaLlm: true,
       clarification: null,
+      optional: null,
     });
   }
 
@@ -113,18 +118,8 @@ export class ChatFlow {
   ): Promise<Reply> {
     const first = await this.applySaveChoice(turn, answer);
     const others = answer.analysis.intents.filter((i) => !SAVE_ANSWER_INTENTS.has(i.intent)).map((intent) => ({ text: turn.text, intent }));
-    const after = first.state ?? {};
     if (!others.length) return first;
-    if (after.pending) return { ...first, state: { ...after, queue: [...(after.queue ?? []), ...others] } };
-    const more = await this.helpers.runner.run({
-      conversationId: turn.conversationId,
-      fresh: others,
-      queued: [],
-      state: { ...after, pending: null, queue: [] },
-      viaLlm: answer.viaLlm,
-      clarification: null,
-    });
-    return mergeReplies([first, more], more.state ?? after);
+    return this.runAfter(turn, { first, after: first.state ?? {}, work: others, viaLlm: answer.viaLlm });
   }
 
   /** All recognized requests of the message (each once), then the ones deferred from the last message. */
@@ -148,13 +143,13 @@ export class ChatFlow {
       state: turn.state,
       viaLlm: classified.viaLlm,
       clarification: analysis.clarification ?? null,
+      optional: null,
     });
   }
 
   /** Saves the uncertain decision the chosen way, then resumes the deferred requests. */
   private async applySaveChoice(turn: ChatTurn, answer: { choice: SaveChoice; pending: SavePending }): Promise<Reply> {
     const { choice, pending } = answer;
-    const rest = turn.state.queue ?? [];
     const base: ConvState = { ...turn.state, pending: null, queue: [] };
     const first: Reply =
       choice === 'nothing'
@@ -163,18 +158,38 @@ export class ChatFlow {
             { conversationId: turn.conversationId, text: pending.text, intent: saveChoiceIntent(choice, pending), state: base },
             { viaLlm: true },
           );
-    // the remaining intents of the original message continue with their original text
-    if (first.state?.pending || !rest.length) return { ...first, state: { ...(first.state ?? base), queue: first.state?.pending ? rest : [] } };
+    return this.continueDeferred(turn, first);
+  }
+
+  /** After an answered question the deferred requests run with their original text; a new question keeps them waiting. */
+  private async continueDeferred(turn: ChatTurn, first: Reply): Promise<Reply> {
+    // handlers return only the fields they change, so the rest of the conversation state stays
+    const after: ConvState = { ...turn.state, pending: null, ...first.state, queue: [] };
+    return this.runAfter(turn, { first, after, work: turn.state.queue ?? [], viaLlm: true });
+  }
+
+  /** Runs further requests after the reply to a question; only a new question that is not optional keeps them waiting. */
+  private async runAfter(turn: ChatTurn, step: { first: Reply; after: ConvState; work: QueuedIntent[]; viaLlm: boolean }): Promise<Reply> {
+    const { first, after, work } = step;
+    const optional = optionalQuestion(after.pending);
+    if (!work.length || (after.pending && !optional)) return { ...first, state: { ...after, queue: [...(after.queue ?? []), ...work] } };
+    this.helpers.runner.recordDone(turn.conversationId, { reply: first, state: after });
     const more = await this.helpers.runner.run({
       conversationId: turn.conversationId,
-      fresh: [],
-      queued: rest,
-      state: { ...(first.state ?? base), pending: null, queue: [] },
-      viaLlm: true,
+      fresh: work,
+      queued: [],
+      state: { ...after, pending: null, queue: [] },
+      viaLlm: step.viaLlm,
       clarification: null,
+      optional,
     });
-    return mergeReplies([first, more], more.state ?? base);
+    return mergeReplies([first, more], more.state ?? after);
   }
+}
+
+/** An optional follow-up question (owner/due date, „Thema oder Projekt?“) does not hold up the deferred requests. */
+function optionalQuestion(pending: Pending | null | undefined): Pending | null {
+  return (pending?.kind === 'open_item' || pending?.kind === 'decision') && pending.optional ? pending : null;
 }
 
 /** Asks „Entscheidung, Ereignis, Notiz oder nichts?“ again – with buttons; the deferred requests remain. */

@@ -106,6 +106,13 @@ describe('new open items', () => {
     expect(created).toMatchObject({ description: 'Beschreibung', dueAt: '2026-04-05', priority: 'low', sourceIds: ['doc-1'], confidence: 0.5 });
     expect(newOpenItemRow(OpenItemInput.parse({ title: 'A', description: '  ' }), refs).description).toBeNull();
   });
+
+  it('keeps an unknown owner and due date only while neither is given', () => {
+    const unknown = OpenItemInput.parse({ title: 'A', responsibleUnknown: true, dueUnknown: true });
+
+    expect(newOpenItemRow(unknown, { ...refs, responsiblePersonId: null })).toMatchObject({ responsibleUnknown: true, dueUnknown: true });
+    expect(newOpenItemRow({ ...unknown, dueAt: '2026-04-05' }, refs)).toMatchObject({ responsibleUnknown: false, dueUnknown: false });
+  });
 });
 
 describe('rendering open items', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ASK_USER } from '../../packages/core/src/agent/ask-user';
 import { pendingCalls } from '../../packages/core/src/agent/history-window';
 import { AppError } from '../../packages/core/src/util/errors';
@@ -99,6 +99,33 @@ describe('AgentRunner (#295)', () => {
         ['r1', false],
         ['w1', true],
       ]);
+      expectAllCallsAnswered(t.history);
+    });
+  });
+
+  describe('time limit during a request', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('ends with the summary of what is done instead of an error', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const t = setupRunner(
+        [
+          calls(call('change', { ids: ['a'] }, 'w1')),
+          (request) =>
+            new Promise((resolve) =>
+              request.signal!.addEventListener('abort', () => resolve(new DOMException('This operation was aborted', 'AbortError')), { once: true }),
+            ),
+        ],
+        { limits: { timeoutMs: 600_000 } },
+      );
+      const running = t.runner.run();
+      await vi.advanceTimersByTimeAsync(600_000);
+      const out = await running;
+      expect(out).toMatchObject({ status: 'limit', limitReason: 'time', error: null });
+      expect(out.text).toContain('Ich habe das Zeitlimit dieses Laufs erreicht');
+      expect(out.text).toContain('1 Einträge geändert');
+      expect(out.text).toContain('Soll ich weitermachen?');
+      expect(t.adapter.requests).toHaveLength(2);
       expectAllCallsAnswered(t.history);
     });
   });

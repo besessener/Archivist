@@ -188,6 +188,15 @@ describe('Metadata tools (#305, #291)', () => {
     expect((await app.ok('documents:get', { id })).persons).toEqual([]);
   });
 
+  it('create_subject for a known person under a title variant reports it as existing; undoing the run keeps the person', async () => {
+    const known = await app.ok('knowledge:createEntity', { type: 'person', name: 'Thomas Müller' });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_subject', args: { type: 'person', name: 'Dr. Thomas Müller' } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Leg Dr. Thomas Müller als Person an' });
+    expect(lastToolOutput(app)).toContain('gibt es schon');
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(app.services.graph.getEntity(known.entity.id)?.name).toBe('Thomas Müller');
+  });
+
   it('re-analysis: archived documents are read again in ONE job and keep their assignments (#220)', async () => {
     const id = await archived(app, { name: 'scan.txt', content: 'alter Text', folder: 'Privat/post', topic: 'Post' });
     const file = app.services.documents.get(id).archivePath!;
@@ -288,6 +297,27 @@ describe('Links and cases (#306, #277, #286)', () => {
     expect(app.services.graph.listEntities({ type: 'case' })).toHaveLength(0);
   });
 
+  it('cases: linking more documents than the mass action threshold asks first (create_case, export_bundle)', async () => {
+    await archived(app, { name: 'kaufvertrag.txt', content: 'Kaufvertrag Auto', folder: 'Privat/auto' });
+    await archived(app, { name: 'versicherung.txt', content: 'Versicherung Auto', folder: 'Privat/auto' });
+    app.services.settings.update({ agent: { massActionThreshold: 1 } });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { folder: 'Privat/auto' } }] },
+      {
+        calls: [
+          { name: 'create_case', args: { name: 'Autokauf 2026', entries: ['S1'] } },
+          { name: 'export_bundle', args: { documents: ['S1'], title: 'Auto', saveAsCase: 'Autokauf Mappe' } },
+        ],
+      },
+      { text: 'Bitte bestätigen.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Leg alles zum Autokauf in einen Vorgang und stell eine Mappe zusammen' });
+    const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
+    expect(run.steps.find((s) => s.tool === 'create_case')?.outcome).toBe('proposed');
+    expect(run.steps.find((s) => s.tool === 'export_bundle')?.outcome).toBe('proposed');
+    expect(app.services.graph.listEntities({ type: 'case' })).toHaveLength(0);
+  });
+
   it('related entries come with a reason (#276)', async () => {
     const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'Privat/x', topic: 'Wohnung' });
     const b = await archived(app, { name: 'b.txt', content: 'B', folder: 'Privat/x', topic: 'Wohnung' });
@@ -367,6 +397,33 @@ describe('Settings per chat (#312)', () => {
     expect(await app.ok('scanner:listExclusions', {})).toHaveLength(0);
     await app.ok('agent:undoRun', { runId: lifted.assistantMessage.runId! });
     expect((await app.ok('scanner:listExclusions', {})).map((e) => e.path)).toEqual([inside]);
+  });
+
+  it('excluding an already excluded folder again leaves the user’s exclusion in place after undoing the run', async () => {
+    const dl = path.join(app.home, 'Downloads');
+    fs.mkdirSync(path.join(dl, 'privat'), { recursive: true });
+    await app.ok('scanner:addDirectory', { path: dl, recursive: true });
+    const inside = path.join(fs.realpathSync(dl), 'privat');
+    await app.ok('scanner:exclude', { kind: 'dir', path: inside });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'exclude_from_scan', args: { path: inside } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Schließ Downloads/privat vom Scan aus' });
+    expect(lastToolOutput(app)).toContain('ist bereits vom Scan ausgeschlossen');
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect((await app.ok('scanner:listExclusions', {})).map((e) => e.path)).toEqual([inside]);
+  });
+
+  it('a path the user excluded as a file counts as excluded when the agent names it without a kind', async () => {
+    const dl = path.join(app.home, 'Downloads');
+    fs.mkdirSync(dl, { recursive: true });
+    fs.writeFileSync(path.join(dl, 'geheim.txt'), 'x');
+    await app.ok('scanner:addDirectory', { path: dl, recursive: true });
+    const file = path.join(fs.realpathSync(dl), 'geheim.txt');
+    await app.ok('scanner:exclude', { kind: 'file', path: file });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'exclude_from_scan', args: { path: file } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Schließ Downloads/geheim.txt vom Scan aus' });
+    expect(lastToolOutput(app)).toContain('ist bereits vom Scan ausgeschlossen');
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(await app.ok('scanner:listExclusions', {})).toEqual([expect.objectContaining({ kind: 'file', path: file })]);
   });
 
   it('created folders and removed empty folders can be undone', async () => {

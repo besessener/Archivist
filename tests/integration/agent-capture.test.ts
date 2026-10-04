@@ -126,6 +126,40 @@ describe('Capturing knowledge as agent tools (#307)', () => {
     expect(await app.ok('reminders:list', { status: 'pending' })).toHaveLength(0);
   });
 
+  it('undoing a run keeps notes the user already had: an identical note reused, or another note with the same text', async () => {
+    const same = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Die Heizung macht Geräusche.', description: 'Die Heizung macht Geräusche.' }))
+      .entity;
+    const other = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Baustelle', description: 'Der Statiker kommt am Montag.' })).entity;
+    app.llm.agent = scriptedTurns(
+      {
+        calls: [
+          { name: 'record_note', args: { content: 'Die Heizung macht Geräusche.' } },
+          { name: 'record_note', args: { content: 'Der Statiker kommt am Montag.' } },
+        ],
+      },
+      { text: 'Notiert.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Notiere: Die Heizung macht Geräusche. Und: Der Statiker kommt am Montag.' });
+    expect(app.services.graph.listEntities({ type: 'note' })).toHaveLength(3);
+    const undo = await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(undo.failed).toBe(0);
+    expect(
+      app.services.graph
+        .listEntities({ type: 'note' })
+        .map((n) => n.id)
+        .toSorted(),
+    ).toEqual([same.id, other.id].toSorted());
+  });
+
+  it('record_note saves the note under the given title', async () => {
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'record_note', args: { title: 'WLAN Gäste', content: 'Passwort hängt am Kühlschrank, Router im Flur.' } }] },
+      { text: 'Notiert.' },
+    );
+    await app.ok('chat:send', { text: 'Notiere unter WLAN Gäste: Passwort hängt am Kühlschrank, Router im Flur.' });
+    expect(app.services.graph.listEntities({ type: 'note' }).map((n) => n.name)).toEqual(['WLAN Gäste']);
+  });
+
   it('update and close open items by K-id; closing is undoable', async () => {
     const item = await app.ok('openItems:create', { title: 'Zahnarzt anrufen', priority: 'normal', confidence: 0.9 } as never);
     app.llm.agent = scriptedTurns(

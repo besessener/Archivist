@@ -129,6 +129,7 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
       description: 'Einen Vorgang anlegen (z. B. „Autokauf 2026“) und optional Einträge (D…/K…/S…) zuordnen.',
       schema: z.object({ name: z.string().min(1), description: optText, entries: list.nullish() }),
       risk: 'write',
+      count: (a, ctx) => ctx.refs.resolveMany(a.entries ?? []).ids.length || 1,
       label: (a) => `Lege den Vorgang „${truncate(a.name, 40)}“ an`,
       run: async (a, ctx) => {
         const existed = graph.findByNameOrAlias('case', a.name);

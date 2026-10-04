@@ -102,7 +102,8 @@ export function ScanProposals() {
         toArchiveItem(d, {
           ...edit,
           mode,
-          topic: group.topic ?? edit.topic,
+          // a project group keeps each document's own topic: the group's topic is only its first document's
+          topic: group.project ? edit.topic : (group.topic ?? edit.topic),
           project: group.project ?? edit.project,
         }),
       );

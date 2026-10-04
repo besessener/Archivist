@@ -159,6 +159,7 @@ export class AgentRunner {
       this.rounds += 1;
       const turn = await this.turn(this.rounds, this.options.maxOutputTokens ?? 32_000);
       if (!turn) return this.finish('cancelled', this.lastText);
+      if (turn === 'time') return this.wrapUp('time');
       const next = await this.afterTurn(turn);
       if (next !== 'continue') return next;
     }
@@ -240,7 +241,7 @@ export class AgentRunner {
     pending.note = `Technische Grenze erreicht: ${LIMIT_TEXT[reason]}. Rufe KEINE Werkzeuge mehr auf. Fasse in wenigen Sätzen zusammen, was erledigt ist und was noch fehlt, und biete an, weiterzumachen.`;
     try {
       const turn = await this.turn(this.rounds + 1, 2_000);
-      if (!turn) return '';
+      if (!turn || turn === 'time') return '';
       if (turn.toolCalls.length) this.pendingTool = { role: 'tool', results: unexecuted(turn.toolCalls, 'Nicht ausgeführt: technische Grenze erreicht.') };
       return turn.text;
     } catch (error) {
@@ -262,8 +263,8 @@ export class AgentRunner {
       .join('\n\n');
   }
 
-  /** One model request with counted, bounded retries (#302). Returns null when cancelled. */
-  private async turn(round: number, maxOutputTokens: number): Promise<TurnResult | null> {
+  /** One model request with counted, bounded retries (#302). Returns null when cancelled, 'time' when the run's time ran out during it. */
+  private async turn(round: number, maxOutputTokens: number): Promise<TurnResult | null | 'time'> {
     this.flushTool();
     const { signal } = this.options.ctx;
     for (let attempt = 0; ; attempt += 1) {
@@ -278,7 +279,7 @@ export class AgentRunner {
         return result;
       } catch (err) {
         if (signal.aborted) return null;
-        if (timeout.signal.aborted) throw new AppError('network_error', 'Zeitlimit des Laufs erreicht.');
+        if (timeout.signal.aborted) return 'time';
         if (!isRetryable(err) || attempt >= this.options.maxRetries) throw err;
         this.usage = addUsage(this.usage, { retries: 1 });
         this.options.onUsage?.(this.usage);
