@@ -104,7 +104,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 
 Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nur das Ergebnis. Dokumentzeilen als Fundstelle stehen als Daten markiert mit der D-ID. Nicht freigegebene Dokumente werden übersprungen und gezählt.
 
-- `sum_amounts`: Belegliste mit Datum, Betrag und Fundstelle, Summe und Anzahl; Dokumente ohne erkennbaren Betrag werden genannt.
+- `sum_amounts`: Belegliste mit Datum, Betrag und Fundstelle, Summe und Anzahl; Dokumente ohne erkennbaren Betrag werden genannt. Als Betrag gilt die Gesamtbetragszeile, sonst der größte Betrag im Dokument; dieselbe Erkennung liefert den Betrag in `export_csv` (Spalte `betrag`) und `export_bundle`.
 - `find_gaps`: Lücken in einer Serie nach Monat (`by: month`) oder laufender Nummer (`by: number`); erstes und letztes Dokument der Serie stehen mit der Fundstelle (Zeile mit dem Datum bzw. der Nummer) im Ergebnis.
 - `compare_documents`: vergleicht zeilenweise. Geänderte Zeilen stehen in einer Tabelle „In A (alt) | In B (neu) | Änderung“ (z. B. „Miete 800 € → 850 €“), danach Zeilen nur in A und nur in B. Mit `weitere` wird das erste Dokument mit jedem weiteren verglichen (B1, B2, …). Alle Dokumente müssen freigegeben sein.
 - `find_deadlines`: Fristen und Ablaufdaten mit Rechenweg und Fundstelle; nennt bestehende Erinnerungen.
