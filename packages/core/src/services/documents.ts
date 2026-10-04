@@ -80,7 +80,11 @@ export class DocumentService {
     });
     this.folderImport = new FolderImport(this.deps, this.importer);
     this.indexRepair = new DocumentIndexRepair(services.ctx, this);
-    this.folderPermission = new FolderPermission({ ctx: services.ctx, privacy: services.privacy, reindex: (id) => this.indexDocument(id) });
+    this.folderPermission = new FolderPermission({
+      ctx: services.ctx,
+      privacy: services.privacy,
+      reindexInBackground: (ids) => this.indexDocumentsInBackground(ids),
+    });
     this.rereader = new DocumentRereader(this.deps);
     this.metadata = new DocumentMetadataEditor(this.deps);
     this.metadata.registerUndo(undo);

@@ -12,7 +12,9 @@ export class LlmAnalysisRetry extends AppError {
   }
 }
 
-export const isRetryableLlmError = (err: unknown): err is AppError => err instanceof AppError && err.category === 'llm_error' && err.retryable;
+/** A transient LLM failure a later attempt can fix: rate limit, outage, timeout, unreachable endpoint or its open circuit breaker. */
+export const isRetryableLlmError = (err: unknown): err is AppError =>
+  err instanceof AppError && (err.category === 'llm_error' || err.category === 'network_error') && err.retryable;
 
 /** Whether a failed LLM request of attempt number `attempt` (1-based) is tried again instead of downgraded. */
 export const mayRetryLlm = (err: unknown, attempt: number | undefined): err is AppError =>

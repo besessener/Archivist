@@ -1,6 +1,8 @@
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REINDEX_CONCURRENCY } from '../../packages/core/src/services/reindex-refs';
 import { archived } from '../helpers/agent';
+import { topicNoteClassification } from '../helpers/document-classifications';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -76,6 +78,35 @@ describe('Re-indexing after a merge runs as a bounded job (#224)', () => {
 
     expect(jobsOfType('search.reindex-refs')[0]).toMatchObject({ status: 'succeeded', summary: expect.stringContaining('2 von 3') });
     expect(new Set(indexed)).toEqual(new Set(ids.slice(1)));
+  });
+});
+
+describe('Withdrawing the LLM permission of a scan folder re-indexes its documents bounded (#224)', () => {
+  it('indexes at most two documents at a time and reaches every locked document', async () => {
+    app.llm.on('DocumentClassification', () => topicNoteClassification('Ordner'));
+    const folder = path.join(app.home, 'Downloads');
+    const files = Array.from({ length: 6 }, (_, index) => app.file(`Downloads/datei-${index}.txt`, `Inhalt ${index} der Datei im Ordner Downloads.`));
+    const root = await app.ok('scanner:addDirectory', { path: folder, recursive: true });
+    const { imported } = await app.ok('documents:import', { paths: files });
+    await app.services.jobs.whenIdle();
+    const indexed: string[] = [];
+    let running = 0;
+    let peak = 0;
+    const original = app.services.documents.indexDocument.bind(app.services.documents);
+    vi.spyOn(app.services.documents, 'indexDocument').mockImplementation(async (id) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await sleep(15);
+      await original(id);
+      running -= 1;
+      indexed.push(id);
+    });
+
+    await app.ok('scanner:updateDirectory', { id: root.id, llmAllowed: false });
+    await vi.waitFor(() => expect(indexed).toHaveLength(imported.length));
+
+    expect(peak).toBe(REINDEX_CONCURRENCY);
+    expect(new Set(indexed)).toEqual(new Set(imported.map((document) => document.id)));
   });
 });
 
