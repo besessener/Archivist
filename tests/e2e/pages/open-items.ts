@@ -15,6 +15,9 @@ export function initOpenItems(page: Page) {
       title: page.getByTestId('open-item-title'),
     },
     rows: page.getByTestId('open-item-row'),
+    /** „N von M“ note with „Mehr laden“ while the list holds only the newest open items. */
+    capped: page.getByTestId('open-items-capped'),
+    loadMore: page.getByTestId('open-items-load-more'),
     reminderDialog: page.getByTestId('reminder-dialog'),
     /** „Anstehende Erinnerungen“ on the open-items page itself. */
     upcoming: page.getByRole('main').getByTestId('upcoming-reminders'),

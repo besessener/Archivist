@@ -11,7 +11,7 @@ const longDateFormat = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month:
 function parse(value: string | null | undefined): Date | null {
   if (!value) return null;
   // interpret plain date values as local days (no time zone shift)
-  const match = /^(\parsed{4})-(\parsed{2})-(\parsed{2})$/.exec(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   const parsed = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

@@ -25,12 +25,14 @@ test.describe('re-processing archived documents (#220)', () => {
     await documents.do.open(0);
     await documents.locators.dialog.edit.click();
     await documents.locators.dialog.editTitle.fill('Eigener Titel');
-    await page.getByTestId('doc-save').click();
+    await documents.locators.dialog.save.click();
     await documents.locators.dialog.confirmSave.click();
     await expect(documents.locators.dialog.root).toContainText('Eigener Titel');
 
     await documents.locators.dialog.reprocess.click();
     await expect(documents.locators.reprocessDialog.estimate).toContainText('1 von 1 Dokument');
+    // personal data is masked by default (#349), not only passwords and keys
+    await expect(documents.locators.reprocessDialog.explain).toContainText('persönliche Daten wie IBAN');
     await expectNoSeriousA11yViolations(page, testInfo);
     await documents.locators.reprocessDialog.allowLlm.check();
     await documents.locators.reprocessDialog.start.click();

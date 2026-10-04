@@ -33,6 +33,7 @@ export function initDecisions(page: Page) {
       participants: page.getByTestId('decision-participants'),
       status: page.getByTestId('decision-status'),
       supersededBy: page.getByTestId('decision-superseded-by'),
+      supersededBySearch: form.getByRole('textbox', { name: 'Entscheidungen durchsuchen' }),
     },
     confirmDialog: page.getByTestId('confirm-dialog'),
     rows: page.getByTestId('decision-row'),
@@ -42,11 +43,13 @@ export function initDecisions(page: Page) {
     /** „Vorgeschlagene Entscheidungen“: the page of decisions found in documents, reached from the decisions page. */
     proposed: {
       open: page.getByTestId('decisions-proposed'),
+      heading: page.getByRole('heading', { name: 'Vorgeschlagene Entscheidungen' }),
       back: page.getByTestId('proposed-decisions-back'),
       cards: page.getByTestId('proposed-decision'),
       more: page.getByTestId('proposed-decisions-more'),
     },
     detail: page.getByTestId('decision-detail'),
+    supersededByNote: page.getByTestId('decision-detail').getByTestId('decision-superseded-by-note'),
   };
   const row = (text: string) => locators.rows.filter({ hasText: text });
   const interactions = {

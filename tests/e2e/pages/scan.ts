@@ -32,6 +32,14 @@ export function initScan(page: Page) {
       confirm: page.getByTestId('scan-analyze-all-confirm'),
       progress: page.getByTestId('scan-analyze-all-progress'),
     },
+    /** „Alle N Vorschläge archivieren“ above the scan proposals: one confirmation with the target structure (#228). */
+    archiveAll: {
+      open: page.getByTestId('scan-archive-all-open'),
+      preview: page.getByTestId('archive-all-preview'),
+      folders: page.getByTestId('archive-all-folders'),
+      reviewed: page.getByTestId('confirm-dialog-checkbox'),
+      confirm: page.getByTestId('archive-all-confirm'),
+    },
   };
   const fileRow = (name: string) => locators.fileRows.filter({ hasText: name });
   const interactions = {

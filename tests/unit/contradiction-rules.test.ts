@@ -159,6 +159,8 @@ describe('negations in the polarity (#179)', () => {
     'Wir haben die Bestellung aufgegeben',
     'Wir haben zwei Entwickler eingestellt',
     'Wir geben einen Auftrag für den Umbau auf',
+    'Wir geben einen neuen Auftrag auf.',
+    'Wir haben zwei große neue Aufträge aufgegeben',
   ])('does not read hiring or ordering in „%s“ as stop', (text) => {
     expect(polarity(text)).toBeNull();
   });
@@ -173,6 +175,7 @@ describe('negations in the polarity (#179)', () => {
     'Wir stellen die Anzeige ein',
     'Wir stoppen die Bestellung und stellen einen Entwickler ein',
     'Wir stellen einen Entwickler ein und beenden den Auftrag',
+    'Wir geben den neuen Auftrag auf',
   ])('keeps „%s“ as stop', (text) => {
     expect(polarity(text)).toBe('stop');
   });

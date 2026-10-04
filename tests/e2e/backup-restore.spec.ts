@@ -60,7 +60,7 @@ test.describe('backups', () => {
     await expectNoSeriousA11yViolations(page, testInfo);
     await backups.beforeRestoreRow.getByTestId('backup-restore').click();
     await expect(backups.confirmRestore).toBeVisible();
-    await expect(page.getByRole('alertdialog').or(page.getByRole('dialog'))).toContainText('Stand vor der Wiederherstellung vom');
+    await expect(backups.confirmDialog).toContainText('Stand vor der Wiederherstellung vom');
     await backups.confirmRestore.click();
 
     await expect(backups.restartNotice).toBeVisible();

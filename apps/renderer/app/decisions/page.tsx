@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { DECISION_STATUS_LABELS } from '@/lib/labels';
 import { useDebounced } from '@/lib/use-debounced';
-import { usePagedQuery, usePageWindow } from '@/lib/use-page-window';
+import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import type { DecisionRecord } from '@/lib/types';
 
@@ -30,7 +30,7 @@ function DecisionsInner() {
   const query = useDebounced(search.trim(), 300);
   const filter = status ? { status } : {};
   const paging = usePageWindow(status);
-  const byFilter = usePagedQuery('decisions:list', filter, paging.window, { scopes: ['decisions'], enabled: !query });
+  const byFilter = useWindowedQuery('decisions:list', { filter, window: paging.window, scopes: ['decisions'], enabled: !query });
   const total = useQuery('decisions:count', filter, { scopes: ['decisions'], enabled: !query });
   const bySearch = useQuery('decisions:search', { query: query || 'x', limit: 50 }, { scopes: ['decisions'], enabled: !!query });
   const active = query ? bySearch : byFilter;

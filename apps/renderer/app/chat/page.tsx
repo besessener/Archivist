@@ -11,7 +11,7 @@ import { ErrorNote } from '@/components/common/states';
 import { useApp } from '@/lib/app-context';
 import { chatRequests, mergeChatMessages, requestsFor } from '@/lib/chat-requests';
 import { call } from '@/lib/ipc';
-import { usePagedQuery, usePageWindow } from '@/lib/use-page-window';
+import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import { useRun } from '@/lib/use-run';
@@ -37,9 +37,11 @@ export default function ChatPage() {
 
   const conversations = useQuery('chat:conversations', {}, { scopes: ['chat'] });
   const aiNotice = aiNoticeFor(useSettings());
-  // the newest messages load first; „Frühere Nachrichten laden“ grows the window backwards
+  // the newest messages load first; „Mehr laden“ grows the window backwards
   const paging = usePageWindow(conversationId ?? '');
-  const history = usePagedQuery('chat:history', conversationId ? { conversationId } : undefined, paging.window, {
+  const history = useWindowedQuery('chat:history', {
+    filter: conversationId ? { conversationId } : undefined,
+    window: paging.window,
     direction: 'backward',
     scopes: ['chat'],
     enabled: conversationId !== null,

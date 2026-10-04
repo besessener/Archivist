@@ -2,11 +2,12 @@ import type { AuditEntry, AuditVerification } from '@archivist/shared';
 import { and, asc, desc, eq, inArray, isNotNull, like, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import type { Db } from '../db/database';
-import { appState, auditLog, entities } from '../db/schema';
+import { auditLog, entities } from '../db/schema';
 import type { ArchivistJson } from '../util/json';
 import { newId, nowIso } from '../util/ids';
 import { AppError } from '../util/errors';
 import { currentRun } from '../agent/scope';
+import type { AppStateService } from './app-state';
 import { ANCHOR_KEY, chainHash, parseAnchor, verifyAuditLog, type ChainAnchor } from './audit-chain';
 
 export interface AuditInput {
@@ -31,7 +32,10 @@ export type AuditListener = (entry: AuditInput & { id: string; runId: string | n
 export class AuditService {
   private readonly listeners: AuditListener[] = [];
 
-  constructor(private readonly ctx: AppContext) {}
+  constructor(
+    private readonly ctx: AppContext,
+    private readonly appState: AppStateService,
+  ) {}
 
   onLog(listener: AuditListener): void {
     this.listeners.push(listener);
@@ -82,7 +86,7 @@ export class AuditService {
     this.ctx.database.db.transaction((tx) => {
       const prevHash = this.newestHash(tx);
       const hash = chainHash(fixed, prevHash);
-      const anchor = this.readAnchor(tx);
+      const anchor = this.readAnchor();
       tx.insert(auditLog)
         .values({
           ...fixed,
@@ -95,7 +99,7 @@ export class AuditService {
         })
         .run();
       // without an anchor yet (log from before it) the current rows are the baseline
-      this.writeAnchor(tx, { count: anchor ? anchor.count + 1 : this.chainedCount(tx), hash });
+      this.writeAnchor({ count: anchor ? anchor.count + 1 : this.chainedCount(tx), hash });
     });
     this.ctx.events.changed('audit');
     for (const listener of this.listeners) {
@@ -119,14 +123,12 @@ export class AuditService {
     );
   }
 
-  private readAnchor(db: Pick<Db, 'select'>): ChainAnchor | null {
-    return parseAnchor(db.select().from(appState).where(eq(appState.key, ANCHOR_KEY)).get()?.value ?? null);
+  private readAnchor(): ChainAnchor | null {
+    return parseAnchor(this.appState.get(ANCHOR_KEY));
   }
 
-  private writeAnchor(db: Pick<Db, 'insert'>, anchor: ChainAnchor): void {
-    const value = JSON.stringify(anchor);
-    const updatedAt = nowIso();
-    db.insert(appState).values({ key: ANCHOR_KEY, value, updatedAt }).onConflictDoUpdate({ target: appState.key, set: { value, updatedAt } }).run();
+  private writeAnchor(anchor: ChainAnchor): void {
+    this.appState.set(ANCHOR_KEY, JSON.stringify(anchor));
   }
 
   private chainedCount(db: Pick<Db, 'select'>): number {
@@ -139,26 +141,22 @@ export class AuditService {
     );
   }
 
-  /** Baselines an existing chain that has no anchor (log from before it, or a missing app_state row); a missing anchor can still be re-baselined by whoever removes it. */
+  /** Baselines an existing chain that has no anchor (log from before it, or a missing app_state row) at startup; a missing anchor can still be re-baselined by whoever removes it. */
   seedAnchor(): void {
     const db = this.ctx.database.db;
-    if (this.readAnchor(db)) return;
+    if (this.readAnchor()) return;
     const hash = this.newestHash(db);
-    if (hash) this.writeAnchor(db, { count: this.chainedCount(db), hash });
+    if (hash) this.writeAnchor({ count: this.chainedCount(db), hash });
   }
 
-  /** Checks the chain and the separate anchor: nothing changed, removed, inserted or cut off since written; pre-chain entries are not covered. */
+  /** Checks the chain and the separate anchor: nothing changed, removed, inserted or cut off since written; pre-chain entries are not covered, nothing is written. */
   verify(): AuditVerification {
-    const db = this.ctx.database.db;
-    this.seedAnchor();
-    return verifyAuditLog(
-      db
-        .select()
-        .from(auditLog)
-        .orderBy(asc(sql`rowid`))
-        .all(),
-      this.readAnchor(db),
-    );
+    const rows = this.ctx.database.db
+      .select()
+      .from(auditLog)
+      .orderBy(asc(sql`rowid`))
+      .all();
+    return verifyAuditLog(rows, this.readAnchor());
   }
 
   /** Titles of the entries the rows concern: the graph node's name, else the title the entry itself recorded (e.g. of a deleted one). */

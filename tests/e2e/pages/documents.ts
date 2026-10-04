@@ -33,6 +33,8 @@ export function initDocuments(page: Page) {
       confirmSave: page.getByTestId('confirm-dialog-confirm'),
       save: page.getByTestId('doc-save'),
       reprocess: page.getByTestId('doc-reprocess'),
+      /** What the analysis did not see of a long document (#190). */
+      coverage: page.getByTestId('document-dialog').getByTestId('document-coverage'),
       /** New metadata proposed for the archived document (#220). */
       reanalysis: {
         proposal: page.getByTestId('reanalysis-proposal'),
@@ -47,6 +49,8 @@ export function initDocuments(page: Page) {
       root: page.getByTestId('reprocess-dialog'),
       reread: page.getByTestId('reprocess-reread'),
       estimate: page.getByTestId('bulk-consent-estimate'),
+      /** What the consent sends and what it masks. */
+      explain: page.getByTestId('bulk-consent-explain'),
       allowLlm: page.getByTestId('reprocess-llm'),
       start: page.getByTestId('reprocess-start'),
     },

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ArchiveMaintenance } from '../../packages/core/src/services/archive-maintenance';
 import { inInbox } from '../helpers/agent';
 import { classification } from '../helpers/document-classifications';
 import { createTestApp, type TestApp } from '../helpers/harness';
@@ -212,19 +212,33 @@ describe('„Alle Vorschläge archivieren“ archives what the preview showed (#
     expect(jobOf()).toMatchObject({ status: 'succeeded', summary: '2 archiviert, 0 übersprungen, 0 fehlgeschlagen, 0 Konflikte.' });
   });
 
-  it('cleans the inbox once at the end of the run instead of before every batch', async () => {
-    await fillInbox(2);
-    const cleanup = vi.spyOn(ArchiveMaintenance.prototype, 'cleanupInbox');
-    const options = { confirmed: true, approveNewCategories: [], confirmMove: false };
+  it('leaves a pending inbox copy to the end of the run instead of cleaning it before every batch', async () => {
+    const [pendingId] = await fillInbox(3);
+    const staged = app.services.documents.getRow(pendingId!).stagedPath!;
+    const unlink = fsp.unlink.bind(fsp);
+    const lock = vi.spyOn(fsp, 'unlink').mockImplementation(async (file) => {
+      if (String(file) === staged) throw Object.assign(new Error('EBUSY: simulated'), { code: 'EBUSY' });
+      return unlink(file);
+    });
+    const items = [{ documentId: pendingId, mode: 'copy', categoryPath: 'Privat/ordner1', topic: null }];
+    await app.ok('documents:archive', { items, confirmed: true, approveNewCategories: [], confirmMove: false } as never);
+    lock.mockRestore();
+    const pendingAroundBatches: boolean[] = [];
+    const execute = app.services.archive.execute.bind(app.services.archive);
+    const batches = vi.spyOn(app.services.archive, 'execute').mockImplementation(async (batch, options) => {
+      pendingAroundBatches.push(fs.existsSync(staged));
+      const result = await execute(batch, options);
+      pendingAroundBatches.push(fs.existsSync(staged));
+      return result;
+    });
 
-    await app.services.archive.execute([], { ...options, inboxCleanup: 'later' });
-    expect(cleanup).not.toHaveBeenCalled();
-    await app.services.archive.execute([], options);
-    expect(cleanup).toHaveBeenCalledTimes(1);
-    cleanup.mockClear();
     await archiveAll();
     await app.services.jobs.whenIdle();
+    batches.mockRestore();
 
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(jobOf()).toMatchObject({ status: 'succeeded', summary: '2 archiviert, 0 übersprungen, 0 fehlgeschlagen, 0 Konflikte.' });
+    expect(pendingAroundBatches, 'the copy is still there before and after the batch').toEqual([true, true]);
+    expect(fs.existsSync(staged), 'removed once the run is done').toBe(false);
+    expect(app.services.documents.getRow(pendingId!).stagedPath).toBeNull();
   });
 });

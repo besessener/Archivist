@@ -1,16 +1,17 @@
+import { EXTRACTION_LIMITS } from '@archivist/shared';
 import type { DocRecord } from '@/lib/types';
 
 type Proposal = NonNullable<DocRecord['proposal']>;
 
 const count = (value: number) => value.toLocaleString('de-DE');
 
-/** What the analysis did not see of a long document – in words, so a missing decision is not mistaken for none in the text (#190). */
-const COVERAGE_LIMIT_NOTE = `Das Dokument ist länger als die Grenze beim Einlesen (${count(400_000)} Zeichen, 300 PDF-Seiten bzw. 40 Seiten mit Texterkennung). Der Rest wurde nicht erfasst und lässt sich nicht durchsuchen.`;
+const COVERAGE_LIMIT_NOTE = `Das Dokument ist länger als die Grenze beim Einlesen (${count(EXTRACTION_LIMITS.textChars)} Zeichen, ${EXTRACTION_LIMITS.pdfPages} PDF-Seiten bzw. ${EXTRACTION_LIMITS.ocrPages} Seiten mit Texterkennung). Der Rest wurde nicht erfasst und lässt sich nicht durchsuchen.`;
 
 /** True when the extraction stopped before the end of the document, so its text is incomplete. */
 export const isIncompletelyRead = (proposal: Proposal | null | undefined): boolean =>
   Boolean(proposal?.coverage && (proposal.coverage.extractionTruncated || (proposal.coverage.ocrPagesSkipped ?? 0) > 0));
 
+/** What the analysis did not see of a long document – in words, so a missing decision is not mistaken for none in the text (#190). */
 export function coverageNotes(proposal: Proposal): string[] {
   const { coverage } = proposal;
   if (!coverage) return [];
@@ -19,7 +20,7 @@ export function coverageNotes(proposal: Proposal): string[] {
   const ocrPagesSkipped = coverage.ocrPagesSkipped ?? 0;
   if (ocrPagesSkipped > 0) {
     notes.push(
-      `Bei ${ocrPagesSkipped === 1 ? '1 gescannten Seite' : `${count(ocrPagesSkipped)} gescannten Seiten`} ohne Textebene wurde die Texterkennung nicht ausgeführt (Grenze: 40 Seiten pro Dokument). Ihr Text fehlt und lässt sich nicht durchsuchen.`,
+      `Bei ${ocrPagesSkipped === 1 ? '1 gescannten Seite' : `${count(ocrPagesSkipped)} gescannten Seiten`} ohne Textebene wurde die Texterkennung nicht ausgeführt (Grenze: ${EXTRACTION_LIMITS.ocrPages} Seiten pro Dokument). Ihr Text fehlt und lässt sich nicht durchsuchen.`,
     );
   }
   if (proposal.analyzedBy === 'llm' && coverage.llmChars < coverage.textChars) {

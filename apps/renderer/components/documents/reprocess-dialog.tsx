@@ -39,7 +39,9 @@ export function ReprocessDialog({ ids, onClose, onStarted }: { ids: string[]; on
         {data && (
           <div className="flex flex-col gap-3">
             {data.total < ids.length && (
-              <Notice tone="warning">{plural(ids.length - data.total, ['Dokument ist', 'Dokumente sind'])} nicht archiviert und wird übersprungen.</Notice>
+              <Notice tone="warning">
+                {plural(ids.length - data.total, ['Dokument ist nicht archiviert und wird', 'Dokumente sind nicht archiviert und werden'])} übersprungen.
+              </Notice>
             )}
             <CheckboxField
               checked={reread}

@@ -1,5 +1,4 @@
 import { ActionService } from '../services/actions';
-import { AppStateService } from '../services/app-state';
 import { ArchiveService } from '../services/archive';
 import { ArchiveRootService } from '../services/archive-root';
 import { CategoryMigrationService } from '../services/category-migration';
@@ -44,7 +43,7 @@ export type WiredServices = BaseServices & DomainServices & LinkingServices;
 
 /** Records, archive, consistency checks and chat, in dependency order. */
 export function createDomainServices(base: BaseServices) {
-  const { ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo, reminders, self } = base;
+  const { ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo, reminders, self, appState } = base;
   const documents = new DocumentService({ ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo });
   const reprocessing = new DocumentReprocessing({ ctx, documents, jobs, notifications, privacy, settings, llm });
   const importAnalysis = new ImportAnalysis({ ctx, jobs, privacy, settings, llm });
@@ -66,7 +65,6 @@ export function createDomainServices(base: BaseServices) {
   const archiveAll = new ArchiveAll({ ctx, archive, jobs, notifications, scanDocumentIds: () => scanner.proposals().flatMap((group) => group.documentIds) });
   const timeline = new TimelineService(ctx);
   const entityDuplicates = new EntityDuplicateCheck({ ctx, insights, actions, llm, privacy });
-  const appState = new AppStateService(ctx);
   const consistency = new ConsistencyService({
     ctx,
     settings,
@@ -140,7 +138,6 @@ export function createDomainServices(base: BaseServices) {
     scanner,
     timeline,
     consistency,
-    appState,
     backup,
     chat,
     capture,

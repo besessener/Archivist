@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
@@ -84,6 +85,30 @@ test.describe('analysing all new files at once (#228)', () => {
     await expect(notifications.item('Analyse abgeschlossen')).toHaveAttribute('data-read', 'true');
     await notifications.do.close();
     await expect(scan.locators.analyzeAll.button).toBeHidden();
+  });
+
+  test('archives all proposals of the scan after one confirmation and keeps the originals', async ({ on, page, workspace }, testInfo) => {
+    const { scan } = on(page);
+    await scan.do.openAnalyzeAll();
+    await scan.locators.analyzeAll.allowLlm.check();
+    await scan.locators.analyzeAll.confirm.click();
+    await expect(scan.locators.analyzedRows).toHaveCount(3, { timeout: 30_000 });
+
+    await scan.locators.archiveAll.open.click();
+    await expect(scan.locators.archiveAll.preview).toContainText('Deine Originale bleiben unverändert');
+    await expect(scan.locators.archiveAll.folders).toContainText('Arbeit/Projekte/Nordlicht/');
+    await expect(scan.locators.archiveAll.folders).toContainText('3 Dokumente');
+    await expect(scan.locators.archiveAll.confirm, 'needs the review confirmation first').toBeDisabled();
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await scan.locators.archiveAll.reviewed.check();
+    await scan.locators.archiveAll.confirm.click();
+
+    const archived = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht');
+    await expect(async () => {
+      expect(fs.readdirSync(archived).sort()).toEqual(['akte-a.txt', 'akte-b.txt', 'akte-c.txt']);
+    }).toPass({ timeout: 30_000 });
+    await expect(scan.locators.archiveAll.open).toBeHidden();
+    for (const name of ['a', 'b', 'c']) expect(fs.existsSync(path.join(workspace.downloads, `akte-${name}.txt`)), 'the original is kept').toBe(true);
   });
 
   test('sends nothing to the LLM without the consent', async ({ llm, on, page }) => {

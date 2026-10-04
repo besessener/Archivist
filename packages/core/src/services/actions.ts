@@ -168,7 +168,7 @@ export class ActionService {
   }
 
   private resolveSettledNotifications(): void {
-    resolveSettledNotifications(this.deps.notifications, (id) => this.get(id).status);
+    resolveSettledNotifications(this.deps.notifications, (ids) => this.getMany(ids));
   }
 
   private reject(action: StoredAgentAction): StoredAgentAction {

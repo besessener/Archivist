@@ -1,10 +1,11 @@
 import fsp from 'node:fs/promises';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { EXTRACTION_LIMITS } from '@archivist/shared';
 import { ocrOptionsFor, recognizeImage } from './ocr';
 import { cleanText, errorMessage, MAX_TEXT_CHARS, type ParsedDocument, type ParseOptions } from './parsed-document';
 
-const MAX_PDF_PAGES = 300;
-const MAX_OCR_PAGES = 40;
+const MAX_PDF_PAGES = EXTRACTION_LIMITS.pdfPages;
+const MAX_OCR_PAGES = EXTRACTION_LIMITS.ocrPages;
 /** Below this many characters a page (or a whole PDF) counts as empty, e.g. a scan without a text layer. */
 const MIN_TEXT_CHARS = 20;
 

@@ -23,8 +23,12 @@ export const AuditEntry = z.object({
 });
 export type AuditEntry = z.infer<typeof AuditEntry>;
 
-/** Audit check result: first non-fitting chained entry (null: intact); `truncated` = entries missing at either end. */
-export const AuditVerification = z.object({ checked: z.number().int(), brokenEntryId: z.string().nullable(), truncated: z.boolean() });
+const ChainCheck = { checked: z.number().int(), truncated: z.boolean() };
+/** Audit check result: an intact chain, or the first chained entry that no longer fits; `truncated` = entries missing at either end. */
+export const AuditVerification = z.discriminatedUnion('chain', [
+  z.object({ chain: z.literal('intact'), ...ChainCheck }),
+  z.object({ chain: z.literal('broken'), brokenEntryId: z.string(), ...ChainCheck }),
+]);
 export type AuditVerification = z.infer<typeof AuditVerification>;
 
 export const LlmTransmission = z.object({

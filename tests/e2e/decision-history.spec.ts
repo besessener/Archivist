@@ -1,5 +1,5 @@
 import { expect, test } from './fixture';
-import { cutOffNewestAuditEntry } from './helpers';
+import { alterNewestAuditEntry, cutOffNewestAuditEntry } from './helpers';
 
 test.describe('decisions: history, deleting and the change log', () => {
   test.beforeEach(async ({ llm, on, page }) => {
@@ -22,7 +22,7 @@ test.describe('decisions: history, deleting and the change log', () => {
     const entry = settings.locators.audit.row('Entscheidung gelöscht');
     await expect(entry).toContainText('Versehentlich angelegt');
     await expect(settings.locators.audit.chainOk).toBeVisible();
-    await entry.getByTestId('audit-undo').click();
+    await settings.locators.audit.undoOf('Entscheidung gelöscht').click();
     await settings.locators.audit.confirmUndo.click();
     await expect(settings.locators.audit.row('Rückgängig: Entscheidung gelöscht')).toBeVisible();
 
@@ -43,6 +43,35 @@ test.describe('decisions: history, deleting and the change log', () => {
     await settings.do.openAudit();
 
     await expect(settings.locators.audit.chainBroken).toContainText('Es fehlen Einträge am Anfang oder Ende');
+  });
+
+  test('the change log shows the newest 100 entries and „Mehr laden“ adds the older ones', async ({ on, page }) => {
+    const { navigation, settings, timeline } = on(page);
+    const events = Array.from({ length: 105 }, (_, index) => ({ title: `Termin ${String(index + 1).padStart(3, '0')}`, occurredAt: '2026-09-01' }));
+    await timeline.do.seedEvents(events);
+    await navigation.do.open('settings');
+    await settings.do.openAudit();
+
+    await expect(settings.locators.audit.rows).toHaveCount(100);
+    await expect(settings.locators.audit.row('Termin 105')).toHaveCount(1);
+    await expect(settings.locators.audit.row('Termin 001')).toHaveCount(0);
+
+    await settings.locators.audit.more.click();
+
+    await expect(settings.locators.audit.row('Termin 001')).toHaveCount(1);
+    await expect(settings.locators.audit.more).toBeHidden();
+  });
+
+  test('names a changed entry of the change log by its time and action, not by its id', async ({ on, page, workspace }) => {
+    const { decisions: d, navigation, settings } = on(page);
+    await d.do.createDraft('Wird verändert');
+    alterNewestAuditEntry(workspace.dataDir);
+    await navigation.do.open('settings');
+    await settings.do.openAudit();
+
+    await expect(settings.locators.audit.chainBroken).toContainText('erster betroffener Eintrag:');
+    await expect(settings.locators.audit.chainBroken).toContainText('„Entscheidung angelegt“');
+    await expect(settings.locators.audit.chainBroken).not.toContainText(/[0-9a-f]{8}-[0-9a-f]{4}-/);
   });
 
   test('a valid decision can be revoked but not deleted', async ({ on, page }) => {
@@ -68,7 +97,7 @@ test.describe('decisions: history, deleting and the change log', () => {
     await expect(edit).toContainText('Entscheidung: Wir nutzen Postgres. → Wir nutzen SQLite.');
     await expect(edit).toContainText('Status: Gültig → Bestätigt');
     await expect(d.locators.history.entries.filter({ hasText: 'Entscheidung angelegt' })).toBeVisible();
-    await expect(page.getByTestId('decision-detail')).toContainText('Änderungen seit der Entscheidung');
+    await expect(d.locators.detail).toContainText('Änderungen seit der Entscheidung');
   });
 
   test('a replaced decision names its successor; a draft cannot replace it', async ({ on, page }) => {
@@ -89,6 +118,6 @@ test.describe('decisions: history, deleting and the change log', () => {
     await expect(d.locators.successor).toContainText('ersetzt durch Wir nutzen SQLite.');
     await d.locators.tabs.history.click();
     await expect(d.locators.history.entries.filter({ hasText: 'Entscheidung als ersetzt markiert' })).toBeVisible();
-    await expect(d.locators.detail.getByTestId('decision-superseded-by-note')).toContainText('Wir nutzen SQLite.');
+    await expect(d.locators.supersededByNote).toContainText('Wir nutzen SQLite.');
   });
 });

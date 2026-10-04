@@ -26,4 +26,13 @@ describe('Sync-folder warning covers the data folder too (#207)', () => {
     app.services.settings.update({ archiveRoot: path.join(outsideSync(), 'Dropbox', 'Archiv') });
     expect(await app.ok('app:getStatus', {})).toMatchObject({ archiveSyncProvider: 'Dropbox', dataSyncProvider: null });
   });
+
+  it('tells whether database, settings and backups lie in the data folder too', async () => {
+    app = await createTestApp();
+    expect((await app.ok('app:getStatus', {})).appStateInDataRoot).toBe(true);
+    await app.cleanup();
+
+    app = await createTestApp({ separateAppData: true });
+    expect((await app.ok('app:getStatus', {})).appStateInDataRoot).toBe(false);
+  });
 });

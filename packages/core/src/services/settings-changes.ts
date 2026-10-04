@@ -6,11 +6,15 @@ export interface SettingsChanges {
 }
 
 /** The settings that differ, as dotted paths (`privacy.mode`) with their value before and after; empty when nothing changed. */
-export function settingsChanges(before: unknown, after: unknown, path = ''): SettingsChanges {
+export function settingsChanges(before: unknown, after: unknown): SettingsChanges {
+  return changesBelow('', { before, after });
+}
+
+function changesBelow(path: string, { before, after }: { before: unknown; after: unknown }): SettingsChanges {
   const changes: SettingsChanges = { before: {}, after: {} };
   if (isPlainObject(before) && isPlainObject(after)) {
     for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
-      const nested = settingsChanges(before[key], after[key], path ? `${path}.${key}` : key);
+      const nested = changesBelow(path ? `${path}.${key}` : key, { before: before[key], after: after[key] });
       Object.assign(changes.before, nested.before);
       Object.assign(changes.after, nested.after);
     }

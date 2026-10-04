@@ -8,8 +8,10 @@ export const AppStatus = z.object({
   archiveRoot: z.string(),
   /** Cloud-sync service whose folder holds the archive root (OneDrive, Dropbox …), if any. */
   archiveSyncProvider: z.string().nullable(),
-  /** Cloud-sync service whose folder holds the data root (inbox, quarantine, trash, database), if any. */
+  /** Cloud-sync service whose folder holds the data root (inbox, quarantine, trash), if any. */
   dataSyncProvider: z.string().nullable(),
+  /** Database, settings and backups lie in the data root too (ARCHIVIST_DATA_DIR) instead of the per-user application data folder. */
+  appStateInDataRoot: z.boolean(),
   platform: z.string(),
   setupCompleted: z.boolean(),
   llm: z.object({

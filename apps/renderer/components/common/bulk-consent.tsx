@@ -23,6 +23,7 @@ export function BulkConsent({
 }) {
   const { settings } = useSettings();
   const mode = settings?.privacy.llmMode ?? 'confirm';
+  const masksPersonal = settings?.privacy.maskPersonalData ?? true;
   const rest = estimate.total - estimate.llmEligible;
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -31,8 +32,11 @@ export function BulkConsent({
       </p>
       <Notice tone="warning" title="Was bei einer KI-Analyse gesendet wird" data-testid="bulk-consent-explain">
         <p>
-          Der gespeicherte oder extrahierte <strong>Textinhalt</strong> (gekürzt, erkannte Passwörter und Schlüssel werden maskiert) sowie Dateiname und Typ
-          werden an den eingerichteten KI-Dienst
+          Der gespeicherte oder extrahierte <strong>Textinhalt</strong> (gekürzt;{' '}
+          {masksPersonal
+            ? 'erkannte Passwörter und Schlüssel sowie persönliche Daten wie IBAN, Kartennummern und Steuer-ID werden maskiert'
+            : 'erkannte Passwörter und Schlüssel werden maskiert, persönliche Daten wie IBAN nicht'}
+          ) sowie Dateiname und Typ werden an den eingerichteten KI-Dienst
           {settings?.llm.baseUrl ? (
             <>
               {' '}

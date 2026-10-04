@@ -5,6 +5,7 @@ import { CATEGORY_MIGRATION_JOB } from '../services/category-migration';
 import { REEMBED_JOB } from '../services/search';
 import { ACTION_EXECUTE_JOB } from '../services/actions';
 import { CONTRADICTION_SCAN_JOB } from '../services/contradictions';
+import { CONTRADICTION_CHECK_JOB, runContradictionCheck, type ContradictionCheckPayload } from '../services/contradiction-check-job';
 import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from '../services/document-batch';
 import { DOCUMENT_IMPORT_FOLDER_JOB, type ImportFolderPayload } from '../services/document-import-folder';
 import { DOCUMENT_REINDEX_JOB } from '../services/document-index';
@@ -183,6 +184,7 @@ export function registerJobHandlers(services: JobServices): void {
       return { summary: found.length === 1 ? '1 möglicher Widerspruch' : `${found.length} mögliche Widersprüche` };
     },
   });
+  jobs.register<ContradictionCheckPayload>(CONTRADICTION_CHECK_JOB, { handler: (job) => runContradictionCheck(services, job) });
   jobs.register<{ trigger?: string }>('consistency.check', {
     handler: async (job) => {
       await archive.cleanupInbox(); // retries inbox copies that were locked right after archiving
