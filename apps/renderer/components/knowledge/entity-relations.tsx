@@ -118,6 +118,8 @@ function RelationRow({
   onUnlink: (pending: PendingUnlink) => void;
 }) {
   const typeLabel = RELATION_TYPE_LABELS[relation.relationType];
+  const [from, to] = relation.direction === 'out' ? [entityName, relation.other.name] : [relation.other.name, entityName];
+  const statement = `„${from}“ ${typeLabel} „${to}“`;
   return (
     <li className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5" data-testid="relation-row" data-status={relation.status}>
       <span className="text-xs text-muted-foreground">{typeLabel}</span>
@@ -131,9 +133,7 @@ function RelationRow({
             size="sm"
             variant="outline"
             data-testid="relation-confirm"
-            onClick={() =>
-              onResolve({ relationId: relation.id, status: 'confirmed', label: `„${entityName}“ ${typeLabel} „${relation.other.name}“ bestätigen` })
-            }
+            onClick={() => onResolve({ relationId: relation.id, status: 'confirmed', label: `${statement} bestätigen` })}
           >
             <Check aria-hidden /> Bestätigen
           </Button>
@@ -153,7 +153,7 @@ function RelationRow({
         className={relation.status === 'proposed' ? undefined : 'ml-auto'}
         aria-label={`Verknüpfung zu „${relation.other.name}“ entfernen`}
         data-testid="relation-unlink"
-        onClick={() => onUnlink({ relationId: relation.id, label: `„${entityName}“ ${typeLabel} „${relation.other.name}“` })}
+        onClick={() => onUnlink({ relationId: relation.id, label: statement })}
       >
         <Unlink aria-hidden /> Entfernen
       </Button>
