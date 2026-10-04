@@ -115,16 +115,11 @@ describe('The agent controls the linking features of Epic #269', () => {
     await app.ok('chat:send', { text: 'Ändere das.' });
   });
 
-  it('update_note keeps an explicitly chosen title and lets a title derived from the old text follow the new text', async () => {
-    const named = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Dach', description: 'Angebot vom Dachdecker einholen.' })).entity;
-    const derived = await app.services.notes.create({ content: 'Fenster ausmessen lassen.' });
-    app.llm.agent = ask(listNotesAndItems, () => [
-      { name: 'update_note', args: { note: refOf('Dachdecker'), content: 'Angebot vom Dachdecker liegt vor.' } },
-      { name: 'update_note', args: { note: refOf('Fenster ausmessen'), content: 'Fenster sind ausgemessen.' } },
-    ]);
-    await app.ok('chat:send', { text: 'Aktualisiere die Notizen zum Dach und zu den Fenstern.' });
-    expect(app.services.graph.getEntity(named.id)?.name).toBe('Dach');
-    expect(app.services.graph.getEntity(derived.id)?.name).toBe('Fenster sind ausgemessen.');
+  it('update_note with only new text keeps the title of a note created with only a name', async () => {
+    const note = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Probefahrt' })).entity;
+    app.llm.agent = ask(listNotesAndItems, () => [{ name: 'update_note', args: { note: refOf('Probefahrt'), content: 'Termin am Samstag um 10 Uhr.' } }]);
+    await app.ok('chat:send', { text: 'Schreib in die Notiz Probefahrt den Termin am Samstag um 10 Uhr.' });
+    expect(app.services.graph.getEntity(note.id)).toMatchObject({ name: 'Probefahrt', description: 'Termin am Samstag um 10 Uhr.' });
   });
 
   it("update_note never revives a rejected pair; a proposal its [[Name]] takes over is the agent's link of the run", async () => {

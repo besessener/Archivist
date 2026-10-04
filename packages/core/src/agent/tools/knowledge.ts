@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { deriveNoteTitle } from '../../services/notes';
 import { truncate } from '../../util/text';
 import { defineTool, list, optText, type AgentTool, type ToolOutput } from '../registry';
 import type { ToolDeps, ToolScope } from './common';
@@ -32,9 +31,7 @@ async function updateNote({ deps, ctx }: ToolScope, args: { note: string; title:
   const note = id ? deps.graph.getEntity(id) : undefined;
   if (!id || note?.type !== 'note') return { content: `„${args.note}“ ist keine Notiz.`, isError: true };
   if (!args.title && !args.content) return { content: 'Gib title oder content an.', isError: true };
-  const titleWasDerived = note.name === deriveNoteTitle(note.description ?? note.name);
-  const title = args.title ?? (titleWasDerived ? null : note.name);
-  const after = await deps.notes.update(id, { patch: { title, content: args.content ?? null }, trigger: 'agent', actor: 'agent' });
+  const after = await deps.notes.update(id, { patch: { title: args.title ?? note.name, content: args.content ?? null }, trigger: 'agent', actor: 'agent' });
   return {
     content: `${ctx.refs.entry(id)} Notiz „${truncate(after.name, 60)}“ gespeichert.${wikiNote(deps, { text: after.description ?? '', id })}`,
     summary: 'gespeichert',
