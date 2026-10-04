@@ -218,6 +218,20 @@
       "when": 1791061046738,
       "tag": "0030_orange_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791073035675,
+      "tag": "0031_search_fts_external_content",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791073042096,
+      "tag": "0032_merged_enhancements",
+      "breakpoints": true
     }
   ]
 }

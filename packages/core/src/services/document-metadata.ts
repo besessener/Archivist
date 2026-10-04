@@ -1,6 +1,6 @@
-import type { DocumentRecord } from '@archivist/shared';
+import type { DocumentRecord, ReanalysisProposal } from '@archivist/shared';
 import { eq } from 'drizzle-orm';
-import { documents } from '../db/schema';
+import { documentReanalysis, documents } from '../db/schema';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
 import { bulkChanges, type BulkPatch, type BulkTargets } from './document-bulk';
@@ -20,6 +20,7 @@ interface DocumentMetadataUndo {
     /** Missing in undo data written before bulk edits existed. */
     docType?: string | null;
     documentDate?: string | null;
+    summary?: string | null;
   };
   /** Relation changes of the edit (absent in undo data written by older versions). */
   relations?: RelationChangeSet;
@@ -49,6 +50,7 @@ function metadataUndo(row: DocRow, edit: { set: Partial<DocRow>; relations: Rela
       persons: row.persons,
       docType: row.docType,
       documentDate: row.documentDate,
+      summary: row.summary,
     },
     relations: edit.relations,
     afterUpdatedAt: edit.set.updatedAt!,
@@ -163,6 +165,47 @@ export class DocumentMetadataEditor {
       entityIds: [id],
       before: { title: row.title, topicId: row.topicId, projectId: row.projectId, tags: row.tags },
       after: patch,
+      undo: { type: 'document_metadata', data: metadataUndo(row, { set, relations: changes }) },
+    });
+    return this.afterEdit(id);
+  }
+
+  /** Applies a re-analysis proposal to an archived document (level 2, already confirmed): fills in, never clears; one undo step. */
+  applyReanalysis(id: string, proposal: ReanalysisProposal): DocumentRecord {
+    const row = this.deps.documents.getRow(id);
+    if (!isArchivedStatus(row.status)) throw new AppError('validation_error', 'Der Vorschlag gilt nur für archivierte oder nur indexierte Dokumente.');
+    const set: Partial<DocRow> = {
+      ...this.metadataChanges(
+        {
+          title: proposal.title,
+          topic: proposal.topic ?? undefined,
+          project: proposal.project ?? undefined,
+          tags: [...row.tags, ...proposal.tags],
+          persons: [...row.persons, ...proposal.persons],
+        },
+        { createPersons: true },
+      ),
+      ...(proposal.docType ? { docType: proposal.docType } : {}),
+      ...(proposal.summary ? { summary: proposal.summary } : {}),
+      ...(proposal.documentDate ? { documentDate: proposal.documentDate } : {}),
+    };
+    const { changes } = this.deps.graph.trackRelationChanges(id, () =>
+      this.deps.ctx.database.transaction(() => {
+        this.db.update(documents).set(set).where(eq(documents.id, id)).run();
+        this.deps.graph.registerNode({ type: 'document', id, name: set.title ?? row.title, description: set.summary ?? row.summary });
+        this.syncAssignment(id, set);
+        this.syncPersonsAndTags(id, set);
+        this.db.delete(documentReanalysis).where(eq(documentReanalysis.documentId, id)).run();
+      }),
+    );
+    this.deps.audit.log({
+      action: 'document.applyReanalysis',
+      actor: 'user',
+      trigger: 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { title: row.title, docType: row.docType, topicId: row.topicId, projectId: row.projectId, tags: row.tags },
+      after: { title: set.title, docType: set.docType, topicId: set.topicId, projectId: set.projectId, tags: set.tags },
       undo: { type: 'document_metadata', data: metadataUndo(row, { set, relations: changes }) },
     });
     return this.afterEdit(id);

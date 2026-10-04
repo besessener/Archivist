@@ -28,6 +28,18 @@ test.describe('backups', () => {
     expect(fs.existsSync(path.join(workspace.dataDir, 'restore-pending.json'))).toBe(true);
   });
 
+  test('shows how much space the database and the backups take, without a warning for a small archive (#225)', async ({ on, page }, testInfo) => {
+    const app = on(page);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openBackups();
+    await app.settings.locators.backups.createMetadata.click();
+    await expect(app.settings.locators.backups.rows).toHaveCount(1);
+
+    await expect(app.settings.locators.backups.storage).toContainText('Datenbank:');
+    await expect(app.settings.locators.backups.sizeWarning).toBeHidden();
+    await expectNoSeriousA11yViolations(page, testInfo);
+  });
+
   test('the database a restore replaced is offered as a source and can be restored the same way', async ({ on, page, workspace }, testInfo) => {
     const app = on(page);
     const backups = app.settings.locators.backups;

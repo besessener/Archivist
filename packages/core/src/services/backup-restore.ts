@@ -26,7 +26,8 @@ export interface RestoreSource {
 }
 
 export interface RestorePaths {
-  root: string;
+  /** Folder of the restore marker. */
+  appData: string;
   database: string;
   backups: string;
 }
@@ -186,7 +187,7 @@ export function scheduleRestore(paths: RestorePaths, name: string): void {
     throw new AppError('database_corrupt', 'Dieses Backup ist selbst beschädigt und kann nicht wiederhergestellt werden. Nimm ein anderes.', {
       details: source.databaseFile,
     });
-  fs.writeFileSync(path.join(paths.root, MARKER_FILE), JSON.stringify({ name, requestedAt: new Date().toISOString() }), 'utf8');
+  fs.writeFileSync(path.join(paths.appData, MARKER_FILE), JSON.stringify({ name, requestedAt: new Date().toISOString() }), 'utf8');
 }
 
 function readMarker(file: string): string | null {
@@ -230,7 +231,7 @@ function moveDatabaseBack(databaseDir: string, aside: string): void {
  * Returns null when nothing was scheduled; the marker is removed in every case so a failure cannot loop.
  */
 export function applyPendingRestore(paths: RestorePaths, archiveRoot: string): RestoreReport | null {
-  const markerFile = path.join(paths.root, MARKER_FILE);
+  const markerFile = path.join(paths.appData, MARKER_FILE);
   if (!fs.existsSync(markerFile)) return null;
   const name = readMarker(markerFile);
   fs.rmSync(markerFile, { force: true });

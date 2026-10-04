@@ -24,7 +24,8 @@
     "llmMode": "confirm",
     "neverAnalyzeDirs": [],
     "neverAnalyzeExtensions": [],
-    "neverAnalyzeFiles": []
+    "neverAnalyzeFiles": [],
+    "maskPersonalData": true
   },
   "notifications": {
     "desktop": false,
@@ -35,7 +36,7 @@
     "retentionDays": 30
   },
   "backups": {
-    "keep": 10,
+    "keep": 3,
     "autoOnStartup": false,
     "includeArchive": false
   },

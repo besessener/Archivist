@@ -55,7 +55,7 @@ describe('masking credentials', () => {
 
     for (const { name, short, long } of boundaries) {
       it(name, () => {
-        expect(redactSecrets(short)).toEqual({ text: short, count: 0, kinds: [] });
+        expect(redactSecrets(short)).toEqual({ text: short, count: 0, kinds: [], personalData: 0 });
         expect(redactSecrets(long).count).toBe(1);
       });
     }
@@ -69,7 +69,7 @@ describe('masking credentials', () => {
       'skizze-vom-projekt',
       'https://example.org/pfad',
     ]) {
-      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [] });
+      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [], personalData: 0 });
     }
   });
 
@@ -204,7 +204,7 @@ describe('connection strings, Google keys and quoted values (issue #70)', () => 
 
   for (const { name, input, expected, kind } of cases) {
     it(name, () => {
-      expect(redactSecrets(input)).toEqual({ text: expected, count: 1, kinds: [kind] });
+      expect(redactSecrets(input)).toEqual({ text: expected, count: 1, personalData: 0, kinds: [kind] });
     });
   }
 
@@ -222,7 +222,7 @@ describe('connection strings, Google keys and quoted values (issue #70)', () => 
       `AIza${chars(36)}`,
       `xAIza${chars(35)}`,
     ]) {
-      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [] });
+      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [], personalData: 0 });
     }
   });
 
@@ -245,6 +245,7 @@ describe('connection strings, Google keys and quoted values (issue #70)', () => 
     expect(redactSecrets('HTTPS://a:pa/ss1@h1 und https://b:pa:ss2@h2')).toEqual({
       text: 'HTTPS://a:[REDACTED:password]@h1 und https://b:[REDACTED:password]@h2',
       count: 2,
+      personalData: 0,
       kinds: ['url_credentials'],
     });
   });
@@ -261,19 +262,24 @@ describe('connection strings, Google keys and quoted values (issue #70)', () => 
       'https://example.org:8080?mail=a@b.de',
       'https://example.org:8080#a@b',
     ]) {
-      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [] });
+      expect(redactSecrets(text)).toEqual({ text, count: 0, kinds: [], personalData: 0 });
     }
   });
 
   it('counts a secret only once, even inside an assignment or when masking again', () => {
     const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk';
-    expect(redactSecrets(`token=${jwt}`)).toEqual({ text: 'token=[REDACTED:jwt]', count: 1, kinds: ['jwt'] });
-    expect(redactSecrets(`api_key="${googleKey}"`)).toEqual({ text: 'api_key="[REDACTED:google_api_key]"', count: 1, kinds: ['google_api_key'] });
+    expect(redactSecrets(`token=${jwt}`)).toEqual({ text: 'token=[REDACTED:jwt]', count: 1, personalData: 0, kinds: ['jwt'] });
+    expect(redactSecrets(`api_key="${googleKey}"`)).toEqual({
+      text: 'api_key="[REDACTED:google_api_key]"',
+      count: 1,
+      personalData: 0,
+      kinds: ['google_api_key'],
+    });
 
     const input = `AccountKey=${azureKey}; password = "my pass phrase"; https://u:pa/ss1@host; pwd={a;b;c}`;
     const once = redactSecrets(input);
     expect(once.count).toBe(4);
     expect(once.text).toBe('AccountKey=[REDACTED:secret]; password = "[REDACTED:secret]"; https://u:[REDACTED:password]@host; pwd={[REDACTED:secret]}');
-    expect(redactSecrets(once.text)).toEqual({ text: once.text, count: 0, kinds: [] });
+    expect(redactSecrets(once.text)).toEqual({ text: once.text, count: 0, kinds: [], personalData: 0 });
   });
 });

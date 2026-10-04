@@ -37,6 +37,7 @@ function DocumentsInner() {
   useEffect(() => setPages(1), [query, topicId]);
   const list = useQuery('documents:list', { ...filter, limit }, { scopes: ['documents'] });
   const total = useQuery('documents:count', filter, { scopes: ['documents'] });
+  const proposals = useQuery('documents:reanalysisPending', {}, { scopes: ['documents'] });
   const topic = useQuery('knowledge:getEntity', topicId ? { id: topicId } : undefined, { enabled: !!topicId });
 
   const docs = list.data ?? [];
@@ -113,6 +114,7 @@ function DocumentsInner() {
           subjects={subjects}
           selected={selected}
           setSelected={setSelected}
+          withProposal={new Set(proposals.data?.documentIds)}
           onOpen={(id) => router.push(`/documents/?id=${encodeURIComponent(id)}${topicSuffix}`)}
         />
       )}

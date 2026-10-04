@@ -311,4 +311,15 @@ describe('changing the archive root', () => {
     expect(await notificationTitles()).toContain('Archivumzug abgebrochen');
     expect((await app.ok('archive:verify', {})).ok).toBe(true);
   });
+
+  it('reports the sync service when the archive root lies in a cloud-synced folder (#207)', async () => {
+    const synced = path.join(app.root, 'OneDrive - Firma', 'Archiv');
+
+    expect((await app.ok('archive:previewRootChange', { root: synced })).syncProvider).toBe('OneDrive');
+    expect((await app.ok('archive:previewRootChange', { root: newRoot() })).syncProvider).toBeNull();
+    expect((await app.ok('app:getStatus', {})).archiveSyncProvider).toBeNull();
+
+    app.services.settings.update({ archiveRoot: synced });
+    expect((await app.ok('app:getStatus', {})).archiveSyncProvider).toBe('OneDrive');
+  });
 });

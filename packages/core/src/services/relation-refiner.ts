@@ -11,7 +11,7 @@ import type { LlmService } from './llm';
 import type { PrivacyService } from './privacy';
 
 /** The LLM's hint for one pair (#284): a more precise kind, its direction and why – or `none`. */
-const RelationKindHint = z.object({
+export const RelationKindHint = z.object({
   kind: z.enum(['supersedes', 'blocks', 'results_from', 'contradicts', 'supports', 'none']),
   /** `a_b`: A {kind} B; `b_a`: B {kind} A. */
   direction: z.enum(['a_b', 'b_a']).nullable(),

@@ -160,7 +160,7 @@ describe('Restoring a backup', () => {
     const source = newestIntactSource(paths);
 
     expect(source?.name).toBe(older.name);
-    expect(fs.existsSync(path.join(paths.root, 'restore-pending.json')), 'choosing schedules nothing').toBe(false);
+    expect(fs.existsSync(path.join(paths.appData, 'restore-pending.json')), 'choosing schedules nothing').toBe(false);
   });
 
   it('recovers from a damaged database: start refused, restore scheduled, next start works', async () => {
@@ -176,7 +176,7 @@ describe('Restoring a backup', () => {
     fs.rmSync(`${databaseFile}-shm`, { force: true });
 
     await expect(startApp()).rejects.toMatchObject({ category: 'database_corrupt' });
-    const paths = resolveDataPaths(dataRoot);
+    const paths = resolveDataPaths({ root: dataRoot });
     scheduleRestore(paths, newestIntactSource(paths)!.name);
     const recovered = await startApp();
 
@@ -212,7 +212,7 @@ describe('Restoring a backup', () => {
   });
 
   it('brings the write-ahead log of a set-aside database along', async () => {
-    const paths = resolveDataPaths(path.join(root, 'Archivist'));
+    const paths = resolveDataPaths({ root: path.join(root, 'Archivist') });
     fs.mkdirSync(paths.backups, { recursive: true });
     const aside = path.join(paths.database, 'vor-wiederherstellung-2026-10-01T10-00-00-000');
     fs.mkdirSync(aside, { recursive: true });

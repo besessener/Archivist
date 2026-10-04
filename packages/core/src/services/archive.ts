@@ -130,7 +130,7 @@ export class ArchiveService {
   }
 
   private async executeAll(items: ArchiveItemRequest[], opts: ExecuteOptions): Promise<ArchiveResult> {
-    await this.maintenance.cleanupInbox();
+    if (opts.inboxCleanup !== 'later') await this.maintenance.cleanupInbox();
     const result = emptyArchiveResult();
     for (const req of items) {
       let outcome: ArchiveOutcome;

@@ -197,6 +197,7 @@ export class KnowledgeAnswerService {
     return this.llm.completeJson(KnowledgeAnswer, {
       schemaName: 'KnowledgeAnswer',
       purpose: 'Wissensabfrage',
+      preview: `Frage: ${question.text} | Quellen: ${[...ids.values()].map((s) => s.title.replace(/^\d+\.\s/, '')).join('; ')}`,
       documentIds: [...ids.values()].filter((s) => s.type === 'document').map((s) => s.id),
       instructions:
         'Du bist Archivist, ein persönlicher Archivar. Beantworte die Frage ausschließlich anhand der nummerierten Quellen. ' +

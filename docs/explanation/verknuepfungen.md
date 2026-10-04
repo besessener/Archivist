@@ -16,6 +16,10 @@ Ein Vorschlag ohne Begründung ist schwer zu prüfen. Deshalb trägt jede Bezieh
 
 Lehnst du ein Paar ab, schlägt **keine** Methode es wieder vor – egal in welcher Richtung und mit welcher Art von Beziehung. Sonst würde dieselbe Frage nach jedem Indexieren, jeder Analyse und jedem rückwirkenden Lauf zurückkehren. Das Nein überlebt auch das Zusammenführen von Duplikaten. Nur „kein Duplikat“ ist schwächer: Zwei Protokolle können verschieden und trotzdem verwandt sein.
 
+## Gleich, ähnlich oder verwandt
+
+Identische Dokumente erkennt Archivist an der Prüfsumme der Datei oder des Texts. Ein Entwurf, der nur einen Absatz anders hat, wäre damit unsichtbar. Deshalb gibt es zusätzlich eine Ähnlichkeit über Wortgruppen: Zwei Texte, deren Dreiwort-Gruppen zu etwa 85 % übereinstimmen, gelten als „ähnlicher Inhalt“. Das ist bewusst eine feste, hohe Schwelle: Ähnlicher Inhalt soll Fassungen desselben Texts finden, nicht bloß Dokumente zum selben Thema – dafür sind die Vorschläge unten da. Ein ähnliches Dokument belegt in Antworten keinen eigenen Platz, wird aber nie gelöscht oder verknüpft, ohne dass du entscheidest.
+
 ## Warum mehrere Methoden
 
 Jede Methode sieht etwas anderes:

@@ -1,22 +1,27 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Inbox as InboxIcon } from 'lucide-react';
 import { ArchiveDialog, defaultEdit, toArchiveItem, type ArchiveEdit } from '@/components/common/archive-dialog';
+import { ArchiveAllButton } from '@/components/common/archive-all';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
+import { AnalyzeImportDialog } from '@/components/inbox/analyze-import-dialog';
 import { InboxDocCard } from '@/components/inbox/doc-card';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Select } from '@/components/ui/select';
 import { ARCHIVE_MODE_SHORT } from '@/lib/labels';
+import { uniqueById, usePagedQuery } from '@/lib/use-paged-query';
 import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import type { DocRecord } from '@/lib/types';
 import type { ArchiveItemRequest, ArchiveMode, DocumentStatus } from '@archivist/shared';
 import { cn, withMembership } from '@/lib/utils';
 
+const PAGE_SIZE = 200;
 const INBOX_STATUSES: DocumentStatus[] = ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'];
 const FILTERS: Array<{ id: DocumentStatus | 'all'; label: string }> = [
   { id: 'all', label: 'Alle' },
@@ -28,21 +33,28 @@ const FILTERS: Array<{ id: DocumentStatus | 'all'; label: string }> = [
   { id: 'ignored', label: 'Ignoriert' },
 ];
 
-export default function InboxPage() {
-  // only inbox documents, filtered in the database – older waiting documents are no longer hidden by newer archived ones (#214)
-  const { data, loading, error, refetch } = useQuery('documents:list', { statuses: INBOX_STATUSES, limit: 1000 }, { scopes: ['documents'], jobs: true });
-  const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
-  const inboxTotal = INBOX_STATUSES.reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
+function InboxContent() {
+  const router = useRouter();
+  const analyzeImportJob = useSearchParams().get('analyzeImport');
   const [filter, setFilter] = useState<DocumentStatus | 'all'>('all');
-  // ignored documents are not part of the inbox count; they load only for their filter
-  const ignoredList = useQuery('documents:list', { status: 'ignored', limit: 1000 }, { scopes: ['documents'], enabled: filter === 'ignored' });
+  // the filter runs in the database and the list is paged: nothing is cut off, „Mehr laden“ adds the next page (#228)
+  const paged = usePagedQuery(
+    'documents:list',
+    { statuses: filter === 'all' ? INBOX_STATUSES : [filter] },
+    { pageSize: PAGE_SIZE, scopes: ['documents'], jobs: true },
+  );
+  const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
+  const { loading, error, refetch } = paged;
+  const data = useMemo(() => (paged.pages ? uniqueById(paged.pages) : undefined), [paged.pages]);
+  const inboxTotal = INBOX_STATUSES.reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
+  const shownTotal = filter === 'all' ? inboxTotal : (byStatus?.[filter] ?? 0);
   const [edits, setEdits] = useState<Record<string, ArchiveEdit>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogItems, setDialogItems] = useState<ArchiveItemRequest[] | null>(null);
   const { settings } = useSettings();
 
-  const docs = useMemo(() => (data ?? []).filter((d) => INBOX_STATUSES.includes(d.status)), [data]);
-  const shown = filter === 'ignored' ? (ignoredList.data ?? []) : docs.filter((d) => filter === 'all' || d.status === filter);
+  const shown = useMemo(() => data ?? [], [data]);
+  const proposedTotal = byStatus?.proposed ?? 0;
   const archivable = shown.filter((d) => d.status === 'staged' || d.status === 'proposed');
   const getEdit = (d: DocRecord): ArchiveEdit => edits[d.id] ?? defaultEdit(d);
   const selectedDocs = archivable.filter((d) => selected.has(d.id));
@@ -72,15 +84,16 @@ export default function InboxPage() {
               )}
             >
               {f.label}
-              {f.id !== 'all' && ` (${byStatus?.[f.id] ?? docs.filter((d) => d.status === f.id).length})`}
+              {f.id !== 'all' && ` (${byStatus?.[f.id] ?? 0})`}
             </button>
           ))}
         </div>
       </div>
-      {inboxTotal > docs.length && (
-        <p className="mb-4 text-sm text-muted-foreground" data-testid="inbox-capped">
-          Angezeigt werden die neuesten {docs.length} von {inboxTotal} wartenden Dokumenten. Archiviere oder ignoriere diese, dann erscheinen die übrigen.
-        </p>
+      {proposedTotal > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2" data-testid="inbox-archive-all">
+          <ArchiveAllButton source="inbox" testId="inbox-archive-all-open" />
+          <span className="text-sm text-muted-foreground">{proposedTotal} Vorschläge warten auf deine Entscheidung.</span>
+        </div>
       )}
 
       {archivable.length > 0 && (
@@ -151,7 +164,18 @@ export default function InboxPage() {
           />
         ))}
       </ul>
+      {shown.length < shownTotal && (
+        <div className="mt-4 flex flex-col items-center gap-2" data-testid="inbox-more">
+          <p className="text-sm text-muted-foreground">
+            {shown.length} von {shownTotal} wartenden Dokumenten angezeigt.
+          </p>
+          <Button variant="outline" onClick={paged.loadMore} disabled={loading} data-testid="inbox-load-more">
+            Mehr laden
+          </Button>
+        </div>
+      )}
 
+      {analyzeImportJob && <AnalyzeImportDialog jobId={analyzeImportJob} onClose={() => router.replace('/inbox/')} />}
       <ArchiveDialog
         open={dialogItems !== null}
         onOpenChange={(o) => {
@@ -164,5 +188,13 @@ export default function InboxPage() {
         }}
       />
     </Page>
+  );
+}
+
+export default function InboxPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <InboxContent />
+    </Suspense>
   );
 }

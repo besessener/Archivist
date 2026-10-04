@@ -2,7 +2,7 @@ import type { RestoreSource } from '@archivist/core';
 import { describe, expect, it, vi } from 'vitest';
 import { recoverFromDamagedDatabase, type RecoveryDeps } from '../../apps/desktop/src/recovery';
 
-const paths = { root: '/data', database: '/data/database', backups: '/data/backups' };
+const paths = { appData: '/data', database: '/data/database', backups: '/data/backups' };
 const source: RestoreSource = {
   name: 'metadaten-2026-10-01',
   path: '/data/backups/x',

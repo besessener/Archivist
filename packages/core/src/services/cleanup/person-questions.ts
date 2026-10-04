@@ -52,7 +52,7 @@ interface Evidence {
   references: number;
 }
 
-const LlmHints = z.object({
+export const LlmHints = z.object({
   questions: z.array(
     z.object({
       nr: z.number().int(),

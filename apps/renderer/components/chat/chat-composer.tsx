@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { Paperclip, SendHorizontal } from 'lucide-react';
+import { FolderInput, Paperclip, SendHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useApp } from '@/lib/app-context';
@@ -25,7 +25,7 @@ export interface ChatComposerProps {
 
 /** Input field with file picker and a resize handle; it grows with the text unless resized by hand. */
 export function ChatComposer({ text, onTextChange, inputRef, working, onSend, aiNotice }: ChatComposerProps) {
-  const { importFiles } = useApp();
+  const { importFiles, importFolder } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   // manually set height of the input field (null = grow automatically with the text)
   const [manualHeight, setManualHeight] = useState<number | null>(null);
@@ -116,6 +116,17 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
         >
           <Paperclip aria-hidden />
         </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Ordner importieren"
+          title="Ordner importieren – alle unterstützten Dateien darin (auch in Unterordnern) werden kopiert; die Originale bleiben unverändert"
+          data-testid="folder-pick"
+          onClick={() => void importFolder()}
+        >
+          <FolderInput aria-hidden />
+        </Button>
         <Textarea
           ref={inputRef}
           value={text}
@@ -138,7 +149,7 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
         </Button>
       </form>
       <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground" data-testid="chat-ai-notice">
-        {aiNotice} Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) kannst du auch einfach in das Fenster ziehen.
+        {aiNotice} Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) und ganze Ordner kannst du auch einfach in das Fenster ziehen.
       </p>
     </div>
   );

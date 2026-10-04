@@ -8,11 +8,15 @@ export function initNotifications(page: Page) {
     bell: page.getByTestId('bell'),
     panel,
     items: panel.getByTestId('bell-item'),
+    markAllRead: panel.getByTestId('bell-mark-all-read'),
+    clearAll: panel.getByTestId('bell-clear-all'),
+    count: page.getByTestId('bell-count'),
     actions: {
       navigate: panel.getByTestId('bell-action-navigate'),
       dismiss: panel.getByTestId('bell-action-ignore'),
       confirm: panel.getByTestId('bell-action-confirm_action'),
     },
+    loadOlder: panel.getByTestId('bell-load-older'),
     actionDialog: page.getByTestId('notification-action-dialog'),
   };
   const item = (text: string) => locators.items.filter({ hasText: text });

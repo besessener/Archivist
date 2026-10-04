@@ -21,6 +21,8 @@ interface AppContextValue {
   contextMessage: ChatMessage | null;
   setContextMessage: (m: ChatMessage | null) => void;
   importFiles: (files: File[]) => Promise<void>;
+  /** Asks for a folder and imports it with everything below it. */
+  importFolder: () => Promise<void>;
   importing: boolean;
   importState: ImportState | null;
   dismissImport: () => void;
@@ -74,6 +76,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [bridgeAvailable, refreshStatus]);
 
+  const importPaths = useCallback(
+    async (paths: string[], localRejected: ImportResult['rejected']) => {
+      if (paths.length === 0) {
+        setImportState({ startedAt: Date.now(), result: { imported: [], duplicates: [], rejected: localRejected, folders: [] } });
+        return;
+      }
+      setImporting(true);
+      try {
+        const chunks: string[][] = [];
+        for (let i = 0; i < paths.length; i += 200) chunks.push(paths.slice(i, i + 200));
+        const merged: ImportResult = { imported: [], duplicates: [], rejected: [...localRejected], folders: [] };
+        for (const chunk of chunks) {
+          const res = await call('documents:import', { paths: chunk });
+          merged.imported.push(...res.imported);
+          merged.duplicates.push(...res.duplicates);
+          merged.rejected.push(...res.rejected);
+          merged.folders.push(...res.folders);
+        }
+        setImportState({ startedAt: Date.now(), result: merged });
+      } catch (err) {
+        reportError(err, () => void importPaths(paths, localRejected), 'Import fehlgeschlagen');
+      } finally {
+        setImporting(false);
+      }
+    },
+    [reportError],
+  );
+
   const importFiles = useCallback(
     async (files: File[]) => {
       const bridge = getBridge();
@@ -90,30 +120,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (p) paths.push(p);
         else localRejected.push({ path: f.name, reason: 'Der Dateipfad konnte nicht ermittelt werden (z. B. bei Dateien aus dem Browser oder aus Archiven).' });
       }
-      if (paths.length === 0) {
-        setImportState({ startedAt: Date.now(), result: { imported: [], duplicates: [], rejected: localRejected } });
-        return;
-      }
-      setImporting(true);
-      try {
-        const chunks: string[][] = [];
-        for (let i = 0; i < paths.length; i += 200) chunks.push(paths.slice(i, i + 200));
-        const merged: ImportResult = { imported: [], duplicates: [], rejected: [...localRejected] };
-        for (const chunk of chunks) {
-          const res = await call('documents:import', { paths: chunk });
-          merged.imported.push(...res.imported);
-          merged.duplicates.push(...res.duplicates);
-          merged.rejected.push(...res.rejected);
-        }
-        setImportState({ startedAt: Date.now(), result: merged });
-      } catch (err) {
-        reportError(err, () => void importFiles(files), 'Import fehlgeschlagen');
-      } finally {
-        setImporting(false);
-      }
+      await importPaths(paths, localRejected);
     },
-    [reportError],
+    [importPaths],
   );
+
+  const importFolder = useCallback(async () => {
+    try {
+      const { path } = await call('app:selectDirectory', { title: 'Ordner zum Importieren wählen' });
+      if (path) await importPaths([path], []);
+    } catch (err) {
+      reportError(err, () => void importFolder(), 'Ordner konnte nicht gewählt werden');
+    }
+  }, [importPaths, reportError]);
 
   const dismissImport = useCallback(() => setImportState(null), []);
 
@@ -126,6 +145,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       contextMessage,
       setContextMessage,
       importFiles,
+      importFolder,
       importing,
       importState,
       dismissImport,

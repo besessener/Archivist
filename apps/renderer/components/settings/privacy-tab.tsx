@@ -9,11 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
-import { formatBytes, formatDateTime } from '@/lib/format';
+import { formatBytes, formatDateTime, formatNumber } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { cn, parseList } from '@/lib/utils';
+import { MaskingSection } from './masking-section';
 import { Section, useSaveSettings, type TabProps } from './shared';
+import { TRANSMISSION_PAGE_SIZE, useTransmissionPages } from './use-transmission-pages';
+import { UsageSection } from './usage-section';
 
 type Mode = 'auto' | 'confirm' | 'local_only';
 const MODES: Array<{ id: Mode; title: string; text: string }> = [
@@ -31,7 +34,8 @@ const MODES: Array<{ id: Mode; title: string; text: string }> = [
 ];
 
 export function PrivacyTab({ settings, reload }: TabProps) {
-  const tx = useQuery('llm:transmissions', { limit: 100 }, { scopes: ['audit'] });
+  const tx = useQuery('llm:transmissions', { limit: TRANSMISSION_PAGE_SIZE }, { scopes: ['audit'] });
+  const pages = useTransmissionPages(tx.data);
   const [open, setOpen] = useState<string | null>(null);
   const { llmMode, neverAnalyzeDirs, neverAnalyzeExtensions, neverAnalyzeFiles } = settings.privacy;
 
@@ -39,16 +43,18 @@ export function PrivacyTab({ settings, reload }: TabProps) {
     <div className="flex flex-col gap-4">
       {/* Separate keys: saving the mode must not discard unsaved edits in "Nie analysieren" and vice versa. */}
       <ModeSection key={llmMode} active={llmMode} reload={reload} />
+      <MaskingSection settings={settings} reload={reload} />
       <NeverAnalyzeSection key={JSON.stringify([neverAnalyzeDirs, neverAnalyzeExtensions, neverAnalyzeFiles])} settings={settings} reload={reload} />
+      <UsageSection key={settings.llm.dailyTokenCap ?? 'none'} settings={settings} reload={reload} />
 
       <Section
         title="An die KI übertragene Inhalte"
-        description="Protokoll aller Übertragungen. „Maskiert“ zeigt, wie viele Geheimnisse (z. B. Passwörter) vor dem Senden unkenntlich gemacht wurden."
+        description="Protokoll aller Übertragungen. „Maskiert“ zeigt, wie viele Geheimnisse (z. B. Passwörter) und, falls eingeschaltet, persönliche Daten (z. B. IBAN) vor dem Senden unkenntlich gemacht wurden."
       >
         {tx.error && !tx.data && <ErrorNote error={tx.error} onRetry={() => void tx.refetch()} />}
         {!tx.data && tx.loading && <Loading />}
-        {tx.data && tx.data.length === 0 && <EmptyState title="Noch nichts übertragen" description="Bisher wurden keine Inhalte an die KI gesendet." />}
-        {tx.data && tx.data.length > 0 && (
+        {tx.data && pages.rows.length === 0 && <EmptyState title="Noch nichts übertragen" description="Bisher wurden keine Inhalte an die KI gesendet." />}
+        {tx.data && pages.rows.length > 0 && (
           <Table data-testid="transmissions-table">
             <THead>
               <tr>
@@ -64,17 +70,23 @@ export function PrivacyTab({ settings, reload }: TabProps) {
               </tr>
             </THead>
             <TBody>
-              {tx.data.map((t) => (
+              {pages.rows.map((t) => (
                 <Fragment key={t.id}>
                   <TR data-testid="transmission-row">
                     <TD className="whitespace-nowrap">{formatDateTime(t.at)}</TD>
-                    <TD>{t.purpose}</TD>
+                    <TD>
+                      {t.purpose}
+                      {t.documents.length > 0 && <span className="block text-xs text-muted-foreground">{documentNames(t.documents)}</span>}
+                    </TD>
                     <TD>
                       <span className="block">{t.model}</span>
                       <span className="block break-all text-xs text-muted-foreground">{t.endpoint}</span>
                     </TD>
                     <TD className="whitespace-nowrap">{formatBytes(t.bytes)}</TD>
-                    <TD>{t.redactions}</TD>
+                    <TD>
+                      {t.redactions}
+                      {t.personalRedactions > 0 && <span className="block text-xs text-muted-foreground">davon {t.personalRedactions} persönliche Daten</span>}
+                    </TD>
                     <TD>{t.success ? <Badge variant="success">Gesendet</Badge> : <Badge variant="danger">Fehler</Badge>}</TD>
                     <TD>
                       <Button size="sm" variant="ghost" onClick={() => setOpen(open === t.id ? null : t.id)} aria-expanded={open === t.id}>
@@ -85,10 +97,26 @@ export function PrivacyTab({ settings, reload }: TabProps) {
                   {open === t.id && (
                     <tr>
                       <td colSpan={7} className="px-3 pb-3">
-                        <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+                        <p
+                          data-testid="transmission-preview"
+                          className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground"
+                        >
                           {t.preview || '(keine Vorschau)'}
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">Betroffene Dokumente: {t.documentIds.length}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {t.documents.length === 0 ? 'Keine Dokumente beteiligt.' : `Betroffene Dokumente: ${documentNames(t.documents, t.documents.length)}`}
+                        </p>
+                        {t.inputTokens != null && (
+                          <p className="mt-1 text-xs text-muted-foreground" data-testid="transmission-tokens">
+                            Tokens: Eingabe {formatNumber(t.inputTokens + (t.cacheReadTokens ?? 0))}, Ausgabe {formatNumber(t.outputTokens ?? 0)},{' '}
+                            {t.requests ?? 1} {t.requests === 1 || t.requests === undefined ? 'Anfrage' : 'Anfragen'}
+                          </p>
+                        )}
+                        {t.note && (
+                          <p className="mt-1 text-xs text-warning" data-testid="transmission-note">
+                            Hinweis: {t.note}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   )}
@@ -97,9 +125,25 @@ export function PrivacyTab({ settings, reload }: TabProps) {
             </TBody>
           </Table>
         )}
+        {pages.canLoadMore && (
+          <div>
+            <Button variant="outline" disabled={pages.loading} onClick={() => void pages.loadMore()} data-testid="transmissions-more">
+              Mehr laden
+            </Button>
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Einträge werden nach {settings.logs.retentionDays} Tagen automatisch gelöscht (Aufbewahrung unter „Protokolle“).
+        </p>
       </Section>
     </div>
   );
+}
+
+/** Titles of the documents of an entry, the first few; a document that no longer exists shows as removed. */
+function documentNames(documents: Array<{ title: string | null }>, shown = 2): string {
+  const names = documents.slice(0, shown).map((document) => document.title ?? 'entferntes Dokument');
+  return documents.length > shown ? `${names.join(', ')} und ${documents.length - shown} weitere` : names.join(', ');
 }
 
 /** Saves the mode on selection (#72); `mode` is optimistic only while saving, a failed save reverts it. */

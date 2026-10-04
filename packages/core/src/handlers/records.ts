@@ -84,7 +84,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'decisions:revoke': (input) => services.decisions.revoke(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER }),
     'decisions:delete': (input) => ({ auditId: services.decisions.delete(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER }) }),
 
-    'jobs:list': (input) => services.jobs.list(input.limit),
+    'jobs:list': (input) => services.jobs.list(input.limit, { type: input.type, activeOnly: input.activeOnly }),
     'jobs:retry': (input) => services.jobs.retry(input.id),
     'jobs:cancel': (input) => services.jobs.cancel(input.id),
 
@@ -93,6 +93,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       services.notifications.markRead(input.ids);
       return { ok: true as const };
     },
+    'notifications:markAllRead': () => ({ marked: services.notifications.markAllRead() }),
     'notifications:resolve': (input) => services.notifications.resolve(input.id),
     'notifications:resolveAll': () => ({ resolved: services.notifications.resolveAll() }),
     'notifications:snooze': (input) => {

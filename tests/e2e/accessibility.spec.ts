@@ -43,6 +43,15 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
       await expectNoSeriousA11yViolations(page, testInfo);
     });
 
+    test('the privacy settings (mode, token use and daily limit) have no serious or critical violations', async ({ on, page }, testInfo) => {
+      const { navigation, settings } = on(page);
+      await navigation.do.open('settings');
+      await settings.do.openPrivacy();
+      await expect(settings.locators.privacy.usageToday).toBeVisible();
+
+      await expectNoSeriousA11yViolations(page, testInfo);
+    });
+
     test('what Archivist has learned (list and rule form) has no serious or critical violations', async ({ on, page }, testInfo) => {
       const { settings } = on(page);
       await on(page).navigation.do.open('settings');

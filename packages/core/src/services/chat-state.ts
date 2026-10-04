@@ -83,6 +83,8 @@ export interface ConvState {
   last?: { openItemId?: string; decisionId?: string; documentIds?: string[]; topic?: string | null };
   /** Agent mode (#294): short ids, mode override and the request a question was asked about. */
   agent?: AgentChatState;
+  /** Daily token limit: the message held back until the user continues, or the day on which they chose to continue. */
+  tokenCap?: { awaiting?: string; overrideDay?: string };
   /** The note „rule-based because there is no LLM“ was shown in this conversation (#248). */
   rulesHintShown?: boolean;
 }

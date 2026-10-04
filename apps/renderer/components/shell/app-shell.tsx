@@ -109,7 +109,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-primary bg-card px-10 py-8 text-center shadow-lg">
                   <FileUp className="size-8 text-primary" aria-hidden />
-                  <p className="font-medium">Dateien hier ablegen</p>
+                  <p className="font-medium">Dateien oder Ordner hier ablegen</p>
                   <p className="text-sm text-muted-foreground">Die Dateien landen zuerst in der Inbox – nichts wird ohne deine Bestätigung archiviert.</p>
                 </div>
               </div>

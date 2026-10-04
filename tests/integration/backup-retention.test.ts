@@ -170,6 +170,20 @@ describe('backups: a full backup needs the archive (issue #236)', () => {
     await app.cleanup();
   });
 
+  it('keeps three backups per kind by default and reports the space they and the database take (#225)', async () => {
+    const app = await createTestApp({ configured: false });
+    expect(app.services.settings.get().backups.keep).toBe(3);
+    for (let i = 0; i < 5; i++) await app.ok('backup:create', { includeArchive: false });
+
+    const listed = await app.ok('backup:list', {});
+    const storage = await app.ok('backup:storage', {});
+
+    expect(listed).toHaveLength(3);
+    expect(storage.databaseBytes).toBeGreaterThan(0);
+    expect(storage.backupsBytes).toBeGreaterThanOrEqual(listed.reduce((sum, b) => sum + b.sizeBytes, 0));
+    await app.cleanup();
+  });
+
   it('never removes a database a restore set aside, however low `keep` is', async () => {
     const app = await createTestApp({ configured: false });
     await app.ok('settings:update', { backups: { keep: 1 } });

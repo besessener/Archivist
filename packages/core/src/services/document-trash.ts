@@ -3,10 +3,11 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { TrashEntry } from '@archivist/shared';
 import { eq, inArray } from 'drizzle-orm';
-import { documents, scanFiles } from '../db/schema';
+import { documentReanalysis, documents, scanFiles } from '../db/schema';
 import { AppError, permissionError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { isInside } from '../util/paths';
+import { clearTransmissionPreviews, compactDatabase, purgeMetadataUndo } from './document-purge';
 import { ArchiveFileOps, pruneEmptyDirs, type MovedFile } from './archive-files';
 import type { DocRow, DocumentDeps } from './document-model';
 import type { NodeSnapshot } from './knowledge-graph';
@@ -73,6 +74,8 @@ export class DocumentTrash {
         ctx.database.db.update(scanFiles).set({ documentId: null }).where(eq(scanFiles.documentId, row.id)).run();
         ctx.database.db.delete(documents).where(eq(documents.id, row.id)).run();
         graph.removeNode(row.id);
+        this.deps.nearDuplicates.remove(row.id);
+        ctx.database.db.delete(documentReanalysis).where(eq(documentReanalysis.documentId, row.id)).run();
       });
     } catch (err) {
       await this.putBackAll(trashed.map(trashMove));
@@ -106,8 +109,11 @@ export class DocumentTrash {
       }));
   }
 
-  /** Deletes everything in the trash for good (second confirmation); the trashed documents can no longer be restored. */
-  async empty(request: { confirmed: boolean; permanentlyConfirmed: boolean }): Promise<{ deletedFiles: number; documents: number }> {
+  /** Deletes everything in the trash for good (second confirmation): files, undo data with the text, transmission previews, free database pages. */
+  async empty(request: {
+    confirmed: boolean;
+    permanentlyConfirmed: boolean;
+  }): Promise<{ deletedFiles: number; documents: number; databaseCompacted: boolean }> {
     if (!request.confirmed || !request.permanentlyConfirmed)
       throw permissionError('Das Leeren des Papierkorbs löscht endgültig und erfordert eine zweite, ausdrückliche Bestätigung.');
     const { ctx, audit } = this.deps;
@@ -118,6 +124,10 @@ export class DocumentTrash {
       audit.endUndo(entry.auditId);
     }
     await this.removeEmptyFolders();
+    const documentIds = entries.map((entry) => entry.documentId);
+    clearTransmissionPreviews(ctx, documentIds);
+    purgeMetadataUndo(ctx, documentIds);
+    const databaseCompacted = entries.length > 0 && compactDatabase(ctx);
     audit.log({
       action: 'trash.empty',
       actor: 'user',
@@ -127,7 +137,7 @@ export class DocumentTrash {
       paths: deleted,
     });
     ctx.events.changed('documents', 'audit');
-    return { deletedFiles: deleted.length, documents: entries.length };
+    return { deletedFiles: deleted.length, documents: entries.length, databaseCompacted };
   }
 
   private async trashFiles(row: DocRow): Promise<TrashedFile[]> {
@@ -194,6 +204,7 @@ export class DocumentTrash {
         ctx.database.db.insert(documents).values(row).run();
         if (undoData.scanFileIds.length) ctx.database.db.update(scanFiles).set({ documentId: row.id }).where(inArray(scanFiles.id, undoData.scanFileIds)).run();
         if (undoData.node) skipped = graph.restoreNode(undoData.node);
+        this.deps.nearDuplicates.record(row.id, row.extractedText);
       });
     } catch (err) {
       await this.putBackAll(restored);

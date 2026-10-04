@@ -17,6 +17,7 @@ export interface DocumentListQuery {
   projectId?: string;
   query?: string;
   limit?: number;
+  offset?: number;
 }
 
 type DocumentRow = typeof documents.$inferSelect;
@@ -60,8 +61,9 @@ export function queryDocumentList(db: Db, opts: DocumentListQuery = {}): Documen
     })
     .from(documents)
     .where(listFilter(opts))
-    .orderBy(desc(documents.createdAt))
+    .orderBy(desc(documents.createdAt), desc(documents.id))
     .limit(opts.limit ?? 300)
+    .offset(opts.offset ?? 0)
     .all();
   const ids = [...new Set(rows.flatMap((r) => [r.topicId, r.projectId]).filter((x): x is string => Boolean(x)))];
   const names = ids.length

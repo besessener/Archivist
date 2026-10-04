@@ -7,6 +7,9 @@ export function initInbox(page: Page) {
     fileInput: page.getByTestId('file-input'),
     /** The import progress card bottom left; it covers what lies beneath until closed. */
     importCard: page.getByTestId('import-card'),
+    /** Folder import via the folder picker (in tests ARCHIVIST_TEST_PICK_DIR names the folder). */
+    folderPick: page.getByTestId('folder-pick'),
+    importFolders: page.getByTestId('import-folders'),
     closeImportCard: page.getByRole('button', { name: 'Import-Hinweis schließen' }),
     items: page.getByTestId('inbox-item'),
     proposals: page.getByTestId('inbox-proposal'),
@@ -45,6 +48,28 @@ export function initInbox(page: Page) {
       release: page.getByTestId('inbox-quarantine-release'),
       confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
       confirm: page.getByTestId('inbox-quarantine-release-confirm'),
+    },
+    /** „Alle N Vorschläge archivieren“: one confirmation with the target structure, then one job (#228). */
+    archiveAll: {
+      open: page.getByTestId('inbox-archive-all-open'),
+      preview: page.getByTestId('archive-all-preview'),
+      folders: page.getByTestId('archive-all-folders'),
+      confirm: page.getByTestId('archive-all-confirm'),
+      reviewed: page.getByTestId('confirm-dialog-checkbox'),
+      newCategory: page.getByTestId('archive-new-category'),
+      progress: page.getByTestId('archive-all-progress'),
+    },
+    /** Paging of a long inbox. */
+    paging: {
+      info: page.getByTestId('inbox-more'),
+      loadMore: page.getByTestId('inbox-load-more'),
+    },
+    /** „Alle N mit KI analysieren“ after a folder import in mode „vorher fragen“. */
+    analyzeImport: {
+      estimate: page.getByTestId('bulk-consent-estimate'),
+      budget: page.getByTestId('bulk-consent-budget'),
+      allowLlm: page.getByTestId('analyze-import-llm'),
+      confirm: page.getByTestId('analyze-import-confirm'),
     },
     archivePlan: {
       source: page.getByTestId('archive-plan-source'),

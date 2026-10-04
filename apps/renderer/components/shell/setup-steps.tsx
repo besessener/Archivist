@@ -2,16 +2,17 @@
 
 import { Archive, CheckCircle2, FolderPlus, Loader2, PlugZap, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
 import { connectionTitle, connectionTone } from '@/lib/labels';
-import { checkLlmBaseUrl, type IpcOutput } from '@archivist/shared';
+import { checkLlmBaseUrl, type IpcOutput, type ReasoningEffort } from '@archivist/shared';
+import { EFFORT_HINT, EffortOptions } from '@/components/settings/effort-options';
 import { AgentCapabilityNote } from '@/components/agent/capability-note';
 import { Field, Notice } from '@/components/common/states';
+import { SyncFolderNotice } from '@/components/common/sync-folder-notice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 export type Mode = 'auto' | 'confirm' | 'local_only';
-export type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high';
 export type ConnectionTest = IpcOutput<'llm:testConnection'>;
 type Directory = IpcOutput<'scanner:listDirectories'>[number];
 
@@ -38,7 +39,11 @@ export function WelcomeStep({
   onProfileNameChange,
   nicknames,
   onNicknamesChange,
+  syncProvider,
+  dataSyncProvider,
 }: {
+  syncProvider: string | null;
+  dataSyncProvider: string | null;
   profileName: string;
   onProfileNameChange: (name: string) => void;
   nicknames: string;
@@ -65,6 +70,7 @@ export function WelcomeStep({
           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> Die Einrichtung dauert etwa zwei Minuten.
         </li>
       </ul>
+      <SyncFolderNotice provider={syncProvider} dataProvider={dataSyncProvider} data-testid="setup-sync-warning" />
       <Field
         label="Dein Name (optional)"
         htmlFor="setup-profile-name"
@@ -93,8 +99,8 @@ export interface LlmForm {
   hasKey: boolean;
   model: string;
   setModel: (value: string) => void;
-  effort: Effort | '';
-  setEffort: (value: Effort | '') => void;
+  effort: ReasoningEffort | '';
+  setEffort: (value: ReasoningEffort | '') => void;
 }
 
 export function LlmStep({ form, test, testing, onTest }: { form: LlmForm; test: ConnectionTest | null; testing: boolean; onTest: () => void }) {
@@ -150,14 +156,9 @@ export function LlmStep({ form, test, testing, onTest }: { form: LlmForm; test: 
           autoComplete="off"
         />
       </Field>
-      <Field label="Denktiefe (optional)" htmlFor="setup-effort" hint="Nur für Modelle mit „Reasoning“. Im Zweifel leer lassen.">
-        <Select id="setup-effort" value={form.effort} onChange={(e) => form.setEffort(e.target.value as Effort | '')}>
-          <option value="">Standard des Modells</option>
-          <option value="none">keine</option>
-          <option value="minimal">minimal</option>
-          <option value="low">niedrig</option>
-          <option value="medium">mittel</option>
-          <option value="high">hoch</option>
+      <Field label="Denktiefe (optional)" htmlFor="setup-effort" hint={`${EFFORT_HINT} Im Zweifel leer lassen.`}>
+        <Select id="setup-effort" value={form.effort} onChange={(e) => form.setEffort(e.target.value as ReasoningEffort | '')}>
+          <EffortOptions />
         </Select>
       </Field>
       <div className="flex flex-wrap items-center gap-3">

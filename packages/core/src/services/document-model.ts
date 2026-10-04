@@ -10,6 +10,7 @@ import type { AuditService } from './audit';
 import type { CategoryService } from './categories';
 import type { DocumentListQuery } from './document-queries';
 import type { JobQueueService } from './jobs';
+import type { NearDuplicateIndex } from './near-duplicates';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { NotificationService } from './notifications';
@@ -70,6 +71,7 @@ export interface DocumentDeps {
   categories: CategoryService;
   jobs: JobQueueService;
   documents: DocumentAccess;
+  nearDuplicates: NearDuplicateIndex;
 }
 
 /** Extracts the text of a file in the worker (with OCR as configured). */

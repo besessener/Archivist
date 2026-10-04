@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { classification } from '../helpers/document-classifications';
@@ -95,32 +94,5 @@ describe('documents:count', () => {
     expect(await app.ok('documents:count', { topicId })).toBe(1101);
     expect(await app.ok('documents:count', { query: 'Mietvertrag', status: 'archived' })).toBe(1101);
     expect(await app.ok('documents:count', { status: 'proposed' })).toBe(0);
-  });
-});
-
-describe('automatic analysis after a scan', () => {
-  it('takes every waiting file, oldest first, and skips files already queued', async () => {
-    const app2 = await createTestApp({ privacy: 'auto', scanEnabled: true });
-    try {
-      const dl = path.join(app2.home, 'Downloads');
-      for (const n of ['b.txt', 'a.txt', 'c.txt']) app2.file(`Downloads/${n}`, `Inhalt ${n}`);
-      await app2.ok('scanner:addDirectory', { path: dl, recursive: true });
-      await app2.ok('scanner:start', {});
-      await app2.services.jobs.whenIdle();
-      const db = app2.services.database.sqlite;
-      const files = app2.services.scanner.getResults({}).files;
-      const idOf = (name: string) => files.find((f) => f.name === name)!.id;
-      // c.txt was seen first, a.txt last; b.txt is excluded from the LLM
-      db.prepare("UPDATE scan_files SET first_seen_at = '2026-01-01T00:00:00.000Z' WHERE id = ?").run(idOf('c.txt'));
-      db.prepare("UPDATE scan_files SET first_seen_at = '2026-03-01T00:00:00.000Z' WHERE id = ?").run(idOf('a.txt'));
-      db.prepare("UPDATE scan_files SET llm_status = 'excluded' WHERE id = ?").run(idOf('b.txt'));
-      expect(app2.services.scanner.filesAwaitingAnalysis()).toEqual([idOf('c.txt'), idOf('a.txt')]);
-
-      await app2.services.jobs.stop();
-      app2.services.jobs.enqueue('scanner.analyze', { label: 'Analysiere', payload: { fileIds: [idOf('c.txt')], confirmLlm: false } });
-      expect(app2.services.scanner.filesAwaitingAnalysis()).toEqual([idOf('a.txt')]);
-    } finally {
-      await app2.cleanup();
-    }
   });
 });

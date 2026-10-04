@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { Job, ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
-import { and, count, desc, eq, inArray, ne } from 'drizzle-orm';
+import type { Job, ScanExclusion, ScanFile, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
+import { and, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, permissionError, validationError } from '../util/errors';
@@ -18,11 +18,14 @@ import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
 import { IntervalSchedule } from './scheduler';
+import { BulkFileAnalysis } from './scanner/bulk-analysis';
 import { FileAnalysis } from './scanner/file-analysis';
 import { ScanExclusions } from './scanner/exclusions';
 import { ScanProposals } from './scanner/proposals';
 import { mapFile, mapRoot, type RootRow } from './scanner/scan-files';
+import { queryScanResults, type ScanResultsQuery } from './scanner/scan-results';
 import { ScanRun } from './scanner/scan-run';
+import type { LlmService } from './llm';
 import type { SettingsService } from './settings';
 
 export interface ScannerServiceDeps {
@@ -32,6 +35,7 @@ export interface ScannerServiceDeps {
   docs: DocumentService;
   graph: KnowledgeGraphService;
   privacy: PrivacyService;
+  llm: LlmService;
   notifications: NotificationService;
   insights: InsightService;
   audit: AuditService;
@@ -45,6 +49,8 @@ export class ScannerService {
   private readonly scans: ScanRun;
   private readonly analysis: FileAnalysis;
   private readonly scanProposals: ScanProposals;
+  /** „Alle neuen Dateien analysieren“: estimate and the run of its job. */
+  readonly bulk: BulkFileAnalysis;
   private readonly exclusions: ScanExclusions;
   /** Files per scan page and batch (lowered in tests). */
   pageSize = SCAN_PAGE_SIZE;
@@ -54,8 +60,18 @@ export class ScannerService {
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
     this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, pageSize: () => this.pageSize });
     this.exclusions = new ScanExclusions({ ctx, audit: deps.audit });
-    this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });
+    this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications, jobs: deps.jobs });
     this.scanProposals = new ScanProposals({ ctx, graph });
+    this.bulk = new BulkFileAnalysis({
+      ctx,
+      analysis: this.analysis,
+      privacy,
+      settings,
+      llm: deps.llm,
+      jobs: deps.jobs,
+      notifications,
+      buildProposals: (ids) => this.buildProposals(ids),
+    });
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
       if (!event.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: event.documentId }).where(eq(scanFiles.path, event.sourcePath)).run();
@@ -111,7 +127,7 @@ export class ScannerService {
     if (!(await fsp.stat(real)).isDirectory()) throw validationError('Das ist kein Verzeichnis.');
     const forbidden = isForbiddenScanRoot(real);
     if (forbidden) throw permissionError(forbidden, real);
-    const ownRoots = [this.deps.ctx.paths.root, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
+    const ownRoots = [this.deps.ctx.paths.root, this.deps.ctx.paths.appData, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
     if (ownRoots.some((ownRoot) => isInside(ownRoot, real))) throw permissionError('Das Archivist-Datenverzeichnis selbst kann nicht gescannt werden.', real);
     if (this.db.select().from(scanRoots).where(eq(scanRoots.path, real)).get()) throw validationError('Dieses Verzeichnis ist bereits freigegeben.');
     const scan = this.deps.settings.get().scan;
@@ -198,45 +214,8 @@ export class ScannerService {
     return this.scans.run(rootId, job);
   }
 
-  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number; offset?: number } = {}): {
-    files: ScanFile[];
-    total: number;
-    lastSummary: ScanSummary | null;
-  } {
-    const conditions = [];
-    if (options.rootId) conditions.push(eq(scanFiles.rootId, options.rootId));
-    if (options.status) conditions.push(eq(scanFiles.status, options.status));
-    const where = conditions.length ? and(...conditions) : undefined;
-    const files = this.db
-      .select()
-      .from(scanFiles)
-      .where(where)
-      .orderBy(desc(scanFiles.lastSeenAt), scanFiles.name, scanFiles.path)
-      .limit(options.limit ?? 500)
-      .offset(options.offset ?? 0)
-      .all()
-      .map(mapFile);
-    const total = this.db.select({ total: count() }).from(scanFiles).where(where).get()?.total ?? 0;
-    const latest = this.db
-      .select()
-      .from(scanRoots)
-      .orderBy(desc(scanRoots.lastScanAt))
-      .all()
-      .find((root) => root.lastSummary);
-    return { files, total, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
-  }
-
-  /** New or changed analysable files not queued yet, oldest first – unlike the result list, not always the same first ones (#222). */
-  filesAwaitingAnalysis(): string[] {
-    const queued = new Set(this.deps.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((payload) => payload.fileIds ?? []));
-    return this.db
-      .select({ id: scanFiles.id })
-      .from(scanFiles)
-      .where(and(inArray(scanFiles.status, ['new', 'changed']), ne(scanFiles.llmStatus, 'excluded')))
-      .orderBy(scanFiles.firstSeenAt, scanFiles.path)
-      .all()
-      .map((row) => row.id)
-      .filter((id) => !queued.has(id));
+  getResults(options: ScanResultsQuery = {}): ReturnType<typeof queryScanResults> {
+    return queryScanResults(this.db, options);
   }
 
   getFile(id: string): ScanFile {
@@ -254,7 +233,10 @@ export class ScannerService {
 
   // ---------- Content analysis ----------
   /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
-  async analyzeFiles(fileIds: string[], options: { confirmLlm: boolean; job?: JobContext }): Promise<{ analyzed: string[]; skipped: string[] }> {
+  async analyzeFiles(
+    fileIds: string[],
+    options: { confirmLlm: boolean; reanalyze?: boolean; job?: JobContext },
+  ): Promise<{ analyzed: string[]; skipped: string[] }> {
     const result = await this.analysis.analyzeFiles(fileIds, options);
     this.buildProposals(result.analyzed);
     this.deps.ctx.events.changed('scanner', 'documents', 'status');

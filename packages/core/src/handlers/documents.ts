@@ -1,4 +1,6 @@
 import type { Services } from '../create-services';
+import { DOCUMENT_REINDEX_JOB } from '../services/document-index';
+import { enqueueReembedding } from '../services/reembedding';
 import { fillPattern } from '../services/rename-pattern';
 import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
@@ -20,6 +22,10 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'documents:counts': () => services.reader.run('documentCounts', {}),
     'documents:count': (input) => services.reader.run('documentCount', input),
     'documents:get': (input) => services.documents.get(input.id),
+    'documents:archiveAllPreview': (input) => services.archiveAll.preview(input.source),
+    'documents:archiveAll': (input) => ({ jobId: services.archiveAll.enqueue(input).id }),
+    'documents:analyzeImportEstimate': (input) => services.importAnalysis.estimate(input.jobId),
+    'documents:analyzeImport': (input) => ({ jobId: services.importAnalysis.enqueue(input).id }),
     'documents:classify': (input) => ({ jobId: services.documents.enqueueAnalysis(input.documentId, { allowLlm: input.allowLlm }) }),
     'documents:previewArchive': (input) => services.archive.preview(input.items),
     'documents:archive': (input) =>
@@ -57,6 +63,20 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'documents:setLlmExcluded': (input) => services.documents.setLlmExcluded(input.id, { excluded: input.excluded }),
     'documents:releaseQuarantine': (input) => services.documents.releaseFromQuarantine(input.id, { confirmed: input.confirmed }),
     'documents:trash': (input) => services.documents.moveToTrash(input.id, { confirmed: input.confirmed, trigger: 'manual' }),
+    'documents:reanalysis': (input) => services.documents.reanalysis.get(input.id),
+    'documents:reanalysisPending': () => ({ documentIds: services.documents.reanalysis.pendingIds() }),
+    'documents:applyReanalysis': (input) => services.documents.reanalysis.apply(input.id, { confirmed: input.confirmed }),
+    'documents:discardReanalysis': (input) => {
+      services.documents.reanalysis.discard(input.id);
+      return { ok: true as const };
+    },
+    'documents:reprocessEstimate': (input) => services.reprocessing.estimate(input.ids),
+    'documents:reprocess': (input) => ({ jobId: services.reprocessing.enqueue(input).id }),
+    'documents:indexStatus': () => services.documents.indexRepair.status(),
+    'documents:rebuildIndex': () => ({
+      jobId: services.jobs.enqueue(DOCUMENT_REINDEX_JOB, { label: 'Suchindex ergänzen', sameAs: () => true, maxAttempts: 1 }).id,
+    }),
+    'documents:reembed': () => ({ jobId: enqueueReembedding(services.jobs).id }),
     'trash:list': () => services.documents.trashEntries(),
     'trash:empty': (input) => services.documents.emptyTrash(input),
 
@@ -75,10 +95,12 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'scanner:analyze': (input) => ({
       jobId: services.jobs.enqueue('scanner.analyze', {
         label: `Analysiere ${input.fileIds.length} Datei(en)`,
-        payload: { fileIds: input.fileIds, confirmLlm: input.confirmLlm },
+        payload: { fileIds: input.fileIds, confirmLlm: input.confirmLlm, reanalyze: input.reanalyze },
         maxAttempts: 1,
       }).id,
     }),
+    'scanner:analyzeAllPreview': () => services.scanner.bulk.estimate(),
+    'scanner:analyzeAll': (input) => ({ jobId: services.scanner.bulk.enqueue({ confirmLlm: input.confirmLlm }).id }),
     'scanner:proposals': () => services.scanner.proposals(),
     'scanner:exclude': (input) => services.scanner.exclude(input.kind, input.path),
     'scanner:listExclusions': () => services.scanner.listExclusions(),
@@ -93,6 +115,7 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'categories:migrate': (input) => services.categoryMigration.migrate({ confirmed: input.confirmed }),
     'backup:create': (input) => services.backup.create({ includeArchive: input.includeArchive }),
     'backup:list': () => services.backup.list(),
+    'backup:storage': () => services.backup.storage(),
     'backup:restore': (input) => {
       services.backup.requestRestore(input.name);
       host.restartApp?.();

@@ -156,4 +156,9 @@ describe('masking secrets before transmission', () => {
   it('masks credentials and counts them', () => {
     expect(maskSecrets('passwort: hunter2xx')).toMatchObject({ text: 'passwort: [REDACTED:secret]', count: 1 });
   });
+
+  it('masks personal identifiers unless the setting is off', () => {
+    expect(maskSecrets('PIN 4711')).toMatchObject({ text: 'PIN [PIN]', count: 1, personalData: 1 });
+    expect(maskSecrets('PIN 4711', { personalData: false })).toMatchObject({ text: 'PIN 4711', count: 0 });
+  });
 });

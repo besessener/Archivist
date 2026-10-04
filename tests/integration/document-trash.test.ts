@@ -115,7 +115,7 @@ describe('trash: deleting with a safety net', () => {
     expect(fs.existsSync(trashed!)).toBe(true);
     await expect(app.services.documents.emptyTrash({ confirmed: true, permanentlyConfirmed: false })).rejects.toThrow('zweite, ausdrückliche Bestätigung');
 
-    expect(await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true })).toEqual({ deletedFiles: 1, documents: 1 });
+    expect(await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true })).toEqual({ deletedFiles: 1, documents: 1, databaseCompacted: true });
 
     expect(fs.existsSync(trashed!)).toBe(false);
     expect(trashDir()).toEqual([]);

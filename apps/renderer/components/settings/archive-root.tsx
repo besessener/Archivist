@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import { ArrowRightLeft, FolderInput, FolderOpen, Loader2, Truck, Undo2, X } from 'lucide-react';
 import { ErrorNote, Field, Loading, Notice } from '@/components/common/states';
+import { SyncFolderNotice } from '@/components/common/sync-folder-notice';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Progress, ProgressIndeterminate } from '@/components/ui/progress';
+import { useApp } from '@/lib/app-context';
 import { formatBytes, formatDateTime } from '@/lib/format';
 import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
@@ -103,6 +105,8 @@ function ChangeRootDialog({ preview, onClose, onStarted }: { preview: Preview; o
           </DialogDescription>
         </DialogHeader>
 
+        <SyncFolderNotice provider={preview.syncProvider} data-testid="archive-root-dialog-sync" />
+
         <div className="flex flex-col gap-3">
           <div className="rounded-lg border p-3" data-testid="archive-root-option-migrate">
             <p className="flex items-center gap-2 font-medium">
@@ -160,6 +164,7 @@ function ChangeRootDialog({ preview, onClose, onStarted }: { preview: Preview; o
 /** Settings section for the archive root: change it safely, follow a running move, see and undo the last change. */
 export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: string; reload: () => void }) {
   const { run, busy } = useRun();
+  const { status: appStatus } = useApp();
   const [root, setRoot] = useState(archiveRoot);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [undoConflicts, setUndoConflicts] = useState<string[]>([]);
@@ -187,6 +192,7 @@ export function ArchiveRootSection({ archiveRoot, reload }: { archiveRoot: strin
       title="Archivordner"
       description="In diesen Ordner legt Archivist deine Dokumente ab. Beim Ändern kannst du das Archiv umziehen lassen oder nur den Pfad umstellen, wenn die Dateien schon dort liegen."
     >
+      <SyncFolderNotice provider={appStatus?.archiveSyncProvider ?? null} dataProvider={appStatus?.dataSyncProvider ?? null} data-testid="archive-root-sync" />
       {rootStatus && unreachableOf(rootStatus.current) > 0 && (
         <Notice tone="danger" title={`${docs(unreachableOf(rootStatus.current))} nicht erreichbar`}>
           <span data-testid="archive-root-unreachable">

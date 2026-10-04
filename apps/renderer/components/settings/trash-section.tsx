@@ -21,6 +21,7 @@ export function TrashSection() {
   const trash = useQuery('trash:list', {}, { scopes: ['documents', 'audit'] });
   const [results, setResults] = useState<Record<string, UndoResult>>({});
   const [emptying, setEmptying] = useState(false);
+  const [compactionFailed, setCompactionFailed] = useState(false);
   const entries = trash.data ?? [];
 
   async function restore(entry: TrashEntry) {
@@ -33,7 +34,7 @@ export function TrashSection() {
   return (
     <Section
       title="Papierkorb"
-      description="Gelöschte Dokumente liegen hier, bis du den Papierkorb leerst. Bis dahin kannst du sie mit allen Verknüpfungen wiederherstellen."
+      description="Gelöschte Dokumente liegen hier, bis du sie aus Archivist entfernst. Bis dahin kannst du sie mit allen Verknüpfungen wiederherstellen."
     >
       {trash.error && !trash.data && <ErrorNote error={trash.error} onRetry={() => void trash.refetch()} />}
       {!trash.data && trash.loading && <Loading />}
@@ -63,26 +64,41 @@ export function TrashSection() {
           ))}
         </ul>
       )}
+      {compactionFailed && (
+        <Notice tone="warning" title="Datenbank nicht vollständig bereinigt" data-testid="trash-compaction-warning">
+          Die Dokumente sind entfernt, aber die Datenbank konnte nicht verdichtet werden. Reste des Textes können in freien Seiten der Datenbank bleiben, bis
+          sie beim nächsten Start oder bei einer späteren Verdichtung überschrieben werden.
+        </Notice>
+      )}
       <div>
         <Button variant="outline" disabled={busy || entries.length === 0} onClick={() => setEmptying(true)} data-testid="trash-empty">
-          <Trash2 aria-hidden /> Papierkorb leeren …
+          <Trash2 aria-hidden /> Aus Archivist entfernen …
         </Button>
       </div>
       <ConfirmDialog
         open={emptying}
         onOpenChange={setEmptying}
-        title="Papierkorb endgültig leeren?"
-        description={`${entries.length === 1 ? 'Ein Dokument wird' : `${entries.length} Dokumente werden`} endgültig gelöscht. Das lässt sich nicht rückgängig machen.`}
-        requireCheckbox="Ich verstehe, dass diese Dateien endgültig gelöscht werden."
-        confirmLabel="Endgültig löschen"
+        title="Papierkorb leeren und aus Archivist entfernen?"
+        description={
+          <>
+            {entries.length === 1 ? 'Ein Dokument wird' : `${entries.length} Dokumente werden`} endgültig aus Archivist entfernt: die Dateien im Papierkorb, der
+            gespeicherte Text samt Zusammenfassung und die Vorschauen im Übertragungsprotokoll. Das lässt sich nicht rückgängig machen. Entscheidungen, offene
+            Punkte und Notizen, die aus den Dokumenten entstanden sind, bleiben erhalten. Deine Originale außerhalb von Archivist bleiben unberührt. Ältere
+            Backups enthalten den Text weiterhin.
+          </>
+        }
+        requireCheckbox="Ich verstehe, dass diese Dokumente nicht wiederhergestellt werden können und ältere Backups den Text weiterhin enthalten."
+        confirmLabel="Endgültig entfernen"
         destructive
         confirmTestId="trash-empty-confirm"
         onConfirm={async (checked) => {
           if (!checked) return;
           const result = await run(() => call('trash:empty', { confirmed: true, permanentlyConfirmed: true }), {
-            success: 'Papierkorb geleert',
+            success: 'Aus Archivist entfernt',
           });
-          if (result) setEmptying(false);
+          if (!result) return;
+          setCompactionFailed(result.documents > 0 && !result.databaseCompacted);
+          setEmptying(false);
         }}
       />
     </Section>

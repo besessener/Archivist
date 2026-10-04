@@ -154,7 +154,18 @@ describe('LLM status: agent requests (#152)', () => {
     config.fail(new AppError('llm_error', 'Agent-Aufruf kaputt'));
     expect(llm.status()).toMatchObject({ state: 'error', lastError: 'Agent-Aufruf kaputt' });
 
-    config.log({ purpose: 'Agent', model: 'm', endpoint: 'e', bytes: 1, redactions: 0, documentIds: [], preview: '', success: true });
+    config.log({
+      purpose: 'Agent',
+      model: 'm',
+      endpoint: 'e',
+      bytes: 1,
+      redactions: 0,
+      personalRedactions: 0,
+      documentIds: [],
+      preview: '',
+      success: true,
+      requests: 1,
+    });
     expect(llm.status().state).toBe('ok');
   });
 

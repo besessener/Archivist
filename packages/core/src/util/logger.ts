@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { redactSecrets } from './redact';
+import { redactSecrets, type RedactionOptions } from './redact';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 const order: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
@@ -16,6 +16,7 @@ export class Logger {
   private secrets = new Set<string>();
   private stream: fs.WriteStream | null = null;
   private currentFile = '';
+  private masking: RedactionOptions = { personalData: true };
 
   constructor(
     private readonly dir: string | null,
@@ -28,6 +29,10 @@ export class Logger {
     this.level = level;
   }
 
+  setMasking(masking: RedactionOptions): void {
+    this.masking = masking;
+  }
+
   /** Registers a known secret value (e.g. an API key) that is masked everywhere. */
   registerSecret(secret: string | null | undefined): void {
     if (secret && secret.length >= 6) this.secrets.add(secret);
@@ -36,7 +41,7 @@ export class Logger {
   sanitizeString(value: string, max = 400): string {
     let sanitized = value;
     for (const secret of this.secrets) sanitized = sanitized.split(secret).join('[REDACTED:key]');
-    sanitized = redactSecrets(sanitized).text;
+    sanitized = redactSecrets(sanitized, this.masking).text;
     return sanitized.length > max ? `${sanitized.slice(0, max)}…[+${sanitized.length - max} chars]` : sanitized;
   }
 

@@ -66,7 +66,7 @@ export class SourceGatherer {
     return [...out, ...support, ...cases, ...this.linkedSources(out.slice(0, 3), { taken: ids, query: queries[0] ?? '' })];
   }
 
-  /** A document with the same file, the same text or a confirmed duplicate link to one already chosen must not take another answer slot. */
+  /** Same file, same or nearly same text (#230) or a confirmed duplicate link to a chosen document: no further answer slot. */
   private duplicatesChosen(id: string, chosen: string[]): boolean {
     if (chosen.length === 0) return false;
     const row = this.deps.docs.getRow(id);
@@ -80,7 +80,7 @@ export class SourceGatherer {
     return chosen.some((otherId) => {
       const other = this.deps.docs.getRow(otherId);
       const sameText = Boolean(row.textHash) && row.textHash === other.textHash;
-      return row.sha256 === other.sha256 || sameText || linked.has(otherId);
+      return row.sha256 === other.sha256 || sameText || linked.has(otherId) || this.deps.docs.nearDuplicates.areSimilar(id, otherId);
     });
   }
 

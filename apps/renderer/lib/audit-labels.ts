@@ -15,6 +15,7 @@ const ACTION_LABELS: Record<string, string> = {
   'document.releaseQuarantine': 'Datei aus der Quarantäne importiert',
   'document.assign': 'Dokument zugeordnet',
   'document.updateMetadata': 'Angaben zum Dokument bearbeitet',
+  'document.applyReanalysis': 'Neue Angaben aus einer Neuanalyse übernommen',
   'document.bulkUpdate': 'Angaben zu mehreren Dokumenten bearbeitet',
   'document.refresh': 'Dokument neu eingelesen',
   'document.reread': 'Dokumenttext neu eingelesen',

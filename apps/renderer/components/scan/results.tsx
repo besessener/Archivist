@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Ban, ExternalLink, FolderX, Microscope } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { AnalyzeAll } from './analyze-all';
 import { EmptyState, ErrorNote, Loading, Notice } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { call } from '@/lib/ipc';
 import { LLM_STATUS_LABELS, SCAN_STATUS_LABELS } from '@/lib/labels';
 import { formatBytes, formatDateTime, formatNumber } from '@/lib/format';
+import { uniqueById, usePagedQuery } from '@/lib/use-paged-query';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { useSettings } from '@/lib/use-settings';
@@ -34,6 +36,10 @@ function statusVariant(s: ScanFileStatus) {
   }
 }
 
+const PAGE_SIZE = 500;
+/** Files per `scanner:analyze` call (the IPC limit). */
+const ANALYZE_CHUNK = 500;
+
 function dirname(p: string): string {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return i > 0 ? p.slice(0, i) : p;
@@ -41,27 +47,24 @@ function dirname(p: string): string {
 
 export function ScanResults() {
   const [filter, setFilter] = useState<ScanFileStatus | ''>('');
-  const { data, loading, error, refetch } = useQuery(
-    'scanner:getResults',
-    { ...(filter ? { status: filter } : {}), limit: 500 },
-    { scopes: ['scanner', 'documents'], jobs: true },
-  );
+  const paged = usePagedQuery('scanner:getResults', filter ? { status: filter } : {}, { pageSize: PAGE_SIZE, scopes: ['scanner', 'documents'], jobs: true });
+  const { loading, error, refetch } = paged;
+  const first = paged.pages?.[0];
   const roots = useQuery('scanner:listDirectories', {}, { scopes: ['scanner'] });
   const { settings } = useSettings();
   const { run } = useRun();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [llmOk, setLlmOk] = useState(false);
+  const [reanalyze, setReanalyze] = useState(false);
   const [excluding, setExcluding] = useState<{ kind: 'file' | 'dir'; path: string } | null>(null);
 
-  const [more, setMore] = useState<ScanFileRecord[]>([]);
-  // a refreshed first page (new scan, filter) replaces what was loaded after it
-  useEffect(() => setMore([]), [data, filter]);
-  const files = useMemo(() => [...(data?.files ?? []), ...more], [data, more]);
-  const total = data?.total ?? 0;
-  const summary = data?.lastSummary ?? null;
+  const files = useMemo(() => uniqueById(paged.pages?.map((page) => page.files)), [paged.pages]);
+  const summary = first?.lastSummary ?? null;
+  const total = first?.total ?? 0;
   const selectedFiles = useMemo(() => files.filter((f) => selected.has(f.id)), [files, selected]);
   const llmAllowedRoots = new Set((roots.data ?? []).filter((r) => r.llmAllowed).map((r) => r.id));
+  const analyzedFiles = selectedFiles.filter((f) => f.status === 'analyzed');
   const llmFiles = selectedFiles.filter((f) => llmAllowedRoots.has(f.rootId) && f.llmStatus !== 'excluded');
   const mode = settings?.privacy.llmMode ?? 'confirm';
   const toggle = (file: ScanFileRecord, checked: boolean) => setSelected((previous) => withMembership(previous, { value: file.id, present: checked }));
@@ -92,6 +95,7 @@ export function ScanResults() {
             disabled={selectedFiles.length === 0}
             onClick={() => {
               setLlmOk(false);
+              setReanalyze(false);
               setAnalyzeOpen(true);
             }}
             data-testid="scan-analyze"
@@ -100,6 +104,8 @@ export function ScanResults() {
           </Button>
         </div>
       </div>
+
+      <AnalyzeAll />
 
       {summary && (
         <Notice title="Letzte Suche" data-testid="scan-summary">
@@ -117,9 +123,9 @@ export function ScanResults() {
         </Notice>
       )}
 
-      {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
-      {!data && loading && <Loading />}
-      {data && files.length === 0 && (
+      {error && !first && <ErrorNote error={error} onRetry={() => void refetch()} />}
+      {!first && loading && <Loading />}
+      {first && files.length === 0 && (
         <EmptyState
           title="Noch keine Dateien gefunden"
           description="Starte oben eine Suche, nachdem du Verzeichnisse hinzugefügt und die Dokumentensuche aktiviert hast."
@@ -217,25 +223,14 @@ export function ScanResults() {
           </Table>
         </div>
       )}
-
-      {files.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-          <p data-testid="scan-results-count">
-            {formatNumber(files.length)} von {formatNumber(total)} Dateien angezeigt
+      {files.length > 0 && files.length < total && (
+        <div className="flex flex-col items-center gap-2" data-testid="scan-more">
+          <p className="text-sm text-muted-foreground" data-testid="scan-results-count">
+            {formatNumber(files.length)} von {formatNumber(total)} Dateien angezeigt.
           </p>
-          {files.length < total && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                void run(() => call('scanner:getResults', { ...(filter ? { status: filter } : {}), offset: files.length, limit: 500 }), {
-                  errorTitle: 'Weitere Dateien konnten nicht geladen werden',
-                }).then((page) => page && setMore((previous) => [...previous, ...page.files]))
-              }
-              data-testid="scan-load-more"
-            >
-              Mehr laden
-            </Button>
-          )}
+          <Button variant="outline" onClick={paged.loadMore} disabled={loading} data-testid="scan-load-more">
+            Mehr laden
+          </Button>
         </div>
       )}
 
@@ -246,9 +241,15 @@ export function ScanResults() {
         confirmLabel={llmOk ? 'Mit KI analysieren' : 'Nur lokal analysieren'}
         confirmTestId="scan-analyze-confirm"
         onConfirm={async () => {
-          const out = await run(() => call('scanner:analyze', { fileIds: selectedFiles.map((f) => f.id), confirmLlm: llmOk }), {
-            success: llmOk ? 'Analyse mit KI gestartet.' : 'Lokale Analyse gestartet.',
-          });
+          const ids = selectedFiles.map((f) => f.id);
+          const out = await run(
+            async () => {
+              for (let start = 0; start < ids.length; start += ANALYZE_CHUNK)
+                await call('scanner:analyze', { fileIds: ids.slice(start, start + ANALYZE_CHUNK), confirmLlm: llmOk, reanalyze });
+              return true;
+            },
+            { success: llmOk ? 'Analyse mit KI gestartet.' : 'Lokale Analyse gestartet.' },
+          );
           if (out) {
             setAnalyzeOpen(false);
             setSelected(new Set());
@@ -282,6 +283,14 @@ export function ScanResults() {
               <p className="mt-1 font-medium text-foreground">Dein Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.</p>
             )}
           </Notice>
+          {analyzedFiles.length > 0 && (
+            <CheckboxField
+              checked={reanalyze}
+              onCheckedChange={(v) => setReanalyze(v === true)}
+              label={`${analyzedFiles.length} ${analyzedFiles.length === 1 ? 'Datei ist' : 'Dateien sind'} schon analysiert – erneut analysieren (kostet bei der KI erneut Token)`}
+              data-testid="scan-reanalyze"
+            />
+          )}
           <CheckboxField
             checked={llmOk}
             disabled={mode === 'local_only'}

@@ -1,6 +1,14 @@
 import { authHeaders, type FetchLike } from '../../agent/adapters/common';
 import { AppError } from '../../util/errors';
 import { abortedError } from '../../util/llm-errors';
+import { parseRetryAfter } from '../../util/retry-after';
+
+export interface PostResponse {
+  status: number;
+  text: string;
+  /** From the Retry-After header (seconds or HTTP date), at most `MAX_RETRY_AFTER_MS`; absent without a usable header. */
+  retryAfterMs?: number;
+}
 
 export interface PostRequest {
   url: string;
@@ -26,7 +34,7 @@ function networkError(err: unknown): AppError {
 }
 
 /** POST with the one auth header the endpoint needs and a timeout; a user cancellation, a timeout and an unreachable endpoint become AppErrors. */
-export async function postJson(fetchImpl: FetchLike, request: PostRequest): Promise<{ status: number; text: string }> {
+export async function postJson(fetchImpl: FetchLike, request: PostRequest): Promise<PostResponse> {
   const { url, apiKey, body, timeoutMs, signal } = request;
   if (signal?.aborted) throw abortedError();
   const controller = new AbortController();
@@ -40,7 +48,8 @@ export async function postJson(fetchImpl: FetchLike, request: PostRequest): Prom
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    return { status: response.status, text: await response.text() };
+    const retryAfterMs = parseRetryAfter(response.headers?.get('retry-after'), Date.now());
+    return { status: response.status, text: await response.text(), ...(retryAfterMs === undefined ? {} : { retryAfterMs }) };
   } catch (err) {
     if (signal?.aborted) throw abortedError();
     if (controller.signal.aborted)

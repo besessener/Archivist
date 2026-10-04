@@ -1,18 +1,34 @@
 import type { AppErrorInfo, ErrorCategory } from '@archivist/shared';
 import { ZodError } from 'zod';
+import { MAX_RETRY_AFTER_MS } from './retry-after';
+
+export interface AppErrorOptions {
+  retryable?: boolean;
+  details?: string;
+  cause?: unknown;
+  /** LLM errors: how long the endpoint asked to wait before the next request (Retry-After, capped at 5 minutes). */
+  retryAfterMs?: number;
+  /** LLM errors: HTTP status of the answer. */
+  httpStatus?: number;
+}
 
 /** Uniform error type of the services; translated into AppErrorInfo at the IPC boundary. */
 export class AppError extends Error {
   constructor(
     public readonly category: ErrorCategory,
     message: string,
-    public readonly options: { retryable?: boolean; details?: string; cause?: unknown } = {},
+    public readonly options: AppErrorOptions = {},
   ) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
     this.name = 'AppError';
   }
   get retryable(): boolean {
     return this.options.retryable ?? false;
+  }
+  /** The wait a server asked for (Retry-After), at most 5 minutes; undefined if it named none. */
+  get retryAfterMs(): number | undefined {
+    const { retryAfterMs } = this.options;
+    return retryAfterMs === undefined ? undefined : Math.min(Math.max(0, retryAfterMs), MAX_RETRY_AFTER_MS);
   }
 }
 
@@ -35,7 +51,8 @@ const FILESYSTEM_MESSAGES: Record<string, string> = {
 
 export function toErrorInfo(err: unknown): AppErrorInfo {
   if (err instanceof AppError) {
-    return { category: err.category, message: err.message, retryable: err.retryable, details: err.options.details };
+    const info = { category: err.category, message: err.message, retryable: err.retryable, details: err.options.details };
+    return err.retryAfterMs === undefined ? info : { ...info, retryAfterMs: err.retryAfterMs };
   }
   if (err instanceof ZodError) {
     return {

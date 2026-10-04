@@ -49,7 +49,7 @@ const quitter = new QuitController({
 });
 
 const recoveryDeps = (): RecoveryDeps => ({
-  paths: resolveDataPaths(dataRoot()),
+  paths: resolveDataPaths({ root: dataRoot(), appDataRoot: appDataRoot() }),
   findNewestRestore: newestIntactSource,
   scheduleRestore,
   askToRestore: ({ message }) =>
@@ -70,7 +70,9 @@ const recoveryDeps = (): RecoveryDeps => ({
 
 const RESTART_DELAY_MS = 500;
 
+// ARCHIVIST_DATA_DIR keeps everything below one folder; otherwise only documents stay in Documents, the application state goes to the per-user data folder
 const dataRoot = () => process.env.ARCHIVIST_DATA_DIR ?? path.join(app.getPath('documents'), 'Archivist');
+const appDataRoot = () => (process.env.ARCHIVIST_DATA_DIR ? undefined : app.getPath('userData'));
 const resource = (...segments: string[]) => path.join(__dirname, ...segments);
 
 /** Encryption via Electron safeStorage (Windows DPAPI; the Linux branches only serve development and CI). */
@@ -240,6 +242,7 @@ async function start(): Promise<void> {
   const migrations = resource('migrations');
   services = createServices({
     dataRoot: dataRoot(),
+    appDataRoot: appDataRoot(),
     migrationsFolder: migrations,
     cipher,
     appVersion: app.getVersion(),

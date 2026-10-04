@@ -2,6 +2,10 @@
 
 Archivist sucht **hybrid**: eine Stichwortsuche (SQLite FTS5) und eine Vektorsuche (Cosine-Ähnlichkeit) laufen parallel, ihre Ergebnislisten werden per Reciprocal Rank Fusion zusammengeführt. Die genauen Regeln stehen in der [Referenz](../reference/funktionen.md#suche).
 
+## Wo der Text liegt
+
+Der Stichwortindex ist ein FTS5-Index im External-Content-Modus über die Abschnitte (`chunks`): Er enthält nur den Index, der Text der Abschnitte steht genau einmal in `chunks.text` (der Titel in `chunks.title`, damit er stärker zählt als der Text). So bleibt die Datenbank kleiner als mit einer zweiten Textkopie im Index. Indexzeile und Abschnitt teilen sich die `rowid`; beim Neuindexieren oder Entfernen eines Eintrags verschwinden zuerst die Indexzeilen, dann die Abschnitte. Der Volltext eines Dokuments steht zusätzlich in `documents.extracted_text`.
+
 ## Warum zwei Verfahren
 
 Stichwortsuche ist präzise und erklärbar: Steht „Mietvertrag“ im Dokument, wird es gefunden. Sie versagt aber bei anderen Formulierungen. Deshalb werden Suchbegriffe leicht gestemmt und als Präfix gesucht („Entscheidungen“ findet „entscheiden“), Frage- und Füllwörter ignoriert und Treffer mit mehr verschiedenen Suchbegriffen nach vorn sortiert.

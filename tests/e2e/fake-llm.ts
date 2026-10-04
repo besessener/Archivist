@@ -53,6 +53,7 @@ function classification(input: string) {
   const name = /Dateiname: (.+)/.exec(input)?.[1] ?? '';
   const vacation = /urlaub/i.test(name);
   const decided = /beschluss/i.test(name);
+  const fresh = /neuordner/i.test(name);
   return {
     docType: vacation ? 'Urlaubsantrag' : 'Protokoll',
     title: vacation ? 'Urlaubsantrag Juni 2026' : 'Jour Fixe Nordlicht',
@@ -63,7 +64,7 @@ function classification(input: string) {
     dates: [{ date: vacation ? '2026-06-12' : '2026-05-04', label: null }],
     tags: vacation ? ['urlaub'] : ['jour-fixe'],
     location: {
-      categoryPath: vacation ? 'Privat/Urlaub/2026' : 'Arbeit/Projekte/Nordlicht',
+      categoryPath: fresh ? 'sonderfall/akten' : vacation ? 'Privat/Urlaub/2026' : 'Arbeit/Projekte/Nordlicht',
       fileName: null,
       newMainCategory: false,
       rationale: vacation ? 'Urlaubsantrag vom 12.06.2026' : 'Das Dokument nennt das Projekt Nordlicht.',
@@ -177,6 +178,7 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
       id: 'r',
       status: 'completed',
       output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }],
+      usage: { input_tokens: 2000, output_tokens: 50, input_tokens_details: { cached_tokens: 0 } },
     });
     setTimeout(() => response.writeHead(200, { 'content-type': 'application/json' }).end(payload), control.delayMs);
   };

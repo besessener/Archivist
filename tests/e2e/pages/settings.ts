@@ -30,16 +30,31 @@ export function initSettings(page: Page) {
       baseUrlError: page.getByTestId('s-baseurl-error'),
       save: page.getByTestId('settings-save'),
       testConnection: page.getByTestId('settings-test-connection'),
+      testResult: page.getByTestId('settings-test-result'),
+      effort: page.getByTestId('settings-effort'),
     },
     privacy: {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
       activeMode: page.getByTestId('privacy-mode-active'),
       extensions: page.getByTestId('privacy-exts'),
+      transmissions: {
+        rows: page.getByTestId('transmission-row'),
+        preview: page.getByTestId('transmission-preview'),
+        retentionNote: page.getByText('Tagen automatisch gelöscht'),
+      },
+      maskPersonal: page.getByTestId('privacy-mask-personal'),
+      maskNote: page.getByTestId('privacy-mask-note'),
+      usageToday: page.getByTestId('usage-today'),
+      usageMonth: page.getByTestId('usage-month'),
+      capInput: page.getByTestId('usage-cap'),
+      capError: page.getByTestId('usage-cap-error'),
+      capSave: page.getByTestId('usage-cap-save'),
     },
     archiveRoot: {
       input: page.getByTestId('settings-archive-root'),
       change: page.getByTestId('settings-archive-change'),
       unreachable: page.getByTestId('archive-root-unreachable'),
+      syncNotice: page.getByTestId('archive-root-sync'),
       lastChange: page.getByTestId('archive-root-last-change'),
       undo: page.getByTestId('archive-root-undo'),
       dialog: {
@@ -49,7 +64,14 @@ export function initSettings(page: Page) {
         pathWarning: dialog.getByTestId('archive-root-path-warning'),
         accept: dialog.getByTestId('archive-root-accept'),
         cancel: dialog.getByTestId('archive-root-cancel'),
+        syncNotice: dialog.getByTestId('archive-root-dialog-sync'),
       },
+    },
+    index: {
+      status: page.getByTestId('index-status'),
+      rebuild: page.getByTestId('index-rebuild'),
+      reembed: page.getByTestId('index-reembed'),
+      confirmReembed: page.getByTestId('index-reembed-confirm'),
     },
     trash: {
       items: page.getByTestId('trash-item'),
@@ -121,6 +143,8 @@ export function initSettings(page: Page) {
       beforeRestoreRow: page.getByTestId('backup-row').filter({ hasText: 'Stand vor der Wiederherstellung vom' }),
       confirmRestore: page.getByTestId('backup-restore-confirm'),
       restartNotice: page.getByTestId('backup-restart-notice'),
+      storage: page.getByTestId('backup-storage'),
+      sizeWarning: page.getByTestId('backup-size-warning'),
     },
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),
@@ -139,6 +163,10 @@ export function initSettings(page: Page) {
     },
     openArchive: async () => {
       await locators.tabs.archive.click();
+    },
+    /** Opens the preview of the transmission log entry in the given row. */
+    openTransmissionPreview: async (row: number) => {
+      await locators.privacy.transmissions.rows.nth(row).getByRole('button', { name: 'Vorschau' }).click();
     },
     /** Creates a category through the form and its confirmation dialog. */
     createCategory: async (categoryPath: string) => {
