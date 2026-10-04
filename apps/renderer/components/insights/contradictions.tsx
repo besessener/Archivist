@@ -17,6 +17,7 @@ import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 
 type Contradiction = IpcOutput<'contradictions:list'>[number];
+type Decision = IpcOutput<'decisions:list'>[number];
 type Resolution = 'acknowledged' | 'resolved' | 'false_positive';
 
 export function ContradictionsSection({
@@ -84,21 +85,15 @@ export function ResolveContradictionDialog({
 }) {
   const { run } = useRun();
   const [resolution, setResolution] = useState<Resolution>('resolved');
-  const [supersede, setSupersede] = useState(true);
+  const [supersedeChoice, setSupersedeChoice] = useState<{ contradictionId: string; checked: boolean }>();
   const decisions = useQuery(
     'decisions:list',
     { ids: contradiction?.affectedEntityIds.slice(0, 100) ?? [], limit: 100 },
     { enabled: contradiction !== null && contradiction.affectedEntityIds.length > 0 },
   );
-  const involved = useMemo(() => {
-    if (!contradiction) return [];
-    return (decisions.data ?? [])
-      .filter((decision) => contradiction.affectedEntityIds.includes(decision.id))
-      .sort((a, b) => (a.decidedAt ?? a.createdAt).localeCompare(b.decidedAt ?? b.createdAt));
-  }, [contradiction, decisions.data]);
-  const older = involved[0];
-  const newer = involved.length >= 2 ? involved[involved.length - 1] : undefined;
+  const { older, newer, dated } = useMemo(() => decisionOrder(contradiction?.affectedEntityIds ?? [], decisions.data ?? []), [contradiction, decisions.data]);
   const canSupersede = !!older && !!newer && resolution === 'resolved';
+  const supersede = supersedeChoice && supersedeChoice.contradictionId === contradiction?.id ? supersedeChoice.checked : dated;
 
   const resolve = async () => {
     if (!contradiction) return;
@@ -140,7 +135,7 @@ export function ResolveContradictionDialog({
           <div className="rounded-md border bg-muted/50 p-3">
             <CheckboxField
               checked={supersede}
-              onCheckedChange={(checked) => setSupersede(checked === true)}
+              onCheckedChange={(checked) => contradiction && setSupersedeChoice({ contradictionId: contradiction.id, checked: checked === true })}
               label={
                 <span>
                   Die neuere Entscheidung ersetzt die ältere:
@@ -158,4 +153,13 @@ export function ResolveContradictionDialog({
       </div>
     </ConfirmDialog>
   );
+}
+
+/** The server stores a pair as [older, newer] but cannot always tell (same day, undated); only decision dates on different days prove the order. */
+function decisionOrder(affectedEntityIds: string[], decisions: Decision[]): { older?: Decision; newer?: Decision; dated: boolean } {
+  const [first, second] = affectedEntityIds.map((id) => decisions.find((decision) => decision.id === id));
+  const firstDay = first?.decidedAt?.slice(0, 10);
+  const secondDay = second?.decidedAt?.slice(0, 10);
+  if (!firstDay || !secondDay || firstDay === secondDay) return { older: first, newer: second, dated: false };
+  return firstDay < secondDay ? { older: first, newer: second, dated: true } : { older: second, newer: first, dated: true };
 }

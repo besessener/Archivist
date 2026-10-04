@@ -246,6 +246,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Ein Hinweis je Objekt und Art.
 - Entfällt die Ursache, schließt der nächste Lauf den Hinweis und zieht seinen Vorschlag zurück (Status „Nicht mehr aktuell“).
 - Widerspruch, Hinweis und Ersetzen-Vorschlag werden gemeinsam geschlossen.
+- Beim Auflösen eines Widerspruchs zwischen zwei Entscheidungen ist „Die neuere Entscheidung ersetzt die ältere“ nur vorausgewählt, wenn beide Entscheidungsdaten auf verschiedene Tage fallen. Am selben Tag oder ohne Datum ist die Reihenfolge unsicher: Dann kreuzt du es nur an, wenn „Neu“ und „Alt“ stimmen, sonst markierst du die überholte Entscheidung auf ihrer Seite als „ersetzt“.
 - Ein Vorschlag wird vor dem Ausführen erneut geprüft (z. B. nichts zurückschieben, was inzwischen verschoben wurde); nach einem Fehlschlag lässt er sich erneut bestätigen.
 - Bestätigte Hinweise kommen wieder, wenn neue Objekte betroffen sind oder die Ursache nach 7 Tagen noch besteht.
 - Vorschläge der Archivprüfung lassen sich nur über Insights bzw. Benachrichtigungen ausführen, nicht per „ja“ im Chat.
