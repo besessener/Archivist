@@ -130,6 +130,19 @@ describe('LLM client: Retry-After and rate limits', () => {
     expect(toErrorInfo(fast)).toMatchObject({ retryable: true, retryAfterMs: expect.any(Number) });
   });
 
+  it('a 429 from Claude keeps the endpoint closed for as long as its Retry-After asks', async () => {
+    const limited = { type: 'error', error: { type: 'rate_limit_error', message: 'rate limited' } };
+    const { llm, calls } = client([{ status: 429, retryAfter: '600', body: limited }], 'https://llm.example.test/anthropic');
+    const first = await llm.complete(plain).catch((err: unknown) => err);
+    expect(calls).toHaveLength(1);
+    expect(toErrorInfo(first)).toMatchObject({ retryable: true, retryAfterMs: MAX_RETRY_AFTER_MS });
+
+    const fast = await llm.complete(plain).catch((err: unknown) => err);
+
+    expect(calls).toHaveLength(1);
+    expect((fast as { retryAfterMs: number }).retryAfterMs).toBeGreaterThan(MAX_RETRY_AFTER_MS - 5000);
+  });
+
   it('without Retry-After the backoff after a 429 grows with every further 429', async () => {
     const { llm } = client([{ status: 429 }]);
     await llm.complete(plain).catch(() => undefined);

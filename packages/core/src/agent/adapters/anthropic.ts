@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicFoundry } from '@anthropic-ai/foundry-sdk';
 import { abortedError } from '../../util/llm-errors';
 import { AppError } from '../../util/errors';
+import { parseRetryAfter } from '../../util/retry-after';
 import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
 import { previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
 
@@ -157,10 +158,11 @@ function mapError(err: unknown, signal?: AbortSignal): Error {
     return new AppError('llm_error', 'Claude hat die Anmeldung abgelehnt (API-Key prüfen).', { details: err.message });
   if (err instanceof Anthropic.NotFoundError)
     return new AppError('llm_error', 'Endpunkt oder Modell (Deployment) wurde nicht gefunden – Base URL und Modellname prüfen.', { details: err.message });
-  if (err instanceof Anthropic.RateLimitError)
-    return new AppError('llm_error', 'Das Claude-Limit wurde erreicht.', { retryable: true, details: err.message, httpStatus: err.status });
-  if (err instanceof Anthropic.InternalServerError)
-    return new AppError('llm_error', 'Claude meldet einen Serverfehler.', { retryable: true, details: err.message, httpStatus: err.status });
+  if (err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError) {
+    const message = err instanceof Anthropic.RateLimitError ? 'Das Claude-Limit wurde erreicht.' : 'Claude meldet einen Serverfehler.';
+    const retryAfterMs = parseRetryAfter(err.headers?.get('retry-after'), Date.now());
+    return new AppError('llm_error', message, { retryable: true, details: err.message, httpStatus: err.status, retryAfterMs });
+  }
   if (err instanceof Anthropic.APIConnectionTimeoutError)
     return new AppError('network_error', 'Zeitüberschreitung – Claude antwortet nicht.', { retryable: true, details: err.message });
   if (err instanceof Anthropic.APIConnectionError)

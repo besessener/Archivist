@@ -277,10 +277,10 @@ describe('OpenAI Responses adapter (#297)', () => {
 
   it('the timeout bounds a pause in the stream, not the whole answer', async () => {
     const events = [
-      ...Array.from({ length: 8 }, () => ({ type: 'response.output_text.delta', delta: 'a' })),
+      ...Array.from({ length: 50 }, () => ({ type: 'response.output_text.delta', delta: 'a' })),
       {
         type: 'response.completed',
-        response: completed([{ type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'aaaaaaaa' }] }]),
+        response: completed([{ type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'a'.repeat(50) }] }]),
       },
     ];
     const slowStream: typeof fetch = async (_url, init) => {
@@ -290,7 +290,7 @@ describe('OpenAI Responses adapter (#297)', () => {
           init!.signal!.addEventListener('abort', () => controller.error(init!.signal!.reason), { once: true });
         },
         async pull(controller) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
+          await new Promise((resolve) => setTimeout(resolve, 25));
           if (next < events.length) controller.enqueue(new TextEncoder().encode(sse([events[next++]])));
           else controller.close();
         },
@@ -298,8 +298,9 @@ describe('OpenAI Responses adapter (#297)', () => {
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
     };
     const { config } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: slowStream });
-    const result = await new OpenAiResponsesAdapter({ ...config, timeoutMs: 60 }).turn(request([user('x')]));
-    expect(result.text).toBe('aaaaaaaa');
+    // 50 chunks 25 ms apart outlast the 1 s timeout as a whole, while no single pause comes near it
+    const result = await new OpenAiResponsesAdapter({ ...config, timeoutMs: 1_000 }).turn(request([user('x')]));
+    expect(result.text).toBe('a'.repeat(50));
   });
 
   it('refusal and incomplete/max_output_tokens', async () => {
