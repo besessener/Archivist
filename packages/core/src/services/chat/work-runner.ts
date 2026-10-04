@@ -113,7 +113,8 @@ export class WorkRunner {
       return;
     }
     run.replies.push(reply);
-    run.current = { ...(reply.state ?? run.current), queue: [] };
+    // capture handlers return only the fields they change, so the rest of the conversation state stays
+    run.current = { ...run.current, ...reply.state, queue: [] };
     // an old follow-up question returned unchanged is settled, not a new one
     if (run.current.pending === run.old) run.current = { ...run.current, pending: null };
     holdOptional(run);
