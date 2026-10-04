@@ -11,9 +11,9 @@ if (!target || !fs.existsSync(target)) {
 }
 
 const stem = (file) => path.basename(file, path.extname(file));
-const importPattern = (file) => new RegExp(`/${stem(file)}['"]`);
+const importsFile = (text, file) => text.includes(`/${stem(file)}'`) || text.includes(`/${stem(file)}"`);
 const readAll = (files) => new Map(files.map((file) => [file, fs.readFileSync(file, 'utf8')]));
-const importers = (file, texts) => [...texts.keys()].filter((other) => other !== file && importPattern(file).test(texts.get(other)));
+const importers = (file, texts) => [...texts.keys()].filter((other) => other !== file && importsFile(texts.get(other), file));
 
 const tests = readAll(fs.globSync('tests/{unit,integration}/**/*.test.ts'));
 const sources = readAll(fs.globSync('packages/*/src/**/*.ts'));
