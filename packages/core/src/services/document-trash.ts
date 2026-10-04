@@ -97,16 +97,13 @@ export class DocumentTrash {
   }
 
   list(): TrashEntry[] {
-    return this.deps.audit
-      .list({ limit: 1000, onlyUndoable: true })
-      .filter((entry) => entry.action === TRASH_ACTION)
-      .map((entry) => ({
-        auditId: entry.id,
-        documentId: entry.entityIds[0] ?? entry.id,
-        title: titleOf(entry.before),
-        trashedAt: entry.at,
-        files: entry.paths.filter((file) => fs.existsSync(file)),
-      }));
+    return this.deps.audit.undoableOf(TRASH_ACTION).map((entry) => ({
+      auditId: entry.id,
+      documentId: entry.entityIds[0] ?? entry.id,
+      title: titleOf(entry.before),
+      trashedAt: entry.at,
+      files: entry.paths.filter((file) => fs.existsSync(file)),
+    }));
   }
 
   /** Deletes everything in the trash for good (second confirmation): files, undo data with the text, transmission previews, free database pages. */
