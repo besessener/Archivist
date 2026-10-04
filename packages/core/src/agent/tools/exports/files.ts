@@ -6,7 +6,8 @@ import { folderLabel, folderOf } from '../../../services/archive-structure';
 import type { DocRow } from '../../../services/documents';
 import { assertRealInside, sanitizeFileName, uniquePath } from '../../../util/paths';
 import type { ToolDeps, ToolScope } from '../common';
-import { parseAmount, type ExportItem } from './items';
+import { invoiceTotal } from '../research/amounts';
+import type { ExportItem } from './items';
 
 export const today = () => new Date().toISOString().slice(0, 10);
 
@@ -48,7 +49,7 @@ export function collectItems(deps: ToolDeps, docs: DocumentRecord[]): ExportItem
     return {
       doc,
       file: archived ?? (row ? readablePath(deps, row) : null),
-      amount: row ? parseAmount(row.extractedText) : null,
+      amount: row ? (invoiceTotal(row.extractedText)?.amount ?? null) : null,
       folder: doc.archiveRelPath ? folderLabel(folderOf(doc)) : '–',
     };
   });

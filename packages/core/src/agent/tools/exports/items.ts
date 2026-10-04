@@ -8,27 +8,6 @@ export interface ExportItem {
   folder: string;
 }
 
-const AMOUNT_RE = /(?<![\d.,])(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?!\d)\s*(?:€|EUR\b)?/g;
-const TOTAL_RE = /\b(?:gesamt\w*|\w*summe|total|endbetrag)\b/i;
-const AMOUNT_LINE_RE = /\b\w*betrag\w*\b/i;
-
-const amountsOf = (line: string): number[] =>
-  [...line.matchAll(AMOUNT_RE)].map((m) => Number(`${m[1]!.replaceAll('.', '')}.${m[2]}`)).filter((n) => Number.isFinite(n));
-
-/** Simple amount parser: last amount on the last line with Gesamt/Summe/Total, else on the last line with „Betrag“. */
-export function parseAmount(text: string): number | null {
-  const lines = text.split(/\r?\n/);
-  for (const re of [TOTAL_RE, AMOUNT_LINE_RE]) {
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      const line = lines[i]!;
-      if (!re.test(line)) continue;
-      const found = amountsOf(line);
-      if (found.length) return found.at(-1)!;
-    }
-  }
-  return null;
-}
-
 export const formatAmount = (amount: number) => `${amount.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 export const csvNumber = (amount: number) => amount.toFixed(2).replace('.', ',');
 
