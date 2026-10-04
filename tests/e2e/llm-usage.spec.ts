@@ -34,6 +34,8 @@ test.describe('token use and thinking depth (#153, #154)', () => {
     await app.settings.locators.privacy.capInput.fill('50000');
     await app.settings.locators.privacy.capSave.click();
     await expect.poll(() => savedLlm(workspace.dataDir).dailyTokenCap).toBe(50_000);
+    await expect(app.settings.locators.privacy.capInput).toHaveValue('50000');
+    await expect(app.settings.locators.privacy.capSave).toBeEnabled();
 
     await app.settings.locators.privacy.capInput.fill('');
     await app.settings.locators.privacy.capSave.click();
@@ -50,11 +52,13 @@ test.describe('token use and thinking depth (#153, #154)', () => {
     await effort.selectOption('max');
     await save.click();
     await expect.poll(() => savedLlm(workspace.dataDir).reasoningEffort).toBe('max');
+    await expect(effort).toHaveValue('max');
     await expect(save).toBeEnabled();
 
     await effort.selectOption('none');
     await save.click();
     await expect.poll(() => savedLlm(workspace.dataDir).reasoningEffort).toBe('none');
+    await expect(effort).toHaveValue('none');
     await expect(save).toBeEnabled();
 
     await effort.selectOption('');
