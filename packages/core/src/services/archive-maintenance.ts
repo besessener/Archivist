@@ -9,6 +9,7 @@ import { hasChecksum } from './archive-files';
 import { archivePathOf, archiveRootOf } from './archive-model';
 import type { ArchiveDeps } from './archive-deps';
 import { sweepOrphanInboxCopies, untrackedFiles } from './archive-inbox-sweep';
+import { sweepStalePartialCopies } from './archive-partial-sweep';
 
 export const FOLDERS_RESTORE_UNDO = 'category_restore';
 
@@ -32,7 +33,7 @@ export class ArchiveMaintenance {
     return this.deps.ctx.database.db;
   }
 
-  /** Removes inbox copies left after archiving, only when unchanged and the archive file is intact; never throws, returns the count. */
+  /** Removes inbox copies left after archiving (only when unchanged and the archive file is intact) and stale `.partial` copies; never throws, returns the inbox count. */
   async cleanupInbox(): Promise<number> {
     let cleaned = 0;
     try {
@@ -50,6 +51,7 @@ export class ArchiveMaintenance {
       // a restore of a running undo looks like an orphan until its commit: sweep only while no file operation runs
       await this.deps.locks.exclusive(async () => {
         cleaned += await sweepOrphanInboxCopies(this.deps);
+        await sweepStalePartialCopies(this.deps);
       });
     } catch (err) {
       this.deps.ctx.logger.error('archive', 'Inbox cleanup failed', { error: err });
@@ -128,7 +130,7 @@ export class ArchiveMaintenance {
       const abs = archivePathOf(root, row.archiveRelPath);
       known.add(path.resolve(abs));
       if (!fs.existsSync(abs)) report.missingFiles.push({ documentId: row.id, title: row.title, path: abs });
-      else if ((await this.deps.pool.run('hashFile', { path: abs })) !== row.sha256)
+      else if ((await this.deps.pool.run('hashFile', { path: abs }, { priority: 'user' })) !== row.sha256)
         report.changedFiles.push({ documentId: row.id, title: row.title, path: abs });
     }
     report.untrackedFiles.push(...(await untrackedFiles(root, known)));

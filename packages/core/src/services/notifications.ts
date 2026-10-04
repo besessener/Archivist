@@ -1,7 +1,7 @@
 import type { AppNotification, NotificationType } from '@archivist/shared';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, lt, notExists, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { notifications } from '../db/schema';
+import { notifications, reminders } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 
@@ -88,13 +88,14 @@ export class NotificationService {
     return out;
   }
 
-  list(opts: { includeResolved?: boolean; limit?: number } = {}): AppNotification[] {
+  list(opts: { includeResolved?: boolean; limit?: number; offset?: number } = {}): AppNotification[] {
     const rows = this.db
       .select()
       .from(notifications)
       .where(opts.includeResolved ? undefined : isNull(notifications.resolvedAt))
-      .orderBy(desc(notifications.createdAt))
+      .orderBy(desc(notifications.createdAt), desc(notifications.id))
       .limit(opts.limit ?? 100)
+      .offset(opts.offset ?? 0)
       .all();
     return rows.map(toNotification);
   }
@@ -134,6 +135,17 @@ export class NotificationService {
         .where(and(eq(notifications.id, id), isNull(notifications.readAt)))
         .run();
     this.ctx.events.changed('notifications', 'status');
+  }
+
+  /** Marks every open, unread notification as read ("Alle als gelesen markieren"); returns how many. */
+  markAllRead(): number {
+    const result = this.db
+      .update(notifications)
+      .set({ readAt: nowIso() })
+      .where(and(isNull(notifications.readAt), isNull(notifications.resolvedAt)))
+      .run();
+    if (result.changes > 0) this.ctx.events.changed('notifications', 'status');
+    return result.changes;
   }
 
   resolve(id: string): AppNotification {
@@ -180,6 +192,19 @@ export class NotificationService {
     const now = nowIso();
     for (const n of stale) this.db.update(notifications).set({ resolvedAt: now }).where(eq(notifications.id, n.id)).run();
     if (stale.length) this.ctx.events.changed('notifications', 'status');
+  }
+
+  /** Deletes notifications that were read more than `days` days ago, except snoozed ones still waiting to come back (#79); returns how many. */
+  pruneRead(days: number): number {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    const snoozed = this.db
+      .select({ id: reminders.id })
+      .from(reminders)
+      .where(and(eq(reminders.targetType, 'notification'), eq(reminders.targetId, notifications.id), eq(reminders.status, 'pending')));
+    return this.db
+      .delete(notifications)
+      .where(and(isNotNull(notifications.readAt), lt(notifications.readAt, cutoff), notExists(snoozed)))
+      .run().changes;
   }
 
   /** Reopens a resolved notification (after "Später erinnern") as new and unread; null if it no longer exists. */

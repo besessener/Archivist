@@ -9,11 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
+import { WEEKDAY_NAMES } from '@/lib/labels';
 import { useSettings } from '@/lib/use-settings';
 import { useRun } from '@/lib/use-run';
 import { dataOfDraft, THEN_FIELDS, WHEN_FIELDS, type MemoryDraft, type RuleForm, type WorkflowForm } from './memory-forms';
-
-const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
 
 function RuleFields({ rule, onChange }: { rule: RuleForm; onChange: (rule: RuleForm) => void }) {
   const group = (title: string, fields: Array<[keyof RuleForm, string]>) => (
@@ -63,7 +62,7 @@ function WorkflowFields({ workflow, onChange }: { workflow: WorkflowForm; onChan
       >
         <Select id="memory-workflow-weekday" value={workflow.weekday} onChange={(e) => onChange({ ...workflow, weekday: e.target.value })}>
           <option value="">nicht automatisch</option>
-          {WEEKDAYS.map((day, i) => (
+          {WEEKDAY_NAMES.map((day, i) => (
             <option key={day} value={i}>
               jeden {day} im Nachtlauf
             </option>

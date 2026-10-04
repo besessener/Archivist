@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { ArchiveRestore, EyeOff, FileInput, FolderOpen, RefreshCw, ShieldOff } from 'lucide-react';
+import { ArchiveRestore, Eye, EyeOff, FileInput, FolderOpen, RefreshCw, ShieldOff } from 'lucide-react';
 import type { Settings } from '@archivist/shared';
 import type { ArchiveEdit } from '@/components/common/archive-dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { call } from '@/lib/ipc';
+import { useToast } from '@/lib/toast';
 import { useRun } from '@/lib/use-run';
 import type { DocRecord } from '@/lib/types';
 import { ArchiveFields, DocFindings, DocHeader, DocNotes, DocProposal } from './doc-details';
@@ -28,10 +29,12 @@ export interface DocCardProps {
 
 export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive, onChanged, llmMode: mode, llmBaseUrl }: DocCardProps) {
   const { run, busy } = useRun();
+  const { toast } = useToast();
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const llmPossible = mode !== 'local_only' && doc.llmStatus !== 'excluded' && doc.folderLlmAllowed;
   const quarantined = doc.status === 'quarantined';
+  const ignored = doc.status === 'ignored';
   const archivable = doc.status === 'staged' || doc.status === 'proposed';
 
   const reprocess = async ({ allowLlm }: { allowLlm: boolean }) => {
@@ -40,6 +43,23 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
     });
     onChanged();
     return started;
+  };
+
+  const ignore = async () => {
+    const out = await run(() => call('documents:ignore', { id: doc.id }));
+    onChanged();
+    if (!out) return;
+    toast({
+      title: 'Dokument ignoriert.',
+      variant: 'success',
+      actionLabel: 'Rückgängig',
+      onAction: () => void run(() => call('audit:undo', { auditId: out.auditId }), { success: 'Ignorieren rückgängig gemacht.' }).then(onChanged),
+    });
+  };
+
+  const takeBack = async () => {
+    await run(() => call('documents:unignore', { id: doc.id }), { success: 'Dokument wieder aufgenommen.' });
+    onChanged();
   };
 
   const release = async () => {
@@ -92,7 +112,12 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 </Button>
               </>
             )}
-            {doc.status !== 'analyzing' && !quarantined && (
+            {ignored && (
+              <Button size="sm" variant="outline" disabled={busy} data-testid="inbox-unignore" onClick={() => void takeBack()}>
+                <Eye aria-hidden /> Wieder aufnehmen
+              </Button>
+            )}
+            {doc.status !== 'analyzing' && !quarantined && !ignored && (
               <Button
                 size="sm"
                 variant="outline"
@@ -107,7 +132,7 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 <RefreshCw aria-hidden /> Erneut verarbeiten
               </Button>
             )}
-            {!quarantined && (
+            {!quarantined && !ignored && (
               <Button
                 size="sm"
                 variant="outline"
@@ -124,18 +149,11 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 <ShieldOff aria-hidden /> {doc.llmStatus === 'excluded' ? 'Externe Analyse erlauben' : 'Von externer Analyse ausschließen'}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              data-testid="inbox-ignore"
-              onClick={async () => {
-                await run(() => call('documents:ignore', { id: doc.id }), { success: 'Dokument wird ignoriert.' });
-                onChanged();
-              }}
-            >
-              <EyeOff aria-hidden /> Ignorieren
-            </Button>
+            {!ignored && (
+              <Button size="sm" variant="ghost" disabled={busy} data-testid="inbox-ignore" onClick={() => void ignore()}>
+                <EyeOff aria-hidden /> Ignorieren
+              </Button>
+            )}
           </div>
         </div>
       </div>

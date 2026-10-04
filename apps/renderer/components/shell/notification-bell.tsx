@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, BellOff, Check, CheckCheck, Clock, Undo2 } from 'lucide-react';
+import { Bell, BellOff, Check, CheckCheck, Clock, MailCheck, Undo2 } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
@@ -15,10 +15,12 @@ import { call } from '@/lib/ipc';
 import { NOTIFICATION_TYPE_LABELS } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format';
 import { useToast } from '@/lib/toast';
-import { useQuery } from '@/lib/use-query';
+import { uniqueById, usePagedQuery } from '@/lib/use-paged-query';
 import { useRun } from '@/lib/use-run';
 import type { ActionRecord, NotificationRecord } from '@/lib/types';
 import { addDays, nextMonday, toIsoDay } from '@/lib/utils';
+
+const PAGE_SIZE = 50;
 
 type NotifAction = NotificationRecord['proposedActions'][number];
 
@@ -30,7 +32,10 @@ export function NotificationBell() {
   const [snoozeFor, setSnoozeFor] = useState<string | null>(null);
   const { run, busy } = useRun();
   const { toast, reportError } = useToast();
-  const { data, loading, error, refetch } = useQuery('notifications:list', { includeResolved: false, limit: 50 }, { scopes: ['notifications'], enabled: open });
+  const paged = usePagedQuery('notifications:list', { includeResolved: false }, { pageSize: PAGE_SIZE, scopes: ['notifications'], enabled: open });
+  const { loading, error, refetch } = paged;
+  const data = useMemo(() => (paged.pages ? uniqueById(paged.pages) : undefined), [paged.pages]);
+  const hasOlder = (paged.pages?.at(-1)?.length ?? 0) === PAGE_SIZE;
   const unread = status?.unreadNotifications ?? 0;
 
   useEffect(() => {
@@ -88,6 +93,14 @@ export function NotificationBell() {
     }
   }
 
+  async function markAllRead() {
+    const result = await run(() => call('notifications:markAllRead', {}), { errorTitle: 'Benachrichtigungen konnten nicht als gelesen markiert werden' });
+    if (result) {
+      void refetch();
+      void refreshStatus();
+    }
+  }
+
   async function snooze(id: string, day: string) {
     await run(() => call('notifications:snooze', { id, remindAt: day }), { success: 'Erinnerung gesetzt.' });
     setSnoozeFor(null);
@@ -117,13 +130,19 @@ export function NotificationBell() {
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[26rem] p-0" data-testid="bell-panel">
-          <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 border-b px-4 py-2">
             <span className="py-1 text-sm font-semibold">Benachrichtigungen</span>
             {data && data.length > 0 && (
-              <Button size="sm" variant="ghost" disabled={busy} data-testid="bell-clear-all" onClick={() => void clearAll()}>
-                <CheckCheck aria-hidden />
-                Alle leeren
-              </Button>
+              <div className="flex flex-wrap gap-1">
+                <Button size="sm" variant="ghost" disabled={busy} data-testid="bell-mark-all-read" onClick={() => void markAllRead()}>
+                  <MailCheck aria-hidden />
+                  Alle als gelesen markieren
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy} data-testid="bell-clear-all" onClick={() => void clearAll()}>
+                  <CheckCheck aria-hidden />
+                  Alle leeren
+                </Button>
+              </div>
             )}
           </div>
           <div className="max-h-[28rem] overflow-y-auto p-2">
@@ -178,6 +197,13 @@ export function NotificationBell() {
                 </li>
               ))}
             </ul>
+            {hasOlder && (
+              <div className="mt-2 flex justify-center">
+                <Button size="sm" variant="outline" disabled={loading} onClick={paged.loadMore} data-testid="bell-load-older">
+                  Ältere laden
+                </Button>
+              </div>
+            )}
             <UpcomingReminders enabled={open} className="mt-3 border-t px-1 pt-3" />
           </div>
         </PopoverContent>

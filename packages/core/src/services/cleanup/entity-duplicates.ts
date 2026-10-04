@@ -27,7 +27,7 @@ const LEGACY_KEY_PREFIX = 'similar-topics:';
 /** Upper bound of pairs sent to the LLM for a hint in one run. */
 const MAX_LLM_PAIRS = 25;
 
-const LlmHints = z.object({
+export const LlmHints = z.object({
   pairs: z.array(
     z.object({
       nr: z.number().int(),

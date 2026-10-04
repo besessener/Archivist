@@ -6,6 +6,7 @@ import { enqueueReembedding } from '../services/reembedding';
 import { settingsChanges } from '../services/settings-changes';
 import { AppError, permissionError } from '../util/errors';
 import { isInside } from '../util/paths';
+import { detectSyncFolder } from '../util/sync-folders';
 import { UI_TRIGGER, type HandlerGroup, type HostApi } from './types';
 
 function appStatus(services: Services, host: HostApi): AppStatus {
@@ -17,10 +18,14 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     version: host.version,
     dataRoot: services.paths.root,
     archiveRoot: settings.archiveRoot,
+    archiveSyncProvider: detectSyncFolder(settings.archiveRoot),
+    dataSyncProvider: detectSyncFolder(services.paths.root),
+    appStateInDataRoot: services.paths.appData === services.paths.root,
     platform: host.platform,
     setupCompleted: settings.setupCompleted,
     llm: {
       configured: services.llm.isConfigured(),
+      localOnly: settings.privacy.llmMode === 'local_only',
       hasApiKey: services.secrets.hasApiKey(),
       status: llm.state,
       lastError: llm.lastError,
@@ -62,7 +67,7 @@ async function locateFile(services: Services, document: DocRow, archiveRoot: str
   const archived = path.join(archiveRoot, ...document.archiveRelPath.split('/'));
   if (services.scanner.fileExists(archived)) return archived;
   for (const candidate of others) {
-    const checksum = await services.pool.run('hashFile', { path: candidate }).catch(() => null);
+    const checksum = await services.pool.run('hashFile', { path: candidate }, { priority: 'user' }).catch(() => null);
     if (checksum === document.sha256) return candidate;
   }
   throw new AppError('filesystem_error', ARCHIVE_COPY_MISSING);
@@ -118,6 +123,8 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
         services.audit.log({ action: 'settings.change', actor: 'user', trigger: UI_TRIGGER, confirmed: true, before: changes.before, after: changes.after });
       // vectors of another model are useless for the new one: move the entries over in the background (#173)
       if (settings.llm.embeddingModel !== embeddingBefore) enqueueReembedding(services.jobs);
+      // jobs paused by the daily token limit continue as soon as it no longer applies
+      if (settings.llm.dailyTokenCap !== previous.llm.dailyTokenCap && !services.llm.tokenCapReached()) services.jobs.resumeTokenCapPaused();
       return { settings };
     },
     'settings:setApiKey': (input) => {
@@ -132,6 +139,7 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
     },
 
     'llm:testConnection': (input) => services.agent.testConnection({ baseUrl: input.baseUrl, model: input.model, apiKey: input.apiKey }),
-    'llm:transmissions': (input) => services.llm.listTransmissions(input.limit),
+    'llm:transmissions': (input) => services.llm.listTransmissions(input.limit, input.offset),
+    'llm:usage': () => services.llm.usage(),
   };
 }

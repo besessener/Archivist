@@ -154,7 +154,7 @@ export class OpenItemDuplicateService {
   /** Keys of pairs rejected as different while both items exist; they stay remembered even when no longer detected. */
   private rememberedDifferent(): string[] {
     const keys: string[] = [];
-    for (const insight of this.deps.insights.list('rejected')) {
+    for (const insight of this.deps.insights.list({ status: 'rejected' })) {
       if (insight.kind !== 'duplicate' || insight.sourceIds.length !== 2) continue;
       const [a, b] = insight.sourceIds as [string, string];
       if (this.row(a) && this.row(b)) keys.push(duplicatePairKey(OPEN_ITEM_DUPLICATE_KEY_PREFIX, [a, b]));

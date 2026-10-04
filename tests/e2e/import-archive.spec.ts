@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
 
 test.describe('import and archiving', () => {
@@ -10,27 +11,27 @@ test.describe('import and archiving', () => {
   test('proposes a target for an imported file and changes nothing before confirmation', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const target = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
+    const target = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
-    await expect(app.inbox.locators.llmStatus.first()).toContainText(/LLM analysiert/i);
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
+    await expect(app.inbox.locators.llmStatus.first()).toContainText(/KI analysiert/i);
 
     await app.inbox.do.openArchivePlan();
     await expect(app.inbox.locators.archivePlan.source.first()).toContainText('inbox');
-    await expect(app.inbox.locators.archivePlan.target.first()).toContainText(path.join('work', 'projects', 'Nordlicht', 'jour-fixe.txt'));
+    await expect(app.inbox.locators.archivePlan.target.first()).toContainText(path.join('Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt'));
     expect(fs.existsSync(target), 'nothing may be in the archive before confirmation').toBe(false);
   });
 
   test('archives after confirmation and leaves the original unchanged', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const target = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
+    const target = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await app.inbox.do.openArchivePlan();
     await app.inbox.do.confirmArchive();
 
@@ -41,11 +42,11 @@ test.describe('import and archiving', () => {
   test('renames archived files of a multi-selection by a scheme, after a preview (#304)', async ({ on, page, workspace }) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const folder = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht');
+    const folder = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht');
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await app.inbox.do.openArchivePlan();
     await app.inbox.do.confirmArchive();
     await app.inbox.locators.archivePlan.close.click();
@@ -82,7 +83,7 @@ test.describe('import and archiving', () => {
 
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await expect(app.inbox.locators.fields.project.first()).toHaveValue('Nordlicht');
     await app.inbox.locators.fields.project.first().fill('');
 
@@ -97,5 +98,35 @@ test.describe('import and archiving', () => {
     await expect(app.documents.locators.rows).toHaveCount(1);
     await expect(app.documents.locators.cell(0, 'Thema')).toHaveText('Nordlicht');
     await expect(app.documents.locators.cell(0, 'Projekt')).toHaveText('–');
+  });
+});
+
+test.describe('importing a whole folder (#228)', () => {
+  test.beforeEach(async ({ llm, on, page }) => {
+    await on(page).setup.do.complete(llm.url);
+  });
+
+  test('copies the supported files of all levels, leaves the originals alone and reports once', async ({ on, page, workspace }, testInfo) => {
+    const app = on(page);
+    const original = workspace.addDownload('jour-fixe-oben.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nDas Projekt Nordlicht wird fortgeführt.');
+    const nested = path.join(workspace.downloads, '2019', 'tief');
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, 'jour-fixe-unten.txt'), 'Jour Fixe Nordlicht am 05.05.2026.\nDas Projekt Nordlicht geht weiter.');
+    fs.writeFileSync(path.join(nested, 'programm.exe'), 'MZ');
+
+    await app.inbox.locators.folderPick.click();
+    await expect(app.inbox.locators.importFolders).toBeVisible();
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await app.inbox.locators.closeImportCard.click();
+    await app.navigation.do.open('inbox');
+
+    await expect(app.inbox.locators.items).toHaveCount(2, { timeout: 30_000 });
+    expect(fs.existsSync(original), 'the original is kept').toBe(true);
+    expect(fs.readdirSync(path.join(workspace.dataDir, 'inbox')).sort()).toEqual(['jour-fixe-oben.txt', 'jour-fixe-unten.txt']);
+    await expect(async () => {
+      await app.notifications.do.open();
+      await expect(app.notifications.item('Ordner')).toContainText('2 Dokumente analysiert, 0 Fehler', { timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+    await expect(app.notifications.item('Klassifikation bereit')).toHaveCount(0);
   });
 });

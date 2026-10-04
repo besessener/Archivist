@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Lightbulb, Play } from 'lucide-react';
 import type { InsightChoice, InsightKind, IpcOutput } from '@archivist/shared';
+import { LoadMore } from '@/components/common/load-more';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { ContradictionsSection, ResolveContradictionDialog } from '@/components/insights/contradictions';
@@ -16,6 +17,7 @@ import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { INSIGHT_KIND_LABELS } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
+import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { InsightRecord } from '@/lib/types';
@@ -36,8 +38,12 @@ function groupByKind(insights: InsightRecord[]): Array<[InsightKind, InsightReco
 
 export default function InsightsPage() {
   const [status, setStatus] = useState<InsightStatus>('open');
-  const insights = useQuery('insights:list', { status }, { scopes: ['insights'] });
-  const contradictions = useQuery('contradictions:list', {}, { scopes: ['contradictions'] });
+  const insightWindow = usePageWindow(status);
+  const insights = useWindowedQuery('insights:list', { filter: { status }, window: insightWindow.window, scopes: ['insights'] });
+  const insightTotal = useQuery('insights:count', { status }, { scopes: ['insights'] });
+  const contradictionWindow = usePageWindow('contradictions');
+  const contradictions = useWindowedQuery('contradictions:list', { filter: {}, window: contradictionWindow.window, scopes: ['contradictions'] });
+  const contradictionTotal = useQuery('contradictions:count', {}, { scopes: ['contradictions'] });
   const { run, busy } = useRun();
   const [accepting, setAccepting] = useState<InsightRecord | null>(null);
   const [choosing, setChoosing] = useState<PendingChoice | null>(null);
@@ -115,8 +121,24 @@ export default function InsightsPage() {
             </ul>
           </section>
         ))}
+        <LoadMore
+          shown={insights.data?.length ?? 0}
+          total={insightTotal.data ?? 0}
+          noun="Hinweisen"
+          onMore={insightWindow.more}
+          loading={insights.loading}
+          testId="insights"
+        />
 
         <ContradictionsSection contradictions={contradictions} onResolve={setResolving} />
+        <LoadMore
+          shown={contradictions.data?.length ?? 0}
+          total={contradictionTotal.data ?? 0}
+          noun="Widersprüchen"
+          onMore={contradictionWindow.more}
+          loading={contradictions.loading}
+          testId="contradictions"
+        />
       </div>
 
       <AcceptDialog

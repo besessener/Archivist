@@ -12,8 +12,8 @@ afterEach(async () => {
 
 describe('Undo of an agent run that treated duplicates', () => {
   it('reverts the relation, tag, subfolder move and entry merge of the whole run', async () => {
-    const keep = await archived(app, { name: 'vertrag-final.txt', content: 'Vertrag neu', folder: 'private/vertraege' });
-    const old = await archived(app, { name: 'vertrag-entwurf.txt', content: 'Vertrag alt', folder: 'private/vertraege' });
+    const keep = await archived(app, { name: 'vertrag-final.txt', content: 'Vertrag neu', folder: 'Privat/vertraege' });
+    const old = await archived(app, { name: 'vertrag-entwurf.txt', content: 'Vertrag alt', folder: 'Privat/vertraege' });
     const keepItem = await app.ok('openItems:create', { title: 'Vertrag unterschreiben', priority: 'normal', sourceIds: [], confidence: 0.9 });
     const dupItem = await app.ok('openItems:create', { title: 'Vertrag unterschreiben!', priority: 'normal', sourceIds: [], confidence: 0.9 });
     const originalPath = app.services.documents.getRow(old).archiveRelPath;

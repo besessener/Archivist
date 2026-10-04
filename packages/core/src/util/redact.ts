@@ -1,18 +1,20 @@
-// Masks potential credentials and technical secrets before every external LLM transmission and in logs.
-interface Rule {
-  kind: string;
-  pattern: RegExp;
-  /** Replacement; $1.. may be referenced */
-  replace: (match: string, ...groups: string[]) => string;
-}
+// Masks credentials, technical secrets and (optionally) personal identifiers before every external LLM transmission and in logs.
+import { PERSONAL_DATA_RULES } from './redact-personal';
+import { applyRules, type RedactionRule } from './redact-rule';
 
 const SECRET_MASK = '[REDACTED:secret]';
 
 /** Skips values that an earlier rule (or an earlier run) already masked, so a secret is counted only once. */
 const NOT_MASKED = String.raw`(?!\[REDACTED:)`;
 
-/** Keys whose value is a secret, incl. any key ending in key/secret/token; the bounded prefix prevents quadratic backtracking. */
-const SECRET_KEY = String.raw`[\w-]{0,40}(?:key|secret|token)|password|passwd|pwd|passwort|kennwort|sharedaccesssignature`;
+/** Names that make a key secret: any `*_key`/`*-secret`/`*.token`, or a known prefix glued to key/secret/token ("accountKey", not "Monkey"). */
+const SECRET_KEY_PREFIX =
+  'api|access|account|auth|private|signing|encryption|license|session|client|master|app|refresh|bearer|shared|webhook|subscription|primary|secondary|secret';
+const SECRET_KEY = [
+  String.raw`(?:[\w-]{0,40}[_-])?(?:key|secret|token|schlüssel)`,
+  String.raw`[\w-]{0,40}(?:${SECRET_KEY_PREFIX})[_-]?(?:key|secret|token)`,
+  'password|passwd|pwd|passwort|kennwort|sharedaccesssignature',
+].join('|');
 
 /** Assignment value, by preference: quoted or braced whole, unquoted up to `;` (connection string), else up to a delimiter. */
 const SECRET_VALUE = [
@@ -33,7 +35,7 @@ function maskValue(value: string): string {
   return value.endsWith(close) ? `${open}${SECRET_MASK}${close}` : `${open}${SECRET_MASK}`;
 }
 
-const rules: Rule[] = [
+const secretRules: RedactionRule[] = [
   { kind: 'private_key', pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, replace: () => '[REDACTED:private_key]' },
   { kind: 'aws_key', pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replace: () => '[REDACTED:aws_key]' },
   { kind: 'jwt', pattern: /\beyJ[\w-]{8,}\.eyJ[\w-]{8,}\.[\w-]{8,}\b/g, replace: () => '[REDACTED:jwt]' },
@@ -56,24 +58,33 @@ const rules: Rule[] = [
   },
 ];
 
+export interface RedactionOptions {
+  /** IBAN, card, tax and social security numbers, PINs and passwords written without a separator (setting privacy.maskPersonalData). */
+  personalData: boolean;
+}
+
 export interface RedactionResult {
   text: string;
+  /** All masked spots, secrets and personal data. */
   count: number;
+  /** Of `count`: the spots that held personal data. */
+  personalData: number;
   kinds: string[];
 }
 
-export function redactSecrets(input: string): RedactionResult {
-  let text = input;
-  let count = 0;
-  const kinds = new Set<string>();
-  for (const rule of rules) {
-    text = text.replace(rule.pattern, (...args: unknown[]) => {
-      const groups = args.slice(0, -2).map(String);
-      const [match, ...rest] = groups as [string, ...string[]];
-      count += 1;
-      kinds.add(rule.kind);
-      return rule.replace(match, ...rest);
-    });
-  }
-  return { text, count, kinds: [...kinds] };
+/** Masking choice from the settings (a missing section from an older settings file counts as on). */
+export const maskingOf = (settings: { privacy: { maskPersonalData?: boolean } }): RedactionOptions => ({
+  personalData: settings.privacy.maskPersonalData !== false,
+});
+
+export function redactSecrets(input: string, options: RedactionOptions = { personalData: true }): RedactionResult {
+  const secrets = applyRules(input, secretRules);
+  if (!options.personalData) return { ...secrets, personalData: 0 };
+  const personal = applyRules(secrets.text, PERSONAL_DATA_RULES);
+  return {
+    text: personal.text,
+    count: secrets.count + personal.count,
+    personalData: personal.count,
+    kinds: [...new Set([...secrets.kinds, ...personal.kinds])],
+  };
 }

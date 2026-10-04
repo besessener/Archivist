@@ -7,12 +7,14 @@ import type { ArchiveService } from './archive';
 import { mergeReplies, type ConvState, type Reply } from './chat-state';
 import { llmCancelScope } from './llm';
 import type { AgentService } from '../agent/service';
+import { tokenCapOverride } from '../util/token-cap';
 import { ConversationStore } from './chat/conversation-store';
 import { ChatDispatcher } from './chat/dispatch';
 import { ChatFlow } from './chat/flow';
 import { IntentClassifier } from './chat/intent-classifier';
 import { PendingQuestions } from './chat/pending-questions';
 import { RuleBasedIntents } from './chat/rule-based';
+import { dayKey, tokenCapGate, type CapGate } from './chat/token-cap-gate';
 import type { ChatDeps, ChatTurn } from './chat/types';
 import { errorDetails, WorkRunner, type ProgressLog } from './chat/work-runner';
 
@@ -103,8 +105,13 @@ export class ChatService {
     return this.store.rename(id, title);
   }
 
-  history(conversationId: string): ChatMessage[] {
-    return this.store.history(conversationId);
+  /** The conversation (or, with `page`, the window of the newest messages the page names), oldest first. */
+  history(conversationId: string, page?: { limit: number; offset: number }): ChatMessage[] {
+    return page ? this.store.page(conversationId, page) : this.store.history(conversationId);
+  }
+
+  historyCount(conversationId: string): number {
+    return this.store.count(conversationId);
   }
 
   /** Emergency fallback without LLM (only if the endpoint is unreachable or not configured). */
@@ -135,7 +142,8 @@ export class ChatService {
     const state = this.store.state(conversation);
     // everything this message creates (also before an error or a cancel) belongs together (#272)
     const created: CreatedEntry[] = [];
-    const reply = await this.replyTo({ conversationId: conversation, text, state }, created);
+    const gate = this.capGate(text, state);
+    const reply = gate.kind === 'ask' ? gate.reply : await this.proceed(gate, { conversationId: conversation, created });
     if (created.length > 1) this.notify('Linking entries of one message failed', () => this.createdTogether?.(created, { id: userMessage.id, text }));
     const assistantMessage = this.store.saveAssistantMessage(conversation, reply);
     // never on the path of the answer: the suggestions follow in a job of their own (#283)
@@ -144,6 +152,12 @@ export class ChatService {
     this.store.saveState(conversation, reply.state ?? state);
     this.ctx.events.changed('chat', 'status');
     return { conversationId: conversation, userMessage, assistantMessage };
+  }
+
+  private capGate(text: string, state: ConvState): CapGate {
+    const { llm, settings } = this.services;
+    const reached = llm.canUse() && llm.tokenCapReached();
+    return tokenCapGate({ text, state, reached, cap: settings.get().llm.dailyTokenCap ?? null, today: dayKey(new Date()) });
   }
 
   /** Cancels the running request of a conversation (without id: all running requests). Returns how many were cancelled. */
@@ -168,6 +182,12 @@ export class ChatService {
     }
   }
 
+  /** Replies past the token limit gate, ignoring the limit when the user chose to continue. */
+  private proceed(gate: Extract<CapGate, { kind: 'proceed' }>, target: { conversationId: string; created: CreatedEntry[] }): Promise<Reply> {
+    const reply = () => this.replyTo({ conversationId: target.conversationId, text: gate.text, state: gate.state }, target.created);
+    return gate.override ? tokenCapOverride.run(true, reply) : reply();
+  }
+
   /** The reply to a message: by the agent, else by the rule-based flow; on cancel or error what is already done stays. */
   private async replyTo(turn: ChatTurn, created: CreatedEntry[]): Promise<Reply> {
     const { conversationId } = turn;
@@ -176,10 +196,8 @@ export class ChatService {
     const controller = new AbortController();
     this.running.set(conversationId, controller);
     try {
-      return await collectCreated(
-        async () => (await this.agentReply(turn)) ?? (await llmCancelScope.run(controller.signal, () => this.flow.handle(turn))),
-        created,
-      );
+      const reply = async () => (await this.agentReply(turn)) ?? (await llmCancelScope.run(controller.signal, () => this.flow.handle(turn)));
+      return await collectCreated(reply, created);
     } catch (err) {
       const done = this.progress.get(conversationId) ?? { replies: [], state: turn.state };
       return controller.signal.aborted ? cancelledReply(done) : this.failedReply(err, done);

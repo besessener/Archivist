@@ -21,8 +21,14 @@ export function initChat(page: Page) {
     /** In-app links in an answer (weekly review, agent answers). */
     appLinks: root.getByTestId('app-link'),
     conversationSelect: root.getByTestId('conversation-select'),
+    /** „N von M“ note with „Mehr laden“ while only the newest messages of a long conversation are shown. */
+    history: {
+      capped: root.getByTestId('chat-history-capped'),
+      loadMore: root.getByTestId('chat-history-load-more'),
+    },
     /** Proposal cards below an answer; `data-status` holds the action's status. */
     actionCards: root.getByTestId('action-card'),
+    toasts: page.getByTestId('toast'),
     /** Agent mode (#300): live steps of a running run, its summary below the answer and the mode switch. */
     agent: {
       steps: root.getByTestId('chat-loading').getByTestId('agent-step'),

@@ -145,11 +145,11 @@ describe('rendering open items', () => {
         'Projekt: Umbau',
         'Verantwortlich: Anna',
         'Fällig: 2026-04-05',
-        'Status: resolved',
+        'Status: Erledigt',
         'Erledigt: Angebot B',
       ].join('\n'),
     );
     const dismissed = toOpenItem(row({ topicId: null, responsiblePersonId: null, status: 'dismissed', resolutionNote: 'Doppelt' }), lookups());
-    expect(openItemIndexContent(dismissed)).toBe('Angebot prüfen\nStatus: dismissed\nVerworfen: Doppelt');
+    expect(openItemIndexContent(dismissed)).toBe('Angebot prüfen\nStatus: Verworfen\nVerworfen: Doppelt');
   });
 });

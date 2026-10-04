@@ -14,16 +14,38 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
     b: { name: 'Max Mustermann', nicknames: ['Maxi', 'MM'] },
   },
   llm: {
-    a: { baseUrl: 'https://llm-a.example.com/v1', model: 'model-a', reasoningEffort: 'high', timeoutMs: 120000, maxInputChars: 50000, embeddingModel: 'emb-a' },
-    b: { baseUrl: 'https://llm-b.example.com/v1', model: 'model-b', reasoningEffort: null, timeoutMs: 30000, maxInputChars: 8000, embeddingModel: 'emb-b' },
+    a: {
+      baseUrl: 'https://llm-a.example.com/v1',
+      model: 'model-a',
+      reasoningEffort: 'high',
+      timeoutMs: 120000,
+      maxInputChars: 50000,
+      embeddingModel: 'emb-a',
+      dailyTokenCap: 50000,
+    },
+    b: {
+      baseUrl: 'https://llm-b.example.com/v1',
+      model: 'model-b',
+      reasoningEffort: null,
+      timeoutMs: 30000,
+      maxInputChars: 8000,
+      embeddingModel: 'emb-b',
+      dailyTokenCap: null,
+    },
   },
   scan: {
     a: { enabled: true, onStartup: true, periodic: true, intervalMinutes: 15, maxFileSizeMb: 10, allowedExtensions: ['pdf'], autoAnalyze: true },
     b: { enabled: false, onStartup: false, periodic: false, intervalMinutes: 240, maxFileSizeMb: 5, allowedExtensions: ['txt', 'md'], autoAnalyze: false },
   },
   privacy: {
-    a: { llmMode: 'auto', neverAnalyzeDirs: ['/geheim'], neverAnalyzeExtensions: ['eml'], neverAnalyzeFiles: ['/a/b.pdf'] },
-    b: { llmMode: 'local_only', neverAnalyzeDirs: ['/privat', '/hr'], neverAnalyzeExtensions: ['xlsx'], neverAnalyzeFiles: ['/c/d.docx'] },
+    a: { llmMode: 'auto', neverAnalyzeDirs: ['/geheim'], neverAnalyzeExtensions: ['eml'], neverAnalyzeFiles: ['/a/b.pdf'], maskPersonalData: true },
+    b: {
+      llmMode: 'local_only',
+      neverAnalyzeDirs: ['/privat', '/hr'],
+      neverAnalyzeExtensions: ['xlsx'],
+      neverAnalyzeFiles: ['/c/d.docx'],
+      maskPersonalData: false,
+    },
   },
   notifications: {
     a: { desktop: true, reminderTime: '07:30' },

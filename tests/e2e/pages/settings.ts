@@ -23,6 +23,8 @@ export function initSettings(page: Page) {
       chainOk: page.getByTestId('audit-chain-ok'),
       chainBroken: page.getByTestId('audit-chain-broken'),
       undo: page.getByTestId('audit-undo'),
+      /** „Rückgängig“ in the row of the entry containing `text`. */
+      undoOf: (text: string) => page.getByTestId('audit-row').filter({ hasText: text }).getByTestId('audit-undo'),
       confirmUndo: page.getByTestId('audit-undo-confirm'),
     },
     llm: {
@@ -30,16 +32,32 @@ export function initSettings(page: Page) {
       baseUrlError: page.getByTestId('s-baseurl-error'),
       save: page.getByTestId('settings-save'),
       testConnection: page.getByTestId('settings-test-connection'),
+      testResult: page.getByTestId('settings-test-result'),
+      effort: page.getByTestId('settings-effort'),
     },
     privacy: {
       mode: (mode: PrivacyMode) => page.getByTestId(`settings-mode-${mode}`),
       activeMode: page.getByTestId('privacy-mode-active'),
       extensions: page.getByTestId('privacy-exts'),
+      transmissions: {
+        rows: page.getByTestId('transmission-row'),
+        preview: page.getByTestId('transmission-preview'),
+        more: page.getByTestId('transmissions-more'),
+        retentionNote: page.getByText('Tagen automatisch gelöscht'),
+      },
+      maskPersonal: page.getByTestId('privacy-mask-personal'),
+      maskNote: page.getByTestId('privacy-mask-note'),
+      usageToday: page.getByTestId('usage-today'),
+      usageMonth: page.getByTestId('usage-month'),
+      capInput: page.getByTestId('usage-cap'),
+      capError: page.getByTestId('usage-cap-error'),
+      capSave: page.getByTestId('usage-cap-save'),
     },
     archiveRoot: {
       input: page.getByTestId('settings-archive-root'),
       change: page.getByTestId('settings-archive-change'),
       unreachable: page.getByTestId('archive-root-unreachable'),
+      syncNotice: page.getByTestId('archive-root-sync'),
       lastChange: page.getByTestId('archive-root-last-change'),
       undo: page.getByTestId('archive-root-undo'),
       dialog: {
@@ -49,18 +67,29 @@ export function initSettings(page: Page) {
         pathWarning: dialog.getByTestId('archive-root-path-warning'),
         accept: dialog.getByTestId('archive-root-accept'),
         cancel: dialog.getByTestId('archive-root-cancel'),
+        syncNotice: dialog.getByTestId('archive-root-dialog-sync'),
       },
+    },
+    index: {
+      status: page.getByTestId('index-status'),
+      rebuild: page.getByTestId('index-rebuild'),
+      reembed: page.getByTestId('index-reembed'),
+      confirmReembed: page.getByTestId('index-reembed-confirm'),
     },
     trash: {
       items: page.getByTestId('trash-item'),
       restore: page.getByTestId('trash-restore'),
       empty: page.getByTestId('trash-empty'),
+      confirmDialog: page.getByTestId('confirm-dialog'),
+      cancelEmpty: page.getByTestId('confirm-dialog').getByRole('button', { name: 'Abbrechen' }),
+      compactionWarning: page.getByTestId('trash-compaction-warning'),
       confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
       confirmEmpty: page.getByTestId('trash-empty-confirm'),
     },
     agent: {
       settingsTab: page.getByTestId('agent-tab-settings'),
       memoryTab: page.getByTestId('agent-tab-memory'),
+      runsTab: page.getByTestId('agent-tab-runs'),
       nightlyHour: page.getByLabel('Nachtlauf (Archivprüfung, Verknüpfungen und geplante Abläufe)'),
       kindLimits: page.getByTestId('agent-kind-limits'),
       /** Field of one background trigger's own limits, e.g. („Archivprüfung auswerten“, „Tokens“). */
@@ -68,6 +97,11 @@ export function initSettings(page: Page) {
         page.getByTestId('agent-kind-limits').getByRole('group', { name: trigger }).getByLabel(field),
       save: page.getByTestId('agent-settings-save'),
       validation: page.getByTestId('agent-settings-error'),
+    },
+    /** The link run under „Agent“ → „Läufe“. */
+    links: {
+      startRun: page.getByTestId('links-start-run'),
+      unlinkedCount: page.getByTestId('links-unlinked-count'),
     },
     memory: {
       newEntry: page.getByTestId('memory-new'),
@@ -91,6 +125,23 @@ export function initSettings(page: Page) {
         save: page.getByTestId('memory-save'),
       },
     },
+    categories: {
+      list: page.getByTestId('category-list'),
+      newPath: page.getByTestId('category-new'),
+      create: page.getByTestId('category-create'),
+      confirmCreate: page.getByTestId('category-confirm'),
+    },
+    categoryMigration: {
+      plan: page.getByTestId('category-migration-plan'),
+      start: page.getByTestId('category-migration-start'),
+      confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
+      confirm: page.getByTestId('category-migration-confirm'),
+      job: page.getByTestId('category-migration-job'),
+    },
+    ocr: {
+      languages: page.getByTestId('settings-ocr-languages'),
+      language: (code: 'deu' | 'eng') => page.getByTestId(`settings-ocr-language-${code}`),
+    },
     archiveCheck: {
       verify: page.getByTestId('archive-verify'),
       report: page.getByTestId('verify-report'),
@@ -102,8 +153,12 @@ export function initSettings(page: Page) {
       createMetadata: page.getByTestId('backup-metadata'),
       rows: page.getByTestId('backup-row'),
       restore: page.getByTestId('backup-restore'),
+      beforeRestoreRow: page.getByTestId('backup-row').filter({ hasText: 'Stand vor der Wiederherstellung vom' }),
       confirmRestore: page.getByTestId('backup-restore-confirm'),
+      confirmDialog: page.getByTestId('confirm-dialog'),
       restartNotice: page.getByTestId('backup-restart-notice'),
+      storage: page.getByTestId('backup-storage'),
+      sizeWarning: page.getByTestId('backup-size-warning'),
     },
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),
@@ -122,6 +177,17 @@ export function initSettings(page: Page) {
     },
     openArchive: async () => {
       await locators.tabs.archive.click();
+    },
+    /** Opens the preview of the transmission log entry in the given row. */
+    openTransmissionPreview: async (row: number) => {
+      await locators.privacy.transmissions.rows.nth(row).getByRole('button', { name: 'Vorschau' }).click();
+    },
+    /** Creates a category through the form and its confirmation dialog. */
+    createCategory: async (categoryPath: string) => {
+      await locators.categories.newPath.fill(categoryPath);
+      await locators.categories.create.click();
+      await locators.categories.confirmCreate.click();
+      await expect(locators.categories.list).toContainText(categoryPath);
     },
     selectMode: async (mode: PrivacyMode) => {
       await locators.privacy.mode(mode).check();

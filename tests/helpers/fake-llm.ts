@@ -131,6 +131,19 @@ export class FakeLlm {
   /** Request headers of agent requests. */
   agentHeaders: Array<Record<string, string>> = [];
 
+  /** Tokens the endpoint reports for plain text requests (/responses, Claude) and embeddings. */
+  textUsage = { input: 10, output: 5, cached: 0 };
+  /** Bodies of the plain text requests (/responses and Claude, no tools), in order. */
+  textBodies: Body[] = [];
+  /** Thinking depths the endpoint rejects with HTTP 400 (`reasoning.effort`). */
+  rejectEfforts: string[] = [];
+  /** Answers `text.format` of type json_schema with HTTP 400, like an endpoint without Structured Outputs. */
+  rejectJsonSchema = false;
+  /** Retry-After header of the error answers (`status` other than 200). */
+  retryAfter: string | null = null;
+  /** The next `count` non-embedding requests fail with `status` (and Retry-After), then the endpoint answers normally. */
+  failing = { count: 0, status: 429, retryAfter: null as string | null };
+
   /** false: the endpoint answers tool requests with plain text only (no native tool calling). */
   toolCalling = true;
 
@@ -157,7 +170,16 @@ export class FakeLlm {
     if (this.down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
     const target = url instanceof Request ? url.url : String(url);
     const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Body;
-    if (this.status !== 200) return new Response(JSON.stringify({ error: { message: 'nope' } }), { status: this.status });
+    if (this.failing.count > 0 && !target.endsWith('/embeddings')) {
+      this.failing.count -= 1;
+      const headers = this.failing.retryAfter ? { 'retry-after': this.failing.retryAfter } : undefined;
+      return new Response(JSON.stringify({ error: { message: 'nope' } }), { status: this.failing.status, headers });
+    }
+    if (this.status !== 200)
+      return new Response(JSON.stringify({ error: { message: 'nope' } }), {
+        status: this.status,
+        headers: this.retryAfter ? { 'retry-after': this.retryAfter } : {},
+      });
     if (target.endsWith('/embeddings')) return this.embeddings(body);
     const toolNames = Array.isArray(body.tools) ? (body.tools as Array<{ name?: string }>).map((tool) => tool.name ?? '') : [];
     // the SDK posts beta requests to `/v1/messages?beta=true`
@@ -176,11 +198,15 @@ export class FakeLlm {
     this.embeddingRequests.push(texts);
     if (!this.embed) return new Response('not found', { status: 404 });
     const vectors = await this.embed(texts);
-    return jsonResponse({ data: vectors.map((embedding, index) => ({ embedding, index })) });
+    return jsonResponse({
+      data: vectors.map((embedding, index) => ({ embedding, index })),
+      usage: { prompt_tokens: this.textUsage.input, total_tokens: this.textUsage.input },
+    });
   }
 
   /** Plain text request via Claude (classification, summaries): the same responders as /responses. */
   private async claudeText(body: Body): Promise<Response> {
+    this.textBodies.push(body);
     const messages = (body.messages as Array<{ content?: unknown }> | undefined) ?? [];
     const first = messages[0]?.content;
     const text = await this.textAnswer(
@@ -195,7 +221,7 @@ export class FakeLlm {
       model: body.model,
       content: [{ type: 'text', text }],
       stop_reason: 'end_turn',
-      usage: { input_tokens: 10, output_tokens: 5 },
+      usage: { input_tokens: this.textUsage.input, output_tokens: this.textUsage.output },
     });
   }
 
@@ -209,6 +235,17 @@ export class FakeLlm {
   private async responsesText(body: Body): Promise<Response> {
     const instructions = typeof body.instructions === 'string' ? body.instructions : '';
     const rawInput = typeof body.input === 'string' ? body.input : JSON.stringify(body.input ?? '');
+    const format = (body.text as { format?: { type?: string } } | undefined)?.format?.type;
+    this.textBodies.push(body);
+    const effort = (body.reasoning as { effort?: string } | undefined)?.effort;
+    if (effort && this.rejectEfforts.includes(effort))
+      return new Response(JSON.stringify({ error: { message: `Unsupported value: 'reasoning.effort' does not support '${effort}' with this model.` } }), {
+        status: 400,
+      });
+    if (this.rejectJsonSchema && format === 'json_schema')
+      return new Response(JSON.stringify({ error: { message: "Invalid parameter: 'text.format' of type 'json_schema' is not supported with this model." } }), {
+        status: 400,
+      });
     // like the OpenAI Responses API: JSON mode requires the word "json" in the input (instructions do not count)
     if (body.text && !/json/i.test(rawInput))
       return new Response(
@@ -216,7 +253,13 @@ export class FakeLlm {
         { status: 400 },
       );
     const text = await this.textAnswer(instructions, rawInput, body);
-    return jsonResponse({ id: 'resp_1', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] });
+    const { input, output, cached } = this.textUsage;
+    return jsonResponse({
+      id: 'resp_1',
+      status: 'completed',
+      output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }],
+      usage: { input_tokens: input + cached, output_tokens: output, input_tokens_details: { cached_tokens: cached } },
+    });
   }
 
   /** Records an agent request and returns the turn that answers it: probe, script or plain "OK". */

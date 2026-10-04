@@ -18,7 +18,7 @@ afterEach(async () => {
 const archiveRoot = () => app.services.settings.get().archiveRoot;
 const row = (id: string) => app.services.documents.getRow(id);
 const folderOf = (id: string) => path.posix.dirname(row(id).archiveRelPath!);
-const openInsights = (kind?: string) => app.services.insights.list('open').filter((i) => !kind || i.kind === kind);
+const openInsights = (kind?: string) => app.services.insights.list({ status: 'open' }).filter((i) => !kind || i.kind === kind);
 const actionStatus = (id: string) => app.services.actions.get(id).status;
 
 async function archived(name: string, loc: string, topic: string | null = TOPIC): Promise<string> {
@@ -37,16 +37,17 @@ async function archived(name: string, loc: string, topic: string | null = TOPIC)
 
 /** Two documents in the majority folder, one elsewhere: the archive check proposes moving the odd one. */
 async function scattered() {
-  const a = await archived('Bescheid', 'private/bildungsurlaub/2026');
-  const b = await archived('Teilnahme', 'private/bildungsurlaub/2026');
-  const odd = await archived('Antrag', 'work/hr/abwesenheiten');
+  const a = await archived('Bescheid', 'Privat/bildungsurlaub/2026');
+  const b = await archived('Teilnahme', 'Privat/bildungsurlaub/2026');
+  const odd = await archived('Antrag', 'Arbeit/hr/abwesenheiten');
   return { a, b, odd };
 }
 
 const relocate = (documentId: string, categoryPath: string) => app.services.archive.relocate([{ documentId, categoryPath }], { confirmed: true });
 
-const decision = (decisionText: string, decidedAt: string | null, extra: Record<string, unknown> = {}) =>
-  app.ok('decisions:create', {
+// saving queues the contradiction check as a job: wait for it
+const decision = async (decisionText: string, decidedAt: string | null, extra: Record<string, unknown> = {}) => {
+  const saved = await app.ok('decisions:create', {
     title: decisionText.slice(0, 40),
     decisionText,
     topic: 'prod-plat',
@@ -59,6 +60,9 @@ const decision = (decisionText: string, decidedAt: string | null, extra: Record<
     asDraft: false,
     ...extra,
   });
+  await app.services.jobs.whenIdle();
+  return saved;
+};
 
 describe('Archive check: withdrawn hints withdraw their action too', () => {
   it('when the cause goes away, the hint disappears and its action becomes "withdrawn" (not "proposed")', async () => {
@@ -68,7 +72,7 @@ describe('Archive check: withdrawn hints withdraw their action too', () => {
     const actionId = insight!.recommendedActionId!;
     expect(actionStatus(actionId)).toBe('proposed');
 
-    await relocate(odd, 'private/bildungsurlaub/2026'); // the user tidied up by other means
+    await relocate(odd, 'Privat/bildungsurlaub/2026'); // the user tidied up by other means
     await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('scattered_documents')).toHaveLength(0);
@@ -81,7 +85,7 @@ describe('Archive check: withdrawn hints withdraw their action too', () => {
     await app.services.consistency.run({ trigger: 'test' });
     const first = openInsights('scattered_documents')[0]!;
 
-    const extra = await archived('Ticket', 'work/tickets');
+    const extra = await archived('Ticket', 'Arbeit/tickets');
     await app.services.consistency.run({ trigger: 'test' });
 
     const after = openInsights('scattered_documents');
@@ -97,7 +101,7 @@ describe('Archive check: withdrawn hints withdraw their action too', () => {
 
 describe('Stable keys: a run closes hints whose cause no longer exists', () => {
   it('missing archive file: the hint disappears as soon as the file is back', async () => {
-    const id = await archived('Vertrag', 'work/vertraege');
+    const id = await archived('Vertrag', 'Arbeit/vertraege');
     const abs = path.join(archiveRoot(), row(id).archiveRelPath!);
     const backup = fs.readFileSync(abs);
     fs.unlinkSync(abs);
@@ -140,9 +144,9 @@ describe('Stable keys: a run closes hints whose cause no longer exists', () => {
   });
 
   it('documents without a topic: a single hint that grows instead of a new one per change', async () => {
-    await archived('Lose Notiz', 'work/notizen', null);
+    await archived('Lose Notiz', 'Arbeit/notizen', null);
     await app.services.consistency.run({ trigger: 'test' });
-    await archived('Zweite lose Notiz', 'work/notizen', null);
+    await archived('Zweite lose Notiz', 'Arbeit/notizen', null);
     await app.services.consistency.run({ trigger: 'test' });
 
     const orphan = openInsights('orphan_document');
@@ -170,7 +174,7 @@ describe('Stable keys: a run closes hints whose cause no longer exists', () => {
 
 describe('Accepting without an action does not hide a problem forever', () => {
   it('if the cause comes back after it was fixed, it is reported again', async () => {
-    const id = await archived('Vertrag', 'work/vertraege');
+    const id = await archived('Vertrag', 'Arbeit/vertraege');
     const abs = path.join(archiveRoot(), row(id).archiveRelPath!);
     const backup = fs.readFileSync(abs);
     fs.unlinkSync(abs);
@@ -189,18 +193,18 @@ describe('Accepting without an action does not hide a problem forever', () => {
   });
 
   it('if new affected objects are added, the confirmed hint reopens', async () => {
-    await archived('Lose Notiz', 'work/notizen', null);
+    await archived('Lose Notiz', 'Arbeit/notizen', null);
     await app.services.consistency.run({ trigger: 'test' });
     await app.ok('insights:respond', { response: 'accept', id: openInsights('orphan_document')[0]!.id, confirmed: true, strongConfirmed: false });
 
-    await archived('Zweite lose Notiz', 'work/notizen', null);
+    await archived('Zweite lose Notiz', 'Arbeit/notizen', null);
     await app.services.consistency.run({ trigger: 'test' });
 
     expect(openInsights('orphan_document')).toHaveLength(1);
   });
 
   it('if the cause still exists days after confirming, the hint is reopened', async () => {
-    await archived('Lose Notiz', 'work/notizen', null);
+    await archived('Lose Notiz', 'Arbeit/notizen', null);
     await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('orphan_document')[0]!;
     await app.ok('insights:respond', { response: 'accept', id: ins.id, confirmed: true, strongConfirmed: false });
@@ -219,7 +223,7 @@ describe('Accepting without an action does not hide a problem forever', () => {
   });
 
   it('rejected hints stay rejected as long as the cause exists', async () => {
-    await archived('Lose Notiz', 'work/notizen', null);
+    await archived('Lose Notiz', 'Arbeit/notizen', null);
     await app.services.consistency.run({ trigger: 'test' });
     await app.ok('insights:respond', { response: 'reject', id: openInsights('orphan_document')[0]!.id });
     await app.services.consistency.run({ trigger: 'test' });
@@ -375,12 +379,12 @@ describe('Outdated proposals are re-checked before execution', () => {
     await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('scattered_documents')[0]!;
 
-    await relocate(odd, 'work/hr/bildungsurlaub'); // e.g. moved via chat in the meantime
+    await relocate(odd, 'Arbeit/hr/bildungsurlaub'); // e.g. moved via chat in the meantime
     const res = await app.call('insights:respond', { response: 'accept', id: ins.id, confirmed: true, strongConfirmed: false });
 
     expect(res.ok).toBe(false);
     expect(res.ok ? '' : res.error.message).toContain('nicht mehr aktuell');
-    expect(folderOf(odd)).toBe('work/hr/bildungsurlaub');
+    expect(folderOf(odd)).toBe('Arbeit/hr/bildungsurlaub');
     expect(actionStatus(ins.recommendedActionId!)).toBe('withdrawn');
     expect(openInsights('scattered_documents')).toHaveLength(0);
 
@@ -394,9 +398,9 @@ describe('Outdated proposals are re-checked before execution', () => {
     await scattered();
     await app.services.consistency.run({ trigger: 'test' });
     const ins = openInsights('scattered_documents')[0]!;
-    app.llm.on('ChatIntent', () => ({ intent: 'archive_reorganize', confidence: 0.9, rationale: 'test', topic: TOPIC, path: 'work/hr/bildungsurlaub' }));
+    app.llm.on('ChatIntent', () => ({ intent: 'archive_reorganize', confidence: 0.9, rationale: 'test', topic: TOPIC, path: 'Arbeit/hr/bildungsurlaub' }));
 
-    const r = await app.ok('chat:send', { text: `leg alle ${TOPIC} nach work/hr/bildungsurlaub` });
+    const r = await app.ok('chat:send', { text: `leg alle ${TOPIC} nach Arbeit/hr/bildungsurlaub` });
 
     expect(r.assistantMessage.actions).toHaveLength(1);
     expect(actionStatus(ins.recommendedActionId!)).toBe('withdrawn');
@@ -427,6 +431,6 @@ describe('Outdated proposals are re-checked before execution', () => {
 
     expect(app.services.actions.withdraw(actionId, 'egal')).toBe(false);
     expect(actionStatus(actionId)).toBe('executed');
-    expect(folderOf(odd)).toBe('private/bildungsurlaub/2026');
+    expect(folderOf(odd)).toBe('Privat/bildungsurlaub/2026');
   });
 });

@@ -58,14 +58,23 @@ function checkDuplicates(run: CheckRun, { list, dateOf }: { list: Decision[]; da
         older,
         newer,
         title: `Doppelte Entscheidung: ${newer.title}`,
-        explanation: `Zu „${scopeName(older)}“ gibt es dieselbe Entscheidung zweimal: ${truncate(newer.decisionText, 160)}`,
+        explanation: `Zu „${sharedScope(older, newer).name}“ gibt es dieselbe Entscheidung zweimal: ${truncate(newer.decisionText, 160)}`,
         rationale: 'Die beiden Entscheidungen sind inhaltlich gleich.',
       });
     }
   }
 }
 
-const scopeName = (decision: Decision) => decision.topicName ?? decision.projectName ?? 'diesem Thema';
+/** The topic both decisions belong to, else their shared project (callers pass pairs that share one). */
+const sharedScope = (older: Decision, newer: Decision) =>
+  older.topicId !== null && older.topicId === newer.topicId
+    ? { kind: 'Thema', name: older.topicName ?? '' }
+    : { kind: 'Projekt', name: older.projectName ?? '' };
+
+const scopeKeys = (decision: Decision): string[] => [
+  ...(decision.topicId ? [`topic:${decision.topicId}`] : []),
+  ...(decision.projectId ? [`project:${decision.projectId}`] : []),
+];
 
 /** Two active decisions sharing a topic or a project (like the contradiction check) that speak about the same thing: the older one may be superseded (unless a contradiction covers the pair). */
 export function checkSuperseded(run: CheckRun, decisions: Decision[]): void {
@@ -77,21 +86,30 @@ export function checkSuperseded(run: CheckRun, decisions: Decision[]): void {
   checkDuplicates(run, { list: active, dateOf });
   const sorted = active.filter((decision) => dateOf(decision)).sort((a, b) => dateOf(a).localeCompare(dateOf(b)));
   const words = new Map(sorted.map((decision) => [decision.id, contentWords(decision.decisionText)]));
-  for (const [index, newer] of sorted.entries()) {
-    const older = sorted
-      .slice(0, index)
-      .findLast(
-        (candidate) =>
-          dayOf(dateOf, candidate) !== dayOf(dateOf, newer) && sharesScope(candidate, newer) && overlaps(words.get(candidate.id)!, words.get(newer.id)!),
-      );
+  const position = new Map(sorted.map((decision, index) => [decision.id, index]));
+  // per topic and per project, the decisions seen so far in date order: only these can be the older one
+  const earlierInScope = new Map<string, Decision[]>();
+  for (const newer of sorted) {
+    const keys = scopeKeys(newer);
+    const speaksAboutSameThing = (candidate: Decision) =>
+      dayOf(dateOf, candidate) !== dayOf(dateOf, newer) && overlaps(words.get(candidate.id)!, words.get(newer.id)!);
+    const [older] = keys
+      .flatMap((key) => earlierInScope.get(key)?.findLast(speaksAboutSameThing) ?? [])
+      .sort((a, b) => position.get(b.id)! - position.get(a.id)!);
+    for (const key of keys) {
+      const group = earlierInScope.get(key) ?? [];
+      group.push(newer);
+      earlierInScope.set(key, group);
+    }
     if (!older || run.deps.contradictions.forPair(older.id, newer.id)) continue;
     const newerDate = dayOf(dateOf, newer);
+    const scope = sharedScope(older, newer);
     proposeSupersede(run, {
       older,
       newer,
       title: `Möglicherweise überholt: ${older.title}`,
-      explanation: `Zum Thema „${scopeName(older)}“ existiert eine neuere aktive Entscheidung vom ${newerDate}${newer.decidedAt ? '' : ' (laut Quelldokument)'}: ${truncate(newer.decisionText, 160)}`,
-      rationale: `Zum Thema „${scopeName(older)}“ gibt es eine neuere Entscheidung.`,
+      explanation: `Zum ${scope.kind} „${scope.name}“ existiert eine neuere aktive Entscheidung vom ${newerDate}${newer.decidedAt ? '' : ' (laut Quelldokument)'}: ${truncate(newer.decisionText, 160)}`,
+      rationale: `Zum ${scope.kind} „${scope.name}“ gibt es eine neuere Entscheidung.`,
     });
   }
 }

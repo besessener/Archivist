@@ -21,8 +21,6 @@ export interface SplitSubject<T extends PlacedDoc = PlacedDoc> {
   groups: FolderGroup<T>[];
 }
 
-const segments = (folder: string) => (folder === '' ? 0 : folder.split('/').length);
-
 /** Folder the archive file actually lies in. */
 export function folderOf(doc: Pick<PlacedDoc, 'archiveRelPath'>): string {
   const dir = path.posix.dirname((doc.archiveRelPath ?? '').replaceAll('\\', '/'));
@@ -43,13 +41,23 @@ export function groupByFolder<T extends PlacedDoc>(docs: T[]): FolderGroup<T>[] 
     .sort((a, b) => b.docs.length - a.docs.length || a.folder.localeCompare(b.folder));
 }
 
-/** Common target folder: where most documents lie, on a tie the deeper, then alphabetical; never the top level (`null`). */
-export function chooseTargetFolder(groups: FolderGroup[]): string | null {
+/** The folder to file into: clear (`chosen`), a tie between several folders (`tied`) or no candidate (`none`). */
+export type TargetChoice = { kind: 'chosen'; folder: string } | { kind: 'tied'; folders: string[] } | { kind: 'none' };
+
+/** Where most documents lie, never the top level; a tie is not decided but returned for the user to choose (#200). */
+export function chooseTargetFolder(groups: FolderGroup[]): TargetChoice {
   const candidates = groups.filter((g) => g.folder !== '');
-  if (candidates.length === 0) return null;
-  const best = [...candidates].sort((a, b) => b.docs.length - a.docs.length || segments(b.folder) - segments(a.folder) || a.folder.localeCompare(b.folder))[0]!;
-  return best.folder;
+  if (candidates.length === 0) return { kind: 'none' };
+  const most = Math.max(...candidates.map((g) => g.docs.length));
+  const folders = candidates
+    .filter((g) => g.docs.length === most)
+    .map((g) => g.folder)
+    .sort((a, b) => a.localeCompare(b));
+  return folders.length === 1 ? { kind: 'chosen', folder: folders[0]! } : { kind: 'tied', folders };
 }
+
+/** Folder names quoted and joined with „oder“. */
+export const folderChoiceText = (folders: string[]): string => folders.map((f) => `„${f}“`).join(' oder ');
 
 /** Topics and projects whose documents lie in more than one folder. */
 export function splitSubjects<T extends PlacedDoc>(docs: T[]): SplitSubject<T>[] {

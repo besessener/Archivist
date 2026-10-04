@@ -14,6 +14,9 @@ const DATABASE_CORRUPT =
 /** SQLite result codes (better-sqlite3 error codes) that mean the file itself is damaged. */
 const CORRUPT_CODES = new Set(['SQLITE_CORRUPT', 'SQLITE_NOTADB', 'SQLITE_CORRUPT_VTAB', 'SQLITE_CORRUPT_INDEX', 'SQLITE_CORRUPT_SEQUENCE']);
 
+/** `user_version` of a file whose deleted content was always zeroed: created with secure_delete on, or rewritten once since. */
+const DELETIONS_ZEROED = 1;
+
 const PRE_MIGRATION_PREFIX = 'vor-migration-';
 const PRE_MIGRATION_KEEP = 3;
 const NEWER_DATABASE =
@@ -44,10 +47,13 @@ export class DatabaseService {
       });
     }
     this.assertIntact(file);
+    const created = this.sqlite.pragma('page_count', { simple: true }) === 0;
     this.sqlite.pragma('journal_mode = WAL');
     this.sqlite.pragma('synchronous = FULL'); // WAL+NORMAL does not sync commits; originals are deleted after them
     this.sqlite.pragma('foreign_keys = ON');
     this.sqlite.pragma('busy_timeout = 5000');
+    this.sqlite.pragma('secure_delete = ON'); // zeroes deleted rows and freed pages, so purged text needs no VACUUM (#206)
+    if (created) this.sqlite.pragma(`user_version = ${DELETIONS_ZEROED}`);
     this.db = drizzle(this.sqlite, { schema });
   }
 
@@ -129,6 +135,13 @@ export class DatabaseService {
   async backupTo(dest: string): Promise<void> {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     await this.sqlite.backup(dest);
+  }
+
+  /** Rewrites the file (VACUUM, seconds on large archives) once if it may still hold content deleted before secure_delete was on. */
+  wipeEarlierDeletions(): void {
+    if (this.sqlite.pragma('user_version', { simple: true }) === DELETIONS_ZEROED) return;
+    this.sqlite.exec('VACUUM');
+    this.sqlite.pragma(`user_version = ${DELETIONS_ZEROED}`);
   }
 
   transaction<T>(fn: () => T): T {

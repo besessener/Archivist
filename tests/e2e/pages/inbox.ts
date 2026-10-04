@@ -7,16 +7,29 @@ export function initInbox(page: Page) {
     fileInput: page.getByTestId('file-input'),
     /** The import progress card bottom left; it covers what lies beneath until closed. */
     importCard: page.getByTestId('import-card'),
+    /** Folder import via the folder picker (in tests ARCHIVIST_TEST_PICK_DIR names the folder). */
+    folderPick: page.getByTestId('folder-pick'),
+    importFolders: page.getByTestId('import-folders'),
     closeImportCard: page.getByRole('button', { name: 'Import-Hinweis schließen' }),
     items: page.getByTestId('inbox-item'),
     proposals: page.getByTestId('inbox-proposal'),
     /** What the analysis did not see of a long document. */
     coverage: page.getByTestId('document-coverage'),
+    /** Badge for how far the text of the file was read („Text gelesen“, „Text teilweise gelesen“ …). */
+    processingStatus: page.getByTestId('inbox-processing-status'),
     llmStatus: page.getByTestId('inbox-llm-status'),
     folderLocked: page.getByTestId('inbox-folder-locked'),
     fields: {
       topic: page.getByTestId('inbox-topic'),
       project: page.getByTestId('inbox-project'),
+    },
+    /** Ignoring (#232): the toast offers „Rückgängig“; ignored documents are listed under the filter „Ignoriert“. */
+    ignore: {
+      button: page.getByTestId('inbox-ignore'),
+      toast: page.getByTestId('toast'),
+      filter: page.getByTestId('inbox-filter-ignored'),
+      allFilter: page.getByTestId('inbox-filter-all'),
+      takeBack: page.getByTestId('inbox-unignore'),
     },
     buttons: {
       archive: page.getByTestId('inbox-archive'),
@@ -35,6 +48,28 @@ export function initInbox(page: Page) {
       release: page.getByTestId('inbox-quarantine-release'),
       confirmCheckbox: page.getByTestId('confirm-dialog-checkbox'),
       confirm: page.getByTestId('inbox-quarantine-release-confirm'),
+    },
+    /** „Alle N Vorschläge archivieren“: one confirmation with the target structure, then one job (#228). */
+    archiveAll: {
+      open: page.getByTestId('inbox-archive-all-open'),
+      preview: page.getByTestId('archive-all-preview'),
+      folders: page.getByTestId('archive-all-folders'),
+      confirm: page.getByTestId('archive-all-confirm'),
+      reviewed: page.getByTestId('confirm-dialog-checkbox'),
+      newCategory: page.getByTestId('archive-new-category'),
+      progress: page.getByTestId('archive-all-progress'),
+    },
+    /** Paging of a long inbox. */
+    paging: {
+      info: page.getByTestId('inbox-more'),
+      loadMore: page.getByTestId('inbox-load-more'),
+    },
+    /** „Alle N mit KI analysieren“ after a folder import in mode „vorher fragen“. */
+    analyzeImport: {
+      estimate: page.getByTestId('bulk-consent-estimate'),
+      budget: page.getByTestId('bulk-consent-budget'),
+      allowLlm: page.getByTestId('analyze-import-llm'),
+      confirm: page.getByTestId('analyze-import-confirm'),
     },
     archivePlan: {
       source: page.getByTestId('archive-plan-source'),
@@ -68,6 +103,10 @@ export function initInbox(page: Page) {
       if (consent.allowLlm) await locators.reprocessDialog.allowLlm.check();
       await locators.reprocessDialog.confirm.click();
       await expect(locators.reprocessDialog.root).toBeHidden();
+    },
+    /** „Ignorieren“ on the first entry. */
+    ignoreFirst: async () => {
+      await locators.ignore.button.first().click();
     },
     openArchivePlan: async () => {
       await locators.buttons.archive.first().click();

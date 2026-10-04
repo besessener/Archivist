@@ -62,6 +62,7 @@ function servicesTone(services: AppStatus['services']): Tone {
 }
 
 function llmState(llm: AppStatus['llm']): { tone: Tone; text: string } {
+  if (llm.localOnly) return { tone: 'unknown', text: 'Nur lokal' };
   if (!llm.configured) return { tone: 'unknown', text: 'Nicht eingerichtet' };
   if (llm.status === 'ok') return { tone: 'ok', text: 'Verbunden' };
   return llm.status === 'error' ? { tone: 'error', text: 'Fehler' } : { tone: 'warn', text: 'Ungeprüft' };
@@ -133,7 +134,11 @@ function LlmPopover({ llm }: { llm: AppStatus['llm'] }) {
         <p className="text-sm text-muted-foreground">{text}</p>
         {llm.lastError && <p className="mt-2 break-words text-xs text-destructive">{llm.lastError}</p>}
         {!llm.hasApiKey && llm.configured && <p className="mt-2 text-xs text-warning">Es ist noch kein API-Schlüssel hinterlegt.</p>}
-        <p className="mt-2 text-xs text-muted-foreground">Ohne Verbindung arbeitet Archivist nur mit lokalen Funktionen.</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {llm.localOnly
+            ? 'Der Datenschutzmodus „nur lokal“ ist aktiv: Es wird nichts an die KI gesendet.'
+            : 'Ohne Verbindung arbeitet Archivist nur mit lokalen Funktionen.'}
+        </p>
       </PopoverContent>
     </Popover>
   );

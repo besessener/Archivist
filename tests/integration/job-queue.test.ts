@@ -10,7 +10,7 @@ let queues: JobQueueService[] = [];
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Test' }),
+    classification({ title: 'Klassifiziert', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: 'Test' }),
   );
 });
 afterEach(async () => {
@@ -259,10 +259,30 @@ describe('Document analysis with retry', () => {
     const id = (await app.ok('documents:import', { paths: [src] })).imported[0]!.id;
     await app.services.jobs.whenIdle();
 
-    expect(analyzeJob()).toMatchObject({ status: 'failed', attempts: 3 });
+    expect(analyzeJob()).toMatchObject({ status: 'failed', attempts: 5 });
     const d = await app.ok('documents:get', { id });
     expect(d.status).toBe('failed');
     expect(d.processingError).toMatch(/gesperrt/);
     expect(importFailures(id)).toHaveLength(1);
+  });
+});
+
+describe('Listing jobs for the job views', () => {
+  it('shows summary and run of a job without loading its payload, and filters by type and activity', async () => {
+    const queue = await makeQueue(0);
+    queue.register<{ runId: string; blob: string }>('test.big', { handler: async () => ({ summary: 'Fertig.' }) });
+    const big = 'x'.repeat(200_000);
+    const done = queue.enqueue('test.big', { label: 'Groß', payload: { runId: 'run-1', blob: big } });
+    queue.start();
+    await queue.whenIdle();
+    await queue.stop();
+    const waiting = queue.enqueue('test.other', { label: 'Wartet', payload: { blob: big } });
+
+    const all = queue.list();
+
+    expect(all.find((job) => job.id === done.id)).toMatchObject({ status: 'succeeded', summary: 'Fertig.', runId: 'run-1' });
+    expect(JSON.stringify(all)).not.toContain('xxxx');
+    expect(queue.list(10, { type: 'test.big' }).map((job) => job.id)).toEqual([done.id]);
+    expect(queue.list(10, { activeOnly: true }).map((job) => job.id)).toEqual([waiting.id]);
   });
 });

@@ -5,12 +5,12 @@ import { findDecisionDuplicate } from '../../packages/core/src/services/decision
 import type { DecisionRow } from '../../packages/core/src/services/decision-fields';
 
 const decision = (over: Partial<Decision>): Decision =>
-  ({ id: 'd1', decisionText: 'Wir nehmen das Angebot von Müller.', topicName: 'Dach', status: 'active', ...over }) as Decision;
+  ({ id: 'd1', decisionText: 'Wir nehmen das Angebot von Müller.', topicName: 'Dach', projectName: null, status: 'active', ...over }) as Decision;
 
 describe('findDecisionDuplicate', () => {
   const existing = [decision({})];
 
-  it('ignores case, punctuation and diacritics in text and topic', () => {
+  it('ignores case, punctuation and diacritics in text, topic and project', () => {
     expect(findDecisionDuplicate({ decisionText: 'wir nehmen das angebot von muller', topic: ' dach ' }, existing)).toBe(existing[0]);
     expect(findDecisionDuplicate({ decisionText: 'WIR NEHMEN das Angebot von Müller!', topic: ' dach ' }, existing)).toBe(existing[0]);
   });
@@ -20,6 +20,20 @@ describe('findDecisionDuplicate', () => {
     expect(findDecisionDuplicate({ decisionText: existing[0]!.decisionText }, existing)).toBeUndefined();
     const withoutTopic = [decision({ topicName: null })];
     expect(findDecisionDuplicate({ decisionText: existing[0]!.decisionText, topic: null }, withoutTopic)).toBe(withoutTopic[0]);
+  });
+
+  it('needs the same project, also for decisions without a topic', () => {
+    const apollo = [decision({ topicName: null, projectName: 'Apollo' })];
+    expect(findDecisionDuplicate({ decisionText: apollo[0]!.decisionText, project: 'Phoenix' }, apollo)).toBeUndefined();
+    expect(findDecisionDuplicate({ decisionText: apollo[0]!.decisionText }, apollo)).toBeUndefined();
+    expect(findDecisionDuplicate({ decisionText: apollo[0]!.decisionText, project: ' apollo ' }, apollo)).toBe(apollo[0]);
+    expect(findDecisionDuplicate({ decisionText: existing[0]!.decisionText, topic: 'Dach', project: 'Apollo' }, existing)).toBeUndefined();
+  });
+
+  it('compares a topic named like the project as the project alone, as it is stored', () => {
+    const stored = [decision({ topicName: null, projectName: 'prod-plat' })];
+    expect(findDecisionDuplicate({ decisionText: stored[0]!.decisionText, topic: 'Prod Plat', project: 'prod-plat' }, stored)).toBe(stored[0]);
+    expect(findDecisionDuplicate({ decisionText: stored[0]!.decisionText, topic: 'Dach', project: 'prod-plat' }, stored)).toBeUndefined();
   });
 
   it('settled decisions may be decided again; drafts and unclear ones count', () => {

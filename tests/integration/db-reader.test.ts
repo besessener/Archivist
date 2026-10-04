@@ -32,7 +32,8 @@ afterEach(async () => {
 });
 
 async function seed() {
-  app.llm.down = true;
+  // a refused key fails every LLM request at once; an outage would re-queue the analysis for minutes
+  app.llm.status = 401;
   const imp = await app.ok('documents:import', { paths: [app.file('in/notiz.txt', 'Eine Notiz über das Budget.')] });
   await app.services.jobs.whenIdle();
   await app.ok('decisions:create', {

@@ -29,13 +29,15 @@ Archivist ist eine lokale Desktop-Anwendung aus Electron, Next.js und TypeScript
 
 `@archivist/core` kennt weder Electron noch HTTP. Die gesamte Geschäftslogik ist dadurch mit Vitest gegen eine echte SQLite-Datenbank und einen Fake-LLM-Endpunkt testbar, ohne ein Fenster zu öffnen. Was wirklich vom Betriebssystem kommt (safeStorage, Dialoge, `shell`), wird über kleine Schnittstellen (`SecretCipher`, `HostApi`) injiziert. dependency-cruiser erzwingt die Grenzen: Der Renderer kennt nur `shared`, der Core weder Electron noch UI.
 
+Services, die sich gegenseitig brauchen (`actions` mit `archive`, `contradictions`, `insights`; `chat` und `capture` mit `actions`), bekommen ihre Partner nach der Konstruktion über `wire()` (`composition/wiring.ts`). Die Importe dazwischen sind `import type`, daher sieht die Regel `no-circular` sie nicht. Eine zweite Regel (`no-type-only-service-cycles`, Warnung) schließt diese Typ-Zyklen ein, und eine Baseline verhindert, dass neue hinzukommen; Details in [qualitaetssicherung.md](../reference/qualitaetssicherung.md). Aktuell gibt es keinen Typ-Zyklus: `actions` kennt die Gegenseiten nur über schmale Schnittstellen.
+
 ## Main-Prozess bleibt frei
 
 Ein blockierter Main-Prozess friert in Electron das ganze Fenster ein. Deshalb:
 
 - Datenbankzugriffe sind kurz (synchrones better-sqlite3).
 - Lange Lesezugriffe (Timeline, Dokumentliste, Zähler) laufen in einem eigenen Lese-Worker mit eigener schreibgeschützter Verbindung (WAL).
-- Hashing, Verzeichnisscans, Textextraktion und Vektorsuche laufen im Worker-Pool.
+- Hashing, Verzeichnisscans und Textextraktion laufen im Worker-Pool, die Vektorsuche in einem eigenen Pool mit einem Worker. Jede Aufgabe hat ein Zeitlimit und lässt sich über das Signal des Jobs abbrechen; dann wird der Worker beendet und beim nächsten Bedarf neu gestartet. Aufgaben, auf die du wartest (Archivieren, Import gewählter Dateien, Öffnen, Neu verknüpfen, Archiv prüfen), kommen vor wartenden Hintergrundaufgaben wie dem Scan dran; das Einlesen (OCR) belegt bei mehreren Workern nie den letzten freien.
 - Die Archivprüfung gibt den Main-Thread zwischen ihren Schritten und in langen Schleifen frei.
 - Langlaufende Abläufe sind Jobs in der persistenten [Job-Queue](../reference/funktionen.md#job-queue).
 

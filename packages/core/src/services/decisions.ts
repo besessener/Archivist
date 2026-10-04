@@ -8,10 +8,9 @@ import {
   type DecisionStatus,
   type EditableDecisionStatus,
 } from '@archivist/shared';
-import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
+import { eq, inArray, like, or } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { decisions, entities } from '../db/schema';
-import { withSubject } from '../db/subject-filter';
 import { CREATED_UNDO_TYPE } from '../agent/created-undo';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
@@ -19,6 +18,7 @@ import { normalizeDateInput, toIsoDate } from '../util/dates';
 import { firstSentence } from '../util/text';
 import type { AuditService } from './audit';
 import { trackedChanges } from './decision-audit';
+import { countDecisionRows, decisionRows, type DecisionFilter } from './decision-list';
 import { findDecisionDuplicate } from './decision-duplicates';
 import {
   assertEditableStatusChange,
@@ -49,7 +49,8 @@ export { ACTIVE_DECISION_STATUSES };
 const today = () => toIsoDate(new Date());
 
 /** Chat and form mentions of „ich“ are the user; whatever stems from a document is the author's „ich“. */
-function decisionMentionContext(trigger: string | undefined, fromDocument: boolean): PersonMentionContext {
+function decisionMentionContext(trigger: string | undefined, decision: { origin?: string | null; sourceIds?: string[] }): PersonMentionContext {
+  const fromDocument = decision.origin === 'document' || (decision.sourceIds?.length ?? 0) > 0;
   return mentionContext(trigger, fromDocument ? 'document' : 'decision');
 }
 
@@ -134,20 +135,13 @@ export class DecisionService {
     return this.map(this.row(id));
   }
 
-  list(opts: { status?: DecisionStatus; topicId?: string; projectId?: string } = {}): Decision[] {
-    const conditions = [];
-    if (opts.status) conditions.push(eq(decisions.status, opts.status));
-    // the main topic/project or a further one (#287)
-    if (opts.topicId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.topicId, subjectId: opts.topicId }));
-    if (opts.projectId) conditions.push(withSubject({ idCol: decisions.id, mainCol: decisions.projectId, subjectId: opts.projectId }));
-    return this.mapMany(
-      this.db
-        .select()
-        .from(decisions)
-        .where(conditions.length ? and(...conditions) : undefined)
-        .orderBy(desc(decisions.decidedAt), desc(decisions.createdAt))
-        .all(),
-    );
+  /** Newest first; without `limit` all matching decisions (internal callers), the IPC channel always pages. */
+  list(opts: DecisionFilter & { limit?: number; offset?: number } = {}): Decision[] {
+    return this.mapMany(decisionRows(this.db, opts));
+  }
+
+  count(filter: DecisionFilter = {}): number {
+    return countDecisionRows(this.db, filter);
   }
 
   async searchDecisions(query: string, limit = 20): Promise<Decision[]> {
@@ -170,7 +164,7 @@ export class DecisionService {
 
   /** Creates a decision; with open required fields (not confirmed as unknown) it is saved as a draft. */
   create(input: DecisionInput, opts: { actor?: 'user' | 'agent'; trigger?: string; status?: Exclude<EditableDecisionStatus, 'draft'> } = {}): Decision {
-    const personContext = decisionMentionContext(opts.trigger, input.origin === 'document' || input.sourceIds.length > 0);
+    const personContext = decisionMentionContext(opts.trigger, input);
     const row = this.newRow(input, { personContext, trigger: opts.trigger, status: opts.status });
     this.db.transaction(() => {
       this.db.insert(decisions).values(row).run();
@@ -231,7 +225,7 @@ export class DecisionService {
     const current = this.row(id);
     // runtime guard for internal callers as well (the IPC schema already rejects these statuses)
     assertEditableStatusChange(current.status as DecisionStatus, patch.status);
-    const personContext = decisionMentionContext(opts.trigger, current.origin === 'document' || (patch.sourceIds?.length ?? 0) > 0);
+    const personContext = decisionMentionContext(opts.trigger, { origin: current.origin, sourceIds: patch.sourceIds });
     const set: Partial<DecisionRow> = { updatedAt: nowIso(), ...this.patchColumns(current, { patch, personContext }) };
     const merged = { ...current, ...set };
     const missing = computeMissingFields({
@@ -271,8 +265,8 @@ export class DecisionService {
     return this.update(id, { patch: { sourceIds: [sourceId] }, ...origin });
   }
 
-  /** A still relevant decision with the same text on the same topic. */
-  findDuplicate(candidate: { decisionText: string; topic?: string | null }): Decision | undefined {
+  /** A still relevant decision with the same text on the same topic and project. */
+  findDuplicate(candidate: { decisionText: string; topic?: string | null; project?: string | null }): Decision | undefined {
     return findDecisionDuplicate(candidate, this.list());
   }
 

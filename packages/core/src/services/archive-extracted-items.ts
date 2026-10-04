@@ -57,7 +57,11 @@ export class ExtractedItemProposer {
     });
     // every decision found (the classification yields only a few per document), each with its own participants (#178)
     const decisionActions = proposal.possibleDecisions.slice(0, MAX_DOCUMENT_DECISIONS).flatMap((decision) => {
-      const existing = this.decisions.findDuplicate({ decisionText: decision.decisionText, topic: source.proposal.topic });
+      const existing = this.decisions.findDuplicate({
+        decisionText: decision.decisionText,
+        topic: source.proposal.topic,
+        project: source.proposal.project,
+      });
       if (!existing) return [this.proposeDecision(source, decision)];
       // the document is already a source (e.g. archived again) – nothing to propose
       return existing.sourceIds.includes(row.id) ? [] : [this.proposeAddedDecisionSource(source, existing)];

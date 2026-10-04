@@ -35,4 +35,30 @@ test.describe('decisions: status change in the form', () => {
     await d.locators.buttons.edit.click();
     await expect(d.locators.inputs.status).toBeDisabled();
   });
+
+  test('the picked successor stays selected when a new search no longer finds it', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('decisions');
+    const d = app.decisions;
+    await d.do.create({ text: 'Wir nutzen Postgres.', isoDate: '2026-09-01', topic: 'Datenbank', participants: 'Anna' });
+    await d.do.create({ text: 'Wir nutzen SQLite.', isoDate: '2026-10-01', topic: 'Datenbank', participants: 'Anna' });
+    await d.do.create({ text: 'Wir nutzen Redis.', isoDate: '2026-10-02', topic: 'Cache', participants: 'Ben' });
+
+    await d.row('Wir nutzen Postgres.').click();
+    await d.locators.buttons.edit.click();
+    await d.locators.inputs.status.selectOption('superseded');
+    const { supersededBy, supersededBySearch } = d.locators.inputs;
+    await supersededBySearch.fill('SQLite');
+    await expect(supersededBy.locator('option', { hasText: 'Redis' })).toHaveCount(0);
+    await d.do.pickSupersededBy('SQLite');
+
+    await supersededBySearch.fill('Redis');
+    await expect(supersededBy.locator('option', { hasText: 'Redis' })).toHaveCount(1);
+    await expect(supersededBy.locator('option:checked')).toHaveText(/Wir nutzen SQLite\./);
+
+    await d.locators.buttons.save.click();
+    await d.locators.buttons.confirmStatus.click();
+    await expect(d.row('Wir nutzen Postgres.')).toHaveAttribute('data-status', 'superseded');
+  });
 });

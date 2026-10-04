@@ -77,14 +77,31 @@ describe('Deleting a decision created in error (#183)', () => {
     expect((await app.ok('decisions:list', {})).map((d) => d.id).sort()).toEqual([draft.id, valid.id].sort());
   });
 
-  it('a decision that another one replaces is not deleted', async () => {
+  it('a decision that replaced others is not deleted, even after being set to unclear', async () => {
+    const first = await create('Erste Entscheidung', { topic: 'Heizung' });
+    const second = await create('Zweite Entscheidung', { topic: 'Heizung' });
+    const newer = await create('Neue Entscheidung', { topic: 'Heizung' });
+    await app.ok('decisions:supersede', { oldDecisionId: first.id, newDecisionId: newer.id, confirmed: true });
+    await app.ok('decisions:supersede', { oldDecisionId: second.id, newDecisionId: newer.id, confirmed: true });
+    await app.ok('decisions:update', { id: newer.id, patch: { status: 'unclear' } });
+
+    const result = await app.call('decisions:delete', { id: newer.id, confirmed: true });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toMatch(/hat eine andere ersetzt/);
+    expect((await app.ok('decisions:get', { id: first.id })).supersededBy).toEqual([{ id: newer.id, title: newer.title }]);
+  });
+
+  it('a decision linked as replacing another one is not deleted either', async () => {
     const older = await create('Alte Entscheidung', { topic: 'Heizung' });
     const newer = await create('Neue Entscheidung', { topic: 'Heizung' });
-    await app.ok('decisions:supersede', { oldDecisionId: older.id, newDecisionId: newer.id, confirmed: true });
-    app.services.database.sqlite.prepare('UPDATE decisions SET status = ? WHERE id = ?').run('draft', older.id);
-    const result = await app.call('decisions:delete', { id: older.id, confirmed: true });
+    await app.ok('decisions:update', { id: newer.id, patch: { status: 'unclear' } });
+    await app.ok('knowledge:link', { sourceId: newer.id, targetId: older.id, relationType: 'supersedes', confirmed: true });
+
+    const result = await app.call('decisions:delete', { id: newer.id, confirmed: true });
+
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toMatch(/ersetzt diese/);
+    if (!result.ok) expect(result.error.message).toMatch(/hat eine andere ersetzt/);
   });
 
   it('restores the draft even when its topic was removed in the meantime, and says so', async () => {

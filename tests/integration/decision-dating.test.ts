@@ -5,14 +5,16 @@ import { createTestApp, type TestApp } from '../helpers/harness';
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.down = true;
+  // a refused key fails every LLM request at once; an outage would re-queue the analysis for minutes
+  app.llm.status = 401;
 });
 afterEach(async () => {
   await app.cleanup();
 });
 
-const decision = (decisionText: string, decidedAt: string | null, sourceIds: string[] = []) =>
-  app.ok('decisions:create', {
+// saving queues the contradiction check as a job: wait for it
+const decision = async (decisionText: string, decidedAt: string | null, sourceIds: string[] = []) => {
+  const saved = await app.ok('decisions:create', {
     title: decisionText.slice(0, 40),
     decisionText,
     topic: 'prod-plat',
@@ -24,6 +26,9 @@ const decision = (decisionText: string, decidedAt: string | null, sourceIds: str
     confidence: 0.9,
     asDraft: false,
   });
+  await app.services.jobs.whenIdle();
+  return saved;
+};
 
 async function documentDated(documentDate: string): Promise<string> {
   const imp = await app.ok('documents:import', { paths: [app.file('in/protokoll.txt', 'Protokoll der Sitzung')] });

@@ -19,6 +19,13 @@ Nur **Windows** (NSIS-Installer mit Auswahl des Installationsverzeichnisses + po
 - **Extern** (werden mitgeliefert): `better-sqlite3`, `sharp`, `pdfjs-dist`.
 - OCR-Worker, WASM-Kern und Sprachdaten (`@tesseract.js-data/*`) liegen im Installationspaket.
 
+## Speicherorte der installierten App
+
+- Dokumentenordner (Archiv, Eingang, Quarantäne, Papierkorb): `Dokumente\Archivist`.
+- Anwendungsdaten (Datenbank, Index, Einstellungen, Protokolle, Backups): `%APPDATA%\Archivist` (Electron-`userData`; Name aus `productName`). Das gilt für Installer und portable EXE gleichermaßen; die Deinstallation entfernt diesen Ordner nicht.
+- Beim ersten Start nach einem Update aus einer Version, die alles in `Dokumente\Archivist` hielt, zieht Archivist die Anwendungsdaten automatisch um, siehe [Datenverzeichnis](datenverzeichnis.md#umzug-aus-der-alten-ablage).
+- `ARCHIVIST_DATA_DIR` legt weiterhin alles unter einen Ordner.
+
 ## App-ID
 
 - `io.github.besessener.archivist` – Reverse-DNS von `besessener.github.io`; die Domain gehört dem Projekt über GitHub.

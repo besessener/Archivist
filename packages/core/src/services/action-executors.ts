@@ -1,6 +1,8 @@
 import { ActionParamSchemas, type AgentActionType } from '@archivist/shared';
 import { AppError } from '../util/errors';
 import type { ActionDeps } from './action-deps';
+import { archiveInBatches } from './archive-batch';
+import { queueContradictionCheck } from './contradiction-check-job';
 
 type Params = Record<string, unknown>;
 type Executor = (deps: ActionDeps, params: Params) => Promise<string> | string;
@@ -11,12 +13,7 @@ const takenOverNote = (takenOver: string[]) => (takenOver.length ? `; übernomme
 
 async function archiveDocuments(d: ActionDeps, p: Params): Promise<string> {
   const params = ActionParamSchemas.archive_documents.parse(p);
-  const result = await d.archive.execute(params.items, {
-    confirmed: true,
-    approveNewCategories: params.approveNewCategories,
-    confirmMove: params.items.some((i) => i.mode === 'move'),
-    trigger: TRIGGER,
-  });
+  const result = await archiveInBatches(d.archive, params.items, { approveNewCategories: params.approveNewCategories, trigger: TRIGGER });
   return `${result.success} archiviert, ${result.skipped} übersprungen, ${result.failed} fehlgeschlagen, ${result.conflicts} Konflikte.`;
 }
 
@@ -65,9 +62,9 @@ function createOpenItem(d: ActionDeps, p: Params): string {
   return 'Offener Punkt angelegt.';
 }
 
-async function recordDecision(d: ActionDeps, p: Params): Promise<string> {
+function recordDecision(d: ActionDeps, p: Params): string {
   const params = ActionParamSchemas.record_decision.parse(p);
-  const existing = d.decisions.findDuplicate({ decisionText: params.decisionText, topic: params.topic });
+  const existing = d.decisions.findDuplicate({ decisionText: params.decisionText, topic: params.topic, project: params.project });
   if (existing) {
     for (const sourceId of params.sourceIds) d.decisions.addSource(existing.id, { sourceId, actor: 'agent', trigger: TRIGGER });
     return `Die Entscheidung „${existing.title}“ gab es schon; die Quelle wurde ergänzt.`;
@@ -91,7 +88,7 @@ async function recordDecision(d: ActionDeps, p: Params): Promise<string> {
     // the user approved the proposal after reading it
     { actor: 'agent', trigger: TRIGGER, status: 'confirmed' },
   );
-  await d.contradictions.checkDecision(decision.id); // only a hint, like for every new decision
+  queueContradictionCheck(d.jobs, decision); // only a hint, like for every new decision
   return 'Entscheidung erfasst (ggf. als Entwurf mit offenen Pflichtfeldern).';
 }
 

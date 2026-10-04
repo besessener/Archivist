@@ -4,7 +4,7 @@ import type { AppContext } from '../context';
 import { insights as insightsTable, notifications as notificationsTable } from '../db/schema';
 import { newId } from '../util/ids';
 import { checkExpiredDecisions, checkIncompleteDecisions, checkSuperseded } from './archive-check/decisions';
-import { checkAssignments, checkDuplicates, checkedDocuments } from './archive-check/documents';
+import { checkAssignments, checkDuplicates, checkSimilarDocuments, checkedDocuments } from './archive-check/documents';
 import { Findings, yieldToEventLoop, type CheckDeps, type CheckRun } from './archive-check/findings';
 import { checkExternalFiles, checkLowConfidenceRelations } from './archive-check/knowledge';
 import { checkOpenItems } from './archive-check/open-items';
@@ -95,6 +95,7 @@ export class ConsistencyService {
     const archived = checkedDocuments(check);
     checkAssignments(check, archived);
     checkDuplicates(check, archived);
+    checkSimilarDocuments(check);
     await step(0.3, 'Prüfe Ablageorte');
     await checkStorage(check, archived);
     await checkArchiveHashes(check, archived);

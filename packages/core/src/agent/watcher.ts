@@ -111,7 +111,7 @@ export class DeadlineWatcher {
     );
     const newUpcoming = upcoming.filter((i) => !previously.deadlines.has(i.key));
     const cardIds = tools.actions.list('proposed').map((a) => a.id);
-    const proposalIds = [...cardIds, ...tools.insights.list('open').map((i) => i.id)];
+    const proposalIds = [...cardIds, ...tools.insights.list({ status: 'open' }).map((i) => i.id)];
     const background = this.deps.runs.list({ trigger: 'background', limit: 200 }).filter((r) => inWeek(r.startedAt));
     const backgroundChanges = background.reduce((n, r) => n + r.steps.filter((s) => s.outcome === 'ok' && s.risk !== 'read').length, 0);
     const carried = (count: number, word = 'offen') => (count ? `\n_Weiterhin ${word} seit letzter Woche: ${count}_` : '');

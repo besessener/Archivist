@@ -49,6 +49,8 @@ export interface TurnRequest {
   documentIds: string[];
   /** Secrets masked in this request's content so far (transmission log). */
   redactions?: number;
+  /** Of `redactions`: personal data. */
+  personalRedactions?: number;
   /** Offer the provider's own web search (server-side tool); only in chat runs. */
   webSearch?: boolean;
   signal?: AbortSignal;

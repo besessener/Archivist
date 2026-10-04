@@ -17,14 +17,16 @@ afterEach(async () => {
 const realCopyFile = fsp.copyFile.bind(fsp);
 
 async function imported(name: string) {
-  app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'work/notes', mainTopic: null }));
+  app.llm.on('DocumentClassification', () =>
+    classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: 'Arbeit/notes', mainTopic: null }),
+  );
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, `Inhalt von ${name}`)] });
   await app.services.jobs.whenIdle();
   return imp.imported[0]!.id;
 }
 
 const archiveRequest = (documentId: string) => ({
-  items: [{ documentId, mode: 'copy', categoryPath: 'work/notes', topic: null }],
+  items: [{ documentId, mode: 'copy', categoryPath: 'Arbeit/notes', topic: null }],
   confirmed: true,
   approveNewCategories: [],
   confirmMove: false,

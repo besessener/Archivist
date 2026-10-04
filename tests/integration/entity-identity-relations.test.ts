@@ -16,8 +16,9 @@ afterEach(async () => {
 const graph = () => app.services.graph;
 const relationsOf = (id: string) => graph().relationsOf(id);
 
-const decision = (decisionText: string, decidedAt: string, extra: Record<string, unknown> = {}) =>
-  app.ok('decisions:create', {
+// saving queues the contradiction check as a job: wait for it
+const decision = async (decisionText: string, decidedAt: string, extra: Record<string, unknown> = {}) => {
+  const saved = await app.ok('decisions:create', {
     title: decisionText.slice(0, 40),
     decisionText,
     topic: 'prod-plat',
@@ -30,6 +31,9 @@ const decision = (decisionText: string, decidedAt: string, extra: Record<string,
     asDraft: false,
     ...extra,
   });
+  await app.services.jobs.whenIdle();
+  return saved;
+};
 
 describe('topics and projects resolve via aliases (#188)', () => {
   it('naming an alias uses the existing topic or project instead of creating a new one', async () => {
@@ -104,7 +108,7 @@ describe('merge proposals for every mergeable kind (#188)', () => {
 });
 
 async function archivedWithPerson(title: string, person: string): Promise<string> {
-  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'work/notes', persons: [person] }));
+  app.llm.on('DocumentClassification', () => classification({ title, summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', persons: [person] }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${title}.txt`, `${title}: ausreichend langer Inhalt für den Test`)] });
   await app.services.jobs.whenIdle();
   const id = imp.imported[0]!.id;
@@ -132,7 +136,7 @@ describe('relation semantics (#189)', () => {
     const b = graph().ensureEntity({ type: 'topic', name: 'Beta' });
     graph().link({ sourceId: a.id, targetId: b.id, relationType: 'related_to' }, { confidence: 0.5, status: 'proposed' });
     await app.services.consistency.run({ trigger: 'test' });
-    expect(app.services.insights.list('open').some((insight) => insight.kind === 'low_confidence_relation')).toBe(true);
+    expect(app.services.insights.list({ status: 'open' }).some((insight) => insight.kind === 'low_confidence_relation')).toBe(true);
   });
 
   it('a decision field mirror is shown as automatic until the user decides on it', async () => {

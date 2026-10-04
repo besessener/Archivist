@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { ArchivistJson } from '../../util/json';
 import { jsonArr } from './columns';
 
@@ -42,7 +42,7 @@ export const insights = sqliteTable(
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
-  (t) => [uniqueIndex('insights_dedupe_idx').on(t.dedupeKey)],
+  (t) => [uniqueIndex('insights_dedupe_idx').on(t.dedupeKey), index('insights_status_updated_idx').on(t.status, t.updatedAt)],
 );
 
 export const contradictions = sqliteTable(
@@ -62,6 +62,8 @@ export const contradictions = sqliteTable(
     resolvedAt: text('resolved_at'),
     /** Resolved by superseding one decision: only undoing that supersede raises the contradiction again. */
     resolvedBySupersede: integer('resolved_by_supersede', { mode: 'boolean' }).notNull().default(false),
+    /** Resolved only because a decision was no longer active: it is raised again once both are active. */
+    resolvedByDeactivation: integer('resolved_by_deactivation', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [uniqueIndex('contradictions_dedupe_idx').on(t.dedupeKey)],
 );

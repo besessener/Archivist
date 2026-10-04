@@ -113,7 +113,7 @@ describe('Folder scan (default mode: local only, confirm)', () => {
     expect(doc.proposal?.possibleOpenItems.length).toBeGreaterThan(0);
 
     // analyse again with explicit approval
-    await app.ok('scanner:analyze', { fileIds: [file.id], confirmLlm: true });
+    await app.ok('scanner:analyze', { fileIds: [file.id], confirmLlm: true, reanalyze: true });
     await app.services.jobs.whenIdle();
     const calls = app.llm.calls.filter((c) => c.schema === 'DocumentClassification');
     expect(calls).toHaveLength(1);
@@ -213,7 +213,7 @@ describe('Assignment proposals and selective archiving of scanned files', () => 
 
     const chosen = groups[0]!.documentIds.slice(0, 2);
     const plan = await app.ok('documents:previewArchive', { items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })) });
-    expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('work', 'projects', 'Hauskauf')))).toBe(true);
+    expect(plan.items.every((i) => i.sourcePath?.includes('Downloads') && i.targetPath?.includes(path.join('Arbeit', 'projects', 'Hauskauf')))).toBe(true);
     const res = await app.ok('documents:archive', {
       items: chosen.map((documentId) => ({ documentId, mode: 'copy' as const })),
       confirmed: true,

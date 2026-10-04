@@ -21,7 +21,7 @@ async function analyze(text: string) {
     classification({
       title: 'Langes Protokoll',
       summary: 'x',
-      categoryPath: 'private/haus',
+      categoryPath: 'Privat/haus',
       decisions: input.includes(DECISION) ? [{ title: 'Fassade', decisionText: DECISION, kind: 'decided', evidence: DECISION, participants: [] }] : [],
     }),
   );
@@ -63,6 +63,21 @@ describe('Long documents are read in parts (#190)', () => {
     expect((await app.ok('llm:transmissions', {})).some((t) => t.redactions > 0)).toBe(true);
   });
 
+  it('sizes the parts for the names the request really lists, so no part is cut in the middle', async () => {
+    app.services.settings.update({ llm: { maxInputChars: 6000 } });
+    for (let i = 0; i < 40; i += 1) {
+      app.services.graph.ensureEntity({ type: 'topic', name: `Aa ${i}` });
+      app.services.graph.ensureEntity({ type: 'topic', name: `Zwiebelzucht Abschnitt ${i} mit einem besonders langen und ausführlichen Namen` });
+    }
+
+    const doc = await analyze(`Zwiebelzucht: Abschnitt mit besonders langen, ausführlichen Namen\n${filler(150)}`.trim());
+
+    expect(classificationCalls().length).toBeGreaterThan(1);
+    expect(classificationCalls().some((call) => call.input.includes('Zwiebelzucht Abschnitt 0 mit'))).toBe(true);
+    expect(classificationCalls().filter((call) => call.input.length > 6000 || call.input.includes('der mittlere Teil fehlt'))).toEqual([]);
+    expect(doc.proposal?.coverage?.llmParts).toBe(classificationCalls().length);
+  });
+
   it('says how much was read when the text is longer than the parts allowed', async () => {
     const text = filler(400).trim();
 
@@ -80,7 +95,7 @@ describe('Long documents are read in parts (#190)', () => {
     app.llm.on('DocumentClassification', () => {
       calls += 1;
       if (calls > 1) throw new Error('Endpunkt nicht erreichbar');
-      return classification({ title: 'Protokoll', summary: 'x', categoryPath: 'private/haus', mainTopic: 'Haus' });
+      return classification({ title: 'Protokoll', summary: 'x', categoryPath: 'Privat/haus', mainTopic: 'Haus' });
     });
     const imported = await app.ok('documents:import', { paths: [app.file('in/lang.txt', filler(60))] });
     await app.services.jobs.whenIdle();

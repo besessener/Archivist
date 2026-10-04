@@ -2,7 +2,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { ParsedMail } from 'mailparser';
 import { visibleHtmlText } from './html-text';
-import { ocrOptionsFor, recognizeImages } from './ocr';
+import { ocrOptionsFor, recognizeImage } from './ocr';
 import { parseDocx, parsePptx } from './office';
 import { parsePdf } from './pdf';
 import { cleanText, errorMessage, type ParsedDocument, type ParseOptions } from './parsed-document';
@@ -101,13 +101,13 @@ async function parseImage(file: string, options: ParseOptions): Promise<ParsedDo
     };
   }
   try {
-    const [result] = await recognizeImages([file], ocrOptionsFor(options));
-    const text = cleanText(result?.text ?? '');
+    const result = await recognizeImage(file, ocrOptionsFor(options));
+    const text = cleanText(result.text);
     return {
       text: text.text,
       status: text.text ? 'extracted' : 'partial',
       error: text.text ? null : 'OCR fand keinen Text.',
-      meta: { ...meta, ocr: true, ocrConfidence: Math.round(result?.confidence ?? 0) },
+      meta: { ...meta, ocr: true, ocrConfidence: Math.round(result.confidence) },
       truncated: text.truncated,
     };
   } catch (err) {

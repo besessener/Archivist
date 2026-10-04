@@ -1,11 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
 
-function savedMode(dataDir: string): string {
-  const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'settings.json'), 'utf8')) as { privacy: { llmMode: string } };
-  return settings.privacy.llmMode;
+function savedPrivacy(dataDir: string): { llmMode: string; maskPersonalData?: boolean } {
+  const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'settings.json'), 'utf8')) as {
+    privacy: { llmMode: string; maskPersonalData?: boolean };
+  };
+  return settings.privacy;
 }
+const savedMode = (dataDir: string): string => savedPrivacy(dataDir).llmMode;
 
 test.describe('privacy mode', () => {
   test('is saved immediately on selection and shown as active', async ({ llm, on, page, workspace }) => {
@@ -28,6 +32,24 @@ test.describe('privacy mode', () => {
     await expect(app.settings.locators.privacy.activeMode).toContainText('Nur lokal');
   });
 
+  test('shows „Nur lokal“ in the connection indicator instead of a stale connection state', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await expect(app.navigation.locators.llmStatus).toHaveAccessibleName(/Verbunden|Ungeprüft/);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openPrivacy();
+
+    await app.settings.do.selectMode('local_only');
+
+    await expect(app.navigation.locators.llmStatus).toHaveAccessibleName('Verbindung zur KI: Nur lokal');
+    await app.navigation.locators.llmStatus.click();
+    await expect(app.navigation.locators.llmDetails).toContainText('Der Datenschutzmodus „nur lokal“ ist aktiv');
+
+    await app.settings.do.selectMode('auto');
+
+    await expect(app.navigation.locators.llmStatus).not.toHaveAccessibleName(/Nur lokal/);
+  });
+
   test('does not discard unsaved input under „Nie analysieren“ when switching the mode', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
@@ -39,5 +61,22 @@ test.describe('privacy mode', () => {
 
     await expect(app.settings.locators.privacy.activeMode).toContainText('Vor jeder externen Analyse fragen');
     await expect(app.settings.locators.privacy.extensions).toHaveValue('xlsx, eml');
+  });
+
+  test('masks personal data by default, says what stays readable and can be switched off', async ({ llm, on, page, workspace }, testInfo) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openPrivacy();
+
+    await expect(app.settings.locators.privacy.maskPersonal).toBeChecked();
+    await expect(app.settings.locators.privacy.maskNote).toContainText('Gesundheitsdaten');
+    await expect(app.settings.locators.privacy.maskNote).toContainText('Nicht maskiert');
+    await expectNoSeriousA11yViolations(page, testInfo);
+
+    await app.settings.locators.privacy.maskPersonal.click();
+
+    await expect(app.settings.locators.privacy.maskPersonal).not.toBeChecked();
+    await expect.poll(() => savedPrivacy(workspace.dataDir).maskPersonalData).toBe(false);
   });
 });

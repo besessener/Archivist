@@ -9,7 +9,7 @@ let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
   app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Testdokument', summary: 'Zusammenfassung', categoryPath: 'work/notes', mainTopic: 'Test' }),
+    classification({ title: 'Testdokument', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes', mainTopic: 'Test' }),
   );
 });
 afterEach(async () => {
@@ -67,9 +67,9 @@ describe('Archiving by copying', () => {
     const a = await importOne('t.txt', 'Traversal-Test Inhalt lang genug');
     const plan = await app.ok('documents:previewArchive', { items: [{ documentId: a.id, mode: 'copy', categoryPath: '../../etc' }] });
     expect(plan.items[0]!.blocked).toBe(true);
-    const res = await archive([{ documentId: a.id, mode: 'copy', categoryPath: 'work/../../../etc' }]);
+    const res = await archive([{ documentId: a.id, mode: 'copy', categoryPath: 'Arbeit/../../../etc' }]);
     expect(res.items[0]!.outcome).toBe('conflict');
-    const res2 = await archive([{ documentId: a.id, mode: 'copy', categoryPath: 'work/ok', fileName: '../../evil.txt' }]);
+    const res2 = await archive([{ documentId: a.id, mode: 'copy', categoryPath: 'Arbeit/ok', fileName: '../../evil.txt' }]);
     expect(res2.success).toBe(1);
     expect(path.relative(app.services.paths.archive, res2.items[0]!.targetPath!).startsWith('..')).toBe(false);
     expect(path.basename(res2.items[0]!.targetPath!)).not.toContain('/');
@@ -79,9 +79,9 @@ describe('Archiving by copying', () => {
     const a = await importOne('l.txt', 'Symlink-Test Inhalt lang genug');
     const outside = path.join(app.root, 'outside');
     fs.mkdirSync(outside);
-    fs.mkdirSync(path.join(app.services.paths.archive, 'work'), { recursive: true });
-    fs.symlinkSync(outside, path.join(app.services.paths.archive, 'work', 'escape'));
-    const res = await archive([{ documentId: a.id, mode: 'copy', categoryPath: 'work/escape/deep' }]);
+    fs.mkdirSync(path.join(app.services.paths.archive, 'Arbeit'), { recursive: true });
+    fs.symlinkSync(outside, path.join(app.services.paths.archive, 'Arbeit', 'escape'));
+    const res = await archive([{ documentId: a.id, mode: 'copy', categoryPath: 'Arbeit/escape/deep' }]);
     expect(res.items[0]!.outcome).toBe('conflict');
     expect(fs.readdirSync(outside)).toHaveLength(0);
   });
@@ -199,7 +199,7 @@ describe('Archive state and processing status', () => {
     const a = await importOne('v.txt', 'Verifikationsdokument Inhalt');
     const res = await archive([{ documentId: a.id, mode: 'copy' }]);
     expect((await app.ok('archive:verify', {})).ok).toBe(true);
-    fs.writeFileSync(path.join(app.services.paths.archive, 'work', 'fremd.txt'), 'nicht verwaltet');
+    fs.writeFileSync(path.join(app.services.paths.archive, 'Arbeit', 'fremd.txt'), 'nicht verwaltet');
     fs.appendFileSync(res.items[0]!.targetPath!, 'x');
     const rep = await app.ok('archive:verify', {});
     expect(rep.ok).toBe(false);
@@ -232,7 +232,8 @@ describe('Archive state and processing status', () => {
     const empty = app.file('in/leer.txt', '');
     const res = await app.ok('documents:import', { paths: [fake, exe, empty, path.join(app.home, 'in'), '/nicht/vorhanden.txt', 'relativ.txt'] });
     expect(res.imported).toHaveLength(0);
-    expect(res.rejected).toHaveLength(6);
+    expect(res.rejected).toHaveLength(5);
+    expect(res.folders).toEqual([{ path: path.join(app.home, 'in'), jobId: expect.any(String) }]);
     expect(fs.readdirSync(app.services.paths.quarantine)).toContain('fake.pdf');
   });
 });

@@ -40,7 +40,7 @@ async function archivedDoc(title: string, meta: { topic?: string; project?: stri
     classification({
       title,
       summary: 'Zusammenfassung',
-      categoryPath: 'work/notes',
+      categoryPath: 'Arbeit/notes',
       mainTopic: meta.topic ?? null,
       project: meta.project ?? null,
       persons: meta.persons ?? [],
@@ -98,6 +98,8 @@ describe('Merging topics (#33)', () => {
 
     const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
 
+    await app.services.jobs.whenIdle();
+
     expect(r).toMatchObject({ targetId: newTopic.id, mergedIds: [oldTopic.id], mergedNames: ['Altthema'], referencesUpdated: 4 });
     expect(graph().getEntity(oldTopic.id)).toBeUndefined();
     expect(graph().getEntity(newTopic.id)!.aliases).toEqual(['Altthema']);
@@ -137,12 +139,15 @@ describe('Merging topics (#33)', () => {
     const before = state();
 
     const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
+
+    await app.services.jobs.whenIdle();
     expect(graph().getEntity(newTopic.id)!.aliases).toEqual(['Altthema', 'Altes Thema']);
     expect(state()).not.toEqual(before);
 
     const entry = (await app.ok('audit:list', { limit: 10, onlyUndoable: true })).find((a) => a.id === r.auditId);
     expect(entry).toMatchObject({ action: 'entity.merge', undoable: true });
     const u = await app.ok('audit:undo', { auditId: r.auditId });
+    await app.services.jobs.whenIdle();
     expect(u).toMatchObject({ undone: true, conflicts: [] });
     expect(u.message).toContain('„Altthema“');
     expect(state()).toEqual(before);
@@ -155,9 +160,11 @@ describe('Merging topics (#33)', () => {
     const newTopic = graph().ensureEntity({ type: 'topic', name: 'Neuthema' });
     const oldTopic = graph().findByName('topic', 'Altthema')!;
     const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
+    await app.services.jobs.whenIdle();
 
     await app.ok('decisions:update', { id: dec.id, patch: { rationale: 'Später ergänzt' } });
     const u = await app.ok('audit:undo', { auditId: r.auditId });
+    await app.services.jobs.whenIdle();
     expect(u.undone).toBe(false);
     expect(u.conflicts).toContain('Die Entscheidung „Wir starten Altthema“ wurde seit der Zusammenführung verändert.');
     expect(graph().getEntity(oldTopic.id)).toBeUndefined();
@@ -168,11 +175,13 @@ describe('Merging topics (#33)', () => {
     const newTopic = graph().ensureEntity({ type: 'topic', name: 'Neuthema' });
     const oldTopic = graph().ensureEntity({ type: 'topic', name: 'Altthema' });
     const r = await graph().merge({ sourceIds: [oldTopic.id], targetId: newTopic.id });
+    await app.services.jobs.whenIdle();
     // the old name is an alias of the target now, so naming it again resolves to the target (#188)
     expect(graph().ensureEntity({ type: 'topic', name: 'Altthema' }).id).toBe(newTopic.id);
     graph().registerNode({ type: 'topic', id: 'recreated-topic', name: 'Altthema' });
 
     const u = await app.ok('audit:undo', { auditId: r.auditId });
+    await app.services.jobs.whenIdle();
     expect(u.undone).toBe(false);
     expect(u.conflicts).toContain('„Altthema“ wurde seit der Zusammenführung neu angelegt. Bitte zuerst diesen Eintrag bereinigen.');
   });
@@ -202,6 +211,8 @@ describe('Merging persons (#33)', () => {
 
     const r = await graph().merge({ sourceIds: [monika.id], targetId: full.id });
 
+    await app.services.jobs.whenIdle();
+
     expect(r.referencesUpdated).toBe(3);
     expect(app.services.decisions.get(dec.id).participants).toEqual(['Monika Lor-Zade', 'Bob']);
     expect(app.services.documents.get(doc).persons).toEqual(['Monika Lor-Zade', 'Bob']);
@@ -221,6 +232,7 @@ describe('Merging persons (#33)', () => {
     expect(indexed(doc)).toContain('Personen: Monika Lor-Zade, Bob');
 
     expect((await app.ok('audit:undo', { auditId: r.auditId })).undone).toBe(true);
+    await app.services.jobs.whenIdle();
     expect(state()).toEqual(before);
     expect(indexed(item.id)).toContain('Verantwortlich: Monika\n');
   });
@@ -246,6 +258,8 @@ describe('Topic ↔ project (#33)', () => {
 
     const r = await graph().merge({ sourceIds: [topic.id], targetId: project.id, allowCrossType: true });
 
+    await app.services.jobs.whenIdle();
+
     expect(r.targetType).toBe('project');
     expect(graph().getEntity(topic.id)).toBeUndefined();
     expect(app.services.eventRecords.get(ev.id)).toMatchObject({ topicId: null, projectId: project.id });
@@ -262,6 +276,7 @@ describe('Topic ↔ project (#33)', () => {
     expect(indexed(ev.id)).not.toContain('Thema:');
 
     expect((await app.ok('audit:undo', { auditId: r.auditId })).undone).toBe(true);
+    await app.services.jobs.whenIdle();
     expect(state()).toEqual(before);
     expect(indexed(ev.id)).toContain('Thema: prod-plat');
   });

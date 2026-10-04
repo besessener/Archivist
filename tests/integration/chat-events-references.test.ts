@@ -120,6 +120,7 @@ describe('References in the chat lead to the right object', () => {
     app.llm.down = true;
     await app.ok('decisions:create', mk('Wir führen prod-plat weiter.', '2026-01-10'));
     await app.ok('decisions:create', mk('Wir machen mit prod-plat vorerst nicht weiter.', '2026-03-01'));
+    await app.services.jobs.whenIdle(); // the contradiction check runs as a job
     const [contra] = await app.ok('contradictions:list', {});
     const entry = (await app.ok('timeline:get', {})).find((e) => e.kind === 'contradiction')!;
     expect(entry.refs[0]).toMatchObject({ type: 'contradiction', id: contra!.id });

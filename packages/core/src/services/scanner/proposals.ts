@@ -1,14 +1,28 @@
 import type { DocumentProposal, ScanProposalGroup } from '@archivist/shared';
 import { and, eq, inArray } from 'drizzle-orm';
+import type { DocRow } from '../documents';
 import type { AppContext } from '../../context';
 import { documents, scanFiles } from '../../db/schema';
-import type { DocRow } from '../documents';
 import type { KnowledgeGraphService } from '../knowledge-graph';
 
 export interface ScanProposalDeps {
   ctx: AppContext;
   graph: KnowledgeGraphService;
 }
+
+/** The columns a proposal group needs; never the extracted text. */
+type ProposalRow = Pick<DocRow, 'id' | 'title' | 'categoryPath' | 'proposal' | 'confidence'>;
+
+const proposalColumns = {
+  id: documents.id,
+  title: documents.title,
+  categoryPath: documents.categoryPath,
+  proposal: documents.proposal,
+  confidence: documents.confidence,
+};
+
+/** Ids per query, far below SQLite's limit of bound variables. */
+const ID_CHUNK = 500;
 
 interface GroupKey {
   key: string;
@@ -18,10 +32,10 @@ interface GroupKey {
 }
 
 interface RowGroup extends Omit<GroupKey, 'key'> {
-  rows: DocRow[];
+  rows: ProposalRow[];
 }
 
-const proposalOf = (row: DocRow) => row.proposal as DocumentProposal | null;
+const proposalOf = (row: ProposalRow) => row.proposal as DocumentProposal | null;
 
 /** Group of a document: its proposed project, else topic, else the parent of its category path. */
 function groupKey(proposal: DocumentProposal | null, category: string | null): GroupKey {
@@ -31,7 +45,7 @@ function groupKey(proposal: DocumentProposal | null, category: string | null): G
   return { key: `${project ? 'project' : topic ? 'topic' : 'category'}:${name}`.toLowerCase(), label: name, topic, project };
 }
 
-function groupRows(rows: DocRow[]): Map<string, RowGroup> {
+function groupRows(rows: ProposalRow[]): Map<string, RowGroup> {
   const groups = new Map<string, RowGroup>();
   for (const row of rows) {
     const { key, ...group } = groupKey(proposalOf(row), row.categoryPath);
@@ -75,13 +89,15 @@ export class ScanProposals {
 
   /** One plan per group, computed lazily so each group sees what the previous one stored. */
   *plans(docIds: string[]) {
-    const rows = docIds.length
-      ? this.db
-          .select()
+    const rows: ProposalRow[] = [];
+    for (let start = 0; start < docIds.length; start += ID_CHUNK)
+      rows.push(
+        ...this.db
+          .select(proposalColumns)
           .from(documents)
-          .where(and(inArray(documents.id, docIds), eq(documents.status, 'proposed')))
-          .all()
-      : [];
+          .where(and(inArray(documents.id, docIds.slice(start, start + ID_CHUNK)), eq(documents.status, 'proposed')))
+          .all(),
+      );
     for (const [key, group] of groupRows(rows)) yield this.planGroup(key, group);
   }
 
@@ -125,13 +141,11 @@ export class ScanProposals {
 
   /** Proposal groups for the scan view (analyzed scan documents that are not archived yet). */
   groups(): ScanProposalGroup[] {
-    const files = this.db.select().from(scanFiles).where(eq(scanFiles.status, 'analyzed')).all();
-    const ids = files.map((file) => file.documentId).filter((id): id is string => Boolean(id));
-    if (ids.length === 0) return [];
     const rows = this.db
-      .select()
+      .select(proposalColumns)
       .from(documents)
-      .where(and(inArray(documents.id, ids), eq(documents.status, 'proposed')))
+      .innerJoin(scanFiles, eq(scanFiles.documentId, documents.id))
+      .where(and(eq(scanFiles.status, 'analyzed'), eq(documents.status, 'proposed')))
       .all();
     const groups = new Map<string, ScanProposalGroup>();
     for (const row of rows) {

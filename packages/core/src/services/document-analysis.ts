@@ -1,13 +1,16 @@
 import path from 'node:path';
-import { DocumentClassification, type DocumentProposal, type LlmStatus } from '@archivist/shared';
+import type { DocumentProposal, LlmStatus } from '@archivist/shared';
 import { and, eq, inArray, ne, notInArray } from 'drizzle-orm';
 import { documents, scanFiles } from '../db/schema';
 import type { ParsedDocument } from '../parsers/parsed-document';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
+import { isTokenCapError } from '../util/token-cap';
+import { LlmAnalysisRetry, mayRetryLlm } from './analysis-retry';
 import { classifyLocally } from './classifier';
-import { classificationRequest, mergeLlmClassification, type Classification, type KnownSubjects } from './document-classification';
-import { MAX_LLM_PARTS, mergeParts, partSize, splitIntoParts } from './document-parts';
+import { mergeLlmClassification, type Classification, type KnownSubjects } from './document-classification';
+import { mergeParts } from './document-parts';
+import { classifyInParts } from './document-part-reading';
 import { ARCHIVED_STATUSES, extractFile, extractedColumns, type DocRow, type DocumentDeps } from './document-model';
 import { isJobCancelled, isJobInterrupted } from './jobs';
 import type { PrivacyDecision } from './privacy';
@@ -22,11 +25,15 @@ export interface AnalyzeOptions {
   signal?: AbortSignal;
   /** On an error, leave the document in `analyzing` for callers that retry; they call `markAnalysisFailed` at the end. */
   deferFailure?: boolean;
+  /** Number of this attempt (1-based) of a job that retries: a retryable LLM error then asks for a re-run instead of the local fallback (#220). */
+  llmAttempt?: number;
+  /** No "Klassifikation bereit" notification: a bulk run reports once at its end. */
+  quiet?: boolean;
 }
 
 export type AnalysisResult = { usedLlm: boolean; warning: string | null; skipped?: true };
 
-interface ClassifiedText {
+export interface ClassifiedText {
   classification: Classification;
   usedLlm: boolean;
   warning: string | null;
@@ -71,16 +78,36 @@ export class DocumentAnalyzer {
     try {
       return await this.runAnalysis(row, opts);
     } catch (err) {
-      if (isJobCancelled(err)) {
-        // interrupted on quit: the document stays `analyzing`, its job runs again after the next start
-        if (!isJobInterrupted(err)) this.markAnalysisCancelled(id);
-        throw err;
-      }
-      // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
-      if (opts.deferFailure ? this.isAnalyzing(id) : this.markAnalysisFailed(id, err)) throw err;
-      this.deps.ctx.logger.info('documents', 'Analysis error ignored: document status has changed meanwhile', { documentId: id, error: err });
-      return skipped();
+      return this.afterFailure(row, { err, opts });
     }
+  }
+
+  /** What a failed analysis leaves behind: a retry waits, a paused or cancelled run keeps the document, any other error marks it failed. */
+  private afterFailure(row: DocRow, failure: { err: unknown; opts: AnalyzeOptions }): AnalysisResult {
+    const { err, opts } = failure;
+    const id = row.id;
+    if (err instanceof LlmAnalysisRetry || (isTokenCapError(err) && !opts.deferFailure)) {
+      this.restoreStatus(row); // a retry waits for the re-run, a bulk run paused by the token limit leaves the document untouched
+      throw err;
+    }
+    if (isJobCancelled(err)) {
+      // interrupted on quit: the document stays `analyzing`, its job runs again after the next start
+      if (!isJobInterrupted(err)) this.markAnalysisCancelled(id);
+      throw err;
+    }
+    // Never leave a document stuck in `analyzing`. If it was archived meanwhile, the failure is irrelevant.
+    if (opts.deferFailure ? this.isAnalyzing(id) : this.markAnalysisFailed(id, err)) throw err;
+    this.deps.ctx.logger.info('documents', 'Analysis error ignored: document status has changed meanwhile', { documentId: id, error: err });
+    return skipped();
+  }
+
+  private restoreStatus(row: DocRow): void {
+    this.db
+      .update(documents)
+      .set({ status: row.status, updatedAt: nowIso() })
+      .where(and(eq(documents.id, row.id), eq(documents.status, 'analyzing')))
+      .run();
+    this.deps.ctx.events.changed('documents', 'status');
   }
 
   private isAnalyzing(id: string): boolean {
@@ -135,18 +162,28 @@ export class DocumentAnalyzer {
     return covered;
   }
 
-  private knownNames(type: 'topic' | 'project', opts: { confirmedOnly?: boolean } = {}): string[] {
-    return this.deps.graph.entityNames({ type, ...opts });
+  private knownNames(type: 'topic' | 'project'): string[] {
+    return this.deps.graph.entityNames({ type });
   }
 
   private async runAnalysis(row: DocRow, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const { signal } = opts;
     const file = this.deps.documents.readablePath(row);
     signal?.throwIfAborted();
-    const parsed = await extractFile(this.deps, file);
+    const parsed = await extractFile(this.deps, file, signal);
     signal?.throwIfAborted();
-    const text = parsed.text;
-    const decision = this.deps.privacy.evaluateDocument({ ...row, sourcePath: row.sourcePath ?? file });
+    const { classified, decision } = await this.classifyText(row, { text: parsed.text, opts, privacyRow: { ...row, sourcePath: row.sourcePath ?? file } });
+    signal?.throwIfAborted(); // last checkpoint: after this the proposal is stored
+    return this.storeProposal(row, { parsed, classified, decision, quiet: opts.quiet ?? false });
+  }
+
+  /** Local classification of a text, refined by the LLM when the privacy rules and the options allow it. */
+  async classifyText(
+    row: DocRow,
+    input: { text: string; opts: AnalyzeOptions; privacyRow?: DocRow },
+  ): Promise<{ classified: ClassifiedText; decision: PrivacyDecision }> {
+    const { text, opts } = input;
+    const decision = this.deps.privacy.evaluateDocument(input.privacyRow ?? row);
     const canUseLlm = opts.allowLlm && decision.allowed && this.deps.llm.isConfigured() && text.trim().length > 0;
     const known: KnownSubjects = { topics: this.knownNames('topic'), projects: this.knownNames('project') };
     const local: Classification = {
@@ -161,28 +198,29 @@ export class DocumentAnalyzer {
       fileNameHint: null,
     };
     const classified = canUseLlm
-      ? await this.classifyWithLlm(row, { local, text, known, signal })
+      ? await this.classifyWithLlm(row, { local, text, known, signal: opts.signal, attempt: opts.llmAttempt })
       : { classification: local, usedLlm: false, warning: null, read: NOTHING_READ };
-    signal?.throwIfAborted(); // last checkpoint: after this the proposal is stored
-    return this.storeProposal(row, { parsed, classified, decision });
+    return { classified, decision };
   }
 
-  /** Falls back to the local classification (with a warning) when the LLM request fails. */
+  /** Falls back to the local classification (with a warning) when the LLM request fails for good; a retryable failure asks for a re-run first. */
   private async classifyWithLlm(
     row: DocRow,
-    input: { local: Classification; text: string; known: KnownSubjects; signal?: AbortSignal },
+    input: { local: Classification; text: string; known: KnownSubjects; signal?: AbortSignal; attempt?: number },
   ): Promise<ClassifiedText> {
     const { local, text, known, signal } = input;
     try {
-      const { results, read } = await this.classifyInParts(row, { text, signal });
+      const { results, read } = await classifyInParts(this.deps, { row, text, signal });
       const merged = mergeParts(results);
       return { classification: mergeLlmClassification(local, { result: merged, text, known }), usedLlm: true, warning: null, read };
     } catch (err) {
       signal?.throwIfAborted(); // a cancelled request is no LLM problem – stop instead of falling back
+      if (isTokenCapError(err)) throw err; // the daily token limit pauses the job instead of degrading the proposal
+      if (mayRetryLlm(err, input.attempt)) throw new LlmAnalysisRetry(err);
       const warning = `LLM-Analyse nicht möglich: ${err instanceof Error ? err.message : String(err)} – lokale Klassifikation verwendet.`;
       this.deps.ctx.logger.warn('documents', 'LLM classification failed', { documentId: row.id, error: err });
       this.deps.notifications.create({
-        title: 'LLM-Analyse fehlgeschlagen',
+        title: 'KI-Analyse fehlgeschlagen',
         description: warning,
         type: 'system',
         priority: 'normal',
@@ -193,38 +231,10 @@ export class DocumentAnalyzer {
     }
   }
 
-  /** A long text is read in consecutive parts, each its own checked, masked and logged request; a failing later part keeps what was read so far. */
-  private async classifyInParts(
+  private async storeProposal(
     row: DocRow,
-    input: { text: string; signal?: AbortSignal },
-  ): Promise<{ results: [DocumentClassification, ...DocumentClassification[]]; read: ClassifiedText['read'] }> {
-    const { text, signal } = input;
-    const confirmed = { topics: this.knownNames('topic', { confirmedOnly: true }), projects: this.knownNames('project', { confirmedOnly: true }) };
-    const context = { mainCategories: this.deps.categories.mainCategories(), confirmed };
-    const promptChars = classificationRequest(row, { ...context, text: '', part: { number: MAX_LLM_PARTS, of: MAX_LLM_PARTS } }).input.length;
-    const parts = splitIntoParts(text, partSize({ maxInputChars: this.deps.settings.get().llm.maxInputChars, promptChars }));
-    const complete = (part: string, number: number) =>
-      this.deps.llm.completeJson(DocumentClassification, {
-        ...classificationRequest(row, { ...context, text: part, part: parts.length > 1 ? { number, of: parts.length } : undefined }),
-        signal,
-      });
-    const results: [DocumentClassification, ...DocumentClassification[]] = [await complete(parts[0]!, 1)];
-    let chars = parts[0]!.length;
-    for (const [index, part] of parts.slice(1).entries()) {
-      signal?.throwIfAborted();
-      try {
-        results.push(await complete(part, index + 2));
-        chars += part.length;
-      } catch (err) {
-        signal?.throwIfAborted();
-        this.deps.ctx.logger.warn('documents', 'LLM analysis of a later part failed', { documentId: row.id, part: index + 2, error: err });
-        break;
-      }
-    }
-    return { results, read: { chars, parts: results.length } };
-  }
-
-  private async storeProposal(row: DocRow, result: { parsed: ParsedDocument; classified: ClassifiedText; decision: PrivacyDecision }): Promise<AnalysisResult> {
+    result: { parsed: ParsedDocument; classified: ClassifiedText; decision: PrivacyDecision; quiet: boolean },
+  ): Promise<AnalysisResult> {
     const { usedLlm, warning, read } = result.classified;
     const c = result.classified.classification;
     const columns = extractedColumns(result.parsed);
@@ -244,7 +254,13 @@ export class DocumentAnalyzer {
       possibleOpenItems: c.possibleOpenItems,
       duplicateOfDocumentId: this.textDuplicateOf(row.id, columns.textHash),
       analyzedBy: usedLlm ? 'llm' : 'local',
-      coverage: { textChars: result.parsed.text.length, llmChars: read.chars, llmParts: read.parts, extractionTruncated: result.parsed.truncated },
+      coverage: {
+        textChars: result.parsed.text.length,
+        llmChars: read.chars,
+        llmParts: read.parts,
+        extractionTruncated: result.parsed.truncated,
+        ocrPagesSkipped: Number(result.parsed.meta.ocrPagesSkipped ?? 0),
+      },
     };
     const title = c.title.slice(0, 200);
     // document, graph node and notice change together: a failure in between leaves none of them
@@ -271,16 +287,18 @@ export class DocumentAnalyzer {
         .where(and(eq(documents.id, row.id), eq(documents.status, 'analyzing')))
         .run();
       if (!written.changes) return false;
+      this.deps.nearDuplicates.record(row.id, result.parsed.text);
       this.deps.graph.registerNode({ type: 'document', id: row.id, name: title, description: c.summary });
-      this.deps.notifications.create({
-        title: 'Klassifikation bereit',
-        description: `„${c.title}“ → ${c.categoryPath} (${Math.round(c.confidence * 100)} % sicher)`,
-        type: 'classification_ready',
-        priority: 'low',
-        affectedEntityIds: [row.id],
-        proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
-        dedupeKey: `classified:${row.id}`,
-      });
+      if (!result.quiet)
+        this.deps.notifications.create({
+          title: 'Klassifikation bereit',
+          description: `„${c.title}“ → ${c.categoryPath} (${Math.round(c.confidence * 100)} % sicher)`,
+          type: 'classification_ready',
+          priority: 'low',
+          affectedEntityIds: [row.id],
+          proposedActions: [{ label: 'Inbox öffnen', kind: 'navigate', target: '/inbox/' }],
+          dedupeKey: `classified:${row.id}`,
+        });
       return true;
     });
     if (!stored) {

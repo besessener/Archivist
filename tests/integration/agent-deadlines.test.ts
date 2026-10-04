@@ -33,7 +33,7 @@ async function call(name: string, args: unknown): Promise<ToolOutput> {
   return tool.run(tool.schema.parse(args), ctx);
 }
 
-const archive = (name: string, content: string, documentDate = '2024-12-01') => archived(app, { name, content, folder: 'private/vertraege', documentDate });
+const archive = (name: string, content: string, documentDate = '2024-12-01') => archived(app, { name, content, folder: 'Privat/vertraege', documentDate });
 const pendingReminders = () => app.services.reminders.list('pending');
 
 describe('deadline to reminder', () => {

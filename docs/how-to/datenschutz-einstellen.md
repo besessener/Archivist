@@ -14,6 +14,10 @@ So legst du fest, was Archivist an den LLM-Endpunkt senden darf.
 
 Die Auswahl wird sofort gespeichert; der aktive Modus steht darunter. Wechselst du in „vorher fragen“ oder „nur lokal“ das Embedding-Modell, geht dadurch nichts hinaus: Lokal eingebettete Einträge bleiben lokal. Was die Modi im Einzelnen bewirken, steht in der [Referenz](../reference/aktionsstufen.md#llm-datenschutz).
 
+## Einwilligung bei großen Läufen
+
+Im Modus „vorher fragen“ fragt Archivist bei **Alle N neuen Dateien analysieren** (Scan) und bei **Neu verarbeiten** (Dokumente) **einmal** für den ganzen Lauf: Der Dialog nennt, wie viele Dateien oder Dokumente insgesamt anstehen, wie viele davon laut deinen Einstellungen (Ausschlüsse, Ordnerfreigabe, Dateityp) überhaupt an das LLM gehen dürfen, und eine grobe Token-Schätzung. Er sagt auch, was vor dem Senden maskiert wird: immer Passwörter und Schlüssel, bei eingeschalteter Maskierung persönlicher Daten (Standard) auch IBAN, Kartennummern und Steuer-ID. Ohne Häkchen läuft der Lauf rein lokal. Im Modus „automatisch“ startet der Lauf ohne Dialog, in „nur lokal“ geht nichts hinaus. Ein per Drag-and-Drop importierter Ordner wird im Modus „vorher fragen“ nur lokal analysiert; die Benachrichtigung dazu bietet **Alle N mit KI analysieren** an, das denselben Dialog öffnet (nur für die Dokumente dieses Imports, die noch nicht mit KI analysiert wurden und gesendet werden dürfen; ein zweiter Klick startet keinen zweiten, bezahlten Lauf). Der Dialog zeigt auch, was vom Tageslimit heute übrig ist. Ordner, Dateien und Dateitypen unter „Nie analysieren“ übernimmt ein Ordnerimport gar nicht erst. Jede Anfrage eines Laufs steht einzeln im Übertragungsprotokoll.
+
 ## Begrenzen, wie viel Text an das Embedding-Modell geht
 
 Mit einem Embedding-Modell im Modus `auto` geht der Text freigegebener Dokumente abschnittsweise an `/embeddings`. Wie viel davon, begrenzt **Einstellungen → KI → maximale Eingabegröße** (`llm.maxInputChars`, Standard 24 000 Zeichen): Pro Dokument gehen höchstens so viele Zeichen insgesamt hinaus, Titel jedes Abschnitts eingerechnet, vor der Maskierung. Der Rest des Dokuments bekommt nur lokale Vektoren. Willst du, dass von einem Dokument nur ein kleiner Anfang den Rechner verlässt, senke den Wert; willst du gar nichts senden, lass das Embedding-Modell leer oder wähle `confirm`.
@@ -30,25 +34,54 @@ Was hier steht, geht nie an das LLM – unabhängig vom Modus. Das gilt auch fü
 
 Für einen gescannten Ordner geht es auch direkt beim Verzeichnis unter **Scan**: **KI-Analyse erlaubt** ausschalten. Entziehst du die Freigabe später, gilt das sofort für bereits erfasste Dokumente – auch in laufenden Chat-Gesprächen des Agenten: Was er vorher aus dem Dokument gelesen hat, geht mit der nächsten Nachricht nicht erneut an das LLM.
 
+## Persönliche Daten maskieren
+
+Unter **Einstellungen → Datenschutz → Persönliche Daten maskieren** (Standard: an) ersetzt Archivist vor jeder Übertragung IBAN, Kartennummern, Steuer-ID, Sozialversicherungsnummer und PINs durch Platzhalter wie `[IBAN]`. Das gilt auch für Embeddings, die Vorschau im Übertragungsprotokoll und das lokale Protokoll. Zugangsdaten und Schlüssel maskiert Archivist immer, unabhängig von diesem Schalter.
+
+Nicht maskiert werden Gesundheitsdaten, Namen, Adressen, Telefonnummern und E-Mail-Adressen. Willst du, dass ein Dokument mit solchen Angaben nie hinausgeht, schließe es unter „Nie analysieren“ aus. Schaltest du die Maskierung aus, gehen die Kennungen im Klartext an die KI, sobald ein Dokument oder eine Nachricht gesendet werden darf.
+
 ## Verschlüsselte Verbindung sicherstellen
 
 Archivist sendet nur über `https://` an einen fremden Rechner. Eine `http://`-Adresse ist nur für deinen eigenen Rechner erlaubt (`localhost`, `127.0.0.1`, `[::1]`, z. B. ein lokaler Ollama-Server). Trägst du unter **Einstellungen → KI** eine andere `http://`-Adresse ein, erscheint am Feld eine Meldung, und Speichern sowie der Verbindungstest bleiben gesperrt – verwende dann die `https://`-Adresse deines Anbieters. Der API-Key geht dabei immer nur in einem Header an den Endpunkt ([LLM-Schnittstelle](../reference/llm-schnittstelle.md#anfragen)).
 
 Hatte eine ältere Version eine solche Adresse gespeichert, sendet Archivist nichts an sie und zeigt die Meldung, bis du sie korrigierst.
 
+## Keine Cloud-Synchronisierung für deine Daten
+
+Archivist hält Datenbank, Einstellungen, Protokolle und Backups im Datenordner deines Benutzerprofils (unter Windows `%APPDATA%\Archivist\`), nicht im Ordner „Dokumente“, den OneDrive, iCloud oder Dropbox oft abgleichen. Nur Archiv, Eingang, Quarantäne und Papierkorb liegen standardmäßig in `Dokumente\Archivist`. Die Dateien sind nicht zusätzlich verschlüsselt (nur der API-Key); schütze den Rechner mit Festplattenverschlüsselung (BitLocker).
+
+Dasselbe gilt für den **Datenordner**: Liegt er in einem Sync-Ordner, liegen Eingang, Quarantäne und Papierkorb (also Kopien deiner Dokumente) dort ebenfalls beim Anbieter; die Warnung nennt dann auch den Datenordner. Datenbank, Einstellungen und Backups liegen nur dann mit im Datenordner, wenn du mit `ARCHIVIST_DATA_DIR` alles in einen Ordner legst ([Datenverzeichnis](../reference/datenverzeichnis.md)); die Warnung sagt, welcher Fall bei dir gilt. Liegt dein Archivordner trotzdem in einem Sync-Ordner (OneDrive, Dropbox, iCloud Drive oder Google Drive, erkannt am Ordnernamen), warnt Archivist in der Einrichtung, unter **Einstellungen → Archiv** und im Dialog „Archivordner ändern“. Willst du, dass deine Dokumente den Rechner nicht verlassen, wähle einen Ordner außerhalb der Synchronisierung ([Archivpfad ändern](archivpfad-aendern.md)) oder nimm den Ordner in der Sync-Software von der Synchronisierung aus.
+
 ## Protokoll und Diagnose für den Agenten
 
 Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `diagnose` den Zustand von Archivist lesen ([Archivist untersuchen](../reference/agentenmodus.md#archivist-untersuchen)). Was er dabei liest, ist Teil seiner Anfrage an das LLM – du steuerst es so:
 
-- **Protokoll:** Es enthält keine Schlüssel und keine Dokumentinhalte, aber Dateipfade und Fehlermeldungen. Zeilen, die ausgeschlossene Dateien, Ordner oder Dateitypen nennen, gibt `read_logs` nicht heraus. Alles andere geht, maskiert, an das LLM, sobald der Agent es liest. Das Protokoll selbst bleibt lokal; die Aufbewahrung stellst du unter Einstellungen → Protokolle (Stufe und Aufbewahrung) ein.
+- **Protokoll:** Es enthält keine Schlüssel und keine Dokumentinhalte, aber Dateipfade und Fehlermeldungen. Zeilen, die ausgeschlossene Dateien, Ordner oder Dateitypen nennen, gibt `read_logs` nicht heraus. Alles andere geht, maskiert, an das LLM, sobald der Agent es liest. Dateipfade stehen bewusst darin (etwa die Ordner eines Scans), damit Fehler nachvollziehbar bleiben; Dateinamen von Dokumenten stehen nicht im Zweck der Übertragungen, dort nur die Dokument-ID. Das Protokoll selbst bleibt lokal; die Aufbewahrung stellst du unter Einstellungen → Protokolle (Stufe und Aufbewahrung) ein. Die Aufbewahrung gilt auch für das Übertragungsprotokoll und für längst gelesene Benachrichtigungen (Aufräumen beim Start und danach täglich), und alle Logdateien zusammen bleiben unter 50 MB (die ältesten gehen zuerst). Das Änderungsprotokoll, Chatverläufe und Agentenaktionen werden nie automatisch gelöscht.
 - **Endpunkt-Messung:** `diagnose` sendet nur im Modus „automatisch“ eine feste Testanfrage an den Embedding-Endpunkt. Sie enthält keinen Dokumentinhalt, steht mit Zweck „Diagnose: Embedding-Endpunkt“ im Übertragungsprotokoll und entfällt in „vorher fragen“ und „nur lokal“.
+
+## Ein Dokument endgültig aus Archivist entfernen
+
+Lege das Dokument im Dokument-Dialog „In den Papierkorb“ und wähle unter **Einstellungen → Archiv → Papierkorb** **Aus Archivist entfernen …**. Bis dahin lässt sich alles wiederherstellen. Nach der zweiten Bestätigung ist weg:
+
+- die Archivdatei und die eigene Eingangskopie im Papierkorb (dein Original außerhalb von Archivist bleibt),
+- der gespeicherte Text samt Zusammenfassung und Vorschlag, auch in den Undo-Daten des Änderungsprotokolls,
+- die Vorschau der Übertragungen, an denen das Dokument beteiligt war (die Einträge selbst bleiben),
+- die Reste in der Datenbank: Gelöschtes überschreibt die Datenbank sofort mit Nullen; den Suchindex und das Schreibprotokoll räumt Archivist danach in kurzen Schritten auf, ohne das Fenster zu blockieren. Nur eine Datenbank aus einer älteren Version schreibt Archivist beim ersten Leeren einmal komplett neu, damit auch früher Gelöschtes verschwindet; das dauert bei großen Archiven einige Sekunden.
+
+Es bleibt, was aus dem Dokument entstanden ist: Entscheidungen, offene Punkte, Notizen und Erkenntnisse. Lösche sie bei Bedarf einzeln. **Ältere Backups enthalten den Text weiterhin**; Archivist schreibt sie nicht um. Lösche sie unter Einstellungen → Backups, wenn auch dort nichts bleiben soll.
 
 ## Änderungsprotokoll
 
 Das Änderungsprotokoll (Einstellungen → Änderungsprotokoll) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert.
 
+## Tokenverbrauch im Blick behalten und begrenzen
+
+Unter **Einstellungen → Datenschutz → Tokenverbrauch** siehst du, wie viele Tokens die KI heute und in diesem Monat verbraucht hat (laut Antwort deines Dienstes, Wiederholungen eingerechnet) und wie viele Anfragen das waren. Trage ein **Tageslimit (Tokens)** ein, wenn du die Kosten deckeln willst, und speichere es; leer lassen heißt kein Limit. Erreicht ein Massenlauf (Alle neuen Dateien analysieren, Import-Analyse, Neu verarbeiten) das Limit, hält er an und lässt alle übrigen Dokumente unverändert; er läuft morgen weiter, oder sofort, sobald du das Limit erhöhst oder löschst.
+
+Ist das Limit erreicht, geht nichts mehr an die KI: Analysen im Hintergrund pausieren bis morgen und laufen sofort weiter, wenn du das Limit erhöhst oder entfernst. Im Chat fragt Archivist vorher; mit „Trotzdem fortfahren“ geht deine Nachricht hinaus und der Rest des Tages ist für diese Unterhaltung frei. Details: [LLM-Schnittstelle](../reference/llm-schnittstelle.md#tokenverbrauch-und-tageslimit).
+
 ## Prüfen, was gesendet wurde
 
-Unter **Einstellungen → Datenschutz → An die KI übertragene Inhalte** steht jede Übertragung mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen und einer gekürzten, maskierten Vorschau. Ein langes Dokument erscheint mit einem Eintrag je gelesenem Teil („Teil 2 von 4“), jeder maskiert und mit der Dokument-ID. Bei Agentenläufen zählt die Anzahl alle bis dahin im Lauf maskierten Stellen – in deiner Nachricht, in der Systemanweisung (Gelerntes, Profil) und in Werkzeugergebnissen.
+Unter **Einstellungen → Datenschutz → An die KI übertragene Inhalte** steht jede Übertragung mit Zeitpunkt, Zweck, Modell, Größe, Anzahl maskierter Stellen (bei persönlichen Daten mit dem Vermerk „davon … persönliche Daten“) den Titeln der beteiligten Dokumente und einer gekürzten, maskierten Vorschau. Die Vorschau zeigt, worum es ging: bei einer Chatfrage deine Frage und die Titel der Quellen, bei der Analyse eines Dokuments den Dateinamen und den Textanfang – nicht den festen Anfang der Anweisung. Die Vorschau eines Eintrags nennt auch die Tokens und die Zahl der Anfragen und, wenn die Anfrage vom Gewünschten abwich (z. B. JSON-Modus statt Structured Outputs oder eine niedrigere Denktiefe), den Hinweis dazu. Die Liste zeigt die neuesten 100 Einträge; **Mehr laden** holt ältere. Aktualisiert sich die Liste, lädt sie alle angezeigten Seiten neu, sodass kein Eintrag verloren geht, den neue Übertragungen nach hinten schieben. Einträge, die älter sind als die eingestellte Aufbewahrungsdauer der Protokolle (`logs.retentionDays`, Standard 30 Tage), löscht Archivist beim Start und danach täglich. Ein Dokument, das du aus Archivist entfernt hast, erscheint als „entferntes Dokument“ und ohne Vorschau. Ein langes Dokument erscheint mit einem Eintrag je gelesenem Teil („Teil 2 von 4“), jeder maskiert und mit der Dokument-ID. Bei Agentenläufen zählt die Anzahl alle bis dahin im Lauf maskierten Stellen – in deiner Nachricht, in der Systemanweisung (Gelerntes, Profil) und in Werkzeugergebnissen.
 
 Hintergrund: [Sicherheits- und Datenschutzmodell](../explanation/sicherheitsmodell.md).

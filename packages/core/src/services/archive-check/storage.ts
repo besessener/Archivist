@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isWithinCategoryFolder } from '../../util/paths';
 import type { CheckedDocument } from './documents';
 import { fileSizes } from './files';
 import { yieldPeriodically, type CheckRun } from './findings';
@@ -37,7 +38,7 @@ export async function checkStorage(run: CheckRun, archived: CheckedDocument[]): 
         document,
         explanation: `Die Datei ${absolutePath(root, relativePath)} hat eine andere Größe als beim Archivieren (${sizes[i]} statt ${document.size} Byte). Sie wurde möglicherweise überschrieben oder beschädigt.`,
       });
-    } else if (document.categoryPath && !path.dirname(relativePath).replace(/\\/g, '/').startsWith(document.categoryPath)) {
+    } else if (document.categoryPath && !isWithinCategoryFolder(path.dirname(relativePath), document.categoryPath)) {
       findings.insightKeys.add(`misplaced:${document.id}`);
       deps.insights.upsert({
         kind: 'misplaced_file',

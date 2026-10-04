@@ -16,7 +16,11 @@ Die auf npm verfügbare Version von SheetJS hat bekannte, ungepatchte Schwachste
 
 ## OCR ohne Netz
 
-Texterkennung läuft lokal mit `tesseract.js`; Sprachdaten liegen im Installationspaket. Das macht den Installer größer, aber ein gescanntes Dokument verlässt dafür nie den Rechner. PDFs werden höchstens 40 Seiten tief erkannt. Details: [Funktionen – OCR](../reference/funktionen.md#ocr).
+Texterkennung läuft lokal mit `tesseract.js`; Sprachdaten liegen im Installationspaket. Das macht den Installer größer, aber ein gescanntes Dokument verlässt dafür nie den Rechner. PDFs werden seitenweise erkannt, aber höchstens 40 Seiten ohne Textebene je Dokument; weitere Seiten bleiben ungelesen und das Dokument zeigt das offen an („Text teilweise gelesen“). Details: [Funktionen – OCR](../reference/funktionen.md#ocr).
+
+## Kein Betriebssystem-Sandkasten für Parser
+
+Dateien aus unbekannter Quelle werden von pdfjs, mammoth, mailparser, sharp, canvas und tesseract in Worker-Threads **innerhalb des Electron-Hauptprozesses** gelesen, ohne Sandbox des Betriebssystems. Die Gegenmaßnahmen sind begrenzt: Zeitlimit je Aufgabe (der Worker wird beendet und ersetzt), Grenzen gegen ZIP-Bomben, lineare statt rückverfolgende Textsuche und Größenlimits für Dateien und Text. Ein Fehler in einer dieser Bibliotheken, der Code ausführt, wäre damit nicht eingedämmt. Ein Prozess mit eingeschränkten Rechten für das Einlesen ist ein bekanntes, bewusst nicht umgesetztes Thema; ein Beispiel für einen Angriff ist nicht bekannt.
 
 ## Kein Hintergrunddienst
 
@@ -24,7 +28,11 @@ Scans, Erinnerungen und Archivprüfungen laufen nur, **solange Archivist geöffn
 
 ## Löschen nur über den Papierkorb
 
-Ein gelöschtes Dokument landet im Papierkorb und lässt sich wiederherstellen, bis du ihn leerst; erst das Leeren löscht endgültig und braucht eine zweite Bestätigung – siehe [Sicherheitsmodell](sicherheitsmodell.md#keine-datei-geht-verloren). Deine Originale außerhalb des Archivs löscht Archivist nie. Selbst erfasste Ereignisse lassen sich löschen; auch das ist über das Änderungsprotokoll rückgängig machbar.
+Ein gelöschtes Dokument landet im Papierkorb und lässt sich wiederherstellen, bis du ihn leerst; erst das Leeren („Aus Archivist entfernen“) löscht endgültig, entfernt auch den gespeicherten Text und die Übertragungsvorschauen und braucht eine zweite Bestätigung; bereits angelegte Backups schreibt Archivist nicht um – siehe [Sicherheitsmodell](sicherheitsmodell.md#keine-datei-geht-verloren). Deine Originale außerhalb des Archivs löscht Archivist nie. Selbst erfasste Ereignisse lassen sich löschen; auch das ist über das Änderungsprotokoll rückgängig machbar.
+
+## Unvollständige Kopien nach einem Absturz
+
+Archivist kopiert immer erst unter einen temporären Namen `<Ziel>.<uuid>.partial` und entfernt diese Datei wieder, wenn das Kopieren scheitert; lässt sie sich nicht entfernen, nennt die Fehlermeldung ihren Pfad. Nur ein Absturz oder Stromausfall mitten im Kopieren kann sie unbemerkt zurücklassen, und gelingt das Kopieren, die temporäre Datei aber lässt sich danach nicht löschen, steht das nur im Protokoll. Im Archivordner räumt Archivist solche Reste selbst auf. Beim Zurücklegen einer archivierten Fassung neben dein Original (Rückgängig) liegt der Rest dagegen in deinem eigenen Ordner, und den durchsucht Archivist bewusst nicht: Eine Datei mit diesem Namensmuster dort kannst du löschen.
 
 ## Widersprüche sind Hinweise
 

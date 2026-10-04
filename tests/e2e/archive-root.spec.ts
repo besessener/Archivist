@@ -6,11 +6,11 @@ import { expect, test } from './fixture';
 
 const NOTE = 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.';
 
-/** Imports a note and archives it into work/projects/Nordlicht, then opens Settings → Archiv. */
+/** Imports a note and archives it into Arbeit/Projekte/Nordlicht, then opens Settings → Archiv. */
 async function archiveNoteAndOpenSettings(app: PageTree, page: Page, file: string): Promise<void> {
   await app.inbox.do.importFile(file);
   await app.navigation.do.open('inbox');
-  await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+  await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
   await app.inbox.do.openArchivePlan();
   await app.inbox.do.confirmArchive();
   await page.keyboard.press('Escape'); // close the result dialog
@@ -25,7 +25,7 @@ test.describe('Archive root', () => {
 
   test('offers moving the archive or only changing the path, and moves it with undo', async ({ on, page, workspace }) => {
     const app = on(page);
-    const rel = path.join('work', 'projects', 'Nordlicht', 'jour-fixe.txt');
+    const rel = path.join('Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
     const oldRoot = path.join(workspace.dataDir, 'archive');
     const newRoot = path.join(path.dirname(workspace.dataDir), 'NAS', 'Archiv');
     await archiveNoteAndOpenSettings(app, page, workspace.addDownload('jour-fixe.txt', NOTE));

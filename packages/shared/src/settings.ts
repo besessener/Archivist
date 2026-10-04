@@ -4,7 +4,8 @@ import { LOCAL_TIME } from './dates';
 import { SUPPORTED_EXTENSIONS } from './documents';
 import { AgentSettings, BackgroundAgentSettings } from './agent';
 
-export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high']);
+export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+export type ReasoningEffort = z.infer<typeof ReasoningEffort>;
 
 export const LlmSettings = z.object({
   baseUrl: z.string().default(''),
@@ -14,6 +15,8 @@ export const LlmSettings = z.object({
   maxInputChars: z.number().int().min(500).max(2000000).default(24000),
   /** optional embedding model (/embeddings). Empty = local vectors. */
   embeddingModel: z.string().default(''),
+  /** Daily token limit (input, cache reads and output); null = no limit. Background jobs pause when it is reached, the chat asks first. */
+  dailyTokenCap: z.number().int().min(1000).max(10_000_000_000).nullable().default(null),
 });
 
 export const ScanSettings = z.object({
@@ -33,6 +36,8 @@ export const PrivacySettings = z.object({
   neverAnalyzeDirs: z.array(z.string()).default([]),
   neverAnalyzeExtensions: z.array(z.string()).default([]),
   neverAnalyzeFiles: z.array(z.string()).default([]),
+  /** Replaces IBAN, card numbers, tax and social security IDs and PINs by placeholders before they leave the machine or reach the log (#203). */
+  maskPersonalData: z.boolean().default(true),
 });
 
 const LogSettings = z.object({
@@ -40,7 +45,7 @@ const LogSettings = z.object({
   retentionDays: z.number().int().min(1).default(30),
 });
 const BackupSettings = z.object({
-  keep: z.number().int().min(1).default(10),
+  keep: z.number().int().min(1).default(3),
   autoOnStartup: z.boolean().default(false),
   includeArchive: z.boolean().default(false),
 });
@@ -79,6 +84,12 @@ export const OCR_LANGUAGE_CODE = /^[a-z]{3}(?:_[a-z]+)?$/;
 export function isOcrLanguageList(value: string): boolean {
   return value.split('+').every((code) => OCR_LANGUAGE_CODE.test(code));
 }
+
+/** Languages whose Tesseract data ships with the app (@tesseract.js-data/*); the settings offer exactly these, in this order. */
+export const OCR_LANGUAGE_CHOICES = [
+  { code: 'deu', label: 'Deutsch' },
+  { code: 'eng', label: 'Englisch' },
+] as const;
 
 const OcrSettings = z.object({
   enabled: z.boolean().default(true),

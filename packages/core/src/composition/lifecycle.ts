@@ -1,6 +1,8 @@
 import type { Job } from '@archivist/shared';
 import type { AgentService } from '../agent/service';
+import { NEAR_DUPLICATE_BACKFILL_JOB } from '../services/near-duplicates';
 import { enqueueReembedding } from '../services/reembedding';
+import { maskingOf } from '../util/redact';
 import type { WiredServices } from './domain-services';
 
 type LifecycleServices = WiredServices & {
@@ -11,6 +13,8 @@ type LifecycleServices = WiredServices & {
 
 /** Longest wait on running archive file operations when quitting; stays below the desktop's 10 s quit deadline (QUIT_DEADLINE_MS). */
 const ARCHIVE_DRAIN_TIMEOUT_MS = 8_000;
+
+const RETENTION_INTERVAL_MS = 24 * 60 * 60_000;
 
 const BACKGROUND_LABEL: Record<string, string> = { inbox: 'Eingang sortieren', archive_check: 'Agentische Archivprüfung', links: 'Verknüpfungen pflegen' };
 
@@ -24,6 +28,7 @@ export function reactToSettingsChanges(services: WiredServices): void {
   events.on('data:changed', (change: { scopes: string[] }) => {
     if (change.scopes.includes('settings')) {
       logger.setLevel(settings.get().logs.level);
+      logger.setMasking(maskingOf(settings.get()));
       consistency.applySettings();
       // a new profile name renames the own person or merges a person with that name into it
       syncOwnPerson(services);
@@ -62,6 +67,22 @@ function addMissingLocalVectors({ appState, search, jobs }: LifecycleServices): 
   if (search.hasRemoteVectorsWithoutLocal()) enqueueReembedding(jobs);
 }
 
+/** Documents from before the near-duplicate signatures get theirs once, in a resumable job (#230). */
+function signExistingDocuments({ appState, jobs }: LifecycleServices): void {
+  if (appState.get('documents.near-duplicates.v1')) return;
+  appState.set('documents.near-duplicates.v1', new Date().toISOString());
+  jobs.enqueue(NEAR_DUPLICATE_BACKFILL_JOB, { label: 'Dokumente auf ähnlichen Inhalt vergleichen', sameAs: () => true });
+}
+
+/** Log files, LLM transmission entries and old read notifications live for `logs.retentionDays`; the audit log, chat and agent actions are never pruned. */
+export function pruneByRetention({ logger, settings, llm, notifications }: WiredServices): void {
+  const days = settings.get().logs.retentionDays;
+  logger.prune(days);
+  const transmissions = llm.pruneTransmissions(days);
+  const readNotifications = notifications.pruneRead(days);
+  if (transmissions || readNotifications) logger.info('retention', 'Old entries removed', { transmissions, readNotifications });
+}
+
 function startAgent({ agent, jobs, chat }: LifecycleServices): void {
   agent.start({
     enqueue: (kind, docIds) =>
@@ -78,11 +99,14 @@ function startupBackup({ settings, backup, logger }: WiredServices): void {
 }
 
 export function createLifecycle(services: LifecycleServices) {
-  const { logger, settings, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, reader, database } = services;
+  let retentionTimer: NodeJS.Timeout | undefined;
+  const { logger, documents, jobs, reminders, self, scanner, archive, agent, consistency, pool, searchPool, reader, database } = services;
   return {
     /** Starts background work (only while the application runs). */
     start(): void {
-      logger.prune(settings.get().logs.retentionDays);
+      pruneByRetention(services);
+      retentionTimer = setInterval(() => pruneByRetention(services), RETENTION_INTERVAL_MS);
+      retentionTimer.unref();
       // before the queue resumes: documents stuck in `analyzing` without a job become `failed` (reprocessable)
       documents.recoverInterruptedAnalyses();
       jobs.start();
@@ -97,12 +121,14 @@ export function createLifecycle(services: LifecycleServices) {
       scheduleArchiveChecks(services);
       startInitialLinkRun(services);
       addMissingLocalVectors(services);
+      signExistingDocuments(services);
       startAgent(services);
       startupBackup(services);
     },
 
     /** Stops background work and closes the database after interrupted jobs (5 s) and running file operations (8 s) were awaited. */
     async shutdown(options: { jobTimeoutMs?: number; archiveTimeoutMs?: number } = {}): Promise<void> {
+      clearInterval(retentionTimer);
       reminders.stop();
       agent.stop();
       scanner.stop();
@@ -110,7 +136,7 @@ export function createLifecycle(services: LifecycleServices) {
       const drained = archive.drain(options.archiveTimeoutMs ?? ARCHIVE_DRAIN_TIMEOUT_MS);
       await jobs.interrupt(options.jobTimeoutMs);
       if (!(await drained)) logger.warn('archive', 'Quit while archive file operations were still running');
-      await pool.close();
+      await Promise.all([pool.close(), searchPool.close()]);
       await reader.close();
       database.close();
       await logger.close();

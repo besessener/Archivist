@@ -11,11 +11,11 @@ test.describe('archive check', () => {
   test('a file renamed outside Archivist is found and re-attached after confirmation', async ({ on, page, workspace }, testInfo) => {
     const app = on(page);
     const note = workspace.addDownload('jour-fixe.txt', 'Jour Fixe Nordlicht am 04.05.2026.\nTeilnehmer: Anna, Ben.\nDas Projekt Nordlicht wird fortgeführt.');
-    const archivedFile = path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe.txt');
+    const archivedFile = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
     const renamedFile = path.join(path.dirname(archivedFile), 'Protokoll Jour Fixe.txt');
     await app.inbox.do.importFile(note);
     await app.navigation.do.open('inbox');
-    await app.inbox.do.waitForProposal('work/projects/Nordlicht');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
     await app.inbox.do.openArchivePlan();
     await app.inbox.do.confirmArchive();
     await app.inbox.locators.archivePlan.close.click();

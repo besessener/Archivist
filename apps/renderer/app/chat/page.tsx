@@ -6,10 +6,12 @@ import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatEmpty } from '@/components/chat/chat-empty';
 import { ConversationBar } from '@/components/chat/conversation-bar';
 import { ChatBubble } from '@/components/chat/message';
+import { LoadMore } from '@/components/common/load-more';
 import { ErrorNote } from '@/components/common/states';
 import { useApp } from '@/lib/app-context';
 import { chatRequests, mergeChatMessages, requestsFor } from '@/lib/chat-requests';
 import { call } from '@/lib/ipc';
+import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import { useRun } from '@/lib/use-run';
@@ -35,10 +37,16 @@ export default function ChatPage() {
 
   const conversations = useQuery('chat:conversations', {}, { scopes: ['chat'] });
   const aiNotice = aiNoticeFor(useSettings());
-  const history = useQuery('chat:history', conversationId ? { conversationId } : undefined, {
+  // the newest messages load first; „Mehr laden“ grows the window backwards
+  const paging = usePageWindow(conversationId ?? '');
+  const history = useWindowedQuery('chat:history', {
+    filter: conversationId ? { conversationId } : undefined,
+    window: paging.window,
+    direction: 'backward',
     scopes: ['chat'],
     enabled: conversationId !== null,
   });
+  const historyTotal = useQuery('chat:historyCount', conversationId ? { conversationId } : undefined, { scopes: ['chat'], enabled: conversationId !== null });
 
   useEffect(() => {
     if (initialised.current || !conversations.data) return;
@@ -86,9 +94,11 @@ export default function ChatPage() {
 
   useEffect(() => () => setContextMessage(null), [setContextMessage]);
 
+  // only a new last message scrolls down, not earlier ones that were loaded above
+  const lastMessageId = messages.at(-1)?.id;
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages, working, progress?.steps.length]);
+  }, [lastMessageId, working, progress?.steps.length]);
 
   const send = useCallback(
     async (raw: string) => {
@@ -128,6 +138,14 @@ export default function ChatPage() {
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="chat-scroll">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
           {history.error && <ErrorNote error={history.error} onRetry={() => void history.refetch()} />}
+          <LoadMore
+            shown={history.data?.length ?? 0}
+            total={historyTotal.data ?? 0}
+            noun="Nachrichten dieses Gesprächs"
+            onMore={paging.more}
+            loading={history.loading}
+            testId="chat-history"
+          />
           {messages.length === 0 && !working && (
             <ChatEmpty
               onPrompt={(prompt) => {

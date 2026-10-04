@@ -19,6 +19,7 @@ import { AgentRunExecutor, type ExecutionResult } from './run-execution';
 import { RunProgress } from './run-progress';
 import type { RunOutcome } from './runner';
 import type { AgentRunService, UndoRunResult } from './runs';
+import { maskingOf } from '../util/redact';
 import { maskSecrets } from './security';
 import type { ToolDeps } from './tools/common';
 import { duplicateTools } from './tools/duplicates';
@@ -218,7 +219,7 @@ export class AgentService {
     const override = modeOverrideIn(text) ?? state.mode ?? null;
     const refs = new RefStore(state.refs ?? { ids: {}, sets: {} });
     const history = this.history.replayable(conversationId, refs);
-    const { text: masked, count: redactions } = maskSecrets(text);
+    const { text: masked, count: redactions, personalData: personalRedactions } = maskSecrets(text, maskingOf(this.deps.settings.get()));
     const turn = userTurn(pendingCalls(history), masked);
     const lastAnswer = turn.answersQuestion ? text : null;
     const userText = lastAnswer && state.task ? `${state.task}\n${text}` : text;
@@ -234,6 +235,7 @@ export class AgentService {
       userText,
       lastAnswer,
       redactions,
+      personalRedactions,
     });
     writer.close(result.run.id);
     return this.reply({ result, refs, state, override, userText });

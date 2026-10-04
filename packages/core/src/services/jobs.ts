@@ -1,12 +1,15 @@
 import type { Job } from '@archivist/shared';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { jobs } from '../db/schema';
 import { AppError } from '../util/errors';
 import { nowIso } from '../util/ids';
+import type { ArchivistJson } from '../util/json';
 import { AttemptOutcomes, type Outcome } from './jobs/attempt-outcome';
+import { pruneFinishedJobs, recoverCrashedJobs } from './jobs/job-maintenance';
 import { createJobContext } from './jobs/job-context';
 import { JobCancelledError, JobInterruptedError } from './jobs/job-errors';
+import { listJobs, type JobListFilter } from './jobs/job-list';
 import { mapJob, newJobRow, type JobRow } from './jobs/job-rows';
 import { pollUntil } from './jobs/polling';
 import type { JobHandler, JobHooks, JobQueueOptions, Registration } from './jobs/job-types';
@@ -16,11 +19,7 @@ export { INTERRUPTED_JOB_MESSAGE } from './jobs/attempt-outcome';
 export { isJobCancelled, isJobInterrupted, JobCancelledError } from './jobs/job-errors';
 export type { JobContext } from './jobs/job-types';
 
-/** Error of a job that was running when the app ended unexpectedly and has no attempt left. */
-export const CRASHED_JOB_ERROR = 'Die App wurde während dieses Jobs unerwartet beendet; es ist kein weiterer Versuch übrig.';
-
-/** Finished jobs (succeeded, failed, cancelled) are removed after this many days. */
-export const JOB_RETENTION_DAYS = 30;
+export { CRASHED_JOB_ERROR, JOB_RETENTION_DAYS } from './jobs/job-maintenance';
 
 /** Exponential backoff: the wait after `failedAttempts` failed attempts (1 → base, 2 → 2 × base, …), capped at `maxMs`. */
 export function retryDelayMs(failedAttempts: number, { baseMs, maxMs }: { baseMs: number; maxMs: number }): number {
@@ -54,10 +53,15 @@ export class JobQueueService {
     this.outcomes = new AttemptOutcomes({
       ctx,
       retryWaits: this.retryWaits,
-      retryDelay: (failedAttempts) => retryDelayMs(failedAttempts, { baseMs: this.retryBaseDelayMs, maxMs: this.retryMaxDelayMs }),
+      retryDelay: (failedAttempts, err) => (err instanceof AppError ? err.retryAfterMs : undefined) ?? this.backoffMs(failedAttempts),
       runHook: (target, run) => this.runHook(target, run),
       notify: (row) => this.notify(row),
     });
+  }
+
+  /** The wait before the next attempt after `failedAttempts` failed ones – also for work a job retries inside itself. */
+  backoffMs(failedAttempts: number): number {
+    return retryDelayMs(failedAttempts, { baseMs: this.retryBaseDelayMs, maxMs: this.retryMaxDelayMs });
   }
 
   private get db() {
@@ -109,12 +113,27 @@ export class JobQueueService {
     return mapJob(this.existingRow(id));
   }
 
+  /** The payload a job was queued with. */
+  payloadOf<P>(id: string): P | undefined {
+    return this.row(id)?.payload as P | undefined;
+  }
+
+  /** Replaces the payload of a job, e.g. a consent given while it waits or runs; the handler reads it again where it needs it. */
+  updatePayload<P>(id: string, payload: P): void {
+    this.db
+      .update(jobs)
+      .set({ payload: payload as ArchivistJson })
+      .where(eq(jobs.id, id))
+      .run();
+  }
+
   getResult(id: string): unknown {
     return this.row(id)?.result ?? null;
   }
 
-  list(limit = 100): Job[] {
-    return this.db.select().from(jobs).orderBy(desc(jobs.createdAt)).limit(limit).all().map(mapJob);
+  /** Newest first; reads only the columns a list shows, optionally just the pending or running jobs of one type. */
+  list(limit = 100, filter: JobListFilter = {}): Job[] {
+    return listJobs(this.db, { limit, ...filter });
   }
 
   counts(): { pending: number; running: number; failed: number } {
@@ -154,6 +173,13 @@ export class JobQueueService {
     return mapJob(row);
   }
 
+  /** Lets the jobs paused by the daily token limit run again (the limit was raised or switched off). */
+  resumeTokenCapPaused(): void {
+    this.outcomes.pausedForTokenCap.forEach((id) => this.retryWaits.delete(id));
+    this.outcomes.pausedForTokenCap.clear();
+    this.kick();
+  }
+
   /** Cancels waiting jobs (also those waiting for a retry) at once, running ones cooperatively via their `signal`. */
   cancel(id: string): Job {
     const current = this.existingRow(id);
@@ -183,22 +209,9 @@ export class JobQueueService {
     return ids.length;
   }
 
-  /** Starts processing: jobs a crash left `running` are requeued (at least once, even with `maxAttempts` 1) or fail; prunes old jobs. */
+  /** Starts processing: jobs a crash left `running` are requeued or fail; prunes old jobs. */
   start(): number {
-    let requeued = 0;
-    for (const row of this.db.select().from(jobs).where(eq(jobs.status, 'running')).all()) {
-      if (row.attempts < Math.max(row.maxAttempts, 2)) {
-        this.db.update(jobs).set({ status: 'pending', progressMessage: 'Nach Neustart fortgesetzt' }).where(eq(jobs.id, row.id)).run();
-        requeued += 1;
-        continue;
-      }
-      this.ctx.logger.error('jobs', `Job crashed without attempts left: ${row.type}`, { jobId: row.id, attempts: row.attempts });
-      this.db.update(jobs).set({ status: 'failed', error: CRASHED_JOB_ERROR, progressMessage: null, finishedAt: nowIso() }).where(eq(jobs.id, row.id)).run();
-      const hooks = this.handlers.get(row.type)?.hooks;
-      this.runHook({ type: row.type, hook: 'onFailed' }, () =>
-        hooks?.onFailed?.({ id: row.id, payload: row.payload as never, attempts: row.attempts }, new Error(CRASHED_JOB_ERROR)),
-      );
-    }
+    const requeued = recoverCrashedJobs(this.ctx, { handlers: this.handlers, runHook: (target, run) => this.runHook(target, run) });
     this.prune();
     this.started = true;
     this.stopping = false;
@@ -208,13 +221,7 @@ export class JobQueueService {
 
   /** Removes finished jobs older than `JOB_RETENTION_DAYS`. Returns the number of removed jobs. */
   prune(now = Date.now()): number {
-    const cutoff = new Date(now - JOB_RETENTION_DAYS * 86_400_000).toISOString();
-    const removed = this.db
-      .delete(jobs)
-      .where(and(inArray(jobs.status, ['succeeded', 'failed', 'cancelled']), lt(jobs.finishedAt, cutoff)))
-      .run().changes;
-    if (removed) this.ctx.logger.info('jobs', 'Old jobs removed', { removed });
-    return removed;
+    return pruneFinishedJobs(this.ctx, now);
   }
 
   /** Pauses the queue: no further job starts, and running jobs are awaited until they end on their own. */

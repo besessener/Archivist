@@ -55,10 +55,51 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
     expect(d.projectName).toBe('prod-plat');
     expect(d.status).toBe('active');
     expect(await app.ok('decisions:list', {})).toHaveLength(1);
-    // the topic moved into the project instead of living on next to it under the same name (#188)
     expect(d.topicName).toBeNull();
+    // merging the topic into the project is a level-2 action: only proposed, never run on the model's reading (#188)
+    const topic = app.services.graph.findByName('topic', 'prod-plat')!;
+    const project = app.services.graph.findByName('project', 'prod-plat')!;
+    expect(topic).toBeDefined();
+    expect(r2.assistantMessage.content).toMatch(/Thema „prod-plat“\. Soll ich es mit dem Projekt „prod-plat“ zusammenführen\?/);
+    const [merge] = r2.assistantMessage.actions;
+    expect(merge).toMatchObject({
+      actionType: 'merge_entities',
+      status: 'proposed',
+      requiredConfirmation: 'confirm',
+      proposedParameters: { sourceIds: [topic.id], targetId: project.id, allowCrossType: true },
+    });
+
+    await app.ok('actions:resolve', { decision: 'approve', actionId: merge!.id, confirmed: true, strongConfirmed: false });
     expect(app.services.graph.findByName('topic', 'prod-plat')).toBeUndefined();
-    expect(app.services.graph.findByName('project', 'prod-plat')).toBeDefined();
+    expect((await app.ok('decisions:list', {}))[0]!.projectName).toBe('prod-plat');
+  });
+
+  it('records a new decision on a name the LLM calls a project and proposes merging the topic of that name', async () => {
+    const topic = app.services.graph.ensureEntity({ type: 'topic', name: 'prod-plat' });
+    const project = app.services.graph.ensureEntity({ type: 'project', name: 'prod-plat' });
+    app.llm.on('ChatIntent', () => complete({ topicIsProject: true }));
+    const r = await send('Wir haben am 3.3.2026 mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
+
+    expect(r.assistantMessage.content).toContain('Die Entscheidung ist gespeichert');
+    const d = (await app.ok('decisions:list', {}))[0]!;
+    expect(d.projectName).toBe('prod-plat');
+    expect(d.topicName).toBeNull();
+    expect(app.services.graph.findByName('topic', 'prod-plat')?.id).toBe(topic.id);
+    expect(r.assistantMessage.actions.map((a) => [a.actionType, a.proposedParameters])).toEqual([
+      ['merge_entities', { sourceIds: [topic.id], targetId: project.id, allowCrossType: true }],
+    ]);
+  });
+
+  it('proposes the merge with a draft too, without merging before the confirmation', async () => {
+    app.services.graph.ensureEntity({ type: 'topic', name: 'prod-plat' });
+    app.services.graph.ensureEntity({ type: 'project', name: 'prod-plat' });
+    app.llm.on('ChatIntent', () => complete({ topicIsProject: true, decidedAt: null }));
+    const r = await send('Wir haben mit Anna und Ben entschieden, mit prod-plat erstmal nicht weiterzumachen.');
+
+    expect(r.assistantMessage.content).toContain('als **Entwurf** gespeichert');
+    expect(r.assistantMessage.content).toMatch(/Soll ich es mit dem Projekt „prod-plat“ zusammenführen\?/);
+    expect(r.assistantMessage.actions.map((a) => a.actionType)).toEqual(['merge_entities']);
+    expect(app.services.graph.findByName('topic', 'prod-plat')).toBeDefined();
   });
 
   it('understands „Thema“ and „Projekt“ without an LLM too', async () => {
@@ -75,10 +116,11 @@ describe('Follow-up question „Thema oder Projekt?“ (#51)', () => {
 
     const r4 = await send('Wir haben am 04.03.2026 mit nord-licht entschieden: Start.');
     expect(r4.assistantMessage.content).toMatch(/Ist „nord-licht“ das Thema oder der Name des Projekts\?/);
-    await send('Das ist ein Projekt', r4.conversationId);
+    const r5 = await send('Das ist ein Projekt', r4.conversationId);
     const nl = (await app.ok('decisions:list', {})).find((x) => x.projectName === 'nord-licht')!;
     expect(nl.status).toBe('active');
-    expect(app.services.graph.findByName('topic', 'nord-licht')).toBeUndefined();
+    expect(nl.topicName).toBeNull();
+    expect(r5.assistantMessage.actions.map((a) => a.actionType)).toEqual(['merge_entities']);
   });
 
   it('does not ask when the name is already known as a project, and saves the decision with the project', async () => {

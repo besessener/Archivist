@@ -19,7 +19,7 @@ const searchHits = async (query: string) => (await app.ok('search:global', { que
 
 describe('trash: deleting with a safety net', () => {
   it('moves the archive file into the trash, removes the document and keeps the original', async () => {
-    const id = await archived(app, { name: 'Mietvertrag Linde.txt', content: 'Mietvertrag Lindenstraße', folder: 'private/vertraege' });
+    const id = await archived(app, { name: 'Mietvertrag Linde.txt', content: 'Mietvertrag Lindenstraße', folder: 'Privat/vertraege' });
     const file = archiveFile(id);
     const original = row(id)!.sourcePath!;
 
@@ -37,7 +37,7 @@ describe('trash: deleting with a safety net', () => {
   });
 
   it('restores file, document, links and search entry via undo', async () => {
-    const id = await archived(app, { name: 'Angebot Bad.txt', content: 'Angebot Badsanierung', folder: 'private/haus' });
+    const id = await archived(app, { name: 'Angebot Bad.txt', content: 'Angebot Badsanierung', folder: 'Privat/haus' });
     const topic = app.services.graph.ensureEntity({ type: 'topic', name: 'Bad' });
     app.services.graph.link({ sourceId: id, targetId: topic.id, relationType: 'relates_to' }, { status: 'confirmed' });
     const file = archiveFile(id);
@@ -68,7 +68,7 @@ describe('trash: deleting with a safety net', () => {
   });
 
   it('never overwrites a file that took the original place meanwhile', async () => {
-    const id = await archived(app, { name: 'Notiz.txt', content: 'alter Inhalt', folder: 'private/notizen' });
+    const id = await archived(app, { name: 'Notiz.txt', content: 'alter Inhalt', folder: 'Privat/notizen' });
     const file = archiveFile(id);
     const { auditId } = await app.ok('documents:trash', { id, confirmed: true });
     fs.writeFileSync(file, 'neue Datei des Benutzers');
@@ -83,7 +83,7 @@ describe('trash: deleting with a safety net', () => {
   });
 
   it('waits for archive file operations: no trash move while a full backup copies the archive', async () => {
-    const id = await archived(app, { name: 'Vertrag.txt', content: 'Vertrag', folder: 'private/vertraege' });
+    const id = await archived(app, { name: 'Vertrag.txt', content: 'Vertrag', folder: 'Privat/vertraege' });
     const release = app.services.archive.beginBackup();
 
     const blocked = await app.call('documents:trash', { id, confirmed: true });
@@ -97,7 +97,7 @@ describe('trash: deleting with a safety net', () => {
   });
 
   it('requires the confirmation to move a document into the trash', async () => {
-    const id = await archived(app, { name: 'Brief.txt', content: 'Brief', folder: 'private/post' });
+    const id = await archived(app, { name: 'Brief.txt', content: 'Brief', folder: 'Privat/post' });
 
     const result = await app.call('documents:trash', { id } as never);
 
@@ -106,7 +106,7 @@ describe('trash: deleting with a safety net', () => {
   });
 
   it('empties the trash only with the second confirmation, then the documents can no longer be restored', async () => {
-    const id = await archived(app, { name: 'Kopie.txt', content: 'Kopie', folder: 'private/post' });
+    const id = await archived(app, { name: 'Kopie.txt', content: 'Kopie', folder: 'Privat/post' });
     const { auditId } = await app.ok('documents:trash', { id, confirmed: true });
     const [trashed] = trashDir()[0]!.files;
 
@@ -115,7 +115,7 @@ describe('trash: deleting with a safety net', () => {
     expect(fs.existsSync(trashed!)).toBe(true);
     await expect(app.services.documents.emptyTrash({ confirmed: true, permanentlyConfirmed: false })).rejects.toThrow('zweite, ausdrückliche Bestätigung');
 
-    expect(await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true })).toEqual({ deletedFiles: 1, documents: 1 });
+    expect(await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true })).toEqual({ deletedFiles: 1, documents: 1, databaseCompacted: true });
 
     expect(fs.existsSync(trashed!)).toBe(false);
     expect(trashDir()).toEqual([]);

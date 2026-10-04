@@ -1,0 +1,1 @@
+CREATE INDEX `insights_status_updated_idx` ON `insights` (`status`,`updated_at`);

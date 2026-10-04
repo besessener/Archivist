@@ -9,12 +9,37 @@ export function initScan(page: Page) {
       start: page.getByTestId('scan-start'),
       analyze: page.getByTestId('scan-analyze'),
       confirmAnalysis: page.getByTestId('scan-analyze-confirm'),
+      loadMore: page.getByTestId('scan-load-more'),
     },
     directories: page.getByTestId('scan-dir'),
     fileRows: page.getByTestId('scan-file-row'),
+    analyzedRows: page.locator('[data-testid="scan-file-row"][data-status="analyzed"]'),
     summary: page.getByTestId('scan-summary'),
+    resultsCount: page.getByTestId('scan-results-count'),
     allowLlm: page.getByTestId('scan-llm-checkbox'),
     proposals: page.getByTestId('scan-proposal'),
+    /** Paging over all results and „erneut analysieren“. */
+    paging: {
+      info: page.getByTestId('scan-more'),
+      loadMore: page.getByTestId('scan-load-more'),
+    },
+    reanalyze: page.getByTestId('scan-reanalyze'),
+    /** „Alle N neuen Dateien analysieren“: one consent, one job with a progress line (#228). */
+    analyzeAll: {
+      button: page.getByTestId('scan-analyze-all'),
+      estimate: page.getByTestId('bulk-consent-estimate'),
+      allowLlm: page.getByTestId('scan-analyze-all-llm'),
+      confirm: page.getByTestId('scan-analyze-all-confirm'),
+      progress: page.getByTestId('scan-analyze-all-progress'),
+    },
+    /** „Alle N Vorschläge archivieren“ above the scan proposals: one confirmation with the target structure (#228). */
+    archiveAll: {
+      open: page.getByTestId('scan-archive-all-open'),
+      preview: page.getByTestId('archive-all-preview'),
+      folders: page.getByTestId('archive-all-folders'),
+      reviewed: page.getByTestId('confirm-dialog-checkbox'),
+      confirm: page.getByTestId('archive-all-confirm'),
+    },
   };
   const fileRow = (name: string) => locators.fileRows.filter({ hasText: name });
   const interactions = {
@@ -33,6 +58,11 @@ export function initScan(page: Page) {
       await locators.buttons.analyze.click();
       await locators.allowLlm.check();
       await locators.buttons.confirmAnalysis.click();
+    },
+    /** Opens the consent dialog of „Alle neuen Dateien analysieren“. */
+    openAnalyzeAll: async () => {
+      await locators.analyzeAll.button.click();
+      await expect(locators.analyzeAll.estimate).toBeVisible();
     },
   };
   return Object.assign(pageObject({ root: locators.fileRows, locators, actions: interactions }), { fileRow });

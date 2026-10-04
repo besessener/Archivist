@@ -211,6 +211,34 @@
       "when": 1791051414756,
       "tag": "0029_contradiction_resolved_by_supersede",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791061046738,
+      "tag": "0030_orange_rocket_raccoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791073035675,
+      "tag": "0031_search_fts_external_content",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791073042096,
+      "tag": "0032_merged_enhancements",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791104182171,
+      "tag": "0033_contradiction_resolved_by_deactivation",
+      "breakpoints": true
     }
   ]
 }

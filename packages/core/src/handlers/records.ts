@@ -1,4 +1,5 @@
 import type { Services } from '../create-services';
+import { queueContradictionCheck } from '../services/contradiction-check-job';
 import { AppError } from '../util/errors';
 import { UI_TRIGGER, type HandlerGroup } from './types';
 
@@ -49,24 +50,25 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
           })
         : services.actions.resolve(input.actionId, { decision: 'reject' }),
 
-    'decisions:create': async (input) => {
-      const duplicate = services.decisions.findDuplicate({ decisionText: input.decisionText, topic: input.topic });
+    'decisions:create': (input) => {
+      const duplicate = services.decisions.findDuplicate({ decisionText: input.decisionText, topic: input.topic, project: input.project });
       if (duplicate)
         throw new AppError(
           'validation_error',
           `Diese Entscheidung ist schon erfasst („${duplicate.title}“). Öffne sie unter „Entscheidungen“ und ergänze sie dort.`,
         );
       const decision = services.decisions.create(input, { actor: 'user', trigger: UI_TRIGGER });
-      await services.contradictions.checkDecision(decision.id); // contradictions only as a hint, and only for active decisions
+      queueContradictionCheck(services.jobs, decision); // only a hint: saving never waits for the LLM's reviews
       return decision;
     },
-    'decisions:update': async (input) => {
+    'decisions:update': (input) => {
       const decision = services.decisions.update(input.id, { patch: input.patch, trigger: UI_TRIGGER });
-      await services.contradictions.checkDecision(decision.id);
+      queueContradictionCheck(services.jobs, decision);
       return decision;
     },
     'decisions:get': (input) => services.decisions.get(input.id),
     'decisions:list': (input) => services.decisions.list(input),
+    'decisions:count': (input) => services.decisions.count(input),
     'decisions:search': (input) => services.decisions.searchDecisions(input.query, input.limit),
     'decisions:proposeSupersede': (input) => proposeSupersede(services, input),
     'decisions:supersede': (input) => {
@@ -83,7 +85,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'decisions:revoke': (input) => services.decisions.revoke(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER }),
     'decisions:delete': (input) => ({ auditId: services.decisions.delete(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER }) }),
 
-    'jobs:list': (input) => services.jobs.list(input.limit),
+    'jobs:list': (input) => services.jobs.list(input.limit, { type: input.type, activeOnly: input.activeOnly }),
     'jobs:retry': (input) => services.jobs.retry(input.id),
     'jobs:cancel': (input) => services.jobs.cancel(input.id),
 
@@ -92,6 +94,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       services.notifications.markRead(input.ids);
       return { ok: true as const };
     },
+    'notifications:markAllRead': () => ({ marked: services.notifications.markAllRead() }),
     'notifications:resolve': (input) => services.notifications.resolve(input.id),
     'notifications:resolveAll': () => ({ resolved: services.notifications.resolveAll() }),
     'notifications:snooze': (input) => {
@@ -100,7 +103,8 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       return services.reminders.create({ targetType: 'notification', targetId: input.id, title: notification.title, remindAt: input.remindAt });
     },
 
-    'insights:list': (input) => services.insights.list(input.status),
+    'insights:list': (input) => services.insights.list(input, { limit: input.limit, offset: input.offset }),
+    'insights:count': (input) => services.insights.count(input),
     'insights:respond': async (input) => {
       if (input.response === 'accept') return services.insights.accept(input.id, { strongConfirmed: input.strongConfirmed });
       if (input.response === 'reject') return services.insights.reject(input.id);
@@ -108,7 +112,8 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
       return services.insights.remindLater(input.id, input.remindAt);
     },
     'consistency:run': () => ({ jobId: services.enqueueConsistency('manual').id }),
-    'contradictions:list': (input) => services.contradictions.list(input.status),
+    'contradictions:list': (input) => services.contradictions.list(input, { limit: input.limit, offset: input.offset }),
+    'contradictions:count': (input) => services.contradictions.count(input),
     'contradictions:resolve': (input) =>
       services.contradictions.resolve(input.id, {
         resolution: input.resolution,
@@ -126,6 +131,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'reminders:list': (input) => services.reminders.list(input.status),
 
     'openItems:list': (input) => services.openItems.list(input),
+    'openItems:count': (input) => services.openItems.count(input),
     'openItems:create': (input) => services.openItems.create(input, { actor: 'user', trigger: UI_TRIGGER }),
     'openItems:update': (input) => services.openItems.update(input.id, { patch: input.patch }),
     'openItems:close': (input) =>

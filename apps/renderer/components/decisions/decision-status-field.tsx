@@ -1,11 +1,10 @@
 'use client';
 
-import { ACTIVE_DECISION_STATUSES, EditableDecisionStatus, isEditableDecisionStatus, type DecisionStatus } from '@archivist/shared';
+import { EditableDecisionStatus, isEditableDecisionStatus, type DecisionStatus } from '@archivist/shared';
 import { Field } from '@/components/common/states';
 import { Select } from '@/components/ui/select';
-import { formatLongDate } from '@/lib/format';
 import { DECISION_STATUS_LABELS } from '@/lib/labels';
-import { useQuery } from '@/lib/use-query';
+import { DecisionPicker } from './decision-picker';
 import type { DecisionRecord } from '@/lib/types';
 
 /** Statuses that need an explicit confirmation (stage 2) and get an undo entry; never sent via `decisions:update`. */
@@ -80,19 +79,9 @@ export function SupersededByField({
   value: string;
   onChange: (id: string) => void;
 }) {
-  const others = useQuery('decisions:list', {}, { scopes: ['decisions'], enabled: open });
   return (
     <Field label="Ersetzt durch" htmlFor="d-superseded-by" hint="Nur gültige oder bestätigte Entscheidungen können eine andere ersetzen.">
-      <Select id="d-superseded-by" value={value} onChange={(e) => onChange(e.target.value)} data-testid="decision-superseded-by">
-        <option value="">Neuere Entscheidung wählen …</option>
-        {(others.data ?? [])
-          .filter((other) => other.id !== decision.id && ACTIVE_DECISION_STATUSES.includes(other.status))
-          .map((other) => (
-            <option key={other.id} value={other.id}>
-              {(other.title || other.decisionText).slice(0, 80)} ({formatLongDate(other.decidedAt, 'ohne Datum')})
-            </option>
-          ))}
-      </Select>
+      <DecisionPicker excludeId={decision.id} open={open} value={value} onChange={onChange} selectId="d-superseded-by" testId="decision-superseded-by" />
     </Field>
   );
 }

@@ -75,7 +75,7 @@ async function archived(
   content: string,
   opts: { loc?: string; date?: string | null; docType?: string; persons?: string[]; title?: string } = {},
 ): Promise<string> {
-  const loc = opts.loc ?? 'private/finanzen';
+  const loc = opts.loc ?? 'Privat/finanzen';
   app.llm.on('DocumentClassification', () =>
     classification({
       title: opts.title ?? name.replace(/\.\w+$/, ''),
@@ -262,11 +262,11 @@ describe('agent research tools', () => {
     expect(storage.content).toContain('Größte Dateien:');
     expect(storage.content).toContain('Keine exakten Duplikate.');
 
-    const target = await archived('Stromrechnung März.txt', 'Gesamt 80,00 €', { loc: 'private/finanzen/strom', persons: ['Stadtwerke'] });
-    await archived('Stromrechnung Februar.txt', 'Gesamt 75,00 €', { loc: 'private/finanzen/strom', persons: ['Stadtwerke'] });
+    const target = await archived('Stromrechnung März.txt', 'Gesamt 80,00 €', { loc: 'Privat/finanzen/strom', persons: ['Stadtwerke'] });
+    await archived('Stromrechnung Februar.txt', 'Gesamt 75,00 €', { loc: 'Privat/finanzen/strom', persons: ['Stadtwerke'] });
     const examples = await call('similar_filings', { document: ctx.refs.doc(target) });
     expect(examples.content).toContain('BEISPIELE (keine Regel)');
-    expect(examples.content).toContain('Ordner private/finanzen/strom');
+    expect(examples.content).toContain('Ordner Privat/finanzen/strom');
   });
 
   it('lists problem files with an explanation', async () => {

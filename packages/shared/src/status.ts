@@ -6,10 +6,18 @@ export const AppStatus = z.object({
   version: z.string(),
   dataRoot: z.string(),
   archiveRoot: z.string(),
+  /** Cloud-sync service whose folder holds the archive root (OneDrive, Dropbox …), if any. */
+  archiveSyncProvider: z.string().nullable(),
+  /** Cloud-sync service whose folder holds the data root (inbox, quarantine, trash), if any. */
+  dataSyncProvider: z.string().nullable(),
+  /** Database, settings and backups lie in the data root too (ARCHIVIST_DATA_DIR) instead of the per-user application data folder. */
+  appStateInDataRoot: z.boolean(),
   platform: z.string(),
   setupCompleted: z.boolean(),
   llm: z.object({
     configured: z.boolean(),
+    /** Privacy mode „nur lokal“: nothing is sent to the LLM, whatever `configured` and `status` say. */
+    localOnly: z.boolean(),
     hasApiKey: z.boolean(),
     status: z.enum(['unknown', 'ok', 'error']),
     lastError: z.string().nullable(),

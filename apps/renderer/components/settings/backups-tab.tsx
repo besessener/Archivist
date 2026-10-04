@@ -14,13 +14,21 @@ import { call } from '@/lib/ipc';
 import { formatBytes, formatDateTime } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
-import type { BackupInfo } from '@archivist/shared';
+import { assessBackupSize, type BackupInfo } from '@archivist/shared';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
+
+const BADGE_VARIANTS = { full: 'info', metadata: 'secondary', before_restore: 'warning' } as const;
+
+function kindLabel(backup: BackupInfo): string {
+  if (backup.kind === 'before_restore') return `Stand vor der Wiederherstellung vom ${formatDateTime(backup.createdAt)}`;
+  return backup.kind === 'full' ? 'Vollständig' : 'Nur Metadaten';
+}
 
 export function BackupsTab({ settings, reload }: TabProps) {
   const { save } = useSaveSettings(reload);
   const { run } = useRun();
   const list = useQuery('backup:list', {}, { scopes: ['settings', 'audit'] });
+  const storage = useQuery('backup:storage', {}, { scopes: ['settings', 'audit'] });
   const [creating, setCreating] = useState<'metadata' | 'full' | null>(null);
   const [keep, setKeep] = useState(String(settings.backups.keep));
   const [restoring, setRestoring] = useState<BackupInfo | null>(null);
@@ -32,8 +40,10 @@ export function BackupsTab({ settings, reload }: TabProps) {
       success: includeArchive ? 'Vollständiges Backup erstellt.' : 'Metadaten-Backup erstellt.',
     });
     setCreating(null);
-    if (backup) void list.refetch();
+    if (backup) void Promise.all([list.refetch(), storage.refetch()]);
   }
+
+  const size = storage.data && assessBackupSize({ ...storage.data, keep: settings.backups.keep });
 
   return (
     <div className="flex flex-col gap-4">
@@ -75,6 +85,21 @@ export function BackupsTab({ settings, reload }: TabProps) {
           </div>
         </div>
       </Section>
+      {storage.data && size && (
+        <Section title="Speicherbedarf">
+          <p className="text-sm text-muted-foreground" data-testid="backup-storage">
+            Datenbank: <strong>{formatBytes(storage.data.databaseBytes)}</strong> · alle Backups zusammen:{' '}
+            <strong>{formatBytes(storage.data.backupsBytes)}</strong>. Jedes Metadaten-Backup ist so groß wie die Datenbank.
+          </p>
+          {size.large && (
+            <Notice tone="warning" title="Backups können viel Speicherplatz belegen" data-testid="backup-size-warning">
+              Bei {settings.backups.keep} aufbewahrten Backups je Art können allein die Metadaten-Backups bis zu{' '}
+              <strong>{formatBytes(size.metadataWorstCaseBytes)}</strong> belegen. Senke unter „Optionen“ die Anzahl aufbewahrter Backups, oder prüfe, ob der
+              Speicherplatz auf dem Laufwerk des Datenordners reicht.
+            </Notice>
+          )}
+        </Section>
+      )}
       <Section title="Optionen">
         <SwitchRow label="Beim Start automatisch sichern">
           <Switch
@@ -126,7 +151,7 @@ export function BackupsTab({ settings, reload }: TabProps) {
                 <TR key={b.path} data-testid="backup-row">
                   <TD className="whitespace-nowrap">{formatDateTime(b.createdAt)}</TD>
                   <TD>
-                    <Badge variant={b.kind === 'full' ? 'info' : 'secondary'}>{b.kind === 'full' ? 'Vollständig' : 'Nur Metadaten'}</Badge>
+                    <Badge variant={BADGE_VARIANTS[b.kind]}>{kindLabel(b)}</Badge>
                   </TD>
                   <TD className="whitespace-nowrap">{formatBytes(b.sizeBytes)}</TD>
                   <TD className="text-xs text-muted-foreground">
@@ -164,7 +189,15 @@ export function BackupsTab({ settings, reload }: TabProps) {
       >
         {restoring && (
           <p className="text-sm">
-            Backup vom <strong>{formatDateTime(restoring.createdAt)}</strong> ({restoring.kind === 'full' ? 'vollständig' : 'nur Metadaten'})
+            {restoring.kind === 'before_restore' ? (
+              <>
+                Stand vor der Wiederherstellung vom <strong>{formatDateTime(restoring.createdAt)}</strong>
+              </>
+            ) : (
+              <>
+                Backup vom <strong>{formatDateTime(restoring.createdAt)}</strong> ({kindLabel(restoring).toLowerCase()})
+              </>
+            )}
           </p>
         )}
       </ConfirmDialog>

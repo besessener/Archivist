@@ -26,7 +26,7 @@ async function corpus() {
   const invoice = await archived(app, {
     name: 'rechnung-maler.txt',
     content: 'Malerarbeiten 1.200 Euro',
-    folder: 'private/finanzen',
+    folder: 'Privat/finanzen',
     docType: 'Rechnung',
     documentDate: '2025-04-10',
     persons: ['Maler Schulz'],
@@ -34,14 +34,14 @@ async function corpus() {
   const contract = await archived(app, {
     name: 'mietvertrag.txt',
     content: 'Mietvertrag Wohnung',
-    folder: 'private/wohnen',
+    folder: 'Privat/wohnen',
     docType: 'Vertrag',
     documentDate: '2024-01-01',
   });
   const slides = await archived(app, {
     name: 'folien.md',
     content: `# Folien\n${'x'.repeat(5_000)}`,
-    folder: 'work/slides',
+    folder: 'Arbeit/slides',
     docType: 'Präsentation',
     documentDate: '2026-02-01',
   });
@@ -59,7 +59,7 @@ describe('find_documents: every filter, paging with total and result sets (#303)
       { name: 'find_documents', args: { docType: 'Vertrag' } },
       { name: 'find_documents', args: { from: '2025-01-01', to: '2025-12-31' } },
       { name: 'find_documents', args: { minKb: 4 } },
-      { name: 'find_documents', args: { folder: 'private' } },
+      { name: 'find_documents', args: { folder: 'Privat' } },
     );
     expect(project).toMatch(/^1 Dokument/);
     expect(project).toContain('rechnung-maler');
@@ -80,7 +80,7 @@ describe('find_documents: every filter, paging with total and result sets (#303)
     const [byName, page2, within] = await call(
       { name: 'find_documents', args: { sort: 'name', pageSize: 1 } },
       { name: 'find_documents', args: { sort: 'name', pageSize: 1, page: 2 } },
-      { name: 'find_documents', args: { within: 'S1', folder: 'work' } },
+      { name: 'find_documents', args: { within: 'S1', folder: 'Arbeit' } },
     );
     expect(byName).toContain('3 Dokument(e)');
     expect(byName).toContain('Seite 1/3');
@@ -102,7 +102,7 @@ describe('find_documents: every filter, paging with total and result sets (#303)
 
 describe('Other read tools (#303)', () => {
   it('read_document pages through sections; section 2 holds the rest of the text', async () => {
-    await archived(app, { name: 'lang.txt', content: `${'a'.repeat(SECTION_CHARS)}ENDE-DES-TEXTS`, folder: 'private/misc' });
+    await archived(app, { name: 'lang.txt', content: `${'a'.repeat(SECTION_CHARS)}ENDE-DES-TEXTS`, folder: 'Privat/misc' });
     const [, first, second] = await call(
       { name: 'find_documents', args: { name: 'lang' } },
       { name: 'read_document', args: { id: 'D1' } },
@@ -116,7 +116,7 @@ describe('Other read tools (#303)', () => {
 
   it('search names the section of the hit', async () => {
     const filler = Array.from({ length: 800 }, (_, i) => `Absatz ${i} über die Bedienung.`).join(' ');
-    await archived(app, { name: 'handbuch.txt', content: `${filler} Die Garantie gilt fünf Jahre.`, folder: 'private/misc' });
+    await archived(app, { name: 'handbuch.txt', content: `${filler} Die Garantie gilt fünf Jahre.`, folder: 'Privat/misc' });
     const [hit] = await call({ name: 'search', args: { query: 'Garantie fünf Jahre' } });
     expect(hit).toContain('handbuch');
     // the hit lies near the end, not in the first section
@@ -152,7 +152,7 @@ describe('Other read tools (#303)', () => {
   });
 
   it('timeline of a case interleaves its documents, decisions, open items and events chronologically', async () => {
-    const contract = await archived(app, { name: 'vertrag.txt', content: 'Vertrag Heizung', folder: 'private/haus', documentDate: '2026-02-10' });
+    const contract = await archived(app, { name: 'vertrag.txt', content: 'Vertrag Heizung', folder: 'Privat/haus', documentDate: '2026-02-10' });
     const decision = await app.ok('decisions:create', {
       decisionText: 'Wir nehmen die Wärmepumpe',
       title: 'Wärmepumpe gewählt',
@@ -191,8 +191,8 @@ describe('Other read tools (#303)', () => {
   });
 
   it('related uses the same list as „Verwandte Einträge“ in the user interface, with the reason', async () => {
-    const a = await archived(app, { name: 'angebot.txt', content: 'Angebot Dach', folder: 'private/haus' });
-    const b = await archived(app, { name: 'auftrag.txt', content: 'Auftrag Dach', folder: 'private/haus' });
+    const a = await archived(app, { name: 'angebot.txt', content: 'Angebot Dach', folder: 'Privat/haus' });
+    const b = await archived(app, { name: 'auftrag.txt', content: 'Auftrag Dach', folder: 'Privat/haus' });
     await app.ok('documents:bulkUpdate', { ids: [a, b], project: 'Dachsanierung', confirmed: true });
     const ui = await app.ok('knowledge:related', { id: a });
     const [, related] = await call({ name: 'find_documents', args: { name: 'angebot' } }, { name: 'related', args: { id: 'D1' } });
@@ -205,7 +205,7 @@ describe('Other read tools (#303)', () => {
 
 describe('Entries that stem only from documents not shared (#301)', () => {
   it('are listed without their content', async () => {
-    const doc = await archived(app, { name: 'befund.txt', content: 'Befund', folder: 'private/gesundheit' });
+    const doc = await archived(app, { name: 'befund.txt', content: 'Befund', folder: 'Privat/gesundheit' });
     await app.ok('documents:setLlmExcluded', { id: doc, excluded: true });
     await app.ok('decisions:create', {
       decisionText: 'Therapie mit Medikament X beginnen',

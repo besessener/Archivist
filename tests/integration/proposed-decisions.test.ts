@@ -18,7 +18,7 @@ async function archivedWithDecisions(name: string, sentences: string[]): Promise
     classification({
       title: name,
       summary: 'Protokoll',
-      categoryPath: 'private/haus',
+      categoryPath: 'Privat/haus',
       decisions: sentences.map((s) => ({ title: s.slice(10, 30), decisionText: s, kind: 'decided', evidence: s, participants: [] })),
     }),
   );
@@ -26,7 +26,7 @@ async function archivedWithDecisions(name: string, sentences: string[]): Promise
   await app.services.jobs.whenIdle();
   const id = imported.imported[0]!.id;
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode: 'copy', categoryPath: 'private/haus' }],
+    items: [{ documentId: id, mode: 'copy', categoryPath: 'Privat/haus' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,
@@ -83,6 +83,19 @@ describe('Reviewing decisions found in documents at archive scale (#181)', () =>
     await decide(second!.id, 'reject');
     expect(await openExtracted()).toHaveLength(0);
     expect(await proposals()).toHaveLength(0);
+  });
+
+  it('resolves only the notifications whose proposals are all decided when many are decided in a row', async () => {
+    const roof = await archivedWithDecisions('Protokoll Dach', SENTENCES);
+    await archivedWithDecisions('Protokoll Garten', ['Beschluss: Der Zaun wird erneuert.']);
+    const ofRoof = (await proposals()).filter((a) => a.affectedEntities.some((entity) => entity.id === roof));
+    expect(ofRoof).toHaveLength(2);
+
+    for (const action of ofRoof) await decide(action.id, 'approve');
+
+    const open = await openExtracted();
+    expect(open).toHaveLength(1);
+    expect(open[0]!.affectedEntityIds).not.toContain(roof);
   });
 
   it('offers to dismiss the notification without deciding its proposals, which stay reachable', async () => {

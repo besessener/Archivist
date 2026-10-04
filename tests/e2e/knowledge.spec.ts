@@ -1,5 +1,14 @@
 import { expectNoSeriousA11yViolations } from './axe';
 import { expect, test } from './fixture';
+import { seedTags } from './helpers';
+
+/** Two tags that mean the same, as documents produce them. */
+const withTags = test.extend({
+  workspace: async ({ workspace }, provide) => {
+    seedTags(workspace.dataDir, ['Steuer', 'Steuern']);
+    await provide(workspace);
+  },
+});
 
 test.describe('knowledge: create new', () => {
   test('creates real entries and opens an existing one instead of claiming it was created', async ({ llm, on, page }) => {
@@ -62,6 +71,26 @@ test.describe('knowledge: create new', () => {
       await k.do.proposeMerge(target);
       await expect(k.locators.mergeAction).toContainText(`„${source}“ in „${target}“ zusammenführen`);
     }
+  });
+
+  withTags('merges two tags after the confirmation of the proposal', async ({ llm, on, page }, testInfo) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.locators.items.filter({ hasText: 'Steuern' }).click();
+    await expect(k.heading()).toHaveText('Steuern');
+
+    await k.locators.buttons.merge.click();
+    await expect(k.locators.inputs.mergeTarget).toContainText('Steuer');
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await k.locators.inputs.mergeTarget.selectOption({ label: 'Steuer' });
+    await k.locators.buttons.proposeMerge.click();
+    await expect(k.locators.mergeAction).toContainText('„Steuern“ in „Steuer“ zusammenführen');
+    await k.locators.approveMerge.click();
+
+    await expect(k.locators.items.filter({ hasText: 'Steuern' })).toHaveCount(0);
+    await expect(k.locators.items.filter({ hasText: 'Steuer' })).toHaveCount(1);
   });
 
   test('shows the own person with the badge „Du“ (name from the setup)', async ({ llm, on, page }) => {

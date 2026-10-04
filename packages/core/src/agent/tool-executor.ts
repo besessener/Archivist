@@ -6,6 +6,7 @@ import { ASK_USER, AskUserArgs, type UserQuestion } from './ask-user';
 import { gateDecision } from './gate';
 import { describeIssues, riskOf, type AgentTool, type ToolContext, type ToolOutput, type ToolRegistry } from './registry';
 import { agentRunScope, type AgentRunScope } from './scope';
+import type { RedactionOptions } from '../util/redact';
 import { findInstruction, maskSecrets } from './security';
 import type { AgentToolCall, AgentToolResult, WebSource } from './types';
 
@@ -38,6 +39,9 @@ export interface ToolExecutorOptions {
   now: () => number;
   /** Secrets already masked before the run. */
   redactions: number;
+  /** Of `redactions`: personal data. */
+  personalRedactions?: number;
+  masking?: RedactionOptions;
 }
 
 export interface RoundResult {
@@ -155,10 +159,12 @@ export class ToolExecutor {
   loopHits = 0;
   /** Secrets masked so far (transmission log). */
   redactions: number;
+  personalRedactions: number;
   private readonly seen = new Map<string, number>();
 
   constructor(private readonly options: ToolExecutorOptions) {
     this.redactions = options.redactions;
+    this.personalRedactions = options.personalRedactions ?? 0;
   }
 
   addStep(step: AgentStep): AgentStep {
@@ -255,8 +261,9 @@ export class ToolExecutor {
     }
     this.recordEffects(valid, out);
     // secrets are masked before anything leaves the machine – tool results included (#301)
-    const masked = maskSecrets(out.content);
+    const masked = maskSecrets(out.content, this.options.masking);
     this.redactions += masked.count;
+    this.personalRedactions += masked.personalData;
     return this.complete(running, {
       outcome: out.isError ? 'error' : 'ok',
       content: bounded(masked.text),

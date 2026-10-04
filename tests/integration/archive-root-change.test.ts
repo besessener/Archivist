@@ -18,7 +18,7 @@ const row = (id: string) => app.services.documents.getRow(id);
 const absIn = (root: string, id: string) => path.join(root, ...row(id).archiveRelPath!.split('/'));
 const newRoot = () => path.join(app.root, 'NAS', 'Archiv');
 
-async function archived(name: string, content: string, loc = 'work/notes'): Promise<string> {
+async function archived(name: string, content: string, loc = 'Arbeit/notes'): Promise<string> {
   app.llm.on('DocumentClassification', () => classification({ title: name, summary: `Zusammenfassung ${name}`, categoryPath: loc }));
   const imp = await app.ok('documents:import', { paths: [app.file(`in/${name}`, content)] });
   await app.services.jobs.whenIdle();
@@ -51,7 +51,7 @@ const notificationTitles = async () => (await app.ok('notifications:list', {})).
 describe('changing the archive root', () => {
   it('previews both ways without changing anything', async () => {
     const a = await archived('a.txt', 'Inhalt A');
-    await archived('b.txt', 'Inhalt B', 'private/b');
+    await archived('b.txt', 'Inhalt B', 'Privat/b');
     const old = archiveRoot();
 
     const preview = await app.ok('archive:previewRootChange', { root: newRoot() });
@@ -69,7 +69,7 @@ describe('changing the archive root', () => {
 
   it('moves the archive: copies, verifies, switches and keeps the old folder', async () => {
     const a = await archived('a.txt', 'Inhalt A');
-    const b = await archived('b.txt', 'Inhalt B', 'private/b');
+    const b = await archived('b.txt', 'Inhalt B', 'Privat/b');
     const old = archiveRoot();
     fs.writeFileSync(path.join(old, 'eigene-notiz.md'), 'nicht von Archivist');
 
@@ -277,7 +277,7 @@ describe('changing the archive root', () => {
     const release = app.services.archive.beginRootChange();
     try {
       const r = await app.call('documents:archive', {
-        items: [{ documentId: imp.imported[0]!.id, mode: 'copy', categoryPath: 'work/notes', topic: null }],
+        items: [{ documentId: imp.imported[0]!.id, mode: 'copy', categoryPath: 'Arbeit/notes', topic: null }],
         confirmed: true,
         approveNewCategories: [],
         confirmMove: false,
@@ -310,5 +310,16 @@ describe('changing the archive root', () => {
     expect(fs.existsSync(newRoot()), 'copies and created folders are removed again').toBe(false);
     expect(await notificationTitles()).toContain('Archivumzug abgebrochen');
     expect((await app.ok('archive:verify', {})).ok).toBe(true);
+  });
+
+  it('reports the sync service when the archive root lies in a cloud-synced folder (#207)', async () => {
+    const synced = path.join(app.root, 'OneDrive - Firma', 'Archiv');
+
+    expect((await app.ok('archive:previewRootChange', { root: synced })).syncProvider).toBe('OneDrive');
+    expect((await app.ok('archive:previewRootChange', { root: newRoot() })).syncProvider).toBeNull();
+    expect((await app.ok('app:getStatus', {})).archiveSyncProvider).toBeNull();
+
+    app.services.settings.update({ archiveRoot: synced });
+    expect((await app.ok('app:getStatus', {})).archiveSyncProvider).toBe('OneDrive');
   });
 });

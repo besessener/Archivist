@@ -12,17 +12,16 @@ import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
 import { connectionTitle, connectionTone } from '@/lib/labels';
-import { checkLlmBaseUrl, type IpcOutput } from '@archivist/shared';
+import { checkLlmBaseUrl, type IpcOutput, type ReasoningEffort } from '@archivist/shared';
+import { EFFORT_HINT, EffortOptions } from './effort-options';
 import { Section, useSaveSettings, type TabProps } from './shared';
-
-type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high';
 
 export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
   const { save, busy } = useSaveSettings(reload);
   const { run, busy: keyBusy } = useRun();
   const [baseUrl, setBaseUrl] = useState(settings.llm.baseUrl);
   const [model, setModel] = useState(settings.llm.model);
-  const [effort, setEffort] = useState<Effort | ''>(settings.llm.reasoningEffort ?? '');
+  const [effort, setEffort] = useState<ReasoningEffort | ''>(settings.llm.reasoningEffort ?? '');
   const [timeoutS, setTimeoutS] = useState(String(Math.round(settings.llm.timeoutMs / 1000)));
   const [maxChars, setMaxChars] = useState(String(settings.llm.maxInputChars));
   const [embedding, setEmbedding] = useState(settings.llm.embeddingModel);
@@ -67,14 +66,9 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           <Field label="Modellname" htmlFor="s-model">
             <Input id="s-model" value={model} onChange={(e) => setModel(e.target.value)} data-testid="settings-model" />
           </Field>
-          <Field label="Denktiefe (Reasoning)" htmlFor="s-effort">
-            <Select id="s-effort" value={effort} onChange={(e) => setEffort(e.target.value as Effort | '')} data-testid="settings-effort">
-              <option value="">Standard des Modells</option>
-              <option value="none">keine</option>
-              <option value="minimal">minimal</option>
-              <option value="low">niedrig</option>
-              <option value="medium">mittel</option>
-              <option value="high">hoch</option>
+          <Field label="Denktiefe (Reasoning)" htmlFor="s-effort" hint={EFFORT_HINT}>
+            <Select id="s-effort" value={effort} onChange={(e) => setEffort(e.target.value as ReasoningEffort | '')} data-testid="settings-effort">
+              <EffortOptions />
             </Select>
           </Field>
           <Field label="Zeitlimit (Sekunden)" htmlFor="s-timeout" hint="1 bis 600">
@@ -148,7 +142,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
               const ok = await run(() => call('settings:setApiKey', { apiKey: apiKey.trim() }), { success: 'API-Schlüssel gespeichert.' });
               if (ok) {
                 setApiKey('');
-                reload();
+                await reload();
               }
             }}
           >
@@ -173,7 +167,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           const ok = await run(() => call('settings:clearApiKey'), { success: 'API-Schlüssel gelöscht.' });
           if (ok) {
             setClearOpen(false);
-            reload();
+            await reload();
           }
         }}
       />

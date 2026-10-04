@@ -60,6 +60,7 @@ export const ErrorCategory = z.enum([
   'scan_error',
   'archive_conflict',
   'native_module_error',
+  'internal_error',
 ]);
 export type ErrorCategory = z.infer<typeof ErrorCategory>;
 
@@ -68,6 +69,8 @@ export const AppErrorInfo = z.object({
   message: z.string(),
   retryable: z.boolean(),
   details: z.string().optional(),
+  /** How long the endpoint asked to wait before the next request (Retry-After, capped at 5 minutes). */
+  retryAfterMs: z.number().int().nonnegative().optional(),
 });
 export type AppErrorInfo = z.infer<typeof AppErrorInfo>;
 

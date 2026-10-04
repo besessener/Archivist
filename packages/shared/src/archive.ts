@@ -62,14 +62,45 @@ export type ArchiveResult = z.infer<typeof ArchiveResult>;
 export const Category = z.object({ id: Id, path: z.string(), approved: z.boolean(), createdAt: IsoDate });
 export type Category = z.infer<typeof Category>;
 
+/** What renaming the English main categories (`work`, `private`) to the German ones would do (#233). */
+export const CategoryMigrationPlan = z.object({
+  renames: z.array(z.object({ from: z.string(), to: z.string() })),
+  /** Archive files that move into the renamed folder. */
+  documentsToMove: z.number().int().min(0),
+  /** Category entries (folders without or with files) that get the new main category. */
+  categoryEntries: z.number().int().min(0),
+  /** Files that stay where they are: target name taken, file changed or missing; nothing is overwritten or merged. */
+  notMoved: z.array(z.object({ documentId: Id, title: z.string(), from: z.string().nullable(), reason: z.string() })),
+  /** Documents without an archive file keep their old path and their old main category stays for them. */
+  withoutFile: z.number().int().min(0),
+});
+export type CategoryMigrationPlan = z.infer<typeof CategoryMigrationPlan>;
+
+export const CategoryMigrationResult = z.object({
+  moved: z.number().int().min(0),
+  notMoved: CategoryMigrationPlan.shape.notMoved,
+  categoryEntriesRenamed: z.number().int().min(0),
+  failed: z.number().int().min(0),
+});
+export type CategoryMigrationResult = z.infer<typeof CategoryMigrationResult>;
+
 export const BackupInfo = z.object({
   name: z.string(),
   path: z.string(),
-  kind: z.enum(['metadata', 'full']),
+  /** `before_restore`: the database a restore replaced; createdAt is the time of that restore. */
+  kind: z.enum(['metadata', 'full', 'before_restore']),
   createdAt: IsoDate,
   sizeBytes: z.number(),
 });
 export type BackupInfo = z.infer<typeof BackupInfo>;
+
+export const BackupStorage = z.object({
+  /** Database file with its write-ahead log. */
+  databaseBytes: z.number(),
+  /** Everything in the backups folder. */
+  backupsBytes: z.number(),
+});
+export type BackupStorage = z.infer<typeof BackupStorage>;
 
 export const RelinkResult = z.object({
   relinked: z.array(z.object({ documentId: Id, title: z.string(), path: z.string() })),
@@ -108,6 +139,8 @@ export type ArchiveRootPresence = z.infer<typeof ArchiveRootPresence>;
 export const ArchiveRootPreview = z.object({
   from: z.string(),
   to: z.string(),
+  /** Cloud-sync service whose folder the new archive root lies in (OneDrive, Dropbox …), if any. */
+  syncProvider: z.string().nullable(),
   /** Presence of the archived documents in the new folder as it is now. */
   atTarget: ArchiveRootPresence,
   migrate: z.object({

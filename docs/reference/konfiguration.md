@@ -2,20 +2,20 @@
 
 ## `settings.json`
 
-Einstellungen liegen in `config/settings.json` im [Datenverzeichnis](datenverzeichnis.md) und werden über die Oberfläche (Einstellungen) gepflegt. Eine vollständige Beispieldatei ohne Zugangsdaten ist [`config.example.json`](../../config.example.json).
+Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (siehe [Datenverzeichnis](datenverzeichnis.md)) und werden über die Oberfläche (Einstellungen) gepflegt. Eine vollständige Beispieldatei ohne Zugangsdaten ist [`config.example.json`](../../config.example.json).
 
 | Bereich | Wichtige Felder |
 | --- | --- |
 | `profile` | `name`, `nicknames` – wer „ich“ ist |
-| `llm` | `baseUrl`, `model`, `reasoningEffort`, `timeoutMs`, `maxInputChars`, `embeddingModel` – siehe [LLM-Schnittstelle](llm-schnittstelle.md); `baseUrl`: `https://`, `http://` nur für `localhost`/`127.0.0.0/8`/`[::1]` |
-| `archiveRoot` | Archivordner; mit archivierten Dokumenten nur über „Archiv umziehen“ oder „Nur Pfad ändern“ änderbar, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md) |
+| `llm` | `baseUrl`, `model`, `reasoningEffort` (`none` bis `max`, leer = Standard des Modells), `timeoutMs`, `maxInputChars`, `embeddingModel`, `dailyTokenCap` (Tokens je Tag, leer = kein Limit) – siehe [LLM-Schnittstelle](llm-schnittstelle.md); `baseUrl`: `https://`, `http://` nur für `localhost`/`127.0.0.0/8`/`[::1]` |
+| `archiveRoot` | Archivordner (Standard `<Dokumentenordner>/archive`; Warnung, wenn er in einem Cloud-Sync-Ordner liegt); mit archivierten Dokumenten nur über „Archiv umziehen“ oder „Nur Pfad ändern“ änderbar, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md) |
 | `scan` | `enabled`, `onStartup`, `periodic`, `intervalMinutes`, `maxFileSizeMb`, `allowedExtensions`, `autoAnalyze` |
-| `privacy` | `llmMode` (`auto` / `confirm` / `local_only`), `neverAnalyzeDirs`, `neverAnalyzeExtensions`, `neverAnalyzeFiles` |
+| `privacy` | `llmMode` (`auto` / `confirm` / `local_only`), `neverAnalyzeDirs`, `neverAnalyzeExtensions`, `neverAnalyzeFiles`, `maskPersonalData` (Standard an: IBAN, Kartennummern, Steuer-ID, Sozialversicherungsnummer und PINs durch Platzhalter ersetzen, siehe [Maskierung](aktionsstufen.md#llm-datenschutz)) |
 | `notifications` | `desktop`, `reminderTime` (Standard `08:00`) |
-| `logs` | `level`, `retentionDays` |
-| `backups` | `keep`, `autoOnStartup`, `includeArchive` |
+| `logs` | `level`, `retentionDays` (Tage, die Logdateien, Einträge des Übertragungsprotokolls und gelesene Benachrichtigungen bleiben; alle Logdateien zusammen höchstens 50 MB, die ältesten zuerst) |
+| `backups` | `keep` (je Art, Standard 3; ein bereits gespeicherter Wert bleibt), `autoOnStartup`, `includeArchive` |
 | `consistency` | `onStartup`, `intervalHours` (0 = aus), `staleOpenItemDays` |
-| `ocr` | `enabled`, `languages` (z. B. `deu+eng`) |
+| `ocr` | `enabled`, `languages` (z. B. `deu+eng`; die Einstellungen bieten die mitgelieferten Sprachen Deutsch und Englisch an) |
 | `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3) |
 
 Der API-Key steht **nie** in `settings.json`, sondern verschlüsselt in `config/llm-api-key.enc`.
@@ -30,11 +30,10 @@ Archivist liest **keine** `.env`-Dateien automatisch. Die Variablen werden vor d
 
 | Variable | Zweck |
 | --- | --- |
-| `ARCHIVIST_DATA_DIR` | Datenverzeichnis (Standard: `~/Documents/Archivist`) |
+| `ARCHIVIST_DATA_DIR` | Ein Ordner für **alles** (Dokumente und Anwendungsdaten). Ohne die Variable liegen Archiv, Eingang, Quarantäne und Papierkorb in `~/Documents/Archivist`, Datenbank, Einstellungen, Protokolle und Backups im Datenordner des Benutzerprofils, siehe [Datenverzeichnis](datenverzeichnis.md) |
 | `ARCHIVIST_LLM_API_KEY` | nur Entwicklung/CI: API-Key aus der Umgebung statt aus dem sicheren Speicher – nie committen |
-| `ARCHIVIST_DEV_URL` | nur Entwicklung: Next.js-Dev-Server statt gebündeltem Frontend (setzt `npm run dev` automatisch) |
-| `ARCHIVIST_TEST_MODE` | nur Tests: erlaubt unter Linux ohne Keyring den unsicheren `basic_text`-Fallback von `safeStorage` |
-| `ARCHIVIST_TEST_PICK_DIR` | nur Tests: ersetzt den nativen Ordnerauswahl-Dialog |
-| `ARCHIVIST_E2E_PACKAGED` | nur Tests: E2E-Tests gegen die gepackte App ausführen |
+| `ARCHIVIST_DEV_URL` | nur Entwicklung, nur ungepackt: Next.js-Dev-Server statt gebündeltem Frontend (setzt `npm run dev` automatisch) |
+| `ARCHIVIST_TEST_MODE` | nur Tests, nur ungepackt: erlaubt unter Linux ohne Keyring den unsicheren `basic_text`-Fallback von `safeStorage` |
+| `ARCHIVIST_TEST_PICK_DIR` | nur Tests, nur ungepackt: ersetzt den nativen Ordnerauswahl-Dialog |
 | `ARCHIVIST_EVAL_*` | Agent-Evaluation, siehe [Den Agenten evaluieren](../how-to/agent-evaluieren.md#1-anbieter-konfigurieren) |
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | Code-Signierung beim lokalen Packen, siehe [Signieren](../how-to/release-veroeffentlichen.md#signieren) |

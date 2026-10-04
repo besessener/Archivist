@@ -9,9 +9,6 @@ import { createPageTree, type PageTree } from './pages';
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- the electron package exports the binary path, which its typings (the Electron API) do not describe
 const electronPath = require('electron') as unknown as string;
 const appDir = path.resolve(__dirname, '../../apps/desktop');
-// ARCHIVIST_E2E_PACKAGED=1: test the packaged application (electron-builder --dir) instead of the development build
-const packaged = process.env.ARCHIVIST_E2E_PACKAGED === '1';
-const packagedBinary = path.join(appDir, 'release', 'linux-unpacked', 'archivist');
 
 /** Fresh, isolated working directory per test: the app's data folder and a "Downloads" folder that serves as scan target. */
 export interface Workspace {
@@ -19,6 +16,11 @@ export interface Workspace {
   downloads: string;
   /** Writes a file into the Downloads folder and returns its path. */
   addDownload(name: string, content: string): string;
+}
+
+interface Options {
+  /** Folder name the data directory is placed in (e.g. "OneDrive" to run inside a cloud-synced folder). */
+  dataParent: string;
 }
 
 interface Fixtures {
@@ -35,8 +37,8 @@ async function launch(env: Record<string, string>): Promise<ElectronApplication>
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await electron.launch({
-        executablePath: packaged ? packagedBinary : electronPath,
-        args: [...(packaged ? [] : [appDir]), '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+        executablePath: electronPath,
+        args: [appDir, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
         timeout: 45_000,
         env,
       });
@@ -46,19 +48,21 @@ async function launch(env: Record<string, string>): Promise<ElectronApplication>
   }
 }
 
-export const test = base.extend<Fixtures>({
+export const test = base.extend<Fixtures & Options>({
+  dataParent: ['', { option: true }],
+
   llm: async ({}, provide) => {
     const llm = await startFakeLlm();
     await provide(llm);
     await llm.close();
   },
 
-  workspace: async ({}, provide) => {
+  workspace: async ({ dataParent }, provide) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-e2e-'));
     const downloads = path.join(root, 'Downloads');
     fs.mkdirSync(downloads, { recursive: true });
     await provide({
-      dataDir: path.join(root, 'Archivist'),
+      dataDir: path.join(root, dataParent, 'Archivist'),
       downloads,
       addDownload: (name, content) => {
         const file = path.join(downloads, name);

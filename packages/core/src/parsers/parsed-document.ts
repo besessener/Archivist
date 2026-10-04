@@ -1,5 +1,7 @@
 // The result shape every parser returns, and the text cleanup they share.
 
+import { EXTRACTION_LIMITS } from '@archivist/shared';
+
 export type ParseStatus = 'extracted' | 'partial' | 'unsupported' | 'failed';
 
 export interface ParsedDocument {
@@ -14,9 +16,11 @@ export interface ParseOptions {
   ocrEnabled?: boolean;
   ocrLanguages?: string;
   tessdataDir?: string;
+  /** Pages of one PDF that get OCR (default 40); the rest is recorded as skipped. */
+  maxOcrPages?: number;
 }
 
-export const MAX_TEXT_CHARS = 400_000;
+export const MAX_TEXT_CHARS = EXTRACTION_LIMITS.textChars;
 
 const clip = (text: string): { text: string; truncated: boolean } =>
   text.length > MAX_TEXT_CHARS ? { text: text.slice(0, MAX_TEXT_CHARS), truncated: true } : { text, truncated: false };

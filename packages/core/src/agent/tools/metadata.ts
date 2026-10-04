@@ -252,7 +252,7 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
       schema: z.object({ documents: list, excluded: z.boolean().default(true) }),
       risk: 'critical',
       count: (a, ctx) => ctx.refs.resolveMany(a.documents).ids.length,
-      label: (a) => (a.excluded ? 'Schließe Dokumente von der LLM-Analyse aus' : 'Gebe Dokumente für die LLM-Analyse frei'),
+      label: (a) => (a.excluded ? 'Schließe Dokumente von der KI-Analyse aus' : 'Gebe Dokumente für die KI-Analyse frei'),
       run: async (a, ctx) => {
         const { docs, unknown } = resolveDocs({ deps, ctx }, a.documents);
         for (const d of docs) deps.docs.setLlmExcluded(d.id, { excluded: a.excluded });

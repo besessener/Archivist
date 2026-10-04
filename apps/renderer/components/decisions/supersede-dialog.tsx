@@ -1,14 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { ACTIVE_DECISION_STATUSES } from '@archivist/shared';
 import { Field } from '@/components/common/states';
+import { DecisionPicker } from '@/components/decisions/decision-picker';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
-import { formatLongDate } from '@/lib/format';
-import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { ActionRecord } from '@/lib/types';
 
@@ -23,7 +20,6 @@ export function SupersedeDialog({
   oldId: string;
   onProposed: (action: ActionRecord) => void;
 }) {
-  const all = useQuery('decisions:list', {}, { enabled: open });
   const [target, setTarget] = useState('');
   const { run, busy } = useRun();
   return (
@@ -36,16 +32,7 @@ export function SupersedeDialog({
           </DialogDescription>
         </DialogHeader>
         <Field label="Neuere Entscheidung" htmlFor="sup-target">
-          <Select id="sup-target" value={target} onChange={(e) => setTarget(e.target.value)} data-testid="supersede-target">
-            <option value="">Entscheidung wählen …</option>
-            {(all.data ?? [])
-              .filter((decision) => decision.id !== oldId && ACTIVE_DECISION_STATUSES.includes(decision.status))
-              .map((decision) => (
-                <option key={decision.id} value={decision.id}>
-                  {(decision.title || decision.decisionText).slice(0, 80)} ({formatLongDate(decision.decidedAt, 'ohne Datum')})
-                </option>
-              ))}
-          </Select>
+          <DecisionPicker excludeId={oldId} open={open} value={target} onChange={setTarget} selectId="sup-target" testId="supersede-target" />
         </Field>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

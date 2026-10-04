@@ -1,70 +1,37 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { z } from 'zod';
-import { checkLlmBaseUrl, type AgentAdapterId, type AppErrorInfo, type LlmTestResult, type LlmTransmission } from '@archivist/shared';
+import type { z } from 'zod';
+import { checkLlmBaseUrl, type AgentAdapterId, type LlmTestResult, type LlmTransmission, type LlmUsage } from '@archivist/shared';
 import type { AppContext } from '../context';
-import { AppError, toErrorInfo, validationError } from '../util/errors';
-import { redactSecrets } from '../util/redact';
-import { abortedError, mapHttpError } from '../util/llm-errors';
+import { AppError, validationError } from '../util/errors';
+import { maskingOf, redactSecrets } from '../util/redact';
+import { abortedError } from '../util/llm-errors';
+import { MAX_RETRY_AFTER_MS } from '../util/retry-after';
 import type { SecretService } from './secret';
 import type { SettingsService } from './settings';
 import { AnthropicAdapter, detectAdapter, type AdapterConfig } from '../agent/adapters';
 import type { FetchLike } from '../agent/adapters/common';
 import { EndpointHealth } from './llm/endpoint-health';
-import { endpointUrl, postJson, type PostRequest } from './llm/http';
-import { isUnsupportedParamError, paramsToDrop, presentParams, withoutParams, type OptionalParam } from './llm/optional-params';
-import { correctionInput, issuesText, parseJsonAnswer, preparedInput, structuredInstructions } from './llm/prompt-text';
-import { responsesRequestBody, responsesText } from './llm/responses';
-import { TransmissionLog, type Transmission } from './llm/transmission-log';
+import { endpointUrl, postJson, type PostRequest, type PostResponse } from './llm/http';
+import { outputLimitFor } from './llm/output-limits';
+import { requestEmbeddings } from './llm/embeddings';
+import { runConnectionTest, runStructuredTest } from './llm/connection-tests';
+import { maskedInput, previewOf } from './llm/prompt-text';
+import { ResponsesRunner } from './llm/responses-runner';
+import { waitFor } from './llm/retry-wait';
+import { structuredAnswer } from './llm/structured';
+import { TokenLedger } from './llm/token-ledger';
+import { TransmissionLog } from './llm/transmission-log';
+import { UsageTally } from './llm/usage';
 
 export type { FetchLike } from '../agent/adapters/common';
-
-export interface LlmRequest {
-  instructions: string;
-  input: string;
-  purpose: string;
-  documentIds?: string[];
-  json?: boolean;
-  /** only for the explicit connection test (sends fixed text only) */
-  bypassPrivacy?: boolean;
-  maxOutputTokens?: number;
-  /** Cancellation by the user: the running request is ended and not retried. */
-  signal?: AbortSignal;
-}
+export type { LlmOverrides, LlmRequest } from './llm/request-types';
+import type { LlmOverrides, LlmRequest } from './llm/request-types';
+import type { Connection, PreparedRequest, Transfer } from './llm/transfer-types';
 
 export { abortedError } from '../util/llm-errors';
 
 /** Every LLM request inside `llmCancelScope.run(signal, …)` uses this signal unless it brings its own (also nested services). */
 export const llmCancelScope = new AsyncLocalStorage<AbortSignal>();
-
-export interface LlmOverrides {
-  baseUrl?: string;
-  model?: string;
-  apiKey?: string;
-}
-
-interface Connection {
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-}
-
-/** A request after the privacy gate: input and instructions are cut and masked, ready to send. */
-interface PreparedRequest {
-  connection: Connection;
-  request: LlmRequest;
-  sent: string;
-  instructions: string;
-  redactions: number;
-  signal?: AbortSignal;
-}
-
-/** One logged transmission: its attempts (retried while `maxAttempts` allows) share one log entry. */
-interface Transfer {
-  transmission: Omit<Transmission, 'success'>;
-  signal?: AbortSignal;
-  attempt: () => Promise<string>;
-  maxAttempts: (err: unknown) => number;
-}
 
 const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
@@ -78,11 +45,10 @@ export type LlmServiceDeps = { ctx: AppContext; settings: SettingsService; secre
 
 /** OpenAI-compatible Responses API client: every transmission is logged masked, structured answers are validated with Zod. */
 export class LlmService {
-  /** Optional parameters an endpoint (base URL + model) has rejected; kept in memory so they are not re-learned every call. */
-  private readonly rejectedParams = new Map<string, Set<OptionalParam>>();
-
   private readonly health: EndpointHealth;
   private readonly transmissions: TransmissionLog;
+  private readonly ledger: TokenLedger;
+  private readonly responses: ResponsesRunner;
 
   private readonly fetchImpl: FetchLike;
   private readonly retryDelayMs: number;
@@ -92,6 +58,11 @@ export class LlmService {
     this.retryDelayMs = deps.retryDelayMs ?? 400;
     this.health = new EndpointHealth(deps.ctx);
     this.transmissions = new TransmissionLog(deps.ctx);
+    this.ledger = new TokenLedger(deps.ctx, () => this.deps.settings.get().llm.dailyTokenCap ?? null);
+    this.responses = new ResponsesRunner(
+      (request) => this.post(request),
+      (message, data) => deps.ctx.logger.warn('llm', message, data),
+    );
   }
 
   status() {
@@ -110,8 +81,17 @@ export class LlmService {
 
   /** Background use nobody asked for (e.g. contradiction checks): only in „automatisch“, never in „vorher fragen“ (#201). */
   canUseInBackground(): boolean {
-    return this.isConfigured() && this.deps.settings.get().privacy.llmMode === 'auto';
+    return this.isConfigured() && this.deps.settings.get().privacy.llmMode === 'auto' && !this.ledger.capReached();
   }
+
+  /** Token use today and this month and the state of the daily limit. */
+  usage = (): LlmUsage => this.ledger.summary();
+
+  /** Whether the daily token limit is reached (always false without a limit). */
+  tokenCapReached = (): boolean => this.ledger.capReached();
+
+  /** Throws `TokenCapError` once the daily limit is reached, unless the user chose to continue (agent turns, #153). */
+  assertWithinCap = (): void => this.ledger.assertWithinCap();
 
   private connection(overrides: LlmOverrides): Connection {
     const llm = this.deps.settings.get().llm;
@@ -120,10 +100,11 @@ export class LlmService {
     const apiKey = overrides.apiKey ?? this.deps.secrets.getApiKey();
     if (!baseUrl || !model || !apiKey) throw new AppError('llm_error', 'Das LLM ist nicht konfiguriert (Base URL, Modell und API-Key erforderlich).');
     assertSecureBaseUrl(baseUrl);
-    return { baseUrl, model, apiKey };
+    const saved = baseUrl === llm.baseUrl.trim() && model === llm.model.trim() && apiKey === this.deps.secrets.getApiKey();
+    return { baseUrl, model, apiKey, source: saved ? 'saved' : 'unsaved' };
   }
 
-  private post(request: PostRequest): Promise<{ status: number; text: string }> {
+  private post(request: PostRequest): Promise<PostResponse> {
     return postJson(this.fetchImpl, request);
   }
 
@@ -137,94 +118,98 @@ export class LlmService {
     const signal = request.signal ?? llmCancelScope.getStore();
     if (signal?.aborted) throw abortedError();
     // the explicit connection test always goes through – it is how the user checks whether the endpoint is back
-    if (!request.bypassPrivacy) this.health.assertCircuitClosed();
-    const input = redactSecrets(preparedInput(request, llm.maxInputChars));
-    const instructions = redactSecrets(request.instructions);
+    if (!request.bypassPrivacy) {
+      this.health.assertCircuitClosed();
+      this.ledger.assertWithinCap();
+    }
+    const masking = maskingOf(this.deps.settings.get());
+    const input = maskedInput(request, { maxInputChars: llm.maxInputChars, masking });
+    const instructions = redactSecrets(request.instructions, masking);
     const prepared: PreparedRequest = {
       connection,
       request,
       sent: input.text,
       instructions: instructions.text,
       redactions: input.count + instructions.count,
+      personalRedactions: input.personalData + instructions.personalData,
+      preview: previewOf(request, { sent: input.text, masking }),
       signal,
     };
     if (this.adapterId(connection.baseUrl) === 'anthropic') return this.completeViaClaude(prepared);
     return this.completeViaResponses(prepared);
   }
 
-  private transmissionOf(prepared: PreparedRequest, endpoint: string): Omit<Transmission, 'success'> {
+  private transmissionOf(prepared: PreparedRequest, endpoint: string): Transfer['transmission'] {
     return {
       purpose: prepared.request.purpose,
       model: prepared.connection.model,
       endpoint,
       bytes: Buffer.byteLength(prepared.sent, 'utf8') + Buffer.byteLength(prepared.instructions, 'utf8'),
       redactions: prepared.redactions,
+      personalRedactions: prepared.personalRedactions,
       documentIds: prepared.request.documentIds ?? [],
-      preview: prepared.sent.slice(0, 280),
+      preview: prepared.preview,
     };
   }
 
-  /** Runs the attempts of one transfer, keeps the endpoint status and the circuit breaker, and logs the transmission. */
+  /** Runs the attempts of one transfer, keeps the endpoint status and the circuit breaker, and logs the transmission with its tokens and requests. */
   private async transfer(transfer: Transfer): Promise<string> {
     let success = false;
+    const tally = new UsageTally();
     try {
-      const text = await this.withRetries(transfer);
+      const text = await this.withRetries(transfer, tally);
       success = true;
-      this.health.markReachable();
+      if (transfer.source === 'saved') this.health.markReachable();
       return text;
     } catch (err) {
-      this.health.markFailed(err, transfer.signal);
+      if (transfer.source === 'saved') this.health.markFailed(err, transfer.signal);
       throw err;
     } finally {
-      this.transmissions.record({ ...transfer.transmission, success });
+      this.transmissions.record({ ...transfer.transmission, ...tally.columns(), success });
     }
   }
 
-  private async withRetries(transfer: Transfer): Promise<string> {
+  private async withRetries(transfer: Transfer, tally: UsageTally): Promise<string> {
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await transfer.attempt();
+        return await transfer.attempt(tally);
       } catch (err) {
         const retry = err instanceof AppError && err.retryable && attempt < transfer.maxAttempts(err) && !transfer.signal?.aborted;
-        if (!retry) throw err;
-        await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs * attempt));
+        const wait = retry ? this.waitBeforeRetry(err, attempt) : null;
+        if (wait === null) throw err;
+        await waitFor(wait, transfer.signal);
       }
     }
   }
 
+  /** The wait before the next attempt: what the endpoint asked for (Retry-After), else a backoff; null if it asks for more than we wait. */
+  private waitBeforeRetry(err: AppError, attempt: number): number | null {
+    const asked = err.retryAfterMs;
+    if (asked === undefined) return this.retryDelayMs * attempt;
+    return asked >= MAX_RETRY_AFTER_MS ? null : asked;
+  }
+
   private completeViaResponses(prepared: PreparedRequest): Promise<string> {
-    const llm = this.deps.settings.get().llm;
     const { connection, request, signal } = prepared;
-    const body = responsesRequestBody({
-      model: connection.model,
+    const llm = this.deps.settings.get().llm;
+    const call = this.responses.prepare({
+      connection,
       instructions: prepared.instructions,
       input: prepared.sent,
       maxOutputTokens: request.maxOutputTokens,
-      reasoningEffort: llm.reasoningEffort,
       json: request.json,
+      jsonSchema: request.jsonSchema,
+      reasoningEffort: llm.reasoningEffort,
+      timeoutMs: llm.timeoutMs,
+      signal,
     });
-    const url = endpointUrl(connection.baseUrl, 'responses');
-    const endpointKey = `${url}\n${connection.model}`;
-    const rejected = this.rejectedParams.get(endpointKey) ?? new Set<OptionalParam>();
-    const post = () => this.post({ url, apiKey: connection.apiKey, body: withoutParams(body, rejected), timeoutMs: llm.timeoutMs, signal });
     return this.transfer({
-      transmission: this.transmissionOf(prepared, url),
+      transmission: this.transmissionOf(prepared, call.url),
+      source: connection.source,
       signal,
       // a hanging endpoint is asked at most twice (each attempt waits the full timeout), other transient errors three times
       maxAttempts: (err) => (isTimeout(err) ? 2 : 3),
-      attempt: async () => {
-        let response = await post();
-        // some compatible endpoints do not know optional parameters → retry without exactly the ones the error names
-        while (response.status === 400 && isUnsupportedParamError(response.text)) {
-          const drop = paramsToDrop(response.text, presentParams(body, rejected));
-          if (drop.length === 0) break;
-          for (const param of drop) rejected.add(param);
-          this.rejectedParams.set(endpointKey, rejected);
-          this.deps.ctx.logger.warn('llm', 'Endpoint rejected optional parameters – retrying without them', { params: drop });
-          response = await post();
-        }
-        return responsesText(response);
-      },
+      attempt: call.attempt,
     });
   }
 
@@ -235,7 +220,8 @@ export class LlmService {
 
   /** Connection data for the agent adapters; every transmission goes into the transmission log. */
   adapterConfig(overrides: LlmOverrides = {}): AdapterConfig {
-    const { baseUrl, model, apiKey } = this.connection(overrides);
+    const { baseUrl, model, apiKey, source } = this.connection(overrides);
+    const saved = source === 'saved';
     return {
       baseUrl,
       model,
@@ -244,7 +230,10 @@ export class LlmService {
       fetchImpl: this.fetchImpl,
       log: (transmission) => {
         this.transmissions.record(transmission);
-        if (transmission.success) this.health.markReachable();
+        if (saved && transmission.success) this.health.markReachable();
+      },
+      fail: (err, signal) => {
+        if (saved) this.health.markFailed(err, signal);
       },
       warn: (message, data) => this.deps.ctx.logger.warn('llm', message, data),
     };
@@ -259,46 +248,48 @@ export class LlmService {
   private completeViaClaude(prepared: PreparedRequest): Promise<string> {
     const { connection, request, signal } = prepared;
     const config = this.adapterConfig(connection);
-    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined });
+    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined, fail: () => undefined });
     return this.transfer({
       transmission: this.transmissionOf(prepared, `${connection.baseUrl} (Messages API)`),
+      source: connection.source,
       signal,
       maxAttempts: () => 3,
-      attempt: async () => {
+      attempt: async (tally) => {
         const maxOutputTokens = request.maxOutputTokens ?? 16_000;
-        const text = await adapter.completeText({ system: prepared.instructions, text: prepared.sent, maxOutputTokens, signal });
+        tally.countRequest();
+        const { text, usage } = await adapter.completeText({ system: prepared.instructions, text: prepared.sent, maxOutputTokens, signal });
+        tally.add(usage);
         if (!text.trim()) throw new AppError('llm_error', 'Das LLM lieferte eine leere Antwort.', { retryable: true });
         return text;
       },
     });
   }
 
+  /** Output limit for a structured answer, only where reasoning tokens cannot eat it: Claude (no thinking) or an explicit thinking depth „none“. */
+  private outputLimit(schemaName: string, overrides: LlmOverrides): number | undefined {
+    const safe = this.adapterId(overrides.baseUrl) === 'anthropic' || this.deps.settings.get().llm.reasoningEffort === 'none';
+    return safe ? outputLimitFor(schemaName) : undefined;
+  }
+
   /** Structured answer validated with Zod: on invalid output exactly one correction request, then an error (nothing runs). */
-  async completeJson<T extends z.ZodType>(
+  completeJson<T extends z.ZodType>(
     schema: T,
-    request: Omit<LlmRequest, 'json'> & { schemaName: string },
+    request: Omit<LlmRequest, 'json' | 'jsonSchema' | 'appendix'> & { schemaName: string },
     overrides: LlmOverrides = {},
   ): Promise<z.output<T>> {
-    const jsonSchema = JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }));
-    const instructions = structuredInstructions(request, jsonSchema);
-    let lastIssues = '';
-    let lastRaw = '';
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const input = attempt === 0 ? request.input : correctionInput(request.input, lastIssues);
-      const raw = await this.complete({ ...request, instructions, input, json: true }, overrides);
-      lastRaw = raw;
-      const parsed = parseJsonAnswer(raw);
-      if (!parsed.ok) lastIssues = 'kein gültiges JSON';
-      else {
-        const result = schema.safeParse(parsed.value);
-        if (result.success) return result.data;
-        lastIssues = issuesText(result.error);
-      }
-      this.deps.ctx.logger.warn('llm', 'Invalid structured LLM output', { schema: request.schemaName, issues: lastIssues, attempt });
-    }
-    throw new AppError('llm_error', 'Die LLM-Antwort entsprach nicht dem erwarteten Format und wurde verworfen.', {
-      details: `${request.schemaName}: ${lastIssues}; Auszug: ${lastRaw.slice(0, 160)}`,
-    });
+    const maxOutputTokens = request.maxOutputTokens ?? this.outputLimit(request.schemaName, overrides);
+    return structuredAnswer(
+      schema,
+      { ...request, maxOutputTokens },
+      {
+        complete: (llmRequest) => this.complete(llmRequest, overrides),
+        warn: (message, data) => this.deps.ctx.logger.warn('llm', message, data),
+        // the transport succeeded, but the endpoint is not usable for structured answers
+        malformed: (error, signal) => {
+          if (this.connection(overrides).source === 'saved') this.health.markFailed(error, signal ?? llmCancelScope.getStore());
+        },
+      },
+    );
   }
 
   /** Embeddings via /embeddings (only if an embedding model is configured). */
@@ -307,77 +298,40 @@ export class LlmService {
     const apiKey = this.deps.secrets.getApiKey();
     if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
     assertSecureBaseUrl(llm.baseUrl);
-    const redacted = texts.map((text) => redactSecrets(text.slice(0, 8000)));
-    const url = endpointUrl(llm.baseUrl, 'embeddings');
-    let success = false;
-    try {
-      const response = await this.post({
-        url,
+    return requestEmbeddings(
+      {
+        url: endpointUrl(llm.baseUrl, 'embeddings'),
         apiKey,
-        body: { model: llm.embeddingModel, input: redacted.map((entry) => entry.text) },
-        timeoutMs: llm.timeoutMs,
-      });
-      if (response.status >= 400) throw mapHttpError(response.status, response.text);
-      const embeddingsSchema = z.object({ data: z.array(z.object({ embedding: z.array(z.number()), index: z.number().optional() })) });
-      const parsed = embeddingsSchema.safeParse(JSON.parse(response.text));
-      if (!parsed.success || parsed.data.data.length !== texts.length) throw new AppError('llm_error', 'Unerwartete Embedding-Antwort.');
-      success = true;
-      return parsed.data.data.map((entry) => entry.embedding);
-    } finally {
-      this.transmissions.record({
-        purpose,
         model: llm.embeddingModel,
-        endpoint: url,
-        bytes: redacted.reduce((sum, entry) => sum + Buffer.byteLength(entry.text), 0),
-        redactions: redacted.reduce((sum, entry) => sum + entry.count, 0),
+        timeoutMs: llm.timeoutMs,
+        texts,
+        purpose,
         documentIds,
-        preview: redacted[0]?.text.slice(0, 200) ?? '',
-        success,
-      });
-    }
+        masking: maskingOf(this.deps.settings.get()),
+      },
+      {
+        post: (request) => this.post(request),
+        record: (transmission) => this.transmissions.record(transmission),
+        assertWithinCap: () => this.ledger.assertWithinCap(),
+        markReachable: () => this.health.markReachable(),
+        markFailed: (err) => this.health.markFailed(err),
+      },
+    );
   }
 
-  async testConnection(overrides: LlmOverrides = {}): Promise<LlmTestResult> {
-    const started = Date.now();
-    try {
-      const reply = await this.complete(
-        {
-          instructions: 'Du bist ein Verbindungstest. Antworte mit genau einem Wort.',
-          input: 'Antworte mit dem Wort: OK',
-          purpose: 'Verbindungstest',
-          maxOutputTokens: 64,
-          bypassPrivacy: true,
-        },
-        overrides,
-      );
-      return { ok: true, latencyMs: Date.now() - started, message: 'Verbindung erfolgreich.', modelReply: reply.trim().slice(0, 80), error: null };
-    } catch (err) {
-      const info: AppErrorInfo = toErrorInfo(err);
-      return { ok: false, latencyMs: null, message: info.message, modelReply: null, error: info };
-    }
+  testConnection(overrides: LlmOverrides = {}): Promise<LlmTestResult> {
+    return runConnectionTest((request) => this.complete(request, overrides));
   }
 
-  /** Same path as every feature (completeJson); no output limit, so reasoning tokens cannot cut the answer short. */
-  async testStructuredAnswer(overrides: LlmOverrides): Promise<{ ok: boolean; message: string }> {
-    try {
-      await this.completeJson(
-        z.object({ ok: z.boolean() }),
-        {
-          instructions: 'Du bist ein Verbindungstest. Antworte mit einem JSON-Objekt, bei dem ok true ist.',
-          input: 'Antworte mit {"ok": true}.',
-          purpose: 'Verbindungstest (strukturierte Antwort)',
-          schemaName: 'ConnectionTest',
-          bypassPrivacy: true,
-        },
-        overrides,
-      );
-      return { ok: true, message: 'Strukturierte Antworten funktionieren.' };
-    } catch (err) {
-      return { ok: false, message: toErrorInfo(err).message };
-    }
+  testStructuredAnswer(overrides: LlmOverrides): Promise<{ ok: boolean; message: string }> {
+    return runStructuredTest((schema, request) => this.completeJson(schema, request, overrides));
   }
 
-  listTransmissions(limit = 100): LlmTransmission[] {
-    return this.transmissions.list(limit);
+  pruneTransmissions(days: number): number {
+    return this.transmissions.prune(days);
+  }
+
+  listTransmissions(limit = 100, offset = 0): LlmTransmission[] {
+    return this.transmissions.list({ limit, offset });
   }
 }

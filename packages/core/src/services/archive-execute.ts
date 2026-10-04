@@ -4,7 +4,6 @@ import type { ArchiveItemRequest, DocumentProposal } from '@archivist/shared';
 import { and, eq, notInArray } from 'drizzle-orm';
 import { documents } from '../db/schema';
 import { AppError, toErrorInfo } from '../util/errors';
-import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
 import { normalizeName } from '../util/text';
 import type { ExtractedItemProposer } from './archive-extracted-items';
@@ -133,7 +132,7 @@ export class ArchiveExecutor {
       return refuse('conflict', `Neue Hauptkategorie „${item.newCategories.join(', ')}“ wurde nicht bestätigt.`);
     if (req.mode === 'move' && !checked.opts.confirmMove)
       return refuse('skipped', 'Verschieben erfordert eine zusätzliche Bestätigung („Original wird entfernt“).');
-    if ((await sha256File(item.sourcePath!)) !== row.sha256)
+    if ((await this.deps.pool.run('hashFile', { path: item.sourcePath! }, { priority: 'user' })) !== row.sha256)
       return refuse('conflict', 'Die Quelldatei hat sich seit der Analyse verändert. Bitte erneut analysieren.');
     return undefined;
   }
@@ -174,7 +173,7 @@ export class ArchiveExecutor {
     const targetAbs = await this.deps.files.copyExclusive({ source, dir: target.dir, fileName: target.fileName });
     let matches: boolean;
     try {
-      matches = (await sha256File(targetAbs)) === verified.sha256;
+      matches = (await this.deps.pool.run('hashFile', { path: targetAbs }, { priority: 'user' })) === verified.sha256;
     } catch {
       matches = false;
     }
@@ -303,7 +302,7 @@ export class ArchiveExecutor {
   private async removeOriginal(row: DocRow, warnings: string[]): Promise<boolean> {
     const original = row.sourcePath!;
     try {
-      if ((await sha256File(original)) === row.sha256) {
+      if ((await this.deps.pool.run('hashFile', { path: original }, { priority: 'user' })) === row.sha256) {
         await fsp.unlink(original);
         return true;
       }

@@ -5,12 +5,15 @@ import type { IpcChannel, IpcInput, IpcOutput } from '@archivist/shared';
 import { call, IpcError } from './ipc';
 import { scopesOf, subscribe } from './events';
 
-export interface UseQueryOptions {
+export interface UseQueryOptions<C extends IpcChannel = IpcChannel> {
   /** Scopes from `data:changed` that trigger a reload. */
   scopes?: string[];
   /** Reload on `job:updated`. */
   jobs?: boolean;
   enabled?: boolean;
+  /** Replaces the single call of `channel` (e.g. a list read page by page); `loadKey` names what makes it a different read. */
+  load?: (input: IpcInput<C>) => Promise<IpcOutput<C>>;
+  loadKey?: string;
 }
 
 export interface QueryState<T> {
@@ -20,12 +23,14 @@ export interface QueryState<T> {
   refetch: () => Promise<void>;
 }
 
-export function useQuery<C extends IpcChannel>(channel: C, input: IpcInput<C> | undefined, opts: UseQueryOptions = {}): QueryState<IpcOutput<C>> {
-  const { scopes, jobs = false, enabled = true } = opts;
+export function useQuery<C extends IpcChannel>(channel: C, input: IpcInput<C> | undefined, opts: UseQueryOptions<C> = {}): QueryState<IpcOutput<C>> {
+  const { scopes, jobs = false, enabled = true, load, loadKey = '' } = opts;
   const [data, setData] = useState<IpcOutput<C> | undefined>(undefined);
   const [loading, setLoading] = useState<boolean>(enabled);
   const [error, setError] = useState<IpcError | null>(null);
-  const inputKey = JSON.stringify(input ?? null);
+  const inputKey = JSON.stringify(input ?? null) + loadKey;
+  const loadRef = useRef(load);
+  loadRef.current = load;
   const scopesKey = (scopes ?? []).join('|');
   const requestId = useRef(0);
   const inputRef = useRef(input);
@@ -36,13 +41,13 @@ export function useQuery<C extends IpcChannel>(channel: C, input: IpcInput<C> | 
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const out = await call(channel, inputRef.current);
+      const out = loadRef.current ? await loadRef.current(inputRef.current as IpcInput<C>) : await call(channel, inputRef.current);
       if (id !== requestId.current) return;
       setData(out);
       setError(null);
     } catch (err) {
       if (id !== requestId.current) return;
-      setError(err instanceof IpcError ? err : new IpcError({ category: 'native_module_error', message: String(err), retryable: true }));
+      setError(err instanceof IpcError ? err : new IpcError({ category: 'internal_error', message: String(err), retryable: true }));
     } finally {
       if (id === requestId.current) setLoading(false);
     }

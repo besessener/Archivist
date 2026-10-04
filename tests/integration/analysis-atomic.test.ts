@@ -7,9 +7,7 @@ import { classification } from '../helpers/document-classifications';
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.on('DocumentClassification', () =>
-    classification({ title: 'Quittung', summary: 'Zusammenfassung', categoryPath: 'private/belege', mainTopic: null }),
-  );
+  app.llm.on('DocumentClassification', () => classification({ title: 'Quittung', summary: 'Zusammenfassung', categoryPath: 'Privat/belege', mainTopic: null }));
 });
 afterEach(async () => {
   vi.restoreAllMocks();

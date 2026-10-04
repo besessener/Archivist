@@ -28,7 +28,7 @@ npm run dev            # Next.js-Dev-Server + Electron mit Hot Reload
 
 Es öffnet sich das Archivist-Fenster mit dem Einrichtungsdialog. Ändere eine Komponente unter `apps/renderer/components/` – die Änderung erscheint sofort.
 
-Die Daten landen unter `~/Documents/Archivist/`. Um dein echtes Archiv nicht anzufassen, setz vorher ein eigenes Datenverzeichnis:
+Die Dokumente landen unter `~/Documents/Archivist/`, Datenbank, Einstellungen und Backups im Datenordner deines Benutzerprofils (Electron-`userData`). Um dein echtes Archiv nicht anzufassen, setz vorher ein eigenes Datenverzeichnis; damit liegt alles unter diesem einen Ordner:
 
 ```bash
 ARCHIVIST_DATA_DIR=~/archivist-dev npm run dev

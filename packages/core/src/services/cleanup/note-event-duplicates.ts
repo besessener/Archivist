@@ -161,7 +161,7 @@ export class NoteEventDuplicateService {
   /** Keys of pairs rejected as different while both records exist; they stay remembered even when no longer detected. */
   private rememberedDifferent(prefix: string, exists: (id: string) => boolean): string[] {
     const keys: string[] = [];
-    for (const insight of this.insights.list('rejected')) {
+    for (const insight of this.insights.list({ status: 'rejected' })) {
       if (insight.sourceIds.length !== 2) continue;
       const [a, b] = insight.sourceIds as [string, string];
       const key = duplicatePairKey(prefix, [a, b]);

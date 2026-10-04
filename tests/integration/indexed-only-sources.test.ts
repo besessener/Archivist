@@ -9,7 +9,7 @@ import { classification } from '../helpers/document-classifications';
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto', scanEnabled: true });
-  app.llm.on('DocumentClassification', () => classification({ title: 'Reiseplanung', summary: 'Zusammenfassung', categoryPath: 'work/notes' }));
+  app.llm.on('DocumentClassification', () => classification({ title: 'Reiseplanung', summary: 'Zusammenfassung', categoryPath: 'Arbeit/notes' }));
 });
 afterEach(async () => {
   await app.cleanup();
@@ -23,7 +23,7 @@ const docs = () => app.services.database.sqlite.prepare("SELECT id, status FROM 
 
 async function archive(id: string, mode: 'index_only' | 'copy') {
   await app.ok('documents:archive', {
-    items: [{ documentId: id, mode, categoryPath: 'work/notes' }],
+    items: [{ documentId: id, mode, categoryPath: 'Arbeit/notes' }],
     confirmed: true,
     approveNewCategories: [],
     confirmMove: false,
@@ -95,7 +95,7 @@ describe('index-only document whose original vanished', () => {
     const content = fs.readFileSync(file);
     fs.rmSync(file);
     await app.services.consistency.run({ trigger: 'manual' });
-    const open = () => app.services.insights.list('open').filter((i) => i.title.startsWith('Original fehlt'));
+    const open = () => app.services.insights.list({ status: 'open' }).filter((i) => i.title.startsWith('Original fehlt'));
     expect(open()).toHaveLength(1);
     expect(open()[0]!.affected.map((a) => a.id)).toEqual([id]);
     expect(open()[0]!.explanation).toContain(file);

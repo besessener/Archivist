@@ -39,7 +39,7 @@ describe('Knowledge answers use the knowledge graph (#289)', () => {
     const offer = await archived(app, {
       name: 'angebot.md',
       content: 'Angebot des Dachdeckers Kowalski über 18.000 Euro für die Dachsanierung.',
-      folder: 'private/haus',
+      folder: 'Privat/haus',
     });
     // the decision text shares no word with the question
     const decision = decide('Sanierung beauftragt', 'Wir beauftragen die Firma für die Arbeiten im Frühjahr.');
@@ -57,7 +57,7 @@ describe('Knowledge answers use the knowledge graph (#289)', () => {
   });
 
   it('proposed, rejected and outdated relations are never used', async () => {
-    const offer = await archived(app, { name: 'angebot.md', content: 'Angebot des Dachdeckers Kowalski über 18.000 Euro.', folder: 'private/haus' });
+    const offer = await archived(app, { name: 'angebot.md', content: 'Angebot des Dachdeckers Kowalski über 18.000 Euro.', folder: 'Privat/haus' });
     const ids = [
       decide('Eins', 'Erster Beschluss zu den Arbeiten.').id,
       decide('Zwei', 'Zweiter Beschluss zu den Arbeiten.').id,
@@ -82,10 +82,10 @@ describe('Near-duplicate documents do not use up answer slots (#308)', () => {
       : `Angebot Nummer ${n} des Dachdeckers Kowalski für die Dachsanierung, Position ${n * 7} Dachziegel und Arbeitszeit.`;
 
   it('collapses same file, same text and confirmed duplicates, so further distinct sources fit', async () => {
-    const best = await archived(app, { name: 'angebot-0.md', content: offerText(0), folder: 'private/haus' });
-    const sameText = await archived(app, { name: 'angebot-0-kopie.md', content: `${offerText(0)} `, folder: 'private/haus' });
-    const sameFile = await archived(app, { name: 'angebot-0-scan.md', content: `${offerText(0)} Scan.`, folder: 'private/haus' });
-    const linked = await archived(app, { name: 'angebot-0-alt.md', content: `${offerText(0)} Alte Fassung.`, folder: 'private/haus' });
+    const best = await archived(app, { name: 'angebot-0.md', content: offerText(0), folder: 'Privat/haus' });
+    const sameText = await archived(app, { name: 'angebot-0-kopie.md', content: `${offerText(0)} `, folder: 'Privat/haus' });
+    const sameFile = await archived(app, { name: 'angebot-0-scan.md', content: `${offerText(0)} Scan.`, folder: 'Privat/haus' });
+    const linked = await archived(app, { name: 'angebot-0-alt.md', content: `${offerText(0)} Alte Fassung.`, folder: 'Privat/haus' });
     const sha = app.services.documents.getRow(best).sha256;
     app.services.ctx.database.sqlite.prepare('UPDATE documents SET sha256 = ? WHERE id = ?').run(sha, sameFile);
     app.services.graph.link(
@@ -93,7 +93,7 @@ describe('Near-duplicate documents do not use up answer slots (#308)', () => {
       { status: 'confirmed', resolvedByUser: true, method: 'manual' },
     );
     const distinct: string[] = [];
-    for (let n = 1; n <= 9; n++) distinct.push(await archived(app, { name: `angebot-${n}.md`, content: offerText(n), folder: 'private/haus' }));
+    for (let n = 1; n <= 9; n++) distinct.push(await archived(app, { name: `angebot-${n}.md`, content: offerText(n), folder: 'Privat/haus' }));
 
     app.llm.on('KnowledgeAnswer', () => ({
       answer: 'Antwort.',

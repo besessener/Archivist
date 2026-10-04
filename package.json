@@ -29,7 +29,7 @@
     "native:check": "node scripts/check-native.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "depcruise": "depcruise --config .dependency-cruiser.cjs packages apps/desktop/src apps/renderer tests",
+    "depcruise": "depcruise --config .dependency-cruiser.cjs packages apps/desktop/src apps/renderer tests && node scripts/check-type-only-cycles.mjs",
     "knip": "knip",
     "test:mutation": "stryker run",
     "mutation:file": "node scripts/mutation-file.mjs",

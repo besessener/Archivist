@@ -1,15 +1,15 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { Job, ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
-import { and, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
+import type { Job, ScanExclusion, ScanFile, ScanProposalGroup, ScanRoot, ScanSummary } from '@archivist/shared';
+import { and, eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { documents, scanExclusions, scanFiles, scanRoots } from '../db/schema';
+import { documents, scanFiles, scanRoots } from '../db/schema';
 import { AppError, permissionError, validationError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { isForbiddenScanRoot, isInside, normalizeFsPath } from '../util/paths';
 import type { WorkerPool } from '../workers/pool';
-import { SCAN_MAX_FILES } from '../workers/tasks';
+import { SCAN_PAGE_SIZE } from '../workers/tasks';
 import type { AuditService } from './audit';
 import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
@@ -18,18 +18,15 @@ import type { KnowledgeGraphService } from './knowledge-graph';
 import type { NotificationService } from './notifications';
 import type { PrivacyService } from './privacy';
 import { IntervalSchedule } from './scheduler';
+import { BulkFileAnalysis } from './scanner/bulk-analysis';
 import { FileAnalysis } from './scanner/file-analysis';
+import { ScanExclusions } from './scanner/exclusions';
 import { ScanProposals } from './scanner/proposals';
 import { mapFile, mapRoot, type RootRow } from './scanner/scan-files';
+import { queryScanResults, type ScanResultsQuery } from './scanner/scan-results';
 import { ScanRun } from './scanner/scan-run';
+import type { LlmService } from './llm';
 import type { SettingsService } from './settings';
-
-const mapExclusion = (row: typeof scanExclusions.$inferSelect): ScanExclusion => ({
-  id: row.id,
-  kind: row.kind as 'file' | 'dir',
-  path: row.path,
-  createdAt: row.createdAt,
-});
 
 export interface ScannerServiceDeps {
   ctx: AppContext;
@@ -38,6 +35,7 @@ export interface ScannerServiceDeps {
   docs: DocumentService;
   graph: KnowledgeGraphService;
   privacy: PrivacyService;
+  llm: LlmService;
   notifications: NotificationService;
   insights: InsightService;
   audit: AuditService;
@@ -51,15 +49,29 @@ export class ScannerService {
   private readonly scans: ScanRun;
   private readonly analysis: FileAnalysis;
   private readonly scanProposals: ScanProposals;
-  /** Upper bound of files collected per scan root (lowered in tests). */
-  maxFilesPerRoot = SCAN_MAX_FILES;
+  /** „Alle neuen Dateien analysieren“: estimate and the run of its job. */
+  readonly bulk: BulkFileAnalysis;
+  private readonly exclusions: ScanExclusions;
+  /** Files per scan page and batch (lowered in tests). */
+  pageSize = SCAN_PAGE_SIZE;
 
   constructor(private readonly deps: ScannerServiceDeps) {
     const { ctx, settings, pool, docs, graph, privacy, notifications } = deps;
     this.schedule = new IntervalSchedule({ name: 'scanner', run: () => this.periodicScan(), logger: ctx.logger });
-    this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, maxFilesPerRoot: () => this.maxFilesPerRoot });
-    this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications });
+    this.scans = new ScanRun({ ctx, settings, pool, docs, privacy, notifications, pageSize: () => this.pageSize });
+    this.exclusions = new ScanExclusions({ ctx, audit: deps.audit });
+    this.analysis = new FileAnalysis({ ctx, pool, docs, graph, privacy, notifications, jobs: deps.jobs });
     this.scanProposals = new ScanProposals({ ctx, graph });
+    this.bulk = new BulkFileAnalysis({
+      ctx,
+      analysis: this.analysis,
+      privacy,
+      settings,
+      llm: deps.llm,
+      jobs: deps.jobs,
+      notifications,
+      buildProposals: (ids) => this.buildProposals(ids),
+    });
     ctx.events.on('document:archived', (event: { documentId: string; sourcePath: string | null }) => {
       if (!event.sourcePath) return;
       this.db.update(scanFiles).set({ status: 'archived', documentId: event.documentId }).where(eq(scanFiles.path, event.sourcePath)).run();
@@ -115,7 +127,7 @@ export class ScannerService {
     if (!(await fsp.stat(real)).isDirectory()) throw validationError('Das ist kein Verzeichnis.');
     const forbidden = isForbiddenScanRoot(real);
     if (forbidden) throw permissionError(forbidden, real);
-    const ownRoots = [this.deps.ctx.paths.root, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
+    const ownRoots = [this.deps.ctx.paths.root, this.deps.ctx.paths.appData, this.deps.settings.get().archiveRoot].map((ownRoot) => normalizeFsPath(ownRoot));
     if (ownRoots.some((ownRoot) => isInside(ownRoot, real))) throw permissionError('Das Archivist-Datenverzeichnis selbst kann nicht gescannt werden.', real);
     if (this.db.select().from(scanRoots).where(eq(scanRoots.path, real)).get()) throw validationError('Dieses Verzeichnis ist bereits freigegeben.');
     const scan = this.deps.settings.get().scan;
@@ -171,50 +183,15 @@ export class ScannerService {
 
   // ---------- Exclusions ----------
   exclude(kind: 'file' | 'dir', target: string): ScanExclusion {
-    if (!path.isAbsolute(target)) throw validationError('Bitte einen absoluten Pfad angeben.');
-    const absolute = normalizeFsPath(target);
-    const existing = this.db
-      .select()
-      .from(scanExclusions)
-      .where(and(eq(scanExclusions.kind, kind), eq(scanExclusions.path, absolute)))
-      .get();
-    const row = existing ?? { id: newId(), kind, path: absolute, createdAt: nowIso() };
-    if (!existing) this.db.insert(scanExclusions).values(row).run();
-    const below = `${absolute}${path.sep}%`;
-    const files = this.db
-      .select()
-      .from(scanFiles)
-      .where(kind === 'file' ? eq(scanFiles.path, absolute) : like(scanFiles.path, below))
-      .all();
-    for (const file of files) this.db.update(scanFiles).set({ status: 'excluded' }).where(eq(scanFiles.id, file.id)).run();
-    // remove not yet archived documents from this location from the inbox
-    const inboxDocs = this.db
-      .select()
-      .from(documents)
-      .where(and(inArray(documents.status, ['staged', 'proposed']), kind === 'file' ? eq(documents.sourcePath, absolute) : like(documents.sourcePath, below)))
-      .all();
-    for (const doc of inboxDocs)
-      if (!doc.stagedPath) this.db.update(documents).set({ status: 'ignored', updatedAt: nowIso() }).where(eq(documents.id, doc.id)).run();
-    this.deps.audit.log({ action: `scanner.exclude.${kind}`, actor: 'user', trigger: 'manual', confirmed: true, paths: [absolute] });
-    this.deps.ctx.events.changed('scanner', 'documents');
-    return mapExclusion(row);
+    return this.exclusions.exclude(kind, target);
   }
 
   listExclusions(): ScanExclusion[] {
-    return this.db.select().from(scanExclusions).orderBy(desc(scanExclusions.createdAt)).all().map(mapExclusion);
+    return this.exclusions.list();
   }
 
   removeExclusion(id: string): void {
-    const row = this.db.select().from(scanExclusions).where(eq(scanExclusions.id, id)).get();
-    if (!row) return;
-    this.db.delete(scanExclusions).where(eq(scanExclusions.id, id)).run();
-    // the files are picked up again on the next scan
-    this.db
-      .delete(scanFiles)
-      .where(and(eq(scanFiles.status, 'excluded'), or(eq(scanFiles.path, row.path), like(scanFiles.path, `${row.path}${path.sep}%`))))
-      .run();
-    this.deps.audit.log({ action: 'scanner.removeExclusion', actor: 'user', trigger: 'manual', confirmed: true, paths: [row.path] });
-    this.deps.ctx.events.changed('scanner');
+    this.exclusions.remove(id);
   }
 
   // ---------- Scan ----------
@@ -237,38 +214,8 @@ export class ScannerService {
     return this.scans.run(rootId, job);
   }
 
-  getResults(options: { rootId?: string; status?: ScanFileStatus; limit?: number } = {}): { files: ScanFile[]; lastSummary: ScanSummary | null } {
-    const conditions = [];
-    if (options.rootId) conditions.push(eq(scanFiles.rootId, options.rootId));
-    if (options.status) conditions.push(eq(scanFiles.status, options.status));
-    const files = this.db
-      .select()
-      .from(scanFiles)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(scanFiles.lastSeenAt), scanFiles.name)
-      .limit(options.limit ?? 500)
-      .all()
-      .map(mapFile);
-    const latest = this.db
-      .select()
-      .from(scanRoots)
-      .orderBy(desc(scanRoots.lastScanAt))
-      .all()
-      .find((root) => root.lastSummary);
-    return { files, lastSummary: (latest?.lastSummary as unknown as ScanSummary | null) ?? null };
-  }
-
-  /** New or changed analysable files not queued yet, oldest first – unlike the result list, not always the same first ones (#222). */
-  filesAwaitingAnalysis(): string[] {
-    const queued = new Set(this.deps.jobs.activePayloads<{ fileIds?: string[] }>('scanner.analyze').flatMap((payload) => payload.fileIds ?? []));
-    return this.db
-      .select({ id: scanFiles.id })
-      .from(scanFiles)
-      .where(and(inArray(scanFiles.status, ['new', 'changed']), ne(scanFiles.llmStatus, 'excluded')))
-      .orderBy(scanFiles.firstSeenAt, scanFiles.path)
-      .all()
-      .map((row) => row.id)
-      .filter((id) => !queued.has(id));
+  getResults(options: ScanResultsQuery = {}): ReturnType<typeof queryScanResults> {
+    return queryScanResults(this.db, options);
   }
 
   getFile(id: string): ScanFile {
@@ -286,7 +233,10 @@ export class ScannerService {
 
   // ---------- Content analysis ----------
   /** Analyzes selected files. Only here (and only with confirmLlm / mode „auto“) can content go to the LLM. */
-  async analyzeFiles(fileIds: string[], options: { confirmLlm: boolean; job?: JobContext }): Promise<{ analyzed: string[]; skipped: string[] }> {
+  async analyzeFiles(
+    fileIds: string[],
+    options: { confirmLlm: boolean; reanalyze?: boolean; job?: JobContext },
+  ): Promise<{ analyzed: string[]; skipped: string[] }> {
     const result = await this.analysis.analyzeFiles(fileIds, options);
     this.buildProposals(result.analyzed);
     this.deps.ctx.events.changed('scanner', 'documents', 'status');

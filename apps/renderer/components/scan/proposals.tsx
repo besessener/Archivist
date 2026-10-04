@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Layers } from 'lucide-react';
+import { ArchiveAllButton } from '@/components/common/archive-all';
 import { ArchiveDialog, defaultEdit, toArchiveItem } from '@/components/common/archive-dialog';
 import { ConfidenceBadge } from '@/components/common/confidence';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
@@ -114,6 +115,11 @@ export function ScanProposals() {
       <h2 id="scan-proposals" className="text-base font-semibold">
         Zuordnungsvorschläge
       </h2>
+      {data && data.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="scan-archive-all">
+          <ArchiveAllButton source="scan" testId="scan-archive-all-open" />
+        </div>
+      )}
       {error && !data && <ErrorNote error={error} onRetry={() => void refetch()} />}
       {!data && loading && <Loading />}
       {data && data.length === 0 && (

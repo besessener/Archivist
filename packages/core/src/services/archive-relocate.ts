@@ -5,7 +5,7 @@ import { documents, relations } from '../db/schema';
 import { AppError } from '../util/errors';
 import { sha256File } from '../util/hash';
 import { nowIso } from '../util/ids';
-import { assertRealInside, resolveInside, sanitizeCategoryPath, uniquePath } from '../util/paths';
+import { assertRealInside, resolveInside, uniquePath } from '../util/paths';
 import { pruneEmptyDirs } from './archive-files';
 import {
   archiveRootOf,
@@ -39,7 +39,7 @@ interface RelationEdits {
   relationsChanged: RelationRow[];
 }
 
-const sameDir = (a: string, b: string) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+const sameDir = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 const errorText = (err: unknown, fallback: string) => (err instanceof AppError ? err.message : fallback);
 
@@ -77,12 +77,13 @@ export class ArchiveRelocator {
       return block('Nur archivierte Dokumente mit einer Datei im Archiv lassen sich umlagern.');
     let categoryPath: string;
     try {
-      categoryPath = sanitizeCategoryPath(req.categoryPath);
+      categoryPath = this.deps.categories.canonical(req.categoryPath);
     } catch (err) {
       return block(errorText(err, 'Ungültiger Zielordner.'));
     }
     const main = this.deps.categories.needsApproval(categoryPath);
-    if (main) return block(`Die Hauptkategorie „${main}“ gibt es noch nicht. Neue Hauptkategorien müssen vorher ausdrücklich angelegt werden.`);
+    if (main && main.toLowerCase() !== req.confirmedMainCategory?.toLowerCase())
+      return block(`Die Hauptkategorie „${main}“ gibt es noch nicht. Neue Hauptkategorien müssen vorher ausdrücklich angelegt werden.`);
     const root = archiveRootOf(this.deps);
     let file: string;
     let dir: string;
@@ -125,31 +126,32 @@ export class ArchiveRelocator {
     const newAbs = await this.deps.files.moveExclusive({ source: source.file, dir: source.dir, name: source.name, sha256: row.sha256, naming: 'unique' });
     const newRel = toPosix(path.relative(root, newAbs));
     const updatedAt = nowIso();
-    const edits = await this.deps.files.commitOrPutBack({ moved: newAbs, original: source.file, sha256: row.sha256, caseOnly: false }, () =>
-      this.writeRelocated(row, { categoryPath: source.categoryPath, newRel, updatedAt }),
-    );
-    await pruneEmptyDirs(root, path.dirname(source.file));
-    const undoData: RelocateUndoData = {
-      documentId: row.id,
-      fromRel: row.archiveRelPath!,
-      toRel: newRel,
-      sha256: row.sha256,
-      beforeCategoryPath: row.categoryPath,
-      beforeUpdatedAt: row.updatedAt,
-      afterUpdatedAt: updatedAt,
-      ...edits,
-    };
-    const auditId = this.deps.audit.log({
-      action: 'archive.relocate',
-      actor: trigger === 'agent_action' ? 'agent' : 'user',
-      trigger,
-      confirmed: true,
-      entityIds: [row.id],
-      paths: [source.file, newAbs],
-      before: { path: source.file, categoryPath: row.categoryPath },
-      after: { path: newAbs, categoryPath: source.categoryPath },
-      undo: { type: 'archive_relocate', data: undoData },
+    // database, graph and audit entry together – if they fail, the file goes back to its old location
+    const auditId = await this.deps.files.commitOrPutBack({ moved: newAbs, original: source.file, sha256: row.sha256, caseOnly: false }, () => {
+      const edits = this.writeRelocated(row, { categoryPath: source.categoryPath, newRel, updatedAt });
+      const undoData: RelocateUndoData = {
+        documentId: row.id,
+        fromRel: row.archiveRelPath!,
+        toRel: newRel,
+        sha256: row.sha256,
+        beforeCategoryPath: row.categoryPath,
+        beforeUpdatedAt: row.updatedAt,
+        afterUpdatedAt: updatedAt,
+        ...edits,
+      };
+      return this.deps.audit.log({
+        action: 'archive.relocate',
+        actor: trigger === 'agent_action' ? 'agent' : 'user',
+        trigger,
+        confirmed: true,
+        entityIds: [row.id],
+        paths: [source.file, newAbs],
+        before: { path: source.file, categoryPath: row.categoryPath },
+        after: { path: newAbs, categoryPath: source.categoryPath },
+        undo: { type: 'archive_relocate', data: undoData },
+      });
     });
+    await pruneEmptyDirs(root, path.dirname(source.file));
     const warnings: string[] = [];
     await this.reindexAfterCommit(row.id, warnings);
     const moved = plan.item.renamed

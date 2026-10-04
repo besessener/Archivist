@@ -6,6 +6,15 @@ export function initInsights(page: Page) {
   const locators = {
     cards: page.getByTestId('insight-card'),
     statusFilter: page.getByTestId('insight-status-filter'),
+    /** „N von M“ note with „Mehr laden“ while the list holds only the newest insights (#223). */
+    capped: page.getByTestId('insights-capped'),
+    loadMore: page.getByTestId('insights-load-more'),
+    /** Contradictions below the insights, paged the same way. */
+    contradictions: {
+      cards: page.getByTestId('contradiction-card'),
+      capped: page.getByTestId('contradictions-capped'),
+      loadMore: page.getByTestId('contradictions-load-more'),
+    },
     buttons: {
       runCheck: page.getByTestId('consistency-run'),
     },

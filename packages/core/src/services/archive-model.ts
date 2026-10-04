@@ -73,6 +73,8 @@ export interface RenamePlanItem {
 export interface RelocateRequest {
   documentId: string;
   categoryPath: string;
+  /** Main category the caller has already had confirmed by the user, so a preview does not block on it. */
+  confirmedMainCategory?: string;
 }
 
 export interface RelocatePlanItem {
@@ -94,6 +96,8 @@ export interface ExecuteOptions {
   approveNewCategories: string[];
   confirmMove: boolean;
   trigger?: string;
+  /** `later`: the caller runs `cleanupInbox` itself after a long run of batches. */
+  inboxCleanup?: 'before' | 'later';
 }
 
 export const archiveRootOf = (deps: { settings: { get(): { archiveRoot: string } } }): string => deps.settings.get().archiveRoot;

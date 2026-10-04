@@ -1,7 +1,7 @@
 import { ActionService } from '../services/actions';
-import { AppStateService } from '../services/app-state';
 import { ArchiveService } from '../services/archive';
 import { ArchiveRootService } from '../services/archive-root';
+import { CategoryMigrationService } from '../services/category-migration';
 import { BackupService } from '../services/backup';
 import { CaptureService } from '../services/capture';
 import { CaseService } from '../services/cases';
@@ -17,6 +17,9 @@ import { DecisionService } from '../services/decisions';
 import { DocumentService } from '../services/documents';
 import { EventService } from '../services/events';
 import { InsightService } from '../services/insights';
+import { DocumentReprocessing } from '../services/document-reprocess';
+import { ArchiveAll } from '../services/archive-batch';
+import { ImportAnalysis } from '../services/document-import-analysis';
 import { KnowledgeAnswerService } from '../services/knowledge-answers';
 import { LinkMethodsService } from '../services/link-methods';
 import { LinkThresholds } from '../services/link-thresholds';
@@ -40,8 +43,10 @@ export type WiredServices = BaseServices & DomainServices & LinkingServices;
 
 /** Records, archive, consistency checks and chat, in dependency order. */
 export function createDomainServices(base: BaseServices) {
-  const { ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo, reminders, self } = base;
+  const { ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo, reminders, self, appState } = base;
   const documents = new DocumentService({ ctx, settings, graph, persons, search, llm, privacy, pool, audit, notifications, categories, jobs, undo });
+  const reprocessing = new DocumentReprocessing({ ctx, documents, jobs, notifications, privacy, settings, llm });
+  const importAnalysis = new ImportAnalysis({ ctx, jobs, privacy, settings, llm });
   const decisions = new DecisionService({ ctx, graph, persons, search, audit, undo });
   const openItems = new OpenItemService({ ctx, graph, persons, search, audit, undo });
   const eventRecords = new EventService({ ctx, graph, search, audit, persons, undo });
@@ -54,11 +59,12 @@ export function createDomainServices(base: BaseServices) {
   const actions = new ActionService(ctx);
   const contradictions = new ContradictionService({ ctx, decisions, graph, insights, notifications, llm, privacy, docs: documents });
   const archive = new ArchiveService({ ctx, settings, docs: documents, categories, graph, persons, audit, notifications, pool, undo });
+  const categoryMigration = new CategoryMigrationService({ ctx, settings, categories, archive, audit, jobs });
   const archiveRoot = new ArchiveRootService({ ctx, settings, archive, audit, notifications, jobs, undo });
-  const scanner = new ScannerService({ ctx, settings, pool, docs: documents, graph, privacy, notifications, insights, audit, jobs });
+  const scanner = new ScannerService({ ctx, settings, pool, docs: documents, graph, privacy, llm, notifications, insights, audit, jobs });
+  const archiveAll = new ArchiveAll({ ctx, archive, jobs, notifications, scanDocumentIds: () => scanner.proposals().flatMap((group) => group.documentIds) });
   const timeline = new TimelineService(ctx);
   const entityDuplicates = new EntityDuplicateCheck({ ctx, insights, actions, llm, privacy });
-  const appState = new AppStateService(ctx);
   const consistency = new ConsistencyService({
     ctx,
     settings,
@@ -110,6 +116,8 @@ export function createDomainServices(base: BaseServices) {
   });
   return {
     documents,
+    reprocessing,
+    importAnalysis,
     decisions,
     openItems,
     openItemDuplicates,
@@ -124,11 +132,12 @@ export function createDomainServices(base: BaseServices) {
     actions,
     contradictions,
     archive,
+    archiveAll,
+    categoryMigration,
     archiveRoot,
     scanner,
     timeline,
     consistency,
-    appState,
     backup,
     chat,
     capture,

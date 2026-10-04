@@ -45,6 +45,8 @@ export interface EmbedResult {
   vectors: Float32Array[];
   model: string;
   dim: number;
+  /** The configured remote model was wanted but failed: these are local vectors that should be replaced later. */
+  fellBack: boolean;
 }
 
 export class EmbeddingService {
@@ -62,12 +64,18 @@ export class EmbeddingService {
     return allowRemote && llmSettings.embeddingModel && this.llm.isConfigured() ? llmSettings.embeddingModel : LOCAL_MODEL;
   }
 
+  /** How many of the texts (from the front) a remote request may carry within `maxInputChars`. */
+  remoteTextCount(texts: string[]): number {
+    return withinCharBudget(texts, this.settings.get().llm.maxInputChars).length;
+  }
+
   /**
    * `allowRemote=false` forces local vectors (e.g. for documents excluded from external analysis).
    * A remote request carries at most `maxInputChars` characters in total: texts beyond that get no vector (`vectors` is then shorter than `texts`).
    */
   async embed(texts: string[], opts: { allowRemote: boolean; purpose: string; documentIds?: string[] }): Promise<EmbedResult> {
     const model = this.currentModel({ allowRemote: opts.allowRemote });
+    let fellBack = false;
     if (model !== LOCAL_MODEL) {
       try {
         const sent = withinCharBudget(texts, this.settings.get().llm.maxInputChars);
@@ -82,12 +90,13 @@ export class EmbeddingService {
           for (let i = 0; i < f.length; i += 1) f[i] = (f[i] ?? 0) / n;
           return f;
         });
-        return { vectors, model, dim: vectors[0]?.length ?? 0 };
+        return { vectors, model, dim: vectors[0]?.length ?? 0, fellBack: false };
       } catch (error) {
         // indexing must not depend on the cloud: local vectors take over
+        fellBack = true;
         this.logger.warn('embedding', 'Remote embeddings failed, using local vectors', { model, error });
       }
     }
-    return { vectors: texts.map(localEmbed), model: LOCAL_MODEL, dim: LOCAL_DIM };
+    return { vectors: texts.map(localEmbed), model: LOCAL_MODEL, dim: LOCAL_DIM, fellBack };
   }
 }

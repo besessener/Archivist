@@ -1,4 +1,12 @@
-import { isEditableDecisionStatus, type Decision, type DecisionField, type DecisionOrigin, type DecisionPatch, type DecisionStatus } from '@archivist/shared';
+import {
+  DECISION_STATUS_LABELS,
+  isEditableDecisionStatus,
+  type Decision,
+  type DecisionField,
+  type DecisionOrigin,
+  type DecisionPatch,
+  type DecisionStatus,
+} from '@archivist/shared';
 import type { decisions } from '../db/schema';
 import { AppError } from '../util/errors';
 import { normalizeDateInput } from '../util/dates';
@@ -115,12 +123,12 @@ function orUnknown(d: Decision, { field, value }: { field: DecisionField; value:
   return d.unknownFields.includes(field) ? CONFIRMED_UNKNOWN : 'offen';
 }
 
-/** Human-readable rendering (when/topic/participants/…). */
 const validityLine = (d: Decision): string[] =>
   d.validFrom || d.validUntil
     ? [`**Gültig:** ${[d.validFrom && `ab ${d.validFrom.slice(0, 10)}`, d.validUntil && `bis ${d.validUntil.slice(0, 10)}`].filter(Boolean).join(' ')}`]
     : [];
 
+/** Human-readable rendering (when/topic/participants/…). */
 export function formatDecision(d: Decision): string {
   const project = d.projectName && d.projectName !== d.topicName ? ` (Projekt: ${d.projectName})` : '';
   return [
@@ -132,9 +140,9 @@ export function formatDecision(d: Decision): string {
     `**Begründung:** ${d.rationale ?? '–'}`,
     `**Auswirkungen:** ${d.consequences ?? '–'}`,
     `**Alternativen:** ${d.alternatives.length ? d.alternatives.join('; ') : '–'}`,
-    `**Status:** ${d.status}`,
+    `**Status:** ${DECISION_STATUS_LABELS[d.status]}`,
     ...(d.supersededBy.length ? [`**Ersetzt durch:** ${d.supersededBy.map((successor) => successor.title).join('; ')}`] : []),
-    `**Confidence:** ${Math.round(d.confidence * 100)} %`,
+    `**Sicherheit:** ${Math.round(d.confidence * 100)} %`,
   ].join('\n');
 }
 
@@ -148,7 +156,7 @@ export function decisionIndexContent(d: Decision): string {
     d.participants.length ? `Beteiligte: ${d.participants.join(', ')}` : '',
     d.rationale && `Begründung: ${d.rationale}`,
     d.consequences && `Auswirkungen: ${d.consequences}`,
-    `Status: ${d.status}`,
+    `Status: ${DECISION_STATUS_LABELS[d.status]}`,
   ]
     .filter(Boolean)
     .join('\n');

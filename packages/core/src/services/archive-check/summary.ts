@@ -30,6 +30,7 @@ export const RECONCILED_INSIGHTS = [
   'missing-topic',
   'missing-category',
   'dup:',
+  'similar:',
   'missing-file:',
   'changed-file:',
   'missing-source:',
@@ -42,7 +43,7 @@ export const RECONCILED_INSIGHTS = [
   'low-rel',
   'external:',
 ];
-export const RECONCILED_NOTIFICATIONS = ['dup:', 'incomplete-decision:', 'no-owner:', 'no-due:', 'overdue:', 'due:'];
+export const RECONCILED_NOTIFICATIONS = ['dup:', 'similar:', 'incomplete-decision:', 'no-owner:', 'no-due:', 'overdue:', 'due:'];
 
 export interface RunSummary {
   total: number;

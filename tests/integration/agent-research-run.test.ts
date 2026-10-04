@@ -27,7 +27,7 @@ describe('Agent research over several steps', () => {
     await archived(app, {
       name: 'protokoll.txt',
       content: 'Beschluss: Die Plattform zieht bis Ende März nach Frankfurt um, verantwortlich ist Jana.',
-      folder: 'work/protokolle',
+      folder: 'Arbeit/protokolle',
     });
     app.llm.on(
       'KnowledgeAnswer',
@@ -63,7 +63,7 @@ describe('Agent research over several steps', () => {
     await archived(app, {
       name: 'angebot.txt',
       content: 'Angebot Dachdecker Kowalski über 18.000 Euro, Beginn der Arbeiten nach Absprache.',
-      folder: 'private/haus',
+      folder: 'Privat/haus',
     });
     app.llm.on(
       'KnowledgeAnswer',

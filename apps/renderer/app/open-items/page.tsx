@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { ListChecks, Plus } from 'lucide-react';
 import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
 import { useSubjectsOf } from '@/components/common/extra-subjects';
+import { LoadMore } from '@/components/common/load-more';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { CloseDialog, RelatedDialog, ReminderDialog } from '@/components/open-items/item-dialogs';
@@ -13,6 +14,7 @@ import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useApp } from '@/lib/app-context';
+import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
@@ -28,7 +30,9 @@ function groupItems(items: OpenItemRecord[]): Record<OpenItemGroup, OpenItemReco
 }
 
 export default function OpenItemsPage() {
-  const { data, loading, error, refetch } = useQuery('openItems:list', {}, { scopes: ['openItems', 'reminders'] });
+  const paging = usePageWindow('open-items');
+  const { data, loading, error, refetch } = useWindowedQuery('openItems:list', { filter: {}, window: paging.window, scopes: ['openItems', 'reminders'] });
+  const total = useQuery('openItems:count', {}, { scopes: ['openItems', 'reminders'] });
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<OpenItemRecord | null>(null);
   const [closeItem, setCloseItem] = useState<OpenItemRecord | null>(null);
@@ -96,6 +100,10 @@ export default function OpenItemsPage() {
             </section>
           ),
         )}
+      </div>
+
+      <div className="mt-4">
+        <LoadMore shown={data?.length ?? 0} total={total.data ?? 0} noun="offenen Punkten" onMore={paging.more} loading={loading} testId="open-items" />
       </div>
 
       <ItemFormDialog key={`c-${createOpen}`} open={createOpen} onOpenChange={setCreateOpen} item={null} onSaved={() => void refetch()} />

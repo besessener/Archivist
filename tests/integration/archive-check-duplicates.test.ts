@@ -11,8 +11,8 @@ afterEach(async () => app.cleanup());
 const TEXT = 'Rechnung Nr. 4711 über die Wartung der Heizungsanlage im Haus Musterstraße 1, fällig in vier Wochen. '.repeat(4);
 
 async function twoCopies(): Promise<[string, string]> {
-  const a = await archived(app, { name: 'a.txt', content: TEXT, folder: 'private/rechnungen' });
-  const b = await archived(app, { name: 'b.txt', content: `${TEXT} `, folder: 'private/rechnungen' });
+  const a = await archived(app, { name: 'a.txt', content: TEXT, folder: 'Privat/rechnungen' });
+  const b = await archived(app, { name: 'b.txt', content: `${TEXT} `, folder: 'Privat/rechnungen' });
   return [a, b];
 }
 
