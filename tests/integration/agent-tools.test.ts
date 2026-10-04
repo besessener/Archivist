@@ -188,6 +188,15 @@ describe('Metadata tools (#305, #291)', () => {
     expect((await app.ok('documents:get', { id })).persons).toEqual([]);
   });
 
+  it('create_subject for a known person under a title variant reports it as existing; undoing the run keeps the person', async () => {
+    const known = await app.ok('knowledge:createEntity', { type: 'person', name: 'Thomas Müller' });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_subject', args: { type: 'person', name: 'Dr. Thomas Müller' } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Leg Dr. Thomas Müller als Person an' });
+    expect(lastToolOutput(app)).toContain('gibt es schon');
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(app.services.graph.getEntity(known.entity.id)?.name).toBe('Thomas Müller');
+  });
+
   it('re-analysis: archived documents are read again in ONE job and keep their assignments (#220)', async () => {
     const id = await archived(app, { name: 'scan.txt', content: 'alter Text', folder: 'Privat/post', topic: 'Post' });
     const file = app.services.documents.get(id).archivePath!;
@@ -366,6 +375,19 @@ describe('Settings per chat (#312)', () => {
     const lifted = await app.ok('chat:send', { text: 'Nimm den Ausschluss für privat wieder raus' });
     expect(await app.ok('scanner:listExclusions', {})).toHaveLength(0);
     await app.ok('agent:undoRun', { runId: lifted.assistantMessage.runId! });
+    expect((await app.ok('scanner:listExclusions', {})).map((e) => e.path)).toEqual([inside]);
+  });
+
+  it('excluding an already excluded folder again leaves the user’s exclusion in place after undoing the run', async () => {
+    const dl = path.join(app.home, 'Downloads');
+    fs.mkdirSync(path.join(dl, 'privat'), { recursive: true });
+    await app.ok('scanner:addDirectory', { path: dl, recursive: true });
+    const inside = path.join(fs.realpathSync(dl), 'privat');
+    await app.ok('scanner:exclude', { kind: 'dir', path: inside });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'exclude_from_scan', args: { path: inside } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Schließ Downloads/privat vom Scan aus' });
+    expect(lastToolOutput(app)).toContain('ist bereits vom Scan ausgeschlossen');
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
     expect((await app.ok('scanner:listExclusions', {})).map((e) => e.path)).toEqual([inside]);
   });
 

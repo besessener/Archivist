@@ -182,7 +182,8 @@ export function metadataTools(deps: ToolDeps): AgentTool[] {
       risk: 'write',
       label: (a) => `Lege ${TYPE_LABEL[a.type]} „${truncate(a.name, 40)}“ an`,
       run: async (a, ctx) => {
-        const existing = graph.findByNameOrAlias(a.type, a.name);
+        // a person also matches without titles or roles and as the user's own person
+        const existing = a.type === 'person' ? deps.persons.resolve(a.name, { create: false }).entity : graph.findByNameOrAlias(a.type, a.name);
         if (existing) return { content: `${ctx.refs.entry(existing.id)} ${TYPE_LABEL[a.type]} „${existing.name}“ gibt es schon.`, summary: 'gab es schon' };
         const entity =
           a.type === 'person'
