@@ -19,10 +19,13 @@ export interface AdapterConfig {
   warn: (message: string, data?: Record<string, unknown>) => void;
 }
 
-/** Aborts a request on „Stopp“ or after `timeoutMs`; armed until disposed, so it also covers reading a streamed body. */
-export function requestAbort(signal: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; error: () => AppError; dispose: () => void } {
+/** Aborts a request on „Stopp“ or after `timeoutMs` without activity; `keepAlive` restarts the timer, so a stalled stream ends but a long one does not. */
+export function requestAbort(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; error: () => AppError; keepAlive: () => void; dispose: () => void } {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer = setTimeout(() => controller.abort(), timeoutMs);
   const onAbort = () => controller.abort();
   signal?.addEventListener('abort', onAbort, { once: true });
   const timedOut = () =>
@@ -30,6 +33,10 @@ export function requestAbort(signal: AbortSignal | undefined, timeoutMs: number)
   return {
     signal: controller.signal,
     error: () => (signal?.aborted ? abortedError() : timedOut()),
+    keepAlive: () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), timeoutMs);
+    },
     dispose: () => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);

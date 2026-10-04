@@ -27,9 +27,11 @@ describe('tool-calling probe before the first agent run', () => {
 
   it('probes again after a rate limit instead of switching agent mode off for good', async () => {
     app.llm.failing = { count: 1, status: 429, retryAfter: null };
+    const warn = vi.spyOn(app.services.logger, 'warn');
 
     expect(await app.services.agent.ensureCapable()).toBe(false);
     expect(app.services.agent.capability()).toBeNull();
+    expect(warn).toHaveBeenCalledWith('agent', expect.stringContaining('not stored'), { message: expect.stringContaining('LLM-Limit') });
     expect(app.services.agent.isActive()).toBe(true);
 
     expect(await app.services.agent.ensureCapable()).toBe(true);

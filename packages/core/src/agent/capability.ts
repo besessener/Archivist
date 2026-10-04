@@ -160,7 +160,10 @@ export class AgentCapabilityService {
 
   private async probeAndStore(config: AdapterConfig): Promise<AgentCapability> {
     const { capability, transient } = await probeToolCalling(createAdapter(detectAdapter(config.baseUrl, this.settings.agent.adapter), config), config);
-    if (transient) return capability;
+    if (transient) {
+      this.deps.ctx.logger.warn('agent', 'Tool-calling probe failed transiently – not stored, next run probes again', { message: capability.message });
+      return capability;
+    }
     this.deps.appState.set(CAPABILITY_KEY, JSON.stringify({ key: this.capabilityKey(config), cap: capability }));
     this.deps.ctx.events.changed('settings', 'status');
     return capability;

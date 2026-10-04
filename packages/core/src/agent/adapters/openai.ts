@@ -129,8 +129,14 @@ async function readJson(response: Response): Promise<ResponseBody> {
   }
 }
 
+/** What reading the answer reports: stream events, and each received chunk as a sign of life. */
+interface ReadHooks {
+  onEvent?: (e: StreamEvent) => void;
+  onActivity: () => void;
+}
+
 /** Reads a server-sent event stream; returns the final response object. */
-async function readStream(response: Response, onEvent?: (e: StreamEvent) => void): Promise<ResponseBody> {
+async function readStream(response: Response, { onEvent, onActivity }: ReadHooks): Promise<ResponseBody> {
   const reader = response.body?.getReader();
   if (!reader) throw new AppError('llm_error', 'Der LLM-Endpunkt lieferte keinen Datenstrom.', { retryable: true });
   const decoder = new TextDecoder();
@@ -156,6 +162,7 @@ async function readStream(response: Response, onEvent?: (e: StreamEvent) => void
   for (;;) {
     const { done, value } = (await reader.read()) as { done: boolean; value?: Uint8Array };
     if (done) break;
+    onActivity();
     // line endings may be CRLF (proxies); events are separated by an empty line
     buffer += decoder.decode(value, { stream: true }).replaceAll('\r\n', '\n');
     let separator: number;
@@ -201,12 +208,13 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         const abort = requestAbort(req.signal, this.config.timeoutMs);
         try {
           const response = await this.post(json, abort.signal);
+          abort.keepAlive();
           if (response.status === 400 && fallback < OPTIONAL.length) {
             await this.dropRejected(response, rejected);
             continue;
           }
           if (response.status >= 400) throw mapHttpError(response.status, await response.text(), retryAfterOf(response));
-          const result = await this.readResult(response, onEvent);
+          const result = await this.readResult(response, { onEvent, onActivity: abort.keepAlive });
           success = true;
           usage = result.usage;
           return result;
@@ -271,12 +279,12 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
     return body;
   }
 
-  private async readResult(response: Response, onEvent?: (e: StreamEvent) => void): Promise<TurnResult> {
+  private async readResult(response: Response, hooks: ReadHooks): Promise<TurnResult> {
     const streamed = (response.headers.get('content-type') ?? '').includes('text/event-stream');
-    const parsed = streamed ? await readStream(response, onEvent) : await readJson(response);
+    const parsed = streamed ? await readStream(response, hooks) : await readJson(response);
     if (parsed.error?.message) throw new AppError('llm_error', 'Der LLM-Endpunkt meldet einen Fehler.', { details: parsed.error.message });
     const result = this.toResult(parsed, streamed);
-    if (!streamed && result.text) onEvent?.({ type: 'text', delta: result.text });
+    if (!streamed && result.text) hooks.onEvent?.({ type: 'text', delta: result.text });
     return result;
   }
 

@@ -275,6 +275,33 @@ describe('OpenAI Responses adapter (#297)', () => {
     expect(err.retryable).toBe(true);
   });
 
+  it('the timeout bounds a pause in the stream, not the whole answer', async () => {
+    const events = [
+      ...Array.from({ length: 8 }, () => ({ type: 'response.output_text.delta', delta: 'a' })),
+      {
+        type: 'response.completed',
+        response: completed([{ type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'aaaaaaaa' }] }]),
+      },
+    ];
+    const slowStream: typeof fetch = async (_url, init) => {
+      let next = 0;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init!.signal!.addEventListener('abort', () => controller.error(init!.signal!.reason), { once: true });
+        },
+        async pull(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          if (next < events.length) controller.enqueue(new TextEncoder().encode(sse([events[next++]])));
+          else controller.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    };
+    const { config } = adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: slowStream });
+    const result = await new OpenAiResponsesAdapter({ ...config, timeoutMs: 60 }).turn(request([user('x')]));
+    expect(result.text).toBe('aaaaaaaa');
+  });
+
   it('refusal and incomplete/max_output_tokens', async () => {
     const refusal = fakeFetch(json(completed([{ type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Dabei helfe ich nicht.' }] }])));
     const r = await new OpenAiResponsesAdapter(adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: refusal.fetchImpl }).config).turn(
