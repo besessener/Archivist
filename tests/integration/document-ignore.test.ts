@@ -14,6 +14,7 @@ afterEach(async () => {
 });
 
 const row = (id: string) => app.services.documents.findRow(id)!;
+const classifications = () => app.llm.calls.filter((c) => c.schema === 'DocumentClassification').length;
 
 describe('ignoring a document (#232)', () => {
   it('undo restores the previous status and archive mode', async () => {
@@ -84,7 +85,6 @@ describe('ignoring a document (#232)', () => {
   it('leaves a document ignored while its analysis was queued untouched', async () => {
     const id = await inInbox(app, { name: 'Import 40.txt', content: 'Import Rechnung' });
     const { auditId } = await app.ok('documents:ignore', { id });
-    const classifications = () => app.llm.calls.filter((c) => c.schema === 'DocumentClassification').length;
     const callsBefore = classifications();
 
     const result = await app.services.documents.analyze(id, { allowLlm: true });
@@ -96,22 +96,29 @@ describe('ignoring a document (#232)', () => {
   });
 
   describe('a document whose queued analysis was skipped while ignored', () => {
-    const classifications = () => app.llm.calls.filter((c) => c.schema === 'DocumentClassification').length;
+    const invoice = () => classification({ title: 'Rechnung', summary: 'Rechnung', categoryPath: 'Privat/eingang', docType: 'Rechnung' });
     beforeEach(() => {
-      app.llm.on('DocumentClassification', () =>
-        classification({ title: 'Rechnung', summary: 'Rechnung', categoryPath: 'Privat/eingang', docType: 'Rechnung' }),
-      );
+      app.llm.on('DocumentClassification', invoice);
     });
 
-    async function ignoredWhileQueued(): Promise<{ id: string; auditId: string }> {
+    /** Imports with the job queue stopped and ignores the first document before its analysis runs. */
+    async function importAndIgnore(paths: string[]): Promise<{ id: string; auditId: string }> {
       await app.services.jobs.stop();
-      const result = await app.ok('documents:import', { paths: [app.file('in/ofen/Rechnung Ofen.txt', 'Rechnung Ofen 120 Euro')] });
-      const id = result.imported[0]!.id;
+      const id = (await app.ok('documents:import', { paths })).imported[0]!.id;
       const { auditId } = await app.ok('documents:ignore', { id });
+      return { id, auditId };
+    }
+
+    async function runQueue(): Promise<void> {
       app.services.jobs.start();
       await app.services.jobs.whenIdle();
-      expect(row(id).status).toBe('ignored');
-      return { id, auditId };
+    }
+
+    async function ignoredWhileQueued(): Promise<{ id: string; auditId: string }> {
+      const ignored = await importAndIgnore([app.file('in/ofen/Rechnung Ofen.txt', 'Rechnung Ofen 120 Euro')]);
+      await runQueue();
+      expect(row(ignored.id).status).toBe('ignored');
+      return ignored;
     }
 
     it('is analysed again after "Wieder aufnehmen"', async () => {
@@ -124,6 +131,18 @@ describe('ignoring a document (#232)', () => {
       expect(classifications()).toBe(1);
     });
 
+    it('is analysed again after "Wieder aufnehmen" when it changed after ignoring', async () => {
+      const { id } = await ignoredWhileQueued();
+      app.services.ctx.database.db.update(documents).set({ updatedAt: '2099-01-01T00:00:00.000Z' }).where(eq(documents.id, id)).run();
+
+      await app.ok('documents:unignore', { id });
+      await app.services.jobs.whenIdle();
+
+      expect(row(id).status).toBe('proposed');
+      expect(classifications()).toBe(1);
+      expect(app.services.audit.list({ entityId: id }).map((entry) => entry.action)).toContain('document.unignore');
+    });
+
     it('is analysed again after undoing the ignore', async () => {
       const { id, auditId } = await ignoredWhileQueued();
 
@@ -134,29 +153,39 @@ describe('ignoring a document (#232)', () => {
       expect(classifications()).toBe(1);
     });
 
-    it('is analysed once when taken back before its queued analysis ran', async () => {
+    it('is analysed again after undoing an ignore made while its analysis ran', async () => {
       await app.services.jobs.stop();
-      const result = await app.ok('documents:import', { paths: [app.file('in/heizung/Heizung.txt', 'Heizung Wartung')] });
-      const id = result.imported[0]!.id;
-      await app.ok('documents:ignore', { id });
+      const id = (await app.ok('documents:import', { paths: [app.file('in/kamin/Kamin.txt', 'Kamin Rechnung')] })).imported[0]!.id;
+      let auditId = '';
+      app.llm.on('DocumentClassification', async () => {
+        if (!auditId) auditId = (await app.ok('documents:ignore', { id })).auditId;
+        return invoice();
+      });
+      await runQueue();
+      expect(row(id).status).toBe('ignored');
+
+      expect((await app.ok('audit:undo', { auditId })).undone).toBe(true);
+      await app.services.jobs.whenIdle();
+
+      expect(row(id).status).toBe('proposed');
+      expect(classifications()).toBe(2);
+    });
+
+    it('is analysed once when taken back before its queued analysis ran', async () => {
+      const { id } = await importAndIgnore([app.file('in/heizung/Heizung.txt', 'Heizung Wartung')]);
       await app.ok('documents:unignore', { id });
 
-      app.services.jobs.start();
-      await app.services.jobs.whenIdle();
+      await runQueue();
 
       expect(row(id).status).toBe('proposed');
       expect(app.services.jobs.list().filter((job) => job.type === 'document.analyze')).toHaveLength(1);
     });
 
     it('is left to its import batch when taken back before the batch ran', async () => {
-      await app.services.jobs.stop();
-      const paths = [app.file('in/batch/Strom.txt', 'Strom Abschlag'), app.file('in/batch/Wasser.txt', 'Wasser Abschlag')];
-      const id = (await app.ok('documents:import', { paths })).imported[0]!.id;
-      await app.ok('documents:ignore', { id });
+      const { id } = await importAndIgnore([app.file('in/batch/Strom.txt', 'Strom Abschlag'), app.file('in/batch/Wasser.txt', 'Wasser Abschlag')]);
       await app.ok('documents:unignore', { id });
 
-      app.services.jobs.start();
-      await app.services.jobs.whenIdle();
+      await runQueue();
 
       expect(row(id).status).toBe('proposed');
       expect(app.services.jobs.list().filter((job) => job.type === 'document.analyze')).toHaveLength(0);

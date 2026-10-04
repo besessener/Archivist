@@ -92,10 +92,12 @@ export class DocumentIgnore {
     return 'Status des Dokuments wiederhergestellt.';
   }
 
-  /** A document back in `staged` without a proposal (its analysis was skipped while ignored) is queued for analysis like a single import. */
+  /** A document back without a pending analysis (skipped, or its result discarded while ignored) is queued for analysis like a single import. */
   private requeueAnalysis(id: string): void {
     const row = this.deps.documents.getRow(id);
-    if (row.status !== 'staged' || row.proposal || this.analysisQueued(id)) return;
+    const stranded = row.status === 'analyzing' || (row.status === 'staged' && !row.proposal);
+    if (!stranded || this.analysisQueued(id)) return;
+    if (row.status === 'analyzing') this.db.update(documents).set({ status: 'staged', updatedAt: nowIso() }).where(eq(documents.id, id)).run();
     this.deps.jobs.enqueue('document.analyze', {
       label: `Analysiere ${row.originalName}`,
       payload: { documentId: id, allowLlm: this.deps.privacy.mode() === 'auto' },
