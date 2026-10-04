@@ -20,6 +20,7 @@
     "@tesseract.js-data/eng": "^1.0.0",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.3",
+    "entities": "^4.5.0",
     "jszip": "^3.10.2",
     "mailparser": "^3.9.32",
     "mammoth": "^1.13.0",
