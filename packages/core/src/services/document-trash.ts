@@ -127,7 +127,7 @@ export class DocumentTrash {
     const documentIds = entries.map((entry) => entry.documentId);
     clearTransmissionPreviews(ctx, documentIds);
     purgeMetadataUndo(ctx, documentIds);
-    const databaseCompacted = entries.length > 0 && compactDatabase(ctx);
+    const databaseCompacted = entries.length > 0 && (await compactDatabase(ctx));
     audit.log({
       action: 'trash.empty',
       actor: 'user',

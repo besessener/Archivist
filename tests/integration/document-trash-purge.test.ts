@@ -38,6 +38,9 @@ async function archivedWithTraces(name: string, text: string): Promise<string> {
     .run();
   return id;
 }
+/** A text spanning several database pages, so deleting it frees some. */
+const longText = (lead: string) => `${lead} ${'Weiterer Inhalt des Schreibens, Seite für Seite. '.repeat(400)}`;
+const freePages = () => app.services.database.sqlite.pragma('freelist_count', { simple: true }) as number;
 const tableText = (table: string) => JSON.stringify(app.services.database.sqlite.prepare(`SELECT * FROM ${table}`).all()).toLowerCase();
 
 describe('emptying the trash removes the extracted text from Archivist', () => {
@@ -99,7 +102,7 @@ describe('emptying the trash removes the extracted text from Archivist', () => {
 
     expect(tableText('audit_log')).not.toContain(MARKER);
     expect(storedBytes()).not.toContain(MARKER);
-    expect(await app.ok('audit:verify', {})).toMatchObject({ brokenEntryId: null, truncated: false });
+    expect(await app.ok('audit:verify', {})).toMatchObject({ chain: 'intact', truncated: false });
   });
 
   it('keeps the undo of a bulk edit for the documents that stay', async () => {
@@ -131,6 +134,35 @@ describe('emptying the trash removes the extracted text from Archivist', () => {
     } finally {
       reader.close();
     }
+  });
+
+  it('wipes the text without rewriting the whole database file', async () => {
+    const id = await archivedWithTraces('Ohne-Vacuum.txt', longText(`Vertraulich: ${MARKER}.`));
+    await app.ok('documents:trash', { id, confirmed: true });
+
+    expect(await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true })).toMatchObject({ databaseCompacted: true });
+
+    expect(storedBytes()).not.toContain(MARKER);
+    expect(freePages(), 'a VACUUM would leave no free pages').toBeGreaterThan(0);
+  });
+
+  it('rewrites a database from before secure deletion once, so text deleted back then is gone too', async () => {
+    const { sqlite } = app.services.database;
+    sqlite.pragma('user_version = 0');
+    sqlite.pragma('secure_delete = OFF');
+    const old = await archivedWithTraces('Alt.txt', longText(`Alt: ${MARKER}.`));
+    await app.ok('documents:trash', { id: old, confirmed: true });
+    sqlite.pragma('secure_delete = ON');
+
+    await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true });
+
+    expect(storedBytes()).not.toContain(MARKER);
+    expect(freePages(), 'the one-time rewrite').toBe(0);
+    const next = await archivedWithTraces('Neu.txt', longText(`Neu: ${MARKER}.`));
+    await app.ok('documents:trash', { id: next, confirmed: true });
+    await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true });
+    expect(storedBytes()).not.toContain(MARKER);
+    expect(freePages(), 'no second rewrite').toBeGreaterThan(0);
   });
 
   it('does nothing with the database when the trash is empty', async () => {

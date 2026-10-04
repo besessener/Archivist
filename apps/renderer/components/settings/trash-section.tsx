@@ -66,8 +66,8 @@ export function TrashSection() {
       )}
       {compactionFailed && (
         <Notice tone="warning" title="Datenbank nicht vollständig bereinigt" data-testid="trash-compaction-warning">
-          Die Dokumente sind entfernt, aber die Datenbank konnte nicht verdichtet werden. Reste des Textes können in freien Seiten der Datenbank bleiben, bis
-          sie beim nächsten Start oder bei einer späteren Verdichtung überschrieben werden.
+          Die Dokumente sind entfernt, aber die Datenbank konnte nicht vollständig bereinigt werden. Reste des Textes können im Suchindex oder im
+          Schreibprotokoll der Datenbank bleiben, bis du den Papierkorb erneut leerst; das Schreibprotokoll leert sich spätestens, wenn du Archivist beendest.
         </Notice>
       )}
       <div>
