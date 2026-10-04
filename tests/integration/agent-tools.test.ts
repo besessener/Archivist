@@ -297,6 +297,27 @@ describe('Links and cases (#306, #277, #286)', () => {
     expect(app.services.graph.listEntities({ type: 'case' })).toHaveLength(0);
   });
 
+  it('cases: linking more documents than the mass action threshold asks first (create_case, export_bundle)', async () => {
+    await archived(app, { name: 'kaufvertrag.txt', content: 'Kaufvertrag Auto', folder: 'Privat/auto' });
+    await archived(app, { name: 'versicherung.txt', content: 'Versicherung Auto', folder: 'Privat/auto' });
+    app.services.settings.update({ agent: { massActionThreshold: 1 } });
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { folder: 'Privat/auto' } }] },
+      {
+        calls: [
+          { name: 'create_case', args: { name: 'Autokauf 2026', entries: ['S1'] } },
+          { name: 'export_bundle', args: { documents: ['S1'], title: 'Auto', saveAsCase: 'Autokauf Mappe' } },
+        ],
+      },
+      { text: 'Bitte bestätigen.' },
+    );
+    const res = await app.ok('chat:send', { text: 'Leg alles zum Autokauf in einen Vorgang und stell eine Mappe zusammen' });
+    const run = await app.ok('agent:run', { id: res.assistantMessage.runId! });
+    expect(run.steps.find((s) => s.tool === 'create_case')?.outcome).toBe('proposed');
+    expect(run.steps.find((s) => s.tool === 'export_bundle')?.outcome).toBe('proposed');
+    expect(app.services.graph.listEntities({ type: 'case' })).toHaveLength(0);
+  });
+
   it('related entries come with a reason (#276)', async () => {
     const a = await archived(app, { name: 'a.txt', content: 'A', folder: 'Privat/x', topic: 'Wohnung' });
     const b = await archived(app, { name: 'b.txt', content: 'B', folder: 'Privat/x', topic: 'Wohnung' });
