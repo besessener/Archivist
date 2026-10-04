@@ -10,6 +10,7 @@ import { LOCAL_MODEL, localEmbed } from './embedding';
 import { fuse, mergeVectorHits, type Hit } from './search-fusion';
 import { embedChanged } from './search-reuse';
 import { keywordPass, termCoverage } from './search-keywords';
+import { similarEntries, type SimilarEntry, type SimilarOptions } from './search-similar';
 import { VectorIndex } from './vector-index';
 
 export interface IndexInput {
@@ -305,31 +306,9 @@ export class SearchService {
     return best;
   }
 
-  /** Entries similar to an indexed one (#271) by chunk vectors – the endpoint's model if the entry has them, else the local ones (`local`). */
-  async similarTo(
-    entityId: string,
-    opts: { types: readonly EntityType[]; limit: number; minScore: { local: number; embeddings: number } },
-  ): Promise<Array<{ id: string; type: EntityType; score: number; passage: string; local: boolean }>> {
-    const models = (
-      this.sqlite.prepare('SELECT DISTINCT embedding_model AS m FROM chunks WHERE entity_id = ? AND embedding IS NOT NULL').all(entityId) as Array<{
-        m: string;
-      }>
-    ).map((r) => r.m);
-    const model = models.find((m) => m !== LOCAL_MODEL) ?? models.find((m) => m === LOCAL_MODEL);
-    if (!model) return [];
-    const local = model === LOCAL_MODEL;
-    const hits = await this.vectors.similarTo(
-      { model, entityId },
-      { k: opts.limit, minScore: local ? opts.minScore.local : opts.minScore.embeddings, types: opts.types },
-    );
-    const passage = this.sqlite.prepare('SELECT text FROM chunks WHERE id = ?');
-    return hits.map((h) => ({
-      id: h.entityId,
-      type: h.entityType as EntityType,
-      score: Math.round(h.score * 1000) / 1000,
-      passage: (passage.get(h.chunkId) as { text: string } | undefined)?.text ?? '',
-      local,
-    }));
+  /** Entries similar to an indexed one (#271): by the endpoint's vectors if it has them, by the local ones for the rest (`local`). */
+  similarTo(entityId: string, opts: SimilarOptions): Promise<SimilarEntry[]> {
+    return similarEntries({ sqlite: this.sqlite, vectors: this.vectors }, entityId, opts);
   }
 
   /** Documents whose content is close to a name/topic (for assignment proposals). */

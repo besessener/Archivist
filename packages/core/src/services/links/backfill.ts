@@ -1,4 +1,5 @@
-import type { LinkCandidates } from './candidates';
+import { currentRun } from '../../agent/scope';
+import type { LinkCandidates, SimilarProposer } from './candidates';
 import type { CoOriginLinks } from './co-origin';
 import { entrySql, isEntry, LINK_ENTRY_TYPES, storedList, type LinkDeps } from './entries';
 
@@ -12,6 +13,8 @@ export interface BackfillResult {
 
 export interface BackfillOptions {
   maxEntries?: number;
+  /** Most open similarity proposals per entry (setting `links.maxProposalsPerEntry`). */
+  max?: number;
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
 }
@@ -91,7 +94,7 @@ export class LinkBackfill {
     let proposed = 0;
     for (const { id } of rows) {
       if (options.signal?.aborted) break;
-      proposed += await this.proposeSimilarLinks(id);
+      proposed += await this.proposeSimilarLinks(id, options.max);
       proposed += await this.runOtherMethods(id, options.signal);
       // stopped in the middle of this entry: it is done again next time (nothing finished is paid twice)
       if (options.signal?.aborted) break;
@@ -110,30 +113,23 @@ export class LinkBackfill {
     return { processed, proposed, done, remaining };
   }
 
-  private async proposeSimilarLinks(id: string): Promise<number> {
-    let proposed = 0;
-    for (const candidate of await this.methods.candidates.candidates(id, { limit: 3, types: LINK_ENTRY_TYPES })) {
-      if (candidate.method !== 'similarity' || this.deps.graph.rejectedBetween({ a: id, b: candidate.id })) continue;
-      try {
-        const result = this.deps.graph.linkEntries(
-          { sourceId: id, targetId: candidate.id, relationType: 'related_to' },
-          {
-            status: 'proposed',
-            trigger: 'link_backfill',
-            confidence: candidate.score,
-            origin: 'system',
-            method: 'similarity',
-            evidence: candidate.reason,
-          },
-        );
-        if (result.created) proposed += 1;
-      } catch (err) {
-        // e.g. an entry removed meanwhile: this pair is skipped, the run goes on
-        this.deps.ctx.logger.warn('links', 'Link proposal skipped', { error: err, from: id, to: candidate.id });
-      }
+  private async proposeSimilarLinks(id: string, max: number | undefined): Promise<number> {
+    // inside an agent run each proposal is audited, so it is undone with the run
+    const propose = currentRun() ? this.auditedProposal : undefined;
+    try {
+      return await this.methods.candidates.proposeSimilar(id, { max, propose });
+    } catch (err) {
+      // e.g. an entry removed meanwhile: it is skipped, the run goes on
+      this.deps.ctx.logger.warn('links', 'Similarity proposals skipped', { error: err, id });
+      return 0;
     }
-    return proposed;
   }
+
+  private readonly auditedProposal: SimilarProposer = (key, proposal) => {
+    if (this.deps.graph.rejectedBetween({ a: key.sourceId, b: key.targetId })) return false;
+    const options = { status: 'proposed', trigger: 'link_backfill', origin: 'system', method: 'similarity', ...proposal } as const;
+    return this.deps.graph.linkEntries(key, options).created;
+  };
 
   /** The other methods of Epic #269: same day and person, same source document, cases, the analysis of a note. */
   private async runOtherMethods(id: string, signal: AbortSignal | undefined): Promise<number> {

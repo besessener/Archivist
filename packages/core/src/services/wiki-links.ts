@@ -1,5 +1,6 @@
 import type { EntityType, GraphEntity, GraphRelation } from '@archivist/shared';
 import type { AppContext } from '../context';
+import type { AdoptedRelation } from './graph/relations';
 import { normalizeName } from '../util/text';
 import type { KnowledgeGraphService } from './knowledge-graph';
 
@@ -116,11 +117,22 @@ export class WikiLinks {
     return relation ? this.graph.getEntity(relation.targetEntityId) : undefined;
   }
 
-  /** New links are created as the user's own, removed ones deleted; an unresolved name keeps a relation that carries it. */
-  sync(noteId: string, text: string): { linked: number; removed: number; unknown: string[] } {
+  /** Takes the note's relation to the target over as the user's link unless it already is theirs; returns its former state. */
+  private adopt(link: { noteId: string; targetId: string; name: string }): AdoptedRelation[] {
+    const before = this.graph
+      .relationsOf(link.noteId, { types: ['relates_to'] })
+      .find((relation) => relation.sourceEntityId === link.noteId && relation.targetEntityId === link.targetId);
+    if (!before || (before.resolvedByUser && before.status === 'confirmed')) return [];
+    this.graph.adoptAsWikiLink(before.id, evidenceOf(link.name));
+    return [before];
+  }
+
+  /** Links become the user's own (also over a proposal or rejection, `adopted` for undo), removed ones are deleted; an unresolved name keeps its relation. */
+  sync(noteId: string, text: string): { linked: number; removed: number; unknown: string[]; adopted: AdoptedRelation[] } {
     const kept = this.current(noteId);
     const keep = new Set<string>();
     const unknown: string[] = [];
+    const adopted: AdoptedRelation[] = [];
     let linked = 0;
     for (const name of wikiNames(text)) {
       const target = this.resolve(name, noteId);
@@ -130,6 +142,7 @@ export class WikiLinks {
         else unknown.push(name);
         continue;
       }
+      adopted.push(...this.adopt({ noteId, targetId: target.id, name }));
       const result = this.graph.link(
         { sourceId: noteId, targetId: target.id, relationType: 'relates_to' },
         {
@@ -150,6 +163,6 @@ export class WikiLinks {
       this.graph.deleteRelation(relation.id);
       removed += 1;
     }
-    return { linked, removed, unknown };
+    return { linked, removed, unknown, adopted };
   }
 }

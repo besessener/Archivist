@@ -7,6 +7,7 @@ import { newId } from '../util/ids';
 import { normalizeName, truncate } from '../util/text';
 import type { AuditService } from './audit';
 import type { NodeSnapshot } from './graph/entities';
+import type { AdoptedRelation } from './graph/relations';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { SearchService } from './search';
 import type { UndoService } from './undo';
@@ -18,6 +19,8 @@ interface NoteUpdateUndo {
   id: string;
   before: { name: string; description: string | null };
   afterUpdatedAt: string;
+  /** Relations the edit's wiki links took over (missing in entries from before). */
+  adopted?: AdoptedRelation[];
 }
 
 /** Undo of deleting a note: its node with relations. */
@@ -106,6 +109,7 @@ export class NoteService {
   private async revertUpdate(undoData: NoteUpdateUndo): Promise<string> {
     const { id, before } = undoData;
     this.graph.registerNode({ type: 'note', id, name: before.name, description: before.description });
+    this.graph.restoreAdoptedRelations(undoData.adopted ?? []);
     this.wiki.sync(id, before.description ?? before.name);
     await this.reindex(id);
     // the analysis runs again on the former text: its relations come back, the newer ones become outdated
@@ -126,7 +130,7 @@ export class NoteService {
     const title = collapse(patch.title ?? '') || (patch.content !== undefined ? truncate(collapse(content), 70) : note.name);
     if (title === note.name && content === (note.description ?? note.name)) return note;
     this.graph.registerNode({ type: 'note', id, name: title, description: content });
-    this.wiki.sync(id, content);
+    const { adopted } = this.wiki.sync(id, content);
     const after = this.graph.getEntity(id)!;
     this.audit?.log({
       action: 'note.update',
@@ -138,7 +142,7 @@ export class NoteService {
       after: { title },
       undo: {
         type: NOTE_UPDATE_UNDO,
-        data: { id, before: { name: note.name, description: note.description }, afterUpdatedAt: after.updatedAt } satisfies NoteUpdateUndo,
+        data: { id, before: { name: note.name, description: note.description }, afterUpdatedAt: after.updatedAt, adopted } satisfies NoteUpdateUndo,
       },
     });
     await this.reindex(id);

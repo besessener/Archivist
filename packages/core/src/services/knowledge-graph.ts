@@ -7,7 +7,7 @@ import { LinkUndo, type LinkUndoData } from './graph/link-undo';
 import { EntityMerges } from './graph/merge';
 import type { MergeBatchResult, MergeOptions, MergeReindexer, MergeRequest, MergeResult } from './graph/merge-types';
 import type { NeighborhoodGraph, NeighborhoodOptions } from './graph/neighborhood';
-import { GraphRelations, type LinkOptions, type LinkResult, type RelationChangeSet, type SystemUnlink } from './graph/relations';
+import { GraphRelations, type AdoptedRelation, type LinkOptions, type LinkResult, type RelationChangeSet, type SystemUnlink } from './graph/relations';
 import type { RelationKey } from './graph/rows';
 import { UserLinks, type LinkChange, type LinkChangeOptions, type LinkEntriesOptions } from './graph/user-links';
 import { GraphViews, type RelatedEntry, type RelatedQuery } from './graph/views';
@@ -124,6 +124,16 @@ export class KnowledgeGraphService {
   /** Sets the status as a user decision (`by: 'user'`), which field sync never overrides afterwards. */
   setRelationStatus(id: string, { status, by = 'user' }: { status: RelationStatus; by?: 'user' | 'system' }): GraphRelation {
     return this.relations.setStatus(id, { status, by });
+  }
+
+  /** Takes a relation over as the user's confirmed wiki link with the link text as evidence (#285). */
+  adoptAsWikiLink(id: string, evidence: string): void {
+    this.relations.adoptAsWikiLink(id, evidence);
+  }
+
+  /** Restores relations `adoptAsWikiLink` took over, unless they are no wiki link any more. */
+  restoreAdoptedRelations(adopted: readonly AdoptedRelation[]): void {
+    this.relations.restoreAdopted(adopted);
   }
 
   relationsOf(entityId: string, opts: { statuses?: RelationStatus[]; types?: RelationType[] } = {}): GraphRelation[] {

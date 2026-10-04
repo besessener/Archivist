@@ -1,6 +1,6 @@
 import type { EntityType, RelationType } from '@archivist/shared';
 import { normalizeName, truncate } from '../../util/text';
-import { otherEndOf } from '../graph/rows';
+import { otherEndOf, type RelationKey } from '../graph/rows';
 import { isConnected, isEntry, LINK_ENTRY_TYPES, type LinkDeps } from './entries';
 
 /** Minimum cosine similarity for a proposal (#271); the lexical local vectors are noisier than embeddings, so their bar is higher. */
@@ -23,6 +23,9 @@ export interface LinkCandidate {
 /** The relation a candidate is proposed with: similar entries are related, a mentioned project or topic is the entry's. */
 export const relationTypeFor = (candidate: LinkCandidate): RelationType =>
   candidate.method === 'similarity' ? 'related_to' : candidate.type === 'project' ? 'belongs_to' : 'relates_to';
+
+/** Creates one similarity proposal; returns whether it is new. */
+export type SimilarProposer = (key: RelationKey, proposal: { confidence: number; evidence: string }) => boolean;
 
 export interface SimilarQuery {
   id: string;
@@ -93,8 +96,9 @@ export class LinkCandidates {
   }
 
   /** Proposes similar entries as `related_to` (#271), at most `max` open ones per entry on both ends; returns the number new. */
-  async proposeSimilar(id: string, options: { max?: number } = {}): Promise<number> {
+  async proposeSimilar(id: string, options: { max?: number; propose?: SimilarProposer } = {}): Promise<number> {
     const max = options.max ?? MAX_SIMILAR_PROPOSALS;
+    const propose = options.propose ?? this.proposeLink;
     if (!isEntry(this.sqlite, id)) return 0;
     let room = max - this.openSimilarityProposals(id);
     if (room <= 0) return 0;
@@ -102,22 +106,16 @@ export class LinkCandidates {
     for (const candidate of await this.candidates(id, { limit: max * 2 })) {
       if (room <= 0) break;
       if (candidate.method !== 'similarity' || this.openSimilarityProposals(candidate.id) >= max) continue;
-      const result = this.deps.graph.link(
-        { sourceId: id, targetId: candidate.id, relationType: 'related_to' },
-        {
-          status: 'proposed',
-          confidence: candidate.score,
-          method: 'similarity',
-          evidence: candidate.reason,
-        },
-      );
-      if (result?.created) {
+      if (propose({ sourceId: id, targetId: candidate.id, relationType: 'related_to' }, { confidence: candidate.score, evidence: candidate.reason })) {
         created += 1;
         room -= 1;
       }
     }
     return created;
   }
+
+  private readonly proposeLink: SimilarProposer = (key, proposal) =>
+    this.deps.graph.link(key, { status: 'proposed', method: 'similarity', ...proposal })?.created ?? false;
 
   /** Proposes the open cases of confirmed members similar to the entry (#286); returns the number new. */
   async proposeCases(id: string): Promise<number> {

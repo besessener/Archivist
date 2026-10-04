@@ -13,6 +13,8 @@ const targets = (noteId: string) =>
   wikiRelations(noteId)
     .map((r) => r.targetEntityId)
     .toSorted();
+const relationTo = (noteId: string, targetId: string) =>
+  app.services.graph.relationsOf(noteId).find((r) => r.sourceEntityId === noteId && r.targetEntityId === targetId);
 const create = async (type: 'note' | 'project' | 'topic' | 'person', name: string, description?: string) =>
   (await app.ok('knowledge:createEntity', { type, name, ...(description ? { description } : {}) })).entity;
 
@@ -41,6 +43,52 @@ describe('Wiki links [[Name]] in notes (#285)', () => {
     const entry = (await app.ok('audit:list', {})).find((e) => e.action === 'note.update')!;
     await app.ok('audit:undo', { auditId: entry.id });
     expect(targets(note.id)).toEqual([project.id, anna.id].toSorted());
+  });
+
+  it("a link written over an analysis proposal becomes the user's link: no later analysis outdates it, removing the link removes it", async () => {
+    app = await createTestApp({ privacy: 'auto', autoLinks: true });
+    const topic = await create('topic', 'Finanzen');
+    let analysedTopic: string | null = 'Finanzen';
+    app.llm.on('NoteAnalysis', () => ({ topic: analysedTopic, project: null, persons: [], tags: [] }));
+    const note = await create('note', 'Bank', 'Kreditgespräch bei der Bank.');
+    await app.services.jobs.whenIdle();
+    const proposal = relationTo(note.id, topic.id)!;
+    expect(proposal).toMatchObject({ method: 'analysis', status: 'proposed' });
+
+    analysedTopic = null;
+    await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch bei der Bank, siehe [[Finanzen]].' });
+    await app.services.jobs.whenIdle();
+    expect(relationTo(note.id, topic.id)).toMatchObject({
+      id: proposal.id,
+      status: 'confirmed',
+      method: 'wikilink',
+      origin: 'user',
+      resolvedByUser: true,
+      evidence: '[[Finanzen]]',
+    });
+
+    await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch bei der Bank.' });
+    await app.services.jobs.whenIdle();
+    expect(relationTo(note.id, topic.id)).toBeUndefined();
+  });
+
+  it('a link written over a rejected relation confirms it; undoing the edit restores the rejection', async () => {
+    app = await createTestApp({ privacy: 'auto', autoLinks: true });
+    const topic = await create('topic', 'Finanzen');
+    app.llm.on('NoteAnalysis', () => ({ topic: 'Finanzen', project: null, persons: [], tags: [] }));
+    const note = await create('note', 'Bank', 'Kreditgespräch bei der Bank.');
+    await app.services.jobs.whenIdle();
+    const proposal = relationTo(note.id, topic.id)!;
+    app.services.graph.setRelationStatus(proposal.id, { status: 'rejected' });
+
+    await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch bei der Bank, siehe [[Finanzen]].' });
+    await app.services.jobs.whenIdle();
+    expect(relationTo(note.id, topic.id)).toMatchObject({ id: proposal.id, status: 'confirmed', method: 'wikilink', resolvedByUser: true });
+
+    const entry = (await app.ok('audit:list', {})).find((e) => e.action === 'note.update')!;
+    await app.ok('audit:undo', { auditId: entry.id });
+    await app.services.jobs.whenIdle();
+    expect(relationTo(note.id, topic.id)).toMatchObject({ id: proposal.id, status: 'rejected', method: 'analysis', resolvedByUser: true });
   });
 
   it('renaming or merging the target keeps the link', async () => {
