@@ -140,7 +140,7 @@ export class DecisionCapture {
     // an incomplete draft continues with its follow-up question instead
     if (duplicate && !supersedes && duplicate.missingFields.length === 0) return Promise.resolve(this.duplicateReply(request, duplicate));
     const created = duplicate
-      ? this.fillDraft(duplicate, { extracted, fields })
+      ? this.fillDraft(duplicate, { extracted, fields, status: request.status })
       : this.deps.decisions.create(
           {
             title: extracted.title?.trim() || undefined,
@@ -172,8 +172,9 @@ export class DecisionCapture {
   }
 
   /** A re-stated incomplete draft takes the details the new statement names. */
-  private fillDraft(draft: Decision, addition: { extracted: Extracted; fields: DecisionFields }): Decision {
-    if (draft.missingFields.length === 0) return draft;
+  private fillDraft(draft: Decision, addition: { extracted: Extracted; fields: DecisionFields; status?: 'unclear' }): Decision {
+    // an unreviewed background capture is no request of the user's, so it does not change the user's draft
+    if (draft.missingFields.length === 0 || addition.status === 'unclear') return draft;
     const { extracted, fields } = addition;
     const decidedAt = normalizeDecisionDate(extracted.decidedAt ?? null);
     const patch: DecisionPatch = { ...(decidedAt ? { decidedAt } : {}), ...detailPatch(draft, { extracted, unknownFields: fields.unknownFields }) };

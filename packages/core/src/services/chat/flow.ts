@@ -98,6 +98,7 @@ export class ChatFlow {
       state: { ...turn.state, queue: [] },
       viaLlm: true,
       clarification: null,
+      optional: null,
     });
   }
 
@@ -117,18 +118,8 @@ export class ChatFlow {
   ): Promise<Reply> {
     const first = await this.applySaveChoice(turn, answer);
     const others = answer.analysis.intents.filter((i) => !SAVE_ANSWER_INTENTS.has(i.intent)).map((intent) => ({ text: turn.text, intent }));
-    const after = first.state ?? {};
     if (!others.length) return first;
-    if (after.pending) return { ...first, state: { ...after, queue: [...(after.queue ?? []), ...others] } };
-    const more = await this.helpers.runner.run({
-      conversationId: turn.conversationId,
-      fresh: others,
-      queued: [],
-      state: { ...after, pending: null, queue: [] },
-      viaLlm: answer.viaLlm,
-      clarification: null,
-    });
-    return mergeReplies([first, more], more.state ?? after);
+    return this.runAfter(turn, { first, after: first.state ?? {}, work: others, viaLlm: answer.viaLlm });
   }
 
   /** All recognized requests of the message (each once), then the ones deferred from the last message. */
@@ -152,6 +143,7 @@ export class ChatFlow {
       state: turn.state,
       viaLlm: classified.viaLlm,
       clarification: analysis.clarification ?? null,
+      optional: null,
     });
   }
 
@@ -171,21 +163,26 @@ export class ChatFlow {
 
   /** After an answered question the deferred requests run with their original text; a new question keeps them waiting. */
   private async continueDeferred(turn: ChatTurn, first: Reply): Promise<Reply> {
-    const rest = turn.state.queue ?? [];
     // handlers return only the fields they change, so the rest of the conversation state stays
-    const after: ConvState = { ...turn.state, pending: null, queue: [], ...first.state };
+    const after: ConvState = { ...turn.state, pending: null, ...first.state, queue: [] };
+    return this.runAfter(turn, { first, after, work: turn.state.queue ?? [], viaLlm: true });
+  }
+
+  /** Runs further requests after the reply to a question; only a new question that is not optional keeps them waiting. */
+  private async runAfter(turn: ChatTurn, step: { first: Reply; after: ConvState; work: QueuedIntent[]; viaLlm: boolean }): Promise<Reply> {
+    const { first, after, work } = step;
     const optional = optionalQuestion(after.pending);
-    if (!rest.length || (after.pending && !optional)) return { ...first, state: { ...after, queue: rest } };
+    if (!work.length || (after.pending && !optional)) return { ...first, state: { ...after, queue: [...(after.queue ?? []), ...work] } };
     const more = await this.helpers.runner.run({
       conversationId: turn.conversationId,
-      fresh: [],
-      queued: rest,
+      fresh: work,
+      queued: [],
       state: { ...after, pending: null, queue: [] },
-      viaLlm: true,
+      viaLlm: step.viaLlm,
       clarification: null,
+      optional,
     });
-    const final = more.state ?? after;
-    return mergeReplies([first, more], final.pending || !optional ? final : { ...final, pending: optional });
+    return mergeReplies([first, more], more.state ?? after);
   }
 }
 

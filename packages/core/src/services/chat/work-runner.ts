@@ -19,6 +19,8 @@ export interface WorkInput {
   state: ConvState;
   viaLlm: boolean;
   clarification: string | null;
+  /** an optional question asked before the run; the run's own ones are combined with it */
+  optional: Pending | null;
 }
 
 /** State of one run through the requests of a message. */
@@ -55,7 +57,7 @@ export class WorkRunner {
       replies: [],
       current: { ...input.state, pending: null, queue: [] },
       deferred: [],
-      optional: null,
+      optional: input.optional,
       clarification: input.clarification,
     };
     for (let i = 0; i < run.work.length; i += 1) {

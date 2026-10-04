@@ -55,6 +55,26 @@ describe('rule-based chat keeps the conversation state across captures', () => {
       await offline.cleanup();
     }
   });
+
+  it.each([
+    ['the save question', ['Es wurde entschieden, den Kickoff am 03.03.2026 zu machen.', 'Entscheidung']],
+    ['the duplicate question', ['Offener Punkt: Angebot prüfen', 'Offener Punkt: Angebot prüfen', 'Neu anlegen']],
+  ])('mentions the missing LLM only once, also after answering %s', async (_question, texts) => {
+    const offline = await createTestApp({ configured: false });
+    try {
+      const first = await offline.ok('chat:send', { text: texts[0]! });
+      const replies = [first];
+      for (const text of texts.slice(1)) replies.push(await offline.ok('chat:send', { text, conversationId: first.conversationId }));
+
+      const later = await offline.ok('chat:send', { text: 'Offener Punkt: Dach reparieren', conversationId: first.conversationId });
+
+      expect(replies.at(-2)!.assistantMessage.quickReplies).toContain(texts.at(-1));
+      expect(first.assistantMessage.content).toContain('regelbasiert');
+      expect(later.assistantMessage.content).not.toContain('regelbasiert');
+    } finally {
+      await offline.cleanup();
+    }
+  });
 });
 
 describe('deferred requests run once the duplicate question is answered', () => {
@@ -100,5 +120,59 @@ describe('deferred requests run once the duplicate question is answered', () => 
     expect(await app.ok('openItems:list', {})).toHaveLength(1);
     expect(answered.assistantMessage.content).toContain('Notiz gespeichert');
     expect(await noteSaved()).toBe(true);
+  });
+});
+
+describe('optional follow-up questions hold up no other request', () => {
+  it('asks „Bis wann?“ about the new item and the deferred one together after „Neu anlegen“', async () => {
+    const item = (title: string) => intent({ intent: 'open_item_new', segment: title, openItem: { title, responsible: 'ich' } });
+    app.llm.on('ChatIntent', (_s, input) => {
+      const text = userText(input);
+      if (/beide/.test(text)) return intent({ intent: 'open_item_update', openItem: { dueAt: '2026-12-31' } });
+      return /Schulz/.test(text) ? { intents: [item('Angebot Müller prüfen'), item('Rechnung Schulz bezahlen')] } : item('Angebot Müller prüfen');
+    });
+    const first = await send('Angebot Müller prüfen');
+    await send('Angebot Müller prüfen. Rechnung Schulz bezahlen', first.conversationId);
+    const answered = await send('Neu anlegen', first.conversationId);
+    expect(answered.assistantMessage.content.match(/Bis wann\?/g)).toHaveLength(2);
+
+    await send('Für beide bis 31.12.2026', first.conversationId);
+
+    const due = (await app.ok('openItems:list', {})).map((i) => `${i.title}: ${i.dueAt?.slice(0, 10) ?? 'offen'}`).toSorted();
+    expect(due).toEqual(['Angebot Müller prüfen: 2026-12-31', 'Angebot Müller prüfen: offen', 'Rechnung Schulz bezahlen: 2026-12-31']);
+  });
+
+  it('runs the other requests of the message that answers the save question, despite „Thema oder Projekt?“', async () => {
+    app.llm.on('ChatIntent', (_s, input) =>
+      /Agenda/.test(userText(input))
+        ? {
+            saveAs: 'decision',
+            intents: [
+              intent({ intent: 'proposal_confirm' }),
+              intent({
+                intent: 'open_item_new',
+                segment: 'Agenda schreiben',
+                openItem: { title: 'Agenda schreiben', responsible: 'ich', dueAt: '2026-10-31' },
+              }),
+            ],
+          }
+        : intent({
+            intent: 'decision_new',
+            decisionCertainty: 'unsure',
+            decision: extractedDecision({
+              decisionText: 'Kickoff mit dem Kunden',
+              topic: 'Kundenstart',
+              topicIsProject: null,
+              decidedAt: '2026-03-03',
+              participants: ['Anna'],
+            }),
+          }),
+    );
+    const first = await send('Kickoff mit dem Kunden am 03.03.2026 mit Anna');
+
+    const answered = await send('Speicher das bitte so ab und notier dir außerdem den offenen Punkt Agenda schreiben', first.conversationId);
+
+    expect(answered.assistantMessage.content).toContain('Ist „Kundenstart“ das Thema');
+    expect((await app.ok('openItems:list', {})).map((i) => i.title)).toEqual(['Agenda schreiben']);
   });
 });

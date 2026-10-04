@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { decisionTools } from '../../packages/core/src/agent/tools/knowledge-decisions';
+import { emptyToolContext } from '../helpers/agent';
+import { toolCaller, toolDepsOf } from '../helpers/agent-tools';
 import { classification } from '../helpers/document-classifications';
 import { extractedDecision, intent } from '../helpers/chat-intents';
 import { createTestApp, type TestApp } from '../helpers/harness';
@@ -132,6 +135,31 @@ describe('Decisions are not recorded twice (#187)', () => {
     const decisions = await app.ok('decisions:list', {});
     expect(decisions).toHaveLength(1);
     expect(decisions[0]).toMatchObject({ decidedAt: '2026-05-03', participants: ['Anna'], rationale: 'Es ist am günstigsten.', missingFields: [] });
+  });
+
+  it('a background run that re-states the user’s incomplete draft leaves the draft unchanged', async () => {
+    app.llm.on('ChatIntent', () =>
+      intent({
+        intent: 'decision_new',
+        decisionCertainty: 'clear',
+        decision: extractedDecision({ decisionText: 'Wir nehmen das Angebot von Müller.', topic: 'Dach', topicIsProject: false }),
+      }),
+    );
+    await app.ok('chat:send', { text: 'Wir nehmen das Angebot von Müller (Thema Dach).' });
+    const [draft] = await app.ok('decisions:list', {});
+    expect(draft!.status).toBe('draft');
+
+    await toolCaller(decisionTools(toolDepsOf(app)), { ...emptyToolContext(), trigger: 'background' })('record_decision', {
+      text: 'Wir nehmen das Angebot von Müller.',
+      topic: 'Dach',
+      decidedAt: '2026-05-03',
+      participants: ['Anna'],
+      rationale: 'Es ist am günstigsten.',
+    });
+
+    const decisions = await app.ok('decisions:list', {});
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]).toMatchObject({ status: 'draft', decidedAt: draft!.decidedAt, participants: draft!.participants, rationale: draft!.rationale });
   });
 
   it('the same text on another topic is another decision, and a revoked one may be decided again', async () => {
