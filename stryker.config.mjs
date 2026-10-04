@@ -11,6 +11,8 @@ export default {
   reporters: ['clear-text', 'progress', 'json', 'html'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
+  // The initial run executes the whole suite once; it exceeds Stryker's 5-minute default (7 min measured on 4 cores).
+  dryRunTimeoutMinutes: 30,
   timeoutMS: 30_000,
   tempDirName: '.stryker-tmp',
   cleanTempDir: true,

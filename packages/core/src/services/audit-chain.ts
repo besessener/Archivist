@@ -38,7 +38,7 @@ export function verifyChain(rows: ChainedRow[]): ChainVerdict {
     if (!started && row.hash === null) continue;
     started = true;
     checked += 1;
-    const intact = row.hash !== null && row.prevHash === expectedPrev && row.hash === chainHash(row, expectedPrev);
+    const intact = row.prevHash === expectedPrev && row.hash === chainHash(row, expectedPrev);
     if (!intact) return { chain: 'broken', brokenEntryId: row.id, checked };
     expectedPrev = row.hash;
   }
