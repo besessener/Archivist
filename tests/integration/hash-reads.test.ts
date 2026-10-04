@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,13 +37,33 @@ async function analyzeAll() {
 }
 
 describe('file reads during ingestion', () => {
-  it('analyzes a scanned file without hashing it again while size and mtime are unchanged', async () => {
+  it('hashes a scanned file again for the analysis, whose hash goes into the document', async () => {
     app.file('Downloads/notiz.txt', 'Notiz mit ausreichend Inhalt eins');
     await scanAll();
     expect(hashed.filter((name) => name === 'notiz.txt')).toHaveLength(1);
     await analyzeAll();
-    expect(hashed.filter((name) => name === 'notiz.txt')).toHaveLength(1);
+    expect(hashed.filter((name) => name === 'notiz.txt')).toHaveLength(2);
     expect((await app.ok('scanner:getResults', {})).files[0]!.status).toBe('analyzed');
+  });
+
+  it('detects a same-size change with a restored mtime: the document gets the new hash and can be archived', async () => {
+    const fixed = new Date('2024-01-01T10:00:00Z');
+    const file = app.file('Downloads/vertrag.txt', 'Vertrag Version AAAA mit ausreichend Inhalt');
+    fs.utimesSync(file, fixed, fixed);
+    await scanAll();
+    fs.writeFileSync(file, 'Vertrag Version BBBB mit ausreichend Inhalt');
+    fs.utimesSync(file, fixed, fixed);
+    await analyzeAll();
+    const scanned = (await app.ok('scanner:getResults', {})).files[0]!;
+    const content = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    expect((await app.ok('documents:get', { id: scanned.documentId! })).sha256).toBe(content);
+    const res = await app.ok('documents:archive', {
+      items: [{ documentId: scanned.documentId!, mode: 'copy' }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    } as never);
+    expect(res.success).toBe(1);
   });
 
   it('hashes again when the file changed after the scan', async () => {
