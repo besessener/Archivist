@@ -36,7 +36,7 @@ export function verifyChain(rows: ChainedRow[]): Pick<AuditVerification, 'checke
     if (!started && row.hash === null) continue;
     started = true;
     checked += 1;
-    const intact = row.hash !== null && row.prevHash === expectedPrev && row.hash === chainHash(row, expectedPrev);
+    const intact = row.prevHash === expectedPrev && row.hash === chainHash(row, expectedPrev);
     if (!intact) return { checked, brokenEntryId: row.id };
     expectedPrev = row.hash;
   }

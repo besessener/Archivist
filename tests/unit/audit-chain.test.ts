@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANCHOR_KEY,
   chainHash,
   isTruncated,
   parseAnchor,
@@ -73,6 +74,11 @@ describe('audit hash chain', () => {
     expect(verifyChain([a!, { ...fields('x'), hash: null, prevHash: null }])).toEqual({ checked: 2, brokenEntryId: 'x' });
     expect(verifyChain([{ ...a!, hash: 'tampered' }])).toEqual({ checked: 1, brokenEntryId: 'a' });
   });
+
+  it('names an entry whose stored link to the one before disagrees with the chain', () => {
+    const [a, b] = chain(fields('a'), fields('b'));
+    expect(verifyChain([a!, { ...b!, prevHash: 'other' }])).toEqual({ checked: 2, brokenEntryId: 'b' });
+  });
 });
 
 describe('audit chain anchor', () => {
@@ -89,6 +95,14 @@ describe('audit chain anchor', () => {
     expect(isTruncated(rows.slice(0, 2), anchor)).toBe(true);
     expect(isTruncated(rows.slice(1), anchor)).toBe(true);
     expect(isTruncated([], anchor)).toBe(true);
+  });
+
+  it('notices an emptied log even when the anchor counts no entries', () => {
+    expect(isTruncated([], { count: 0, hash: anchor.hash })).toBe(true);
+  });
+
+  it('keeps the anchor under the stored settings key', () => {
+    expect(ANCHOR_KEY).toBe('audit.chainAnchor');
   });
 
   it('notices removed rows even when later entries were chained on', () => {
