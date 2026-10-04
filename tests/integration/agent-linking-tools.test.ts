@@ -94,7 +94,7 @@ describe('The agent controls the linking features of Epic #269', () => {
       },
     );
     await app.ok('chat:send', { text: 'Ergänze in der Notiz Baustelle einen Link auf Hausbau und Herr Kalt.' });
-    expect(app.services.graph.getEntity(note.id)!.description).toContain('[[Hausbau]]');
+    expect(app.services.graph.getEntity(note.id)).toMatchObject({ name: 'Baustelle', description: expect.stringContaining('[[Hausbau]]') });
     expect(
       app.services.graph
         .relationsOf(note.id)

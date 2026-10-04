@@ -12,23 +12,15 @@ async function recordNote(
   args: { content: string; title: string | null; topic: string | null; links?: string[] | null },
 ): Promise<ToolOutput> {
   const { deps, ctx } = scope;
-  const result = await deps.capture.forAgent({
-    conversationId: ctx.conversationId,
-    text: args.content,
-    intent: {
-      ...agentIntent('note_capture', args.content),
-      note: args.content,
-      topic: args.topic,
-    },
-  });
-  const created = deps.graph.listEntities({ type: 'note', limit: 2000 }).find((n) => (n.description ?? n.name).trim() === args.content.trim());
-  if (created) {
-    deps.audit.log({ action: 'note.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [created.id], after: { title: created.name } });
-    for (const target of ctx.refs.resolveMany(args.links ?? []).ids)
-      deps.graph.link({ sourceId: created.id, targetId: target, relationType: 'relates_to' }, { confidence: 0.9, status: 'confirmed' });
-  }
+  const topic = args.topic ? deps.graph.ensureEntity({ type: 'topic', name: args.topic }) : null;
+  const links = [
+    ...(topic ? [{ targetId: topic.id, relationType: 'relates_to' as const, confidence: 0.8 }] : []),
+    ...ctx.refs.resolveMany(args.links ?? []).ids.map((targetId) => ({ targetId, relationType: 'relates_to' as const })),
+  ];
+  const { note, created } = await deps.notes.createUnlessExists({ content: args.content, title: args.title, links });
+  if (created) deps.audit.log({ action: 'note.create', actor: 'agent', trigger: 'agent', confirmed: true, entityIds: [note.id], after: { title: note.name } });
   return {
-    content: `${created ? ctx.refs.entry(created.id) : ''} ${result.content}${wikiNote(deps, { text: args.content, id: created?.id })}${await linkHint(scope, created?.id ?? null)}`,
+    content: `${ctx.refs.entry(note.id)} Notiz gespeichert${args.topic ? ` (Thema: ${args.topic})` : ''}.${wikiNote(deps, { text: args.content, id: note.id })}${await linkHint(scope, note.id)}`,
     summary: 'gespeichert',
     change: `Notiz „${truncate(args.title ?? args.content, 50)}“ gespeichert`,
   };
@@ -39,7 +31,7 @@ async function updateNote({ deps, ctx }: ToolScope, args: { note: string; title:
   const note = id ? deps.graph.getEntity(id) : undefined;
   if (!id || note?.type !== 'note') return { content: `„${args.note}“ ist keine Notiz.`, isError: true };
   if (!args.title && !args.content) return { content: 'Gib title oder content an.', isError: true };
-  const after = await deps.notes.update(id, { patch: { title: args.title ?? null, content: args.content ?? null }, trigger: 'agent', actor: 'agent' });
+  const after = await deps.notes.update(id, { patch: { title: args.title ?? note.name, content: args.content ?? null }, trigger: 'agent', actor: 'agent' });
   return {
     content: `${ctx.refs.entry(id)} Notiz „${truncate(after.name, 60)}“ gespeichert.${wikiNote(deps, { text: after.description ?? '', id })}`,
     summary: 'gespeichert',

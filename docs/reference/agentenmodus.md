@@ -63,6 +63,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 - Jeder Lauf hat eine Lauf-ID mit Auslöser, Anbieter und Modell, Werkzeugaufrufen (gekürzte Ergebnisse), Tokens und geschätzten Kosten, Dauer und Ergebnis.
 - Jede Änderung trägt die Lauf-ID (Änderungsprotokoll, Beziehungen mit Herkunft `agent`).
 - „Lauf rückgängig“ setzt alle Änderungen in umgekehrter Reihenfolge mit Konfliktprüfung zurück, einzelne Schritte ebenso.
+- Entfernt werden nur Einträge, die der Lauf selbst angelegt hat: Eine schon vorhandene identische Notiz, die `record_note` wiederverwendet, bleibt erhalten.
 - Ansicht unter Einstellungen → Agent.
 
 ## Große Dateiaktionen
@@ -138,7 +139,7 @@ Weitere Werkzeuge für die Verknüpfungen:
 | --- | --- |
 | `set_metadata` | `topic`/`project` ersetzen das Hauptthema bzw. -projekt (Ablage). `addTopics`/`addProjects` ergänzen weitere – wer noch keins hat, bekommt es als Hauptthema –, `removeTopics`/`removeProjects` entfernen weitere; `case` ordnet einem vorhandenen Vorgang zu; `addTags` gilt für alle Arten von Einträgen. Ergänzungen sind wie die Sammelzuordnung ein Rückgängig-Schritt |
 | `link` | auch `subtopic_of`: ein Thema oder Projekt unter ein anderes einordnen (keine Kreise) |
-| `update_note` | Titel und Text einer Notiz ändern (nur auf Wunsch); `[[Name]]` verlinkt, unbekannte Namen meldet das Werkzeug zum Anlegen |
+| `update_note` | Titel und Text einer Notiz ändern (nur auf Wunsch); ohne neuen Titel bleibt der bisherige. `[[Name]]` verlinkt, unbekannte Namen meldet das Werkzeug zum Anlegen |
 | `case_overview` | ein Vorgang mit Status, offenen Punkten und Verlauf (nur lesen; Dokumentnamen nur mit Freigabe) |
 | `list_subjects` | zeigt bei Unterthemen das Oberthema |
 
