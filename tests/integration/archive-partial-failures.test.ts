@@ -421,6 +421,22 @@ describe('Relocating with partial failures', () => {
     expect(filesIn(archiveRoot())).toEqual([original]);
     expect(row(id).archiveRelPath).toBe('Arbeit/hr/antrag.txt');
   });
+
+  it('audit error after moving: the file is back at its old location, nothing moved without an undo entry', async () => {
+    const id = await archived('antrag.txt', 'Antrag', 'Arbeit/hr');
+    const original = abs(id);
+    const log = app.services.audit.log.bind(app.services.audit);
+    vi.spyOn(app.services.audit, 'log').mockImplementation((input) => {
+      if (input.undo?.type === 'archive_relocate') throw new Error('SQLITE_FULL: database or disk is full');
+      return log(input);
+    });
+
+    const res = await app.services.archive.relocate([{ documentId: id, categoryPath: 'Arbeit/neu' }], { confirmed: true });
+
+    expect(res.failed).toBe(1);
+    expect(filesIn(archiveRoot())).toEqual([original]);
+    expect(row(id)).toMatchObject({ archiveRelPath: 'Arbeit/hr/antrag.txt', categoryPath: 'Arbeit/hr' });
+  });
 });
 
 describe('Relocation proposal: „0 verschoben“ is not a success', () => {

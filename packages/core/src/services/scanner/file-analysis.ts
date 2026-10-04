@@ -175,9 +175,8 @@ export class FileAnalysis {
     const realPath = await fsp.realpath(file.path);
     if (!isInside(await fsp.realpath(root.path), realPath)) throw permissionError('Symbolischer Link führt aus dem freigegebenen Verzeichnis heraus.');
     const stats = await fsp.stat(realPath);
-    // size and mtime unchanged since the scan hashed it: the scan's hash still describes the content
-    const unchangedSinceScan = file.sha256 !== null && file.size === stats.size && file.mtimeMs === stats.mtimeMs;
-    const sha = unchangedSinceScan ? file.sha256! : await this.deps.pool.run('hashFile', { path: realPath }, { signal });
+    // always hashed: size and mtime can stay the same while the content changes, and this hash goes into the document
+    const sha = await this.deps.pool.run('hashFile', { path: realPath }, { signal });
     return { root, content: { realPath, sha, size: stats.size, mtimeMs: stats.mtimeMs } };
   }
 
