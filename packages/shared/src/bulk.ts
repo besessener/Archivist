@@ -42,6 +42,7 @@ export type ArchiveAllSource = z.infer<typeof ArchiveAllSource>;
 
 /** What „Alle N Vorschläge archivieren“ would do: how many documents, into which folders, which folders are new. */
 export const ArchiveAllPreview = z.object({
+  previewId: Id.describe('die gezeigte Vorschau; die Bestätigung gilt genau für ihre Dokumente'),
   count: z.number().int().min(0).describe('Dokumente, die archiviert würden'),
   blocked: z.number().int().min(0).describe('Dokumente, die nicht archiviert werden können (z. B. Quelldatei fehlt)'),
   folders: z.array(z.object({ path: z.string(), count: z.number().int().min(1) })).describe('die größten Zielordner'),

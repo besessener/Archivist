@@ -6,6 +6,7 @@ import { AppError, fsError } from '../util/errors';
 /** Application state that older versions kept next to the documents; it moves to the per-user data folder. */
 const MOVED_ENTRIES = ['database', 'index', 'config', 'logs', 'backups', 'restore-pending.json'];
 const MARKER_FILE = 'layout-migration.json';
+const TRACE_FILE = 'layout-migration.log';
 const STAGE_DIR = '.layout-migration';
 const HASH_BLOCK_BYTES = 1024 * 1024;
 /** Room kept free on top of the copies (new files written while the move runs, file system overhead). */
@@ -19,6 +20,12 @@ export interface LayoutMigrationPlaces {
   appDataRoot: string;
   /** Called with a short English line for each step, so the (possibly long) move shows up in the log. */
   onProgress?: (message: string) => void;
+}
+
+/** Appends each step to `layout-migration.log` at once (no logger exists yet), so a hang leaves traces. */
+export function traceLayoutStep(appDataRoot: string): (message: string) => void {
+  const file = path.join(appDataRoot, TRACE_FILE);
+  return (message) => fs.appendFileSync(file, `${new Date().toISOString()} ${message}\n`, 'utf8');
 }
 
 export type LayoutMigrationResult = { migrated: false } | { migrated: true; from: string; to: string; entries: string[] };

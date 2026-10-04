@@ -354,7 +354,10 @@ export const ipcContract = {
   'scanner:removeExclusion': channel(z.object({ id: Id }), Ok),
 
   // --- Jobs ---
-  'jobs:list': channel(z.object({ limit: z.number().int().min(1).max(500).default(100) }), z.array(Job)),
+  'jobs:list': channel(
+    z.object({ limit: z.number().int().min(1).max(500).default(100), type: z.string().optional(), activeOnly: z.boolean().optional() }),
+    z.array(Job),
+  ),
   'jobs:retry': channel(z.object({ id: Id }), Job),
   'jobs:cancel': channel(z.object({ id: Id }), Job),
 

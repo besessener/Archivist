@@ -1,5 +1,5 @@
 import type { Job } from '@archivist/shared';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { jobs } from '../db/schema';
 import { AppError } from '../util/errors';
@@ -8,6 +8,7 @@ import { AttemptOutcomes, type Outcome } from './jobs/attempt-outcome';
 import { pruneFinishedJobs, recoverCrashedJobs } from './jobs/job-maintenance';
 import { createJobContext } from './jobs/job-context';
 import { JobCancelledError, JobInterruptedError } from './jobs/job-errors';
+import { listJobs, type JobListFilter } from './jobs/job-list';
 import { mapJob, newJobRow, type JobRow } from './jobs/job-rows';
 import { pollUntil } from './jobs/polling';
 import type { JobHandler, JobHooks, JobQueueOptions, Registration } from './jobs/job-types';
@@ -120,8 +121,9 @@ export class JobQueueService {
     return this.row(id)?.result ?? null;
   }
 
-  list(limit = 100): Job[] {
-    return this.db.select().from(jobs).orderBy(desc(jobs.createdAt)).limit(limit).all().map(mapJob);
+  /** Newest first; reads only the columns a list shows, optionally just the pending or running jobs of one type. */
+  list(limit = 100, filter: JobListFilter = {}): Job[] {
+    return listJobs(this.db, { limit, ...filter });
   }
 
   counts(): { pending: number; running: number; failed: number } {

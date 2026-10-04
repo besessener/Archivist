@@ -38,7 +38,7 @@ Bis einschließlich der Vorversion lagen auch `database/`, `index/`, `config/`, 
 3. Marker `layout-migration.json` (Status `switching`), die geprüften Kopien werden an ihren Platz umbenannt,
 4. erst danach werden die alten Ordner im Dokumentenordner entfernt; der Marker bekommt den Status `complete`.
 
-Wird Archivist dazwischen beendet, setzt der nächste Start dort fort (ein unfertiger Zwischenordner wird neu angelegt). Archivist überschreibt dabei nie etwas: Liegt am Ziel schon eine Datenbank oder ein anderer Inhalt, bricht der Start mit einer Meldung ab und lässt alles unverändert. Archiv, Eingang, Quarantäne und Papierkorb bleiben, wo sie sind. Ist der Marker `complete`, passiert beim Start nichts mehr. Jeder Schritt (Platzprüfung, Kopieren, Prüfen, Umschalten) steht als Zeile „Layout migration …“ im Protokoll, damit ein langer Umzug dort sichtbar ist.
+Wird Archivist dazwischen beendet, setzt der nächste Start dort fort (ein unfertiger Zwischenordner wird neu angelegt). Archivist überschreibt dabei nie etwas: Liegt am Ziel schon eine Datenbank oder ein anderer Inhalt, bricht der Start mit einer Meldung ab und lässt alles unverändert. Archiv, Eingang, Quarantäne und Papierkorb bleiben, wo sie sind. Ist der Marker `complete`, passiert beim Start nichts mehr. Jeder Schritt (Platzprüfung, Kopieren, Prüfen, Umschalten) steht sofort, noch während er läuft, als Zeile „Layout migration …“ in `layout-migration.log` im Datenordner (das Protokoll gibt es erst nach dem Umzug), damit ein langer oder hängender Umzug Spuren hinterlässt.
 
 ## Ablage im Archiv
 

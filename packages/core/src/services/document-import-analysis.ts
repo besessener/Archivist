@@ -1,17 +1,15 @@
 import type { BulkEstimate, Job } from '@archivist/shared';
-import { inArray } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
 import { permissionError, validationError } from '../util/errors';
-import { estimateTokens } from '../util/estimate-tokens';
+import { estimateAnalysisTokens } from './bulk-estimate';
 import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from './document-batch';
 import type { JobQueueService } from './jobs';
 import type { LlmService } from './llm';
 import type { PrivacyService } from './privacy';
 import type { SettingsService } from './settings';
 
-/** Characters the instructions of one analysis request add to the text. */
-const PROMPT_OVERHEAD_CHARS = 2_000;
 const ID_CHUNK = 500;
 /** Documents still in the inbox; archived or trashed ones are no longer analysed. */
 const INBOX_STATUSES = ['staged', 'proposed', 'failed'];
@@ -32,6 +30,7 @@ export class ImportAnalysis {
     return this.deps.ctx.database.db;
   }
 
+  /** The import's documents that still wait in the inbox and were not analysed with the LLM yet (id, privacy fields and text length only). */
   private rows(jobId: string) {
     const payload = this.deps.jobs.payloadOf<AnalyzeBatchPayload>(jobId);
     if (!payload?.documentIds) throw validationError('Zu dieser Meldung gibt es keinen Import mehr.');
@@ -39,31 +38,58 @@ export class ImportAnalysis {
     for (let start = 0; start < payload.documentIds.length; start += ID_CHUNK)
       rows.push(
         ...this.db
-          .select()
+          .select({
+            id: documents.id,
+            status: documents.status,
+            sourcePath: documents.sourcePath,
+            ext: documents.ext,
+            llmStatus: documents.llmStatus,
+            folderLlmAllowed: documents.folderLlmAllowed,
+            textLength: sql<number>`length(${documents.extractedText})`,
+          })
           .from(documents)
           .where(inArray(documents.id, payload.documentIds.slice(start, start + ID_CHUNK)))
           .all(),
       );
-    return rows.filter((row) => INBOX_STATUSES.includes(row.status));
+    return rows.filter((row) => INBOX_STATUSES.includes(row.status) && row.llmStatus !== 'analyzed');
   }
 
-  /** How many of the import's documents still wait in the inbox, how many may go to the LLM and roughly how many tokens. */
+  /** How many of the import's documents wait for the LLM, how many may go there and roughly how many tokens. */
   estimate(jobId: string): BulkEstimate {
     const { privacy, llm, settings } = this.deps;
-    const maxChars = settings.get().llm.maxInputChars;
     const rows = this.rows(jobId);
     const eligible = llm.isConfigured() ? rows.filter((row) => privacy.evaluateDocument(row).allowed) : [];
-    const chars = eligible.reduce((sum, row) => sum + Math.min(row.extractedText.length, maxChars) + PROMPT_OVERHEAD_CHARS, 0);
-    return { total: rows.length, llmEligible: eligible.length, estimatedTokens: estimateTokens(chars) };
+    const estimatedTokens = estimateAnalysisTokens(
+      eligible.map((row) => row.textLength),
+      settings.get().llm.maxInputChars,
+    );
+    return { total: rows.length, llmEligible: eligible.length, estimatedTokens };
   }
 
-  /** Queues the batch analysis with the LLM; the privacy rules still decide per document what may be sent. */
-  enqueue(jobId: string): Job {
-    if (this.deps.privacy.mode() === 'local_only') throw permissionError('Dein Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.');
-    if (!this.deps.llm.isConfigured()) throw validationError('Es ist noch kein KI-Dienst eingerichtet.');
-    const ids = this.rows(jobId).map((row) => row.id);
-    if (ids.length === 0) throw validationError('Alle Dokumente dieses Imports sind schon archiviert oder entfernt.');
-    const payload: AnalyzeBatchPayload = { documentIds: ids, allowLlm: true, duplicates: 0, rejected: 0, title: 'Analyse mit KI abgeschlossen' };
-    return this.deps.jobs.enqueue(DOCUMENT_ANALYZE_BATCH_JOB, { label: `Analysiere ${ids.length} Dokumente mit KI`, payload, maxAttempts: 1 });
+  /** Queues the batch analysis with the LLM for the documents the privacy rules allow; a second click returns the run that is already queued. */
+  enqueue(request: { jobId: string; confirmLlm: boolean }): Job {
+    const { privacy, llm, jobs } = this.deps;
+    if (!request.confirmLlm) throw permissionError('Die Analyse mit KI erfordert deine ausdrückliche Zustimmung.');
+    if (privacy.mode() === 'local_only') throw permissionError('Dein Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.');
+    if (!llm.isConfigured()) throw validationError('Es ist noch kein KI-Dienst eingerichtet.');
+    const ids = this.rows(request.jobId)
+      .filter((row) => privacy.evaluateDocument(row).allowed)
+      .map((row) => row.id);
+    if (ids.length === 0)
+      throw validationError('Alle Dokumente dieses Imports sind schon mit KI analysiert, archiviert, entfernt oder von der KI ausgeschlossen.');
+    const payload: AnalyzeBatchPayload = {
+      documentIds: ids,
+      allowLlm: true,
+      duplicates: 0,
+      rejected: 0,
+      title: 'Analyse mit KI abgeschlossen',
+      sourceJobId: request.jobId,
+    };
+    return jobs.enqueue(DOCUMENT_ANALYZE_BATCH_JOB, {
+      label: `Analysiere ${ids.length} Dokumente mit KI`,
+      payload,
+      maxAttempts: 1,
+      sameAs: (active: AnalyzeBatchPayload) => active.sourceJobId === request.jobId && active.allowLlm,
+    });
   }
 }

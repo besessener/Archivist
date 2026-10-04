@@ -94,6 +94,8 @@ export interface ExecuteOptions {
   approveNewCategories: string[];
   confirmMove: boolean;
   trigger?: string;
+  /** `later`: the caller runs `cleanupInbox` itself after a long run of batches. */
+  inboxCleanup?: 'before' | 'later';
 }
 
 export const archiveRootOf = (deps: { settings: { get(): { archiveRoot: string } } }): string => deps.settings.get().archiveRoot;

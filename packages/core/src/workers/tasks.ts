@@ -93,7 +93,7 @@ class DirectoryWalk {
     const target = await this.resolve(full);
     if (!target) return;
     if (target.stats.isDirectory()) await this.visitDirectory(full, target.real);
-    else if (target.stats.isFile()) this.visitFile({ path: full, name, stats: target.stats });
+    else if (target.stats.isFile()) this.visitFile({ path: full, real: target.real, name, stats: target.stats });
   }
 
   /** Stats of the entry (of its target for a symlink); a symlink leading out of the root is recorded as skipped. */
@@ -108,18 +108,18 @@ class DirectoryWalk {
     return { stats: await fsp.stat(full), real };
   }
 
-  private isExcludedDir(full: string): boolean {
-    return this.excludedDirs.some((excluded) => isInside(excluded, full));
+  private isExcludedDir(...places: string[]): boolean {
+    return places.some((place) => this.excludedDirs.some((excluded) => isInside(excluded, place)));
   }
 
   private async visitDirectory(full: string, real: string): Promise<void> {
-    if (!this.input.recursive || this.isExcludedDir(full) || this.visited.has(real)) return;
+    if (!this.input.recursive || this.isExcludedDir(full, real) || this.visited.has(real)) return;
     this.visited.add(real);
     await this.walk(full);
   }
 
-  private visitFile(file: { path: string; name: string; stats: Stats }): void {
-    if (this.excludedFiles.has(path.resolve(file.path)) || this.isExcludedDir(file.path)) return;
+  private visitFile(file: { path: string; real: string; name: string; stats: Stats }): void {
+    if (this.excludedFiles.has(path.resolve(file.path)) || this.excludedFiles.has(path.resolve(file.real)) || this.isExcludedDir(file.path, file.real)) return;
     const ext = path.extname(file.name).slice(1).toLowerCase();
     if (!this.extensions.has(ext)) return;
     if (file.stats.size > this.input.maxSizeBytes) {

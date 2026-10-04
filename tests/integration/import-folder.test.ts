@@ -115,6 +115,26 @@ describe('Dropping a folder imports it recursively (#228)', () => {
     expect((await app.ok('documents:list', {})).length).toBe(1);
   });
 
+  it('analyses the copies of a chunk replayed after an interruption, although its checkpoint was never saved', async () => {
+    const root = archiveTree();
+    const before = new Date(Date.now() - 1_000).toISOString();
+    await app.ok('documents:import', { paths: [root] });
+    await app.services.jobs.whenIdle();
+    const jobId = folderJob().id;
+    app.services.database.sqlite
+      .prepare("UPDATE jobs SET status = 'pending', finished_at = NULL, result = ? WHERE id = ?")
+      .run(JSON.stringify({ checkpoint: { startedAt: before, copied: 0, imported: 0, duplicates: 0, rejected: 0, importedIds: [] } }), jobId);
+
+    app.services.jobs.start();
+    await app.services.jobs.whenIdle();
+
+    const analyses = app.services.jobs.list().filter((job) => job.type === 'documents.analyzeBatch');
+    expect(analyses).toHaveLength(2);
+    const replayed = app.services.jobs.payloadOf<{ documentIds: string[] }>(analyses[0]!.id)!;
+    expect(replayed.documentIds).toHaveLength(3);
+    expect(await app.ok('documents:list', {})).toHaveLength(3);
+  });
+
   it('keeps the notification of a single file and aggregates several files', async () => {
     const one = app.file('Einzeln/a.txt', 'Eine einzelne Datei mit ausreichend Text für die Analyse.');
     await app.ok('documents:import', { paths: [one] });

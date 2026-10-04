@@ -53,6 +53,7 @@ function classification(input: string) {
   const name = /Dateiname: (.+)/.exec(input)?.[1] ?? '';
   const vacation = /urlaub/i.test(name);
   const decided = /beschluss/i.test(name);
+  const fresh = /neuordner/i.test(name);
   return {
     docType: vacation ? 'Urlaubsantrag' : 'Protokoll',
     title: vacation ? 'Urlaubsantrag Juni 2026' : 'Jour Fixe Nordlicht',
@@ -63,7 +64,7 @@ function classification(input: string) {
     dates: [{ date: vacation ? '2026-06-12' : '2026-05-04', label: null }],
     tags: vacation ? ['urlaub'] : ['jour-fixe'],
     location: {
-      categoryPath: vacation ? 'private/vacation/2026' : 'work/projects/Nordlicht',
+      categoryPath: fresh ? 'sonderfall/akten' : vacation ? 'private/vacation/2026' : 'work/projects/Nordlicht',
       fileName: null,
       newMainCategory: false,
       rationale: vacation ? 'Urlaubsantrag vom 12.06.2026' : 'Das Dokument nennt das Projekt Nordlicht.',

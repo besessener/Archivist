@@ -1,5 +1,8 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { and, gte, inArray } from 'drizzle-orm';
+import { documents } from '../db/schema';
+import { nowIso } from '../util/ids';
 import { permissionError } from '../util/errors';
 import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from './document-batch';
 import { folderRefusal, importWalkRules } from './document-import-guard';
@@ -13,11 +16,16 @@ export const DOCUMENT_IMPORT_FOLDER_JOB = 'documents.importFolder';
 /** Files one folder import takes; more are left out with a clear message (the walk is the same as the scanner's). */
 export const IMPORT_FOLDER_MAX_FILES = SCAN_MAX_FILES;
 const COPY_CHUNK = 50;
+/** The checkpoint is saved again after a tenth more files, so 20.000 files write it about 40 times, not 400. */
+const CHECKPOINT_GROWTH = 10;
 const MAX_IMPORT_BYTES = 500 * 1024 * 1024;
 
 /** The part of the importer a folder import uses (typed by shape to keep the modules acyclic). */
 export interface QuietImporter {
-  importQuietly(files: string[], opts: { allowLlm: boolean }): Promise<{ imported: Array<{ id: string }>; duplicates: unknown[]; rejected: unknown[] }>;
+  importQuietly(
+    files: string[],
+    opts: { allowLlm: boolean },
+  ): Promise<{ imported: Array<{ id: string }>; duplicates: Array<{ existingDocumentId: string }>; rejected: unknown[] }>;
 }
 
 export interface ImportFolderPayload {
@@ -26,11 +34,13 @@ export interface ImportFolderPayload {
 }
 
 interface FolderCheckpoint {
+  /** Documents created since then belong to this run (a replayed file finds its own copy as a „duplicate“). */
+  startedAt: string;
   copied: number;
   imported: number;
   duplicates: number;
   rejected: number;
-  /** The documents this run created – only these are analysed afterwards. */
+  /** The documents this run created – only these are analysed afterwards; saved with growing gaps so the checkpoint stays small. */
   importedIds: string[];
 }
 
@@ -48,7 +58,7 @@ export class FolderImport {
     const refusal = folderRefusal(job.payload.path, this.deps);
     if (refusal) throw permissionError(refusal, job.payload.path);
     const saved = job.checkpoint as Partial<FolderCheckpoint> | null;
-    const progress: FolderCheckpoint = { copied: 0, imported: 0, duplicates: 0, rejected: 0, importedIds: [], ...saved };
+    const progress: FolderCheckpoint = { startedAt: nowIso(), copied: 0, imported: 0, duplicates: 0, rejected: 0, importedIds: [], ...saved };
     const walked = await this.deps.pool.run('scanDirectory', {
       root: await fsp.realpath(job.payload.path),
       recursive: true,
@@ -63,29 +73,48 @@ export class FolderImport {
 
   private async copyFiles(files: string[], run: { job: JobContext<ImportFolderPayload>; progress: FolderCheckpoint }): Promise<void> {
     const { job, progress } = run;
+    let saveAt = progress.copied;
     for (; progress.copied < files.length; progress.copied += COPY_CHUNK) {
       job.throwIfCancelled();
       const chunk = files.slice(progress.copied, progress.copied + COPY_CHUNK);
       const result = await this.importer.importQuietly(chunk, { allowLlm: job.payload.allowLlm });
       progress.imported += result.imported.length;
-      progress.importedIds.push(...result.imported.map((doc) => doc.id));
+      progress.importedIds.push(...result.imported.map((doc) => doc.id), ...this.ownCopies(result.duplicates, progress.startedAt));
       progress.duplicates += result.duplicates.length;
       progress.rejected += result.rejected.length;
-      job.saveCheckpoint({ ...progress, copied: progress.copied + chunk.length });
+      const copied = progress.copied + chunk.length;
+      if (copied >= saveAt) {
+        job.saveCheckpoint({ ...progress, copied });
+        saveAt = copied + Math.max(COPY_CHUNK, Math.floor(copied / CHECKPOINT_GROWTH));
+      }
       job.report(null, `${Math.min(progress.copied + COPY_CHUNK, files.length)} von ${files.length} Dateien kopiert`);
     }
     progress.copied = files.length;
+    job.saveCheckpoint(progress);
+  }
+
+  /** Duplicates that are copies this very run made before an interruption: a replayed chunk finds them again. */
+  private ownCopies(duplicates: Array<{ existingDocumentId: string }>, startedAt: string): string[] {
+    if (duplicates.length === 0) return [];
+    const ids = duplicates.map((duplicate) => duplicate.existingDocumentId);
+    return this.deps.ctx.database.db
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(inArray(documents.id, ids), gte(documents.createdAt, startedAt)))
+      .all()
+      .map((row) => row.id);
   }
 
   /** Hands the copies of this run (and only these) to one analysis job that reports once; a resumed run does not queue a second one. */
   private queueAnalysis(run: { job: JobContext<ImportFolderPayload>; progress: FolderCheckpoint; limitReached: boolean }): string {
     const { job, progress } = run;
     const folder = job.payload.path;
+    const documentIds = [...new Set(progress.importedIds)];
     const cap = run.limitReached
       ? ` Der Ordner enthält mehr als ${this.maxFiles.toLocaleString('de-DE')} unterstützte Dateien; nur die ersten ${this.maxFiles.toLocaleString('de-DE')} wurden übernommen. Importiere die übrigen Unterordner einzeln.`
       : '';
     const payload: AnalyzeBatchPayload = {
-      documentIds: progress.importedIds,
+      documentIds,
       allowLlm: job.payload.allowLlm,
       duplicates: progress.duplicates,
       rejected: progress.rejected,
@@ -95,7 +124,7 @@ export class FolderImport {
       sourceJobId: job.id,
     };
     this.deps.jobs.enqueue(DOCUMENT_ANALYZE_BATCH_JOB, {
-      label: `Analysiere ${progress.importedIds.length} Dokumente aus „${path.basename(folder)}“`,
+      label: `Analysiere ${documentIds.length} Dokumente aus „${path.basename(folder)}“`,
       payload,
       maxAttempts: 1,
       sameAs: (active: AnalyzeBatchPayload) => active.sourceJobId === job.id,

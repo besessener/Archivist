@@ -93,6 +93,17 @@ describe('Application data in the per-user data folder', () => {
   });
 });
 
+describe('Starting while the old layout is moved', () => {
+  it('leaves each step in layout-migration.log even when the start never completes', async () => {
+    write(path.join(legacy(), 'database', 'archivist.db'), 'datenbank');
+    vi.spyOn(fs, 'statfsSync').mockReturnValue({ bavail: 10, bsize: 4096 } as fs.StatsFs);
+
+    await expect(startApp({ separateAppData: true })).rejects.toThrow(/freier Speicher benötigt/);
+
+    expect(read(path.join(appData(), 'layout-migration.log'))).toMatch(/Layout migration needs \d+ bytes, 40960 bytes are free/);
+  });
+});
+
 describe('Moving the old layout', () => {
   const places = () => ({ legacyRoot: legacy(), appDataRoot: appData() });
   const seed = () => {

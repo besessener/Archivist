@@ -4,7 +4,7 @@ import { DatabaseService, type MigrationStatus } from '../db/database';
 import { EventBus, ensureDataDirs, resolveDataPaths, type AppContext } from '../context';
 import { AuditService } from '../services/audit';
 import { applyPendingRestore } from '../services/backup-restore';
-import { migrateLegacyLayout } from '../services/data-layout-migration';
+import { migrateLegacyLayout, traceLayoutStep } from '../services/data-layout-migration';
 import { CategoryService } from '../services/categories';
 import { EmbeddingService } from '../services/embedding';
 import { JobQueueService } from '../services/jobs';
@@ -50,9 +50,8 @@ export interface CreateServicesOptions {
 
 /** Directory structure, settings, logging, database and the services every domain service builds on. */
 export function createBaseServices(options: CreateServicesOptions) {
-  const layoutProgress: string[] = [];
   const layout = options.appDataRoot
-    ? migrateLegacyLayout({ legacyRoot: options.dataRoot, appDataRoot: options.appDataRoot, onProgress: (message) => layoutProgress.push(message) })
+    ? migrateLegacyLayout({ legacyRoot: options.dataRoot, appDataRoot: options.appDataRoot, onProgress: traceLayoutStep(options.appDataRoot) })
     : { migrated: false as const };
   const baseline = resolveDataPaths({ root: options.dataRoot, appDataRoot: options.appDataRoot });
   ensureDataDirs(baseline);
@@ -62,7 +61,6 @@ export function createBaseServices(options: CreateServicesOptions) {
   fs.mkdirSync(paths.archive, { recursive: true });
 
   const logger = new Logger(paths.logs, settings.get().logs.level);
-  for (const message of layoutProgress) logger.info('app', message);
   if (layout.migrated) logger.info('app', 'Application data moved to the per-user data folder', { from: layout.from, to: layout.to, entries: layout.entries });
   logger.setMasking(maskingOf(settings.get()));
   const restore = applyPendingRestore(paths, paths.archive);

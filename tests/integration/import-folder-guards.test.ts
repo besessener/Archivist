@@ -90,6 +90,30 @@ describe('Dropping a folder: privacy exclusions are honoured (#228)', () => {
   });
 });
 
+describe('Dropping a folder: links do not lead around the exclusions (#228)', () => {
+  beforeEach(() => setup());
+
+  it('does not follow a link inside the folder into a never-analyse folder, Archivist’s archive or out of the folder', async () => {
+    app.file('Archiv/ok.txt', text('ok'));
+    app.file('Archiv/privat/geheim.txt', text('geheim'));
+    app.file('Draussen/fremd.txt', text('fremd'));
+    const root = path.join(app.home, 'Archiv');
+    const archiveRoot = app.services.settings.get().archiveRoot;
+    fs.mkdirSync(archiveRoot, { recursive: true });
+    fs.writeFileSync(path.join(archiveRoot, 'intern.txt'), text('intern'));
+    app.services.settings.update({ privacy: { neverAnalyzeDirs: [path.join(root, 'privat')] } });
+    fs.symlinkSync(path.join(root, 'privat'), path.join(root, 'verweis-privat'), 'dir');
+    fs.symlinkSync(path.join(root, 'privat', 'geheim.txt'), path.join(root, 'verweis-datei.txt'));
+    fs.symlinkSync(archiveRoot, path.join(root, 'verweis-archiv'), 'dir');
+    fs.symlinkSync(path.join(app.home, 'Draussen'), path.join(root, 'verweis-draussen'), 'dir');
+
+    await app.ok('documents:import', { paths: [root] });
+    await app.services.jobs.whenIdle();
+
+    expect(await names()).toEqual(['ok.txt']);
+  });
+});
+
 describe('Dropping a folder analyses only its own documents (#228)', () => {
   beforeEach(() => setup());
 

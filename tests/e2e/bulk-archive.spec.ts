@@ -23,9 +23,11 @@ test.describe('archiving all proposals at once (#228)', () => {
     await expect(inbox.locators.archiveAll.folders).toContainText('work/projects/Nordlicht/');
     await expect(inbox.locators.archiveAll.folders).toContainText('3 Dokumente');
     await expect(inbox.locators.archiveAll.confirm).toContainText('3 Dokumente archivieren');
+    await expect(inbox.locators.archiveAll.confirm, 'needs the review confirmation first').toBeDisabled();
     await expectNoSeriousA11yViolations(page, testInfo);
     expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'work')), 'nothing is archived before the confirmation').toBe(false);
 
+    await inbox.locators.archiveAll.reviewed.check();
     await inbox.locators.archiveAll.confirm.click();
 
     await expect(inbox.locators.items).toHaveCount(0, { timeout: 30_000 });
@@ -35,6 +37,42 @@ test.describe('archiving all proposals at once (#228)', () => {
       'jour-fixe-3.txt',
     ]);
     for (const original of originals) expect(fs.existsSync(original), 'the original is kept').toBe(true);
+  });
+});
+
+test.describe('archiving all proposals: new main categories (#228)', () => {
+  test.beforeEach(async ({ llm, on, page, workspace }) => {
+    await on(page).setup.do.complete(llm.url);
+    const { inbox, navigation } = on(page);
+    await inbox.do.importFiles([workspace.addDownload('jour-fixe-1.txt', NORDLICHT(1)), workspace.addDownload('neuordner-1.txt', NORDLICHT(2))]);
+    await navigation.do.open('inbox');
+    await expect(inbox.locators.proposals).toHaveCount(2, { timeout: 30_000 });
+    await inbox.locators.archiveAll.open.click();
+  });
+
+  test('a new main category is created only when it is ticked; without it that document stays in the inbox', async ({ on, page, workspace }, testInfo) => {
+    const { inbox } = on(page);
+
+    await expect(inbox.locators.archiveAll.newCategory).toHaveCount(1);
+    await expect(inbox.locators.archiveAll.newCategory).not.toBeChecked();
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await inbox.locators.archiveAll.reviewed.check();
+    await inbox.locators.archiveAll.confirm.click();
+
+    await expect(inbox.locators.items).toHaveCount(1, { timeout: 30_000 });
+    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'work', 'projects', 'Nordlicht', 'jour-fixe-1.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'sonderfall')), 'the unapproved folder is not created').toBe(false);
+  });
+
+  test('a ticked new main category is created', async ({ on, page, workspace }) => {
+    const { inbox } = on(page);
+
+    await inbox.locators.archiveAll.newCategory.check();
+    await inbox.locators.archiveAll.reviewed.check();
+    await inbox.locators.archiveAll.confirm.click();
+
+    await expect(inbox.locators.items).toHaveCount(0, { timeout: 30_000 });
+    expect(fs.existsSync(path.join(workspace.dataDir, 'archive', 'sonderfall', 'akten', 'neuordner-1.txt'))).toBe(true);
   });
 });
 

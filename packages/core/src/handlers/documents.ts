@@ -25,7 +25,7 @@ export function documentHandlers(services: Services, host: HostApi): HandlerGrou
     'documents:archiveAllPreview': (input) => services.archiveAll.preview(input.source),
     'documents:archiveAll': (input) => ({ jobId: services.archiveAll.enqueue(input).id }),
     'documents:analyzeImportEstimate': (input) => services.importAnalysis.estimate(input.jobId),
-    'documents:analyzeImport': (input) => ({ jobId: services.importAnalysis.enqueue(input.jobId).id }),
+    'documents:analyzeImport': (input) => ({ jobId: services.importAnalysis.enqueue(input).id }),
     'documents:classify': (input) => ({ jobId: services.documents.enqueueAnalysis(input.documentId, { allowLlm: input.allowLlm }) }),
     'documents:previewArchive': (input) => services.archive.preview(input.items),
     'documents:archive': (input) =>

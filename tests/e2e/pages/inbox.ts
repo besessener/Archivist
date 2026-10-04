@@ -45,6 +45,8 @@ export function initInbox(page: Page) {
       preview: page.getByTestId('archive-all-preview'),
       folders: page.getByTestId('archive-all-folders'),
       confirm: page.getByTestId('archive-all-confirm'),
+      reviewed: page.getByTestId('confirm-dialog-checkbox'),
+      newCategory: page.getByTestId('archive-new-category'),
       progress: page.getByTestId('archive-all-progress'),
     },
     /** Paging of a long inbox. */
