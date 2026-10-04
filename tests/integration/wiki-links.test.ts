@@ -91,6 +91,17 @@ describe('Wiki links [[Name]] in notes (#285)', () => {
     expect(relationTo(note.id, topic.id)).toMatchObject({ id: proposal.id, status: 'rejected', method: 'analysis', resolvedByUser: true });
   });
 
+  it('an unrelated edit keeps a rejected wiki link rejected while its [[Name]] stays in the text', async () => {
+    app = await createTestApp();
+    const topic = await create('topic', 'Finanzen');
+    const note = await create('note', 'Bank', 'Kreditgesprach zu [[Finanzen]].');
+    const link = relationTo(note.id, topic.id)!;
+    app.services.graph.setRelationStatus(link.id, { status: 'rejected' });
+
+    await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch zu [[Finanzen]].' });
+    expect(relationTo(note.id, topic.id)).toMatchObject({ id: link.id, status: 'rejected', method: 'wikilink' });
+  });
+
   it('renaming or merging the target keeps the link', async () => {
     app = await createTestApp();
     const project = await create('project', 'Hausbau');

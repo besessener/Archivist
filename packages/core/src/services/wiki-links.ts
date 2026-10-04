@@ -1,5 +1,6 @@
 import type { EntityType, GraphEntity, GraphRelation } from '@archivist/shared';
 import type { AppContext } from '../context';
+import { currentRun } from '../agent/scope';
 import type { AdoptedRelation } from './graph/relations';
 import { normalizeName } from '../util/text';
 import type { KnowledgeGraphService } from './knowledge-graph';
@@ -117,17 +118,19 @@ export class WikiLinks {
     return relation ? this.graph.getEntity(relation.targetEntityId) : undefined;
   }
 
-  /** Takes the note's relation to the target over as the user's link unless it already is theirs; returns its former state. */
+  /** Takes the note's relation to the target over as a wiki link unless it already is one; returns its former state. */
   private adopt(link: { noteId: string; targetId: string; name: string }): AdoptedRelation[] {
     const before = this.graph
       .relationsOf(link.noteId, { types: ['relates_to'] })
       .find((relation) => relation.sourceEntityId === link.noteId && relation.targetEntityId === link.targetId);
-    if (!before || (before.resolvedByUser && before.status === 'confirmed')) return [];
+    if (!before || before.method === 'wikilink' || (before.resolvedByUser && before.status === 'confirmed')) return [];
+    // only the user's own edit overrides their rejection, never an agent run
+    if (before.status === 'rejected' && currentRun()) return [];
     this.graph.adoptAsWikiLink(before.id, evidenceOf(link.name));
     return [before];
   }
 
-  /** Links become the user's own (also over a proposal or rejection, `adopted` for undo), removed ones are deleted; an unresolved name keeps its relation. */
+  /** Links become the user's own (also over a proposal or, outside an agent run, a rejection; `adopted` for undo), removed ones are deleted; an unresolved name keeps its relation. */
   sync(noteId: string, text: string): { linked: number; removed: number; unknown: string[]; adopted: AdoptedRelation[] } {
     const kept = this.current(noteId);
     const keep = new Set<string>();

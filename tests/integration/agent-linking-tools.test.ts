@@ -115,6 +115,26 @@ describe('The agent controls the linking features of Epic #269', () => {
     await app.ok('chat:send', { text: 'Ändere das.' });
   });
 
+  it("update_note never revives a rejected pair; a proposal its [[Name]] takes over is the agent's link of the run", async () => {
+    const rejectedTopic = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Finanzen' })).entity;
+    const proposedTopic = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Steuern' })).entity;
+    const note = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Bank', description: 'Kreditgespräch bei der Bank.' })).entity;
+    const propose = (targetId: string) =>
+      app.services.graph.link({ sourceId: note.id, targetId, relationType: 'relates_to' }, { status: 'proposed', method: 'analysis' })!;
+    const rejected = propose(rejectedTopic.id);
+    app.services.graph.setRelationStatus(rejected.id, { status: 'rejected' });
+    const proposal = propose(proposedTopic.id);
+    app.llm.agent = ask(listNotesAndItems, () => [
+      { name: 'update_note', args: { note: refOf('Kreditgespräch'), content: 'Kreditgespräch bei der Bank zu [[Finanzen]] und [[Steuern]].' } },
+    ]);
+    await app.ok('chat:send', { text: 'Verlinke in der Notiz Bank Finanzen und Steuern.' });
+
+    expect(app.services.graph.getRelation(rejected.id)).toMatchObject({ status: 'rejected', method: 'analysis', origin: rejected.origin, runId: null });
+    const runId = (await app.ok('audit:list', {})).find((e) => e.action === 'note.update')!.runId;
+    expect(runId).toBeTruthy();
+    expect(app.services.graph.getRelation(proposal.id)).toMatchObject({ status: 'confirmed', method: 'wikilink', origin: 'agent', runId });
+  });
+
   it('linkage_report, case_overview and the topic tree in list_subjects; resetting learned thresholds always asks', async () => {
     const urlaub = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Urlaub' })).entity;
     const u26 = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Urlaub 2026' })).entity;

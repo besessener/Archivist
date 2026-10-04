@@ -36,7 +36,7 @@ export interface RelationChangeSet {
 }
 
 /** A relation a wiki link was written over (#285), as it was before; undoing the note edit restores it. */
-export type AdoptedRelation = Pick<GraphRelation, 'id' | 'status' | 'confidence' | 'resolvedByUser' | 'origin' | 'method' | 'evidence' | 'updatedAt'>;
+export type AdoptedRelation = Pick<GraphRelation, 'id' | 'status' | 'confidence' | 'resolvedByUser' | 'origin' | 'runId' | 'method' | 'evidence' | 'updatedAt'>;
 
 export interface SystemUnlink {
   entityId: string;
@@ -187,11 +187,13 @@ export class GraphRelations {
     return { ...relation, status: change.status };
   }
 
-  /** Takes a relation over as the user's confirmed wiki link with the link text as evidence (#285). */
+  /** Takes a relation over as a confirmed wiki link with the link text as evidence (#285); inside an agent run it is the agent's. */
   adoptAsWikiLink(id: string, evidence: string): void {
+    const run = currentRun();
+    const origin = run ? 'agent' : 'user';
     this.db
       .update(relations)
-      .set({ status: 'confirmed', confidence: 1, resolvedByUser: true, origin: 'user', method: 'wikilink', evidence, updatedAt: nowIso() })
+      .set({ status: 'confirmed', confidence: 1, resolvedByUser: true, origin, runId: run?.runId ?? null, method: 'wikilink', evidence, updatedAt: nowIso() })
       .where(eq(relations.id, id))
       .run();
     this.ctx.events.changed('knowledge');
@@ -199,7 +201,7 @@ export class GraphRelations {
 
   /** Restores relations {@link adoptAsWikiLink} took over, unless they are no wiki link any more. */
   restoreAdopted(adopted: readonly AdoptedRelation[]): void {
-    for (const { id, status, confidence, resolvedByUser, origin, method, evidence, updatedAt } of adopted)
+    for (const { id, status, confidence, resolvedByUser, origin, runId, method, evidence, updatedAt } of adopted)
       this.db
         .update(relations)
         .set({
@@ -207,6 +209,7 @@ export class GraphRelations {
           confidence,
           resolvedByUser: resolvedByUser ?? false,
           origin: origin ?? null,
+          runId: runId ?? null,
           method: method ?? null,
           evidence: evidence ?? null,
           updatedAt,

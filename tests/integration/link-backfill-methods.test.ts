@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { agentRunScope } from '../../packages/core/src/agent/scope';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { flatText } from '../helpers/link-texts';
 
@@ -62,6 +63,25 @@ describe('Retroactive link run with all methods (#279)', () => {
       app.services.graph.relationsOf(id, { statuses: ['proposed'] }).filter((r) => r.method === 'similarity' && r.relationType === 'related_to');
     for (const id of notes) expect(openSimilarity(id).length).toBeLessThanOrEqual(1);
     expect((await app.ok('audit:list', { limit: 100 })).filter((e) => e.action === 'relation.link')).toEqual([]);
+  });
+
+  it('inside an agent run a failing pair skips only itself: the other similar entries are still proposed and counted', async () => {
+    app = await createTestApp({ autoLinks: false });
+    for (const what of ['Mietvertrag', 'Nebenkosten', 'Kündigung']) await app.services.notes.create({ title: what, content: flatText(what) });
+    await app.services.jobs.whenIdle();
+    const { graph } = app.services;
+    const linkEntries = graph.linkEntries.bind(graph);
+    let failed = false;
+    vi.spyOn(graph, 'linkEntries').mockImplementation((key, options) => {
+      if (failed) return linkEntries(key, options);
+      failed = true;
+      throw new Error('entry removed meanwhile');
+    });
+
+    const result = await agentRunScope.run({ runId: 'run-1', explicit: false, auditIds: [] }, () => app.services.links.backfill({ maxEntries: 1 }));
+    expect(failed).toBe(true);
+    expect(result.proposed).toBe(1);
+    expect(byMethod().similarity).toBe(1);
   });
 
   it('continues where it stopped – a note analysed by the language model is not paid for again', async () => {
