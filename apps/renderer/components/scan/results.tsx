@@ -291,7 +291,7 @@ export function ScanResults() {
             {mode === 'local_only' && (
               <p className="mt-1 font-medium text-foreground">Dein Datenschutzmodus ist „Nur lokal“ – es wird nichts an die KI gesendet.</p>
             )}
-            {automatic && (
+            {automatic && llmConfigured && (
               <p className="mt-1 font-medium text-foreground" data-testid="scan-llm-automatic">
                 Dein Datenschutzmodus ist „Automatisch“ – die erlaubten Dateien gehen ohne weitere Rückfrage an die KI.
               </p>

@@ -117,6 +117,10 @@ describe('Wiki links [[Name]] in notes (#285)', () => {
     expect(relationTo(note.id, topic.id)).toMatchObject({ id: rejected.id, status: 'rejected', method: 'analysis' });
     expect(relationTo(note.id, project.id)).toMatchObject({ id: proposal.id, status: 'proposed', method: 'analysis' });
 
+    const edit = (await app.ok('audit:list', {})).find((e) => e.action === 'note.update')!;
+    await app.ok('audit:undo', { auditId: edit.id });
+    expect(relationTo(note.id, topic.id)).toMatchObject({ id: rejected.id, status: 'rejected', method: 'analysis' });
+
     await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch.' });
     await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch zu [[Hausbau]].' });
     expect(relationTo(note.id, project.id)).toMatchObject({ id: proposal.id, status: 'confirmed', method: 'wikilink', resolvedByUser: true });

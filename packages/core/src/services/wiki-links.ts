@@ -151,7 +151,7 @@ export class WikiLinks {
         else unknown.push(name);
         continue;
       }
-      // a link already in the text leaves the user's decision or a pending proposal on its target alone
+      // a link already in the text leaves any other relation to its target as it is, also when an edit is undone
       if (linkedBefore.has(normalizeName(name)) && this.otherRelation(noteId, target.id)) continue;
       adopted.push(...this.adopt({ noteId, targetId: target.id, name }));
       const result = this.graph.link(

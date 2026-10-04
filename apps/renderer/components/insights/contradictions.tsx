@@ -150,7 +150,7 @@ export function ResolveContradictionDialog({
             />
             {!dated && (
               <p className="mt-2 text-xs text-muted-foreground" data-testid="contradiction-order-unknown">
-                Welche Entscheidung neuer ist, ist unbekannt – prüf Neu und Alt, bevor du ankreuzt.
+                Welche Entscheidung neuer ist, ist unbekannt – prüfe Neu und Alt, bevor du ankreuzt.
               </p>
             )}
           </div>
