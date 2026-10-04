@@ -64,14 +64,14 @@ export class DocumentAnalyzer {
   async analyze(id: string, opts: AnalyzeOptions): Promise<AnalysisResult> {
     const row = this.deps.documents.getRow(id);
     if (row.status === 'quarantined') throw new AppError('validation_error', QUARANTINE_NOT_ANALYZED);
-    // Claim the document atomically: an archived or index-only document (e.g. archived while queued) stays untouched.
+    // Claim the document atomically: an archived, index-only or ignored document (e.g. while queued) stays untouched.
     const claimed = this.db
       .update(documents)
       .set({ status: 'analyzing', updatedAt: nowIso() })
-      .where(and(eq(documents.id, id), notInArray(documents.status, ARCHIVED_STATUSES)))
+      .where(and(eq(documents.id, id), notInArray(documents.status, [...ARCHIVED_STATUSES, 'ignored'])))
       .run();
     if (!claimed.changes) {
-      this.deps.ctx.logger.info('documents', 'Analysis skipped: document is already archived', { documentId: id, status: row.status });
+      this.deps.ctx.logger.info('documents', 'Analysis skipped: document is archived or ignored', { documentId: id, status: row.status });
       return skipped();
     }
     this.deps.ctx.events.changed('documents');

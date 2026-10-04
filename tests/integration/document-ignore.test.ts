@@ -79,4 +79,18 @@ describe('ignoring a document (#232)', () => {
     expect((await app.call('documents:ignore', { id: archivedId })).ok).toBe(false);
     expect((await app.call('documents:unignore', { id: inboxId })).ok).toBe(false);
   });
+
+  it('leaves a document ignored while its analysis was queued untouched', async () => {
+    const id = await inInbox(app, { name: 'Import 40.txt', content: 'Import Rechnung' });
+    const { auditId } = await app.ok('documents:ignore', { id });
+    const classifications = () => app.llm.calls.filter((c) => c.schema === 'DocumentClassification').length;
+    const callsBefore = classifications();
+
+    const result = await app.services.documents.analyze(id, { allowLlm: true });
+
+    expect(result.skipped).toBe(true);
+    expect(row(id).status).toBe('ignored');
+    expect(classifications()).toBe(callsBefore);
+    expect((await app.ok('audit:undo', { auditId })).undone).toBe(true);
+  });
 });

@@ -54,6 +54,13 @@ function snapshotBefore(row: DocRow): ArchiveUndoData['before'] {
   };
 }
 
+/** The analysis proposal with the topic and project the user chose for the archiving. */
+function assignedProposal({ req, proposal }: Archiving): DocumentProposal | null {
+  if (!proposal) return null;
+  const { topicName, projectName } = assignmentNames(req, proposal);
+  return { ...proposal, topic: topicName, project: projectName };
+}
+
 const isApproved = (category: string, approved: string[]) => approved.some((a) => a.toLowerCase() === category.toLowerCase());
 
 const successMessage = (mode: ArchiveItemRequest['mode']) =>
@@ -161,7 +168,7 @@ export class ArchiveExecutor {
     this.deps.ctx.events.emit('document:archived', { documentId: row.id, sourcePath: row.sourcePath });
     this.deps.notifications.resolveByDedupePrefix(`classified:${row.id}`);
     try {
-      this.parts.extractedItems.propose(row, archiving.proposal);
+      this.parts.extractedItems.propose(row, assignedProposal(archiving));
     } catch (err) {
       this.deps.ctx.logger.error('archive', 'Could not create proposals from the document', { documentId: row.id, error: err });
     }

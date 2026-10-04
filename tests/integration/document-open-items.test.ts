@@ -93,4 +93,37 @@ describe('Open items from documents', () => {
     const second = await archived('Protokoll Folgetermin', [{ title: 'Gerüst für die Fassade bestellen' }]);
     expect((await proposedFor(second)).map((a) => a.actionType)).toEqual(['create_open_item']);
   });
+  const EINSPRUCH = 'Beschluss: Wir legen Einspruch ein.';
+
+  it('proposes open items and decisions with the topic and project chosen in the archive dialog', async () => {
+    app.llm.on('DocumentClassification', () =>
+      classification({
+        title: 'Steuerbescheid',
+        summary: 'Bescheid',
+        categoryPath: 'Privat/haus',
+        mainTopic: 'Steuer',
+        project: 'Haushalt',
+        openItems: [ANGEBOT],
+        decisions: [{ title: 'Einspruch', decisionText: EINSPRUCH, kind: 'decided', evidence: EINSPRUCH, participants: [] }],
+      }),
+    );
+    const imp = await app.ok('documents:import', { paths: [app.file('in/bescheid.txt', `Bescheid\n${EINSPRUCH}`)] });
+    await app.services.jobs.whenIdle();
+    const doc = imp.imported[0]!.id;
+    await app.ok('documents:archive', {
+      items: [{ documentId: doc, mode: 'copy', categoryPath: 'Privat/haus', topic: 'Finanzamt 2024', project: '' }],
+      confirmed: true,
+      approveNewCategories: [],
+      confirmMove: false,
+    } as never);
+
+    const params = (await proposedFor(doc)).map((a) => [a.actionType, a.proposedParameters]);
+    expect(params).toEqual(
+      expect.arrayContaining([
+        ['create_open_item', expect.objectContaining({ topic: 'Finanzamt 2024', project: null })],
+        ['record_decision', expect.objectContaining({ topic: 'Finanzamt 2024', project: null })],
+      ]),
+    );
+    expect(params).toHaveLength(2);
+  });
 });

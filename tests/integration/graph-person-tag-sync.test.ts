@@ -71,6 +71,23 @@ describe('editing an archived document', () => {
     expect(relStatus(id, tagId('umzug')!, 'relates_to')).toBeUndefined();
   });
 
+  it('a bulk edit syncs the relations to persons and tags; its undo restores the previous state', async () => {
+    const id = await archived(['Anna Albers'], ['budget', 'reise']);
+
+    await app.ok('documents:bulkUpdate', { ids: [id], removeTags: ['reise'], addTags: ['umzug'], addPersons: ['Dora Dietz'], confirmed: true });
+
+    expect(relStatus(personId('Dora Dietz'), id, 'mentioned_in')).toBe('confirmed');
+    expect(relStatus(personId('Anna Albers'), id, 'mentioned_in')).toBe('confirmed');
+    expect(relStatus(id, tagId('umzug')!, 'relates_to')).toBe('confirmed');
+    expect(relStatus(id, tagId('reise')!, 'relates_to')).toBe('outdated');
+    expect(relStatus(id, tagId('budget')!, 'relates_to')).toBe('confirmed');
+
+    expect((await app.ok('audit:undo', { auditId: (await lastAudit('document.bulkUpdate')).id })).undone).toBe(true);
+    expect(relStatus(personId('Dora Dietz'), id, 'mentioned_in')).toBeUndefined();
+    expect(relStatus(id, tagId('reise')!, 'relates_to')).toBe('confirmed');
+    expect(relStatus(id, tagId('umzug')!, 'relates_to')).toBeUndefined();
+  });
+
   it('archiving links every person and every tag (no longer only 12 persons and 8 tags)', async () => {
     const persons = Array.from({ length: 15 }, (_, i) => `Person Nummer${String.fromCharCode(65 + i)}`);
     const tags = Array.from({ length: 10 }, (_, i) => `tag${i}`);
