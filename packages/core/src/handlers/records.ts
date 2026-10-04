@@ -50,7 +50,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
         : services.actions.resolve(input.actionId, { decision: 'reject' }),
 
     'decisions:create': async (input) => {
-      const duplicate = services.decisions.findDuplicate({ decisionText: input.decisionText, topic: input.topic });
+      const duplicate = services.decisions.findDuplicate({ decisionText: input.decisionText, topic: input.topic, project: input.project });
       if (duplicate)
         throw new AppError(
           'validation_error',
