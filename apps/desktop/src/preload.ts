@@ -16,7 +16,7 @@ const bridge: ArchivistBridge = {
       return {
         ok: false,
         error: {
-          category: 'validation_error',
+          category: 'internal_error',
           message: 'Die Anfrage an den lokalen Dienst ist fehlgeschlagen.',
           retryable: true,
           details: err instanceof Error ? err.message : String(err),

@@ -110,7 +110,16 @@ export class BulkFileAnalysis {
       .all()
       .map((row) => row.id);
     const payload: BulkPayload = { confirmLlm: request.confirmLlm, fileIds };
-    return this.deps.jobs.enqueue(SCAN_ANALYZE_ALL_JOB, { label: 'Analysiere alle neuen Dateien', payload, sameAs: () => true, maxAttempts: 1 });
+    const job = this.deps.jobs.enqueue(SCAN_ANALYZE_ALL_JOB, { label: 'Analysiere alle neuen Dateien', payload, sameAs: () => true, maxAttempts: 1 });
+    const active = this.deps.jobs.payloadOf<BulkPayload>(job.id);
+    // a run already active without consent gets it for the files it has not reached yet
+    if (request.confirmLlm && active && !active.confirmLlm) this.deps.jobs.updatePayload(job.id, { ...active, confirmLlm: true });
+    return job;
+  }
+
+  /** The consent as stored now: it may have been given after the run started (it is never taken back). */
+  private consented(jobId: string): boolean {
+    return this.deps.jobs.payloadOf<BulkPayload>(jobId)?.confirmLlm ?? false;
   }
 
   /** The ids of a page that still wait (a file may have been analysed, excluded or removed since the consent), in the page's order. */
@@ -125,11 +134,11 @@ export class BulkFileAnalysis {
 
   /** Runs over the frozen ids after the checkpoint; a file that fails stays `new`, but the run is past it. */
   async run(job: JobContext<BulkPayload>): Promise<{ summary: string }> {
-    const { confirmLlm, fileIds } = job.payload;
+    const { fileIds } = job.payload;
     const saved = (job.checkpoint ?? {}) as Partial<BulkCheckpoint>;
     const state: BulkCheckpoint = { next: 0, analyzed: 0, failed: 0, skipped: 0, failures: [], ...saved };
     const handled = () => state.analyzed + state.failed + state.skipped;
-    await pausingOnTokenCap(() => this.analyzePages(fileIds, { state, confirmLlm, job }), {
+    await pausingOnTokenCap(() => this.analyzePages(fileIds, { state, job }), {
       notifications: this.deps.notifications,
       jobId: job.id,
       title: 'Analyse pausiert',
@@ -139,8 +148,8 @@ export class BulkFileAnalysis {
     return { summary: runSummary({ done: state.analyzed, failed: state.failed }) };
   }
 
-  private async analyzePages(fileIds: string[], run: { state: BulkCheckpoint; confirmLlm: boolean; job: JobContext<BulkPayload> }): Promise<void> {
-    const { state, confirmLlm, job } = run;
+  private async analyzePages(fileIds: string[], run: { state: BulkCheckpoint; job: JobContext<BulkPayload> }): Promise<void> {
+    const { state, job } = run;
     const mode = this.deps.privacy.mode();
     const queued = this.queuedElsewhere();
     const started = Date.now();
@@ -153,7 +162,7 @@ export class BulkFileAnalysis {
         for (const id of page) {
           job.throwIfCancelled();
           if (waiting.has(id) && !queued.has(id)) {
-            const result = await this.deps.analysis.analyzeOne(id, { mode, confirmLlm, job, quiet: true });
+            const result = await this.deps.analysis.analyzeOne(id, { mode, confirmLlm: job.payload.confirmLlm || this.consented(job.id), job, quiet: true });
             this.tally(state, result);
             if (result.kind === 'analyzed') documentIds.push(result.documentId);
           }

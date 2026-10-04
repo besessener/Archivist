@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { AppError, validationError } from '../util/errors';
+import { AppError, toErrorInfo, validationError } from '../util/errors';
 
 const MARKER_FILE = 'restore-pending.json';
 const DATABASE_FILE = 'archivist.db';
@@ -153,16 +153,23 @@ function stage(source: RestoreSource, target: string): void {
   if (source.walFile) fs.copyFileSync(source.walFile, `${target}.restoring-wal`);
 }
 
-/** Stages the source and checks the copy; the staged files stay only when it is intact. */
+/** Stages the source and checks the copy; the staged files stay only when it is intact. A copy that fails is a disk problem, not damage. */
 function stageIntact(source: RestoreSource, target: string): boolean {
   try {
     stage(source, target);
-  } catch {
+  } catch (err) {
     discardStaged(target);
-    return false;
+    const info = toErrorInfo(err);
+    throw new AppError('filesystem_error', `Das Backup ließ sich zur Prüfung nicht kopieren: ${info.message} Deine Daten sind unverändert.`, {
+      retryable: info.retryable,
+      details: info.details,
+      cause: err,
+    });
   }
   if (isIntact(`${target}.restoring`)) {
+    // the read-only check of a WAL database leaves an empty log and index behind; only a copied log belongs to the restore
     fs.rmSync(`${target}.restoring-shm`, { force: true });
+    if (!source.walFile) fs.rmSync(`${target}.restoring-wal`, { force: true });
     return true;
   }
   discardStaged(target);

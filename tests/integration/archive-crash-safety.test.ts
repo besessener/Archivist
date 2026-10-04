@@ -48,6 +48,20 @@ const archive = (documentId: string) =>
     confirmMove: false,
   } as never);
 
+/** A file found by the scanner and analysed in place: undoing its archiving puts the archived version back next to it. */
+async function scanned(name: string, content: string) {
+  app.services.settings.update({ scan: { enabled: true } });
+  const dl = path.join(app.home, 'Downloads');
+  const src = app.file(`Downloads/${name}`, content);
+  await app.ok('scanner:addDirectory', { path: dl, recursive: true });
+  await app.ok('scanner:start', {});
+  await app.services.jobs.whenIdle();
+  const file = (await app.ok('scanner:getResults', {})).files.find((x) => x.name === name)!;
+  await app.ok('scanner:analyze', { fileIds: [file.id], confirmLlm: true });
+  await app.services.jobs.whenIdle();
+  return { src, dl, id: (await app.ok('documents:list', {})).find((d) => d.originalName === name)!.id };
+}
+
 describe('Read-only files', () => {
   it('are archived, keep their read-only flag and can be moved to the trash', async () => {
     const { src, id } = await imported('schreibgeschuetzt.txt', 'Schreibgeschützter Anhang');
@@ -90,19 +104,6 @@ describe('Archiving: the audit entry cannot be written', () => {
 });
 
 describe('Undo: the database refuses after the archived version was put back', () => {
-  async function scanned(name: string, content: string) {
-    app.services.settings.update({ scan: { enabled: true } });
-    const dl = path.join(app.home, 'Downloads');
-    const src = app.file(`Downloads/${name}`, content);
-    await app.ok('scanner:addDirectory', { path: dl, recursive: true });
-    await app.ok('scanner:start', {});
-    await app.services.jobs.whenIdle();
-    const file = (await app.ok('scanner:getResults', {})).files.find((x) => x.name === name)!;
-    await app.ok('scanner:analyze', { fileIds: [file.id], confirmLlm: true });
-    await app.services.jobs.whenIdle();
-    return { src, dl, id: (await app.ok('documents:list', {})).find((d) => d.originalName === name)!.id };
-  }
-
   it('takes the put-back copy away again, so a retry leaves exactly one „Name (2).ext“', async () => {
     const a = await scanned('bericht.txt', 'Archivierte Fassung');
     const res = await archive(a.id);
@@ -124,5 +125,49 @@ describe('Undo: the database refuses after the archived version was put back', (
     expect(fs.readdirSync(a.dl).sort()).toEqual(['bericht (2).txt', 'bericht.txt']);
     expect(fs.readFileSync(path.join(a.dl, 'bericht (2).txt'), 'utf8')).toBe('Archivierte Fassung');
     expect(fs.readFileSync(a.src, 'utf8')).toBe('Später bearbeitete Fassung');
+  });
+});
+
+describe('Undo: putting the archived version back next to the original fails', () => {
+  const isPartialIn = (dir: string, p: unknown) => path.dirname(String(p)) === dir && String(p).endsWith('.partial');
+
+  async function archivedOriginal() {
+    const a = await scanned('bericht.txt', 'Archivierte Fassung');
+    const res = await archive(a.id);
+    fs.writeFileSync(a.src, 'Später bearbeitete Fassung');
+    return { ...a, dir: a.dl, auditId: res.items[0]!.auditId!, archived: res.items[0]!.targetPath! };
+  }
+
+  it('a copy that breaks off halfway leaves no partial file in the original folder', async () => {
+    const a = await archivedOriginal();
+    const realCopy = fsp.copyFile.bind(fsp);
+    vi.spyOn(fsp, 'copyFile').mockImplementation(async (from, to, mode) => {
+      if (!isPartialIn(a.dir, to)) return realCopy(from, to, mode);
+      fs.writeFileSync(String(to), 'halb');
+      throw errno('ENOSPC');
+    });
+
+    const failed = await app.call('documents:undoArchive', { auditId: a.auditId });
+
+    expect(failed).toMatchObject({ ok: false, error: { message: expect.stringContaining('Es wurde nichts verändert') } });
+    expect(fs.readdirSync(a.dir)).toEqual(['bericht.txt']);
+    expect(fs.existsSync(a.archived)).toBe(true);
+  });
+
+  it('a temporary copy that cannot be removed is reported with its path instead of staying behind unnoticed', async () => {
+    const a = await archivedOriginal();
+    const realUnlink = fsp.unlink.bind(fsp);
+    vi.spyOn(fsp, 'link').mockRejectedValue(errno('EPERM'));
+    vi.spyOn(fsp, 'unlink').mockImplementation(async (p) => {
+      if (isPartialIn(a.dir, p)) throw errno('EBUSY');
+      return realUnlink(p);
+    });
+
+    const failed = await app.call('documents:undoArchive', { auditId: a.auditId });
+
+    const leftover = fs.readdirSync(a.dir).find((name) => name.endsWith('.partial'))!;
+    expect(failed).toMatchObject({ ok: false, error: { message: expect.stringContaining(path.join(a.dir, leftover)) } });
+    expect(fs.readdirSync(a.dir).filter((name) => !name.endsWith('.partial'))).toEqual(['bericht.txt']);
+    expect(fs.existsSync(a.archived)).toBe(true);
   });
 });

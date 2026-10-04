@@ -15,7 +15,7 @@ export const LlmSettings = z.object({
   maxInputChars: z.number().int().min(500).max(2000000).default(24000),
   /** optional embedding model (/embeddings). Empty = local vectors. */
   embeddingModel: z.string().default(''),
-  /** Daily token limit (input + output); null = no limit. Background jobs pause when it is reached, the chat asks first. */
+  /** Daily token limit (input, cache reads and output); null = no limit. Background jobs pause when it is reached, the chat asks first. */
   dailyTokenCap: z.number().int().min(1000).max(10_000_000_000).nullable().default(null),
 });
 

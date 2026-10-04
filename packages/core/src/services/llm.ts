@@ -90,6 +90,9 @@ export class LlmService {
   /** Whether the daily token limit is reached (always false without a limit). */
   tokenCapReached = (): boolean => this.ledger.capReached();
 
+  /** Throws `TokenCapError` once the daily limit is reached, unless the user chose to continue (agent turns, #153). */
+  assertWithinCap = (): void => this.ledger.assertWithinCap();
+
   private connection(overrides: LlmOverrides): Connection {
     const llm = this.deps.settings.get().llm;
     const baseUrl = (overrides.baseUrl ?? llm.baseUrl).trim();

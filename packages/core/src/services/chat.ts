@@ -143,8 +143,7 @@ export class ChatService {
     // everything this message creates (also before an error or a cancel) belongs together (#272)
     const created: CreatedEntry[] = [];
     const gate = this.capGate(text, state);
-    const reply =
-      gate.kind === 'ask' ? gate.reply : await this.replyTo({ conversationId: conversation, text: gate.text, state: gate.state }, created, gate.override);
+    const reply = gate.kind === 'ask' ? gate.reply : await this.proceed(gate, { conversationId: conversation, created });
     if (created.length > 1) this.notify('Linking entries of one message failed', () => this.createdTogether?.(created, { id: userMessage.id, text }));
     const assistantMessage = this.store.saveAssistantMessage(conversation, reply);
     // never on the path of the answer: the suggestions follow in a job of their own (#283)
@@ -183,8 +182,14 @@ export class ChatService {
     }
   }
 
+  /** Replies past the token limit gate, ignoring the limit when the user chose to continue. */
+  private proceed(gate: Extract<CapGate, { kind: 'proceed' }>, target: { conversationId: string; created: CreatedEntry[] }): Promise<Reply> {
+    const reply = () => this.replyTo({ conversationId: target.conversationId, text: gate.text, state: gate.state }, target.created);
+    return gate.override ? tokenCapOverride.run(true, reply) : reply();
+  }
+
   /** The reply to a message: by the agent, else by the rule-based flow; on cancel or error what is already done stays. */
-  private async replyTo(turn: ChatTurn, created: CreatedEntry[], override: boolean): Promise<Reply> {
+  private async replyTo(turn: ChatTurn, created: CreatedEntry[]): Promise<Reply> {
     const { conversationId } = turn;
     this.progress.set(conversationId, { replies: [], state: turn.state });
     this.running.get(conversationId)?.abort();
@@ -192,7 +197,7 @@ export class ChatService {
     this.running.set(conversationId, controller);
     try {
       const reply = async () => (await this.agentReply(turn)) ?? (await llmCancelScope.run(controller.signal, () => this.flow.handle(turn)));
-      return await collectCreated(() => (override ? tokenCapOverride.run(true, reply) : reply()), created);
+      return await collectCreated(reply, created);
     } catch (err) {
       const done = this.progress.get(conversationId) ?? { replies: [], state: turn.state };
       return controller.signal.aborted ? cancelledReply(done) : this.failedReply(err, done);

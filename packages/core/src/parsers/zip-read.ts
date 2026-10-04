@@ -23,27 +23,32 @@ interface Budget {
   readonly archiveBytes: number;
 }
 
-/** Inflates one entry as a stream and stops at the limits instead of after the fact; `keep` false only counts. */
-function inflateEntry(entry: JSZip.JSZipObject, budget: Budget, keep: boolean): Promise<Buffer> {
+/** Streams one entry and stops at the limits instead of after the fact; each chunk within them goes to `onChunk`. */
+function streamEntry(entry: JSZip.JSZipObject, { budget, onChunk }: { budget: Budget; onChunk: (chunk: Buffer) => void }): Promise<void> {
   return new Promise((resolve, reject) => {
-    const stream = entry.nodeStream('nodebuffer') as Readable;
-    const chunks: Buffer[] = [];
+    const source = entry.nodeStream('nodebuffer') as Readable;
     let entryBytes = 0;
     const abort = (reason: string) => {
-      stream.destroy();
+      source.destroy();
       reject(new ZipLimitError(reason));
     };
-    stream.on('data', (chunk: Buffer) => {
+    source.on('data', (chunk: Buffer) => {
       entryBytes += chunk.length;
       budget.total += chunk.length;
       if (entryBytes > ZIP_LIMITS.maxEntryBytes) return abort('einzelner Teil zu groß');
       if (budget.total > ZIP_LIMITS.maxTotalBytes) return abort('Gesamtgröße zu groß');
       if (budget.total > ZIP_LIMITS.ratioFloorBytes && budget.total > budget.archiveBytes * ZIP_LIMITS.maxRatio) return abort('Kompressionsverhältnis zu hoch');
-      if (keep) chunks.push(chunk);
+      onChunk(chunk);
     });
-    stream.on('error', reject);
-    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    source.on('error', reject);
+    source.on('end', () => resolve());
   });
+}
+
+async function inflateEntry(entry: JSZip.JSZipObject, budget: Budget): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  await streamEntry(entry, { budget, onChunk: (chunk) => chunks.push(chunk) });
+  return Buffer.concat(chunks);
 }
 
 async function openZip(buffer: Buffer): Promise<JSZip> {
@@ -59,7 +64,7 @@ export async function readZipXml(buffer: Buffer, names: RegExp): Promise<Array<{
   const budget: Budget = { total: 0, archiveBytes: buffer.length };
   const parts: Array<{ name: string; xml: string }> = [];
   for (const [name, entry] of Object.entries(zip.files)) {
-    if (names.test(name) && !entry.dir) parts.push({ name, xml: (await inflateEntry(entry, budget, true)).toString('utf8') });
+    if (names.test(name) && !entry.dir) parts.push({ name, xml: (await inflateEntry(entry, budget)).toString('utf8') });
   }
   return parts;
 }
@@ -69,6 +74,6 @@ export async function assertZipWithinLimits(buffer: Buffer): Promise<void> {
   const zip = await openZip(buffer);
   const budget: Budget = { total: 0, archiveBytes: buffer.length };
   for (const entry of Object.values(zip.files)) {
-    if (!entry.dir) await inflateEntry(entry, budget, false);
+    if (!entry.dir) await streamEntry(entry, { budget, onChunk: () => undefined });
   }
 }

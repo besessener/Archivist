@@ -12,7 +12,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 | API-Key | nicht in `settings.json`, siehe [Geheimnisse](aktionsstufen.md#geheimnisse) |
 | Modellname | `llm.model` |
 | Reasoning effort (optional) | `llm.reasoningEffort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` oder leer (Standard des Modells), siehe [Denktiefe](#denktiefe) |
-| Tageslimit für Tokens (optional) | `llm.dailyTokenCap` (Eingabe + Ausgabe, mindestens 1 000; leer = kein Limit), siehe [Tokenverbrauch und Tageslimit](#tokenverbrauch-und-tageslimit) |
+| Tageslimit für Tokens (optional) | `llm.dailyTokenCap` (Eingabe, Cache und Ausgabe, mindestens 1 000; leer = kein Limit), siehe [Tokenverbrauch und Tageslimit](#tokenverbrauch-und-tageslimit) |
 | Timeout | `llm.timeoutMs` |
 | maximale Eingabegröße | `llm.maxInputChars` (zu lange Eingaben werden in der Mitte gekürzt, Anfang und Ende bleiben; die Klassifikation eines Dokuments teilt lange Texte stattdessen in Teile, siehe [Lange Dokumente](#lange-dokumente); für Embeddings gilt sie als Obergrenze je Eintrag, siehe [Anfragen](#anfragen)) |
 | Embedding-Modell (optional) | `llm.embeddingModel` |
@@ -60,6 +60,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Das **Tageslimit** (`llm.dailyTokenCap`, Standard aus) zählt Eingabe, Cache und Ausgabe des heutigen Tages. Ist es erreicht, geht keine Anfrage mehr hinaus – vorher wird nichts gesendet:
   - **Hintergrundarbeit** pausiert: Automatische Funktionen, die nur im Modus „automatisch“ laufen (Widerspruchsprüfung, Themenvorschläge, Hintergrundläufe des Agenten), werden übersprungen. Eine Dokumentanalyse in der Warteschlange wartet als „Pausiert“ bis zum nächsten Tag, ohne einen Versuch zu verbrauchen, und läuft sofort weiter, sobald du das Limit erhöhst oder entfernst. Sie fällt nicht auf die lokale Klassifikation zurück. **Massenläufe** (Alle neuen Dateien analysieren, Auswahl-Analyse, Analyse mehrerer hochgeladener Dateien, Ordnerimport, Neu verarbeiten) halten beim Erreichen an: Das Dokument, bei dem es auftrat, und alle weiteren bleiben unverändert (nicht „fehlgeschlagen“), der Auftrag setzt mit seinem Stand fort, und eine Benachrichtigung „Analyse pausiert“ nennt den Fortschritt.
   - Im **Chat** fragt Archivist vorher („Trotzdem fortfahren“). Du entscheidest je Unterhaltung; danach gilt die Freigabe bis Tagesende.
+  - Ein **Agentenlauf** (Chat oder Hintergrund) prüft das Limit vor jeder Anfrage: Erreicht er es mitten im Lauf, endet er mit dem Fehler „Tageslimit erreicht“, ohne eine weitere Anfrage zu senden; was er schon geändert hat, bleibt und lässt sich rückgängig machen. Mit „Trotzdem fortfahren“ läuft er weiter.
   - Andere Aktionen, die du in der Oberfläche auslöst (z. B. eine Wissensfrage), melden den Fehler „Tageslimit erreicht“. Der Verbindungstest geht immer durch.
 - **Schätzung vor einem Import:** `estimateTokens(text | Zeichenzahl)` aus dem Core-Paket schätzt vier Zeichen je Token, aufgerundet; für eine Vorabschätzung (Dokumente × Zeichen je Dokument, begrenzt auf `llm.maxInputChars`) ohne die Datei zu lesen.
 
@@ -75,7 +76,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 
 ## Lange Dokumente
 
-- Die Klassifikation (Schema `DocumentClassification`) sendet einen Text, der mit dem Prompt nicht in `llm.maxInputChars` passt, in bis zu 6 aufeinanderfolgenden Teilen. Jeder Teil nennt im Prompt „Teil i von n“, der Text bleibt als Daten markiert.
+- Die Klassifikation (Schema `DocumentClassification`) sendet einen Text, der mit dem Prompt nicht in `llm.maxInputChars` passt, in bis zu 6 aufeinanderfolgenden Teilen. Jeder Teil nennt im Prompt „Teil i von n“, der Text bleibt als Daten markiert. Die Teilgröße rechnet mit dem längsten möglichen Prompt (die längsten bekannten Themen- und Projektnamen), sodass kein Teil in der Mitte gekürzt wird.
 - Jeder Teil ist eine eigene Anfrage: Er geht nur, wenn das Dokument zur externen Analyse freigegeben ist (Datenschutzmodus, Ausschlüsse, Ordnerfreigabe – einmal je Dokument geprüft), wird maskiert und steht mit dem Zweck „Dokumentklassifikation (Dokument-ID, Teil i von n)“ und der Dokument-ID im Übertragungsprotokoll. Der Dateiname steht nur im Text der Anfrage an das LLM, nicht im Zweck – so landet er nicht in Übertragungsprotokoll und Log.
 - Titel, Thema, Projekt, Ablageort und Einschätzung stammen aus dem ersten Teil; Entscheidungen (mit wörtlichem Beleg im Dokument), offene Punkte, Personen, Tags und Daten werden aus allen Teilen zusammengeführt.
 - Was gelesen wurde, speichert der Vorschlag als `coverage` (`textChars`, `llmChars`, `llmParts`, `extractionTruncated`) und zeigt es in der Oberfläche. Über 6 Teile hinaus liest die KI nichts mehr; der Rest ist im Hinweis ausgewiesen.

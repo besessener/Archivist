@@ -116,9 +116,8 @@ export class DocumentImporter {
     return batch.out;
   }
 
-  private enqueueFolder(folder: string, allowLlm: boolean): string {
-    const payload: ImportFolderPayload = { path: folder, allowLlm };
-    return this.deps.jobs.enqueue(DOCUMENT_IMPORT_FOLDER_JOB, { label: `Importiere Ordner ${path.basename(folder)}`, payload, maxAttempts: 1 }).id;
+  private enqueueFolder(payload: ImportFolderPayload): string {
+    return this.deps.jobs.enqueue(DOCUMENT_IMPORT_FOLDER_JOB, { label: `Importiere Ordner ${path.basename(payload.path)}`, payload, maxAttempts: 1 }).id;
   }
 
   private queueAnalysis(batch: ImportBatch): void {
@@ -171,7 +170,7 @@ export class DocumentImporter {
       return;
     }
     if (checked.kind === 'folder') {
-      out.folders.push({ path: input, jobId: this.enqueueFolder(checked.real, state.batch.autoLlm) });
+      out.folders.push({ path: input, jobId: this.enqueueFolder({ path: checked.real, allowLlm: state.batch.autoLlm }) });
       return;
     }
     if (!(await contentMatchesExtension(checked.real, checked.ext))) {
