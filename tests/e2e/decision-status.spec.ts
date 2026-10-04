@@ -36,6 +36,30 @@ test.describe('decisions: status change in the form', () => {
     await expect(d.locators.inputs.status).toBeDisabled();
   });
 
+  test('choosing „Entwurf“ or back „Gültig“ in the status select saves exactly that status', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('decisions');
+    const d = app.decisions;
+    await d.do.create({ text: 'Wir nutzen Postgres.', isoDate: '2026-09-01', topic: 'Datenbank', participants: 'Anna' });
+    await expect(d.row('Wir nutzen Postgres.')).toHaveAttribute('data-status', 'active');
+
+    await d.row('Wir nutzen Postgres.').click();
+    await d.locators.buttons.edit.click();
+    await d.locators.inputs.status.selectOption('draft');
+    await expect(d.locators.inputs.draft).toBeChecked();
+    await d.locators.buttons.save.click();
+    await expect(d.locators.form).toBeHidden();
+    await expect(d.row('Wir nutzen Postgres.')).toHaveAttribute('data-status', 'draft');
+
+    await d.locators.buttons.edit.click();
+    await d.locators.inputs.status.selectOption('active');
+    await expect(d.locators.inputs.draft).not.toBeChecked();
+    await d.locators.buttons.save.click();
+    await expect(d.locators.form).toBeHidden();
+    await expect(d.row('Wir nutzen Postgres.')).toHaveAttribute('data-status', 'active');
+  });
+
   test('the picked successor stays selected when a new search no longer finds it', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);

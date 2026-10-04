@@ -119,6 +119,19 @@ export function DecisionFormDialog({
   const [initialFormState] = useState(formState);
   const fieldsChanged = formState !== initialFormState;
 
+  // the status select and the draft checkbox stay in step, so neither silently overrides the other on save
+  function changeStatus(next: DecisionStatus) {
+    setStatus(next);
+    if (isEditableDecisionStatus(next)) setDraft(next === 'draft');
+  }
+
+  function changeDraft(checked: boolean) {
+    setDraft(checked);
+    if (!decision || !isEditableDecisionStatus(status)) return;
+    if (checked) setStatus('draft');
+    else if (status === 'draft') setStatus('confirmed');
+  }
+
   function setFieldUnknown(field: DecisionField, isUnknown: boolean) {
     setUnknown((previous) => withMembership(previous, { value: field, present: isUnknown }));
   }
@@ -257,7 +270,7 @@ export function DecisionFormDialog({
           <Field label="Gültig bis" htmlFor="d-until">
             <Input id="d-until" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
           </Field>
-          {decision && <DecisionStatusField decision={decision} status={status} onStatusChange={setStatus} />}
+          {decision && <DecisionStatusField decision={decision} status={status} onStatusChange={changeStatus} />}
           {pendingCritical === 'superseded' && decision && (
             <SupersededByField decision={decision} open={open} value={supersededBy} onChange={setSupersededBy} />
           )}
@@ -271,7 +284,7 @@ export function DecisionFormDialog({
         <CheckboxField
           checked={effectiveDraft}
           disabled={missing.length > 0}
-          onCheckedChange={(checked) => setDraft(checked === true)}
+          onCheckedChange={(checked) => changeDraft(checked === true)}
           label="Als Entwurf speichern"
           data-testid="decision-draft"
         />
