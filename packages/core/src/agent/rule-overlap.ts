@@ -4,13 +4,12 @@ import { normalizeName } from '../util/text';
 type Condition = RuleDefinition['when'];
 const CONDITIONS = ['sender', 'docType', 'nameContains', 'ext', 'topic', 'textContains'] as const;
 
-const clean = (value: string | null | undefined, field: (typeof CONDITIONS)[number]) =>
-  normalizeName(field === 'ext' ? (value ?? '').replace(/^\./, '') : (value ?? ''));
+const clean = (value: string | null | undefined) => normalizeName(value ?? '');
 
 /** Could one document match both conditions? Fields only one rule names do not exclude each other. */
 export function conditionsOverlap(a: Condition, b: Condition): boolean {
   return CONDITIONS.every((field) => {
-    const [x, y] = [clean(a[field], field), clean(b[field], field)];
+    const [x, y] = [clean(a[field]), clean(b[field])];
     if (!x || !y) return true;
     return field === 'ext' ? x === y : x.includes(y) || y.includes(x);
   });

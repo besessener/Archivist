@@ -15,4 +15,8 @@ export const MUTATE_TARGETS = [
   'packages/core/src/services/contradiction-rules.ts',
   'packages/core/src/services/document-contradiction-rules.ts',
   'packages/shared/src/llm-base-url.ts',
+  'packages/core/src/services/audit-chain.ts',
+  'packages/core/src/services/archive-structure.ts',
+  'packages/core/src/agent/rule-overlap.ts',
+  'packages/core/src/parsers/html-text.ts',
 ];
