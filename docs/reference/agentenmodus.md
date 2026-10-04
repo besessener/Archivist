@@ -105,7 +105,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 
 Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nur das Ergebnis. Dokumentzeilen als Fundstelle stehen als Daten markiert mit der D-ID. Nicht freigegebene Dokumente werden übersprungen und gezählt.
 
-- `sum_amounts`: Belegliste mit Datum, Betrag und Fundstelle, Summe und Anzahl; Dokumente ohne erkennbaren Betrag werden genannt. Als Betrag gilt die Gesamtbetragszeile, sonst der größte Betrag im Dokument; dieselbe Erkennung liefert den Betrag in `export_csv` (Spalte `betrag`) und `export_bundle`.
+- `sum_amounts`: Belegliste mit Datum, Betrag und Fundstelle, Summe und Anzahl; Dokumente ohne erkennbaren Betrag werden genannt. Als Betrag gilt die Gesamtbetragszeile (Zwischensumme, Netto und Steuer zählen nicht), sonst der größte Betrag im Dokument. `export_csv` (Spalte `betrag`) und `export_bundle` übernehmen nur die Gesamtbetragszeile; Dokumente ohne sie (etwa Verträge oder Angebote) bleiben dort ohne Betrag und zählen nicht zur Summe.
 - `find_gaps`: Lücken in einer Serie nach Monat (`by: month`) oder laufender Nummer (`by: number`); erstes und letztes Dokument der Serie stehen mit der Fundstelle (Zeile mit dem Datum bzw. der Nummer) im Ergebnis.
 - `compare_documents`: vergleicht zeilenweise. Geänderte Zeilen stehen in einer Tabelle „In A (alt) | In B (neu) | Änderung“ (z. B. „Miete 800 € → 850 €“), danach Zeilen nur in A und nur in B. Mit `weitere` wird das erste Dokument mit jedem weiteren verglichen (B1, B2, …). Alle Dokumente müssen freigegeben sein.
 - `find_deadlines`: Fristen und Ablaufdaten mit Rechenweg und Fundstelle; nennt bestehende Erinnerungen.
@@ -142,7 +142,7 @@ Weitere Werkzeuge für die Verknüpfungen:
 | --- | --- |
 | `set_metadata` | `topic`/`project` ersetzen das Hauptthema bzw. -projekt (Ablage). `addTopics`/`addProjects` ergänzen weitere – wer noch keins hat, bekommt es als Hauptthema –, `removeTopics`/`removeProjects` entfernen weitere; `case` ordnet einem vorhandenen Vorgang zu; `addTags` gilt für alle Arten von Einträgen. Ergänzungen sind wie die Sammelzuordnung ein Rückgängig-Schritt |
 | `link` | auch `subtopic_of`: ein Thema oder Projekt unter ein anderes einordnen (keine Kreise) |
-| `update_note` | Titel und Text einer Notiz ändern (nur auf Wunsch); ohne neuen Titel bleibt der bisherige. `[[Name]]` verlinkt, unbekannte Namen meldet das Werkzeug zum Anlegen |
+| `update_note` | Titel und Text einer Notiz ändern (nur auf Wunsch); ohne neuen Titel bleibt ein selbst gewählter Titel, ein aus dem Text abgeleiteter folgt dem neuen Text wie beim Bearbeiten in der Oberfläche. `[[Name]]` verlinkt, unbekannte Namen meldet das Werkzeug zum Anlegen |
 | `case_overview` | ein Vorgang mit Status, offenen Punkten und Verlauf (nur lesen; Dokumentnamen nur mit Freigabe) |
 | `list_subjects` | zeigt bei Unterthemen das Oberthema |
 

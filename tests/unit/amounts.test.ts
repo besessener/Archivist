@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findAmounts, formatEuro, invoiceTotal, parseNumber } from '../../packages/core/src/agent/tools/research/amounts';
+import { findAmounts, formatEuro, invoiceTotal, labelledTotal, parseNumber } from '../../packages/core/src/agent/tools/research/amounts';
 
 describe('numbers as written in documents', () => {
   it.each([
@@ -88,6 +88,17 @@ describe('invoice total', () => {
     expect(invoiceTotal('Gesamt 100,00 €\nGesamt 120,00 €')?.amount).toBe(120);
     expect(invoiceTotal('Gesamt 120,00 €\nGesamt 100,00 €')?.amount).toBe(120);
     expect(invoiceTotal('Gesamt 100,00 € A\nGesamt 100,00 € B')?.line).toBe('Gesamt 100,00 € B');
+  });
+});
+
+describe('labelled total', () => {
+  it('takes only a total line, never the largest amount of a document without one', () => {
+    expect(labelledTotal('Kaution 2.550,00 €\nMiete 850,00 €')).toBeNull();
+    expect(invoiceTotal('Kaution 2.550,00 €\nMiete 850,00 €')?.amount).toBe(2550);
+  });
+
+  it('skips subtotal and tax lines for the gross total', () => {
+    expect(labelledTotal('Zwischensumme 100,00 €\nMwSt 19 % 19,00 €\nRechnungsbetrag 119,00 €')).toEqual({ amount: 119, line: 'Rechnungsbetrag 119,00 €' });
   });
 });
 

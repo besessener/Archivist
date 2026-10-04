@@ -40,6 +40,8 @@ export interface NoteInput {
 
 const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
 const sameText = (a: string, b: string) => collapse(a).toLowerCase() === collapse(b).toLowerCase();
+/** The title a note gets from its text when none is given. */
+export const deriveNoteTitle = (content: string): string => truncate(collapse(content), 70);
 
 export type NoteServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; search: SearchService; audit?: AuditService; undo?: UndoService };
 
@@ -127,7 +129,7 @@ export class NoteService {
     if (note?.type !== 'note') throw new AppError('validation_error', 'Notiz nicht gefunden.');
     if (note.duplicateOfId) throw new AppError('validation_error', 'Diese Notiz wurde als Duplikat verworfen.');
     const content = patch.content?.trim() || note.description || note.name;
-    const title = collapse(patch.title ?? '') || (patch.content !== undefined ? truncate(collapse(content), 70) : note.name);
+    const title = collapse(patch.title ?? '') || (patch.content !== undefined ? deriveNoteTitle(content) : note.name);
     if (title === note.name && content === (note.description ?? note.name)) return note;
     this.graph.registerNode({ type: 'note', id, name: title, description: content });
     const { adopted } = this.wiki.sync(id, content);
@@ -153,7 +155,7 @@ export class NoteService {
 
   private resolve(input: NoteInput): { title: string; content: string } {
     const content = input.content.trim();
-    const title = collapse(input.title ?? '') || truncate(collapse(content), 70);
+    const title = collapse(input.title ?? '') || deriveNoteTitle(content);
     if (!content || !title) throw new AppError('validation_error', 'Eine Notiz braucht einen Inhalt.');
     return { title, content };
   }

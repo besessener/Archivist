@@ -115,6 +115,18 @@ describe('The agent controls the linking features of Epic #269', () => {
     await app.ok('chat:send', { text: 'Ändere das.' });
   });
 
+  it('update_note keeps an explicitly chosen title and lets a title derived from the old text follow the new text', async () => {
+    const named = (await app.ok('knowledge:createEntity', { type: 'note', name: 'Dach', description: 'Angebot vom Dachdecker einholen.' })).entity;
+    const derived = await app.services.notes.create({ content: 'Fenster ausmessen lassen.' });
+    app.llm.agent = ask(listNotesAndItems, () => [
+      { name: 'update_note', args: { note: refOf('Dachdecker'), content: 'Angebot vom Dachdecker liegt vor.' } },
+      { name: 'update_note', args: { note: refOf('Fenster ausmessen'), content: 'Fenster sind ausgemessen.' } },
+    ]);
+    await app.ok('chat:send', { text: 'Aktualisiere die Notizen zum Dach und zu den Fenstern.' });
+    expect(app.services.graph.getEntity(named.id)?.name).toBe('Dach');
+    expect(app.services.graph.getEntity(derived.id)?.name).toBe('Fenster sind ausgemessen.');
+  });
+
   it("update_note never revives a rejected pair; a proposal its [[Name]] takes over is the agent's link of the run", async () => {
     const rejectedTopic = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Finanzen' })).entity;
     const proposedTopic = (await app.ok('knowledge:createEntity', { type: 'topic', name: 'Steuern' })).entity;

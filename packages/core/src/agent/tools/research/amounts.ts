@@ -76,18 +76,21 @@ function lineTotal(line: string): TotalCandidate | null {
 const betterTotal = (candidate: TotalCandidate, best: TotalCandidate | null) =>
   !best || candidate.score > best.score || (candidate.score === best.score && candidate.amount >= best.amount);
 
-/** Invoice total of a text: preferably a line with Gesamt/Summe/Total …, otherwise the largest amount. */
-export function invoiceTotal(text: string): { amount: number; line: string } | null {
+const lineCandidates = (text: string) => text.split(/\r?\n/).flatMap((raw) => lineTotal(raw.trim()) ?? []);
+const asTotal = (candidate: TotalCandidate | null) => (candidate ? { amount: candidate.amount, line: candidate.line } : null);
+
+/** Total from a line labelled Gesamt/Summe/Total …; subtotal, net and tax lines lose against it. */
+export function labelledTotal(text: string): { amount: number; line: string } | null {
   let best: TotalCandidate | null = null;
+  for (const candidate of lineCandidates(text)) if (candidate.score > 0 && betterTotal(candidate, best)) best = candidate;
+  return asTotal(best);
+}
+
+/** Invoice total of a text: the labelled total, otherwise the largest amount. */
+export function invoiceTotal(text: string): { amount: number; line: string } | null {
   let largest: TotalCandidate | null = null;
-  for (const raw of text.split(/\r?\n/)) {
-    const candidate = lineTotal(raw.trim());
-    if (!candidate) continue;
-    if (!largest || candidate.amount > largest.amount) largest = candidate;
-    if (candidate.score > 0 && betterTotal(candidate, best)) best = candidate;
-  }
-  const total = best ?? largest;
-  return total ? { amount: total.amount, line: total.line } : null;
+  for (const candidate of lineCandidates(text)) if (!largest || candidate.amount > largest.amount) largest = candidate;
+  return labelledTotal(text) ?? asTotal(largest);
 }
 
 /** 1234.56 → „1.234,56 €“ (deterministic, without locale data). */

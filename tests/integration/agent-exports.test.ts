@@ -192,7 +192,8 @@ describe('agent export tools (#311)', () => {
     expect(out.content).toContain('3 Zeile(n)');
   });
 
-  it('exports the invoice total, not a subtotal', async () => {
+  it('exports the invoice total, not a subtotal, and no amount for a document without a total line', async () => {
+    const contract = await archived('miete.txt', 'Mietvertrag\nKaution 2.550,00 €\nMiete 850,00 € monatlich\n', 'Privat/wohnen', 'Mietvertrag', '2026-03-01');
     const id = await archived(
       'maler.txt',
       'Rechnung Malerarbeiten\nZwischensumme 100,00 €\nMwSt 19 % 19,00 €\nRechnungsbetrag 119,00 €\n',
@@ -201,9 +202,9 @@ describe('agent export tools (#311)', () => {
       '2026-03-02',
     );
     const ctx = emptyToolContext();
-    await run('export_csv', { documents: [ctx.refs.doc(id)], columns: ['titel', 'betrag'] }, ctx);
+    await run('export_csv', { documents: [ctx.refs.doc(contract), ctx.refs.doc(id)], columns: ['titel', 'betrag'] }, ctx);
     const lines = fs.readFileSync(ctx.files[0]!, 'utf8').slice(1).trimEnd().split('\r\n');
-    expect(lines).toEqual(['Titel;Betrag', 'Maler;119,00']);
+    expect(lines).toEqual(['Titel;Betrag', 'Mietvertrag;', 'Maler;119,00']);
   });
 
   it('keeps titles of non-shareable documents out of the tool result (the local file is complete)', async () => {
