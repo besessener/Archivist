@@ -24,7 +24,7 @@ function liftScanExclusion(deps: ToolDeps, path: string): ToolOutput {
 }
 
 function excludeFromScan(deps: ToolDeps, target: { kind: 'file' | 'dir'; path: string }): ToolOutput {
-  const existing = deps.scanner.listExclusions().find((e) => e.kind === target.kind && deps.privacy.paths.same(e.path, target.path));
+  const existing = deps.scanner.listExclusions().find((e) => deps.privacy.paths.same(e.path, target.path));
   if (existing) return { content: `${existing.path} ist bereits vom Scan ausgeschlossen.`, summary: 'bereits ausgeschlossen' };
   const exclusion = deps.scanner.exclude(target.kind, target.path);
   logScanExclusion(deps, { action: 'scan.exclude', undo: { kind: exclusion.kind, path: exclusion.path, excluded: true } });

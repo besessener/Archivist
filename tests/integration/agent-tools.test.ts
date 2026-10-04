@@ -412,6 +412,20 @@ describe('Settings per chat (#312)', () => {
     expect((await app.ok('scanner:listExclusions', {})).map((e) => e.path)).toEqual([inside]);
   });
 
+  it('a path the user excluded as a file counts as excluded when the agent names it without a kind', async () => {
+    const dl = path.join(app.home, 'Downloads');
+    fs.mkdirSync(dl, { recursive: true });
+    fs.writeFileSync(path.join(dl, 'geheim.txt'), 'x');
+    await app.ok('scanner:addDirectory', { path: dl, recursive: true });
+    const file = path.join(fs.realpathSync(dl), 'geheim.txt');
+    await app.ok('scanner:exclude', { kind: 'file', path: file });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'exclude_from_scan', args: { path: file } }] }, { text: 'ok' });
+    const res = await app.ok('chat:send', { text: 'Schließ Downloads/geheim.txt vom Scan aus' });
+    expect(lastToolOutput(app)).toContain('ist bereits vom Scan ausgeschlossen');
+    await app.ok('agent:undoRun', { runId: res.assistantMessage.runId! });
+    expect(await app.ok('scanner:listExclusions', {})).toEqual([expect.objectContaining({ kind: 'file', path: file })]);
+  });
+
   it('created folders and removed empty folders can be undone', async () => {
     await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'create_folder', args: { path: 'Arbeit/neu/tief' } }] }, { text: 'ok' });
