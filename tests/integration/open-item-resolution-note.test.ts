@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { intent } from '../helpers/chat-intents';
 
@@ -31,6 +31,10 @@ describe('Closing an open item with an optional solution comment', () => {
     const [entry] = (await app.ok('audit:list', { onlyUndoable: true })).filter((a) => a.action === 'open_item.close');
     await app.ok('audit:undo', { auditId: entry!.id });
     expect(app.services.openItems.get(item.id)).toMatchObject({ status: 'open', resolutionNote: null });
+    await vi.waitFor(async () => {
+      const afterUndo = await app.services.search.search('Ziegelmann', { types: ['task'] });
+      expect(afterUndo.map((h) => h.id)).not.toContain(item.id);
+    });
   });
 
   it('closing without a comment works as before', async () => {
