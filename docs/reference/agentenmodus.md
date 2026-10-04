@@ -117,7 +117,7 @@ Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nu
 - Die Erfassungswerkzeuge des Agenten und der regelbasierte Chat rufen dasselbe Modul auf. Rückfragen stellt der Agent über `ask_user`, der regelbasierte Chat über seine Rückfrage im Gespräch.
 - `chat.ts` enthält nur noch den Gesprächsablauf und den regelbasierten Rückfall (Absicht-Klassifikation und `dispatch()`).
 - Ist beim Ersetzen nicht eindeutig, welche ältere Entscheidung gemeint ist, nennt `record_decision` die Kandidaten mit ihren K-IDs; nach der Rückfrage legt `supersede_decision` die Vorschlagskarte an. Als überholt markiert wird erst nach deiner Bestätigung.
-- `create_subject` legt nur an, was es noch nicht gibt. Eine Person erkennt es wie `resolve_person` auch ohne Titel oder Rolle („Dr. Thomas Müller“) und als dich selbst („ich“); dann meldet es den vorhandenen Eintrag, und „Lauf rückgängig“ löscht ihn nicht.
+- `create_subject` legt nur an, was es noch nicht gibt. Eine Person erkennt es auch ohne Titel oder Rolle („Dr. Thomas Müller“) und unter deinem Profilnamen oder Spitznamen als dich selbst; dann meldet es den vorhandenen Eintrag, und „Lauf rückgängig“ löscht ihn nicht.
 - `set_metadata` ändert bei Entscheidungen, offenen Punkten und Ereignissen auch Titel, Personen (Beteiligte bzw. Verantwortliche) und Datum (Entscheidungsdatum, Fälligkeit, Ereignisdatum).
 - Datumsangaben ohne Jahr: „31.10.“ ist bei einer Entscheidung der letzte 31. Oktober, bei einer Erinnerung oder Fälligkeit der nächste.
 
