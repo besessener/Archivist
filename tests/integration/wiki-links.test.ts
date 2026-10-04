@@ -102,6 +102,26 @@ describe('Wiki links [[Name]] in notes (#285)', () => {
     expect(relationTo(note.id, topic.id)).toMatchObject({ id: link.id, status: 'rejected', method: 'wikilink' });
   });
 
+  it('an unrelated edit leaves a rejected or proposed relation alone while its [[Name]] was already in the text', async () => {
+    app = await createTestApp();
+    const note = await create('note', 'Bank', 'Kreditgesprach zu [[Finanzen]] und [[Hausbau]].');
+    const topic = await create('topic', 'Finanzen');
+    const project = await create('project', 'Hausbau');
+    const relates = (targetId: string) =>
+      app.services.graph.link({ sourceId: note.id, targetId, relationType: 'relates_to' }, { status: 'proposed', method: 'analysis' })!;
+    const rejected = relates(topic.id);
+    app.services.graph.setRelationStatus(rejected.id, { status: 'rejected' });
+    const proposal = relates(project.id);
+
+    await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch zu [[Finanzen]] und [[Hausbau]].' });
+    expect(relationTo(note.id, topic.id)).toMatchObject({ id: rejected.id, status: 'rejected', method: 'analysis' });
+    expect(relationTo(note.id, project.id)).toMatchObject({ id: proposal.id, status: 'proposed', method: 'analysis' });
+
+    await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch.' });
+    await app.ok('knowledge:updateNote', { id: note.id, content: 'Kreditgespräch zu [[Hausbau]].' });
+    expect(relationTo(note.id, project.id)).toMatchObject({ id: proposal.id, status: 'confirmed', method: 'wikilink', resolvedByUser: true });
+  });
+
   it('renaming or merging the target keeps the link', async () => {
     app = await createTestApp();
     const project = await create('project', 'Hausbau');

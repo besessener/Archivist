@@ -108,9 +108,10 @@ export class NoteService {
 
   private async revertUpdate(undoData: NoteUpdateUndo): Promise<string> {
     const { id, before } = undoData;
+    const current = this.graph.getEntity(id)!;
     this.graph.registerNode({ type: 'note', id, name: before.name, description: before.description });
     this.graph.restoreAdoptedRelations(undoData.adopted ?? []);
-    this.wiki.sync(id, before.description ?? before.name);
+    this.wiki.sync(id, { text: before.description ?? before.name, previous: current.description ?? current.name });
     await this.reindex(id);
     // the analysis runs again on the former text: its relations come back, the newer ones become outdated
     this.ctx.events.emit('entry:updated', { id, type: 'note' });
@@ -130,7 +131,7 @@ export class NoteService {
     const title = collapse(patch.title ?? '') || (patch.content !== undefined ? truncate(collapse(content), 70) : note.name);
     if (title === note.name && content === (note.description ?? note.name)) return note;
     this.graph.registerNode({ type: 'note', id, name: title, description: content });
-    const { adopted } = this.wiki.sync(id, content);
+    const { adopted } = this.wiki.sync(id, { text: content, previous: note.description ?? note.name });
     const after = this.graph.getEntity(id)!;
     this.audit?.log({
       action: 'note.update',
@@ -176,7 +177,7 @@ export class NoteService {
     const id = newId();
     this.graph.registerNode({ type: 'note', id, name: title, description: content });
     this.applyLinks(id, input);
-    this.wiki.sync(id, content);
+    this.wiki.sync(id, { text: content });
     this.ctx.events.created({ id, type: 'note' });
     await this.search.index({ type: 'note', id, title, content });
     this.ctx.events.changed('knowledge');

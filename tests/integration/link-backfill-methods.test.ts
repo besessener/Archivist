@@ -84,6 +84,25 @@ describe('Retroactive link run with all methods (#279)', () => {
     expect(byMethod().similarity).toBe(1);
   });
 
+  it('outside an agent run a failing pair skips only itself: the other similar entries are still proposed and counted', async () => {
+    app = await createTestApp({ autoLinks: false });
+    for (const what of ['Mietvertrag', 'Nebenkosten', 'Kündigung']) await app.services.notes.create({ title: what, content: flatText(what) });
+    await app.services.jobs.whenIdle();
+    const { graph } = app.services;
+    const link = graph.link.bind(graph);
+    let failed = false;
+    vi.spyOn(graph, 'link').mockImplementation((key, options) => {
+      if (failed || options?.method !== 'similarity' || key.relationType !== 'related_to') return link(key, options);
+      failed = true;
+      throw new Error('entry removed meanwhile');
+    });
+
+    const result = await app.services.links.backfill({ maxEntries: 1 });
+    expect(failed).toBe(true);
+    expect(result.proposed).toBe(1);
+    expect(byMethod().similarity).toBe(1);
+  });
+
   it('continues where it stopped – a note analysed by the language model is not paid for again', async () => {
     app = await createTestApp({ privacy: 'auto', autoLinks: false });
     app.llm.on('NoteAnalysis', () => ({ topic: null, project: null, persons: [], tags: ['notiz'] }));

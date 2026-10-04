@@ -128,13 +128,7 @@ export class LinkBackfill {
   private readonly auditedProposal: SimilarProposer = (key, proposal) => {
     if (this.deps.graph.rejectedBetween({ a: key.sourceId, b: key.targetId })) return false;
     const options = { status: 'proposed', trigger: 'link_backfill', origin: 'system', method: 'similarity', ...proposal } as const;
-    try {
-      return this.deps.graph.linkEntries(key, options).created;
-    } catch (err) {
-      // e.g. an entry removed meanwhile: this pair is skipped, the run goes on
-      this.deps.ctx.logger.warn('links', 'Link proposal skipped', { error: err, from: key.sourceId, to: key.targetId });
-      return false;
-    }
+    return this.deps.graph.linkEntries(key, options).created;
   };
 
   /** The other methods of Epic #269: same day and person, same source document, cases, the analysis of a note. */

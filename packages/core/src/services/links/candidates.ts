@@ -106,12 +106,22 @@ export class LinkCandidates {
     for (const candidate of await this.candidates(id, { limit: max * 2 })) {
       if (room <= 0) break;
       if (candidate.method !== 'similarity' || this.openSimilarityProposals(candidate.id) >= max) continue;
-      if (propose({ sourceId: id, targetId: candidate.id, relationType: 'related_to' }, { confidence: candidate.score, evidence: candidate.reason })) {
+      if (this.proposePair(propose, { key: { sourceId: id, targetId: candidate.id, relationType: 'related_to' }, candidate })) {
         created += 1;
         room -= 1;
       }
     }
     return created;
+  }
+
+  /** One failing pair (e.g. an entry removed meanwhile) is skipped; the other candidates are still proposed. */
+  private proposePair(propose: SimilarProposer, pair: { key: RelationKey; candidate: LinkCandidate }): boolean {
+    try {
+      return propose(pair.key, { confidence: pair.candidate.score, evidence: pair.candidate.reason });
+    } catch (err) {
+      this.deps.ctx.logger.warn('links', 'Link proposal skipped', { error: err, from: pair.key.sourceId, to: pair.key.targetId });
+      return false;
+    }
   }
 
   private readonly proposeLink: SimilarProposer = (key, proposal) =>
