@@ -26,8 +26,8 @@ function isHidden(attrs: string): boolean {
   return COLLAPSED.test(css) && /(?:^|;)overflow:hidden/.test(css);
 }
 
-// one pass, so an escaped entity (&amp;lt;) stays literal; out-of-range code points become U+FFFD
-const decodeEntities = (text: string) => decodeHTML(text).replace(/\u00A0/g, ' ');
+// one pass, so an escaped entity (&amp;lt;) stays literal; &nbsp; in any case is a blank as before
+const decodeEntities = (text: string) => decodeHTML(text.replace(/&nbsp;/gi, ' '));
 
 interface Tag {
   start: number;
