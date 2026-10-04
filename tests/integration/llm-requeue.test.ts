@@ -11,6 +11,7 @@ beforeEach(async () => {
   );
 });
 afterEach(async () => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   await app.cleanup();
 });
@@ -64,6 +65,44 @@ describe('A rate limit or an outage re-queues the analysis instead of downgradin
   it('caps a server wish at 5 minutes', () => {
     expect(new AppError('llm_error', 'x', { retryable: true, retryAfterMs: 9_999_999 }).retryAfterMs).toBe(300_000);
     expect(new AppError('llm_error', 'x', { retryable: true }).retryAfterMs).toBeUndefined();
+  });
+
+  /** Until the analysis job ended or waits for its third attempt – the second one met the open circuit breaker. */
+  const untilSecondAttemptSettled = () =>
+    vi.waitFor(() => {
+      const job = analyzeJob();
+      expect(job.status === 'succeeded' || (job.status === 'pending' && job.attempts === 2)).toBe(true);
+    });
+
+  it('waits for the open circuit after a rate limit without Retry-After and then analyses with the LLM', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+    app.llm.failing = { count: 3, status: 429, retryAfter: null };
+    const id = await importOne();
+    await untilSecondAttemptSettled();
+    await vi.advanceTimersByTimeAsync(15_000);
+    await app.services.jobs.whenIdle();
+
+    const document = await app.ok('documents:get', { id });
+    expect(document).toMatchObject({ status: 'proposed', llmStatus: 'analyzed' });
+    expect(document.proposal?.analyzedBy).toBe('llm');
+    expect(llmFailures()).toHaveLength(0);
+    expect(analyzeJob()).toMatchObject({ status: 'succeeded', attempts: 3 });
+  });
+
+  it('waits for the open circuit after an unreachable endpoint and then analyses with the LLM', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+    app.llm.down = true;
+    const id = await importOne();
+    await untilSecondAttemptSettled();
+    app.llm.down = false;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await app.services.jobs.whenIdle();
+
+    const document = await app.ok('documents:get', { id });
+    expect(document).toMatchObject({ status: 'proposed', llmStatus: 'analyzed' });
+    expect(document.proposal?.analyzedBy).toBe('llm');
+    expect(llmFailures()).toHaveLength(0);
+    expect(analyzeJob()).toMatchObject({ status: 'succeeded', attempts: 3 });
   });
 
   it('does not re-queue an error that retrying cannot fix', async () => {

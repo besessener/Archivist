@@ -1,5 +1,6 @@
 import type {
   ArchiveMode,
+  BackgroundLimitKind,
   DecisionStatus,
   DocumentStatus,
   InsightKind,
@@ -7,6 +8,7 @@ import type {
   LlmStatus,
   LlmTestResult,
   NotificationType,
+  ReasoningEffort,
   RelationStatus,
   ScanFileStatus,
 } from '@archivist/shared';
@@ -145,3 +147,24 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   failed: 'Fehlgeschlagen',
   quarantined: 'In Quarantäne',
 };
+
+export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  none: 'keine (wird gesendet)',
+  minimal: 'minimal',
+  low: 'niedrig',
+  medium: 'mittel',
+  high: 'hoch',
+  xhigh: 'sehr hoch',
+  max: 'maximal',
+};
+
+/** Background tasks with limits of their own. */
+export const BACKGROUND_KIND_LABELS: Record<BackgroundLimitKind, string> = {
+  inbox: 'Neue Dateien einsortieren',
+  archive_check: 'Archivprüfung auswerten',
+  links: 'Verknüpfungen vorschlagen',
+  workflow: 'Eigene Abläufe (geplant)',
+};
+
+/** Index 0 is Sunday, as in the settings. */
+export const WEEKDAY_NAMES = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];

@@ -1,4 +1,5 @@
 import type { AgentSettings, BackgroundLimitKind, SettingsPatch } from '@archivist/shared';
+import { BACKGROUND_KIND_LABELS } from '@/lib/labels';
 
 export type AgentPatch = NonNullable<SettingsPatch['agent']>;
 
@@ -63,12 +64,7 @@ export function parsePrices(rows: PriceRow[]): Parsed<NonNullable<AgentPatch['pr
   return { ok: true, value: table };
 }
 
-export const LIMIT_KINDS: Array<[BackgroundLimitKind, string]> = [
-  ['inbox', 'Neue Dateien einsortieren'],
-  ['archive_check', 'Archivprüfung auswerten'],
-  ['links', 'Verknüpfungen vorschlagen'],
-  ['workflow', 'Eigene Abläufe (geplant)'],
-];
+export const LIMIT_KINDS = Object.entries(BACKGROUND_KIND_LABELS) as Array<[BackgroundLimitKind, string]>;
 
 /** Own limits per background trigger; an empty field means „wie im Hintergrund allgemein“. */
 export type KindLimitsForm = Record<BackgroundLimitKind, LimitsForm>;

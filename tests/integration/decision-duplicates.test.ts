@@ -132,4 +132,36 @@ describe('Decisions are not recorded twice (#187)', () => {
     expect((await app.call('decisions:create', { ...base, topic: 'Dach' })).ok).toBe(true);
     expect(await app.ok('decisions:list', {})).toHaveLength(3);
   });
+  it('the same text in another project is another decision, also when neither has a topic', async () => {
+    const base = {
+      decisionText: 'Wir verschieben den Start um einen Monat.',
+      decidedAt: '2026-09-01',
+      participants: ['Anna'],
+      alternatives: [],
+      unknownFields: [],
+      sourceIds: [],
+      confidence: 0.9,
+      asDraft: false,
+    };
+    const apollo = await app.ok('decisions:create', { ...base, project: 'Apollo' });
+    const phoenix = await app.ok('decisions:create', { ...base, project: 'Phoenix' });
+    expect(phoenix.id).not.toBe(apollo.id);
+    expect(phoenix.projectName).toBe('Phoenix');
+
+    const duplicate = await app.call('decisions:create', { ...base, project: 'apollo' });
+    expect(duplicate.ok).toBe(false);
+
+    const recorded = app.services.actions.propose({
+      actionType: 'record_decision',
+      label: 'Entscheidung erfassen',
+      rationale: 'Test',
+      confidence: 0.7,
+      affectedEntities: [],
+      requiredConfirmation: 'confirm',
+      proposedParameters: { title: 'Start verschieben', decisionText: base.decisionText, project: 'Nova' },
+    });
+    expect((await approve(recorded.id)).status).toBe('executed');
+    const decisions = await app.ok('decisions:list', {});
+    expect(decisions.map((d) => d.projectName).toSorted()).toEqual(['Apollo', 'Nova', 'Phoenix']);
+  });
 });

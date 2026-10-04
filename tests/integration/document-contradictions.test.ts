@@ -181,6 +181,30 @@ describe('Contradictions between documents (#179)', () => {
     expect(JSON.stringify(entry)).not.toContain('anna@example.org');
   });
 
+  it('clears the preview of the comparison when a compared document is purged from the trash', async () => {
+    app.llm.on('ContradictionProposal', verdict(false));
+    const [first, second] = await twoOffers();
+    await app.services.contradictions.scanAll();
+    const comparison = () => app.services.llm.listTransmissions(10).find((e) => e.purpose === 'Widerspruchsprüfung zwischen Dokumenten')!;
+    expect(comparison().documentIds.toSorted()).toEqual([first, second].toSorted());
+    expect(comparison().preview, 'precondition: the preview holds the text').toContain('Budget');
+
+    await app.ok('documents:trash', { id: first, confirmed: true });
+    await app.ok('trash:empty', { confirmed: true, permanentlyConfirmed: true });
+
+    expect(comparison().preview).toBe('');
+  });
+
+  it('records a pair once when two scans run at the same time', async () => {
+    app.llm.on('ContradictionProposal', verdict(true));
+    await twoOffers();
+
+    const results = await Promise.all([app.services.contradictions.scanAll(), app.services.contradictions.scanAll()]);
+
+    expect(found()).toHaveLength(1);
+    expect(results.flat()).toHaveLength(1);
+  });
+
   it('asks about a pair only once, also after a restart of the check, and again when a text changed', async () => {
     app.llm.on('ContradictionProposal', verdict(false));
     const [first] = await twoOffers();

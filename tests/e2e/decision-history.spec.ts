@@ -59,12 +59,14 @@ test.describe('decisions: history, deleting and the change log', () => {
     await d.row('Wir nutzen Postgres.').click();
     await d.locators.buttons.edit.click();
     await d.locators.inputs.text.fill('Wir nutzen SQLite.');
+    await d.locators.inputs.status.selectOption('confirmed');
     await d.locators.buttons.save.click();
     await expect(d.locators.form).toBeHidden();
 
     await d.locators.tabs.history.click();
     const edit = d.locators.history.entries.filter({ hasText: 'Entscheidung bearbeitet' });
     await expect(edit).toContainText('Entscheidung: Wir nutzen Postgres. → Wir nutzen SQLite.');
+    await expect(edit).toContainText('Status: Gültig → Bestätigt');
     await expect(d.locators.history.entries.filter({ hasText: 'Entscheidung angelegt' })).toBeVisible();
     await expect(page.getByTestId('decision-detail')).toContainText('Änderungen seit der Entscheidung');
   });

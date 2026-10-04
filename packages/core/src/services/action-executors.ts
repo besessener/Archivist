@@ -63,7 +63,7 @@ function createOpenItem(d: ActionDeps, p: Params): string {
 
 async function recordDecision(d: ActionDeps, p: Params): Promise<string> {
   const params = ActionParamSchemas.record_decision.parse(p);
-  const existing = d.decisions.findDuplicate({ decisionText: params.decisionText, topic: params.topic });
+  const existing = d.decisions.findDuplicate({ decisionText: params.decisionText, topic: params.topic, project: params.project });
   if (existing) {
     for (const sourceId of params.sourceIds) d.decisions.addSource(existing.id, { sourceId, actor: 'agent', trigger: TRIGGER });
     return `Die Entscheidung „${existing.title}“ gab es schon; die Quelle wurde ergänzt.`;

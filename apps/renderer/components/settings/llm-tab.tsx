@@ -142,7 +142,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
               const ok = await run(() => call('settings:setApiKey', { apiKey: apiKey.trim() }), { success: 'API-Schlüssel gespeichert.' });
               if (ok) {
                 setApiKey('');
-                reload();
+                await reload();
               }
             }}
           >
@@ -167,7 +167,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           const ok = await run(() => call('settings:clearApiKey'), { success: 'API-Schlüssel gelöscht.' });
           if (ok) {
             setClearOpen(false);
-            reload();
+            await reload();
           }
         }}
       />

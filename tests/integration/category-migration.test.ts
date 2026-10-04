@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { CategoryMigrationResult } from '@archivist/shared';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CategoryService } from '../../packages/core/src/services/categories';
-import { germanCategoryPath } from '../../packages/core/src/services/category-migration';
+import { CATEGORY_MIGRATION_JOB, germanCategoryPath } from '../../packages/core/src/services/category-migration';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { classification } from '../helpers/document-classifications';
 
@@ -18,6 +19,15 @@ const archiveRoot = () => app.services.settings.get().archiveRoot;
 const row = (id: string) => app.services.documents.getRow(id);
 const categoryPaths = () => app.services.categories.list().map((c) => c.path);
 const sql = (query: string, ...params: unknown[]) => app.services.database.sqlite.prepare(query).run(...params);
+const migrationJobs = () => app.services.jobs.list().filter((job) => job.type === CATEGORY_MIGRATION_JOB);
+const archivedAt = (...segments: string[]) => fs.existsSync(path.join(archiveRoot(), ...segments));
+
+/** Level 3: both confirmations; the migration runs as a job, whose result this returns. */
+async function migrate(): Promise<CategoryMigrationResult> {
+  const { jobId } = await app.ok('categories:migrate', { confirmed: true, strongConfirmed: true });
+  await app.services.jobs.whenIdle();
+  return app.services.jobs.getResult(jobId) as CategoryMigrationResult;
+}
 
 /** An archive as earlier versions wrote it: English main categories only. */
 function legacyArchive() {
@@ -82,18 +92,27 @@ describe('Renaming the English main categories (#233)', () => {
     expect(categoryPaths()).not.toContain('Arbeit');
   });
 
-  it('refuses to run without confirmation', async () => {
-    const res = await app.call('categories:migrate', { confirmed: false } as never);
+  it('refuses to run without the second, explicit confirmation (level 3)', async () => {
+    legacyArchive();
+    const id = await archived('plan.txt', 'work/projects/alpha');
 
-    expect(res.ok).toBe(false);
+    expect((await app.call('categories:migrate', { confirmed: false, strongConfirmed: true } as never)).ok).toBe(false);
+    expect((await app.call('categories:migrate', { confirmed: true } as never)).ok).toBe(false);
+    expect((await app.call('categories:migrate', { confirmed: true, strongConfirmed: false } as never)).ok).toBe(false);
+    expect(() => app.services.categoryMigration.enqueue({ confirmed: true, strongConfirmed: false })).toThrow('zweite, ausdrückliche Bestätigung');
+    await app.services.jobs.whenIdle();
+
+    expect(migrationJobs()).toEqual([]);
+    expect(row(id).archiveRelPath).toBe('work/projects/alpha/plan.txt');
   });
 
   it('moves the files, renames the categories and removes the emptied English ones', async () => {
     legacyArchive();
     const id = await archived('plan.txt', 'work/projects/alpha');
 
-    const result = await app.ok('categories:migrate', { confirmed: true });
+    const result = await migrate();
 
+    expect(migrationJobs()).toEqual([expect.objectContaining({ status: 'succeeded', summary: expect.stringContaining('1 Datei(en) verschoben') })]);
     expect(result).toMatchObject({ moved: 1, notMoved: [], failed: 0 });
     expect(row(id)).toMatchObject({ categoryPath: 'Arbeit/projects/alpha', archiveRelPath: 'Arbeit/projects/alpha/plan.txt' });
     expect(fs.readFileSync(path.join(archiveRoot(), 'Arbeit', 'projects', 'alpha', 'plan.txt'), 'utf8')).toBe('Inhalt plan.txt');
@@ -108,7 +127,7 @@ describe('Renaming the English main categories (#233)', () => {
     const blocker = await archived('bericht.txt', 'Arbeit/projects/alpha', 'neu');
 
     const plan = await app.ok('categories:previewMigration', {});
-    const result = await app.ok('categories:migrate', { confirmed: true });
+    const result = await migrate();
 
     expect(plan.notMoved).toHaveLength(1);
     expect(result.moved).toBe(0);
@@ -122,7 +141,7 @@ describe('Renaming the English main categories (#233)', () => {
   it('every move and the removal of the emptied categories can be undone', async () => {
     legacyArchive();
     const id = await archived('plan.txt', 'work/projects/alpha');
-    await app.ok('categories:migrate', { confirmed: true });
+    await migrate();
     const entries = await app.ok('audit:list', { limit: 50 });
 
     for (const entry of entries.filter((e) => ['archive.relocate', 'category.migrate'].includes(e.action) && e.undoable)) {
@@ -132,5 +151,53 @@ describe('Renaming the English main categories (#233)', () => {
     expect(row(id)).toMatchObject({ categoryPath: 'work/projects/alpha', archiveRelPath: 'work/projects/alpha/plan.txt' });
     expect(fs.readFileSync(path.join(archiveRoot(), 'work', 'projects', 'alpha', 'plan.txt'), 'utf8')).toBe('Inhalt plan.txt');
     expect(categoryPaths()).toEqual(expect.arrayContaining(['work', 'work/projects/alpha']));
+  });
+});
+
+describe('The migration as a cancellable level-3 job (#233)', () => {
+  it('stops between files when cancelled; moved files stay moved and undoable, a re-run moves the rest', async () => {
+    legacyArchive();
+    const ids = [await archived('a.txt', 'work/projects'), await archived('b.txt', 'work/projects'), await archived('c.txt', 'work/projects')];
+    const relocate = app.services.archive.relocate.bind(app.services.archive);
+    vi.spyOn(app.services.archive, 'relocate').mockImplementationOnce(async (items, options) => {
+      const result = await relocate(items, options);
+      app.services.jobs.cancel(migrationJobs()[0]!.id);
+      return result;
+    });
+
+    await app.ok('categories:migrate', { confirmed: true, strongConfirmed: true });
+    await app.services.jobs.whenIdle();
+
+    expect(migrationJobs()[0]!.status).toBe('cancelled');
+    const moved = ids.filter((id) => row(id).archiveRelPath!.startsWith('Arbeit/'));
+    expect(moved).toHaveLength(1);
+    expect(ids.filter((id) => row(id).archiveRelPath!.startsWith('work/'))).toHaveLength(2);
+    expect((await app.ok('categories:previewMigration', {})).documentsToMove).toBe(2);
+    const relocation = (await app.ok('audit:list', { limit: 50 })).find((entry) => entry.action === 'archive.relocate' && entry.entityIds.includes(moved[0]!));
+    expect(relocation?.undoable).toBe(true);
+
+    const rest = await migrate();
+
+    expect(rest).toMatchObject({ moved: 2, failed: 0 });
+    expect(ids.map((id) => row(id).archiveRelPath)).toEqual(['Arbeit/projects/a.txt', 'Arbeit/projects/b.txt', 'Arbeit/projects/c.txt']);
+    expect(archivedAt('work')).toBe(false);
+  });
+
+  it('leaves a file where it is when it was moved out of the English folder by hand and relinked', async () => {
+    legacyArchive();
+    const id = await archived('hand.txt', 'work/kunden');
+    fs.mkdirSync(path.join(archiveRoot(), 'Kunden', 'x'), { recursive: true });
+    fs.renameSync(path.join(archiveRoot(), 'work', 'kunden', 'hand.txt'), path.join(archiveRoot(), 'Kunden', 'x', 'hand.txt'));
+    await app.ok('archive:relink', { confirmed: true });
+    expect(row(id)).toMatchObject({ categoryPath: 'work/kunden', archiveRelPath: 'Kunden/x/hand.txt' });
+
+    const plan = await app.ok('categories:previewMigration', {});
+    const result = await migrate();
+
+    expect(plan).toMatchObject({ documentsToMove: 0, notMoved: [], withoutFile: 0 });
+    expect(result).toMatchObject({ moved: 0, failed: 0 });
+    expect(row(id).archiveRelPath).toBe('Kunden/x/hand.txt');
+    expect(archivedAt('Kunden', 'x', 'hand.txt')).toBe(true);
+    expect(archivedAt('Arbeit', 'kunden', 'hand.txt')).toBe(false);
   });
 });

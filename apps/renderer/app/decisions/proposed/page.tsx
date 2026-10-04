@@ -1,24 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Gavel } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
-import { useQuery } from '@/lib/use-query';
+import { uniqueById, usePagedQuery } from '@/lib/use-paged-query';
 
 const PAGE_SIZE = 20;
 
 export default function ProposedDecisionsPage() {
   const router = useRouter();
-  const [limit, setLimit] = useState(PAGE_SIZE);
-  const { data, loading, error, refetch } = useQuery(
-    'actions:list',
-    { status: 'proposed', actionType: 'record_decision', limit, offset: 0 },
-    { scopes: ['status'] },
-  );
+  // paged by offset: one request may return at most 200 proposals (#181)
+  const paged = usePagedQuery('actions:list', { status: 'proposed', actionType: 'record_decision' }, { pageSize: PAGE_SIZE, scopes: ['status'] });
+  const { loading, error, refetch } = paged;
+  const data = useMemo(() => (paged.pages ? uniqueById(paged.pages) : undefined), [paged.pages]);
+  const hasMore = (paged.pages?.at(-1)?.length ?? 0) === PAGE_SIZE;
 
   return (
     <Page>
@@ -47,9 +46,9 @@ export default function ProposedDecisionsPage() {
           </li>
         ))}
       </ul>
-      {data && data.length >= limit && (
+      {hasMore && (
         <div className="mt-4 flex justify-center">
-          <Button variant="outline" onClick={() => setLimit((current) => current + PAGE_SIZE)} data-testid="proposed-decisions-more">
+          <Button variant="outline" onClick={paged.loadMore} disabled={loading} data-testid="proposed-decisions-more">
             Weitere anzeigen
           </Button>
         </div>

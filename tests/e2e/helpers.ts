@@ -51,6 +51,29 @@ export function seedLongLists(dataDir: string, count: number): void {
   database.close();
 }
 
+/** Creates the database before the first start with `count` proposed decisions (the first one is the oldest). */
+export function seedProposedDecisions(dataDir: string, count: number): void {
+  const database = new DatabaseService(path.join(dataDir, 'database', 'archivist.db'), new Logger(null));
+  database.migrate(path.resolve(__dirname, '../../packages/core/migrations'));
+  const insert = database.sqlite.prepare(
+    `INSERT INTO agent_actions (id, action_type, label, rationale, confidence, affected_entities, required_confirmation, params, status, created_at)
+     VALUES (?, 'record_decision', ?, 'In einem Dokument gefunden.', 0.55, '[]', 'confirm', ?, 'proposed', ?)`,
+  );
+  database.transaction(() => {
+    for (let index = 0; index < count; index++) {
+      const at = new Date(Date.UTC(2026, 0, 1) + index * 60_000).toISOString();
+      const params = JSON.stringify({
+        title: `Vorschlag ${index + 1}`,
+        decisionText: `Wir beschließen Vorschlag ${index + 1}.`,
+        participants: [],
+        sourceIds: [],
+      });
+      insert.run(`proposal-${index}`, `Entscheidung erfassen: Vorschlag ${index + 1}`, params, at);
+    }
+  });
+  database.close();
+}
+
 /** Deletes the newest entry of the audit log behind the running app's back, as another program on the database could. */
 export function cutOffNewestAuditEntry(dataDir: string): void {
   const database = new DatabaseService(path.join(dataDir, 'database', 'archivist.db'), new Logger(null));

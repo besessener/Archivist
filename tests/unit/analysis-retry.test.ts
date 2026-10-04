@@ -14,7 +14,13 @@ describe('Which LLM errors are tried again', () => {
     expect(mayRetryLlm(rateLimit(), undefined)).toBe(false);
   });
 
+  it('retries an unreachable endpoint and its open circuit breaker like a rate limit', () => {
+    expect(isRetryableLlmError(new AppError('network_error', 'Netz', { retryable: true }))).toBe(true);
+    expect(mayRetryLlm(new AppError('network_error', 'Netz', { retryable: true, retryAfterMs: 15_000 }), 1)).toBe(true);
+  });
+
   it('leaves errors alone that retrying cannot fix', () => {
+    expect(isRetryableLlmError(new AppError('network_error', 'Zeitlimit', { retryable: false }))).toBe(false);
     expect(isRetryableLlmError(new AppError('llm_error', 'Key', { retryable: false }))).toBe(false);
     expect(isRetryableLlmError(new AppError('filesystem_error', 'Datei', { retryable: true }))).toBe(false);
     expect(isRetryableLlmError(new Error('x'))).toBe(false);

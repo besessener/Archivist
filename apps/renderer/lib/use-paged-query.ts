@@ -6,7 +6,7 @@ import { call, IpcError } from './ipc';
 import { scopesOf, subscribe } from './events';
 
 /** Channels whose input takes `limit` and `offset` (server-side paging). */
-type PagedChannel = 'documents:list' | 'scanner:getResults' | 'notifications:list';
+type PagedChannel = 'documents:list' | 'scanner:getResults' | 'notifications:list' | 'actions:list';
 type BaseInput<C extends PagedChannel> = Omit<IpcInput<C>, 'limit' | 'offset'>;
 
 export interface UsePagedQueryOptions {

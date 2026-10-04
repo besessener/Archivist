@@ -147,7 +147,7 @@ function documentNames(documents: Array<{ title: string | null }>, shown = 2): s
 }
 
 /** Saves the mode on selection (#72); `mode` is optimistic only while saving, a failed save reverts it. */
-function ModeSection({ active, reload }: { active: Mode; reload: () => void }) {
+function ModeSection({ active, reload }: { active: Mode; reload: TabProps['reload'] }) {
   const { save, busy } = useSaveSettings(reload);
   const [mode, setMode] = useState<Mode>(active);
   const title = (id: Mode) => MODES.find((m) => m.id === id)?.title ?? id;

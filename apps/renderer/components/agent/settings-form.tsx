@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AgentSettings } from '@archivist/shared';
+import { AgentEffort } from '@archivist/shared';
 import { Save } from 'lucide-react';
 import { Field, Notice } from '@/components/common/states';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from '@/components/settings/shared';
@@ -10,17 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { REASONING_EFFORT_LABELS } from '@/lib/labels';
 import { BackgroundSection, CapabilitySection, LimitsFields, PriceTable, priceRowsFrom } from './settings-fields';
 import { KindLimitsFields } from './kind-limits-fields';
 import { fail, intIn, parseKindLimits, parseLimits, parsePrices, toKindLimits, toLimits, type AgentPatch, type Parsed, type PriceRow } from './settings-parse';
 
-const EFFORTS: Array<[AgentSettings['effort'], string]> = [
-  ['low', 'niedrig'],
-  ['medium', 'mittel'],
-  ['high', 'hoch'],
-  ['xhigh', 'sehr hoch'],
-  ['max', 'maximal'],
-];
+const EFFORTS = AgentEffort.options.map((value) => [value, REASONING_EFFORT_LABELS[value]] as const);
 
 /** Settings of the agent mode (#294, #298, #313, #315). */
 export function AgentSettingsForm({ settings, reload }: TabProps) {

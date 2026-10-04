@@ -264,8 +264,8 @@ export class DecisionService {
     return this.update(id, { patch: { sourceIds: [sourceId] }, ...origin });
   }
 
-  /** A still relevant decision with the same text on the same topic. */
-  findDuplicate(candidate: { decisionText: string; topic?: string | null }): Decision | undefined {
+  /** A still relevant decision with the same text on the same topic and project. */
+  findDuplicate(candidate: { decisionText: string; topic?: string | null; project?: string | null }): Decision | undefined {
     return findDecisionDuplicate(candidate, this.list());
   }
 

@@ -14,7 +14,7 @@ Wir duzen – in der Oberfläche, im Chat, in Benachrichtigungen, Fehlermeldunge
 ## Begriffe
 
 - **KI** ist das Wort für das Sprachmodell in allem, was Benutzer sehen („per KI analysiert“, „Die KI ist nicht konfiguriert“). **LLM** bleibt Fachbegriff in Code, Docs und Prompts.
-- Interne Werte (Status, Beziehungsarten, Eintragsarten, Audit-Aktionen, Fehlercodes) erscheinen nie roh im Text: Es gibt immer eine deutsche Bezeichnung (`DECISION_STATUS_LABELS`, `RELATION_TYPE_LABELS`, `OPEN_ITEM_STATUS_LABELS` in `packages/shared`, `auditActionLabel` im Renderer). Eine Prüfung stellt sicher, dass jede Audit-Aktion des Kerns eine Bezeichnung hat.
+- Interne Werte (Status, Beziehungsarten, Eintragsarten, Audit-Aktionen, Fehlercodes) erscheinen nie roh im Text: Es gibt immer eine deutsche Bezeichnung (`DECISION_STATUS_LABELS`, `RELATION_TYPE_LABELS`, `OPEN_ITEM_STATUS_LABELS` in `packages/shared`, `auditActionLabel` und `settingLabel` im Renderer). Prüfungen stellen sicher, dass jede Audit-Aktion des Kerns und jede Einstellung des Einstellungsschemas eine Bezeichnung hat.
 - Die Zuverlässigkeit einer Einschätzung heißt „Sicherheit“, nicht „Confidence“.
 - Dateisystemfehler werden in einfachem Deutsch erklärt, der Fehlercode steht nur in den technischen Details. Unbekannte Fehler heißen „Unerwarteter Fehler“, nicht „Ungültige Eingabe“.
 

@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { CategoryMigrationPlan, CategoryMigrationResult } from '@archivist/shared';
+import type { CategoryMigrationPlan, CategoryMigrationResult, Job } from '@archivist/shared';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { documents } from '../db/schema';
+import { progressLine } from '../util/bulk-text';
 import { permissionError } from '../util/errors';
 import { resolveInside } from '../util/paths';
 import type { ArchiveService } from './archive';
@@ -12,9 +13,13 @@ import { FOLDERS_RESTORE_UNDO } from './archive-maintenance';
 import { archiveRootOf, type RelocateRequest } from './archive-model';
 import type { AuditService } from './audit';
 import { LEGACY_MAIN_CATEGORIES, type CategoryService } from './categories';
+import { isJobCancelled, type JobContext, type JobQueueService } from './jobs';
 import type { SettingsService } from './settings';
 
 const TRIGGER = 'category_migration';
+
+/** Job type of the migration: moves file by file, so a cancel stops between two files (#233). */
+export const CATEGORY_MIGRATION_JOB = 'categories.migrate';
 
 /** The German path for a path below an English main category; undefined for every other path. */
 export function germanCategoryPath(categoryPath: string): string | undefined {
@@ -25,17 +30,27 @@ export function germanCategoryPath(categoryPath: string): string | undefined {
 
 const mainOf = (categoryPath: string) => categoryPath.split('/')[0]!;
 
+/** Archived with its own file in the archive, not only indexed. */
+const hasArchiveFile = (row: Pick<typeof documents.$inferSelect, 'status' | 'archiveRelPath' | 'archiveMode'>) =>
+  row.status === 'archived' && row.archiveRelPath !== null && row.archiveMode !== 'index_only';
+
 export interface CategoryMigrationDeps {
   ctx: AppContext;
   settings: SettingsService;
   categories: CategoryService;
   archive: ArchiveService;
   audit: AuditService;
+  jobs: JobQueueService;
 }
 
 interface ArchivedFile {
   id: string;
   target: string;
+}
+
+interface MigrationProgress {
+  moved: number;
+  failed: number;
 }
 
 interface Plan {
@@ -57,25 +72,54 @@ export class CategoryMigrationService {
     return (await this.plan()).summary;
   }
 
-  /** Level 2: renames the main categories and moves their files; files that cannot move without a conflict stay and are reported. */
-  async migrate(opts: { confirmed: boolean }): Promise<CategoryMigrationResult> {
-    if (!opts.confirmed) throw permissionError('Das Umbenennen der Hauptkategorien muss ausdrücklich bestätigt werden.');
+  /** Level 3 (it moves nearly the whole archive): queues the migration as one job, only with both confirmations. */
+  enqueue(request: { confirmed: boolean; strongConfirmed: boolean }): Job {
+    if (!request.confirmed || !request.strongConfirmed)
+      throw permissionError('Das Umbenennen der Hauptkategorien verschiebt fast das ganze Archiv und erfordert eine zweite, ausdrückliche Bestätigung.');
+    return this.deps.jobs.enqueue(CATEGORY_MIGRATION_JOB, { label: 'Hauptkategorien auf Deutsch umstellen', sameAs: () => true, maxAttempts: 1 });
+  }
+
+  /** Renames the main categories and moves their files one by one; a cancelled run keeps what moved, a re-run plans again and moves the rest. */
+  async run(job: JobContext<Record<string, never>>): Promise<CategoryMigrationResult & { summary: string }> {
     const { summary, movable, legacyEntries } = await this.plan();
     for (const { to } of summary.renames) this.deps.categories.create(to, { confirmed: true });
-    const relocated = movable.length ? await this.deps.archive.relocate(movable, { confirmed: true, trigger: TRIGGER }) : undefined;
+    const progress: MigrationProgress = { moved: 0, failed: 0 };
+    try {
+      await this.moveFiles(movable, { job, progress });
+    } catch (err) {
+      if (isJobCancelled(err)) this.log(summary, { progress, removedEntries: [] });
+      throw err;
+    }
     const removedEntries = await this.renameEntries(legacyEntries);
-    const moved = relocated?.success ?? 0;
+    this.log(summary, { progress, removedEntries });
+    const result = { ...progress, notMoved: summary.notMoved, categoryEntriesRenamed: legacyEntries.length };
+    return { ...result, summary: resultText(result) };
+  }
+
+  private async moveFiles(movable: RelocateRequest[], run: { job: JobContext<Record<string, never>>; progress: MigrationProgress }): Promise<void> {
+    const { job, progress } = run;
+    const started = Date.now();
+    for (const [index, request] of movable.entries()) {
+      job.throwIfCancelled();
+      const relocated = await this.deps.archive.relocate([request], { confirmed: true, trigger: TRIGGER });
+      progress.moved += relocated.success;
+      progress.failed += relocated.failed + relocated.conflicts;
+      job.report((index + 1) / movable.length, progressLine({ done: index + 1, total: movable.length, elapsedMs: Date.now() - started, verb: 'verschoben' }));
+    }
+  }
+
+  private log(summary: CategoryMigrationPlan, outcome: { progress: MigrationProgress; removedEntries: string[] }): void {
+    const { progress, removedEntries } = outcome;
     this.deps.audit.log({
       action: 'category.migrate',
       actor: 'user',
       trigger: 'manual',
       confirmed: true,
       before: { renames: summary.renames },
-      after: { moved, notMoved: summary.notMoved.length, removedEntries },
+      after: { moved: progress.moved, notMoved: summary.notMoved.length, removedEntries },
       ...(removedEntries.length ? { undo: { type: FOLDERS_RESTORE_UNDO, data: { paths: removedEntries } } } : {}),
     });
     this.deps.ctx.events.changed('documents', 'knowledge', 'audit', 'status');
-    return { moved, notMoved: summary.notMoved, categoryEntriesRenamed: legacyEntries.length, failed: (relocated?.failed ?? 0) + (relocated?.conflicts ?? 0) };
   }
 
   private async plan(): Promise<Plan> {
@@ -84,13 +128,12 @@ export class CategoryMigrationService {
       .map((c) => c.path)
       .filter((p) => germanCategoryPath(p));
     const files = this.archivedFiles();
-    const movedIds = new Set(files.map((f) => f.id));
     const withoutFile = this.db
-      .select({ id: documents.id, categoryPath: documents.categoryPath })
+      .select({ status: documents.status, archiveRelPath: documents.archiveRelPath, archiveMode: documents.archiveMode, categoryPath: documents.categoryPath })
       .from(documents)
       .where(isNotNull(documents.categoryPath))
       .all()
-      .filter((row) => !movedIds.has(row.id) && germanCategoryPath(row.categoryPath!)).length;
+      .filter((row) => !hasArchiveFile(row) && germanCategoryPath(row.categoryPath!)).length;
     const mains = new Set([...legacyEntries, ...files.map((f) => f.target)].map((p) => mainOf(p).toLowerCase()));
     const renames = Object.entries(LEGACY_MAIN_CATEGORIES)
       .filter(([legacy, german]) => mains.has(legacy) || mains.has(german.toLowerCase()))
@@ -110,7 +153,7 @@ export class CategoryMigrationService {
     return { summary, movable, legacyEntries };
   }
 
-  /** Archived documents with a file inside an English main category, with the German folder they move to. */
+  /** Archived documents whose file lies inside an English main category, with the German folder they move to; files elsewhere stay. */
   private archivedFiles(): ArchivedFile[] {
     const rows = this.db
       .select()
@@ -118,8 +161,8 @@ export class CategoryMigrationService {
       .where(and(eq(documents.status, 'archived'), isNotNull(documents.archiveRelPath)))
       .all();
     return rows.flatMap((row) => {
-      if (row.archiveMode === 'index_only') return [];
       const folder = path.posix.dirname(row.archiveRelPath!);
+      if (!hasArchiveFile(row) || !germanCategoryPath(folder)) return [];
       const target = germanCategoryPath(germanCategoryPath(row.categoryPath ?? '') ? row.categoryPath! : folder);
       return target ? [{ id: row.id, target }] : [];
     });
@@ -148,4 +191,10 @@ export class CategoryMigrationService {
     await fsp.rmdir(absolute);
     return true;
   }
+}
+
+function resultText(result: CategoryMigrationResult): string {
+  const failed = result.failed > 0 ? `, ${result.failed} Verschiebung(en) sind fehlgeschlagen` : '';
+  const notMoved = result.notMoved.length > 0 ? `, ${result.notMoved.length} Datei(en) bleiben wegen eines Konflikts` : '';
+  return `${result.moved} Datei(en) verschoben, ${result.categoryEntriesRenamed} Kategorie-Einträge umbenannt${failed}${notMoved}. Du kannst das im Änderungsprotokoll rückgängig machen.`;
 }

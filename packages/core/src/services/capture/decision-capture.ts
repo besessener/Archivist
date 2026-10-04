@@ -2,6 +2,7 @@ import { DECISION_FIELD_LABELS, type ChatContext, type ChatIntent, type Decision
 import { normalizeDecisionDate, parseDecisionDate } from '../../util/dates';
 import { normalizeName } from '../../util/text';
 import { decisionRef, decisionSource, TOPIC_KIND_QUICK_REPLIES, UNKNOWN_RE, type ConvState, type Pending, type Reply } from '../chat-state';
+import { topicProjectMergeProposal } from '../cleanup/topic-project-names';
 import { questionFor, type DecisionService } from '../decisions';
 import type { CaptureDeps, CaptureRequest } from './capture-deps';
 import type { DecisionSupersede } from './decision-supersede';
@@ -22,13 +23,22 @@ interface DecisionFields {
   clarify: string | null;
 }
 
-/** A stored decision and what is still to be asked about it. */
+/** Proposal cards for the reply, each with the line that explains it. */
+interface Proposals {
+  actions: StoredAgentAction[];
+  lines: string[];
+}
+
+/** A stored decision and what is still to be asked or proposed about it. */
 interface DecisionChange {
   decision: Decision;
   clarifyTopic: string | null;
   supersedesHint: string | null;
   supersedesId: string | null;
+  topicMerge: Proposals;
 }
+
+const NO_PROPOSALS: Proposals = { actions: [], lines: [] };
 
 const emptyExtraction = (): Extracted => ({ participants: [], alternatives: [], unknownFields: [], confidence: 0.5 });
 
@@ -106,21 +116,27 @@ export class DecisionCapture {
     return { topic, project, clarify: unclear };
   }
 
-  /** A name confirmed as project is one entry: the topic of the same name moves into the project (undoable merge). */
-  private async moveTopicToProject(name: string): Promise<void> {
+  /** A name confirmed as project: a topic of the same name is offered for merging into it, a level-2 action the user confirms (#188). */
+  private proposeTopicMerge(conv: string, name: string): Proposals {
     const { graph } = this.deps;
     const topic = graph.findByNameOrAlias('topic', name);
     const project = graph.findByNameOrAlias('project', name);
-    if (!topic || !project) return;
-    await graph.merge({ sourceIds: [topic.id], targetId: project.id, allowCrossType: true }, { trigger: 'chat' });
+    if (!topic || !project) return NO_PROPOSALS;
+    const action = this.deps.actions().propose({ ...topicProjectMergeProposal({ topic, project }, 'project'), conversationId: conv });
+    return {
+      actions: [action],
+      lines: [
+        `Es gibt auch noch das Thema „${topic.name}“. Soll ich es mit dem Projekt „${project.name}“ zusammenführen? Das lässt sich rückgängig machen – bitte bestätige den Vorschlag.`,
+      ],
+    };
   }
 
-  private async create(request: DecisionRequest, scope: { extracted: Extracted; fields: DecisionFields }): Promise<Reply> {
+  private create(request: DecisionRequest, scope: { extracted: Extracted; fields: DecisionFields }): Promise<Reply> {
     const { text, intent } = request;
     const { extracted, fields } = scope;
     const decisionText = extracted.decisionText?.trim() || text;
     const supersedes = intent.intent === 'decision_supersede';
-    const duplicate = this.deps.decisions.findDuplicate({ decisionText, topic: fields.topic });
+    const duplicate = this.deps.decisions.findDuplicate({ decisionText, topic: fields.topic, project: fields.project });
     // an incomplete draft continues with its follow-up question instead
     if (duplicate && !supersedes && duplicate.missingFields.length === 0) return Promise.resolve(this.duplicateReply(request, duplicate));
     const created =
@@ -145,13 +161,13 @@ export class DecisionCapture {
         },
         { actor: 'user', trigger: 'chat', status: request.status },
       );
-    const movedToProject = extracted.topicIsProject === true && fields.topic && fields.project && normalizeName(fields.topic) === normalizeName(fields.project);
-    if (movedToProject) await this.moveTopicToProject(fields.project!);
+    const namedAsProject = extracted.topicIsProject === true && fields.topic && fields.project && normalizeName(fields.topic) === normalizeName(fields.project);
     return this.afterChange(request, {
-      decision: movedToProject ? this.deps.decisions.get(created.id) : created,
+      decision: created,
       clarifyTopic: fields.clarify,
       supersedesHint: supersedes ? (intent.topic ?? fields.topic ?? intent.query ?? '') : null,
       supersedesId: supersedes ? (extracted.supersedesId ?? null) : null,
+      topicMerge: namedAsProject ? this.proposeTopicMerge(request.conv, fields.project!) : NO_PROPOSALS,
     });
   }
 
@@ -183,7 +199,7 @@ export class DecisionCapture {
     return { ...patch, ...detailPatch(target, { extracted, unknownFields: fields.unknownFields }) };
   }
 
-  private async amend(
+  private amend(
     request: DecisionRequest,
     change: { target: Decision; extracted: Extracted; pending: DecisionPending | null; fields: DecisionFields },
   ): Promise<Reply> {
@@ -191,18 +207,15 @@ export class DecisionCapture {
     const { target, extracted, pending, fields } = change;
     const patch = this.amendPatch(change, request.text);
     if (!pending && Object.keys(patch).length === 0)
-      return {
+      return Promise.resolve({
         intent: intent.intent,
         content: `Was soll ich an der Entscheidung „${target.title}“ ergänzen? Nenne bitte Datum, Beteiligte, Begründung, Thema oder Projekt.`,
         sources: [decisionSource(target)],
         confidence: 0.4,
         state: { ...state, last: { ...(state.last ?? {}), decisionId: target.id } },
-      };
-    let updated = this.deps.decisions.update(target.id, { patch, trigger: 'chat' });
-    if (extracted.topicIsProject === true && pending?.clarifyTopic) {
-      await this.moveTopicToProject(pending.clarifyTopic);
-      updated = this.deps.decisions.get(target.id);
-    }
+      });
+    const updated = this.deps.decisions.update(target.id, { patch, trigger: 'chat' });
+    const answeredProject = extracted.topicIsProject === true ? (pending?.clarifyTopic ?? null) : null;
     // „Thema oder Projekt?“ stays asked until it is answered (or another topic was named)
     const unanswered = extracted.topicIsProject === null || extracted.topicIsProject === undefined;
     const sameTopic = !fields.topic || normalizeName(fields.topic) === normalizeName(pending?.clarifyTopic ?? '');
@@ -212,6 +225,7 @@ export class DecisionCapture {
       clarifyTopic: stillClarify,
       supersedesHint: pending?.supersedes ?? null,
       supersedesId: pending?.supersedesId ?? null,
+      topicMerge: answeredProject ? this.proposeTopicMerge(request.conv, answeredProject) : NO_PROPOSALS,
     });
   }
 
@@ -242,9 +256,11 @@ export class DecisionCapture {
     const questions = askFields.map((field) => `• ${questionFor(field, { topic: decision.topicName })}`);
     if (clarifyTopic) questions.push(`• Ist „${clarifyTopic}“ das Thema oder der Name des Projekts?`);
     const known = this.deps.decisions.format(decision);
+    const merge = change.topicMerge.lines.map((line) => `\n\n${line}`).join('');
     return {
       intent: 'decision_new',
-      content: `Ich habe die Entscheidung als **Entwurf** gespeichert. Damit sie vollständig ist, brauche ich noch:\n\n${questions.join('\n')}\n\n(Wenn du etwas nicht weißt, sage „unbekannt“ – dann speichere ich es so.)\n\n${known}`,
+      content: `Ich habe die Entscheidung als **Entwurf** gespeichert. Damit sie vollständig ist, brauche ich noch:\n\n${questions.join('\n')}\n\n(Wenn du etwas nicht weißt, sage „unbekannt“ – dann speichere ich es so.)\n\n${known}${merge}`,
+      actions: change.topicMerge.actions,
       sources: [decisionSource(decision)],
       context: this.decisionContext(decision),
       confidence: decision.confidence,
@@ -267,8 +283,8 @@ export class DecisionCapture {
   private async completeReply(request: DecisionRequest, scope: { change: DecisionChange; last: ConvState['last'] }): Promise<Reply> {
     const { change } = scope;
     const { decision } = change;
-    const actions: StoredAgentAction[] = [];
-    const lines: string[] = [];
+    const actions: StoredAgentAction[] = [...change.topicMerge.actions];
+    const lines: string[] = [...change.topicMerge.lines];
     const conflicts = await this.deps.contradictions.checkDecision(decision.id);
     for (const conflict of conflicts) {
       const insight = this.deps.insights.byDedupeKey(`contradiction:${conflict.id}`);

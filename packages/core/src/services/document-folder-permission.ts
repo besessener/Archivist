@@ -5,7 +5,7 @@ import type { PrivacyService } from './privacy';
 
 /** The LLM permission of scan folders as it applies to the documents found in them. */
 export class FolderPermission {
-  constructor(private readonly deps: { ctx: AppContext; privacy: PrivacyService; reindex: (documentId: string) => Promise<void> }) {}
+  constructor(private readonly deps: { ctx: AppContext; privacy: PrivacyService; reindexInBackground: (documentIds: string[]) => void }) {}
 
   private get db() {
     return this.deps.ctx.database.db;
@@ -35,14 +35,16 @@ export class FolderPermission {
       .all()
       .filter((d) => linked.has(d.id) || (d.sourcePath !== null && this.deps.privacy.paths.inside(root.path, d.sourcePath)));
     let changed = 0;
+    const lockedIds: string[] = [];
     for (const d of rows) {
       const allowed = root.llmAllowed && (d.sourcePath === null || this.allowedFor(d.sourcePath));
       if (allowed === d.folderLlmAllowed) continue;
       this.db.update(documents).set({ folderLlmAllowed: allowed }).where(eq(documents.id, d.id)).run();
       // remote vectors of a newly locked document are replaced by local ones
-      if (!allowed) void this.deps.reindex(d.id);
+      if (!allowed) lockedIds.push(d.id);
       changed += 1;
     }
+    this.deps.reindexInBackground(lockedIds);
     if (changed) this.deps.ctx.events.changed('documents');
     return changed;
   }

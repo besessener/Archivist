@@ -5,7 +5,8 @@ import { createTestApp, type TestApp } from '../helpers/harness';
 let app: TestApp;
 beforeEach(async () => {
   app = await createTestApp({ privacy: 'auto' });
-  app.llm.down = true;
+  // a refused key fails every LLM request at once; an outage would re-queue the analysis for minutes
+  app.llm.status = 401;
 });
 afterEach(async () => {
   await app.cleanup();
