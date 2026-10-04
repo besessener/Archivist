@@ -10,7 +10,7 @@ import { Logger } from '../../packages/core/src/util/logger';
 type Answer = { status: number; retryAfter?: string; body?: unknown };
 
 /** LLM client whose endpoint answers with the scripted statuses (the last one repeats); 200 carries the text OK. */
-function client(answers: Answer[]) {
+function client(answers: Answer[], baseUrl = 'https://llm.example.test/v1') {
   const calls: number[] = [];
   const fetchImpl = async (): Promise<Response> => {
     const answer = answers[Math.min(calls.length, answers.length - 1)]!;
@@ -24,7 +24,7 @@ function client(answers: Answer[]) {
   const ctx = { events: { emit: () => true }, logger: new Logger(null), database: {} };
   const settings = {
     get: () => ({
-      llm: { baseUrl: 'https://llm.example.test/v1', model: 'test-model', maxInputChars: 10000, reasoningEffort: null, timeoutMs: 5000 },
+      llm: { baseUrl, model: 'test-model', maxInputChars: 10000, reasoningEffort: null, timeoutMs: 5000 },
       privacy: { llmMode: 'auto' },
     }),
   };
@@ -116,6 +116,18 @@ describe('LLM client: Retry-After and rate limits', () => {
 
     await expect(llm.complete({ ...plain, bypassPrivacy: true })).resolves.toBe('OK');
     await expect(llm.complete(plain)).resolves.toBe('OK');
+  });
+
+  it('a 429 from Claude counts toward the endpoint health as well', async () => {
+    const limited = { type: 'error', error: { type: 'rate_limit_error', message: 'rate limited' } };
+    const { llm, calls } = client([{ status: 429, body: limited }], 'https://llm.example.test/anthropic');
+    await llm.complete(plain).catch(() => undefined);
+    const attempts = calls.length;
+
+    const fast = await llm.complete(plain).catch((err: unknown) => err);
+
+    expect(calls).toHaveLength(attempts);
+    expect(toErrorInfo(fast)).toMatchObject({ retryable: true, retryAfterMs: expect.any(Number) });
   });
 
   it('without Retry-After the backoff after a 429 grows with every further 429', async () => {

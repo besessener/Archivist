@@ -157,9 +157,10 @@ function mapError(err: unknown, signal?: AbortSignal): Error {
     return new AppError('llm_error', 'Claude hat die Anmeldung abgelehnt (API-Key prüfen).', { details: err.message });
   if (err instanceof Anthropic.NotFoundError)
     return new AppError('llm_error', 'Endpunkt oder Modell (Deployment) wurde nicht gefunden – Base URL und Modellname prüfen.', { details: err.message });
-  if (err instanceof Anthropic.RateLimitError) return new AppError('llm_error', 'Das Claude-Limit wurde erreicht.', { retryable: true, details: err.message });
+  if (err instanceof Anthropic.RateLimitError)
+    return new AppError('llm_error', 'Das Claude-Limit wurde erreicht.', { retryable: true, details: err.message, httpStatus: err.status });
   if (err instanceof Anthropic.InternalServerError)
-    return new AppError('llm_error', 'Claude meldet einen Serverfehler.', { retryable: true, details: err.message });
+    return new AppError('llm_error', 'Claude meldet einen Serverfehler.', { retryable: true, details: err.message, httpStatus: err.status });
   if (err instanceof Anthropic.APIConnectionTimeoutError)
     return new AppError('network_error', 'Zeitüberschreitung – Claude antwortet nicht.', { retryable: true, details: err.message });
   if (err instanceof Anthropic.APIConnectionError)

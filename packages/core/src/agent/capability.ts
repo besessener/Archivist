@@ -33,7 +33,11 @@ interface ProbeOutcome {
   transient: boolean;
 }
 
-const isTransient = (err: unknown) => err instanceof AppError && err.retryable;
+const isServerOrRateLimit = (status: number | undefined) => status === 429 || (status ?? 0) >= 500;
+
+/** Only rate limits, server errors, timeouts and unreachable endpoints pass; a broken answer would repeat on every probe. */
+const isTransient = (err: unknown) =>
+  err instanceof AppError && err.retryable && (err.category === 'network_error' || isServerOrRateLimit(err.options.httpStatus));
 
 const PROBE_SYSTEM =
   'Du bist ein Verbindungstest. Rufe das Werkzeug echo genau einmal mit text="archivist" auf. Nachdem du das Ergebnis erhalten hast, antworte mit dem Wort OK.';

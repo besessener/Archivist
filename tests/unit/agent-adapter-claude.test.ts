@@ -225,6 +225,7 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
       expect(err, `HTTP ${status}`).toBeInstanceOf(AppError);
       expect(err.message, `HTTP ${status}`).toMatch(message);
       expect(err.retryable, `HTTP ${status}`).toBe(retryable);
+      expect(err.options.httpStatus, `HTTP ${status}`).toBe(retryable ? status : undefined);
       // the SDK must not retry on its own: the core counts retries
       expect(t.sent, `HTTP ${status}`).toHaveLength(1);
       expect(logs.at(-1)).toMatchObject({ success: false });
