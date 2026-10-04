@@ -57,6 +57,14 @@ describe('research helpers of the agent', () => {
       expect(sequenceNumber('Auszug 3')).toEqual({ kind: 'number', n: 3 });
       expect(sequenceNumber('Gehalt 2025-07')).toEqual({ kind: 'month', month: '2025-07' });
       expect(numberGaps([1, 2, 4, 7])).toEqual([3, 5, 6]);
+    });
+
+    it('reads a year-month after a label or with underscores as the month, not as a number', () => {
+      expect(sequenceNumber('Kontoauszug 2025-07')).toEqual({ kind: 'month', month: '2025-07' });
+      expect(sequenceNumber('Kontoauszug_2025-07.pdf')).toEqual({ kind: 'month', month: '2025-07' });
+      expect(sequenceNumber('Rechnung_2025_07.pdf')).toEqual({ kind: 'month', month: '2025-07' });
+      expect(sequenceNumber('Rechnung 2025-001')).toEqual({ kind: 'number', n: 1 });
+      expect(sequenceNumber('Teil 2.pdf')).toEqual({ kind: 'number', n: 2 });
       expect(numberGaps([5])).toEqual([]);
     });
   });
