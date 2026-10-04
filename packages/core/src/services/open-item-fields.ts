@@ -44,6 +44,7 @@ export function newOpenItemRow(
   input: OpenItemInput,
   refs: { id: string; now: string; topicId: string | null; projectId: string | null; responsiblePersonId: string | null },
 ): OpenItemRow {
+  const dueAt = normalizeDateInput(input.dueAt ?? null);
   return {
     id: refs.id,
     title: input.title.trim(),
@@ -51,9 +52,9 @@ export function newOpenItemRow(
     topicId: refs.topicId,
     projectId: refs.projectId,
     responsiblePersonId: refs.responsiblePersonId,
-    responsibleUnknown: false,
-    dueAt: normalizeDateInput(input.dueAt ?? null),
-    dueUnknown: false,
+    responsibleUnknown: !refs.responsiblePersonId && (input.responsibleUnknown ?? false),
+    dueAt,
+    dueUnknown: !dueAt && (input.dueUnknown ?? false),
     status: 'open',
     priority: input.priority ?? 'normal',
     sourceIds: input.sourceIds ?? [],

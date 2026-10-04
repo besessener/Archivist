@@ -55,13 +55,15 @@ export function ItemFormDialog({
       responsible: responsibleUnknown ? null : (nonEmpty(responsible) ?? null),
       dueAt: dueUnknown ? null : dueAt || null,
       priority,
+      responsibleUnknown,
+      dueUnknown,
     };
     const saved = await run(
       async () => {
         const record = item
           ? await call('openItems:update', {
               id: item.id,
-              patch: { ...base, ...(statusEditable ? { status } : {}), responsibleUnknown, dueUnknown },
+              patch: { ...base, ...(statusEditable ? { status } : {}) },
             })
           : await call('openItems:create', base);
         await extra.save(record.id);
