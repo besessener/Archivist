@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { readTable, type TableBlock } from './markdown-table';
 
 /** Where a `[[Name]]` leads (#285): the entry's page, or null for a name without entry (shown as unknown). */
 export type WikiResolver = (name: string) => { href: string; title: string } | null;
@@ -84,7 +85,8 @@ function withBreaks({ lines, keyPrefix, wiki }: { lines: string[]; keyPrefix: st
   ]);
 }
 
-type Block = { kind: 'p'; lines: string[] } | { kind: 'ul'; items: string[] } | { kind: 'ol'; items: string[] } | { kind: 'h'; level: number; text: string };
+type Block =
+  { kind: 'p'; lines: string[] } | { kind: 'ul'; items: string[] } | { kind: 'ol'; items: string[] } | { kind: 'h'; level: number; text: string } | TableBlock;
 
 /** The block a single non-empty line starts. */
 function lineBlock(line: string): Block {
@@ -115,10 +117,23 @@ function appendTo(previous: Block | undefined, block: Block): boolean {
 
 function parse(text: string): Block[] {
   const blocks: Block[] = [];
-  // an empty line or a heading closes the block before it
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((raw) => raw.trimEnd());
+  // an empty line, a heading or a table closes the block before it
   let open = false;
-  for (const raw of text.replace(/\r\n/g, '\n').split('\n')) {
-    const line = raw.trimEnd();
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? '';
+    const table = readTable({ lines, start: i });
+    if (table) {
+      blocks.push(table.block);
+      open = false;
+      i = table.next;
+      continue;
+    }
+    i++;
     if (line.trim() === '') {
       open = false;
       continue;
@@ -156,10 +171,42 @@ function renderBlock({ block, key, wiki }: { block: Block; key: string; wiki?: W
           {renderInline({ text: block.text, keyPrefix: key, wiki })}
         </p>
       );
+    case 'table':
+      return renderTable({ block, key, wiki });
   }
 }
 
-/** Lightweight, safe Markdown rendering (paragraphs, lists, headings, bold, italic, code, http(s) links). */
+function renderTable({ block, key, wiki }: { block: TableBlock; key: string; wiki?: WikiResolver }): React.ReactElement {
+  const cell = (text: string, id: string) => renderInline({ text, keyPrefix: id, wiki });
+  return (
+    <div key={key} className="overflow-x-auto">
+      <table className="w-full border-collapse text-left">
+        <thead>
+          <tr className="border-b">
+            {block.header.map((text, c) => (
+              <th key={`${key}-h${c}`} scope="col" className="px-2 py-1 font-semibold">
+                {cell(text, `${key}-h${c}`)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {block.rows.map((row, r) => (
+            <tr key={`${key}-r${r}`} className="border-b last:border-b-0">
+              {row.map((text, c) => (
+                <td key={`${key}-r${r}-c${c}`} className="px-2 py-1 align-top">
+                  {cell(text, `${key}-r${r}-c${c}`)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Lightweight, safe Markdown rendering (paragraphs, lists, headings, tables, bold, italic, code, http(s) links). */
 export function Markdown({ text, className, testId, wiki }: { text: string; className?: string; testId?: string; wiki?: WikiResolver }) {
   const blocks = parse(text);
   return (

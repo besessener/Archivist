@@ -56,6 +56,21 @@ test.describe('Timeline', () => {
     await expect(description).not.toContainText('**');
   });
 
+  test('a Markdown table in an event description is rendered as a table', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('timeline');
+    const tl = app.timeline;
+
+    await tl.do.addEvent('Folien gesichtet', '2026-10-01');
+    await tl.do.editEvent('Folien gesichtet', { description: '| Datei | Ordner |\n|---|---|\n| Sovereign AI.pptx | sovereign-ai |' });
+
+    const description = tl.entry('Folien gesichtet').getByTestId('timeline-description');
+    await expect(description.locator('th')).toHaveText(['Datei', 'Ordner']);
+    await expect(description.locator('td')).toHaveText(['Sovereign AI.pptx', 'sovereign-ai']);
+    await expect(description).not.toContainText('|');
+  });
+
   test('shows the newest entries first and loads older ones on request', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
