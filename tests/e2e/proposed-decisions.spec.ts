@@ -38,6 +38,19 @@ test.describe('decisions found in documents', () => {
     await expect(app.decisions.row('Fassade streichen')).toBeVisible();
   });
 
+  test('mark their notification as new until the bell is closed, and as handled once opened', async ({ on, page }) => {
+    const app = on(page);
+    await app.notifications.do.open();
+    await expect(app.notifications.item(NOTIFICATION).getByTestId('bell-item-new')).toBeVisible();
+    await app.notifications.locators.actions.navigate.click();
+    await expect(app.decisions.locators.proposed.heading).toBeVisible();
+
+    await app.notifications.do.open();
+    await expect(app.notifications.item(NOTIFICATION)).toHaveCount(0);
+    await app.notifications.locators.resolvedToggle.click();
+    await expect(app.notifications.locators.resolvedItems.filter({ hasText: NOTIFICATION })).toContainText('Erledigt am');
+  });
+
   test('close their notification once every proposal is decided', async ({ on, page }) => {
     const app = on(page);
     await app.navigation.do.open('decisions');
