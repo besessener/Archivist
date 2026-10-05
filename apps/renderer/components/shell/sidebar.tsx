@@ -35,7 +35,7 @@ export function Sidebar() {
   // counts per status instead of the newest 1000 documents: the badge is exact and cheap (#214)
   const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
   const inboxCount = ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'].reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
-  const counts: Record<'inbox' | 'insights', number> = { inbox: inboxCount, insights: status?.openInsights ?? 0 };
+  const counts: Record<'inbox' | 'insights', number> = { inbox: inboxCount, insights: (status?.openInsights ?? 0) + (status?.openLinkProposals ?? 0) };
 
   return (
     <nav aria-label="Hauptnavigation" className="flex h-full w-16 shrink-0 flex-col border-r bg-sidebar md:w-56">
