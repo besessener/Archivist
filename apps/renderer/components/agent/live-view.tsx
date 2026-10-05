@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Square } from 'lucide-react';
 import { AgentProgress } from '@archivist/shared';
+import { Markdown } from '@/components/common/markdown';
 import { Button } from '@/components/ui/button';
 import { call } from '@/lib/ipc';
 import { subscribe } from '@/lib/events';
@@ -75,9 +76,7 @@ export function useAgentProgress({ conversationId, pending }: { conversationId: 
   return progress;
 }
 
-const PREVIEW_CHARS = 600;
-
-/** Replaces „Archivist denkt nach …“ while a run works: steps in plain language, streamed text, tokens and cost. */
+/** Replaces „Archivist denkt nach …“ while a run works: steps, tokens and cost in a card, the streamed text below as the answer. */
 export function AgentLiveView({ progress, onStop, stopping }: { progress: Progress | null; onStop: () => void; stopping?: boolean }) {
   const steps = progress?.steps ?? [];
   const last = steps[steps.length - 1];
@@ -88,32 +87,30 @@ export function AgentLiveView({ progress, onStop, stopping }: { progress: Progre
     if (!last) return 'Archivist denkt nach.';
     return last.outcome === 'running' ? `${last.label} …` : `${last.label}${last.summary ? `: ${last.summary}` : ''}.`;
   }, [progress, last]);
-  const preview = progress?.text ? (progress.text.length > PREVIEW_CHARS ? `… ${progress.text.slice(-PREVIEW_CHARS)}` : progress.text) : '';
+  const preview = progress?.text ?? '';
   const running = !progress || progress.status === 'running';
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-card p-3 text-sm" data-testid="chat-loading">
-      <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="agent-live-announcement">
-        {announcement}
+    <div className="flex flex-col gap-3 text-sm" data-testid="chat-loading">
+      <div className="flex flex-col gap-2 rounded-lg border bg-card p-3">
+        <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="agent-live-announcement">
+          {announcement}
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          {running && <Loader2 className="size-4 animate-spin" aria-hidden />}
+          <span className="flex-1">{running ? (steps.length > 0 ? 'Archivist arbeitet …' : 'Archivist denkt nach …') : RUN_STATUS[progress.status].label}</span>
+          {progress && (
+            <span className="text-[11px]" data-testid="agent-live-usage">
+              {usageLine({ usage: progress.usage, costUsd: progress.costUsd })}
+            </span>
+          )}
+          <Button variant="ghost" size="sm" onClick={onStop} disabled={stopping || !running} data-testid="chat-cancel">
+            <Square aria-hidden /> Stopp
+          </Button>
+        </div>
+        {steps.length > 0 && <StepList steps={steps} />}
       </div>
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {running && <Loader2 className="size-4 animate-spin" aria-hidden />}
-        <span className="flex-1">{running ? (steps.length > 0 ? 'Archivist arbeitet …' : 'Archivist denkt nach …') : RUN_STATUS[progress.status].label}</span>
-        {progress && (
-          <span className="text-[11px]" data-testid="agent-live-usage">
-            {usageLine({ usage: progress.usage, costUsd: progress.costUsd })}
-          </span>
-        )}
-        <Button variant="ghost" size="sm" onClick={onStop} disabled={stopping || !running} data-testid="chat-cancel">
-          <Square aria-hidden /> Stopp
-        </Button>
-      </div>
-      {steps.length > 0 && <StepList steps={steps} />}
-      {preview && (
-        <p className="max-h-40 overflow-hidden whitespace-pre-wrap break-words border-l-2 pl-2 text-muted-foreground" data-testid="agent-live-text">
-          {preview}
-        </p>
-      )}
+      {preview && <Markdown text={preview} testId="agent-live-text" />}
     </div>
   );
 }
