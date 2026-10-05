@@ -14,6 +14,8 @@ Die Ablage bleibt außerdem **ohne Archivist verständlich** – lesbare Ordner 
 
 Der Standardmodus `confirm` fragt vor jeder externen Analyse. Das ist bewusst unbequem: Die Entscheidung, ob ein Kontoauszug an einen Cloud-Dienst geht, soll nicht nebenbei fallen. Wer mehr Komfort will, wählt `auto`; wer gar nichts senden will, `local_only` – Archivist funktioniert dann mit lokaler Klassifikation, lokaler Suche und regelbasiertem Chat weiter.
 
+Die Spracheingabe hält sich daran: Aufnahmen werden lokal in Text umgewandelt und weder gespeichert noch gesendet, weil Audio sich – anders als Text – nicht maskieren lässt. Die einzige Verbindung nach außen ist der einmalige Download des Modells; er überträgt nichts von dir, geschieht nur nach deiner Bestätigung und nie im Modus `local_only`. Das Modell ist auf einen Commit festgelegt und wird gegen Prüfsummen geprüft, bevor es benutzt wird.
+
 Drei Mechanismen sorgen dafür, dass die Wahl auch an unerwarteten Stellen gilt:
 
 - **Ausschlüsse hängen am Dokument**, nicht am Arbeitsschritt. Ein ausgeschlossenes Dokument taucht weder in einer Analyse noch als Chat-Quelle, Lösungsvorschlag, Embedding oder Werkzeugergebnis des Agenten im Klartext auf.
@@ -34,7 +36,7 @@ Deshalb sind Dokumenttexte, Verlauf, Kontextlisten, Werkzeugergebnisse und Webse
 
 Die Oberfläche zeigt Inhalte aus Dokumenten an. Sollte darüber je Code in den Renderer gelangen, darf er nichts erreichen: Der Renderer läuft in einer Sandbox ohne Node, Dateisystem, Datenbank oder Shell, unter strenger CSP, und spricht nur über eine Allowlist von IPC-Kanälen, deren Ein- und Ausgaben der Main-Prozess validiert. Kritische Aktionen verlangen zusätzlich `confirmed: true` im Schema – ein manipulierter Renderer kann sie nicht stillschweigend auslösen.
 
-Die gepackte App ist zusätzlich gehärtet: Die Electron-Fuses `runAsNode`, `NODE_OPTIONS` und `--inspect` sind abgeschaltet, Code wird nur aus `app.asar` geladen, und `file://`-Seiten bekommen keine Sonderrechte (das Frontend kommt über `app://`). Die Test-Umgebungsvariablen (`ARCHIVIST_TEST_MODE`, `ARCHIVIST_TEST_PICK_DIR`) und `ARCHIVIST_DEV_URL` gelten nur in einer ungepackten App; in der installierten App bleibt der unsichere `basic_text`-Speicher für Schlüssel damit ausgeschlossen.
+Die gepackte App ist zusätzlich gehärtet: Die Electron-Fuses `runAsNode`, `NODE_OPTIONS` und `--inspect` sind abgeschaltet, Code wird nur aus `app.asar` geladen, und `file://`-Seiten bekommen keine Sonderrechte (das Frontend kommt über `app://`). Die Test-Umgebungsvariablen (`ARCHIVIST_TEST_MODE`, `ARCHIVIST_TEST_PICK_DIR`, `ARCHIVIST_TEST_SPEECH_MODEL`, `ARCHIVIST_TEST_SPEECH_WORKER`) und `ARCHIVIST_DEV_URL` gelten nur in einer ungepackten App; in der installierten App bleibt der unsichere `basic_text`-Speicher für Schlüssel damit ausgeschlossen.
 
 ## Ehrlich über Grenzen
 

@@ -1,4 +1,4 @@
-// Checks that better-sqlite3 and sharp load in Node AND in Electron: their N-API prebuilds need no electron-rebuild.
+// Checks that better-sqlite3, sharp and onnxruntime-node (speech input) load in Node AND in Electron: their N-API prebuilds need no electron-rebuild.
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
@@ -8,7 +8,8 @@ const Database = require('better-sqlite3');
 const db = new Database(':memory:');
 const fts = db.prepare("select count(*) c from pragma_compile_options where compile_options like '%FTS5%'").get().c;
 const sharp = require('sharp');
-console.log(JSON.stringify({ sqlite: db.prepare('select sqlite_version() v').get().v, fts5: fts > 0, sharp: sharp.versions.sharp, abi: process.versions.modules, electron: process.versions.electron ?? null }));
+const onnx = require('onnxruntime-node');
+console.log(JSON.stringify({ onnxSession: typeof onnx.InferenceSession, sqlite: db.prepare('select sqlite_version() v').get().v, fts5: fts > 0, sharp: sharp.versions.sharp, abi: process.versions.modules, electron: process.versions.electron ?? null }));
 `;
 
 function run(label, runtime) {

@@ -1,6 +1,6 @@
 # Architektur
 
-Archivist ist eine lokale Desktop-Anwendung aus Electron, Next.js und TypeScript. Alles ist JavaScript/TypeScript – **kein Python, kein HTTP-Backend, keine Datenbankinstallation, kein Docker**. Alle Daten (Metadaten, Embeddings, Logs, Dateien) liegen lokal; nach außen spricht Archivist nur mit dem von dir konfigurierten LLM-Endpunkt.
+Archivist ist eine lokale Desktop-Anwendung aus Electron, Next.js und TypeScript. Alles ist JavaScript/TypeScript – **kein Python, kein HTTP-Backend, keine Datenbankinstallation, kein Docker**. Alle Daten (Metadaten, Embeddings, Logs, Dateien) liegen lokal; nach außen spricht Archivist nur mit dem von dir konfigurierten LLM-Endpunkt und, einmalig nach deiner Bestätigung, mit `huggingface.co` für das Modell der Spracheingabe.
 
 ```
 ┌────────────────────────── Electron ───────────────────────────┐
@@ -38,6 +38,7 @@ Ein blockierter Main-Prozess friert in Electron das ganze Fenster ein. Deshalb:
 - Datenbankzugriffe sind kurz (synchrones better-sqlite3).
 - Lange Lesezugriffe (Timeline, Dokumentliste, Zähler) laufen in einem eigenen Lese-Worker mit eigener schreibgeschützter Verbindung (WAL).
 - Hashing, Verzeichnisscans und Textextraktion laufen im Worker-Pool, die Vektorsuche in einem eigenen Pool mit einem Worker. Jede Aufgabe hat ein Zeitlimit und lässt sich über das Signal des Jobs abbrechen; dann wird der Worker beendet und beim nächsten Bedarf neu gestartet. Aufgaben, auf die du wartest (Archivieren, Import gewählter Dateien, Öffnen, Neu verknüpfen, Archiv prüfen), kommen vor wartenden Hintergrundaufgaben wie dem Scan dran; das Einlesen (OCR) belegt bei mehreren Workern nie den letzten freien.
+- Die Spracherkennung (Whisper über `@huggingface/transformers` und `onnxruntime-node`) läuft in einem eigenen, langlebigen Worker (`speech-worker.cjs`): Er lädt das Modell beim ersten Diktat und wird nach 5 Minuten ohne Aufnahme beendet, damit das Modell nicht dauerhaft Arbeitsspeicher belegt. Die Aufnahme entsteht im Renderer (`MediaRecorder`, 16 kHz mono) und kommt als `Int16Array` über `speech:transcribe` zum Main-Prozess.
 - Die Archivprüfung gibt den Main-Thread zwischen ihren Schritten und in langen Schleifen frei.
 - Langlaufende Abläufe sind Jobs in der persistenten [Job-Queue](../reference/funktionen.md#job-queue).
 

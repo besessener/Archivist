@@ -4,7 +4,11 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { FolderInput, Paperclip, SendHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { DictationButton, DictationNote } from '@/components/chat/dictation';
 import { useApp } from '@/lib/app-context';
+import { joinDictation } from '@/lib/dictation';
+import { useDictation } from '@/lib/use-dictation';
+import { useQuery } from '@/lib/use-query';
 import { SUPPORTED_TYPES_TEXT } from '@/lib/labels';
 
 const ACCEPT = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.markdown,.eml,.png,.jpg,.jpeg';
@@ -27,6 +31,13 @@ export interface ChatComposerProps {
 export function ChatComposer({ text, onTextChange, inputRef, working, onSend, aiNotice }: ChatComposerProps) {
   const { importFiles, importFolder } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
+  const speech = useQuery('speech:status', {}, { scopes: ['speech'] });
+  const dictation = useDictation({
+    onText: (dictated) => {
+      onTextChange(joinDictation(text, dictated));
+      inputRef.current?.focus();
+    },
+  });
   // manually set height of the input field (null = grow automatically with the text)
   const [manualHeight, setManualHeight] = useState<number | null>(null);
 
@@ -144,10 +155,19 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
           style={manualHeight !== null ? { height: manualHeight } : undefined}
           className="max-h-[60vh] min-h-9 flex-1 resize-none overflow-y-auto border-0 bg-transparent shadow-none focus-visible:outline-none"
         />
+        <DictationButton
+          status={speech.data}
+          state={dictation.state}
+          seconds={dictation.seconds}
+          onStart={() => void dictation.start()}
+          onFinish={() => void dictation.finish()}
+          onCancel={dictation.cancel}
+        />
         <Button type="submit" size="icon" disabled={working || !text.trim()} aria-label="Senden" data-testid="chat-send">
           <SendHorizontal aria-hidden />
         </Button>
       </form>
+      <DictationNote status={speech.data} state={dictation.state} seconds={dictation.seconds} onCancel={dictation.cancel} />
       <p className="mx-auto mt-1.5 max-w-3xl 2xl:max-w-5xl text-center text-[11px] text-muted-foreground" data-testid="chat-ai-notice">
         {aiNotice} Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) und ganze Ordner kannst du auch einfach in das Fenster ziehen.
       </p>

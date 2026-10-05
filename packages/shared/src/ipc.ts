@@ -18,6 +18,7 @@ import {
 } from './archive';
 import { Confirmed, Empty, Ok, channel } from './ipc-channel';
 import { bulkChannels } from './ipc-bulk';
+import { speechChannels } from './ipc-speech';
 import { BulkEstimate, ImportedFolder, IndexStatus, ReanalysisProposal, StartedJob } from './bulk';
 import { AuditEntry, AuditVerification, LlmTransmission, LlmUsage, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
@@ -670,6 +671,7 @@ export const ipcContract = {
   ),
 
   ...bulkChannels,
+  ...speechChannels,
 } as const;
 
 export type IpcContract = typeof ipcContract;

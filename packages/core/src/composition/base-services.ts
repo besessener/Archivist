@@ -19,6 +19,10 @@ import { SearchService } from '../services/search';
 import { SecretService, type SecretCipher } from '../services/secret';
 import { SelfService } from '../services/self';
 import { SettingsService, settingsLoadNotification } from '../services/settings';
+import { SpeechService } from '../services/speech';
+import { WorkerSpeechEngine, type SpeechEngine } from '../services/speech/engine';
+import { SPEECH_MODEL, type SpeechModelSpec } from '../services/speech/model-manifest';
+import { SpeechModelStore } from '../services/speech/model-store';
 import { UndoService } from '../services/undo';
 import { Logger } from '../util/logger';
 import { maskingOf } from '../util/redact';
@@ -41,6 +45,10 @@ export interface CreateServicesOptions {
   workerFile?: string | null;
   /** Path to the bundled read worker (own read-only DB connection); null/undefined = queries run inline (tests) */
   readerFile?: string | null;
+  /** Speech input: the bundled Whisper worker; without it (and without `speech.engine`) nothing can be transcribed. */
+  speechWorkerFile?: string | null;
+  /** Replaces the model, its download and the engine (tests). */
+  speech?: { model?: SpeechModelSpec; engine?: SpeechEngine; fetchImpl?: FetchLike };
   fetchImpl?: FetchLike;
   jobConcurrency?: number;
   /** Wait before the first job retry; doubles with every further attempt (default 5 s, tests: 0) */
@@ -84,6 +92,7 @@ export function createBaseServices(options: CreateServicesOptions) {
   const reader = new DbReader(database.db, { workerFile: options.readerFile ?? null, databaseFile: database.file, logger });
   const llm = new LlmService({ ctx, settings, secrets, fetchImpl: options.fetchImpl, retryDelayMs: options.llmRetryDelayMs });
   const privacy = new PrivacyService(settings);
+  const speech = createSpeech({ ctx, privacy, options });
   const embedding = new EmbeddingService({ settings, llm, logger: ctx.logger });
   const graph = new KnowledgeGraphService({ ctx, audit, undo });
   const persons = new PersonService(ctx, graph);
@@ -128,5 +137,17 @@ export function createBaseServices(options: CreateServicesOptions) {
     jobs,
     notifications,
     reminders,
+    speech,
   };
+}
+
+/** The Whisper model lives in the index folder; its worker starts on the first recording. */
+function createSpeech({ ctx, privacy, options }: { ctx: AppContext; privacy: PrivacyService; options: CreateServicesOptions }): SpeechService {
+  const spec = options.speech?.model ?? SPEECH_MODEL;
+  const modelsDir = path.join(ctx.paths.index, 'models');
+  const store = new SpeechModelStore(spec, modelsDir, options.speech?.fetchImpl ?? fetch);
+  const engine =
+    options.speech?.engine ??
+    new WorkerSpeechEngine({ workerFile: options.speechWorkerFile ?? null, modelsDir, modelName: spec.directory, idleMs: 5 * 60_000, timeoutMs: 5 * 60_000 });
+  return new SpeechService({ ctx, privacy, spec, store, engine });
 }

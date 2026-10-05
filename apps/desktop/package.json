@@ -21,6 +21,7 @@
     "release:win": "electron-builder --win nsis portable --x64 --publish always"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
     "@napi-rs/canvas": "^1.0.9",
     "@tesseract.js-data/deu": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",

@@ -18,6 +18,10 @@ Die auf npm verfügbare Version von SheetJS hat bekannte, ungepatchte Schwachste
 
 Texterkennung läuft lokal mit `tesseract.js`; Sprachdaten liegen im Installationspaket. Das macht den Installer größer, aber ein gescanntes Dokument verlässt dafür nie den Rechner. PDFs werden seitenweise erkannt, aber höchstens 40 Seiten ohne Textebene je Dokument; weitere Seiten bleiben ungelesen und das Dokument zeigt das offen an („Text teilweise gelesen“). Details: [Funktionen – OCR](../reference/funktionen.md#ocr).
 
+## Spracheingabe: lokal, nur Deutsch, ein Modell
+
+Die Spracheingabe nutzt Whisper „small“ (quantisiert) auf der CPU. Das ist für Diktate im Chat gedacht: Aufnahmen bis zwei Minuten, Erkennung ausschließlich Deutsch, kein Streaming (der Text erscheint nach dem Beenden der Aufnahme), kein Wake-Word. Ein größeres Modell (`medium`, `turbo`) wäre genauer, aber langsamer und größer; es wird beim Bauen mit `npm run speech:pin -- --model …` aus einer festen Liste gewählt, nicht in der Oberfläche. Die Grenzen sind bewusst gewählt. Das Modell kommt nicht im Installer mit, sondern per Download nach deiner Bestätigung, damit der Installer klein bleibt; im Modus „nur lokal“ lädt Archivist deshalb nichts nach.
+
 ## Kein Betriebssystem-Sandkasten für Parser
 
 Dateien aus unbekannter Quelle werden von pdfjs, mammoth, mailparser, sharp, canvas und tesseract in Worker-Threads **innerhalb des Electron-Hauptprozesses** gelesen, ohne Sandbox des Betriebssystems. Die Gegenmaßnahmen sind begrenzt: Zeitlimit je Aufgabe (der Worker wird beendet und ersetzt), Grenzen gegen ZIP-Bomben, lineare statt rückverfolgende Textsuche und Größenlimits für Dateien und Text. Ein Fehler in einer dieser Bibliotheken, der Code ausführt, wäre damit nicht eingedämmt. Ein Prozess mit eingeschränkten Rechten für das Einlesen ist ein bekanntes, bewusst nicht umgesetztes Thema; ein Beispiel für einen Angriff ist nicht bekannt.

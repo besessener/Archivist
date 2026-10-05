@@ -20,4 +20,5 @@ export * from './llm';
 export * from './llm-base-url';
 export * from './backup-size';
 export * from './agent';
+export * from './speech';
 export * from './ipc';

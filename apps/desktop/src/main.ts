@@ -11,12 +11,14 @@ import {
   type HostApi,
   type SecretCipher,
   type Services,
+  type SpeechModelSpec,
 } from '@archivist/core';
 import { IPC_CHANNELS, type AppNotification } from '@archivist/shared';
 import { appUserModelId } from './app-id';
 import { readUnpackagedEnv } from './test-environment';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { isExternalWebUrl } from './external-links';
+import { allowsMicrophoneCheck, allowsMicrophoneRequest } from './permissions';
 import { recoverFromDamagedDatabase, type RecoveryDeps } from './recovery';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
 
@@ -25,9 +27,12 @@ const unpackagedEnv = (name: string) => readUnpackagedEnv({ packaged: app.isPack
 const devUrl = unpackagedEnv('ARCHIVIST_DEV_URL');
 const isDev = Boolean(devUrl);
 const testMode = unpackagedEnv('ARCHIVIST_TEST_MODE') === '1';
+const testSpeechModel = unpackagedEnv('ARCHIVIST_TEST_SPEECH_MODEL');
 
 // the interface is German only: date and time fields follow Chromium's language, not the operating system's
 app.commandLine.appendSwitch('lang', 'de-DE');
+// E2E: a synthetic microphone and camera; the permission handlers below still decide who may use them
+if (testMode) app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 if (process.env.ARCHIVIST_DATA_DIR) app.setPath('userData', path.join(process.env.ARCHIVIST_DATA_DIR, '.electron'));
@@ -248,6 +253,9 @@ async function start(): Promise<void> {
     appVersion: app.getVersion(),
     workerFile: resource('worker.cjs'),
     readerFile: resource('db-reader.cjs'),
+    // E2E: a stand-in worker and a model served by the test (no real Whisper)
+    speechWorkerFile: unpackagedEnv('ARCHIVIST_TEST_SPEECH_WORKER') ?? resource('speech-worker.cjs'),
+    speech: testSpeechModel ? { model: JSON.parse(testSpeechModel) as SpeechModelSpec } : undefined,
   });
   const appServices = services;
 
@@ -258,9 +266,23 @@ async function start(): Promise<void> {
     return new Response(served.body as ConstructorParameters<typeof Response>[0], { status: served.status, headers: served.headers });
   });
 
-  // Always deny permission requests (camera, location …)
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, respond) => respond(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // Deny every permission (camera, location …) except the microphone for the app's own window (speech input in the chat)
+  const trustedOrigins = [APP_ORIGIN, ...(isDev ? [new URL(devUrl!).origin] : [])];
+  const fromMainWindow = (contents: Electron.WebContents | null) => mainWindow !== null && contents === mainWindow.webContents;
+  session.defaultSession.setPermissionRequestHandler((contents, permission, respond, details) =>
+    respond(
+      allowsMicrophoneRequest({
+        permission,
+        mediaTypes: 'mediaTypes' in details ? details.mediaTypes : undefined,
+        origin: details.requestingUrl,
+        fromMainWindow: fromMainWindow(contents),
+        trustedOrigins,
+      }),
+    ),
+  );
+  session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
+    allowsMicrophoneCheck({ permission, mediaType: details.mediaType, origin: requestingOrigin, fromMainWindow: fromMainWindow(contents), trustedOrigins }),
+  );
 
   registerIpc(appServices);
   forwardEvents(appServices);

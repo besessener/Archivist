@@ -12,11 +12,12 @@ Nur **Windows** (NSIS-Installer mit Auswahl des Installationsverzeichnisses + po
 - Ein `electron-rebuild` ist deshalb nicht nötig (`npmRebuild: false`); das Cross-Packaging ist reproduzierbar.
 - `npm run native:check` beweist das für Node *und* die Electron-Laufzeit.
 - In der Anwendung liegen die Module per `asarUnpack` außerhalb des ASAR-Archivs.
+- `onnxruntime-node` (Spracheingabe, über `@huggingface/transformers`) liefert ebenfalls N-API-Prebuilds. Im Paket bleiben nur die Windows-x64-Binärdateien (die anderen Plattformen und `onnxruntime-web` schließt `electron-builder.yml` aus, das spart mehrere hundert MB). Die `.npmrc` setzt `onnxruntime-node-install=skip`, damit `npm install` unter Linux keine CUDA-Bibliotheken nachlädt; Archivist rechnet nur auf der CPU.
 
 ## Bündelung
 
-- **Gebündelt** (esbuild): Main, Preload, Worker, alle reinen JS-Abhängigkeiten.
-- **Extern** (werden mitgeliefert): `better-sqlite3`, `sharp`, `pdfjs-dist`.
+- **Gebündelt** (esbuild): Main, Preload, Worker (`worker.cjs`, `db-reader.cjs`, `speech-worker.cjs`), alle reinen JS-Abhängigkeiten.
+- **Extern** (werden mitgeliefert): `better-sqlite3`, `sharp`, `pdfjs-dist`, `@huggingface/transformers` (mit `onnxruntime-node`).
 - OCR-Worker, WASM-Kern und Sprachdaten (`@tesseract.js-data/*`) liegen im Installationspaket.
 
 ## Speicherorte der installierten App
