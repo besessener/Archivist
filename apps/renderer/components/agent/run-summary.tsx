@@ -40,7 +40,7 @@ export function RunSummary({ runId }: { runId: string }) {
   const query = useQuery('agent:run', { id: runId }, { scopes: ['agent'] });
   const undo = useAgentUndo(runId);
   const { run } = useRun();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const r = useMemo(() => (query.data ? normalizeRun(query.data) : null), [query.data]);
   if (!r) return null;
