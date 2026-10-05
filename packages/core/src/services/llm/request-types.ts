@@ -13,6 +13,8 @@ export interface LlmRequest {
   maxOutputTokens?: number;
   /** Structured Outputs: the strict schema sent as `text.format` (only with `json`). */
   jsonSchema?: StrictSchema | null;
+  /** The schema as text for the instructions; sent only when `jsonSchema` does not go out as the response format. */
+  schemaText?: string;
   /** Appended after the input was cut to the size limit, so it always reaches the model (e.g. the correction note). */
   appendix?: string;
   /** Cancellation by the user: the running request is ended and not retried. */

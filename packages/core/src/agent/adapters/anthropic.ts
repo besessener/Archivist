@@ -1,28 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicFoundry } from '@anthropic-ai/foundry-sdk';
 import { abortedError } from '../../util/llm-errors';
-import { AppError } from '../../util/errors';
-import { parseRetryAfter } from '../../util/retry-after';
 import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
+import { claudeError } from './anthropic-errors';
+import { withFeatureFallback } from './anthropic-features';
+import { completeClaudeText, type ClaudeTextInput, type ClaudeTextUsage } from './anthropic-text';
 import { previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
-
-/** Optional features; an endpoint that rejects one gets requests without it from then on (#296). */
-type Feature = 'web_location' | 'web_search' | 'effort' | 'task_budget' | 'compaction' | 'eager_streaming' | 'top_cache' | 'fallbacks';
-const FEATURE_MENTIONS: Record<Feature, RegExp> = {
-  // the specific features come first: „output_config.task_budget: …“ must switch off the task budget, not the effort
-  web_location: /user_location/i,
-  // web search switched off for the organization, or not offered by the endpoint (Bedrock, some Foundry deployments)
-  web_search: /web[_ ]?search/i,
-  task_budget: /task[_-]?budget/i,
-  eager_streaming: /eager_input_streaming/i,
-  compaction: /context_management|compact/i,
-  fallbacks: /fallback/i,
-  effort: /\beffort\b|output_config/i,
-  top_cache: /cache_control/i,
-};
 
 /** Searches per request; enough for comparisons, a brake for runaway searching. */
 export const WEB_SEARCH_MAX_USES = 5;
@@ -138,44 +124,17 @@ function toolParams(req: TurnRequest, off: Set<string>): unknown[] {
     ...(off.has('eager_streaming') ? {} : { eager_input_streaming: true }),
     ...(i === req.tools.length - 1 ? { cache_control: { type: 'ephemeral' } } : {}),
   }));
-  // basic web search (server tool): available on the Claude API and on Foundry, also for deployments hosted on Azure
+  // web search (server tool) filtering its results before they reach the context; the basic one where that is not offered
   if (req.webSearch && !off.has('web_search')) {
     const timeZone = off.has('web_location') ? null : userTimeZone();
     tools.unshift({
-      type: 'web_search_20250305',
+      type: off.has('web_dynamic') ? 'web_search_20250305' : 'web_search_20260209',
       name: 'web_search',
       max_uses: WEB_SEARCH_MAX_USES,
       ...(timeZone ? { user_location: { type: 'approximate', timezone: timeZone } } : {}),
     });
   }
   return tools;
-}
-
-/** SDK error → user-facing error; rate limits, server and connection errors are retryable (the core counts retries). */
-function mapError(err: unknown, signal?: AbortSignal): Error {
-  if (err instanceof Anthropic.APIUserAbortError || signal?.aborted) return abortedError();
-  if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError)
-    return new AppError('llm_error', 'Claude hat die Anmeldung abgelehnt (API-Key prüfen).', { details: err.message });
-  if (err instanceof Anthropic.NotFoundError)
-    return new AppError('llm_error', 'Endpunkt oder Modell (Deployment) wurde nicht gefunden – Base URL und Modellname prüfen.', { details: err.message });
-  if (err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError) {
-    const message = err instanceof Anthropic.RateLimitError ? 'Das Claude-Limit wurde erreicht.' : 'Claude meldet einen Serverfehler.';
-    const retryAfterMs = parseRetryAfter(err.headers?.get('retry-after'), Date.now());
-    return new AppError('llm_error', message, { retryable: true, details: err.message, httpStatus: err.status, retryAfterMs });
-  }
-  if (err instanceof Anthropic.APIConnectionTimeoutError)
-    return new AppError('network_error', 'Zeitüberschreitung – Claude antwortet nicht.', { retryable: true, details: err.message });
-  if (err instanceof Anthropic.APIConnectionError)
-    return new AppError('network_error', 'Der Claude-Endpunkt ist nicht erreichbar (Netzwerk oder Base URL prüfen).', {
-      retryable: true,
-      details: err.message,
-    });
-  if (err instanceof Anthropic.BadRequestError) return new AppError('llm_error', 'Claude hat die Anfrage abgelehnt.', { details: err.message });
-  if (err instanceof Anthropic.APIError)
-    return new AppError('llm_error', 'Claude meldet einen Fehler.', { details: err.message, retryable: (err.status ?? 0) >= 500 });
-  if (err instanceof AppError) return err;
-  // e.g. tool input JSON the tolerant parser could not read: the turn is re-issued
-  return new AppError('llm_error', 'Die Antwort von Claude war unvollständig.', { retryable: true, details: err instanceof Error ? err.message : String(err) });
 }
 
 /** Claude via the Messages API (#296), directly or through Microsoft Foundry; thinking steered by `effort`, tool use never forced. */
@@ -230,37 +189,28 @@ export class AnthropicAdapter implements ProviderAdapter {
     let usage: TurnResult['usage'] | null = null;
     let bytes = 0;
     try {
-      for (let fallback = 0; ; fallback += 1) {
-        if (req.signal?.aborted) throw abortedError();
-        const params = this.params(req, off);
-        bytes = Buffer.byteLength(JSON.stringify(params), 'utf8');
-        try {
+      const result = await withFeatureFallback(off, {
+        warn: this.config.warn,
+        send: async () => {
+          if (req.signal?.aborted) throw abortedError();
+          const params = this.params(req, off);
+          bytes = Buffer.byteLength(JSON.stringify(params), 'utf8');
           const stream = this.client.beta.messages.stream(params as never, { signal: req.signal });
           let streamed = false;
           stream.on('text', (delta) => {
             streamed = true;
             onEvent?.({ type: 'text', delta });
           });
-          const message = await stream.finalMessage();
-          success = true;
-          const result = this.toResult(message, streamed);
-          usage = result.usage;
-          return result;
-        } catch (err) {
-          if (err instanceof Anthropic.BadRequestError && fallback < 6) {
-            const feature = (Object.keys(FEATURE_MENTIONS) as Feature[]).find((f) => !off.has(f) && FEATURE_MENTIONS[f].test(err.message));
-            if (feature) {
-              off.add(feature);
-              this.config.warn('Claude endpoint rejected an optional feature – retrying without it', { feature });
-              continue;
-            }
-          }
-          throw mapError(err, req.signal);
-        }
-      }
+          return this.toResult(await stream.finalMessage(), streamed);
+        },
+      });
+      success = true;
+      usage = result.usage;
+      return result;
     } catch (err) {
-      this.config.fail(err, req.signal);
-      throw err;
+      const error = claudeError(err, req.signal);
+      this.config.fail(error, req.signal);
+      throw error;
     } finally {
       this.config.log({
         purpose: req.purpose,
@@ -314,29 +264,8 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   /** Plain text request (classification, summaries) for the rest of Archivist when Claude is configured. */
-  async completeText(input: {
-    system: string;
-    text: string;
-    maxOutputTokens: number;
-    signal?: AbortSignal;
-  }): Promise<{ text: string; usage: Pick<TurnResult['usage'], 'inputTokens' | 'outputTokens' | 'cacheReadTokens'> }> {
-    try {
-      const message = await this.client.messages.create(
-        { model: this.model, max_tokens: input.maxOutputTokens, system: input.system, messages: [{ role: 'user', content: input.text }] },
-        { signal: input.signal },
-      );
-      if (message.stop_reason === 'refusal') throw new AppError('llm_error', 'Claude hat die Anfrage abgelehnt.');
-      const text = message.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('');
-      const usage = message.usage;
-      return {
-        text,
-        usage: { inputTokens: usage.input_tokens ?? 0, outputTokens: usage.output_tokens ?? 0, cacheReadTokens: usage.cache_read_input_tokens ?? 0 },
-      };
-    } catch (err) {
-      throw mapError(err, input.signal);
-    }
+  completeText(input: ClaudeTextInput): Promise<{ text: string; usage: ClaudeTextUsage }> {
+    const off = rejectedFeatures(`${this.endpoint}\n${this.model}`);
+    return completeClaudeText({ client: this.client, model: this.model, off, warn: this.config.warn }, input);
   }
 }

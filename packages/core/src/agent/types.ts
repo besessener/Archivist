@@ -53,6 +53,8 @@ export interface TurnRequest {
   personalRedactions?: number;
   /** Offer the provider's own web search (server-side tool); only in chat runs. */
   webSearch?: boolean;
+  /** Groups requests that share a prefix for the provider's prompt cache (OpenAI `prompt_cache_key`): the conversation, else the run. */
+  cacheKey?: string;
   signal?: AbortSignal;
 }
 

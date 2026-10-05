@@ -35,9 +35,14 @@ function preparedInput(request: { input: string; json?: boolean; appendix?: stri
   return input;
 }
 
-/** Instructions for a structured answer: the caller's instructions plus the JSON schema the answer must follow. */
-export function structuredInstructions(request: { instructions: string; schemaName: string }, jsonSchema: string): string {
-  return `${request.instructions}\n\nAntworte AUSSCHLIESSLICH mit einem einzigen gültigen JSON-Objekt (kein Markdown, kein Fließtext), das dem folgenden JSON-Schema „${request.schemaName}“ entspricht. Unbekannte Werte als null angeben; keine Informationen erfinden.\nJSON-Schema: ${jsonSchema}`;
+/** Instructions for a structured answer: the caller's instructions plus the answer rules; the schema itself is `schemaText`. */
+export function structuredInstructions(request: { instructions: string; schemaName: string }): string {
+  return `${request.instructions}\n\nAntworte AUSSCHLIESSLICH mit einem einzigen gültigen JSON-Objekt „${request.schemaName}“ (kein Markdown, kein Fließtext). Unbekannte Werte als null angeben; keine Informationen erfinden.`;
+}
+
+/** The JSON schema as text; only sent when the endpoint does not enforce it as a response format. */
+export function schemaText(jsonSchema: string): string {
+  return `\nJSON-Schema: ${jsonSchema}`;
 }
 
 /** Note appended to the input of the single correction request after an invalid structured answer. */

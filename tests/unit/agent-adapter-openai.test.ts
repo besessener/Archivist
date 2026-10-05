@@ -44,7 +44,7 @@ describe('OpenAI Responses adapter (#297)', () => {
       },
       toolResults('Technische Grenze erreicht.'),
     ];
-    await new OpenAiResponsesAdapter(config).turn(request(history, { effort: 'xhigh', maxOutputTokens: 1_234 }));
+    await new OpenAiResponsesAdapter(config).turn(request(history, { effort: 'xhigh', maxOutputTokens: 1_234, cacheKey: 'chat:conv-1' }));
     const [req] = t.sent;
     expect(req!.url).toBe(`${base}/responses`);
     expect(req!.headers.authorization).toBe('Bearer sk-test-KEY-0123456789');
@@ -68,6 +68,8 @@ describe('OpenAI Responses adapter (#297)', () => {
       reasoning: { effort: 'high' },
       include: ['reasoning.encrypted_content'],
       max_output_tokens: 1_234,
+      prompt_cache_key: 'chat:conv-1',
+      context_management: [{ type: 'compaction', compact_threshold: 150_000 }],
     });
     // a foreign provider's thinking never goes to OpenAI
     expect(JSON.stringify(req!.body)).not.toContain('geheim');
@@ -99,6 +101,43 @@ describe('OpenAI Responses adapter (#297)', () => {
       { role: 'assistant', content: 'Ich suche.' },
       { type: 'function_call', call_id: 'c1', name: 'find_documents', arguments: '{"ext":"md"}' },
     ]);
+  });
+
+  it('keeps a compaction item for the replay, which then starts with it; without tools there is no compaction', async () => {
+    const compaction = { type: 'compaction', id: 'cmp_1', encrypted_content: 'gAAAA-SUMMARY' };
+    const t = fakeFetch(json(completed([compaction, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }])));
+    const adapter = new OpenAiResponsesAdapter(adapterSetup({ baseUrl: uniqueBase(), model: 'gpt-5', fetchImpl: t.fetchImpl }).config);
+    const res = await adapter.turn(request([user('lange Aufgabe')]));
+    expect(res.raw).toEqual([compaction, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }]);
+
+    const history: AgentMessage[] = [
+      user('lange Aufgabe'),
+      { role: 'assistant', text: 'ok', toolCalls: [], provider: 'openai', model: 'gpt-5', raw: res.raw },
+      user('weiter'),
+    ];
+    expect(toResponsesInput(history, 'gpt-5')).toEqual([compaction, { role: 'assistant', content: 'ok' }, { role: 'user', content: 'weiter' }]);
+    // another model cannot read the encrypted item: it gets the whole history
+    expect(toResponsesInput(history, 'gpt-5-mini')).toHaveLength(3);
+    expect(JSON.stringify(toResponsesInput(history, 'gpt-5-mini'))).not.toContain('SUMMARY');
+
+    await adapter.turn(request([user('x')], { tools: [] }));
+    expect(t.sent[1]!.body).not.toHaveProperty('context_management');
+    expect(t.sent[1]!.body).not.toHaveProperty('prompt_cache_key');
+  });
+
+  it('an endpoint that rejects compaction or the cache key gets requests without them', async () => {
+    const base = uniqueBase();
+    const ok = json(completed([{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }]));
+    const t = fakeFetch(
+      json({ error: { message: "Unknown parameter: 'context_management'.", type: 'invalid_request_error' } }, 400),
+      json({ error: { message: "Unsupported parameter: 'prompt_cache_key' is not supported with this model.", type: 'invalid_request_error' } }, 400),
+      ok,
+    );
+    const { config, warns } = adapterSetup({ baseUrl: base, model: 'gpt-compat', fetchImpl: t.fetchImpl });
+    await expect(new OpenAiResponsesAdapter(config).turn(request([user('x')], { cacheKey: 'run:r1' }))).resolves.toMatchObject({ text: 'ok' });
+    expect(t.sent[2]!.body).not.toHaveProperty('context_management');
+    expect(t.sent[2]!.body).not.toHaveProperty('prompt_cache_key');
+    expect(warns.map((w) => w.data)).toEqual([{ params: ['context_management'] }, { params: ['prompt_cache_key'] }]);
   });
 
   it('parses the event stream: text deltas, function calls, usage incl. cached tokens', async () => {

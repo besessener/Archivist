@@ -25,7 +25,7 @@ export function scriptedTurns(...turns: Array<AgentTurn | ((request: Parameters<
   };
 }
 
-const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 function headersOf(init?: RequestInit): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -139,6 +139,8 @@ export class FakeLlm {
   rejectEfforts: string[] = [];
   /** Answers `text.format` of type json_schema with HTTP 400, like an endpoint without Structured Outputs. */
   rejectJsonSchema = false;
+  /** Answers Claude's `output_config.format` with HTTP 400, like a model without structured outputs. */
+  rejectClaudeFormat = false;
   /** Retry-After header of the error answers (`status` other than 200). */
   retryAfter: string | null = null;
   /** The next `count` non-embedding requests fail with `status` (and Retry-After), then the endpoint answers normally. */
@@ -207,13 +209,15 @@ export class FakeLlm {
   /** Plain text request via Claude (classification, summaries): the same responders as /responses. */
   private async claudeText(body: Body): Promise<Response> {
     this.textBodies.push(body);
+    if (this.rejectClaudeFormat && (body.output_config as { format?: unknown } | undefined)?.format)
+      return jsonResponse(
+        { type: 'error', error: { type: 'invalid_request_error', message: 'output_config.format: Structured outputs are not supported for this model.' } },
+        400,
+      );
     const messages = (body.messages as Array<{ content?: unknown }> | undefined) ?? [];
     const first = messages[0]?.content;
-    const text = await this.textAnswer(
-      typeof body.system === 'string' ? body.system : '',
-      typeof first === 'string' ? first : JSON.stringify(first ?? ''),
-      body,
-    );
+    const system = Array.isArray(body.system) ? (body.system as Array<{ text?: string }>).map((block) => block.text ?? '').join('') : body.system;
+    const text = await this.textAnswer(typeof system === 'string' ? system : '', typeof first === 'string' ? first : JSON.stringify(first ?? ''), body);
     return jsonResponse({
       id: 'msg_text',
       type: 'message',
@@ -282,7 +286,7 @@ export class FakeLlm {
   private async textAnswer(instructions: string, rawInput: string, body: Body): Promise<string> {
     // the technical JSON hint of the client is not part of what the tests check
     const input = rawInput.replace(/^Antworte als JSON\.\n\n/, '');
-    const schema = /JSON-Schema „(\w+)“/.exec(instructions)?.[1] ?? 'plain';
+    const schema = /JSON-Objekt „(\w+)“/.exec(instructions)?.[1] ?? 'plain';
     this.calls.push({ schema, input, instructions });
     if (this.raw !== null) return this.raw;
     const answer = await this.responderAnswer(schema, input, body);

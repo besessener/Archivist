@@ -16,6 +16,8 @@ export interface PreparedRequest {
   request: LlmRequest;
   sent: string;
   instructions: string;
+  /** Masked `request.schemaText`; empty without one. */
+  schemaText: string;
   redactions: number;
   personalRedactions: number;
   preview: string;

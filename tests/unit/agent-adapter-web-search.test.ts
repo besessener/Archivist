@@ -48,7 +48,7 @@ describe('web search of the provider', () => {
     ]);
   }
 
-  it('Claude: offers the basic web search tool first (custom tools keep the cache breakpoint) only when asked', async () => {
+  it('Claude: offers the filtering web search tool first (custom tools keep the cache breakpoint) only when asked', async () => {
     const t = fakeFetch(claudeStream([{ type: 'text', text: 'ok' }]));
     const adapter = new AnthropicAdapter(
       adapterSetup({ baseUrl: 'https://api.anthropic.com', model: uniqueModel('claude-opus-5-5'), fetchImpl: t.fetchImpl }).config,
@@ -57,9 +57,24 @@ describe('web search of the provider', () => {
     expect((t.sent[0]!.body.tools as Array<{ name: string }>).map((x) => x.name)).toEqual(['find_documents', 'move_documents']);
     await adapter.turn(request([user('x')], { webSearch: true }));
     const tools = t.sent[1]!.body.tools as Array<Record<string, unknown>>;
-    expect(tools[0]).toMatchObject({ type: 'web_search_20250305', name: 'web_search', max_uses: 5 });
+    expect(tools[0]).toMatchObject({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
     expect(tools[0]).not.toHaveProperty('cache_control');
     expect(tools.at(-1)).toMatchObject({ name: 'move_documents', cache_control: { type: 'ephemeral' } });
+  });
+
+  it('Claude: a model or deployment without result filtering gets the basic web search, remembered', async () => {
+    const model = uniqueModel('claude-haiku-4-5');
+    const t = fakeFetch(
+      claudeError(400, "tools.0: web_search_20260209 requires programmatic tool calling; set allowed_callers to ['direct']"),
+      claudeStream([{ type: 'text', text: 'ok' }]),
+    );
+    const { config, warns } = adapterSetup({ baseUrl: 'https://api.anthropic.com', model, fetchImpl: t.fetchImpl });
+    await new AnthropicAdapter(config).turn(request([user('x')], { webSearch: true }));
+    await new AnthropicAdapter(config).turn(request([user('y')], { webSearch: true }));
+    const firstTool = (index: number) => (t.sent[index]!.body.tools as Array<Record<string, unknown>>)[0];
+    expect([firstTool(0)!.type, firstTool(1)!.type, firstTool(2)!.type]).toEqual(['web_search_20260209', 'web_search_20250305', 'web_search_20250305']);
+    expect(firstTool(1)).toMatchObject({ name: 'web_search', max_uses: 5 });
+    expect(warns.map((w) => w.data)).toEqual([{ feature: 'web_dynamic' }]);
   });
 
   it('Claude: reads searches and cited pages; the raw blocks (with encrypted content) stay for the replay', async () => {

@@ -2,24 +2,11 @@ import type { AgentEffort } from '@archivist/shared';
 import { abortedError, mapHttpError } from '../../util/llm-errors';
 import { parseRetryAfter } from '../../util/retry-after';
 import { AppError } from '../../util/errors';
-import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
-import { authHeaders, previewOf, rejectedFeatures, replayRaw, requestAbort, uniqueSources, userTimeZone, type AdapterConfig } from './common';
+import type { AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
+import { authHeaders, previewOf, rejectedFeatures, requestAbort, uniqueSources, userTimeZone, type AdapterConfig } from './common';
+import { textOf, toResponsesInput, type OutputItem } from './openai-items';
 
-/** Output item of the Responses API as far as the adapter reads it. */
-interface OutputItem {
-  type?: string;
-  id?: string;
-  role?: string;
-  status?: string;
-  call_id?: string;
-  name?: string;
-  arguments?: string;
-  content?: Array<{ type?: string; text?: string; refusal?: string; annotations?: Array<{ type?: string; url?: string; title?: string }> }>;
-  encrypted_content?: string | null;
-  summary?: unknown;
-  /** web_search_call: what the search did (search / open_page / find_in_page). */
-  action?: { type?: string; query?: string; queries?: string[]; url?: string; sources?: Array<{ type?: string; url?: string }> } | null;
-}
+export { toResponsesInput } from './openai-items';
 
 interface ResponseBody {
   status?: string;
@@ -30,59 +17,26 @@ interface ResponseBody {
 }
 
 /** Optional parameters a compatible endpoint (Azure OpenAI, Foundry `…/openai/v1`) may reject; `web_search` is the hosted tool. */
-const OPTIONAL = ['web_search', 'stream', 'reasoning', 'include', 'max_output_tokens', 'parallel_tool_calls', 'store'] as const;
+const OPTIONAL = [
+  'web_search',
+  'stream',
+  'reasoning',
+  'include',
+  'max_output_tokens',
+  'parallel_tool_calls',
+  'prompt_cache_key',
+  'context_management',
+  'store',
+] as const;
+
+/** Context size (tokens) from which the server compacts the history of a run, as Claude does by default. */
+export const COMPACT_THRESHOLD = 150_000;
 
 const UNSUPPORTED_RE = /\b(?:unsupported|unknown|unrecognized|not\s+supported|does\s+not\s+support|invalid)\b/i;
 
 /** OpenAI only knows low/medium/high – xhigh and max are sent as high. */
 export function openAiEffort(e: AgentEffort): 'low' | 'medium' | 'high' {
   return e === 'low' || e === 'medium' ? e : 'high';
-}
-
-type AssistantMessage = Extract<AgentMessage, { role: 'assistant' }>;
-
-/** Provider-neutral history → Responses API input items. */
-export function toResponsesInput(messages: AgentMessage[], model: string): unknown[] {
-  return messages.flatMap((message): unknown[] => {
-    if (message.role === 'user') return [{ role: 'user', content: message.content }];
-    if (message.role === 'tool') return toolOutputs(message);
-    if (replayRaw(message, { provider: 'openai', model }) && Array.isArray(message.raw)) return (message.raw as OutputItem[]).flatMap(replayedItem);
-    return assistantItems(message);
-  });
-}
-
-function toolOutputs(message: Extract<AgentMessage, { role: 'tool' }>): unknown[] {
-  const items: unknown[] = message.results.map((r) => ({
-    type: 'function_call_output',
-    call_id: r.callId,
-    output: r.isError ? `FEHLER: ${r.content}` : r.content,
-  }));
-  if (message.note) items.push({ role: 'user', content: message.note });
-  return items;
-}
-
-/** Own output items go back unchanged (reasoning with encrypted content keeps the chain of thought with store:false). */
-function replayedItem(item: OutputItem): unknown[] {
-  // web search calls go back as they came (id, status, action) so the reasoning before them keeps its successor
-  if (item.type === 'reasoning' || item.type === 'web_search_call') return [item];
-  if (item.type === 'function_call') return [{ type: 'function_call', call_id: item.call_id, name: item.name, arguments: item.arguments }];
-  if (item.type === 'message') return [{ role: 'assistant', content: textOf([item]) }];
-  return [];
-}
-
-function assistantItems(message: AssistantMessage): unknown[] {
-  const items: unknown[] = message.text.trim() ? [{ role: 'assistant', content: message.text }] : [];
-  for (const c of message.toolCalls) items.push({ type: 'function_call', call_id: c.id, name: c.name, arguments: JSON.stringify(c.args ?? {}) });
-  return items;
-}
-
-function textOf(output: OutputItem[]): string {
-  return output
-    .filter((i) => i.type === 'message')
-    .flatMap((i) => i.content ?? [])
-    .filter((c) => c.type === 'output_text' || c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('');
 }
 
 /** Searches (`web_search_call`) and cited pages (`url_citation`) of one response. */
@@ -269,6 +223,9 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
       reasoning: { effort: openAiEffort(req.effort) },
       include: ['reasoning.encrypted_content'],
       max_output_tokens: req.maxOutputTokens,
+      ...(req.cacheKey ? { prompt_cache_key: req.cacheKey } : {}),
+      // server-side compaction works with store:false; the compaction item comes back encrypted and is replayed
+      ...(functions.length ? { context_management: [{ type: 'compaction', compact_threshold: COMPACT_THRESHOLD }] } : {}),
     };
     const body = Object.fromEntries(Object.entries(full).filter(([key]) => !rejected.has(key)));
     // hosted web search (only in chat runs); without a location the results would be localized to the United States
@@ -302,7 +259,11 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
       text: textOf(output),
       toolCalls,
       raw: output.map(({ id, status, ...rest }) =>
-        rest.type === 'reasoning' ? { id, ...rest } : rest.type === 'web_search_call' ? { id, status, ...rest } : (void status, rest),
+        rest.type === 'reasoning' || rest.type === 'compaction'
+          ? { id, ...rest }
+          : rest.type === 'web_search_call'
+            ? { id, status, ...rest }
+            : (void status, rest),
       ),
       stopReason,
       usage: {
