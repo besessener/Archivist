@@ -35,5 +35,7 @@ Archivist liest **keine** `.env`-Dateien automatisch. Die Variablen werden vor d
 | `ARCHIVIST_DEV_URL` | nur Entwicklung, nur ungepackt: Next.js-Dev-Server statt gebündeltem Frontend (setzt `npm run dev` automatisch) |
 | `ARCHIVIST_TEST_MODE` | nur Tests, nur ungepackt: erlaubt unter Linux ohne Keyring den unsicheren `basic_text`-Fallback von `safeStorage` |
 | `ARCHIVIST_TEST_PICK_DIR` | nur Tests, nur ungepackt: ersetzt den nativen Ordnerauswahl-Dialog |
+| `ARCHIVIST_TEST_SPEECH_MODEL` | nur Tests, nur ungepackt: JSON eines Modells der Spracheingabe (Host, Commit, Dateien mit Größe und SHA-256), das ein Test-Server ausliefert |
+| `ARCHIVIST_TEST_SPEECH_WORKER` | nur Tests, nur ungepackt: Pfad eines Stand-in-Workers statt `speech-worker.cjs` (kein echtes Whisper) |
 | `ARCHIVIST_EVAL_*` | Agent-Evaluation, siehe [Den Agenten evaluieren](../how-to/agent-evaluieren.md#1-anbieter-konfigurieren) |
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | Code-Signierung beim lokalen Packen, siehe [Signieren](../how-to/release-veroeffentlichen.md#signieren) |

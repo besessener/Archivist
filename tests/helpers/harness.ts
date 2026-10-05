@@ -1,7 +1,15 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createHandlers, createIpcDispatcher, createServices, type HostApi, type SecretCipher, type Services } from '../../packages/core/src';
+import {
+  createHandlers,
+  createIpcDispatcher,
+  createServices,
+  type CreateServicesOptions,
+  type HostApi,
+  type SecretCipher,
+  type Services,
+} from '../../packages/core/src';
 import type { IpcChannel, IpcInput, IpcOutput, Result } from '@archivist/shared';
 import { FakeLlm } from './fake-llm';
 
@@ -51,6 +59,8 @@ export interface TestAppOptions {
   /** bundled read worker (db-reader-entry); null = queries run inline */
   readerFile?: string | null;
   dataRoot?: string;
+  /** Model, download and engine of the speech input; without it nothing is downloaded or transcribed. */
+  speech?: CreateServicesOptions['speech'];
   /** Database, config, logs and backups in their own folder next to the document store (the default layout of the installed app). */
   separateAppData?: boolean;
 }
@@ -69,6 +79,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     fetchImpl: llm.fetch,
     workerFile: options.workerFile ?? null,
     readerFile: options.readerFile ?? null,
+    speech: options.speech,
     jobConcurrency: 1,
     llmRetryDelayMs: 0,
     jobRetryDelayMs: 0,

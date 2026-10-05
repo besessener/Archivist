@@ -31,6 +31,17 @@ export function initChat(page: Page) {
     /** Proposal cards below an answer; `data-status` holds the action's status. */
     actionCards: root.getByTestId('action-card'),
     toasts: page.getByTestId('toast'),
+    /** Speech input: the microphone button (`data-state`: not_installed, downloading, idle, recording, transcribing) and the line below the input. */
+    dictation: {
+      toggle: root.getByTestId('dictation-toggle'),
+      status: root.getByTestId('dictation-status'),
+      discard: root.getByTestId('dictation-discard'),
+      download: root.getByTestId('dictation-download'),
+      downloadCancel: root.getByTestId('dictation-download-cancel'),
+      error: root.getByTestId('dictation-error'),
+      installDialog: page.getByTestId('confirm-dialog'),
+      installConfirm: page.getByTestId('dictation-install-confirm'),
+    },
     /** Agent mode (#300): live steps of a running run, its summary below the answer and the mode switch. */
     agent: {
       steps: root.getByTestId('chat-loading').getByTestId('agent-step'),
@@ -68,6 +79,11 @@ export function initChat(page: Page) {
     undoLastRun: async () => {
       await locators.agent.undoRun.last().click();
       await locators.agent.undoConfirm.click();
+    },
+    /** Clicks the microphone button and confirms the one-time model download. */
+    startDictationSetup: async () => {
+      await locators.dictation.toggle.click();
+      await locators.dictation.installConfirm.click();
     },
     inputHeight: () => locators.inputs.message.evaluate((element) => element.clientHeight),
     /** Drags the grip above the input field upwards (positive number = larger). */

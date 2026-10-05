@@ -3,6 +3,7 @@ export { createHandlers, createIpcDispatcher, type HostApi, type IpcDispatcher }
 export { resolveDataPaths, ensureDataDirs, type DataLocations, type DataPaths } from './context';
 export type { SecretCipher } from './services/secret';
 export type { FetchLike } from './services/llm';
+export type { SpeechModelSpec } from './services/speech/model-manifest';
 export { AppError, toErrorInfo, type AppErrorOptions } from './util/errors';
 export { estimateTokens } from './util/estimate-tokens';
 export { isTokenCapError, TokenCapError } from './util/token-cap';

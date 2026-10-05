@@ -82,6 +82,7 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`; die Schritte l
 | `AgentFileJobs` | `agent/file-jobs.ts` | große Dateiaktionen des Agenten als eigener Auftrag |
 | `MemoryService` | `agent/memory.ts` | Gedächtnis des Agenten (Regeln, Abläufe, Vorlieben) |
 | `JobQueueService` | `services/jobs.ts` | persistente Job-Queue |
+| `SpeechService` | `services/speech.ts` | Spracheingabe im Chat: Modell-Download (`speech/model-store.ts`, festgelegt in `speech/model-pin.json`), lokale Transkription über `speech/engine.ts` (Worker `workers/speech-worker-entry.ts`) |
 | `AuditService` | `services/audit.ts` | Änderungsprotokoll |
 | `UndoService` | `services/undo.ts` | Rückgängig machen |
 | `BackupService` | `services/backup.ts` | Backups |
@@ -112,7 +113,7 @@ Jede Service-Klasse bleibt unter dem Pfad aus der Tabelle; ihre Teile liegen dan
 | `AgentService` | `agent/*.ts` | Gate (ausführen, vorschlagen, blockieren), Ausführung der Werkzeugaufrufe, Verlauf, Fähigkeitstest, Laufausführung, Hintergrundaufgaben, Korrekturen |
 | Agentenwerkzeuge | `agent/tools/` mit `research/`, `exports/` | Werkzeugdefinitionen; Rechercheberichte (Beträge, Fristen, Lücken, Zahlungen, Mails), Exporte (ZIP, PDF, CSV, Übersicht) |
 
-`packages/shared/src/` ist nach Bereichen aufgeteilt (`documents.ts`, `archive.ts`, `decisions.ts`, `open-items.ts`, `events.ts`, `notifications.ts`, `knowledge.ts`, `links.ts`, `actions.ts`, `chat.ts`, `jobs.ts`, `bulk.ts`, `audit.ts`, `scan.ts`, `status.ts`) und wird über `index.ts` exportiert. Die Kanäle stehen in `ipc.ts`; die der Massenläufe auf langen Listen (`documents:archiveAll…`, `documents:analyzeImport…`) in `ipc-bulk.ts`, das `ipc.ts` einbindet (gemeinsame Helfer in `ipc-channel.ts`).
+`packages/shared/src/` ist nach Bereichen aufgeteilt (`documents.ts`, `speech.ts`, `archive.ts`, `decisions.ts`, `open-items.ts`, `events.ts`, `notifications.ts`, `knowledge.ts`, `links.ts`, `actions.ts`, `chat.ts`, `jobs.ts`, `bulk.ts`, `audit.ts`, `scan.ts`, `status.ts`) und wird über `index.ts` exportiert. Die Kanäle stehen in `ipc.ts`; die der Massenläufe auf langen Listen (`documents:archiveAll…`, `documents:analyzeImport…`) in `ipc-bulk.ts` und die der Spracheingabe in `ipc-speech.ts`, die `ipc.ts` einbinden (gemeinsame Helfer in `ipc-channel.ts`).
 
 Im Renderer liegen die Teile einer Seite unter `components/<bereich>/`, z. B. `knowledge/entity-list.tsx`, `decisions/decision-detail.tsx`, `documents/documents-table.tsx`, `chat/chat-composer.tsx`.
 

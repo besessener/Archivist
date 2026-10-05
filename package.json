@@ -27,6 +27,7 @@
     "dist:win": "npm run build && npm run dist:win -w archivist",
     "release:win": "npm run build && npm run release:win -w archivist",
     "native:check": "node scripts/check-native.mjs",
+    "speech:pin": "node scripts/pin-speech-model.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "depcruise": "depcruise --config .dependency-cruiser.cjs packages apps/desktop/src apps/renderer tests && node scripts/check-type-only-cycles.mjs",

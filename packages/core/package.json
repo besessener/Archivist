@@ -16,6 +16,7 @@
     "@anthropic-ai/foundry-sdk": "^0.5.2",
     "@anthropic-ai/sdk": "^0.131.0",
     "@archivist/shared": "*",
+    "@huggingface/transformers": "^4.3.0",
     "@tesseract.js-data/deu": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "better-sqlite3": "^13.0.3",

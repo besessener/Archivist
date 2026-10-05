@@ -11,6 +11,10 @@ directories:
 files:
   - dist/**/*
   - package.json
+  # Only the Windows x64 binaries of onnxruntime-node (speech input) are needed; the web runtime is not used in Node.
+  - '!**/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**'
+  - '!**/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**'
+  - '!**/node_modules/onnxruntime-web/**'
 asar: true
 # Native modules must live outside the ASAR archive so that they can be loaded.
 asarUnpack:
@@ -18,6 +22,7 @@ asarUnpack:
   - '**/node_modules/sharp/**'
   - '**/node_modules/@img/**'
   - '**/node_modules/@napi-rs/**'
+  - '**/node_modules/onnxruntime-node/**'
   - '**/node_modules/tesseract.js/**'
   - '**/node_modules/tesseract.js-core/**'
   - '**/node_modules/@tesseract.js-data/**'

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { _electron as electron, test as base, type ElectronApplication, type Page } from '@playwright/test';
 import { startFakeLlm, type FakeLlmServer } from './fake-llm';
 import { createPageTree, type PageTree } from './pages';
+import { startSpeechModelServer, type SpeechModelServer } from '../helpers/speech-model-server';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- the electron package exports the binary path, which its typings (the Electron API) do not describe
 const electronPath = require('electron') as unknown as string;
@@ -25,6 +26,8 @@ interface Options {
 
 interface Fixtures {
   llm: FakeLlmServer;
+  /** The model host of the speech input: a local server with a tiny model; the worker is a stand-in (no real Whisper). */
+  speechModel: SpeechModelServer;
   workspace: Workspace;
   electronApp: ElectronApplication;
   page: Page;
@@ -57,6 +60,12 @@ export const test = base.extend<Fixtures & Options>({
     await llm.close();
   },
 
+  speechModel: async ({}, provide) => {
+    const server = await startSpeechModelServer({ 'config.json': '{}', 'onnx/encoder_model_quantized.onnx': 'weights'.repeat(2_000) });
+    await provide(server);
+    await server.close();
+  },
+
   workspace: async ({ dataParent }, provide) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-e2e-'));
     const downloads = path.join(root, 'Downloads');
@@ -73,13 +82,15 @@ export const test = base.extend<Fixtures & Options>({
     fs.rmSync(root, { recursive: true, force: true });
   },
 
-  electronApp: async ({ workspace }, provide) => {
+  electronApp: async ({ workspace, speechModel }, provide) => {
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       ELECTRON_ENABLE_LOGGING: '1',
       ARCHIVIST_DATA_DIR: workspace.dataDir,
       ARCHIVIST_TEST_MODE: '1',
       ARCHIVIST_TEST_PICK_DIR: workspace.downloads,
+      ARCHIVIST_TEST_SPEECH_MODEL: JSON.stringify(speechModel.spec),
+      ARCHIVIST_TEST_SPEECH_WORKER: path.resolve(__dirname, '../helpers/fake-speech-worker.mjs'),
     };
     delete env.DBUS_SESSION_BUS_ADDRESS; // an invalid bus only causes error messages from Chromium
     const app = await launch(env);

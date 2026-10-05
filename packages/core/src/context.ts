@@ -69,6 +69,7 @@ export type ChangeScope =
   | 'contradictions'
   | 'audit'
   | 'agent'
+  | 'speech'
   | 'status';
 
 /** Event bus: services report data changes, the host layer forwards them to the renderer. */

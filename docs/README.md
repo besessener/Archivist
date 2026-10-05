@@ -22,6 +22,7 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [Hauptkategorien auf Deutsch umstellen](how-to/hauptkategorien-umbenennen.md)
 - [Verknüpfungsvorschläge prüfen](how-to/verknuepfungen-pruefen.md)
 - [Datenschutz einstellen](how-to/datenschutz-einstellen.md)
+- [Spracheingabe einrichten und nutzen](how-to/spracheingabe-einrichten.md)
 - [Archivpfad ändern](how-to/archivpfad-aendern.md)
 - [Backups anlegen](how-to/backups-anlegen.md)
 - [Backup wiederherstellen](how-to/backup-wiederherstellen.md)
