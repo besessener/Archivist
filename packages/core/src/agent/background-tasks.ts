@@ -28,7 +28,7 @@ export interface BackgroundTaskInput {
 const ARCHIVE_CHECK_TASK =
   'Agentische Archivprüfung: Sieh dir die offenen Hinweise der Archivprüfung an (list_entries kind=insight) und das Archiv (archive_overview, problem_files, find_duplicates). Bewerte die Befunde. Räume auf, wo es eindeutig ist (z. B. falsch abgelegte Dateien verschieben, Duplikate als Duplikat markieren – nie löschen); alles andere lässt du als Hinweis stehen. Kurze Zusammenfassung am Ende.';
 const LINKS_TASK =
-  'Verknüpfungen pflegen mit den festen Verknüpfungsmethoden: 1. backfill_links (rückwirkender Lauf, setzt an der gemerkten Stelle fort). 2. find_unlinked_entries: Für verwaiste Einträge mit einem eindeutig passenden Ziel link mit onUserRequest=false. 3. find_topic_clusters: Für eine eindeutige Gruppe propose_topic mit einem treffenden Namen. Alles bleibt ein VORSCHLAG – bestätige nichts selbst; vom Benutzer abgelehnte Paare schlägst du nie wieder vor. Kurze Zusammenfassung am Ende.';
+  'Verknüpfungen pflegen mit den festen Verknüpfungsmethoden: 1. backfill_links (rückwirkender Lauf, prüft nur neue oder geänderte Einträge). 2. find_unlinked_entries: Für verwaiste Einträge mit einem eindeutig passenden Ziel link mit onUserRequest=false. 3. find_topic_clusters: Für eine eindeutige Gruppe propose_topic mit einem treffenden Namen. Alles bleibt ein VORSCHLAG – bestätige nichts selbst; vom Benutzer abgelehnte Paare schlägst du nie wieder vor. Kurze Zusammenfassung am Ende.';
 
 /** Task and trigger of a background run (#313); null when there is nothing to do. */
 export function backgroundTask(kind: BackgroundKind, input: BackgroundTaskInput): BackgroundTask | null {

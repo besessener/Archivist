@@ -184,7 +184,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'backfill_links',
       description:
-        'Rückwirkender Verknüpfungslauf über das bestehende Archiv: schlägt für jeden Eintrag ähnliche Einträge als Verknüpfung VOR (nie bestätigt; abgelehnte Paare nie wieder). Arbeitet bis zu maxEntries Einträge ab und merkt sich die Stelle – ein weiterer Aufruf oder ein Neustart macht dort weiter.',
+        'Rückwirkender Verknüpfungslauf über das bestehende Archiv: schlägt für jeden Eintrag ähnliche Einträge als Verknüpfung VOR (nie bestätigt; abgelehnte Paare nie wieder). Prüft nur Einträge, die neu oder seit der letzten Prüfung geändert sind, bis zu maxEntries je Aufruf – ein weiterer Aufruf macht mit den übrigen weiter.',
       schema: z.object({ maxEntries: z.number().int().min(1).max(2000).default(200) }),
       risk: 'write',
       // proposals change no entry: they do not count towards the mass-action threshold

@@ -16,6 +16,10 @@ Ein Vorschlag ohne Begründung ist schwer zu prüfen. Deshalb trägt jede Bezieh
 
 Lehnst du ein Paar ab, schlägt **keine** Methode es wieder vor – egal in welcher Richtung und mit welcher Art von Beziehung. Sonst würde dieselbe Frage nach jedem Indexieren, jeder Analyse und jedem rückwirkenden Lauf zurückkehren. Das Nein überlebt auch das Zusammenführen von Duplikaten. Nur „kein Duplikat“ ist schwächer: Zwei Protokolle können verschieden und trotzdem verwandt sein.
 
+## Erst der Eintrag, dann das Archiv
+
+Verknüpfungen entstehen dort, wo ein Eintrag entsteht oder sich ändert: Er wird gegen den Bestand geprüft, solange du ihn vor dir hast, und die Vorschläge erscheinen bei ihm. Ein Voll-Scan wächst mit dem Archiv, kostet bei jedem Durchlauf dasselbe und liefert Vorschläge ohne Zusammenhang. Der rückwirkende Lauf bleibt als Nachholer für Altbestand und Importe, rührt aber nur an, was noch nicht geprüft ist. Jeder geprüfte Eintrag trägt eine Markierung, die bei einer Änderung oder einer neuen Methode verfällt. Ein neues Dokument macht die alten Einträge nicht ungeprüft: Es wird selbst gegen sie geprüft, und seine Vorschläge zeigen die Verbindung in beide Richtungen.
+
 ## Gleich, ähnlich oder verwandt
 
 Identische Dokumente erkennt Archivist an der Prüfsumme der Datei oder des Texts. Ein Entwurf, der nur einen Absatz anders hat, wäre damit unsichtbar. Deshalb gibt es zusätzlich eine Ähnlichkeit über Wortgruppen: Zwei Texte, deren Dreiwort-Gruppen zu etwa 85 % übereinstimmen, gelten als „ähnlicher Inhalt“. Das ist bewusst eine feste, hohe Schwelle: Ähnlicher Inhalt soll Fassungen desselben Texts finden, nicht bloß Dokumente zum selben Thema – dafür sind die Vorschläge unten da. Ein ähnliches Dokument belegt in Antworten keinen eigenen Platz, wird aber nie gelöscht oder verknüpft, ohne dass du entscheidest.

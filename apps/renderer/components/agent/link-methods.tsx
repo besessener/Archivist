@@ -28,7 +28,7 @@ export function LinkMethodsSection() {
   return (
     <Section
       title="Verknüpfungen vorschlagen"
-      description="Geht das ganze Archiv durch und schlägt ähnliche Einträge als Verknüpfung sowie neue Themen für ähnliche Einträge ohne Thema vor. Läuft lokal; bestätigt wird nur, was du übernimmst."
+      description="Neue und geänderte Einträge prüft Archivist selbst. Der Lauf hier geht das ganze Archiv erneut durch und schlägt ähnliche Einträge als Verknüpfung sowie neue Themen für ähnliche Einträge ohne Thema vor. Läuft lokal; bestätigt wird nur, was du übernimmst."
     >
       {links && (
         <>

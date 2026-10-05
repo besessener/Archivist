@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, FolderKanban, Link2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, FolderKanban, Link2, Search, X } from 'lucide-react';
 import { RELATION_METHOD_LABELS, RELATION_PROVENANCE_LABELS, RelationType, relationProvenance, type GraphRelation } from '@archivist/shared';
 import { EntityChip, EntityIcon } from '@/components/common/entity-chip';
 import { ErrorNote, Field, Loading } from '@/components/common/states';
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
+import { plural } from '@/lib/format';
 import { RELATION_TYPE_LABELS } from '@/lib/labels';
 import { ENTITY_TYPE_LABELS } from '@/lib/nav';
 import { useDebounced } from '@/lib/use-debounced';
@@ -45,13 +46,24 @@ export function RelationProvenance({ relation }: { relation: Pick<GraphRelation,
 const RELATED_PAGE = 10;
 
 /** Related entries strongest first with their reason (#276); with `link`, the section brings its own „Verknüpfen“ button (#277). */
-export function RelatedEntries({ id, link }: { id: string; link?: { name: string } }) {
+export function RelatedEntries({ id, link, scan = false }: { id: string; link?: { name: string }; scan?: boolean }) {
   const [page, setPage] = useState(0);
   const [linkOpen, setLinkOpen] = useState(false);
   const [caseOpen, setCaseOpen] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const q = useQuery('knowledge:related', { id, limit: RELATED_PAGE, offset: page * RELATED_PAGE }, { scopes: ['knowledge'] });
   const { run, busy } = useRun();
   const total = q.data?.total ?? 0;
+  const searchLinks = async () => {
+    const out = await run(() => call('links:scan', { id }), { errorTitle: 'Suche fehlgeschlagen' });
+    if (!out) return;
+    setMessage(
+      out.proposed
+        ? `${plural(out.proposed, ['neuer Vorschlag', 'neue Vorschläge'])} gefunden. Du entscheidest, was übernommen wird.`
+        : 'Keine neuen Vorschläge gefunden.',
+    );
+    void q.refetch();
+  };
   const pages = Math.max(1, Math.ceil(total / RELATED_PAGE));
   const decide = async (relationId: string, status: 'confirmed' | 'rejected') => {
     const out = await run(() => call('knowledge:resolveRelation', { relationId, status, confirmed: true }), {
@@ -63,17 +75,31 @@ export function RelatedEntries({ id, link }: { id: string; link?: { name: string
     <section data-testid="related-entries">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Verwandte Einträge{q.data ? ` (${total})` : ''}</h3>
-        {link && (
+        {(link || scan) && (
           <span className="flex gap-1.5">
-            <Button variant="outline" size="sm" onClick={() => setCaseOpen(true)} data-testid="related-case">
-              <FolderKanban aria-hidden /> Zu Vorgang hinzufügen
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="related-link">
-              <Link2 aria-hidden /> Verknüpfen
-            </Button>
+            {scan && (
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => void searchLinks()} data-testid="related-scan">
+                <Search aria-hidden /> Verknüpfungen suchen
+              </Button>
+            )}
+            {link && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setCaseOpen(true)} data-testid="related-case">
+                  <FolderKanban aria-hidden /> Zu Vorgang hinzufügen
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} data-testid="related-link">
+                  <Link2 aria-hidden /> Verknüpfen
+                </Button>
+              </>
+            )}
           </span>
         )}
       </div>
+      {message && (
+        <p className="mb-2 text-xs text-muted-foreground" role="status" data-testid="related-scan-result">
+          {message}
+        </p>
+      )}
       {q.error && !q.data && <ErrorNote error={q.error} onRetry={() => void q.refetch()} />}
       {!q.data && q.loading && <Loading />}
       {q.data && total === 0 && <p className="text-sm text-muted-foreground">Keine verwandten Einträge gefunden.</p>}

@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expectNoSeriousA11yViolations } from './axe';
+import { flatText } from '../helpers/link-texts';
 import { expect, test } from './fixture';
 
 /** Optional screenshots for a visual check (ARCHIVIST_E2E_SHOTS=<folder>). */
@@ -117,6 +118,24 @@ test.describe('linking knowledge (Epic #269)', () => {
     await page.getByTestId('wiki-suggestion').filter({ hasText: 'Hausbau' }).click();
 
     await expect(k.locators.inputs.description).toHaveValue('Termin mit [[Hausbau]] und [[Anna]] morgen');
+  });
+
+  test('searching links for one entry proposes a similar entry, which is confirmed there (#313)', async ({ llm, on, page }, testInfo) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.do.create({ type: 'note', name: 'Nebenkosten', description: flatText('Nebenkosten') });
+    await k.do.create({ type: 'note', name: 'Mietvertrag', description: flatText('Mietvertrag') });
+    await expect(k.heading()).toHaveText('Mietvertrag');
+
+    await k.locators.scanLinks.click();
+    await expect(k.locators.scanResult).toBeVisible();
+    const similar = k.locators.relatedEntries.filter({ hasText: 'Nebenkosten' });
+    await expect(similar).toBeVisible();
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await similar.getByTestId('related-confirm').click();
+    await expect(k.locators.toasts.filter({ hasText: 'Bestätigt' })).toBeVisible();
   });
 
   test('the unlink dialog of an incoming link states it in its stored direction', async ({ llm, on, page }) => {

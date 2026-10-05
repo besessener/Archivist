@@ -128,7 +128,7 @@ export function RelatedDialog({ item, onClose }: Pick<ItemDialogProps, 'item' | 
           <DialogTitle>Zusammenhänge</DialogTitle>
           <DialogDescription>{item?.title}</DialogDescription>
         </DialogHeader>
-        {item && <RelatedEntries id={item.id} link={{ name: item.title }} />}
+        {item && <RelatedEntries id={item.id} link={{ name: item.title }} scan />}
       </DialogContent>
     </Dialog>
   );

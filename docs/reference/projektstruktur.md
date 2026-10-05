@@ -76,7 +76,7 @@ Erzeugt und verdrahtet in `packages/core/src/create-services.ts`; die Schritte l
 | `ChatService` | `services/chat.ts` | Gesprächsablauf; Intent-Erkennung und `dispatch()` als regelbasierter Rückfall |
 | `CaptureService` | `services/capture.ts` | Wissen erfassen (Entscheidungen, Notizen, offene Punkte, Erinnerungen, Ereignisse) – für Agentenwerkzeuge und Rückfall |
 | `KnowledgeAnswerService` | `services/knowledge-answers.ts` | geprüfte Wissensantworten mit Quellen |
-| `LinkMethodsService` | `services/link-methods.ts` | Verknüpfungsmethoden (ähnliche Einträge, gleicher Tag + Person, gemeinsam entstanden, verwaiste Einträge, Themen aus Gruppen), Vorschlagsliste, verwandte Einträge, rückwirkender Lauf |
+| `LinkMethodsService` | `services/link-methods.ts` | Verknüpfungsmethoden (ähnliche Einträge, gleicher Tag + Person, gemeinsam entstanden, verwaiste Einträge, Themen aus Gruppen), Vorschlagsliste, verwandte Einträge, rückwirkender Lauf mit Markierung je Eintrag (`link_scans`) |
 | `AgentService` | `agent/service.ts` | Agentenmodus in Chat und Hintergrund |
 | `AgentRunService` | `agent/runs.ts` | Agentenläufe und „Lauf rückgängig“ |
 | `AgentFileJobs` | `agent/file-jobs.ts` | große Dateiaktionen des Agenten als eigener Auftrag |

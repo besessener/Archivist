@@ -26,6 +26,9 @@ export function initKnowledge(page: Page) {
     /** „Bestätigen“ on the merge proposal of the shown entry. */
     approveMerge: page.getByTestId('merge-action').getByTestId('action-approve'),
     eventForm: page.getByTestId('event-form'),
+    scanLinks: page.getByTestId('related-scan'),
+    scanResult: page.getByTestId('related-scan-result'),
+    relatedEntries: page.getByTestId('related-entry'),
     items: page.getByTestId('knowledge-item'),
     detail: page.getByTestId('entity-detail'),
     toasts: page.getByTestId('toast'),

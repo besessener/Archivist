@@ -23,7 +23,7 @@ type Group = LinkProposalPage['groups'][number];
 
 /** All open link proposals (#280), grouped by method or entry and paged; every decision is undoable in the change log. */
 export function LinkProposals() {
-  const [groupBy, setGroupBy] = useState<GroupBy>('method');
+  const [groupBy, setGroupBy] = useState<GroupBy>('entry');
   const [page, setPage] = useState(0);
   const query = useQuery('links:proposals', { groupBy, limit: PAGE, offset: page * PAGE }, { scopes: ['knowledge'] });
   const { run, busy } = useRun();
@@ -70,8 +70,8 @@ export function LinkProposals() {
               setPage(0);
             }}
           >
-            <option value="method">Nach Methode</option>
             <option value="entry">Nach Eintrag</option>
+            <option value="method">Nach Methode</option>
           </Select>
         </div>
       </div>
@@ -84,7 +84,7 @@ export function LinkProposals() {
                 <h3 className="text-sm font-medium">
                   {g?.label ?? key} <span className="text-muted-foreground">({g?.count ?? items.length})</span>
                 </h3>
-                {g && g.count > 1 && (
+                {g && g.count > 1 && groupBy === 'entry' && (
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmGroup(g)} data-testid="link-proposals-confirm-all">
                     <CheckCheck aria-hidden /> Alle bestätigen
                   </Button>
