@@ -1,3 +1,4 @@
+import models from './models.json';
 import pin from './model-pin.json';
 
 export interface SpeechModelFile {
@@ -18,11 +19,15 @@ export interface SpeechModelSpec {
   files: SpeechModelFile[];
 }
 
-/** `model-pin.json` is written by `npm run speech:pin` (commit, files and checksums), never by hand. */
+/** The models `npm run speech:pin -- --model <name>` can pin; `model-pin.json` (model, commit, files, checksums) is written by it, never by hand. */
+export type SpeechModelName = keyof typeof models;
+
+const chosen = models[pin.model as SpeechModelName];
+
 export const SPEECH_MODEL: SpeechModelSpec = {
-  label: 'Whisper small (quantisiert)',
-  directory: 'whisper-small',
-  baseUrl: 'https://huggingface.co/onnx-community/whisper-small/resolve',
+  label: chosen.label,
+  directory: chosen.directory,
+  baseUrl: `https://huggingface.co/${chosen.repository}/resolve`,
   revision: pin.revision,
   files: pin.files,
 };

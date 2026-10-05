@@ -16,7 +16,7 @@ Alle Befehle werden im Wurzelverzeichnis ausgeführt.
 | `npm run pack -w archivist` | packt die App ohne Installer (für E2E gegen die gepackte App) |
 | `npm run db:generate` | Drizzle-Migration aus Schemaänderungen erzeugen |
 | `npm run native:check` | prüft die nativen Module (`better-sqlite3`, `sharp`, `onnxruntime-node`) in Node **und** in der Electron-Laufzeit |
-| `npm run speech:pin` | legt das Whisper-Modell der Spracheingabe fest: löst den neuesten Commit auf, lädt die Dateien von `huggingface.co` und schreibt Commit, Größen und SHA-256 nach `packages/core/src/services/speech/model-pin.json` (Netzwerk nötig; Ergebnis committen) |
+| `npm run speech:pin -- --model small\|medium\|turbo` | legt das Whisper-Modell der Spracheingabe fest (nur diese drei Namen; ohne `--model` das bisherige): löst den neuesten Commit auf, lädt die Dateien von `huggingface.co` und schreibt Commit, Größen und SHA-256 nach `packages/core/src/services/speech/model-pin.json` (Netzwerk nötig; Ergebnis committen) |
 
 ## Prüfen
 
