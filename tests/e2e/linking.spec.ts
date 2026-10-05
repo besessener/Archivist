@@ -46,6 +46,27 @@ test.describe('linking knowledge (Epic #269)', () => {
     // the graph of the note: the project, the case and the wiki link
     await page.getByTestId('knowledge-graph').click();
     await expect(page.getByTestId('graph-node')).toHaveCount(3);
+    // zoom with the wheel and pan by dragging, then fullscreen and back with Escape
+    const svg = page.getByTestId('graph-svg');
+    await svg.scrollIntoViewIfNeeded();
+    const box = (await svg.boundingBox())!;
+    // left of the centre, away from the toast in the bottom right corner
+    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
+    await page.mouse.wheel(0, -400);
+    await expect(svg).not.toHaveAttribute('data-view', '0,0,720');
+    const zoomed = await svg.getAttribute('data-view');
+    await page.mouse.move(box.x + 20, box.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 80, box.y + 60);
+    await page.mouse.up();
+    await expect(svg).not.toHaveAttribute('data-view', zoomed!);
+    await page.getByTestId('graph-zoom-reset').click();
+    await expect(svg).toHaveAttribute('data-view', '0,0,720');
+    await page.getByTestId('graph-fullscreen').click();
+    await expect(page.getByTestId('graph-view')).toHaveAttribute('data-fullscreen', 'true');
+    await expectNoSeriousA11yViolations(page, testInfo);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('graph-view')).toHaveAttribute('data-fullscreen', 'false');
     await page.getByTestId('graph-node').filter({ hasText: 'Autokauf' }).click();
     await expect(page.getByTestId('graph-selection')).toContainText('Autokauf');
     await shot(page, 'graph');

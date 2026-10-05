@@ -291,13 +291,13 @@ describe('Sources carry the document date, not the archive date (#168)', () => {
     expect((await app.ok('documents:get', { id: documentId })).documentDate).toBe('2025-08-14');
   });
 
-  it('says that the date is unknown when the document has none', async () => {
+  it('falls back to the file creation date when the content has no date', async () => {
     const documentId = await archiveText('notiz.txt', 'Heizungswartung: der Techniker kommt einmal im Jahr.', 'Notiz Heizung', 'Notiz zur Heizungswartung.');
 
     const m = (await app.ok('chat:send', { text: 'Was gilt für die Heizungswartung?' })).assistantMessage;
 
-    expect(knowledgeInput()).toMatch(/\[S1\] \(document, Dokumentdatum unbekannt, archiviert am \d{4}-\d\d-\d\d\)/);
-    expect(m.sources[0]).toMatchObject({ id: documentId, dateKind: 'archived' });
+    expect(knowledgeInput()).toMatch(/\[S1\] \(document, Dokumentdatum \d{4}-\d\d-\d\d, archiviert am \d{4}-\d\d-\d\d\)/);
+    expect(m.sources[0]).toMatchObject({ id: documentId, dateKind: 'document' });
   });
 });
 

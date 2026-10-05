@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, FileText, HelpCircle } from 'lucide-react';
+import { AlertCircle, ExternalLink, FileText, HelpCircle } from 'lucide-react';
 import { RunSummary } from '@/components/agent/run-summary';
 import { ActionCard } from '@/components/common/action-card';
+import { DocumentDialog } from '@/components/documents/document-dialog';
 import { isLinkSuggestion, LinkSuggestions } from './link-suggestions';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown } from '@/components/common/markdown';
@@ -27,6 +29,7 @@ const DATE_KIND_LABEL: Record<NonNullable<SourceRef['dateKind']>, string> = {
 
 function SourceChip({ source }: { source: SourceRef }) {
   const { run } = useRun();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const inner = (
     <>
       <EntityIcon type={source.type} className="mt-0.5 size-3.5 shrink-0 text-primary" />
@@ -48,28 +51,25 @@ function SourceChip({ source }: { source: SourceRef }) {
     </>
   );
   const cls =
-    'flex max-w-xs items-start gap-2 rounded-lg border bg-background px-2.5 py-1.5 transition-colors hover:border-primary/60 hover:bg-primary/8 focus-visible:outline-2 focus-visible:outline-ring';
+    'flex w-full items-start gap-2 rounded-lg border bg-background px-2.5 py-1.5 transition-colors hover:border-primary/60 hover:bg-primary/8 focus-visible:outline-2 focus-visible:outline-ring';
   if (source.type === 'document') {
     return (
-      <span className="flex max-w-xs items-stretch gap-1">
-        <button
-          type="button"
-          className={cls}
-          data-testid="chat-source"
-          title={source.snippet || source.title}
-          onClick={() => void run(() => call('app:openPath', { documentId: source.id }), { errorTitle: 'Datei konnte nicht geöffnet werden' })}
-        >
+      <div className="relative">
+        <button type="button" className={cn(cls, 'pr-8')} data-testid="chat-source" title={source.snippet || source.title} onClick={() => setDetailsOpen(true)}>
           {inner}
         </button>
-        <Link
-          href={entityHref('document', source.id)}
-          className="flex items-center rounded-lg border bg-background px-2 text-[11px] text-primary hover:border-primary/60 hover:bg-primary/8 focus-visible:outline-2 focus-visible:outline-ring"
-          data-testid="chat-source-details"
-          aria-label={`Details zu ${source.title}`}
+        <button
+          type="button"
+          className="absolute right-1.5 top-1.5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+          data-testid="chat-source-open"
+          aria-label={`Datei „${source.title}“ öffnen`}
+          title="Datei öffnen"
+          onClick={() => void run(() => call('app:openPath', { documentId: source.id }), { errorTitle: 'Datei konnte nicht geöffnet werden' })}
         >
-          Details
-        </Link>
-      </span>
+          <ExternalLink className="size-3.5" aria-hidden />
+        </button>
+        <DocumentDialog id={detailsOpen ? source.id : null} onClose={() => setDetailsOpen(false)} onChanged={() => undefined} />
+      </div>
     );
   }
   return (
@@ -146,7 +146,7 @@ export function ChatBubble({
                 <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                   <FileText className="size-3.5" aria-hidden /> Quellen
                 </p>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid gap-1.5 sm:grid-cols-2">
                   {message.sources.map((s) => (
                     <SourceChip key={`${s.type}-${s.id}`} source={s} />
                   ))}

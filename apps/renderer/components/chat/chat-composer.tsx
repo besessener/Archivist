@@ -75,7 +75,7 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the window splitter is a focusable widget
         tabIndex={0}
         title="Ziehen, um das Eingabefeld zu vergrößern oder zu verkleinern (Doppelklick: zurücksetzen)"
-        className="group mx-auto flex h-3 w-full max-w-3xl cursor-row-resize touch-none items-center justify-center focus-visible:outline-2 focus-visible:outline-ring"
+        className="group mx-auto flex h-3 w-full max-w-3xl 2xl:max-w-5xl cursor-row-resize touch-none items-center justify-center focus-visible:outline-2 focus-visible:outline-ring"
         onPointerDown={startResize}
         onDoubleClick={() => setManualHeight(null)}
         onKeyDown={resizeByKey}
@@ -84,7 +84,7 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
         <span className="h-1 w-10 rounded-full bg-border group-hover:bg-muted-foreground" aria-hidden />
       </div>
       <form
-        className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-2xl border bg-card p-2 shadow-xs focus-within:border-ring"
+        className="mx-auto flex w-full max-w-3xl 2xl:max-w-5xl items-end gap-2 rounded-2xl border bg-card p-2 shadow-xs focus-within:border-ring"
         onSubmit={(e) => {
           e.preventDefault();
           onSend(text);
@@ -148,7 +148,7 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
           <SendHorizontal aria-hidden />
         </Button>
       </form>
-      <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground" data-testid="chat-ai-notice">
+      <p className="mx-auto mt-1.5 max-w-3xl 2xl:max-w-5xl text-center text-[11px] text-muted-foreground" data-testid="chat-ai-notice">
         {aiNotice} Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) und ganze Ordner kannst du auch einfach in das Fenster ziehen.
       </p>
     </div>

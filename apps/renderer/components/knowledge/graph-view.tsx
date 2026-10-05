@@ -8,8 +8,10 @@ import { call } from '@/lib/ipc';
 import { RELATION_TYPE_LABELS } from '@/lib/labels';
 import { ENTITY_TYPE_LABELS } from '@/lib/nav';
 import { useRun } from '@/lib/use-run';
-import { GraphEdge, GraphLegend, GraphNode, GraphSelection, GraphTable, type GraphNodeRecord } from './graph-parts';
-import { GRAPH_HEIGHT, GRAPH_WIDTH, layoutGraph, mergeGraphs, type Point } from './graph-layout';
+import { GraphSelection, GraphTable, type GraphNodeRecord } from './graph-parts';
+import { GraphCanvas } from './graph-canvas';
+import { layoutGraph, mergeGraphs, type Point } from './graph-layout';
+import { cn } from '@/lib/utils';
 
 type Status = '' | 'confirmed' | 'proposed';
 
@@ -24,6 +26,7 @@ export function GraphView({ id }: { id: string }) {
   const [graph, setGraph] = useState<NeighborhoodGraph | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const { run, busy } = useRun();
   const filters = useMemo(
@@ -49,6 +52,13 @@ export function GraphView({ id }: { id: string }) {
     };
   }, [id, depth, filters]);
 
+  useEffect(() => {
+    if (!fullscreen) return;
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && setFullscreen(false);
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [fullscreen]);
+
   const positions = useMemo(() => (graph ? layoutGraph(graph) : new Map<string, Point>()), [graph]);
   const nodeById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph]);
   const selectedNode = selected ? nodeById.get(selected) : undefined;
@@ -65,7 +75,11 @@ export function GraphView({ id }: { id: string }) {
 
   if (error && !graph) return <ErrorNote error={error as Error} />;
   return (
-    <section className="flex flex-col gap-3" data-testid="graph-view">
+    <section
+      className={cn('flex flex-col gap-3', fullscreen && 'fixed inset-0 z-50 overflow-auto bg-background p-4')}
+      data-testid="graph-view"
+      data-fullscreen={fullscreen}
+    >
       <div className="grid gap-2 sm:grid-cols-4">
         <Field label="Schritte" htmlFor="graph-depth">
           <Select id="graph-depth" value={String(depth)} onChange={(e) => setDepth(e.target.value === '2' ? 2 : 1)} data-testid="graph-depth">
@@ -108,29 +122,15 @@ export function GraphView({ id }: { id: string }) {
         <Loading />
       ) : (
         <>
-          <div className="relative rounded-xl border bg-card">
-            <svg
-              viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-              className="h-auto w-full"
-              role="group"
-              aria-label={`Graph mit ${graph.nodes.length} Einträgen und ${graph.edges.length} Verknüpfungen`}
-            >
-              {graph.edges.map((edge) => (
-                <GraphEdge key={edge.id} edge={edge} positions={positions} nodeById={nodeById} selected={selected} />
-              ))}
-              {graph.nodes.map((node) => (
-                <GraphNode
-                  key={node.id}
-                  node={node}
-                  position={positions.get(node.id)}
-                  isCenter={node.id === graph.centerId}
-                  isSelected={selected === node.id}
-                  onSelect={() => setSelected(node.id)}
-                />
-              ))}
-            </svg>
-            <GraphLegend truncated={graph.truncated} />
-          </div>
+          <GraphCanvas
+            graph={graph}
+            positions={positions}
+            nodeById={nodeById}
+            selected={selected}
+            fullscreen={fullscreen}
+            onSelect={setSelected}
+            onToggleFullscreen={() => setFullscreen((on) => !on)}
+          />
 
           {selectedNode && (
             <GraphSelection

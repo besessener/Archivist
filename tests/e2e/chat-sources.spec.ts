@@ -16,7 +16,9 @@ test.describe('sources in the chat', () => {
     await app.chat.do.send('Wann haben wir Nordlicht pausiert?');
 
     await expect(app.chat.locators.sources.first()).toBeVisible();
-    await app.chat.locators.sourceDetails.first().click();
-    await expect(page).toHaveURL(/\/documents\/\?id=/);
+    await expect(app.chat.locators.sourceOpenFile.first()).toBeVisible();
+    await app.chat.locators.sources.first().click();
+    await expect(app.chat.locators.sourceDialog).toBeVisible();
+    await expect(page).toHaveURL(/\/chat/);
   });
 });

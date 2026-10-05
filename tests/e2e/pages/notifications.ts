@@ -16,6 +16,8 @@ export function initNotifications(page: Page) {
       dismiss: panel.getByTestId('bell-action-ignore'),
       confirm: panel.getByTestId('bell-action-confirm_action'),
     },
+    resolvedToggle: panel.getByTestId('bell-resolved-toggle'),
+    resolvedItems: panel.getByTestId('bell-resolved-item'),
     loadOlder: panel.getByTestId('bell-load-older'),
     actionDialog: page.getByTestId('notification-action-dialog'),
   };

@@ -275,7 +275,7 @@ export class DocumentAnalyzer {
           persons: this.deps.persons.resolveNames(c.persons, { context: 'document', create: false }).names,
           tags: c.tags,
           dates: c.dates,
-          documentDate: c.documentDate,
+          documentDate: c.documentDate ?? row.documentDate,
           confidence: c.confidence,
           ...columns,
           proposal,
