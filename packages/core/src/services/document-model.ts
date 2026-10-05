@@ -38,6 +38,8 @@ export interface NewDocument {
   folderLlmAllowed?: boolean;
   status?: Extract<DocumentStatus, 'staged' | 'quarantined'>;
   processingError?: string | null;
+  /** Preset for the document date (YYYY-MM-DD) until an analysis finds a date in the content. */
+  documentDate?: string | null;
 }
 
 /** What the parts of the document service use of the service itself (typed by shape to keep the modules acyclic). */

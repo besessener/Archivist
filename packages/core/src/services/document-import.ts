@@ -41,7 +41,13 @@ interface CheckedFile {
   real: string;
   ext: string;
   size: number;
+  /** Day the file was created (YYYY-MM-DD), the modification day where the filesystem has no creation time. */
+  createdOn: string;
 }
+
+/** Creation day of a file; `birthtimeMs` is 0 on filesystems that do not record it. */
+const creationDay = (stat: { birthtimeMs: number; birthtime: Date; mtime: Date }): string =>
+  (stat.birthtimeMs > 0 ? stat.birthtime : stat.mtime).toISOString().slice(0, 10);
 
 interface ImportBatch {
   autoLlm: boolean;
@@ -210,6 +216,7 @@ export class DocumentImporter {
       sourcePath: checked.real,
       stagedPath: staged,
       folderLlmAllowed: this.deps.documents.folderLlmAllowedFor(checked.real),
+      documentDate: checked.createdOn,
     });
     this.deps.audit.log({
       action: 'document.import',
@@ -238,7 +245,7 @@ export class DocumentImporter {
     if (!this.supported.has(ext)) return rejected(`Dateityp „.${ext || '?'}“ wird nicht unterstützt.`);
     if (stat.size > MAX_IMPORT_BYTES) return rejected('Datei ist zu groß (maximal 500 MB).');
     if (stat.size === 0) return rejected('Die Datei ist leer.');
-    return { kind: 'file', real, ext, size: stat.size };
+    return { kind: 'file', real, ext, size: stat.size, createdOn: creationDay(stat) };
   }
 
   private notifyDuplicate(real: string, duplicate: { id: string; title: string }): void {

@@ -27,7 +27,7 @@ export function newDocumentRow(input: NewDocument, created: { id: string; at: st
     persons: [],
     tags: [],
     dates: [],
-    documentDate: null,
+    documentDate: input.documentDate ?? null,
     confidence: null,
     llmStatus: input.llmStatus ?? 'pending',
     folderLlmAllowed: input.folderLlmAllowed ?? true,
