@@ -35,6 +35,7 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     jobs: counts,
     unreadNotifications: services.notifications.unreadCount(),
     openInsights: services.insights.openCount(),
+    openLinkProposals: services.links.proposals({ limit: 1 }).total,
     services: [
       {
         name: 'Datenbank',

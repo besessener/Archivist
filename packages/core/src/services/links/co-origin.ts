@@ -14,6 +14,8 @@ const BUSINESS_DATE: Array<{ table: string; column: string; type: EntityType; ex
   { table: 'decisions', column: 'decided_at', type: 'decision' },
   { table: 'documents', column: 'document_date', type: 'document', extra: "AND x.status IN ('archived','indexed_only')" },
 ];
+/** Most same-day proposals per entry: every pair on a busy day would grow quadratically. */
+const MAX_DATE_PERSON = 3;
 /** Confidence of a same-day proposal with one shared person (#278); every further person adds 0.1. */
 const DATE_PERSON_BASE = 0.6;
 const dayShift = (day: string, days: number) => new Date(Date.parse(`${day}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -118,12 +120,15 @@ export class CoOriginLinks {
     if (!persons.size) return 0;
     // more shared persons, more confidence; the learned raise (#275) holds back the weakest ones first
     const bar = DATE_PERSON_BASE + (this.deps.thresholds?.offset('date_person') ?? 0) - 1e-9;
-    let created = 0;
+    const found: Array<{ otherId: string; confidence: number; evidence: string }> = [];
     for (const otherId of this.sameDayEntries({ id, day })) {
       const shared = [...this.personsOf(otherId).entries()].filter(([personId]) => persons.has(personId)).map(([, name]) => `„${name}“`);
       const confidence = Math.min(0.8, DATE_PERSON_BASE + 0.1 * (shared.length - 1));
       if (!shared.length || confidence < bar) continue;
-      const evidence = `Am ${germanDay(day)} mit ${shared.join(', ')}`;
+      found.push({ otherId, confidence, evidence: `Am ${germanDay(day)} mit ${shared.join(', ')}` });
+    }
+    let created = 0;
+    for (const { otherId, confidence, evidence } of found.toSorted((a, b) => b.confidence - a.confidence).slice(0, MAX_DATE_PERSON)) {
       const result = this.deps.graph.link(
         { sourceId: id, targetId: otherId, relationType: 'related_to' },
         { status: 'proposed', confidence, method: 'date_person', evidence },

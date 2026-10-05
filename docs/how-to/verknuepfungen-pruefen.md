@@ -4,7 +4,9 @@ So entscheidest du über die Verknüpfungen, die Archivist vorschlägt, und verk
 
 ## Gebündelt prüfen
 
-1. Öffne **Insights**. Ganz oben steht **Verknüpfungsvorschläge** mit der Zahl offener Vorschläge. Die Glocke meldet sich, sobald neue dazukommen („Vorschläge prüfen“ führt hierher).
+1. Öffne **Insights**. Ganz oben steht **Verknüpfungsvorschläge** mit der Zahl offener Vorschläge. Dieselbe Zahl (zusammen mit den offenen Hinweisen) steht an „Insights“ in der Seitenleiste. Die Glocke meldet sich, sobald neue dazukommen („Vorschläge prüfen“ führt hierher).
+
+Sind 20 Vorschläge offen, legt kein Lauf neue an – erst wenn du entschieden hast, kommen weitere. „Gleicher Tag und Person“ schlägt je Eintrag höchstens 3 vor.
 2. Wähl die Gruppierung: **Nach Methode** (ähnlicher Inhalt, gleicher Tag …) oder **Nach Eintrag**.
 3. Prüf je Vorschlag den Beleg (z. B. die gemeinsame Textstelle) und wähl **Bestätigen** oder **Ablehnen**. Ein abgelehntes Paar wird nie wieder vorgeschlagen.
 4. Passt eine ganze Gruppe, nimm **Alle bestätigen**. Das gilt für alle Vorschläge der Gruppe, auch auf weiteren Seiten.

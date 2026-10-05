@@ -27,6 +27,7 @@ export const AppStatus = z.object({
   jobs: z.object({ pending: z.number(), running: z.number(), failed: z.number() }),
   unreadNotifications: z.number(),
   openInsights: z.number(),
+  openLinkProposals: z.number(),
   services: z.array(z.object({ name: z.string(), status: z.enum(['ok', 'degraded', 'error']), detail: z.string().nullable() })),
 });
 export type AppStatus = z.infer<typeof AppStatus>;
