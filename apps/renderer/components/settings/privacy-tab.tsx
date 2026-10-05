@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState } from 'react';
 import { CheckCircle2, FolderPlus, Save, Trash2 } from 'lucide-react';
+import { tokenBreakdown } from '@/components/agent/run-utils';
 import { EmptyState, ErrorNote, Field, Loading } from '@/components/common/states';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { call } from '@/lib/ipc';
-import { formatBytes, formatDateTime, formatNumber } from '@/lib/format';
+import { formatBytes, formatDateTime } from '@/lib/format';
 import { uniqueById, usePagedQuery } from '@/lib/use-paged-query';
 import { useRun } from '@/lib/use-run';
 import { cn, parseList } from '@/lib/utils';
@@ -111,8 +112,7 @@ export function PrivacyTab({ settings, reload }: TabProps) {
                         </p>
                         {t.inputTokens != null && (
                           <p className="mt-1 text-xs text-muted-foreground" data-testid="transmission-tokens">
-                            Tokens: Eingabe {formatNumber(t.inputTokens + (t.cacheReadTokens ?? 0))}, Ausgabe {formatNumber(t.outputTokens ?? 0)},{' '}
-                            {t.requests ?? 1} {t.requests === 1 || t.requests === undefined ? 'Anfrage' : 'Anfragen'}
+                            Tokens: {tokenBreakdown(t)} · {t.requests ?? 1} {t.requests === 1 || t.requests === undefined ? 'Anfrage' : 'Anfragen'}
                           </p>
                         )}
                         {t.note && (

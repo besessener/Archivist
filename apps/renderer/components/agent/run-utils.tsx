@@ -9,11 +9,13 @@ import { Notice } from '@/components/common/states';
 import { Progress } from '@/components/ui/progress';
 import { call } from '@/lib/ipc';
 import { useRun } from '@/lib/use-run';
+import { formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { IpcOutput } from '@archivist/shared';
 
 export type UndoResult = IpcOutput<'agent:undoRun'>;
 type UsageLike = Partial<AgentUsage> | undefined;
+type TokenCounts = { [K in 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheWriteTokens']?: number | null } | undefined;
 
 const decimal = (digits: number) => new Intl.NumberFormat('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
@@ -58,9 +60,23 @@ export function runDurationMs(startedAt: string, finishedAt: string | null): num
   return Number.isNaN(duration) ? null : duration;
 }
 
-/** Discreet usage line: „1,2k Tokens · ~0,01 $ · 12 s“ */
+/** „frisch 1.200 · aus dem Cache 48.000 · in den Cache geschrieben 900 · Ausgabe 300“: cache reads cost a fraction of fresh input. */
+export function tokenBreakdown(usage: TokenCounts): string {
+  return [
+    `frisch ${formatNumber(usage?.inputTokens ?? 0)}`,
+    `aus dem Cache ${formatNumber(usage?.cacheReadTokens ?? 0)}`,
+    usage?.cacheWriteTokens ? `in den Cache geschrieben ${formatNumber(usage.cacheWriteTokens)}` : null,
+    `Ausgabe ${formatNumber(usage?.outputTokens ?? 0)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Discreet usage line: „~0,01 $ · 1,2k Tokens (davon 1,1k aus dem Cache) · 12 s“ */
 export function usageLine({ usage, costUsd, durationMs }: { usage: UsageLike; costUsd: number | null | undefined; durationMs?: number | null }): string {
-  return [formatTokens(totalTokens(usage)), formatCost(costUsd), formatDuration(durationMs)].filter(Boolean).join(' · ');
+  const cached = usage?.cacheReadTokens ?? 0;
+  const tokens = `${formatTokens(totalTokens(usage))}${cached ? ` (davon ${formatTokens(cached).replace(' Tokens', '')} aus dem Cache)` : ''}`;
+  return [formatCost(costUsd), tokens, formatDuration(durationMs)].filter(Boolean).join(' · ');
 }
 
 export const RUN_STATUS: Record<AgentRunStatus, { label: string; variant: 'secondary' | 'success' | 'danger' | 'warning' | 'info' }> = {

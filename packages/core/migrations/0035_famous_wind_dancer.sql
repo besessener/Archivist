@@ -1,0 +1,1 @@
+ALTER TABLE `llm_transmissions` ADD `cache_write_tokens` integer;

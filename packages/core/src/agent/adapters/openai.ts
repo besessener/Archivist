@@ -195,6 +195,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         inputTokens: usage?.inputTokens ?? null,
         outputTokens: usage?.outputTokens ?? null,
         cacheReadTokens: usage?.cacheReadTokens ?? null,
+        cacheWriteTokens: usage?.cacheWriteTokens ?? null,
       });
     }
   }

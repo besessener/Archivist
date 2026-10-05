@@ -23,6 +23,10 @@ test.describe('token use and thinking depth (#153, #154)', () => {
 
     await expect(app.settings.locators.privacy.usageToday).toContainText(/[1-9][\d.]* Tokens/);
     await expect(app.settings.locators.privacy.usageToday).toContainText('Anfragen');
+    // cache reads cost a fraction of fresh input: the totals name them apart
+    await expect(app.settings.locators.privacy.usageToday).toContainText(/frisch [1-9][\d.]* · aus dem Cache \d/);
+    // the test model has no known price: no made-up cost, but a hint where to add one
+    await expect(app.settings.locators.privacy.usageTodayUnpriced).toContainText('Kosten unbekannt');
     await expect(app.settings.locators.privacy.usageMonth).toContainText(/[1-9][\d.]* Tokens/);
     expect(savedLlm(workspace.dataDir).dailyTokenCap).toBeNull();
 

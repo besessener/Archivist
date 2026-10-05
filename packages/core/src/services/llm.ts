@@ -58,7 +58,10 @@ export class LlmService {
     this.retryDelayMs = deps.retryDelayMs ?? 400;
     this.health = new EndpointHealth(deps.ctx);
     this.transmissions = new TransmissionLog(deps.ctx);
-    this.ledger = new TokenLedger(deps.ctx, () => this.deps.settings.get().llm.dailyTokenCap ?? null);
+    this.ledger = new TokenLedger(deps.ctx, {
+      dailyCap: () => this.deps.settings.get().llm.dailyTokenCap ?? null,
+      prices: () => this.deps.settings.get().agent.prices,
+    });
     this.responses = new ResponsesRunner(
       (request) => this.post(request),
       (message, data) => deps.ctx.logger.warn('llm', message, data),

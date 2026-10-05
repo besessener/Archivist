@@ -115,6 +115,20 @@ export function webActivity(blocks: RawBlock[]): { web?: WebSearchActivity } {
   return { web: { queries, sources: cited.length ? cited : found.slice(0, 8) } };
 }
 
+type UsageCounts = Pick<Anthropic.Beta.BetaUsage, 'input_tokens' | 'output_tokens' | 'cache_read_input_tokens' | 'cache_creation_input_tokens'>;
+
+/** Tokens of a turn: the top-level counts leave out a server-side compaction, which is billed as an iteration of its own. */
+export function turnUsage(usage: Anthropic.Beta.BetaUsage): TurnResult['usage'] {
+  const parts: UsageCounts[] = [usage, ...(usage.iterations ?? []).filter((iteration) => iteration.type === 'compaction')];
+  const sum = (key: keyof UsageCounts) => parts.reduce((total, part) => total + (part[key] ?? 0), 0);
+  return {
+    inputTokens: sum('input_tokens'),
+    outputTokens: sum('output_tokens'),
+    cacheReadTokens: sum('cache_read_input_tokens'),
+    cacheWriteTokens: sum('cache_creation_input_tokens'),
+  };
+}
+
 /** Streamed tools get eager input streaming; the last tool is the first cache breakpoint. */
 function toolParams(req: TurnRequest, off: Set<string>): unknown[] {
   const tools: unknown[] = req.tools.map((t, i) => ({
@@ -225,6 +239,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         inputTokens: usage?.inputTokens ?? null,
         outputTokens: usage?.outputTokens ?? null,
         cacheReadTokens: usage?.cacheReadTokens ?? null,
+        cacheWriteTokens: usage?.cacheWriteTokens ?? null,
       });
     }
   }
@@ -251,12 +266,7 @@ export class AnthropicAdapter implements ProviderAdapter {
       toolCalls,
       raw: message.content,
       stopReason,
-      usage: {
-        inputTokens: message.usage.input_tokens ?? 0,
-        outputTokens: message.usage.output_tokens ?? 0,
-        cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
-        cacheWriteTokens: message.usage.cache_creation_input_tokens ?? 0,
-      },
+      usage: turnUsage(message.usage),
       refusal: stopReason === 'refusal' ? { category: details?.category ?? null, explanation: details?.explanation ?? null } : undefined,
       streamed,
       ...webActivity(message.content as unknown as RawBlock[]),

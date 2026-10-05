@@ -26,7 +26,7 @@ export interface PreparedRequest {
 
 /** One logged transmission: its attempts (retried while `maxAttempts` allows) share one log entry. */
 export interface Transfer {
-  transmission: Omit<Transmission, 'success' | 'requests' | 'note' | 'inputTokens' | 'outputTokens' | 'cacheReadTokens'>;
+  transmission: Omit<Transmission, 'success' | 'requests' | 'note' | 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheWriteTokens'>;
   source: Connection['source'];
   signal?: AbortSignal;
   attempt: (tally: UsageTally) => Promise<string>;

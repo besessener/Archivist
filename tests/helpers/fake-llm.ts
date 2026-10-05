@@ -132,7 +132,7 @@ export class FakeLlm {
   agentHeaders: Array<Record<string, string>> = [];
 
   /** Tokens the endpoint reports for plain text requests (/responses, Claude) and embeddings. */
-  textUsage = { input: 10, output: 5, cached: 0 };
+  textUsage: { input: number; output: number; cached: number; cacheWrite?: number } = { input: 10, output: 5, cached: 0 };
   /** Bodies of the plain text requests (/responses and Claude, no tools), in order. */
   textBodies: Body[] = [];
   /** Thinking depths the endpoint rejects with HTTP 400 (`reasoning.effort`). */
@@ -225,7 +225,12 @@ export class FakeLlm {
       model: body.model,
       content: [{ type: 'text', text }],
       stop_reason: 'end_turn',
-      usage: { input_tokens: this.textUsage.input, output_tokens: this.textUsage.output },
+      usage: {
+        input_tokens: this.textUsage.input,
+        output_tokens: this.textUsage.output,
+        cache_read_input_tokens: this.textUsage.cached,
+        cache_creation_input_tokens: this.textUsage.cacheWrite ?? 0,
+      },
     });
   }
 
