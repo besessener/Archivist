@@ -577,7 +577,9 @@ export const ipcContract = {
     z.object({ groupBy: LinkGroupBy, key: z.string().min(1), decision: z.enum(['confirmed', 'rejected']), confirmed: Confirmed }),
     z.object({ decided: z.number().int() }),
   ),
-  /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. */
+  /** Looks for links for one entry right now with every method (proposals only) and marks it as checked. */
+  'links:scan': channel(z.object({ id: Id }), z.object({ proposed: z.number().int() })),
+  /** Retroactive link run over the archive and topic proposals from groups (#279, #281) as a job; local, without LLM. Checks the whole archive again. */
   'links:startRun': channel(Empty, z.object({ jobId: Id })),
   /** What the link methods learned from rejections (#275): raise of the threshold per method, capped. */
   'links:thresholds': channel(Empty, z.array(LearnedThreshold)),

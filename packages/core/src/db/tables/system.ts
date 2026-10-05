@@ -84,3 +84,10 @@ export const appState = sqliteTable('app_state', {
   value: text('value').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+/** Entries the retroactive link run has checked; a new or changed entry has no row (or an outdated `methodVersion`) and is checked again. */
+export const linkScans = sqliteTable('link_scans', {
+  entityId: text('entity_id').primaryKey(),
+  methodVersion: integer('method_version').notNull(),
+  scannedAt: text('scanned_at').notNull(),
+});

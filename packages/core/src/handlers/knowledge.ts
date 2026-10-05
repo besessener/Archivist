@@ -156,7 +156,11 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
 
     'links:suggestions': (input) => services.links.candidates(input.id, { limit: input.limit }),
     'links:unlinked': (input) => services.links.orphans(input),
-    'links:startRun': () => ({ jobId: services.enqueueLinkRun('manual').id }),
+    'links:startRun': () => {
+      services.links.restartBackfill();
+      return { jobId: services.enqueueLinkRun('manual').id };
+    },
+    'links:scan': async (input) => ({ proposed: await services.links.scanEntry(input.id, { max: services.settings.get().links.maxProposalsPerEntry }) }),
     'links:proposals': (input) => services.links.proposals(input),
     'links:metrics': () => services.links.metrics(),
     'links:thresholds': () => services.linkThresholds.list(),

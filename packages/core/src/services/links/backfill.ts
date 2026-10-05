@@ -1,4 +1,5 @@
 import { currentRun } from '../../agent/scope';
+import { nowIso } from '../../util/ids';
 import type { LinkCandidates, SimilarProposer } from './candidates';
 import type { CoOriginLinks } from './co-origin';
 import { entrySql, isEntry, LINK_ENTRY_TYPES, LINK_PROPOSAL_METHODS, sqlList, storedList, type LinkDeps } from './entries';
@@ -6,26 +7,31 @@ import { entrySql, isEntry, LINK_ENTRY_TYPES, LINK_PROPOSAL_METHODS, sqlList, st
 export interface BackfillResult {
   processed: number;
   proposed: number;
-  /** All entries are done (the next run starts over from the beginning). */
+  /** Every entry is checked. */
   done: boolean;
   remaining: number;
 }
 
-export interface BackfillOptions {
-  maxEntries?: number;
+export interface ScanOptions {
   /** Most open similarity proposals per entry (setting `links.maxProposalsPerEntry`). */
   max?: number;
   signal?: AbortSignal;
+}
+
+export interface BackfillOptions extends ScanOptions {
+  maxEntries?: number;
   onProgress?: (done: number, total: number) => void;
 }
 
 /** Analyses a note (#273) for the retroactive run; returns the number of new proposals. */
 export type NoteAnalyzer = (id: string, signal?: AbortSignal) => Promise<number>;
 
-const BACKFILL_CURSOR = 'links.backfill.cursor';
+/** Raise it when a link method is added or changed: every entry is checked again once. */
+const METHOD_VERSION = 2;
 /** Entries indexed since the last similarity pass (#271); kept across restarts. */
 const SIMILAR_PENDING = 'links.similar.pending';
 const ENTRY_WHERE = entrySql('e', LINK_ENTRY_TYPES);
+const UNSCANNED = `NOT EXISTS (SELECT 1 FROM link_scans s WHERE s.entity_id = e.id AND s.method_version >= ${METHOD_VERSION})`;
 /** No run adds proposals while this many are open: new ones come once the user has worked through them. */
 export const MAX_OPEN_PROPOSALS = 20;
 
@@ -46,9 +52,22 @@ export class LinkBackfill {
     this.noteAnalyzer = analyzer;
   }
 
-  /** The retroactive run starts again from the first entry (e.g. once after an update that brought new methods). */
+  /** Every entry counts as unchecked again (the user asked for a full run). */
   restart(): void {
-    this.deps.appState.set(BACKFILL_CURSOR, '');
+    this.sqlite.prepare('DELETE FROM link_scans').run();
+  }
+
+  /** A new or changed entry is checked again by the retroactive run. */
+  forgetScan(id: string): void {
+    this.sqlite.prepare('DELETE FROM link_scans WHERE entity_id = ?').run(id);
+  }
+
+  private markScanned(id: string): void {
+    this.sqlite
+      .prepare(
+        'INSERT INTO link_scans (entity_id, method_version, scanned_at) VALUES (?, ?, ?) ON CONFLICT(entity_id) DO UPDATE SET method_version = excluded.method_version, scanned_at = excluded.scanned_at',
+      )
+      .run(id, METHOD_VERSION, nowIso());
   }
 
   /** Remembers entries to look for similar ones (after indexing, #271); returns true if one of them counts. */
@@ -93,33 +112,29 @@ export class LinkBackfill {
     return { processed, proposed };
   }
 
-  /** Retroactive run (#279): PROPOSES links for every entry in a stable order, storing its position after each entry. */
+  /** Proposes by every method for one entry and marks it as checked, unless stopped in the middle (it is done again next time). */
+  async scanEntry(id: string, options: ScanOptions = {}): Promise<number> {
+    const proposed = (await this.proposeSimilarLinks(id, options.max)) + (await this.runOtherMethods(id, options.signal));
+    if (!options.signal?.aborted) this.markScanned(id);
+    return proposed;
+  }
+
+  /** Retroactive run (#279): PROPOSES links for every entry not checked yet (new, changed or from before a new method), in a stable order. */
   async backfill(options: BackfillOptions = {}): Promise<BackfillResult> {
-    const cursor = this.deps.appState.get(BACKFILL_CURSOR) ?? '';
     const rows = this.sqlite
-      .prepare(`SELECT e.id FROM entities e WHERE ${ENTRY_WHERE} AND e.id > ? ORDER BY e.id LIMIT ?`)
-      .all(cursor, options.maxEntries ?? 200) as Array<{ id: string }>;
+      .prepare(`SELECT e.id FROM entities e WHERE ${ENTRY_WHERE} AND ${UNSCANNED} ORDER BY e.id LIMIT ?`)
+      .all(options.maxEntries ?? 200) as Array<{ id: string }>;
     let processed = 0;
     let proposed = 0;
     for (const { id } of rows) {
       if (options.signal?.aborted || this.proposalsAtLimit()) break;
-      proposed += await this.proposeSimilarLinks(id, options.max);
-      proposed += await this.runOtherMethods(id, options.signal);
-      // stopped in the middle of this entry: it is done again next time (nothing finished is paid twice)
+      proposed += await this.scanEntry(id, options);
       if (options.signal?.aborted) break;
       processed += 1;
-      this.deps.appState.set(BACKFILL_CURSOR, id);
       options.onProgress?.(processed, rows.length);
     }
-    const remaining = (
-      this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${ENTRY_WHERE} AND e.id > ?`).get(this.deps.appState.get(BACKFILL_CURSOR) ?? '') as {
-        c: number;
-      }
-    ).c;
-    const done = remaining === 0;
-    // finished: the next run starts over (new entries since then get their chance)
-    if (done) this.restart();
-    return { processed, proposed, done, remaining };
+    const remaining = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${ENTRY_WHERE} AND ${UNSCANNED}`).get() as { c: number }).c;
+    return { processed, proposed, done: remaining === 0, remaining };
   }
 
   private async proposeSimilarLinks(id: string, max: number | undefined): Promise<number> {

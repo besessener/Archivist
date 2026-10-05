@@ -101,6 +101,7 @@ function addLinkConsistencyCheck(services: WiredServices, notifyLinkProposals: L
 /** New, edited and indexed entries trigger link proposals, always in jobs of their own, never on the caller's path. */
 function addEntryTriggers(services: WiredServices, notifyLinkProposals: LinkProposalNotifier): void {
   const { search, settings, links, jobs, events, logger } = services;
+  search.onIndexed(({ id }) => links.forgetScan(id));
   search.onIndexed(({ id }) => {
     if (!settings.get().links.autoPropose || !links.queueSimilar([id])) return;
     // a job that has not started yet takes the entry along; a running one picks it up before it ends

@@ -130,10 +130,57 @@ describe('Retroactive link run with all methods (#279)', () => {
     expect(second).toMatchObject({ processed: 2, done: true });
     expect(app.llm.calls.filter((c) => c.schema === 'NoteAnalysis')).toHaveLength(4);
 
-    // stopped right away: nothing is done, the position stays
+    // stopped right away: nothing is done
     const ctrl = new AbortController();
     ctrl.abort();
     expect(await app.services.links.backfill({ maxEntries: 10, signal: ctrl.signal })).toMatchObject({ processed: 0 });
     expect(app.llm.calls.filter((c) => c.schema === 'NoteAnalysis')).toHaveLength(4);
+  });
+
+  it('a checked entry is not checked again; a changed or new entry is, and a full run covers everything', async () => {
+    app = await createTestApp({ privacy: 'auto', autoLinks: false });
+    app.llm.on('NoteAnalysis', () => ({ topic: null, project: null, persons: [], tags: ['notiz'] }));
+    const note = await app.services.notes.create({ title: 'Alt', content: 'Alter Inhalt' });
+    const analyses = () => app.llm.calls.filter((c) => c.schema === 'NoteAnalysis').length;
+    expect(await app.services.links.backfill()).toMatchObject({ processed: 1, done: true });
+    const afterFirst = analyses();
+
+    expect(await app.services.links.backfill()).toMatchObject({ processed: 0, done: true });
+    expect(analyses()).toBe(afterFirst);
+
+    // a new entry is picked up; the checked one stays untouched
+    await app.services.notes.create({ title: 'Neu', content: 'Neuer Inhalt' });
+    expect(await app.services.links.backfill()).toMatchObject({ processed: 1, done: true });
+
+    // changing the entry (re-indexing it) makes it a candidate again
+    await app.services.search.index({ id: note.id, type: 'note', title: 'Alt', content: 'Geänderter Inhalt' });
+    expect(await app.services.links.backfill()).toMatchObject({ processed: 1, done: true });
+
+    // the user asks for a full run: everything is checked once more
+    app.services.links.restartBackfill();
+    expect(await app.services.links.backfill()).toMatchObject({ processed: 2, done: true });
+  });
+
+  it('an entry whose check was stopped in the middle is checked again', async () => {
+    app = await createTestApp({ autoLinks: false });
+    await app.services.notes.create({ title: 'Eins', content: 'Inhalt eins' });
+    const ctrl = new AbortController();
+    vi.spyOn(app.services.graph, 'getEntity').mockImplementation(() => {
+      ctrl.abort();
+      return undefined;
+    });
+    await app.services.links.backfill({ signal: ctrl.signal });
+    vi.restoreAllMocks();
+    expect(await app.services.links.backfill()).toMatchObject({ processed: 1, done: true });
+  });
+
+  it('scanEntry proposes for one entry right now and marks it as checked', async () => {
+    app = await createTestApp({ autoLinks: false });
+    const [a] = await Promise.all(['Mietvertrag', 'Nebenkosten'].map((what) => app.services.notes.create({ title: what, content: flatText(what) })));
+    await app.services.jobs.whenIdle();
+    const { proposed } = await app.ok('links:scan', { id: a!.id });
+    expect(proposed).toBeGreaterThan(0);
+    expect(byMethod().similarity).toBe(proposed);
+    expect(await app.services.links.backfill({ maxEntries: 10 })).toMatchObject({ processed: 1, done: true });
   });
 });

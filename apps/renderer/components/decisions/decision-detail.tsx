@@ -97,7 +97,7 @@ export function DecisionDetail({ id, onEdit, onDeleted }: { id: string; onEdit: 
           )}
           <DecisionHints id={decision.id} />
           <DecisionFields decision={decision} />
-          <RelatedEntries id={decision.id} link={{ name: decision.title }} />
+          <RelatedEntries id={decision.id} link={{ name: decision.title }} scan />
           {action && (
             <div data-testid="supersede-action">
               <h3 className="mb-2 text-sm font-semibold">Vorschlag</h3>

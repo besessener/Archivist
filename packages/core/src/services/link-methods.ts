@@ -1,6 +1,6 @@
 import type { EntityType } from '@archivist/shared';
 import type { CreatedEntry } from '../util/origin-scope';
-import { LinkBackfill, type BackfillOptions, type BackfillResult, type NoteAnalyzer } from './links/backfill';
+import { LinkBackfill, type BackfillOptions, type BackfillResult, type NoteAnalyzer, type ScanOptions } from './links/backfill';
 import { CapturedSuggestions, type CapturedSuggestion } from './links/captured';
 import { LinkCandidates, type LinkCandidate } from './links/candidates';
 import { CoOriginLinks } from './links/co-origin';
@@ -154,12 +154,22 @@ export class LinkMethodsService {
     return this.runs.runPendingSimilar(opts);
   }
 
-  /** The retroactive run starts again from the first entry (e.g. once after an update that brought new methods). */
+  /** Every entry counts as unchecked again, so the next retroactive run goes through the whole archive. */
   restartBackfill(): void {
     this.runs.restart();
   }
 
-  /** Retroactive link run (#279), resumable: returns when `maxEntries` are done, the signal aborts or everything is done. */
+  /** A new or changed entry is checked again by the next retroactive run. */
+  forgetScan(id: string): void {
+    this.runs.forgetScan(id);
+  }
+
+  /** Proposes by every method for one entry right now and marks it as checked; returns the number of new proposals. */
+  async scanEntry(id: string, opts: ScanOptions = {}): Promise<number> {
+    return this.runs.scanEntry(id, opts);
+  }
+
+  /** Retroactive link run (#279), resumable: checks entries not checked yet until `maxEntries` are done, the signal aborts or everything is done. */
   async backfill(opts: BackfillOptions = {}): Promise<BackfillResult> {
     return this.runs.backfill(opts);
   }

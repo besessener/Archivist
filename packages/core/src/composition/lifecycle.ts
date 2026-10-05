@@ -53,10 +53,9 @@ function scheduleArchiveChecks(services: LifecycleServices): void {
 }
 
 /** The retroactive link run starts once after the update that brought it (#279); later only on request or by the agent. */
-function startInitialLinkRun({ appState, links, enqueueLinkRun }: LifecycleServices): void {
+function startInitialLinkRun({ appState, enqueueLinkRun }: LifecycleServices): void {
   if (appState.get('links.run.initial.v2')) return;
   appState.set('links.run.initial.v2', new Date().toISOString());
-  links.restartBackfill();
   enqueueLinkRun('update');
 }
 
