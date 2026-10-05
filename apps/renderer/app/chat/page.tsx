@@ -136,7 +136,7 @@ export default function ChatPage() {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="chat-scroll">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
+        <div className="mx-auto flex w-full max-w-3xl 2xl:max-w-5xl flex-col gap-5 px-4 py-6">
           {history.error && <ErrorNote error={history.error} onRetry={() => void history.refetch()} />}
           <LoadMore
             shown={history.data?.length ?? 0}

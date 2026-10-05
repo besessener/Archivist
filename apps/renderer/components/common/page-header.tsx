@@ -23,5 +23,5 @@ export function PageHeader({
 }
 
 export function Page({ children, className, wide = false }: { children: React.ReactNode; className?: string; wide?: boolean }) {
-  return <div className={cn('mx-auto w-full p-4 sm:p-6', wide ? 'max-w-7xl' : 'max-w-5xl', className)}>{children}</div>;
+  return <div className={cn('mx-auto w-full p-4 sm:p-6', wide ? 'max-w-7xl 2xl:max-w-[96rem]' : 'max-w-5xl 2xl:max-w-7xl', className)}>{children}</div>;
 }
