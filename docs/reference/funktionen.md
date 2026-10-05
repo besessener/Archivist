@@ -263,6 +263,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Eine Erinnerung für einen Tag ohne Uhrzeit erscheint um **08:00 Uhr Ortszeit** (Einstellungen → Benachrichtigungen → „Uhrzeit für Erinnerungen“).
 - „Heute fällig“, „überfällig“ und die Tage der Timeline richten sich nach der **Ortszeit**, nicht nach UTC.
 - Die Glocke zeigt die letzten 50 offenen Benachrichtigungen, **„Ältere laden“** holt jeweils 50 weitere (`notifications:list` mit `offset`); „Alle als gelesen markieren“ setzt alle offenen als gelesen (auch die über der 50), „Alle leeren“ schließt sie.
+- Neue Einträge der Glocke tragen einen Punkt und einen fetten Titel; als gelesen gelten sie erst, wenn du die Glocke schließt. Ein Klick auf „Öffnen“ oder „Navigieren“ gilt als bearbeitet und schließt den Eintrag; unter „Zuletzt erledigt“ (eingeklappt) stehen die zehn zuletzt erledigten Einträge mit Datum.
 - Desktop-Benachrichtigungen: Einstellungen → Benachrichtigungen. Sie erscheinen nur, wenn die App-ID stimmt, siehe [Packaging – App-ID](packaging.md#app-id).
 
 ## Job-Queue

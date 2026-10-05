@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell, BellOff, Check, CheckCheck, Clock, MailCheck, Undo2 } from 'lucide-react';
 import { ActionCard } from '@/components/common/action-card';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
+import { RecentlyResolvedNotifications } from '@/components/shell/recently-resolved-notifications';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -38,22 +39,23 @@ export function NotificationBell() {
   const hasOlder = (paged.pages?.at(-1)?.length ?? 0) === PAGE_SIZE;
   const unread = status?.unreadNotifications ?? 0;
 
-  useEffect(() => {
-    if (!open || !data) return;
-    const ids = data.filter((n) => !n.readAt).map((n) => n.id);
-    if (ids.length > 0) {
-      void call('notifications:markRead', { ids })
-        .then(() => refreshStatus())
-        .catch((err: unknown) => reportError(err, undefined, 'Benachrichtigungen konnten nicht als gelesen markiert werden'));
-    }
-  }, [open, data, refreshStatus, reportError]);
+  // Marking as read waits until the panel closes, so new entries stay recognisable while it is open.
+  function changeOpen(next: boolean) {
+    setOpen(next);
+    const ids = next ? [] : (data ?? []).filter((n) => !n.readAt).map((n) => n.id);
+    if (ids.length === 0) return;
+    void call('notifications:markRead', { ids })
+      .then(() => refreshStatus())
+      .catch((err: unknown) => reportError(err, undefined, 'Benachrichtigungen konnten nicht als gelesen markiert werden'));
+  }
 
   async function handle(n: NotificationRecord, a: NotifAction) {
     switch (a.kind) {
       case 'navigate':
       case 'open':
         if (a.target && a.target.startsWith('/')) {
-          setOpen(false);
+          await run(() => call('notifications:resolve', { id: n.id }));
+          changeOpen(false);
           router.push(a.target);
         }
         break;
@@ -109,7 +111,7 @@ export function NotificationBell() {
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={changeOpen}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
@@ -155,7 +157,15 @@ export function NotificationBell() {
               {(data ?? []).map((n) => (
                 <li key={n.id} className="rounded-lg border p-3 text-sm" data-testid="bell-item" data-read={n.readAt ? 'true' : 'false'}>
                   <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium">{n.title}</p>
+                    <p className={n.readAt ? 'font-medium' : 'font-semibold'}>
+                      {!n.readAt && (
+                        <span data-testid="bell-item-new">
+                          <span aria-hidden className="mr-1.5 inline-block size-2 rounded-full bg-primary align-middle" />
+                          <span className="sr-only">Neu: </span>
+                        </span>
+                      )}
+                      {n.title}
+                    </p>
                     {n.priority === 'high' && <Badge variant="danger">Wichtig</Badge>}
                   </div>
                   <p className="mt-0.5 text-muted-foreground">{n.description}</p>
@@ -205,6 +215,7 @@ export function NotificationBell() {
               </div>
             )}
             <UpcomingReminders enabled={open} className="mt-3 border-t px-1 pt-3" />
+            <RecentlyResolvedNotifications enabled={open} />
           </div>
         </PopoverContent>
       </Popover>
