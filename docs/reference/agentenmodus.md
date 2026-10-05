@@ -213,8 +213,8 @@ Zwei Werkzeuge der Stufe **lesen** (keine Bestätigung, ändern nichts) lassen d
 
 ## Verbrauch
 
-- Tokens (Eingabe, Ausgabe, Cache) pro Anfrage und Lauf.
-- Kosten aus einer pflegbaren Preistabelle – nur zur Information.
+- Tokens pro Anfrage und Lauf, getrennt nach frischer Eingabe, aus dem Cache gelesen, in den Cache geschrieben und Ausgabe. Aus dem Cache gelesene Tokens kosten nur einen Bruchteil frischer Eingabe (meist 10 %, bei Claude Opus 5.5 5 %, bei Claude Fable 5.1 2,5 %); die Laufzeile nennt deshalb zuerst die geschätzten Kosten und bei den Tokens den Anteil aus dem Cache. Kompaktiert Claude den Verlauf, zählen die Tokens dieses Schritts mit (`usage.iterations`).
+- Kosten aus einer pflegbaren Preistabelle – nur zur Information. Ein Modell gilt nur für seine eigene Version: `gpt-5` gilt für `gpt-5-…`, nicht für `gpt-5.5`; eine unbekannte Version hat keinen Preis statt eines falschen. Eigene Preise (Einstellungen → Agent) haben Vorrang.
 - Die Tokens aller Anfragen, auch der Agentenläufe, stehen im Übertragungsprotokoll und zählen für das optionale **Tageslimit** (`llm.dailyTokenCap`, [LLM-Schnittstelle](llm-schnittstelle.md#tokenverbrauch-und-tageslimit)): Ist es erreicht, starten Hintergrundläufe nicht, und im Chat fragt Archivist vorher, ob er trotzdem fortfahren soll.
 - Übersicht pro Tag und Monat, getrennt nach Chat und Hintergrund.
 

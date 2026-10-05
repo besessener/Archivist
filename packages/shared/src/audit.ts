@@ -50,6 +50,8 @@ export const LlmTransmission = z.object({
   inputTokens: z.number().nullish(),
   outputTokens: z.number().nullish(),
   cacheReadTokens: z.number().nullish(),
+  /** Tokens written to the provider's prompt cache (Claude); absent in older entries. */
+  cacheWriteTokens: z.number().nullish(),
   /** POSTs the transmission took, retries included; absent in entries from before #153. */
   requests: z.number().int().optional(),
   /** Visible fallback of the request, e.g. „json_schema abgelehnt“. */
@@ -64,9 +66,14 @@ export const TokenTotals = z.object({
   inputTokens: z.number().int(),
   outputTokens: z.number().int(),
   cacheReadTokens: z.number().int(),
-  /** input + cache + output */
+  cacheWriteTokens: z.number().int(),
+  /** input + cache reads + cache writes + output (what the daily limit counts) */
   totalTokens: z.number().int(),
   requests: z.number().int(),
+  /** Estimated cost in US$ of the tokens of models with a known price; null when none has one. */
+  costUsd: z.number().nullable(),
+  /** Tokens of models without a known price, not in `costUsd`. */
+  unpricedTokens: z.number().int(),
 });
 export type TokenTotals = z.infer<typeof TokenTotals>;
 

@@ -6,19 +6,28 @@ import type { TokenTotals } from '@archivist/shared';
 import { ErrorNote, Field, Loading, Notice } from '@/components/common/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { formatCost, tokenBreakdown } from '@/components/agent/run-utils';
 import { formatNumber } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { Section, useSaveSettings, type TabProps } from './shared';
 
 function Totals({ label, totals, testId }: { label: string; totals: TokenTotals; testId: string }) {
+  const cost = formatCost(totals.costUsd);
+  const tokens = `${formatNumber(totals.totalTokens)} Tokens`;
   return (
     <div className="rounded-lg border p-3" data-testid={testId}>
       <p className="text-sm font-medium">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{formatNumber(totals.totalTokens)} Tokens</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums">{cost ?? tokens}</p>
       <p className="mt-1 text-xs text-muted-foreground">
-        Eingabe {formatNumber(totals.inputTokens + totals.cacheReadTokens)} · Ausgabe {formatNumber(totals.outputTokens)} · {formatNumber(totals.requests)}{' '}
-        Anfragen
+        {cost ? `${tokens} · ` : ''}
+        {tokenBreakdown(totals)} · {formatNumber(totals.requests)} Anfragen
       </p>
+      {totals.unpricedTokens > 0 && (
+        <p className="mt-1 text-xs text-muted-foreground" data-testid={`${testId}-unpriced`}>
+          {cost ? `Ohne ${formatNumber(totals.unpricedTokens)} Tokens` : 'Kosten unbekannt'} von Modellen ohne bekannten Preis – eigene Preise trägst du unter
+          Agent ein.
+        </p>
+      )}
     </div>
   );
 }

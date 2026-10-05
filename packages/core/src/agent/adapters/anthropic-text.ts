@@ -17,7 +17,7 @@ export interface ClaudeTextInput {
   signal?: AbortSignal;
 }
 
-export type ClaudeTextUsage = Pick<TurnResult['usage'], 'inputTokens' | 'outputTokens' | 'cacheReadTokens'>;
+export type ClaudeTextUsage = TurnResult['usage'];
 
 /** Thinking depth of plain requests: the setting where Claude knows it, else `low` (current Claude models cannot switch thinking off). */
 export function claudeTextEffort(setting: ReasoningEffort | null): AgentEffort {
@@ -53,9 +53,15 @@ export async function completeClaudeText(
       .map((b) => b.text)
       .join('');
     const usage = message.usage;
-    // the log has no column for cache writes: they count as input, like on an endpoint without a cache
-    const inputTokens = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
-    return { text, usage: { inputTokens, outputTokens: usage.output_tokens ?? 0, cacheReadTokens: usage.cache_read_input_tokens ?? 0 } };
+    return {
+      text,
+      usage: {
+        inputTokens: usage.input_tokens ?? 0,
+        outputTokens: usage.output_tokens ?? 0,
+        cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
+      },
+    };
   } catch (err) {
     throw claudeError(err, input.signal);
   }

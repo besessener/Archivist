@@ -70,6 +70,8 @@ export const llmTransmissions = sqliteTable(
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     cacheReadTokens: integer('cache_read_tokens'),
+    /** Tokens written to the provider's prompt cache (Claude); null for older entries and providers that report none. */
+    cacheWriteTokens: integer('cache_write_tokens'),
     /** POSTs this transmission took (retries and resends of rejected parameters included); 1 for older entries. */
     requests: integer('requests').notNull().default(1),
     /** Visible fallback of the request (e.g. json_schema → json_object); null when nothing was downgraded. */

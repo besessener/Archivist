@@ -48,6 +48,7 @@ export function initSettings(page: Page) {
       maskPersonal: page.getByTestId('privacy-mask-personal'),
       maskNote: page.getByTestId('privacy-mask-note'),
       usageToday: page.getByTestId('usage-today'),
+      usageTodayUnpriced: page.getByTestId('usage-today-unpriced'),
       usageMonth: page.getByTestId('usage-month'),
       capInput: page.getByTestId('usage-cap'),
       capError: page.getByTestId('usage-cap-error'),

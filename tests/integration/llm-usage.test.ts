@@ -15,7 +15,7 @@ const ask = { instructions: 'Test', input: 'Hallo', purpose: 'Nutzung' };
 
 describe('token accounting in the transmission log (#153)', () => {
   it('stores the tokens the endpoint reports for a plain answer, cached tokens separately', async () => {
-    app.llm.textUsage = { input: 120, output: 30, cached: 80 };
+    app.llm.textUsage = { input: 120, output: 30, cached: 80, cacheWrite: 0 };
 
     await app.services.llm.complete(ask);
 
@@ -33,20 +33,27 @@ describe('token accounting in the transmission log (#153)', () => {
   it('stores the tokens of embeddings as input tokens', async () => {
     app.services.settings.update({ llm: { embeddingModel: 'emb' } });
     app.llm.embed = (texts) => texts.map(() => [0.1, 0.2]);
-    app.llm.textUsage = { input: 42, output: 0, cached: 0 };
+    app.llm.textUsage = { input: 42, output: 0, cached: 0, cacheWrite: 0 };
 
     await app.services.llm.embeddings(['ein Text'], { purpose: 'Vektoren' });
 
     expect(await latest('Vektoren')).toMatchObject({ inputTokens: 42, outputTokens: 0, requests: 1 });
   });
 
-  it('stores the tokens of a plain answer given through Claude', async () => {
+  it('stores the tokens of a plain answer given through Claude, cache reads and writes separately', async () => {
     app.services.settings.update({ llm: { baseUrl: 'https://llm.example.test/anthropic' } });
-    app.llm.textUsage = { input: 77, output: 11, cached: 0 };
+    app.llm.textUsage = { input: 77, output: 11, cached: 400, cacheWrite: 900 };
 
     await app.services.llm.complete(ask);
 
-    expect(await latest('Nutzung')).toMatchObject({ inputTokens: 77, outputTokens: 11, requests: 1, endpoint: expect.stringContaining('Messages API') });
+    expect(await latest('Nutzung')).toMatchObject({
+      inputTokens: 77,
+      outputTokens: 11,
+      cacheReadTokens: 400,
+      cacheWriteTokens: 900,
+      requests: 1,
+      endpoint: expect.stringContaining('Messages API'),
+    });
   });
 
   it('counts every attempt of one transmission and keeps it a single entry', async () => {
@@ -74,9 +81,38 @@ describe('token accounting in the transmission log (#153)', () => {
 
     const usage = await app.ok('llm:usage', {});
 
-    expect(usage.today).toEqual({ inputTokens: 20, outputTokens: 10, cacheReadTokens: 0, totalTokens: 30, requests: 2 });
+    expect(usage.today).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 30,
+      requests: 2,
+      costUsd: null,
+      unpricedTokens: 30,
+    });
     expect(usage.month.totalTokens).toBe(30);
     expect(usage).toMatchObject({ dailyCap: null, capReached: false });
+  });
+
+  it('estimates the cost per model from its price, own prices first, and names the tokens without a price', async () => {
+    app.services.settings.update({ llm: { baseUrl: 'https://llm.example.test/anthropic', model: 'claude-opus-5-5' } });
+    app.llm.textUsage = { input: 1_000_000, output: 100_000, cached: 2_000_000, cacheWrite: 200_000 };
+    await app.services.llm.complete(ask);
+    app.services.settings.update({ llm: { baseUrl: 'https://llm.example.test/v1', model: 'eigenes-modell' } });
+    app.llm.textUsage = { input: 1_000_000, output: 0, cached: 0, cacheWrite: 0 };
+    await app.services.llm.complete(ask);
+    app.services.settings.update({ llm: { model: 'unbekannt' } });
+    app.llm.textUsage = { input: 5_000, output: 0, cached: 0, cacheWrite: 0 };
+    await app.services.llm.complete(ask);
+    app.services.settings.update({ agent: { prices: { 'eigenes-modell': { input: 3, output: 15, cacheRead: 0, cacheWrite: 0 } } } });
+
+    const { today } = await app.ok('llm:usage', {});
+
+    // Opus 5.5: 1 M fresh × 4 $ + 2 M from the cache × 0.20 $ + 0.2 M written × 5 $ + 0.1 M output × 20 $ = 7.40 $; own model: 3 $
+    expect(today.costUsd).toBeCloseTo(10.4, 6);
+    expect(today.unpricedTokens).toBe(5_000);
+    expect(today).toMatchObject({ cacheReadTokens: 2_000_000, cacheWriteTokens: 200_000, totalTokens: 4_305_000 });
   });
 
   it('does not count entries from before today in the daily total', async () => {
