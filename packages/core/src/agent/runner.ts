@@ -320,6 +320,7 @@ export class AgentRunner {
       redactions: this.tools.redactions,
       personalRedactions: this.tools.personalRedactions,
       webSearch: this.options.webSearch ?? false,
+      cacheKey: this.options.ctx.conversationId ? `chat:${this.options.ctx.conversationId}` : `run:${this.options.ctx.runId}`,
       signal,
     };
   }

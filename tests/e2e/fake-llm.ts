@@ -172,7 +172,7 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
       answerAgent(control, request, response);
       return;
     }
-    const schema = /JSON-Schema „(\w+)“/.exec(request.instructions ?? '')?.[1] ?? 'plain';
+    const schema = /JSON-Objekt „(\w+)“/.exec(request.instructions ?? '')?.[1] ?? 'plain';
     calls.push({ schema, input: request.input ?? '' });
     const text = !control.structuredAnswers && schema === 'ConnectionTest' ? '{}' : textAnswer(schema, request.input ?? '');
     const payload = JSON.stringify({

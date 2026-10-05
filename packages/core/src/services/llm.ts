@@ -8,7 +8,7 @@ import { abortedError } from '../util/llm-errors';
 import { MAX_RETRY_AFTER_MS } from '../util/retry-after';
 import type { SecretService } from './secret';
 import type { SettingsService } from './settings';
-import { AnthropicAdapter, detectAdapter, type AdapterConfig } from '../agent/adapters';
+import { AnthropicAdapter, claudeTextEffort, detectAdapter, type AdapterConfig } from '../agent/adapters';
 import type { FetchLike } from '../agent/adapters/common';
 import { EndpointHealth } from './llm/endpoint-health';
 import { endpointUrl, postJson, type PostRequest, type PostResponse } from './llm/http';
@@ -125,13 +125,15 @@ export class LlmService {
     const masking = maskingOf(this.deps.settings.get());
     const input = maskedInput(request, { maxInputChars: llm.maxInputChars, masking });
     const instructions = redactSecrets(request.instructions, masking);
+    const schema = redactSecrets(request.schemaText ?? '', masking);
     const prepared: PreparedRequest = {
       connection,
       request,
       sent: input.text,
       instructions: instructions.text,
-      redactions: input.count + instructions.count,
-      personalRedactions: input.personalData + instructions.personalData,
+      schemaText: schema.text,
+      redactions: input.count + instructions.count + schema.count,
+      personalRedactions: input.personalData + instructions.personalData + schema.personalData,
       preview: previewOf(request, { sent: input.text, masking }),
       signal,
     };
@@ -144,7 +146,8 @@ export class LlmService {
       purpose: prepared.request.purpose,
       model: prepared.connection.model,
       endpoint,
-      bytes: Buffer.byteLength(prepared.sent, 'utf8') + Buffer.byteLength(prepared.instructions, 'utf8'),
+      // the schema text counts although an enforced response format leaves it out: the size is an upper bound
+      bytes: Buffer.byteLength(prepared.sent + prepared.instructions + prepared.schemaText, 'utf8'),
       redactions: prepared.redactions,
       personalRedactions: prepared.personalRedactions,
       documentIds: prepared.request.documentIds ?? [],
@@ -195,6 +198,7 @@ export class LlmService {
     const call = this.responses.prepare({
       connection,
       instructions: prepared.instructions,
+      schemaText: prepared.schemaText,
       input: prepared.sent,
       maxOutputTokens: request.maxOutputTokens,
       json: request.json,
@@ -248,6 +252,7 @@ export class LlmService {
   private completeViaClaude(prepared: PreparedRequest): Promise<string> {
     const { connection, request, signal } = prepared;
     const config = this.adapterConfig(connection);
+    const effort = claudeTextEffort(this.deps.settings.get().llm.reasoningEffort);
     const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined, fail: () => undefined });
     return this.transfer({
       transmission: this.transmissionOf(prepared, `${connection.baseUrl} (Messages API)`),
@@ -257,7 +262,15 @@ export class LlmService {
       attempt: async (tally) => {
         const maxOutputTokens = request.maxOutputTokens ?? 16_000;
         tally.countRequest();
-        const { text, usage } = await adapter.completeText({ system: prepared.instructions, text: prepared.sent, maxOutputTokens, signal });
+        const { text, usage } = await adapter.completeText({
+          system: prepared.instructions,
+          schemaText: prepared.schemaText,
+          jsonSchema: request.jsonSchema?.schema ?? null,
+          text: prepared.sent,
+          maxOutputTokens,
+          effort,
+          signal,
+        });
         tally.add(usage);
         if (!text.trim()) throw new AppError('llm_error', 'Das LLM lieferte eine leere Antwort.', { retryable: true });
         return text;
@@ -265,9 +278,9 @@ export class LlmService {
     });
   }
 
-  /** Output limit for a structured answer, only where reasoning tokens cannot eat it: Claude (no thinking) or an explicit thinking depth „none“. */
+  /** Output limit for a structured answer, only where reasoning tokens cannot eat it: thinking depth „none“ outside Claude, whose current models always think. */
   private outputLimit(schemaName: string, overrides: LlmOverrides): number | undefined {
-    const safe = this.adapterId(overrides.baseUrl) === 'anthropic' || this.deps.settings.get().llm.reasoningEffort === 'none';
+    const safe = this.adapterId(overrides.baseUrl) !== 'anthropic' && this.deps.settings.get().llm.reasoningEffort === 'none';
     return safe ? outputLimitFor(schemaName) : undefined;
   }
 

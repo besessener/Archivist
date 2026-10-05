@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AppError } from '../../util/errors';
-import { correctionNote, issuesText, parseJsonAnswer, structuredInstructions } from './prompt-text';
+import { correctionNote, issuesText, parseJsonAnswer, schemaText, structuredInstructions } from './prompt-text';
 import type { StrictSchema } from './responses';
 import { toStrictJsonSchema } from './strict-schema';
 
@@ -18,6 +18,7 @@ interface StructuredRequest {
 interface CompletionRequest extends StructuredRequest {
   json: true;
   jsonSchema: StrictSchema | null;
+  schemaText: string;
   appendix?: string;
 }
 
@@ -34,14 +35,15 @@ export async function structuredAnswer<T extends z.ZodType>(
     malformed: (error: AppError, signal?: AbortSignal) => void;
   },
 ): Promise<z.output<T>> {
-  const instructions = structuredInstructions(request, JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' })));
+  const instructions = structuredInstructions(request);
+  const schemaHint = schemaText(JSON.stringify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' })));
   const strict = toStrictJsonSchema(schema);
   const jsonSchema = strict && { name: formatName(request.schemaName), schema: strict };
   let lastIssues = '';
   let lastRaw = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const appendix = attempt === 0 ? undefined : correctionNote(lastIssues);
-    lastRaw = await deps.complete({ ...request, instructions, json: true, jsonSchema, appendix });
+    lastRaw = await deps.complete({ ...request, instructions, json: true, jsonSchema, schemaText: schemaHint, appendix });
     const parsed = parseJsonAnswer(lastRaw);
     if (!parsed.ok) lastIssues = 'kein gültiges JSON';
     else {

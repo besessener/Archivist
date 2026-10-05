@@ -7,6 +7,8 @@ import { responsesUsage, type UsageTally } from './usage';
 export interface ResponsesCall {
   connection: { baseUrl: string; model: string; apiKey: string };
   instructions: string;
+  /** Appended to the instructions whenever the strict schema does not go out as `text.format`. */
+  schemaText?: string;
   input: string;
   maxOutputTokens?: number;
   json?: boolean;
@@ -37,10 +39,11 @@ export class ResponsesRunner {
     const url = endpointUrl(connection.baseUrl, 'responses');
     const endpointKey = `${url}\n${connection.model}`;
     const rejected = this.rejectedParams.get(endpointKey) ?? new Set<OptionalParam>();
+    const strict = () => Boolean(call.jsonSchema) && !rejected.has('json_schema') && !rejected.has('text');
     const build = () =>
       responsesRequestBody({
         model: connection.model,
-        instructions: call.instructions,
+        instructions: strict() ? call.instructions : call.instructions + (call.schemaText ?? ''),
         input: call.input,
         // a dropped „none“ leaves the model its default thinking, which could eat the output limit
         maxOutputTokens: call.reasoningEffort === 'none' && rejected.has('reasoning') ? undefined : call.maxOutputTokens,

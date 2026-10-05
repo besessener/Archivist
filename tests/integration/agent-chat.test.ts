@@ -87,6 +87,21 @@ describe('Agent in the chat (#295, #303, #304)', () => {
     expect(folderOf(app, b)).toBe('Arbeit/misc');
   });
 
+  it('all requests of a conversation share one prompt cache key, other conversations get their own', async () => {
+    app.llm.agent = scriptedTurns(
+      { calls: [{ name: 'find_documents', args: { ext: ['md'] } }] },
+      { text: 'Keine.' },
+      { text: 'Auch keine.' },
+      { text: 'Neu.' },
+    );
+    const first = await app.ok('chat:send', { text: 'Welche md-Dateien gibt es?' });
+    await app.ok('chat:send', { conversationId: first.conversationId, text: 'Und jetzt?' });
+    const other = await app.ok('chat:send', { text: 'Etwas anderes' });
+
+    const keys = app.llm.agentRequests.slice(-4).map((body) => body.prompt_cache_key);
+    expect(keys).toEqual([...Array(3).fill(`chat:${first.conversationId}`), `chat:${other.conversationId}`]);
+  });
+
   it('mode „Fragen“: prepares the change as one proposal card and executes it after confirmation', async () => {
     app.services.settings.update({ agent: { mode: 'ask' } });
     const a = await archived(app, { name: 'a.md', content: 'A', folder: 'Arbeit/misc' });

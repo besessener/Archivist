@@ -5,6 +5,7 @@ import type { AdapterConfig } from './common';
 import { OpenAiResponsesAdapter } from './openai';
 
 export { AnthropicAdapter } from './anthropic';
+export { claudeTextEffort } from './anthropic-text';
 export type { AdapterConfig } from './common';
 
 /** Anthropic endpoints (`api.anthropic.com`, Foundry `…/anthropic`) get the Messages API, everything else Responses (#296, #297). */

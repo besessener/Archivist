@@ -37,6 +37,17 @@ describe('Structured Outputs (#154)', () => {
     expect((await transmissions())[0]).toMatchObject({ note: null, requests: 1 });
   });
 
+  it('sends the schema as text only while it does not go out as the enforced response format', async () => {
+    app.llm.rejectJsonSchema = true;
+
+    await app.services.llm.completeJson(Answer, request);
+
+    const instructions = app.llm.textBodies.map((body) => String(body.instructions));
+    expect(instructions[0]).toContain('JSON-Objekt „Antwort“');
+    expect(instructions[0]).not.toContain('JSON-Schema:');
+    expect(instructions[1]).toContain('JSON-Schema: {');
+  });
+
   it('names the format with a valid name', async () => {
     app.llm.raw = '{"title":"T"}';
 
@@ -178,12 +189,12 @@ describe('output limits (#153)', () => {
     expect(entries[1]?.note).toContain('„none“ weggelassen');
   });
 
-  it('sets the limit for Claude, which does not think here', async () => {
-    app.services.settings.update({ llm: { baseUrl: 'https://llm.example.test/anthropic' } });
+  it('sets no schema limit for Claude, whose current models always think', async () => {
+    app.services.settings.update({ llm: { baseUrl: 'https://llm.example.test/anthropic', reasoningEffort: 'none' } });
 
     await app.services.llm.completeJson(Topic, topic);
 
-    expect(app.llm.textBodies[0]).toMatchObject({ max_tokens: 400 });
+    expect(app.llm.textBodies[0]).toMatchObject({ max_tokens: 16_000 });
   });
 
   it('sets none for schemas without a known limit and never overrides a limit of the caller', async () => {
@@ -195,5 +206,57 @@ describe('output limits (#153)', () => {
 
     expect(app.llm.textBodies[0]).not.toHaveProperty('max_output_tokens');
     expect(app.llm.textBodies[1]).toMatchObject({ max_output_tokens: 77 });
+  });
+});
+
+describe('Claude (Messages API)', () => {
+  const Topic = z.object({ name: z.string().nullable() });
+  const topic = { instructions: 'Test', input: 'Hallo', purpose: 'Struktur', schemaName: 'TopicName' };
+  const useClaude = (llm: Record<string, unknown> = {}) =>
+    app.services.settings.update({ llm: { baseUrl: 'https://llm.example.test/anthropic', model: `claude-${crypto.randomUUID()}`, ...llm } });
+  const system = (index: number) => (app.llm.textBodies[index]?.system as Array<{ text: string; cache_control?: unknown }>)[0]!;
+
+  beforeEach(() => {
+    app.llm.on('TopicName', () => ({ name: 'Thema' }));
+  });
+
+  it('caches the instructions, thinks at low depth and enforces the schema instead of sending it as text', async () => {
+    useClaude();
+
+    await expect(app.services.llm.completeJson(Topic, topic)).resolves.toEqual({ name: 'Thema' });
+
+    expect(system(0)).toMatchObject({ type: 'text', cache_control: { type: 'ephemeral' } });
+    expect(system(0).text).toContain('JSON-Objekt „TopicName“');
+    expect(system(0).text).not.toContain('JSON-Schema:');
+    expect(app.llm.textBodies[0]?.output_config).toMatchObject({
+      effort: 'low',
+      format: { type: 'json_schema', schema: { type: 'object', additionalProperties: false, required: ['name'] } },
+    });
+  });
+
+  it.each([
+    [null, 'low'],
+    ['none', 'low'],
+    ['minimal', 'low'],
+    ['medium', 'medium'],
+    ['max', 'max'],
+  ] as const)('sends the thinking depth setting %s as effort %s', async (setting, effort) => {
+    useClaude({ reasoningEffort: setting });
+
+    await app.services.llm.complete({ instructions: 'Test', input: 'Hallo', purpose: 'Struktur' });
+
+    expect(app.llm.textBodies[0]?.output_config).toEqual({ effort });
+  });
+
+  it('sends the schema as text when the model rejects the response format, and remembers it', async () => {
+    useClaude();
+    app.llm.rejectClaudeFormat = true;
+
+    await expect(app.services.llm.completeJson(Topic, topic)).resolves.toEqual({ name: 'Thema' });
+    await app.services.llm.completeJson(Topic, topic);
+
+    expect(app.llm.textBodies.map((body) => (body.output_config as { format?: unknown }).format === undefined)).toEqual([false, true, true]);
+    expect(system(1).text).toContain('JSON-Schema: {');
+    expect(app.llm.textBodies[2]?.output_config).toEqual({ effort: 'low' });
   });
 });

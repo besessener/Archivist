@@ -26,12 +26,13 @@ Code: `packages/core/src/agent/`.
 - Vor dem ersten Lauf prüft Archivist den Werkzeugaufruf einmal je Endpunkt, Modell und Adapter und merkt sich das Ergebnis. Scheitert die Prüfung nur vorübergehend (Limit, Serverfehler, Zeitüberschreitung, Endpunkt nicht erreichbar), merkt er sich nichts und schreibt eine Warnung ins Log: Für diese eine Chatnachricht gilt dann die regelbasierte Auswertung, der nächste Lauf prüft erneut. Jeder andere Fehler, etwa eine unvollständige Antwort oder ein abgebrochener Datenstrom, wird wie ein fehlender Werkzeugaufruf gespeichert und im Status angezeigt.
 - Claude-Modelle auf Foundry bieten natives Tool-Calling am Anthropic-Endpunkt derselben Ressource (`https://<resource>.services.ai.azure.com/anthropic`) – der Dialog schlägt ihn vor.
 - **Claude**: Thinking ist immer an und wird nur über `effort` gesteuert (Standard `high`); Werkzeugaufrufe werden nie erzwungen (`tool_choice: auto`); Systemanweisung und Werkzeugliste werden gecacht; Task-Budget (nur Claude API) und Kompaktierung werden genutzt, wo verfügbar, und abgeschaltet, wenn ein Endpunkt sie ablehnt.
+- **OpenAI/Responses**: Alle Anfragen einer Unterhaltung tragen denselben `prompt_cache_key` (`chat:<Unterhaltungs-ID>`, ein Hintergrundlauf `run:<Lauf-ID>`), damit der Anbieter ihren gemeinsamen Anfang aus dem Cache liest. Ab 150 000 Token Kontext kompaktiert der Server den Verlauf (`context_management`, auch mit `store: false`); das verschlüsselte Kompaktierungs-Element geht danach statt des älteren Verlaufs mit, nur an dasselbe Modell. Lehnt ein Endpunkt einen der beiden Parameter ab, entfällt er.
 - Der Verlauf wird anbieterneutral gespeichert – ein Wechsel des Anbieters braucht keinen Neustart.
 
 ## Websuche im Chat
 
 - Im Chat darf der Agent im Internet suchen – über die eingebaute Websuche des Anbieters:
-  - Claude: Server-Werkzeug `web_search_20250305`, höchstens 5 Suchen pro Anfrage,
+  - Claude: Server-Werkzeug `web_search_20260209`, das die Suchergebnisse vor dem Kontext filtert (weniger Tokens), höchstens 5 Suchen pro Anfrage. Modelle und Deployments ohne diese Filterung (ältere Modelle, Foundry gehostet auf Azure) bekommen die einfache Websuche `web_search_20250305`, gemerkt für Endpunkt und Modell,
   - OpenAI/Azure: gehostetes Werkzeug `web_search`.
 - Lokalisiert über die Zeitzone des Rechners.
 - Archivist selbst baut dafür keine weitere Verbindung auf; die Suche läuft beim konfigurierten Anbieter, der sie gesondert berechnet (Claude: 10 US$ pro 1.000 Suchen, nicht in der Kostenschätzung enthalten).
