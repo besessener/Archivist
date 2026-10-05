@@ -17,6 +17,23 @@ const byMethod = () =>
   ).reduce<Record<string, number>>((acc, r) => ({ ...acc, [r.method ?? 'null']: r.c }), {});
 
 describe('Retroactive link run with all methods (#279)', () => {
+  it('stops adding proposals while 20 are open, so a repeated run does not flood the list', async () => {
+    app = await createTestApp({ autoLinks: false });
+    for (let i = 0; i < 30; i += 1) await app.services.notes.create({ title: `Notiz ${i}`, content: flatText(`Thema${i}`) });
+    await app.services.jobs.whenIdle();
+
+    await app.ok('links:startRun', {});
+    await app.services.jobs.whenIdle();
+    const first = byMethod().similarity ?? 0;
+    expect(first).toBeGreaterThanOrEqual(20);
+    expect(first).toBeLessThan(26);
+    expect((await app.ok('app:getStatus', {})).openLinkProposals).toBe(first);
+
+    await app.ok('links:startRun', {});
+    await app.services.jobs.whenIdle();
+    expect(byMethod().similarity).toBe(first);
+  });
+
   it('proposes by every method for the existing archive, analyses notes once and sends ONE notification', async () => {
     // the archive from before: nothing was proposed automatically
     app = await createTestApp({ privacy: 'auto', autoLinks: false });

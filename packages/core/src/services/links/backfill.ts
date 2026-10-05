@@ -2,7 +2,7 @@ import { currentRun } from '../../agent/scope';
 import { nowIso } from '../../util/ids';
 import type { LinkCandidates, SimilarProposer } from './candidates';
 import type { CoOriginLinks } from './co-origin';
-import { entrySql, isEntry, LINK_ENTRY_TYPES, storedList, type LinkDeps } from './entries';
+import { entrySql, isEntry, LINK_ENTRY_TYPES, LINK_PROPOSAL_METHODS, sqlList, storedList, type LinkDeps } from './entries';
 
 export interface BackfillResult {
   processed: number;
@@ -32,6 +32,8 @@ const METHOD_VERSION = 2;
 const SIMILAR_PENDING = 'links.similar.pending';
 const ENTRY_WHERE = entrySql('e', LINK_ENTRY_TYPES);
 const UNSCANNED = `NOT EXISTS (SELECT 1 FROM link_scans s WHERE s.entity_id = e.id AND s.method_version >= ${METHOD_VERSION})`;
+/** No run adds proposals while this many are open: new ones come once the user has worked through them. */
+export const MAX_OPEN_PROPOSALS = 20;
 
 /** The link methods run over many entries: after indexing (#271) and retroactively over the whole archive (#279). */
 export class LinkBackfill {
@@ -78,6 +80,13 @@ export class LinkBackfill {
     return true;
   }
 
+  private proposalsAtLimit(): boolean {
+    const open = this.sqlite
+      .prepare(`SELECT count(*) AS c FROM relations WHERE status = 'proposed' AND method IN (${sqlList(LINK_PROPOSAL_METHODS)})`)
+      .get() as { c: number };
+    return open.c >= MAX_OPEN_PROPOSALS;
+  }
+
   private pendingSimilar(): string[] {
     return storedList(this.deps.appState, SIMILAR_PENDING).filter((id): id is string => typeof id === 'string');
   }
@@ -87,7 +96,7 @@ export class LinkBackfill {
     let processed = 0;
     let proposed = 0;
     for (let next = this.pendingSimilar()[0]; next !== undefined; next = this.pendingSimilar()[0]) {
-      if (options.signal?.aborted) break;
+      if (options.signal?.aborted || this.proposalsAtLimit()) break;
       try {
         // the more specific reason first: same day and person (#278), then similar content (#271)
         proposed += this.methods.coOrigin.proposeSameDayPerson(next);
@@ -118,7 +127,7 @@ export class LinkBackfill {
     let processed = 0;
     let proposed = 0;
     for (const { id } of rows) {
-      if (options.signal?.aborted) break;
+      if (options.signal?.aborted || this.proposalsAtLimit()) break;
       proposed += await this.scanEntry(id, options);
       if (options.signal?.aborted) break;
       processed += 1;
