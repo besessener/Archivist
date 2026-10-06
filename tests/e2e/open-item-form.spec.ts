@@ -53,4 +53,26 @@ test.describe('open items: the form', () => {
     await expect(oi.locators.doneToggle).toHaveAttribute('aria-expanded', 'true');
     await expect(oi.row('Angebot einholen')).toBeVisible();
   });
+
+  test('a scrolled dialog keeps its title and „Schließen“ button visible and clickable', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('open-items');
+    const oi = app.openItems;
+    await page.setViewportSize({ width: 900, height: 420 });
+
+    await oi.locators.buttons.create.click();
+    const scroller = oi.locators.form.locator('> div').first();
+    await scroller.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+    const title = oi.locators.form.getByRole('heading');
+    const close = oi.locators.form.getByRole('button', { name: 'Schließen' });
+    await expect(title).toBeInViewport({ ratio: 1 });
+    await expect(close).toBeInViewport({ ratio: 1 });
+    const formTop = (await oi.locators.form.boundingBox())!.y;
+    const titleTop = (await title.boundingBox())!.y;
+    expect(titleTop - formTop).toBeLessThan(40);
+
+    await close.click();
+    await expect(oi.locators.form).toBeHidden();
+  });
 });
