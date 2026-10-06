@@ -20,6 +20,9 @@ export function initOpenItems(page: Page) {
     /** „N von M“ note with „Mehr laden“ while the list holds only the newest open items. */
     capped: page.getByTestId('open-items-capped'),
     loadMore: page.getByTestId('open-items-load-more'),
+    closeConfirm: page.getByTestId('open-item-close-confirm'),
+    /** „Erledigt“ group heading: collapsed by default, expands on click. */
+    doneToggle: page.getByTestId('open-group-done-toggle'),
     deleteConfirm: page.getByTestId('open-item-delete-confirm'),
     reminderDialog: page.getByTestId('reminder-dialog'),
     /** „Anstehende Erinnerungen“ on the open-items page itself. */
