@@ -36,4 +36,21 @@ test.describe('open items: the form', () => {
     await oi.do.remove('Alte Idee');
     await expect(app.navigation.locators.count('open-items')).toHaveCount(0);
   });
+
+  test('closed items sit in a collapsed „Erledigt“ group that opens on click', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('open-items');
+    const oi = app.openItems;
+    await oi.do.create('Angebot einholen');
+
+    await oi.row('Angebot einholen').getByTestId('open-item-close').click();
+    await oi.locators.closeConfirm.click();
+
+    await expect(oi.locators.doneToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(oi.row('Angebot einholen')).toBeHidden();
+    await oi.locators.doneToggle.click();
+    await expect(oi.locators.doneToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(oi.row('Angebot einholen')).toBeVisible();
+  });
 });

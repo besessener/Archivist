@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ListChecks, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, ListChecks, Plus } from 'lucide-react';
 import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
 import { useSubjectsOf } from '@/components/common/extra-subjects';
 import { LoadMore } from '@/components/common/load-more';
@@ -33,6 +33,7 @@ export default function OpenItemsPage() {
   const paging = usePageWindow('open-items');
   const { data, loading, error, refetch } = useWindowedQuery('openItems:list', { filter: {}, window: paging.window, scopes: ['openItems', 'reminders'] });
   const total = useQuery('openItems:count', {}, { scopes: ['openItems', 'reminders'] });
+  const [doneExpanded, setDoneExpanded] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<OpenItemRecord | null>(null);
   const [closeItem, setCloseItem] = useState<OpenItemRecord | null>(null);
@@ -82,10 +83,26 @@ export default function OpenItemsPage() {
         {GROUPS.map((group) =>
           groups[group].length === 0 ? null : (
             <section key={group} aria-labelledby={`grp-${group}`} data-testid={`open-group-${group}`}>
-              <h2 id={`grp-${group}`} className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                {GROUP_LABELS[group]} <Badge variant={group === 'overdue' ? 'danger' : 'secondary'}>{groups[group].length}</Badge>
+              <h2 id={`grp-${group}`} className="mb-2 text-sm font-semibold">
+                {group === 'done' ? (
+                  <button
+                    type="button"
+                    aria-expanded={doneExpanded}
+                    aria-controls="open-group-done-list"
+                    onClick={() => setDoneExpanded((expanded) => !expanded)}
+                    className="flex items-center gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-ring"
+                    data-testid="open-group-done-toggle"
+                  >
+                    {doneExpanded ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4" aria-hidden />}
+                    {GROUP_LABELS[group]} <Badge variant="secondary">{groups[group].length}</Badge>
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    {GROUP_LABELS[group]} <Badge variant={group === 'overdue' ? 'danger' : 'secondary'}>{groups[group].length}</Badge>
+                  </span>
+                )}
               </h2>
-              <ul className="flex flex-col gap-2">
+              <ul id={`open-group-${group}-list`} className={group === 'done' && !doneExpanded ? 'hidden' : 'flex flex-col gap-2'}>
                 {groups[group].map((item) => (
                   <OpenItemRow
                     key={item.id}
