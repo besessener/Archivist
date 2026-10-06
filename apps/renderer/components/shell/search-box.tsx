@@ -98,7 +98,7 @@ export function SearchBox() {
                   router.push(entityHref(r.type, r.id));
                 }}
               >
-                <EntityIcon type={r.type} className="mt-0.5 size-4 shrink-0 text-primary" />
+                <EntityIcon type={r.type} className="mt-0.5 size-4 shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{r.title}</span>
                   {r.snippet && <span className="line-clamp-2 text-xs text-muted-foreground">{r.snippet}</span>}

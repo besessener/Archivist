@@ -21,6 +21,31 @@ test.describe('open items: the form', () => {
     await expect(row.getByTestId('badge-no-due')).toHaveCount(0);
   });
 
+  test('an overdue item stands out: red stripe, red navigation counter, secondary actions as named icon buttons', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('open-items');
+    await expect(app.navigation.locators.pageTile).toHaveAttribute('data-tone', 'task');
+    const oi = app.openItems;
+    await oi.do.create('Zählerstand melden');
+    await expect(app.navigation.locators.count('open-items')).toHaveAttribute('data-emphasis', 'normal');
+
+    const yesterday = new Date(Date.now() - 86_400_000).toLocaleDateString('sv-SE');
+    await oi.locators.buttons.create.click();
+    await oi.locators.inputs.title.fill('Steuererklärung abgeben');
+    await oi.locators.inputs.due.fill(yesterday);
+    await oi.locators.buttons.save.click();
+    await expect(oi.locators.form).toBeHidden();
+
+    const overdue = oi.row('Steuererklärung abgeben');
+    await expect(overdue).toHaveAttribute('data-group', 'overdue');
+    await expect(overdue).toHaveAttribute('data-stripe', 'danger');
+    await expect(oi.row('Zählerstand melden')).not.toHaveAttribute('data-stripe');
+    await expect(app.navigation.locators.count('open-items')).toHaveAttribute('data-emphasis', 'urgent');
+    await expect(app.navigation.locators.count('open-items')).toHaveAttribute('aria-label', '2 offen, davon 1 überfällig');
+    for (const name of ['Bearbeiten', 'Erinnern', 'Zusammenhänge', 'Löschen …']) await expect(overdue.getByRole('button', { name })).toBeVisible();
+  });
+
   test('deleting an item asks first and removes it only after confirming', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);

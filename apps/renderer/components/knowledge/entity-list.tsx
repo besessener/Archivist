@@ -135,7 +135,7 @@ function EntityListItem({
           current && 'bg-accent',
         )}
       >
-        <EntityIcon type={entity.type} className="size-4 shrink-0 text-primary" />
+        <EntityIcon type={entity.type} className="size-4 shrink-0" />
         <span className={cn('min-w-0 flex-1 truncate', entity.duplicateOfId && 'text-muted-foreground line-through')}>{entity.name}</span>
         {entity.isSelf && (
           <Badge variant="info" data-testid="knowledge-item-self">

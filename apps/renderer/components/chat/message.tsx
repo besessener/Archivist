@@ -32,7 +32,7 @@ function SourceChip({ source }: { source: SourceRef }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const inner = (
     <>
-      <EntityIcon type={source.type} className="mt-0.5 size-3.5 shrink-0 text-primary" />
+      <EntityIcon type={source.type} className="mt-0.5 size-3.5 shrink-0" />
       <span className="min-w-0 text-left">
         <span className="block truncate text-xs font-medium">{source.title}</span>
         {source.snippet && <span className="line-clamp-2 block text-[11px] text-muted-foreground">{source.snippet}</span>}

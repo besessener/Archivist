@@ -73,7 +73,7 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
   }
 
   return (
-    <div className="border-t bg-background px-4 pb-3 pt-1">
+    <div className="border-t bg-canvas px-4 pb-3 pt-1">
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- focusable separator (WAI-ARIA window splitter), intentionally interactive */}
       <div
         role="separator"

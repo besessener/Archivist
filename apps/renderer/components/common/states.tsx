@@ -70,7 +70,7 @@ export function Notice({
     <div
       className={cn(
         'rounded-lg border p-3 text-sm',
-        tone === 'info' && 'border-primary/30 bg-primary/8',
+        tone === 'info' && 'border-info/30 bg-info/8',
         tone === 'warning' && 'border-warning/50 bg-warning/12',
         tone === 'danger' && 'border-destructive/40 bg-destructive/8',
         className,

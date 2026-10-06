@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, ListChecks, Plus } from 'lucide-react';
 import { BulkAssignBar, useSelection } from '@/components/common/bulk-assign';
 import { useSubjectsOf } from '@/components/common/extra-subjects';
 import { LoadMore } from '@/components/common/load-more';
-import { Page, PageHeader } from '@/components/common/page-header';
+import { GROUP_HEADING, Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { CloseDialog, DeleteDialog, RelatedDialog, ReminderDialog } from '@/components/open-items/item-dialogs';
 import { ItemFormDialog } from '@/components/open-items/item-form-dialog';
@@ -18,6 +18,7 @@ import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 const GROUPS = ['overdue', 'due', 'open', 'done'] as const;
 const GROUP_LABELS: Record<OpenItemGroup, string> = { overdue: 'Überfällig', due: 'Bald fällig', open: 'Offen', done: 'Erledigt' };
@@ -83,7 +84,7 @@ export default function OpenItemsPage() {
         {GROUPS.map((group) =>
           groups[group].length === 0 ? null : (
             <section key={group} aria-labelledby={`grp-${group}`} data-testid={`open-group-${group}`}>
-              <h2 id={`grp-${group}`} className="mb-2 text-sm font-semibold">
+              <h2 id={`grp-${group}`} className={cn(GROUP_HEADING, 'mb-2', group === 'overdue' && 'text-destructive')}>
                 {group === 'done' ? (
                   <button
                     type="button"

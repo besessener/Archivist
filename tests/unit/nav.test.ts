@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ChatMessage, EntityType, RefType } from '@archivist/shared';
-import { ENTITY_TYPE_LABELS, entityHref } from '../../apps/renderer/lib/nav';
+import { ENTITY_TYPE_LABELS, ENTITY_TYPE_TONES, entityHref } from '../../apps/renderer/lib/nav';
+import { SECTIONS, sectionOf } from '../../apps/renderer/lib/sections';
 
 describe('link targets in the renderer (entityHref)', () => {
   it('leads every reference type to the matching view', () => {
@@ -45,5 +46,22 @@ describe('link targets in the renderer (entityHref)', () => {
       context: { contradictions: [{ type: 'contradiction', id: 'k1', label: 'W' }] },
     };
     expect(ChatMessage.safeParse(current).success).toBe(true);
+  });
+});
+
+describe('colours of object types and sections', () => {
+  it('gives every reference type a colour, related types the same one', () => {
+    for (const t of RefType.options) expect(ENTITY_TYPE_TONES[t]).toBeTruthy();
+    expect(ENTITY_TYPE_TONES.question).toBe(ENTITY_TYPE_TONES.task);
+    expect(ENTITY_TYPE_TONES.case).toBe(ENTITY_TYPE_TONES.project);
+    expect(ENTITY_TYPE_TONES.contradiction).toBe('danger');
+  });
+
+  it('finds the section of a route, sub-routes included, and none for an unknown route', () => {
+    expect(sectionOf('/open-items/')?.label).toBe('Offene Punkte');
+    expect(sectionOf('/decisions/proposed/')?.label).toBe('Entscheidungen');
+    expect(sectionOf('/knowledge/')?.tone).toBe('topic');
+    expect(sectionOf('/')).toBeUndefined();
+    expect(new Set(SECTIONS.map((section) => section.testId)).size).toBe(SECTIONS.length);
   });
 });

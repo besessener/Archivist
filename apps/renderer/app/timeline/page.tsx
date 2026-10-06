@@ -18,6 +18,7 @@ import { useRun } from '@/lib/use-run';
 import { useToast } from '@/lib/toast';
 import { formatLongDate } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
+import type { Tone } from '@/lib/nav';
 import type { IpcOutput } from '@archivist/shared';
 
 type Entry = IpcOutput<'timeline:get'>[number];
@@ -28,13 +29,13 @@ const PAGE_SIZE = 200;
 /** Must not exceed the `limit` maximum of the `timeline:get` channel. */
 const MAX_ENTRIES = 10000;
 
-const KIND: Record<Entry['kind'], { icon: React.ComponentType<{ className?: string }>; label: string }> = {
-  document: { icon: FileText, label: 'Dokument' },
-  decision: { icon: Gavel, label: 'Entscheidung' },
-  open_item: { icon: ListChecks, label: 'Offener Punkt' },
-  event: { icon: CalendarDays, label: 'Ereignis' },
-  contradiction: { icon: ShieldAlert, label: 'Widerspruch' },
-  note: { icon: StickyNote, label: 'Notiz' },
+const KIND: Record<Entry['kind'], { icon: React.ComponentType<{ className?: string }>; label: string; tone: Tone }> = {
+  document: { icon: FileText, label: 'Dokument', tone: 'document' },
+  decision: { icon: Gavel, label: 'Entscheidung', tone: 'decision' },
+  open_item: { icon: ListChecks, label: 'Offener Punkt', tone: 'task' },
+  event: { icon: CalendarDays, label: 'Ereignis', tone: 'neutral' },
+  contradiction: { icon: ShieldAlert, label: 'Widerspruch', tone: 'danger' },
+  note: { icon: StickyNote, label: 'Notiz', tone: 'neutral' },
 };
 
 export default function TimelinePage() {
@@ -98,8 +99,8 @@ export default function TimelinePage() {
     const k = KIND[e.kind];
     return (
       <li key={e.id} className="relative" data-testid="timeline-entry" data-kind={e.kind}>
-        <span className="absolute -left-[2.15rem] flex size-6 items-center justify-center rounded-full border bg-card">
-          <k.icon className="size-3.5 text-primary" />
+        <span data-tone={k.tone} className="absolute -left-[2.15rem] flex size-6 items-center justify-center rounded-full border border-tone/40 bg-card">
+          <k.icon className="size-3.5 text-tone" />
         </span>
         <p className="text-xs text-muted-foreground">
           {e.undated ? `ohne Datum, erfasst am ${formatLongDate(e.date)}` : formatLongDate(e.date)} · {k.label}

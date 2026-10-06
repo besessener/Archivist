@@ -140,7 +140,7 @@ export function WikiTextarea({
               onMouseEnter={() => setActive(i)}
               data-testid="wiki-suggestion"
             >
-              <EntityIcon type={s.type} className="size-4 shrink-0 text-muted-foreground" />
+              <EntityIcon type={s.type} className="size-4 shrink-0" />
               <span className="min-w-0 truncate">{s.name}</span>
               <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                 {s.alias ? `auch „${s.alias}“ · ` : ''}

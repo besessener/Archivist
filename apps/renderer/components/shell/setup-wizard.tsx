@@ -131,7 +131,7 @@ export function SetupWizard() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center overflow-y-auto bg-background p-4" data-testid="setup-wizard">
+    <div className="flex h-screen items-center justify-center overflow-y-auto bg-canvas p-4" data-testid="setup-wizard">
       <Card className="my-auto w-full max-w-xl">
         <CardContent className="flex flex-col gap-5 p-6">
           <ol className="flex items-center gap-1.5" aria-label="Fortschritt der Einrichtung">

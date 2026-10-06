@@ -47,6 +47,7 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [Tests und Qualitätssicherung](reference/qualitaetssicherung.md)
 - [Packaging](reference/packaging.md)
 - [Texte und Ansprache](reference/texte-und-ansprache.md)
+- [Gestaltung der Oberfläche](reference/gestaltung.md)
 
 ## Hintergrund
 

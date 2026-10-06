@@ -138,7 +138,7 @@ export function DecisionDetail({ id, onEdit, onDeleted }: { id: string; onEdit: 
 
 function DecisionFields({ decision }: { decision: DecisionRecord }) {
   return (
-    <dl className="rounded-xl border bg-card px-4">
+    <dl className="rounded-xl border bg-card shadow-card px-4">
       <Row label={DECISION_FIELD_LABELS.decidedAt}>
         <RequiredValue known={Boolean(decision.decidedAt)} unknown={decision.unknownFields.includes('decidedAt')}>
           {formatLongDate(decision.decidedAt)}

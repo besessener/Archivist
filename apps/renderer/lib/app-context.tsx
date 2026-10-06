@@ -65,7 +65,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const offStatus = subscribe('status:changed', schedule);
     const offData = subscribe('data:changed', (payload) => {
       const scopes = scopesOf(payload);
-      if (scopes.length === 0 || scopes.some((s) => ['notifications', 'jobs', 'insights', 'settings', 'documents'].includes(s))) schedule();
+      if (scopes.length === 0 || scopes.some((s) => ['notifications', 'jobs', 'insights', 'settings', 'documents', 'openItems'].includes(s))) schedule();
     });
     const offJob = subscribe('job:updated', schedule);
     return () => {

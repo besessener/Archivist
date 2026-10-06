@@ -26,6 +26,8 @@ export function decisionStatusVariant(status: DecisionStatus) {
   }
 }
 
+const STRIPES: Partial<Record<DecisionStatus, 'danger' | 'warning'>> = { draft: 'warning', revoked: 'danger' };
+
 export function DecisionListItem({
   decision,
   current,
@@ -52,9 +54,9 @@ export function DecisionListItem({
         href={`/decisions/?id=${encodeURIComponent(decision.id)}`}
         data-testid="decision-row"
         data-status={decision.status}
+        data-stripe={STRIPES[decision.status]}
         className={cn(
-          'block min-w-0 flex-1 rounded-lg border p-3 transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring',
-          decision.status === 'draft' && 'border-warning/60 bg-warning/8',
+          'block min-w-0 flex-1 rounded-lg border bg-card p-3 shadow-card transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring',
           current && 'ring-2 ring-primary/50',
         )}
       >

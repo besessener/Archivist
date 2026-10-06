@@ -4,7 +4,9 @@ import Link from 'next/link';
 import type { EntrySubjects } from '@archivist/shared';
 import { localDate, localToday } from '@archivist/shared';
 import { BellPlus, Check, MessageSquare, Network, Pencil, Trash2 } from 'lucide-react';
+import { TypeBadge } from '@/components/common/entity-chip';
 import { ExtraSubjectsNote } from '@/components/common/extra-subjects';
+import { IconAction } from '@/components/common/icon-action';
 import { Markdown } from '@/components/common/markdown';
 import { SolutionSection, type SolutionSectionProps } from '@/components/open-items/solution';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +32,8 @@ export function groupOf(item: OpenItemRecord): OpenItemGroup {
   return 'open';
 }
 
+const STRIPES: Partial<Record<OpenItemGroup, 'danger' | 'warning'>> = { overdue: 'danger', due: 'warning' };
+
 export interface OpenItemActions {
   onEdit: (item: OpenItemRecord) => void;
   onRemind: (item: OpenItemRecord) => void;
@@ -52,7 +56,13 @@ export interface OpenItemRowProps {
 export function OpenItemRow({ item, group, selected, onSelect, subjects, llm, actions }: OpenItemRowProps) {
   const done = group === 'done';
   return (
-    <li className="flex gap-3 rounded-xl border bg-card p-3" data-testid="open-item-row" data-status={item.status} data-group={group}>
+    <li
+      className="flex gap-3 rounded-xl border bg-card shadow-card p-3"
+      data-stripe={STRIPES[group]}
+      data-testid="open-item-row"
+      data-status={item.status}
+      data-group={group}
+    >
       <Checkbox
         className="mt-1"
         checked={selected}
@@ -89,8 +99,8 @@ export function OpenItemRow({ item, group, selected, onSelect, subjects, llm, ac
           <ResponsibleBadge item={item} group={group} />
           <DueBadge item={item} group={group} />
           {item.reminderAt && <Badge variant="info">Erinnerung {formatDate(item.reminderAt)}</Badge>}
-          {item.topicName && <Badge variant="outline">{item.topicName}</Badge>}
-          {item.projectName && <Badge variant="outline">{item.projectName}</Badge>}
+          {item.topicName && <TypeBadge type="topic">{item.topicName}</TypeBadge>}
+          {item.projectName && <TypeBadge type="project">{item.projectName}</TypeBadge>}
           <ExtraSubjectsNote subjects={subjects} />
         </div>
         {item.resolutionNote && (
@@ -134,22 +144,24 @@ function DueBadge({ item, group }: { item: OpenItemRecord; group: OpenItemGroup 
 
 function OpenItemButtons({ item, llm, actions }: Pick<OpenItemRowProps, 'item' | 'llm' | 'actions'>) {
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      <Button size="sm" variant="outline" onClick={() => actions.onEdit(item)} data-testid="open-item-edit">
-        <Pencil aria-hidden /> Bearbeiten
-      </Button>
-      <Button size="sm" variant="outline" onClick={() => actions.onRemind(item)} data-testid="open-item-remind">
-        <BellPlus aria-hidden /> Erinnern
-      </Button>
-      <Button size="sm" variant="outline" onClick={() => actions.onRelated(item)} data-testid="open-item-related">
-        <Network aria-hidden /> Zusammenhänge
-      </Button>
+    <div className="mt-3 flex flex-wrap items-center gap-2">
       <Button size="sm" onClick={() => actions.onClose(item)} data-testid="open-item-close">
         <Check aria-hidden /> Erledigt …
       </Button>
-      <Button size="sm" variant="outline" onClick={() => actions.onDelete(item)} data-testid="open-item-delete">
-        <Trash2 aria-hidden /> Löschen …
-      </Button>
+      <span className="flex items-center gap-0.5">
+        <IconAction label="Bearbeiten" onClick={() => actions.onEdit(item)} data-testid="open-item-edit">
+          <Pencil aria-hidden />
+        </IconAction>
+        <IconAction label="Erinnern" onClick={() => actions.onRemind(item)} data-testid="open-item-remind">
+          <BellPlus aria-hidden />
+        </IconAction>
+        <IconAction label="Zusammenhänge" onClick={() => actions.onRelated(item)} data-testid="open-item-related">
+          <Network aria-hidden />
+        </IconAction>
+        <IconAction label="Löschen …" onClick={() => actions.onDelete(item)} data-testid="open-item-delete">
+          <Trash2 aria-hidden />
+        </IconAction>
+      </span>
       <SolutionSection item={item} mode={llm.mode} llmConfigured={llm.configured} onChanged={actions.onChanged} />
     </div>
   );

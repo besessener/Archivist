@@ -16,6 +16,7 @@ import { RELATION_TYPE_LABELS } from '@/lib/labels';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { RelationProvenance } from './related';
+import { GROUP_HEADING } from '@/components/common/page-header';
 
 const PAGE = 20;
 type GroupBy = 'method' | 'entry';
@@ -54,7 +55,7 @@ export function LinkProposals() {
   return (
     <section id="link-proposals" aria-labelledby="link-proposals-title" className="mb-8 scroll-mt-4" data-testid="link-proposals">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 id="link-proposals-title" className="flex items-center gap-2 text-sm font-semibold">
+        <h2 id="link-proposals-title" className={GROUP_HEADING}>
           <Link2 className="size-4" aria-hidden /> Verknüpfungsvorschläge{' '}
           <Badge variant="secondary" data-testid="link-proposals-total">
             {total}
@@ -79,7 +80,7 @@ export function LinkProposals() {
         {[...byGroup.entries()].map(([key, items]) => {
           const g = groupOf.get(key);
           return (
-            <div key={key} className="rounded-xl border bg-card p-3" data-testid="link-proposal-group">
+            <div key={key} className="rounded-xl border bg-card shadow-card p-3" data-testid="link-proposal-group">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-medium">
                   {g?.label ?? key} <span className="text-muted-foreground">({g?.count ?? items.length})</span>

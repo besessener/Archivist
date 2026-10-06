@@ -28,6 +28,8 @@ export const AppStatus = z.object({
   unreadNotifications: z.number(),
   openInsights: z.number(),
   openLinkProposals: z.number(),
+  /** Active open items due before today (local day); the navigation shows their count in red. */
+  overdueOpenItems: z.number(),
   services: z.array(z.object({ name: z.string(), status: z.enum(['ok', 'degraded', 'error']), detail: z.string().nullable() })),
 });
 export type AppStatus = z.infer<typeof AppStatus>;
