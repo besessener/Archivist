@@ -30,6 +30,8 @@ export function initChat(page: Page) {
     },
     /** Proposal cards below an answer; `data-status` holds the action's status. */
     actionCards: root.getByTestId('action-card'),
+    /** The same proposal cards in the context panel next to the chat. */
+    panelActionCards: page.getByTestId('context-panel').getByTestId('action-card'),
     toasts: page.getByTestId('toast'),
     /** Speech input: the microphone button (`data-state`: not_installed, downloading, idle, recording, transcribing) and the line below the input. */
     dictation: {
