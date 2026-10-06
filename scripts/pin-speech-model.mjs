@@ -63,7 +63,9 @@ for (const name of names) {
     console.log(`Pinned ${name} at ${pinned[name].revision} (${pinned[name].files.reduce((sum, file) => sum + file.bytes, 0)} bytes)`);
   } catch (error) {
     failed.push(name);
-    console.error(`Could not pin ${name}: ${error.message}`);
+    // Node's fetch reports every network problem as "fetch failed"; the reason (proxy, certificate, DNS) is in the cause.
+    const cause = error.cause ? ` (${error.cause.code ?? error.cause.message})` : '';
+    console.error(`Could not pin ${name}: ${error.message}${cause}`);
   }
 }
 fs.writeFileSync(output, `${JSON.stringify(pinned, null, 2)}\n`);
