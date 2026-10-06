@@ -1,24 +1,36 @@
 import { describe, expect, it } from 'vitest';
+import { SPEECH_MODEL_NAMES } from '@archivist/shared';
 import models from '../../packages/core/src/services/speech/models.json';
 import pin from '../../packages/core/src/services/speech/model-pin.json';
-import { SPEECH_MODEL, fileUrl, totalBytes } from '../../packages/core/src/services/speech/model-manifest';
+import { SPEECH_MODELS, fileUrl, totalBytes } from '../../packages/core/src/services/speech/model-manifest';
 
 describe('speech model manifest', () => {
-  it('pins one of the offered models and describes it from the list', () => {
-    expect(Object.keys(models)).toEqual(['small', 'medium', 'turbo']);
-    expect(Object.keys(models)).toContain(pin.model);
-    const chosen = models[pin.model as keyof typeof models];
-    expect(SPEECH_MODEL).toMatchObject({ label: chosen.label, directory: chosen.directory, baseUrl: `https://huggingface.co/${chosen.repository}/resolve` });
+  it('offers exactly the models of the settings, each with a description and a pin', () => {
+    expect(Object.keys(models)).toEqual([...SPEECH_MODEL_NAMES]);
+    expect(Object.keys(pin)).toEqual([...SPEECH_MODEL_NAMES]);
+    expect(Object.keys(SPEECH_MODELS)).toEqual([...SPEECH_MODEL_NAMES]);
   });
 
-  it('offers every model its own folder', () => {
+  it('describes every model from the list and its pin', () => {
+    for (const name of SPEECH_MODEL_NAMES) {
+      expect(SPEECH_MODELS[name]).toMatchObject({
+        label: models[name].label,
+        directory: models[name].directory,
+        baseUrl: `https://huggingface.co/${models[name].repository}/resolve`,
+        revision: pin[name].revision,
+        files: pin[name].files,
+      });
+    }
+  });
+
+  it('gives every model its own folder', () => {
     const directories = Object.values(models).map((model) => model.directory);
     expect(new Set(directories).size).toBe(directories.length);
   });
 
   it('builds the download address from the pinned commit and sums the sizes', () => {
     const spec = {
-      ...SPEECH_MODEL,
+      ...SPEECH_MODELS.small,
       baseUrl: 'https://host/repo/resolve',
       revision: 'abc',
       files: [

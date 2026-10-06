@@ -72,6 +72,7 @@ const SETTING_LABELS: Record<string, string> = {
   'agent.background.weeklyReviewDay': 'Wochentag des Rückblicks',
   'agent.learning': 'Gelerntes verwenden',
   'agent.webSearch': 'Websuche im Chat',
+  'speech.model': 'Modell der Spracheingabe',
   'links.autoPropose': 'Verknüpfungen automatisch vorschlagen',
   'links.maxProposalsPerEntry': 'Höchstens offene Verknüpfungsvorschläge je Eintrag',
 };
@@ -91,6 +92,7 @@ const VALUE_TEXTS: Record<string, (value: unknown) => string | undefined> = {
   'privacy.llmMode': labelsOf({ auto: 'Automatisch analysieren', confirm: 'Vor jeder externen Analyse fragen', local_only: 'Nur lokal' }),
   'agent.mode': labelsOf({ auto: 'Auto', ask: 'Fragen' }),
   'agent.adapter': labelsOf({ auto: 'Automatisch', anthropic: 'Claude (Anthropic)', openai: 'OpenAI-kompatibel' }),
+  'speech.model': labelsOf({ small: 'small (schnell, Standard)', medium: 'medium', turbo: 'turbo' }),
   'logs.level': labelsOf({ error: 'Nur Fehler', warn: 'Warnungen und Fehler', info: 'Normal', debug: 'Ausführlich (Fehlersuche)' }),
   'agent.background.nightlyHour': (value) => (typeof value === 'number' ? `um ${String(value).padStart(2, '0')}:00 Uhr` : 'aus'),
   'agent.background.weeklyReviewDay': (value) => WEEKDAY_NAMES[Number(value)],

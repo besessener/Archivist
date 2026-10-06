@@ -52,5 +52,8 @@
   "links": {
     "autoPropose": true,
     "maxProposalsPerEntry": 3
+  },
+  "speech": {
+    "model": "small"
   }
 }

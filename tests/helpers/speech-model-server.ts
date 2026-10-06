@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { SpeechModelName } from '@archivist/shared';
 import type { SpeechModelSpec } from '../../packages/core/src/services/speech/model-manifest';
 
 export interface SpeechModelServer {
+  /** The served files as a pinned model; `models` has one per model name, each in its own folder. */
   spec: SpeechModelSpec;
+  models: Record<SpeechModelName, SpeechModelSpec>;
   /** Requests served per path. */
   requests: string[];
   /** Serves different bytes of the same length for this file from now on (a corrupted download). */
@@ -40,18 +43,21 @@ export async function startSpeechModelServer(contents: Record<string, string>): 
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
+  const spec: SpeechModelSpec = {
+    label: 'Testmodell',
+    directory: 'test-model',
+    baseUrl: `http://127.0.0.1:${port}`,
+    revision: REVISION,
+    files: Object.entries(contents).map(([path, body]) => ({
+      path,
+      bytes: Buffer.byteLength(body),
+      sha256: createHash('sha256').update(body).digest('hex'),
+    })),
+  };
+  const named = (name: SpeechModelName): SpeechModelSpec => ({ ...spec, label: `Testmodell ${name}`, directory: `test-${name}` });
   return {
-    spec: {
-      label: 'Testmodell',
-      directory: 'test-model',
-      baseUrl: `http://127.0.0.1:${port}`,
-      revision: REVISION,
-      files: Object.entries(contents).map(([path, body]) => ({
-        path,
-        bytes: Buffer.byteLength(body),
-        sha256: createHash('sha256').update(body).digest('hex'),
-      })),
-    },
+    spec,
+    models: { small: named('small'), medium: named('medium'), turbo: named('turbo') },
     requests,
     corrupt: (path) => served.set(path, `X${(served.get(path) ?? '').slice(1)}`),
     hold: () => {

@@ -31,7 +31,7 @@ export interface ChatComposerProps {
 export function ChatComposer({ text, onTextChange, inputRef, working, onSend, aiNotice }: ChatComposerProps) {
   const { importFiles, importFolder } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
-  const speech = useQuery('speech:status', {}, { scopes: ['speech'] });
+  const speech = useQuery('speech:status', {}, { scopes: ['speech', 'settings'] });
   const dictation = useDictation({
     onText: (dictated) => {
       onTextChange(joinDictation(text, dictated));

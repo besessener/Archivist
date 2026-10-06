@@ -66,6 +66,11 @@ export class SpeechModelStore {
     }
   }
 
+  /** Deletes the model from the disk; it can be downloaded again. */
+  async remove(): Promise<void> {
+    await fsp.rm(this.directory, { recursive: true, force: true });
+  }
+
   /** Total download size, for the progress display. */
   get totalBytes(): number {
     return totalBytes(this.spec);

@@ -89,7 +89,7 @@ export const test = base.extend<Fixtures & Options>({
       ARCHIVIST_DATA_DIR: workspace.dataDir,
       ARCHIVIST_TEST_MODE: '1',
       ARCHIVIST_TEST_PICK_DIR: workspace.downloads,
-      ARCHIVIST_TEST_SPEECH_MODEL: JSON.stringify(speechModel.spec),
+      ARCHIVIST_TEST_SPEECH_MODELS: JSON.stringify(speechModel.models),
       ARCHIVIST_TEST_SPEECH_WORKER: path.resolve(__dirname, '../helpers/fake-speech-worker.mjs'),
     };
     delete env.DBUS_SESSION_BUS_ADDRESS; // an invalid bus only causes error messages from Chromium

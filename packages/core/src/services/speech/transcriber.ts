@@ -5,15 +5,19 @@ export type RecognitionPipeline = (samples: Float32Array, options: Record<string
 const WINDOW_SECONDS = 30;
 const OVERLAP_SECONDS = 5;
 
-/** Loads the model once, on the first recording. */
-export function createTranscriber(loadPipeline: () => Promise<RecognitionPipeline>): (samples: Float32Array) => Promise<string> {
-  let loading: Promise<RecognitionPipeline> | null = null;
-  return async (samples) => {
-    loading ??= loadPipeline().catch((err: unknown) => {
-      loading = null;
-      throw err;
-    });
-    const recognise = await loading;
+/** Loads a model on its first recording and keeps only the one in use: choosing another model replaces it. */
+export function createTranscriber(loadPipeline: (model: string) => Promise<RecognitionPipeline>): (samples: Float32Array, model: string) => Promise<string> {
+  let loaded: { model: string; pipeline: Promise<RecognitionPipeline> } | null = null;
+  return async (samples, model) => {
+    const pipeline = loaded?.model === model ? loaded.pipeline : loadPipeline(model);
+    if (loaded?.pipeline !== pipeline) {
+      loaded = { model, pipeline };
+      // a failed load is tried again on the next recording
+      pipeline.catch(() => {
+        if (loaded?.pipeline === pipeline) loaded = null;
+      });
+    }
+    const recognise = await pipeline;
     const result = await recognise(samples, { language: 'german', task: 'transcribe', chunk_length_s: WINDOW_SECONDS, stride_length_s: OVERLAP_SECONDS });
     return Array.isArray(result) ? result.map((part) => part.text).join(' ') : result.text;
   };

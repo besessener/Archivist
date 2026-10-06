@@ -1,5 +1,5 @@
 {
   "small": { "label": "Whisper small (quantisiert)", "directory": "whisper-small", "repository": "onnx-community/whisper-small" },
-  "medium": { "label": "Whisper medium (quantisiert)", "directory": "whisper-medium", "repository": "onnx-community/whisper-medium" },
+  "medium": { "label": "Whisper medium (quantisiert)", "directory": "whisper-medium", "repository": "Xenova/whisper-medium" },
   "turbo": { "label": "Whisper large-v3-turbo (quantisiert)", "directory": "whisper-large-v3-turbo", "repository": "onnx-community/whisper-large-v3-turbo" }
 }

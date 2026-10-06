@@ -19,7 +19,7 @@ Dokumentenordner (Standard: ~/Documents/Archivist/)
 
 Datenordner der Anwendung (Standard: %APPDATA%\Archivist\)
 ├── database/      archivist.db (SQLite, WAL)
-├── index/         lokale Indexdaten (z. B. OCR-Sprachdaten unter tessdata/; das Modell der Spracheingabe unter models/whisper-small/, rund 250 MB, in keinem Backup)
+├── index/         lokale Indexdaten (z. B. OCR-Sprachdaten unter tessdata/; die heruntergeladenen Modelle der Spracheingabe unter models/<Modell>/, je einige hundert MB, in keinem Backup)
 ├── config/        settings.json (nicht geheim) und llm-api-key.enc (verschlüsselt)
 ├── logs/          strukturierte JSON-Logs (ohne Schlüssel/Dokumentinhalte); der Agent liest sie mit `read_logs`; nach `logs.retentionDays` Tagen und über 50 MB insgesamt (älteste zuerst) gelöscht
 ├── backups/       Datenbank- und Metadaten-Backups

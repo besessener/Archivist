@@ -3,6 +3,7 @@ import { patchSchema } from './common';
 import { LOCAL_TIME } from './dates';
 import { SUPPORTED_EXTENSIONS } from './documents';
 import { AgentSettings, BackgroundAgentSettings } from './agent';
+import { SpeechModelName } from './speech';
 
 export const ReasoningEffort = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 export type ReasoningEffort = z.infer<typeof ReasoningEffort>;
@@ -96,6 +97,11 @@ const OcrSettings = z.object({
   languages: z.string().refine(isOcrLanguageList, { message: 'Ungültige OCR-Sprachcodes (Beispiel: deu+eng oder deu+chi_sim).' }).default('deu+eng'),
 });
 
+const SpeechSettings = z.object({
+  /** Whisper model of the speech input in the chat; larger ones recognise better and take longer and more space. */
+  model: SpeechModelName.default('small'),
+});
+
 export const Settings = z.object({
   setupCompleted: z.boolean().default(false),
   profile: ProfileSettings.default(() => ProfileSettings.parse({})),
@@ -111,6 +117,7 @@ export const Settings = z.object({
   ocr: OcrSettings.default(() => OcrSettings.parse({})),
   agent: AgentSettings.default(() => AgentSettings.parse({})),
   links: LinkSettings.default(() => LinkSettings.parse({})),
+  speech: SpeechSettings.default(() => SpeechSettings.parse({})),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -131,5 +138,6 @@ export const SettingsPatch = z.object({
     .extend({ background: patchSchema(BackgroundAgentSettings).optional() })
     .optional(),
   links: patchSchema(LinkSettings).optional(),
+  speech: patchSchema(SpeechSettings).optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

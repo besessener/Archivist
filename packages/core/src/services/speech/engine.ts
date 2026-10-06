@@ -2,8 +2,8 @@ import { Worker } from 'node:worker_threads';
 import { AppError } from '../../util/errors';
 
 export interface SpeechEngine {
-  /** `samples`: 16 kHz mono floats in [-1, 1]. Resolves with the recognised German text. */
-  transcribe(samples: Float32Array, signal: AbortSignal): Promise<string>;
+  /** `samples`: 16 kHz mono floats in [-1, 1]; `model`: folder name of the installed model. Resolves with the recognised German text. */
+  transcribe(samples: Float32Array, model: string, signal: AbortSignal): Promise<string>;
   /** Frees the loaded model. */
   close(): Promise<void>;
 }
@@ -13,7 +13,6 @@ export interface WorkerEngineOptions {
   workerFile: string | null;
   /** Passed to the worker, which loads the model from there. */
   modelsDir: string;
-  modelName: string;
   /** The model needs about a gigabyte of memory: the worker ends after this long without a request. */
   idleMs: number;
   /** One transcription may take this long, then the worker is ended. */
@@ -32,7 +31,7 @@ export class WorkerSpeechEngine implements SpeechEngine {
 
   constructor(private readonly options: WorkerEngineOptions) {}
 
-  async transcribe(samples: Float32Array, signal: AbortSignal): Promise<string> {
+  async transcribe(samples: Float32Array, model: string, signal: AbortSignal): Promise<string> {
     signal.throwIfAborted();
     this.clearIdleTimer();
     const worker = this.worker ?? this.spawn();
@@ -64,7 +63,7 @@ export class WorkerSpeechEngine implements SpeechEngine {
       worker.on('error', onError);
       worker.on('exit', onExit);
       signal.addEventListener('abort', onAbort, { once: true });
-      worker.postMessage({ samples });
+      worker.postMessage({ samples, model });
     });
   }
 
@@ -74,9 +73,9 @@ export class WorkerSpeechEngine implements SpeechEngine {
   }
 
   private spawn(): Worker {
-    const { workerFile, modelsDir, modelName } = this.options;
+    const { workerFile, modelsDir } = this.options;
     if (!workerFile) throw workerFailed('Die Spracherkennung ist in diesem Modus nicht verfügbar.');
-    this.worker = new Worker(workerFile, { workerData: { modelsDir, modelName } });
+    this.worker = new Worker(workerFile, { workerData: { modelsDir } });
     return this.worker;
   }
 

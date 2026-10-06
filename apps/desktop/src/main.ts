@@ -13,7 +13,7 @@ import {
   type Services,
   type SpeechModelSpec,
 } from '@archivist/core';
-import { IPC_CHANNELS, type AppNotification } from '@archivist/shared';
+import { IPC_CHANNELS, type AppNotification, type SpeechModelName } from '@archivist/shared';
 import { appUserModelId } from './app-id';
 import { readUnpackagedEnv } from './test-environment';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
@@ -27,7 +27,7 @@ const unpackagedEnv = (name: string) => readUnpackagedEnv({ packaged: app.isPack
 const devUrl = unpackagedEnv('ARCHIVIST_DEV_URL');
 const isDev = Boolean(devUrl);
 const testMode = unpackagedEnv('ARCHIVIST_TEST_MODE') === '1';
-const testSpeechModel = unpackagedEnv('ARCHIVIST_TEST_SPEECH_MODEL');
+const testSpeechModels = unpackagedEnv('ARCHIVIST_TEST_SPEECH_MODELS');
 
 // the interface is German only: date and time fields follow Chromium's language, not the operating system's
 app.commandLine.appendSwitch('lang', 'de-DE');
@@ -255,7 +255,7 @@ async function start(): Promise<void> {
     readerFile: resource('db-reader.cjs'),
     // E2E: a stand-in worker and a model served by the test (no real Whisper)
     speechWorkerFile: unpackagedEnv('ARCHIVIST_TEST_SPEECH_WORKER') ?? resource('speech-worker.cjs'),
-    speech: testSpeechModel ? { model: JSON.parse(testSpeechModel) as SpeechModelSpec } : undefined,
+    speech: testSpeechModels ? { models: JSON.parse(testSpeechModels) as Partial<Record<SpeechModelName, SpeechModelSpec>> } : undefined,
   });
   const appServices = services;
 
