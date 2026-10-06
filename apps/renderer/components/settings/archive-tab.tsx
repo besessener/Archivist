@@ -17,6 +17,7 @@ import { IndexSection } from './index-section';
 import { CategoryMigrationSection } from './category-migration-section';
 import { OcrLanguages } from './ocr-languages';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
+import { SpeechSection } from './speech-section';
 import { TrashSection } from './trash-section';
 
 export function ArchiveTab({ settings, reload }: TabProps) {
@@ -197,6 +198,8 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           </div>
         </div>
       </Section>
+
+      <SpeechSection settings={settings} reload={reload} />
 
       <IndexSection />
 

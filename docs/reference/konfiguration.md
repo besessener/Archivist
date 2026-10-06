@@ -15,7 +15,7 @@ Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (sie
 | `logs` | `level`, `retentionDays` (Tage, die Logdateien, Einträge des Übertragungsprotokolls und gelesene Benachrichtigungen bleiben; alle Logdateien zusammen höchstens 50 MB, die ältesten zuerst) |
 | `backups` | `keep` (je Art, Standard 3; ein bereits gespeicherter Wert bleibt), `autoOnStartup`, `includeArchive` |
 | `consistency` | `onStartup`, `intervalHours` (0 = aus), `staleOpenItemDays` |
-| `speech` | `model` (`small`, `medium` oder `turbo`; die Einstellungen unter Profil bieten genau diese drei an) |
+| `speech` | `model` (`small`, `medium` oder `turbo`; die Einstellungen unter Archiv bieten genau diese drei an) |
 | `ocr` | `enabled`, `languages` (z. B. `deu+eng`; die Einstellungen bieten die mitgelieferten Sprachen Deutsch und Englisch an) |
 | `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3) |
 

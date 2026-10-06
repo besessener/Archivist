@@ -15,9 +15,8 @@ export function initSettings(page: Page) {
       notifications: page.getByTestId('tab-notifications'),
       backups: page.getByTestId('tab-backups'),
       audit: page.getByTestId('tab-audit'),
-      profile: page.getByTestId('tab-profile'),
     },
-    /** Speech input (Profil): the model list, its download and deletion. */
+    /** Speech input (Archiv, below the text recognition): the model list, its download and deletion. */
     speech: {
       model: page.getByTestId('settings-speech-model'),
       state: (name: string) => page.getByTestId(`settings-speech-state-${name}`),

@@ -4,7 +4,7 @@ Im Chat kannst du Nachrichten diktieren. Die Spracherkennung läuft vollständig
 
 ## Modell wählen
 
-Unter **Einstellungen → Profil → Spracheingabe** wählst du das Modell aus einer festen Liste:
+Unter **Einstellungen → Archiv → Spracheingabe** wählst du das Modell aus einer festen Liste:
 
 | Modell | Für wen |
 | --- | --- |

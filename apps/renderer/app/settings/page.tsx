@@ -12,7 +12,6 @@ import { AuditTab } from '@/components/settings/audit-tab';
 import { BackupsTab } from '@/components/settings/backups-tab';
 import { LogsTab, NotificationsTab, ProfileTab } from '@/components/settings/misc-tabs';
 import { PrivacyTab } from '@/components/settings/privacy-tab';
-import { SpeechSection } from '@/components/settings/speech-section';
 import { Section } from '@/components/settings/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSettings } from '@/lib/use-settings';
@@ -92,10 +91,7 @@ function SettingsInner() {
             <PrivacyTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="profile">
-            <div className="flex flex-col gap-6">
-              <ProfileTab key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
-              <SpeechSection settings={settings} reload={reload} />
-            </div>
+            <ProfileTab key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="notifications">
             <NotificationsTab key={JSON.stringify(settings.notifications)} settings={settings} hasApiKey={hasApiKey} reload={reload} />

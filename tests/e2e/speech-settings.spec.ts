@@ -5,7 +5,7 @@ test.describe('settings: speech input', () => {
   test.beforeEach(async ({ llm, on, page }) => {
     await on(page).setup.do.complete(llm.url);
     await on(page).navigation.do.open('settings');
-    await on(page).settings.locators.tabs.profile.click();
+    await on(page).settings.locators.tabs.archive.click();
   });
 
   test('lists the models, downloads the chosen one and deletes it again', async ({ on, page }) => {
@@ -31,7 +31,7 @@ test.describe('settings: speech input', () => {
     await expect(speech.model).toHaveValue('turbo');
 
     await page.reload();
-    await on(page).settings.locators.tabs.profile.click();
+    await on(page).settings.locators.tabs.archive.click();
 
     await expect(speech.model).toHaveValue('turbo');
   });

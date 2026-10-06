@@ -101,7 +101,7 @@ test.describe('chat: speech input', () => {
   test('dictates with the model chosen in the settings', async ({ on, page }) => {
     const { navigation, settings, chat } = on(page);
     await navigation.do.open('settings');
-    await settings.locators.tabs.profile.click();
+    await settings.locators.tabs.archive.click();
     await settings.locators.speech.model.selectOption('medium');
     await settings.locators.speech.install.click();
     await expect(settings.locators.speech.state('medium')).toHaveText('heruntergeladen');
