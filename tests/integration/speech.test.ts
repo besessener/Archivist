@@ -95,6 +95,19 @@ describe('speech input: model download', () => {
     await app.ok('speech:install', { confirmed: true });
     const failed = await waitForState('not_installed');
     expect(failed.error).toContain('Internetverbindung');
+    expect(failed.error).toContain('ECONNREFUSED');
+    expect(fs.existsSync(`${modelDir()}.partial`)).toBe(false);
+  });
+
+  it('names the HTTP status when the host refuses a file', async () => {
+    await app.cleanup();
+    const small = { ...server.models.small, files: [...server.models.small.files, { path: 'missing.json', bytes: 1, sha256: '0'.repeat(64) }] };
+    app = await createTestApp({ speech: { models: { ...server.models, small }, engine } });
+
+    await app.ok('speech:install', { confirmed: true });
+    const failed = await waitForState('not_installed');
+
+    expect(failed.error).toContain('(HTTP 404 für missing.json)');
     expect(fs.existsSync(`${modelDir()}.partial`)).toBe(false);
   });
 

@@ -37,5 +37,5 @@ Erkannt wird Deutsch. Nur Stille oder ein versehentlicher Klick ergibt keinen Te
 | Das Mikrofon erscheint nicht im Chat | Für das gewählte Modell nennt diese Version keinen Download („in dieser Version nicht verfügbar“ in den Einstellungen). Wähle ein anderes Modell. |
 | „Archivist darf das Mikrofon nicht benutzen“ | Windows → Einstellungen → Datenschutz & Sicherheit → Mikrofon: „Desktop-Apps den Zugriff auf Ihr Mikrofon erlauben“ einschalten. |
 | „Es wurde kein Mikrofon gefunden“ | Ein Mikrofon anschließen oder in Windows ein Standardgerät wählen. |
-| Download schlägt fehl | Internetverbindung und Proxy prüfen und erneut versuchen; die Meldung steht unter dem Eingabefeld und in den Einstellungen. |
+| Download schlägt fehl | Die Meldung steht unter dem Eingabefeld und in den Einstellungen und nennt die Ursache in Klammern, z. B. `(ENOTFOUND)` oder `(net::ERR_CERT_AUTHORITY_INVALID)`. Der Download nutzt wie ein Browser die Windows-Zertifikate und den Systemproxy; hinter einer Firmen-Firewall muss `huggingface.co` samt seinen Download-Servern erreichbar sein. Nach einer Korrektur erneut herunterladen. |
 | Die Umwandlung dauert lange | Beim ersten Diktat lädt Archivist das Modell in den Arbeitsspeicher (mehrere hundert MB); es wird nach fünf Minuten ohne Diktat wieder freigegeben. Ein kleineres Modell antwortet schneller. |
