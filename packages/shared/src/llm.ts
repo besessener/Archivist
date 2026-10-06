@@ -29,6 +29,7 @@ export const INTENTS = [
   'scan_start',
   'exclude_path',
   'contradiction_check',
+  'contradiction_resolve',
   'relation_decide',
   'smalltalk',
   'unknown',
@@ -81,6 +82,9 @@ export const ChatIntent = z.object({
   query: opt(z.string()).describe('Such- bzw. Fragetext'),
   alternativeQueries: opt(z.array(z.string()).transform((queries) => queries.slice(0, 4))).describe(
     'Nur bei Fragen/Suchen: 2–4 weitere Suchformulierungen (Synonyme, Umschreibungen, dieselben Kernbegriffe auf Englisch bzw. Deutsch)',
+  ),
+  contradictionResolution: opt(z.enum(['resolved', 'false_positive', 'acknowledged'])).describe(
+    'Nur bei contradiction_resolve: resolved = geklärt/aufgelöst, false_positive = kein echter Widerspruch/Fehlalarm, acknowledged = zur Kenntnis genommen; query nennt, welcher Widerspruch gemeint ist',
   ),
   topic: opt(z.string()),
   project: opt(z.string()),

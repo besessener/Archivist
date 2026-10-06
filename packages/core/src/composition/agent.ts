@@ -41,6 +41,7 @@ export function createAgent(services: WiredServices, enqueueConsistency: (trigge
       notifications: services.notifications,
       openItemDuplicates: services.openItemDuplicates,
       noteEventDuplicates: services.noteEventDuplicates,
+      contradictions: services.contradictions,
       memory,
       fileJobs: agentFileJobs,
       links: services.links,

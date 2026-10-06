@@ -9,6 +9,7 @@ import type { AuditService } from '../../services/audit';
 import type { CategoryService } from '../../services/categories';
 import type { NoteEventDuplicateService } from '../../services/cleanup/note-event-duplicates';
 import type { OpenItemDuplicateService } from '../../services/cleanup/open-item-duplicates';
+import type { ContradictionService } from '../../services/contradictions';
 import type { DecisionService } from '../../services/decisions';
 import type { DocumentService } from '../../services/documents';
 import type { EventService } from '../../services/events';
@@ -47,6 +48,7 @@ export interface ToolDeps {
   graph: KnowledgeGraphService;
   privacy: PrivacyService;
   decisions: DecisionService;
+  contradictions: ContradictionService;
   openItems: OpenItemService;
   reminders: ReminderService;
   events: EventService;

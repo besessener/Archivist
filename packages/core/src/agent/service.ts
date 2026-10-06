@@ -28,6 +28,7 @@ import { fileTools } from './tools/files';
 import { knowledgeTools } from './tools/knowledge';
 import { learningTools } from './tools/learning';
 import { linkMethodTools } from './tools/link-methods';
+import { contradictionTools } from './tools/contradictions';
 import { linkTools } from './tools/links';
 import { metadataTools } from './tools/metadata';
 import { readTools } from './tools/read';
@@ -125,6 +126,7 @@ export class AgentService {
       ...diagnosticTools(deps),
       ...specialTaskTools(deps),
       ...duplicateTools(deps),
+      ...contradictionTools(deps),
       ...exportTools(deps),
       undoPreviousRunTool({ runs, undoRun: (runId) => this.undoRun(runId) }),
     ];
