@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
 import {
   AppError,
   createHandlers,
@@ -8,6 +8,7 @@ import {
   resolveDataPaths,
   newestIntactSource,
   scheduleRestore,
+  type FetchLike,
   type HostApi,
   type SecretCipher,
   type Services,
@@ -255,7 +256,11 @@ async function start(): Promise<void> {
     readerFile: resource('db-reader.cjs'),
     // E2E: a stand-in worker and a model served by the test (no real Whisper)
     speechWorkerFile: unpackagedEnv('ARCHIVIST_TEST_SPEECH_WORKER') ?? resource('speech-worker.cjs'),
-    speech: testSpeechModels ? { models: JSON.parse(testSpeechModels) as Partial<Record<SpeechModelName, SpeechModelSpec>> } : undefined,
+    speech: {
+      // Chromium's network stack knows the Windows certificate store and the system proxy; Node's fetch knows neither (company networks)
+      fetchImpl: ((input, init) => net.fetch(input as string, init)) satisfies FetchLike,
+      ...(testSpeechModels ? { models: JSON.parse(testSpeechModels) as Partial<Record<SpeechModelName, SpeechModelSpec>> } : {}),
+    },
   });
   const appServices = services;
 

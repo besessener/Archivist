@@ -17,12 +17,19 @@ export interface InstallOptions {
 /** The DOM and the Node typings of a fetch body differ between the projects that compile this file; at runtime they are the same stream. */
 const toNodeStream = (body: unknown) => Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]);
 
+/** What Node or Chromium report for a failed request: Node nests the code (`ENOTFOUND`, a certificate error) in the cause, Chromium says `net::ERR_…`. */
+function reasonOf(cause: unknown): string {
+  if (!(cause instanceof Error)) return 'unbekannt';
+  const nested = cause.cause as { code?: string; message?: string } | undefined;
+  return nested?.code ?? nested?.message ?? cause.message;
+}
+
 const downloadFailed = (cause: unknown) =>
-  new AppError('network_error', 'Der Download des Spracherkennungsmodells ist fehlgeschlagen. Prüfe deine Internetverbindung und versuche es noch einmal.', {
-    retryable: true,
-    cause,
-    details: cause instanceof Error ? cause.message : undefined,
-  });
+  new AppError(
+    'network_error',
+    `Der Download des Spracherkennungsmodells ist fehlgeschlagen (${reasonOf(cause)}). Prüfe deine Internetverbindung und versuche es noch einmal.`,
+    { retryable: true, cause, details: cause instanceof Error ? cause.message : undefined },
+  );
 
 /** The speech model on disk: complete or absent, never half there. Files are checked against pinned size and SHA-256 before they replace anything. */
 export class SpeechModelStore {
