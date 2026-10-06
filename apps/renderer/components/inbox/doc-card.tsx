@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { ArchiveRestore, Eye, EyeOff, FileInput, FolderOpen, RefreshCw, ShieldOff } from 'lucide-react';
+import { ArchiveRestore, Eye, EyeOff, FileInput, FolderOpen, RefreshCw, Shield, ShieldOff } from 'lucide-react';
 import type { Settings } from '@archivist/shared';
 import type { ArchiveEdit } from '@/components/common/archive-dialog';
+import { IconAction } from '@/components/common/icon-action';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { call } from '@/lib/ipc';
@@ -26,6 +27,9 @@ export interface DocCardProps {
   /** Configured AI endpoint (shown in the confirmation). */
   llmBaseUrl: string;
 }
+
+/** Documents that could not be processed or were held back stand out in the list. */
+const STRIPES: Partial<Record<DocRecord['status'], 'danger'>> = { failed: 'danger', quarantined: 'danger' };
 
 export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive, onChanged, llmMode: mode, llmBaseUrl }: DocCardProps) {
   const { run, busy } = useRun();
@@ -73,7 +77,7 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
   };
 
   return (
-    <li className="rounded-xl border bg-card p-4" data-testid="inbox-item" data-status={doc.status}>
+    <li className="rounded-xl border bg-card shadow-card p-4" data-stripe={STRIPES[doc.status]} data-testid="inbox-item" data-status={doc.status}>
       <div className="flex items-start gap-3">
         <Checkbox
           checked={selected}
@@ -90,7 +94,7 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
           {doc.proposal && <DocProposal proposal={doc.proposal} />}
           {archivable && <ArchiveFields doc={doc} edit={edit} onEdit={onEdit} />}
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             {archivable && (
               <Button size="sm" onClick={onArchive} data-testid="inbox-archive" disabled={busy}>
                 <ArchiveRestore aria-hidden /> Archivieren …
@@ -117,43 +121,43 @@ export function InboxDocCard({ doc, edit, onEdit, selected, onSelect, onArchive,
                 <Eye aria-hidden /> Wieder aufnehmen
               </Button>
             )}
-            {doc.status !== 'analyzing' && !quarantined && !ignored && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                data-testid="inbox-reprocess"
-                onClick={async () => {
-                  // „vorher fragen“: every external transfer needs an explicit confirmation
-                  if (llmPossible && mode === 'confirm') setReprocessOpen(true);
-                  else await reprocess({ allowLlm: llmPossible });
-                }}
-              >
-                <RefreshCw aria-hidden /> Erneut verarbeiten
-              </Button>
-            )}
-            {!quarantined && !ignored && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                data-testid="inbox-exclude-llm"
-                onClick={async () => {
-                  const excluded = doc.llmStatus !== 'excluded';
-                  await run(() => call('documents:setLlmExcluded', { id: doc.id, excluded }), {
-                    success: excluded ? 'Wird nicht mehr extern analysiert.' : 'Externe Analyse wieder erlaubt.',
-                  });
-                  onChanged();
-                }}
-              >
-                <ShieldOff aria-hidden /> {doc.llmStatus === 'excluded' ? 'Externe Analyse erlauben' : 'Von externer Analyse ausschließen'}
-              </Button>
-            )}
-            {!ignored && (
-              <Button size="sm" variant="ghost" disabled={busy} data-testid="inbox-ignore" onClick={() => void ignore()}>
-                <EyeOff aria-hidden /> Ignorieren
-              </Button>
-            )}
+            <span className="flex items-center gap-0.5">
+              {doc.status !== 'analyzing' && !quarantined && !ignored && (
+                <IconAction
+                  label="Erneut verarbeiten"
+                  disabled={busy}
+                  data-testid="inbox-reprocess"
+                  onClick={async () => {
+                    // „vorher fragen“: every external transfer needs an explicit confirmation
+                    if (llmPossible && mode === 'confirm') setReprocessOpen(true);
+                    else await reprocess({ allowLlm: llmPossible });
+                  }}
+                >
+                  <RefreshCw aria-hidden />
+                </IconAction>
+              )}
+              {!quarantined && !ignored && (
+                <IconAction
+                  label={doc.llmStatus === 'excluded' ? 'Externe Analyse erlauben' : 'Von externer Analyse ausschließen'}
+                  disabled={busy}
+                  data-testid="inbox-exclude-llm"
+                  onClick={async () => {
+                    const excluded = doc.llmStatus !== 'excluded';
+                    await run(() => call('documents:setLlmExcluded', { id: doc.id, excluded }), {
+                      success: excluded ? 'Wird nicht mehr extern analysiert.' : 'Externe Analyse wieder erlaubt.',
+                    });
+                    onChanged();
+                  }}
+                >
+                  {doc.llmStatus === 'excluded' ? <Shield aria-hidden /> : <ShieldOff aria-hidden />}
+                </IconAction>
+              )}
+              {!ignored && (
+                <IconAction label="Ignorieren" disabled={busy} data-testid="inbox-ignore" onClick={() => void ignore()}>
+                  <EyeOff aria-hidden />
+                </IconAction>
+              )}
+            </span>
           </div>
         </div>
       </div>

@@ -80,7 +80,7 @@ function InboxContent() {
               onClick={() => setFilter(f.id)}
               className={cn(
                 'rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring',
-                filter === f.id ? 'border-primary bg-primary/12 text-primary' : 'hover:bg-accent',
+                filter === f.id ? 'border-primary bg-primary/12 text-foreground' : 'hover:bg-accent',
               )}
             >
               {f.label}

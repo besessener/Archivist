@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
+import { GROUP_HEADING } from '@/components/common/page-header';
+import { cn } from '@/lib/utils';
 
 const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v * 100)} %`);
 const share = (s: Metrics['current']) => (s.entries ? s.orphans / s.entries : 0);
@@ -20,7 +22,7 @@ function Tile({ label, value, hint, onClick, testId }: { label: string; value: s
       type="button"
       onClick={onClick}
       data-testid={testId}
-      className="flex flex-col items-start gap-0.5 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+      className="flex flex-col items-start gap-0.5 rounded-xl border bg-card shadow-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
     >
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-2xl font-semibold tabular-nums">{value}</span>
@@ -158,7 +160,7 @@ export function LinkageMetrics() {
   const decided = query.data.methods.filter((m) => m.rate !== null);
   return (
     <section aria-labelledby="linkage-title" className="mb-8" data-testid="linkage-metrics">
-      <h2 id="linkage-title" className="mb-2 flex items-center gap-2 text-sm font-semibold">
+      <h2 id="linkage-title" className={cn(GROUP_HEADING, 'mb-2')}>
         <Gauge className="size-4" aria-hidden /> Verknüpfungsgrad
       </h2>
       <div className="grid gap-3 sm:grid-cols-3">

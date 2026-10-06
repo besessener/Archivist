@@ -2,7 +2,7 @@
 
 import type { IpcOutput } from '@archivist/shared';
 import { Check, FolderKanban, GitMerge, Link2, Pencil, Trash2, Waypoints } from 'lucide-react';
-import { EntityIcon } from '@/components/common/entity-chip';
+import { TypeBadge } from '@/components/common/entity-chip';
 import { Markdown, type WikiResolver } from '@/components/common/markdown';
 import { CASE_ENTRY_TYPES } from '@/components/knowledge/case-dialog';
 import { canDelete } from '@/components/knowledge/delete-dialog';
@@ -44,9 +44,7 @@ export function EntityHeader(props: EntityHeaderProps) {
 function EntityBadges({ entity }: { entity: Entity }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge variant="info">
-        <EntityIcon type={entity.type} className="size-3" /> {ENTITY_TYPE_LABELS[entity.type]}
-      </Badge>
+      <TypeBadge type={entity.type}>{ENTITY_TYPE_LABELS[entity.type]}</TypeBadge>
       {entity.isSelf && (
         <Badge variant="success" data-testid="entity-self" title="Das bist du (Einstellungen → Über dich)">
           Du

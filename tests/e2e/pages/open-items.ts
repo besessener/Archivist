@@ -14,6 +14,7 @@ export function initOpenItems(page: Page) {
     inputs: {
       title: page.getByTestId('open-item-title'),
       responsibleUnknown: page.getByTestId('open-item-resp-unknown'),
+      due: page.getByTestId('open-item-due'),
       dueUnknown: page.getByTestId('open-item-due-unknown'),
     },
     rows: page.getByTestId('open-item-row'),

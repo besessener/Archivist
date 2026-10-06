@@ -6,7 +6,7 @@ import type { NeighborhoodGraph } from '@archivist/shared';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Button } from '@/components/ui/button';
 import { RELATION_TYPE_LABELS } from '@/lib/labels';
-import { ENTITY_TYPE_LABELS, entityHref } from '@/lib/nav';
+import { ENTITY_TYPE_LABELS, ENTITY_TYPE_TONES, entityHref } from '@/lib/nav';
 import { cn } from '@/lib/utils';
 import type { Point } from './graph-layout';
 
@@ -83,19 +83,16 @@ export function GraphNode({
       }}
       data-testid="graph-node"
       data-node-id={node.id}
+      data-tone={ENTITY_TYPE_TONES[node.type]}
     >
       <circle
         r={radius}
-        className={cn(
-          isCenter ? 'fill-primary stroke-primary' : 'fill-card stroke-muted-foreground',
-          isSelected && !isCenter && 'stroke-primary',
-          isGroup && 'fill-muted',
-        )}
+        className={cn(isCenter ? 'fill-tone stroke-tone' : 'fill-card stroke-tone', isSelected && !isCenter && 'stroke-primary', isGroup && 'fill-muted')}
         strokeWidth={isSelected ? 3 : 1.5}
         strokeDasharray={isGroup ? '3 2' : undefined}
       />
       <foreignObject x={-8} y={-8} width={16} height={16} pointerEvents="none">
-        <EntityIcon type={node.type} className={cn('size-4', isCenter ? 'text-primary-foreground' : 'text-muted-foreground')} />
+        <EntityIcon type={node.type} className={cn('size-4', isCenter && 'text-primary-foreground')} />
       </foreignObject>
       <text y={radius + 13} textAnchor="middle" className="fill-foreground text-[11px]">
         {isGroup ? `${node.count} ${ENTITY_TYPE_LABELS[node.type]}` : shorten(node.name)}
@@ -130,7 +127,7 @@ export function GraphSelection({ node, canExpand, busy, onExpand }: { node: Grap
   const router = useRouter();
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="graph-selection">
-      <EntityIcon type={node.type} className="size-4 text-primary" />
+      <EntityIcon type={node.type} className="size-4" />
       <span className="font-medium">{node.count !== null ? `${node.count} ${ENTITY_TYPE_LABELS[node.type]}` : node.name}</span>
       <span className="text-muted-foreground">{ENTITY_TYPE_LABELS[node.type]}</span>
       {node.count === null && (

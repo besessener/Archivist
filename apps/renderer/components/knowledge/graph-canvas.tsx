@@ -69,7 +69,7 @@ export function GraphCanvas({ graph, layout, nodeById, selected, fullscreen, onS
   };
 
   return (
-    <div className={cn('relative flex flex-col rounded-xl border bg-card', fullscreen && 'min-h-0 flex-1')}>
+    <div className={cn('relative flex flex-col rounded-xl border bg-card shadow-card', fullscreen && 'min-h-0 flex-1')}>
       <div className="absolute right-2 top-2 z-10 flex gap-1" data-testid="graph-controls">
         <Button size="icon" variant="outline" aria-label="Vergrößern" onClick={() => zoomAtCenter(BUTTON_STEP)} data-testid="graph-zoom-in">
           <Plus aria-hidden />

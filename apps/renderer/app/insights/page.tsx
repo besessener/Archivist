@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Lightbulb, Play } from 'lucide-react';
 import type { InsightChoice, InsightKind, IpcOutput } from '@archivist/shared';
 import { LoadMore } from '@/components/common/load-more';
-import { Page, PageHeader } from '@/components/common/page-header';
+import { GROUP_HEADING, Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { ContradictionsSection, ResolveContradictionDialog } from '@/components/insights/contradictions';
 import { InsightCard, rejectSuccess, type InsightActions } from '@/components/insights/insight-card';
@@ -21,6 +21,7 @@ import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import type { InsightRecord } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 type Contradiction = IpcOutput<'contradictions:list'>[number];
 type InsightStatus = 'open' | 'accepted' | 'rejected' | 'snoozed';
@@ -109,7 +110,7 @@ export default function InsightsPage() {
         )}
         {grouped.map(([kind, list]) => (
           <section key={kind} aria-labelledby={`k-${kind}`}>
-            <h2 id={`k-${kind}`} className="mb-2 flex items-center gap-2 text-sm font-semibold">
+            <h2 id={`k-${kind}`} className={cn(GROUP_HEADING, 'mb-2')}>
               {INSIGHT_KIND_LABELS[kind]} <Badge variant="secondary">{list.length}</Badge>
             </h2>
             <ul className="flex flex-col gap-3">

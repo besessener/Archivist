@@ -262,7 +262,7 @@ export function LinkDialog({
                     onChange={() => setTarget({ id: r.id, title: r.title })}
                     data-testid="link-result"
                   />
-                  <EntityIcon type={r.type} className="size-4 shrink-0 text-primary" />
+                  <EntityIcon type={r.type} className="size-4 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{r.title}</span>
                   <span className="text-xs text-muted-foreground">{ENTITY_TYPE_LABELS[r.type]}</span>
                   {checked && <span className="text-xs font-medium">ausgewählt</span>}

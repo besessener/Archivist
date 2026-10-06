@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Settings, SettingsPatch } from '@archivist/shared';
 import { SettingsService } from '../../packages/core/src/services/settings';
 
-type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent' | 'links' | 'speech';
+type SectionKey =
+  'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent' | 'links' | 'speech' | 'appearance';
 
 /** Two valid non-default value sets per section; every field differs between A and B, so a single saved field is observable. */
 const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<string, unknown> }> = {
@@ -70,6 +71,10 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
   speech: {
     a: { model: 'turbo' },
     b: { model: 'medium' },
+  },
+  appearance: {
+    a: { theme: 'dark' },
+    b: { theme: 'light' },
   },
   links: {
     a: { autoPropose: false, maxProposalsPerEntry: 2 },

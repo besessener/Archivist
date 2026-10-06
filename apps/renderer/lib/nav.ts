@@ -34,3 +34,23 @@ export const ENTITY_TYPE_LABELS: Record<RefType, string> = {
   reminder: 'Erinnerung',
   contradiction: 'Widerspruch',
 };
+
+/** Colour family of an object type or section; `[data-tone]` in globals.css maps each to a colour token. */
+export type Tone = 'primary' | 'document' | 'decision' | 'person' | 'project' | 'topic' | 'task' | 'danger' | 'neutral';
+
+export const ENTITY_TYPE_TONES: Record<RefType, Tone> = {
+  document: 'document',
+  decision: 'decision',
+  topic: 'topic',
+  category: 'topic',
+  tag: 'topic',
+  project: 'project',
+  case: 'project',
+  person: 'person',
+  task: 'task',
+  question: 'task',
+  reminder: 'task',
+  contradiction: 'danger',
+  event: 'neutral',
+  note: 'neutral',
+};

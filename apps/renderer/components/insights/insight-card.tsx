@@ -14,6 +14,13 @@ const DUPLICATE_KINDS = new Set<InsightKind>(['similar_entities']);
 const UNDO_KINDS = new Set<InsightKind>(['persons_merged']);
 const acceptLabel = (kind: InsightKind) => (DUPLICATE_KINDS.has(kind) ? 'Zusammenführen' : UNDO_KINDS.has(kind) ? 'Rückgängig' : 'Bestätigen');
 const rejectLabel = (kind: InsightKind) => (DUPLICATE_KINDS.has(kind) ? 'Verschieden' : UNDO_KINDS.has(kind) ? 'Behalten' : 'Ablehnen');
+/** Findings that something in the archive is wrong or no longer valid get a status stripe. */
+const STRIPES: Partial<Record<InsightKind, 'danger' | 'warning'>> = {
+  contradiction: 'danger',
+  decision_expired: 'warning',
+  outdated_info: 'warning',
+  possibly_superseded: 'warning',
+};
 export const rejectSuccess = (kind: InsightKind) =>
   DUPLICATE_KINDS.has(kind) ? 'Als verschieden gemerkt.' : UNDO_KINDS.has(kind) ? 'Zusammenführung behalten.' : 'Hinweis abgelehnt.';
 
@@ -26,7 +33,7 @@ export interface InsightActions {
 
 export function InsightCard({ insight, busy, actions }: { insight: InsightRecord; busy: boolean; actions: InsightActions }) {
   return (
-    <li className="rounded-xl border bg-card p-4" data-testid="insight-card" data-kind={insight.kind}>
+    <li className="rounded-xl border bg-card shadow-card p-4" data-stripe={STRIPES[insight.kind]} data-testid="insight-card" data-kind={insight.kind}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h3 className="font-semibold">{insight.title}</h3>
         <ConfidenceBadge value={insight.confidence} />

@@ -65,7 +65,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const offStatus = subscribe('status:changed', schedule);
     const offData = subscribe('data:changed', (payload) => {
       const scopes = scopesOf(payload);
-      if (scopes.length === 0 || scopes.some((s) => ['notifications', 'jobs', 'insights', 'settings', 'documents'].includes(s))) schedule();
+      if (scopes.length === 0 || scopes.some((s) => ['notifications', 'jobs', 'insights', 'settings', 'documents', 'openItems'].includes(s))) schedule();
     });
     const offJob = subscribe('job:updated', schedule);
     return () => {
@@ -75,6 +75,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (timer.current) clearTimeout(timer.current);
     };
   }, [bridgeAvailable, refreshStatus]);
+
+  const theme = status?.theme ?? 'system';
+  useEffect(() => {
+    if (theme === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   const importPaths = useCallback(
     async (paths: string[], localRejected: ImportResult['rejected']) => {

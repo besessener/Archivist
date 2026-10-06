@@ -30,6 +30,7 @@ open items and knowledge, and keeps the archive consistent. Features:
 | Schema and migrations | [datenbankschema-aendern.md](docs/how-to/datenbankschema-aendern.md) |
 | Tests, CI, quality gates | [qualitaetssicherung.md](docs/reference/qualitaetssicherung.md), [befehle.md](docs/reference/befehle.md) |
 | User-facing text, docs style | [texte-und-ansprache.md](docs/reference/texte-und-ansprache.md) |
+| Colours, surfaces, visual cues | [gestaltung.md](docs/reference/gestaltung.md) |
 
 ## Hard rules
 

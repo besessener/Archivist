@@ -12,6 +12,7 @@ export function initSettings(page: Page) {
       privacy: page.getByTestId('tab-privacy'),
       agent: page.getByTestId('tab-agent'),
       archive: page.getByTestId('tab-archive'),
+      appearance: page.getByTestId('tab-appearance'),
       notifications: page.getByTestId('tab-notifications'),
       backups: page.getByTestId('tab-backups'),
       audit: page.getByTestId('tab-audit'),
@@ -172,6 +173,8 @@ export function initSettings(page: Page) {
       storage: page.getByTestId('backup-storage'),
       sizeWarning: page.getByTestId('backup-size-warning'),
     },
+    /** „Darstellung“: the colour scheme (System, Hell, Dunkel). */
+    theme: page.getByTestId('settings-theme'),
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),
       saveReminderTime: page.getByTestId('settings-reminder-time-save'),
@@ -252,6 +255,12 @@ export function initSettings(page: Page) {
     },
     openBackups: async () => {
       await locators.tabs.backups.click();
+    },
+    /** Chooses a colour scheme in „Darstellung“; it is saved and applied at once. */
+    setTheme: async (theme: 'system' | 'light' | 'dark') => {
+      await locators.tabs.appearance.click();
+      await locators.theme.selectOption(theme);
+      await expect(locators.theme).toBeEnabled();
     },
     openNotifications: async () => {
       await locators.tabs.notifications.click();
