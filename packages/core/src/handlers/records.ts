@@ -136,6 +136,10 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'openItems:update': (input) => services.openItems.update(input.id, { patch: input.patch }),
     'openItems:close': (input) =>
       services.openItems.close(input.id, { status: input.status, confirmed: input.confirmed, trigger: UI_TRIGGER, resolutionNote: input.resolutionNote }),
+    'openItems:delete': (input) => {
+      services.openItems.delete(input.id, { confirmed: input.confirmed });
+      return { ok: true as const };
+    },
     'openItems:solutionPreview': (input) => services.solutions.preview(input.id),
     'openItems:generateSolution': (input) => services.solutions.generate(input.id, { confirmed: input.confirmed }),
     'openItems:cancelSolution': (input) => ({ cancelled: services.solutions.cancel(input.id) }),

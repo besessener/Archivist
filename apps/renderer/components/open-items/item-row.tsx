@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import type { EntrySubjects } from '@archivist/shared';
 import { localDate, localToday } from '@archivist/shared';
-import { BellPlus, Check, MessageSquare, Network, Pencil } from 'lucide-react';
+import { BellPlus, Check, MessageSquare, Network, Pencil, Trash2 } from 'lucide-react';
 import { ExtraSubjectsNote } from '@/components/common/extra-subjects';
 import { Markdown } from '@/components/common/markdown';
 import { SolutionSection, type SolutionSectionProps } from '@/components/open-items/solution';
@@ -35,6 +35,7 @@ export interface OpenItemActions {
   onRemind: (item: OpenItemRecord) => void;
   onRelated: (item: OpenItemRecord) => void;
   onClose: (item: OpenItemRecord) => void;
+  onDelete: (item: OpenItemRecord) => void;
   onChanged: () => void;
 }
 
@@ -145,6 +146,9 @@ function OpenItemButtons({ item, llm, actions }: Pick<OpenItemRowProps, 'item' |
       </Button>
       <Button size="sm" onClick={() => actions.onClose(item)} data-testid="open-item-close">
         <Check aria-hidden /> Erledigt …
+      </Button>
+      <Button size="sm" variant="outline" onClick={() => actions.onDelete(item)} data-testid="open-item-delete">
+        <Trash2 aria-hidden /> Löschen …
       </Button>
       <SolutionSection item={item} mode={llm.mode} llmConfigured={llm.configured} onChanged={actions.onChanged} />
     </div>

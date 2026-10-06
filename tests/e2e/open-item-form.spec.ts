@@ -20,4 +20,20 @@ test.describe('open items: the form', () => {
     await expect(row.getByTestId('badge-no-owner')).toHaveCount(0);
     await expect(row.getByTestId('badge-no-due')).toHaveCount(0);
   });
+
+  test('deleting an item asks first and removes it only after confirming', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('open-items');
+    const oi = app.openItems;
+    await oi.do.create('Alte Idee');
+    await expect(app.navigation.locators.count('open-items')).toHaveText('1');
+
+    await oi.row('Alte Idee').getByTestId('open-item-delete').click();
+    await page.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(oi.row('Alte Idee')).toBeVisible();
+
+    await oi.do.remove('Alte Idee');
+    await expect(app.navigation.locators.count('open-items')).toHaveCount(0);
+  });
 });

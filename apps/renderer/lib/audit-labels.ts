@@ -72,6 +72,7 @@ const ACTION_LABELS: Record<string, string> = {
   'open_item.create': 'Offenen Punkt angelegt',
   'open_item.update': 'Offenen Punkt bearbeitet',
   'open_item.close': 'Offenen Punkt abgeschlossen',
+  'open_item.delete': 'Offenen Punkt gelöscht',
   'open_item.add_source': 'Quelle zu einem offenen Punkt hinzugefügt',
   'open_item.solution': 'Lösungsvorschlag gespeichert',
   'open_item.solution_note': 'Lösung als Notiz gespeichert',
