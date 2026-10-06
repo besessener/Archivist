@@ -65,7 +65,7 @@ Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `dia
 
 ## Ein Dokument endgültig aus Archivist entfernen
 
-Lege das Dokument im Dokument-Dialog „In den Papierkorb“ und wähle unter **Einstellungen → Archiv → Papierkorb** **Aus Archivist entfernen …**. Bis dahin lässt sich alles wiederherstellen. Nach der zweiten Bestätigung ist weg:
+Lege das Dokument im Dokument-Dialog oder per Auswahl in der Dokumentliste „In den Papierkorb“ und wähle unter **Einstellungen → Archiv → Papierkorb** **Aus Archivist entfernen …**. Bis dahin lässt sich alles wiederherstellen. Nach der zweiten Bestätigung ist weg:
 
 - die Archivdatei und die eigene Eingangskopie im Papierkorb (dein Original außerhalb von Archivist bleibt),
 - der gespeicherte Text samt Zusammenfassung und Vorschlag, auch in den Undo-Daten des Änderungsprotokolls,

@@ -14,10 +14,12 @@ import { useRun } from '@/lib/use-run';
 import type { ArchiveResultRecord, DocRecord } from '@/lib/types';
 import { parseList } from '@/lib/utils';
 import { CaseSelect } from '@/components/knowledge/case-dialog';
+import { BulkTrashButton } from './bulk-trash';
 import { RenameDialog } from './rename-dialog';
 import { ReprocessDialog } from './reprocess-dialog';
 
-type Result = { kind: 'assign'; updated: number } | { kind: 'reprocess' } | { kind: 'move' | 'rename'; result: ArchiveResultRecord };
+type Result =
+  { kind: 'assign'; updated: number } | { kind: 'trash'; trashed: number } | { kind: 'reprocess' } | { kind: 'move' | 'rename'; result: ArchiveResultRecord };
 
 function AssignDialog({ docs, onClose, onDone }: { docs: DocRecord[]; onClose: () => void; onDone: (r: Result) => void }) {
   const [topic, setTopic] = useState('');
@@ -153,11 +155,13 @@ function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => vo
       title={
         result.kind === 'assign'
           ? `${plural(result.updated, ['Dokument', 'Dokumente'])} zugeordnet`
-          : result.kind === 'reprocess'
-            ? 'Neuverarbeitung gestartet'
-            : result.kind === 'rename'
-              ? 'Umbenennen abgeschlossen'
-              : 'Verschieben abgeschlossen'
+          : result.kind === 'trash'
+            ? `${plural(result.trashed, ['Dokument', 'Dokumente'])} in den Papierkorb gelegt`
+            : result.kind === 'reprocess'
+              ? 'Neuverarbeitung gestartet'
+              : result.kind === 'rename'
+                ? 'Umbenennen abgeschlossen'
+                : 'Verschieben abgeschlossen'
       }
       role="status"
       data-testid="bulk-result"
@@ -177,6 +181,7 @@ function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => vo
       )}
       {result.kind === 'reprocess' && <p>Den Fortschritt siehst du bei den Aufgaben. Neue Metadaten erscheinen als Vorschlag im jeweiligen Dokument.</p>}
       {result.kind === 'assign' && <p>Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.</p>}
+      {result.kind === 'trash' && <p>Wiederherstellen kannst du sie unter Einstellungen → Archiv → Papierkorb.</p>}
       <Button size="icon-sm" variant="ghost" className="absolute right-1 top-1" aria-label="Hinweis schließen" onClick={onDismiss}>
         <X aria-hidden />
       </Button>
@@ -217,6 +222,7 @@ export function BulkBar({ docs, onClear, onDone }: { docs: DocRecord[]; onClear:
           <Button size="sm" variant="outline" onClick={() => setDialog('reprocess')} data-testid="bulk-reprocess">
             <RefreshCw aria-hidden /> Neu verarbeiten
           </Button>
+          <BulkTrashButton docs={docs} onDone={(trashed) => finish({ kind: 'trash', trashed })} />
           <Button size="sm" variant="ghost" onClick={onClear} data-testid="bulk-clear">
             Auswahl aufheben
           </Button>

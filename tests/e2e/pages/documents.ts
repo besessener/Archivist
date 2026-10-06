@@ -20,6 +20,8 @@ export function initDocuments(page: Page) {
       selectAll: page.getByTestId('documents-select-all'),
       rename: page.getByTestId('bulk-rename'),
       reprocess: page.getByTestId('bulk-reprocess'),
+      trash: page.getByTestId('bulk-trash'),
+      confirmTrash: page.getByTestId('bulk-trash-confirm'),
       result: page.getByTestId('bulk-result'),
     },
     /** The detail dialog of a document, with „In den Papierkorb“. */
@@ -80,6 +82,13 @@ export function initDocuments(page: Page) {
       await locators.dialog.trash.click();
       await locators.dialog.confirmTrash.click();
       await expect(locators.dialog.root).toBeHidden();
+    },
+    /** Moves all listed documents into the trash from the list, after the confirmation. */
+    trashAll: async () => {
+      await locators.bulk.selectAll.click();
+      await locators.bulk.trash.click();
+      await locators.bulk.confirmTrash.click();
+      await expect(locators.bulk.result).toContainText('in den Papierkorb gelegt');
     },
     /** Renames all listed documents by a scheme: preview first, then rename. */
     renameAll: async (pattern: string, expectedName: string) => {

@@ -28,6 +28,27 @@ test.describe('trash', () => {
     await on(page).setup.do.complete(llm.url);
   });
 
+  test('documents selected in the list go into the trash without opening them', async ({ on, page, workspace }) => {
+    const app = on(page);
+    const note = workspace.addDownload('jour-fixe.txt', NOTE);
+    await app.inbox.do.importFile(note);
+    await app.navigation.do.open('inbox');
+    await app.inbox.do.waitForProposal('Arbeit/Projekte/Nordlicht');
+    await app.inbox.do.openArchivePlan();
+    await app.inbox.do.confirmArchive();
+    await app.inbox.locators.archivePlan.close.click();
+    await app.navigation.do.open('documents');
+    await expect(app.documents.locators.rows).toHaveCount(1);
+
+    await app.documents.do.trashAll();
+    await expect(app.documents.locators.rows).toHaveCount(0);
+
+    await app.navigation.do.open('settings');
+    await app.settings.do.openArchive();
+    await expect(app.settings.locators.trash.items).toHaveCount(1);
+    expect(fs.existsSync(note), "the user's original stays").toBe(true);
+  });
+
   test('a deleted document lands in the trash and can be restored; emptying deletes it for good', async ({ on, page, workspace }, testInfo) => {
     const app = on(page);
     const archivedFile = path.join(workspace.dataDir, 'archive', 'Arbeit', 'Projekte', 'Nordlicht', 'jour-fixe.txt');
