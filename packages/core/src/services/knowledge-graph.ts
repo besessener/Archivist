@@ -2,10 +2,12 @@ import type { EntityDetail, EntityType, GraphEntity, GraphRelation, RelationMeth
 import type { AppContext } from '../context';
 import type { AuditService } from './audit';
 import { GraphEntities, type EntityQuery, type NewEntity, type NodeSnapshot } from './graph/entities';
+import { isBlockedName } from './graph/blocked-names';
 import { subtopicPairs, subtreeOf } from './graph/hierarchy';
 import { LinkUndo, type LinkUndoData } from './graph/link-undo';
 import { EntityMerges } from './graph/merge';
 import type { MergeBatchResult, MergeOptions, MergeReindexer, MergeRequest, MergeResult } from './graph/merge-types';
+import { SubjectDeletion, type SubjectDeleteResult, type SubjectImpact } from './graph/subject-delete';
 import type { NeighborhoodGraph, NeighborhoodOptions } from './graph/neighborhood';
 import { GraphRelations, type AdoptedRelation, type LinkOptions, type LinkResult, type RelationChangeSet, type SystemUnlink } from './graph/relations';
 import type { RelationKey } from './graph/rows';
@@ -28,6 +30,7 @@ export class KnowledgeGraphService {
   private readonly views: GraphViews;
   private readonly userLinks: UserLinks;
   private readonly merges: EntityMerges;
+  private readonly deletions: SubjectDeletion;
 
   private readonly ctx: AppContext;
 
@@ -39,6 +42,7 @@ export class KnowledgeGraphService {
     this.views = new GraphViews(this.entities, this.relations);
     this.userLinks = new UserLinks({ ctx, audit, graph: { entities: this.entities, relations: this.relations } });
     this.merges = new EntityMerges({ ctx, audit, undo });
+    this.deletions = new SubjectDeletion({ ctx, audit, undo, snapshots: this.entities });
     new LinkUndo(ctx).register(undo);
   }
 
@@ -82,6 +86,21 @@ export class KnowledgeGraphService {
   /** Restores a node captured by `snapshotNode`; returns the number of relations skipped because their other end is gone. */
   restoreNode(snapshot: NodeSnapshot): number {
     return this.entities.restore(snapshot);
+  }
+
+  /** What deleting a person, topic, project or tag would remove (see {@link deleteSubject}). */
+  subjectImpact(id: string): SubjectImpact {
+    return this.deletions.impact(id);
+  }
+
+  /** Deletes a person, topic, project or tag with all its edges; its name stays blocked for the analysis. Undoable. */
+  deleteSubject(id: string, options: { actor: 'user' | 'agent'; trigger: string; reason?: string }): Promise<SubjectDeleteResult> {
+    return this.deletions.delete(id, options);
+  }
+
+  /** Whether the user deleted this name before: the analysis must not create it again. */
+  isBlockedName(subject: { type: EntityType; name: string }): boolean {
+    return isBlockedName(this.ctx.database.db, subject);
   }
 
   listEntities(opts: EntityQuery = {}): Array<GraphEntity & { relationCount: number }> {
@@ -245,6 +264,7 @@ export class KnowledgeGraphService {
   /** Sets the callback that rebuilds search index entries of records touched by a merge or its undo. */
   setReindexer(reindexer: MergeReindexer): void {
     this.merges.setReindexer(reindexer);
+    this.deletions.setReindexer(reindexer);
   }
 
   /** Merges one or more entities into a target (see {@link mergeMany}); one audit entry, undoable. */

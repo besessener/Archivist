@@ -180,7 +180,7 @@ export class AgentRunExecutor {
       // web search runs in chat only; background runs never leave the archive (#301)
       webSearch: kind === 'chat' && agent.webSearch,
       propose: (proposal) => {
-        setup.proposals.push(...proposalItems(proposal));
+        setup.proposals.push(...proposalItems(proposal, ctx));
         return proposedText(proposal.reason);
       },
       ...this.liveView(setup),

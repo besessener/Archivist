@@ -529,6 +529,16 @@ export const ipcContract = {
   ),
   /** Deletes a note after confirmation; undoable in the change log (#248). */
   'knowledge:deleteNote': channel(z.object({ id: Id, confirmed: Confirmed }), Ok),
+  /** What deleting a person, topic, project or tag would remove: relations and the records that name it. */
+  'knowledge:subjectImpact': channel(
+    z.object({ id: Id }),
+    z.object({
+      relations: z.number().int().min(0),
+      records: z.array(z.object({ table: z.enum(['documents', 'decisions', 'openItems', 'events']), id: Id, title: z.string(), main: z.boolean() })),
+    }),
+  ),
+  /** Deletes a person, topic, project or tag with all its edges after confirmation; its name stays blocked for the analysis. Undoable. */
+  'knowledge:deleteSubject': channel(z.object({ id: Id, confirmed: Confirmed }), Ok),
   /** The surroundings of an entry as a graph, 1–2 steps, filtered; big hubs grouped (#288). */
   'knowledge:neighborhood': channel(
     z.object({

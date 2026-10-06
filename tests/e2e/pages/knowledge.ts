@@ -9,7 +9,7 @@ export function initKnowledge(page: Page) {
       create: page.getByTestId('knowledge-create'),
       save: page.getByTestId('knowledge-new-save'),
       saveEvent: page.getByTestId('event-save'),
-      deleteNote: page.getByTestId('note-delete'),
+      deleteEntry: page.getByTestId('knowledge-delete'),
       confirmDelete: page.getByTestId('confirm-dialog-confirm'),
       merge: page.getByTestId('knowledge-merge'),
       proposeMerge: page.getByTestId('merge-propose'),
@@ -22,6 +22,7 @@ export function initKnowledge(page: Page) {
       eventDate: page.getByTestId('event-date'),
       mergeTarget: page.getByTestId('merge-target'),
     },
+    confirmDialog: page.getByTestId('confirm-dialog'),
     mergeAction: page.getByTestId('merge-action'),
     /** „Bestätigen“ on the merge proposal of the shown entry. */
     approveMerge: page.getByTestId('merge-action').getByTestId('action-approve'),

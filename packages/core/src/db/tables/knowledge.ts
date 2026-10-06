@@ -53,3 +53,15 @@ export const relations = sqliteTable(
   },
   (t) => [uniqueIndex('relations_unique_idx').on(t.sourceEntityId, t.targetEntityId, t.relationType), index('relations_target_idx').on(t.targetEntityId)],
 );
+
+/** Names the user deleted: the automatic analysis does not create them again (type + normalized name). */
+export const blockedSubjects = sqliteTable(
+  'blocked_subjects',
+  {
+    id: text('id').primaryKey(),
+    type: text('type').notNull(),
+    normalizedName: text('normalized_name').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('blocked_subjects_unique_idx').on(t.type, t.normalizedName)],
+);

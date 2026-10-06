@@ -97,7 +97,9 @@ Der Chat ist die zentrale Schnittstelle.
 - **„Neu anlegen“** auf der Wissen-Seite erzeugt echte Einträge (Ereignisse mit Datum über den Timeline-Dialog, Notizen indexiert) und öffnet bei einem bereits vorhandenen Eintrag diesen mit dem Hinweis „existiert bereits“.
 - **Unbestätigte Themen und Projekte**: Unverändert aus einem Dokument übernommene Themen und Projekte sind auf der Wissen-Seite „unbestätigt“ und werden dem Modell erst nach deiner Bestätigung (oder sobald du den Namen selbst verwendest) als bekannt genannt.
 - **Notizen bearbeiten**: „Bearbeiten“ auf der Wissen-Seite ändert Titel und Text einer Notiz; danach wird sie neu indexiert und neu analysiert. Rückgängig im Änderungsprotokoll.
-- **Notizen löschen**: „Löschen“ entfernt eine Notiz nach Bestätigung aus Wissensgraph und Suche; rückgängig im Änderungsprotokoll.
+- **Einträge löschen**: „Löschen“ auf der Wissen-Seite entfernt eine Notiz nach Bestätigung aus Wissensgraph und Suche; rückgängig im Änderungsprotokoll. Dasselbe gilt für offene Punkte und Ereignisse (Entscheidungen löschst du auf ihrer eigenen Seite).
+- **Personen, Themen, Projekte und Schlagwörter löschen**: „Löschen“ entfernt den Eintrag mit allen Verknüpfungen und Aliassen. Der Dialog nennt vorher, wie viele Verknüpfungen daran hängen und welche Einträge ihr Hauptthema oder -projekt verlieren; die Ablage ändert sich dadurch nicht, Dateien werden nicht verschoben. Der Name wird von der automatischen Analyse (Dokumente, Notizen) nicht wieder angelegt; wenn du ihn selbst anlegst, geht das weiter. Du selbst („Du“) lässt sich nicht löschen. Rückgängig im Änderungsprotokoll stellt Eintrag, Aliasse, Verknüpfungen und Namenslisten her und hebt die Sperre des Namens auf; ist der Name inzwischen neu angelegt, bleibt das Rückgängig gesperrt. Der Agent löscht mit `delete_subject`.
+- **Kennungen sind keine Personen**: Ein einzelnes Wort mit Ziffer („K35“, „D12“, „R-204“) legt die Analyse nicht als Person an.
 
 ## Verknüpfungen
 

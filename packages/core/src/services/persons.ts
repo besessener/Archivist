@@ -41,6 +41,8 @@ export interface ResolvePersonOptions {
   create?: boolean;
   /** Description of a newly created person. */
   description?: string | null;
+  /** The mention comes from the automatic analysis: a name the user deleted is not created again. */
+  fromAnalysis?: boolean;
 }
 
 /** Existing person the mention might mean; the mention was NOT assigned to it (unclear, must be asked). */
@@ -200,10 +202,18 @@ export class PersonService {
       };
     };
 
+    const rejection = (): PersonResolution => ({
+      entity: null,
+      name: null,
+      parsed,
+      matchedBy: null,
+      rejected: true,
+      selfReference: mention.selfReference,
+      ambiguousCandidates: [],
+    });
     if (isNotAPersonName(parsed.raw)) {
       const self = mention.selfReference ? this.selfResolver(mention) : null;
-      if (self) return result(self, { matchedBy: 'self' });
-      return { entity: null, name: null, parsed, matchedBy: null, rejected: true, selfReference: mention.selfReference, ambiguousCandidates: [] };
+      return self ? result(self, { matchedBy: 'self' }) : rejection();
     }
     const exact = this.graph.findByName('person', parsed.raw);
     if (exact) return result(exact, { matchedBy: 'exact' });
@@ -217,6 +227,7 @@ export class PersonService {
     if (self) return result(self, { matchedBy: 'self' });
     const candidates = unclearCandidates(parsed, { all, aliasHits });
     if (!create || !parsed.cleanName) return result(null, { matchedBy: null, candidates });
+    if (opts.fromAnalysis && this.graph.isBlockedName({ type: 'person', name: parsed.cleanName })) return rejection();
     return result(this.createPerson(parsed.cleanName, { description: opts.description, candidates }), { matchedBy: 'created', candidates });
   }
 

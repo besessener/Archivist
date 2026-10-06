@@ -170,11 +170,14 @@ export function parsePersonName(input: string): ParsedPersonName {
   return { raw, cleanName, roles: dedupe(roles), titles, comparisonKey: personNameKey(cleanName) };
 }
 
-/** True for pronouns, answer words ("ja", "nein", "unbekannt") and text without letters: never a person. */
+/** One word with a digit: an internal ID or code (K35, D12, R-204), never a name. */
+const IDENTIFIER = /^\S*\d\S*$/u;
+
+/** True for pronouns, answer words ("ja", "nein", "unbekannt"), identifiers and text without letters: never a person. */
 export function isNotAPersonName(input: string): boolean {
   const parsed = parsePersonName(input);
   const key = parsed.comparisonKey;
-  if (!/\p{L}/u.test(key) || key.replace(/ /g, '').length < 2) return true;
+  if (!/\p{L}/u.test(key) || key.replace(/ /g, '').length < 2 || IDENTIFIER.test(parsed.cleanName)) return true;
   return NOT_A_PERSON.has(key) || NOT_A_PERSON.has(personNameKey(parsed.raw));
 }
 

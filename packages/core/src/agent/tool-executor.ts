@@ -199,7 +199,7 @@ export class ToolExecutor {
   private isRead(call: AgentToolCall): boolean {
     const tool = this.options.registry.get(call.name);
     const parsed = tool?.schema.safeParse(call.args ?? {});
-    return Boolean(tool && parsed?.success && riskOf(tool, parsed.data) === 'read');
+    return Boolean(tool && parsed?.success && riskOf(tool, parsed.data, this.options.ctx) === 'read');
   }
 
   private collectQuestion(calls: AgentToolCall[], round: number): { question: UserQuestion | null; rejected: Map<number, AgentToolResult> } {
@@ -228,7 +228,7 @@ export class ToolExecutor {
     // invalid arguments go back to the model as an error result so it can correct itself – the run continues
     if (!parsed.success) return errorResult(call, `Ungültige Argumente: ${describeIssues(parsed.error)}`);
     const args = parsed.data;
-    const risk = riskOf(tool, args);
+    const risk = riskOf(tool, args, this.options.ctx);
     const step = this.addStep(runningStep(round, { tool, args, risk }));
     const running: RunningStep = { step, call, startedAt: this.options.now() };
     if (repetition > MAX_IDENTICAL_CALLS) {

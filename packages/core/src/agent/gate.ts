@@ -21,6 +21,8 @@ export function gateDecision({ tool, args, risk, ctx, massThreshold }: GateInput
       kind: 'block',
       reason: 'Gespeichert wird nur auf ausdrücklichen Wunsch des Benutzers. Frag zuerst mit ask_user nach, ob du dir das merken sollst.',
     };
+  if (tool.requiresUserRequest && !userAsked)
+    return { kind: 'block', reason: 'Gelerntes löschst du nur auf ausdrücklichen Wunsch des Benutzers. Frag zuerst mit ask_user nach.' };
   if (tool.needsConfirmedText?.(args) && !userAgrees(ctx.lastAnswer))
     return {
       kind: 'block',

@@ -93,6 +93,11 @@ describe('isNotAPersonName / isSelfReference (#28)', () => {
     for (const n of ['Monika', 'Monika Lor-Zade (chefin)', 'Jan', 'Ida', 'Jo Meier']) expect(isNotAPersonName(n), n).toBe(false);
   });
 
+  it('rejects internal identifiers and codes, keeps real names', () => {
+    for (const id of ['K35', 'D12', 'S3', 'k35', 'R-204', '4711', 'AB123']) expect(isNotAPersonName(id), id).toBe(true);
+    for (const name of ['Frank Tenzer', 'Frank Tenzer (Chef)', 'Anne-Marie Dubois']) expect(isNotAPersonName(name), name).toBe(false);
+  });
+
   it('recognises self references', () => {
     for (const w of ['ich', 'Ich selbst', 'mir', 'mich', 'mein', 'me']) expect(isSelfReference(w), w).toBe(true);
     for (const w of ['du', 'ja', 'Monika']) expect(isSelfReference(w), w).toBe(false);

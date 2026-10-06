@@ -137,19 +137,21 @@ export interface AgentTool<A = unknown> {
   description: string;
   schema: z.ZodType<A>;
   /** read: changes nothing; write: changes the archive (logged, undoable); critical: always asks (#298). */
-  risk: ToolRisk | ((args: A) => ToolRisk);
+  risk: ToolRisk | ((args: A, ctx?: ToolContext) => ToolRisk);
   /** Plain-language label of a call („Suche pptx-Dateien“). */
   label: (args: A) => string;
   /** How many entries a call would change (mass action threshold); default 1 for write tools. */
   count?: (args: A, ctx: ToolContext) => number;
   /** Learning tools may only store what the user explicitly asked for (#315). */
   requiresUserInstruction?: boolean;
+  /** Deleting tools run only on the user's own request in the chat. */
+  requiresUserRequest?: boolean;
   /** The user must confirm the exact wording first (a „Ja“ to the agent's question) before the call runs. */
   needsConfirmedText?: (args: A) => boolean;
   run: (args: A, ctx: ToolContext) => Promise<ToolOutput>;
 }
 
-export const riskOf = <A>(tool: AgentTool<A>, args: A): ToolRisk => (typeof tool.risk === 'function' ? tool.risk(args) : tool.risk);
+export const riskOf = <A>(tool: AgentTool<A>, args: A, ctx?: ToolContext): ToolRisk => (typeof tool.risk === 'function' ? tool.risk(args, ctx) : tool.risk);
 
 /** Typed helper so that `run` sees the parsed argument type. */
 export function defineTool<S extends z.ZodType>(tool: Omit<AgentTool<z.output<S>>, 'schema'> & { schema: S }): AgentTool<unknown> {
