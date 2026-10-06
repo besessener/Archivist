@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fitView, panView, screenScale, toGraphPoint, zoomView } from '../../apps/renderer/components/knowledge/graph-viewport';
 
-const FULL_VIEW = fitView(0);
+const FULL_VIEW = fitView({ width: 720, height: 440 });
 const rect = { left: 10, top: 20, width: 720, height: 440 };
 
 describe('graph viewport', () => {
@@ -27,10 +27,10 @@ describe('graph viewport', () => {
     expect(zoomView({ view: FULL_VIEW, factor: 0.001, focus, fit: FULL_VIEW }).width).toBe(1440);
   });
 
-  it('gives a graph with many nodes a larger frame than a small one', () => {
-    expect(fitView(15)).toEqual({ x: 0, y: 0, width: 720, height: 440 });
-    expect(fitView(60)).toEqual({ x: 0, y: 0, width: 1440, height: 880 });
-    expect(zoomView({ view: fitView(60), factor: 1000, focus: { x: 0, y: 0 }, fit: fitView(60) }).width).toBe(180);
+  it('shows the whole layout frame', () => {
+    expect(fitView({ width: 1440, height: 880 })).toEqual({ x: 0, y: 0, width: 1440, height: 880 });
+    const fit = fitView({ width: 1440, height: 880 });
+    expect(zoomView({ view: fit, factor: 1000, focus: { x: 0, y: 0 }, fit }).width).toBe(180);
   });
 
   it('pans the content along with the pointer', () => {

@@ -6,7 +6,7 @@ import type { NeighborhoodGraph } from '@archivist/shared';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { GraphEdge, GraphLegend, GraphNode, type GraphNodeRecord } from './graph-parts';
-import type { Point } from './graph-layout';
+import type { GraphLayout, Point } from './graph-layout';
 import { fitView, panView, screenScale, toGraphPoint, zoomView, type ViewBox } from './graph-viewport';
 
 const WHEEL_STEP = 1.0015;
@@ -14,7 +14,7 @@ const BUTTON_STEP = 1.4;
 
 type Props = {
   graph: NeighborhoodGraph;
-  positions: Map<string, Point>;
+  layout: GraphLayout;
   nodeById: Map<string, GraphNodeRecord>;
   selected: string | null;
   fullscreen: boolean;
@@ -23,17 +23,18 @@ type Props = {
 };
 
 /** The SVG with wheel zoom, drag to pan and a fullscreen toggle; the view resets when the centre entry changes. */
-export function GraphCanvas({ graph, positions, nodeById, selected, fullscreen, onSelect, onToggleFullscreen }: Props) {
+export function GraphCanvas({ graph, layout, nodeById, selected, fullscreen, onSelect, onToggleFullscreen }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<{ last: Point } | null>(null);
-  const fit = fitView(graph.nodes.length);
+  const { positions, frame } = layout;
+  const fit = fitView(frame);
   const fitRef = useRef(fit);
   fitRef.current = fit;
   const [view, setView] = useState<ViewBox>(fit);
   const viewRef = useRef(view);
   viewRef.current = view;
 
-  useEffect(() => setView(fitRef.current), [graph.centerId, graph.nodes.length]);
+  useEffect(() => setView(fitRef.current), [graph.centerId, frame.width, frame.height]);
 
   const zoomAtCenter = (factor: number) => {
     const current = viewRef.current;
