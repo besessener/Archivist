@@ -89,8 +89,6 @@ export default function InsightsPage() {
           </Button>
         }
       />
-      <LinkageMetrics />
-      <LinkProposals />
 
       <div className="mb-4 w-52">
         <Select value={status} onChange={(e) => setStatus(e.target.value as InsightStatus)} aria-label="Status filtern" data-testid="insight-status-filter">
@@ -139,6 +137,11 @@ export default function InsightsPage() {
           loading={contradictions.loading}
           testId="contradictions"
         />
+
+        <div>
+          <LinkageMetrics />
+          <LinkProposals />
+        </div>
       </div>
 
       <AcceptDialog
