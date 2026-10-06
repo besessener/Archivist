@@ -17,6 +17,7 @@ Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (sie
 | `consistency` | `onStartup`, `intervalHours` (0 = aus), `staleOpenItemDays` |
 | `speech` | `model` (`small`, `medium` oder `turbo`; die Einstellungen unter Archiv bieten genau diese drei an) |
 | `ocr` | `enabled`, `languages` (z. B. `deu+eng`; die Einstellungen bieten die mitgelieferten Sprachen Deutsch und Englisch an) |
+| `appearance` | `theme`: Farbschema `system` (Standard, wie das Betriebssystem), `light` oder `dark`; Einstellungen → Darstellung, gilt sofort |
 | `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3) |
 
 Der API-Key steht **nie** in `settings.json`, sondern verschlüsselt in `config/llm-api-key.enc`.

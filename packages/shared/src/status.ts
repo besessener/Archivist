@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AppErrorInfo } from './common';
 import { AgentCapability } from './agent';
+import { ThemeChoice } from './settings';
 
 export const AppStatus = z.object({
   version: z.string(),
@@ -30,6 +31,8 @@ export const AppStatus = z.object({
   openLinkProposals: z.number(),
   /** Active open items due before today (local day); the navigation shows their count in red. */
   overdueOpenItems: z.number(),
+  /** Colour scheme chosen in the settings; the renderer applies it as `data-theme`. */
+  theme: ThemeChoice,
   services: z.array(z.object({ name: z.string(), status: z.enum(['ok', 'degraded', 'error']), detail: z.string().nullable() })),
 });
 export type AppStatus = z.infer<typeof AppStatus>;

@@ -90,7 +90,7 @@ export function DecisionDetail({ id, onEdit, onDeleted }: { id: string; onEdit: 
         </TabsList>
         <TabsContent value="details" className="flex flex-col gap-4">
           {decision.missingFields.length > 0 && (
-            <div className="rounded-lg border border-warning/60 bg-warning/10 p-3 text-sm" data-testid="decision-detail-missing">
+            <div className="rounded-lg border border-warning/60 bg-warning-surface/50 p-3 text-sm" data-testid="decision-detail-missing">
               <p className="font-medium">Diese Entscheidung ist noch unvollständig</p>
               <p className="text-muted-foreground">Es fehlt: {decision.missingFields.map((field) => DECISION_FIELD_LABELS[field]).join(', ')}.</p>
             </div>

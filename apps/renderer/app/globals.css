@@ -19,17 +19,18 @@
   --destructive: #c22432;
   --destructive-foreground: #ffffff;
   --success: #166534;
-  --warning: #854d0e;
+  --warning: #806000;
+  --warning-surface: #fdf1c4;
   --border: #e4e4ea;
   --input: #d4d4dc;
   --ring: #7c7ce8;
   --info: #1d4ed8;
-  --attention: #d97706;
+  --attention: #e0a800;
   --sidebar: #efeff3;
   --user-bubble: #ececf1;
   --card-shadow: 0 1px 2px rgb(24 24 40 / 0.05), 0 2px 6px -2px rgb(24 24 40 / 0.06);
   --type-document: #2160c4;
-  --type-decision: #b45309;
+  --type-decision: #9a6700;
   --type-person: #15803d;
   --type-project: #7c3aed;
   --type-topic: #0e7490;
@@ -38,8 +39,9 @@
   color-scheme: light;
 }
 
+/* Dark tokens twice: for the system scheme, and for the explicit choice in Einstellungen → Darstellung (`data-theme`). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --background: #16161a;
     --canvas: #16161a;
     --foreground: #ececf0;
@@ -59,11 +61,12 @@
     --destructive-foreground: #14141a;
     --success: #4ade80;
     --warning: #facc15;
+    --warning-surface: rgb(250 204 21 / 0.2);
     --border: #2e2e36;
     --input: #3a3a44;
     --ring: #8b8bf0;
     --info: #6ea8ff;
-    --attention: #f59e0b;
+    --attention: #e9a23b;
     --sidebar: #111114;
     --user-bubble: #2d2d35;
     --card-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.4);
@@ -76,6 +79,45 @@
     --tone: var(--primary);
     color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --background: #16161a;
+  --canvas: #16161a;
+  --foreground: #ececf0;
+  --card: #1f1f25;
+  --card-foreground: #ececf0;
+  --popover: #212127;
+  --popover-foreground: #ececf0;
+  --primary: #8b8bf0;
+  --primary-foreground: #14141a;
+  --secondary: #2a2a31;
+  --secondary-foreground: #ececf0;
+  --muted: #25252b;
+  --muted-foreground: #9a9aa6;
+  --accent: #2d2d35;
+  --accent-foreground: #ececf0;
+  --destructive: #f47a84;
+  --destructive-foreground: #14141a;
+  --success: #4ade80;
+  --warning: #facc15;
+  --warning-surface: rgb(250 204 21 / 0.2);
+  --border: #2e2e36;
+  --input: #3a3a44;
+  --ring: #8b8bf0;
+  --info: #6ea8ff;
+  --attention: #e9a23b;
+  --sidebar: #111114;
+  --user-bubble: #2d2d35;
+  --card-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.4);
+  --type-document: #6aa1f2;
+  --type-decision: #e9a23b;
+  --type-person: #4fcf83;
+  --type-project: #b08cf6;
+  --type-topic: #3fc0d4;
+  --type-task: #f074a8;
+  --tone: var(--primary);
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -98,6 +140,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

@@ -55,5 +55,8 @@
   },
   "speech": {
     "model": "small"
+  },
+  "appearance": {
+    "theme": "system"
   }
 }

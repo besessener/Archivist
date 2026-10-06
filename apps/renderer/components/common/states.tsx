@@ -71,7 +71,7 @@ export function Notice({
       className={cn(
         'rounded-lg border p-3 text-sm',
         tone === 'info' && 'border-info/30 bg-info/8',
-        tone === 'warning' && 'border-warning/50 bg-warning/12',
+        tone === 'warning' && 'border-warning/50 bg-warning-surface/60',
         tone === 'danger' && 'border-destructive/40 bg-destructive/8',
         className,
       )}

@@ -76,6 +76,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [bridgeAvailable, refreshStatus]);
 
+  const theme = status?.theme ?? 'system';
+  useEffect(() => {
+    if (theme === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
   const importPaths = useCallback(
     async (paths: string[], localRejected: ImportResult['rejected']) => {
       if (paths.length === 0) {

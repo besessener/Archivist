@@ -9,6 +9,7 @@ import type {
   LlmTestResult,
   NotificationType,
   ReasoningEffort,
+  ThemeChoice,
   RelationStatus,
   ScanFileStatus,
 } from '@archivist/shared';
@@ -156,6 +157,12 @@ export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
   high: 'hoch',
   xhigh: 'sehr hoch',
   max: 'maximal',
+};
+
+export const THEME_LABELS: Record<ThemeChoice, string> = {
+  system: 'Wie das System',
+  light: 'Hell',
+  dark: 'Dunkel',
 };
 
 /** Background tasks with limits of their own. */

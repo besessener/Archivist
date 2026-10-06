@@ -2,6 +2,10 @@
 
 Farben, Flächen und Hervorhebungen des Renderers. Alle Werte sind Tokens in `apps/renderer/app/globals.css`, je für hell und dunkel; Komponenten verwenden nur die Tokens, nie feste Farbwerte.
 
+## Farbschema
+
+Einstellungen → Darstellung: **Wie das System** (Standard), **Hell** oder **Dunkel** (`appearance.theme`). Der Hauptprozess setzt `nativeTheme.themeSource`; `prefers-color-scheme` im Renderer folgt sofort, ohne Neustart.
+
 ## Flächen
 
 Drei Ebenen, von hinten nach vorn:
@@ -21,7 +25,7 @@ Jede Art eines Eintrags hat eine Farbe (`ENTITY_TYPE_TONES` in `apps/renderer/li
 | Farbe | Token | Arten |
 | --- | --- | --- |
 | Blau | `--type-document` | Dokument |
-| Bernstein | `--type-decision` | Entscheidung |
+| Gold | `--type-decision` | Entscheidung |
 | Grün | `--type-person` | Person |
 | Violett | `--type-project` | Projekt, Vorgang |
 | Petrol | `--type-topic` | Thema, Kategorie, Schlagwort |
@@ -33,7 +37,11 @@ Ein Element setzt `data-tone="<Farbe>"`; darin stehen die Klassen `text-tone`, `
 
 ## Bereiche
 
-Die Bereiche der Navigation stehen in `apps/renderer/lib/sections.ts`. Jede Seitenüberschrift (`PageHeader`) zeigt das Symbol ihres Bereichs in einer Kachel, getönt in der Farbe dessen, was der Bereich auflistet (Dokumente blau, Entscheidungen bernstein, offene Punkte pink, Wissen petrol). Chat und Insights sind indigo, Timeline, Scan und Einstellungen grau. Der aktive Eintrag der Navigation ist eine Karte mit indigo Balken am linken Rand.
+Die Bereiche der Navigation stehen in `apps/renderer/lib/sections.ts`. Jede Seitenüberschrift (`PageHeader`) zeigt das Symbol ihres Bereichs in einer Kachel, getönt in der Farbe dessen, was der Bereich auflistet (Dokumente blau, Entscheidungen gold, offene Punkte pink, Wissen petrol). Chat und Insights sind indigo, Timeline, Scan und Einstellungen grau. Der aktive Eintrag der Navigation ist eine Karte mit indigo Balken am linken Rand.
+
+## Warnfarbe
+
+Warnungen sind in beiden Schemata gelb, deutlich getrennt von Rot: Text `--warning` auf `--warning-surface` (Badges, Hinweiskästen), Streifen `--attention`.
 
 ## Indigo
 
@@ -54,7 +62,7 @@ Ein Streifen am linken Rand einer Karte (`data-stripe`) zeigt ihren Zustand, bev
 | Streifen | Karten |
 | --- | --- |
 | rot (`danger`) | offener Punkt überfällig; Entscheidung widerrufen; Widerspruch; Inbox-Dokument fehlgeschlagen oder in Quarantäne |
-| orange (`warning`) | offener Punkt in den nächsten 7 Tagen fällig; Entscheidung im Entwurf; Hinweis auf abgelaufene, veraltete oder vermutlich ersetzte Angaben |
+| gelb (`warning`) | offener Punkt in den nächsten 7 Tagen fällig; Entscheidung im Entwurf; Hinweis auf abgelaufene, veraltete oder vermutlich ersetzte Angaben |
 
 ## Aktionen auf Karten
 
