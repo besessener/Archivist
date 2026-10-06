@@ -2,7 +2,7 @@
 
 import { ShieldAlert } from 'lucide-react';
 import { EntityChip } from '@/components/common/entity-chip';
-import { Badge } from '@/components/ui/badge';
+import { ActionCard } from '@/components/common/action-card';
 import { useApp } from '@/lib/app-context';
 import type { EntityRef } from '@archivist/shared';
 
@@ -72,22 +72,10 @@ export function ContextPanel() {
           {m.actions.length > 0 && (
             <section className="mb-4">
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vorgeschlagene Aktionen</h3>
-              <ul className="flex flex-col gap-1.5 text-sm">
+              <ul className="flex flex-col gap-2">
                 {m.actions.map((a) => (
-                  <li key={a.id} className="rounded-md border bg-background p-2">
-                    <p>{a.label}</p>
-                    <Badge variant={a.status === 'proposed' ? 'warning' : 'secondary'} className="mt-1">
-                      {
-                        {
-                          proposed: 'Offen',
-                          approved: 'Wird ausgeführt',
-                          rejected: 'Abgelehnt',
-                          executed: 'Ausgeführt',
-                          failed: 'Fehlgeschlagen',
-                          withdrawn: 'Nicht mehr aktuell',
-                        }[a.status]
-                      }
-                    </Badge>
+                  <li key={a.id}>
+                    <ActionCard action={a} />
                   </li>
                 ))}
               </ul>

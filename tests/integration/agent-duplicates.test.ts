@@ -39,6 +39,7 @@ function depsOf(t: TestApp): ToolDeps {
     notifications: s.notifications,
     openItemDuplicates: s.openItemDuplicates,
     noteEventDuplicates: s.noteEventDuplicates,
+    contradictions: s.contradictions,
     memory: {} as never,
     fileJobs: s.agentFileJobs,
     links: s.links,

@@ -25,6 +25,7 @@ const INTENT_LABELS: Partial<Record<ChatIntent['intent'], string>> = {
   scan_start: 'Scan',
   exclude_path: 'Ausschluss',
   contradiction_check: 'Widerspruchsprüfung',
+  contradiction_resolve: 'Widerspruch auflösen',
   relation_decide: 'Beziehungen',
 };
 

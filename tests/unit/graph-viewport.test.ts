@@ -28,9 +28,9 @@ describe('graph viewport', () => {
   });
 
   it('gives a graph with many nodes a larger frame than a small one', () => {
-    expect(fitView(25)).toEqual({ x: 0, y: 0, width: 720, height: 440 });
-    expect(fitView(100)).toEqual({ x: 0, y: 0, width: 1440, height: 880 });
-    expect(zoomView({ view: fitView(100), factor: 1000, focus: { x: 0, y: 0 }, fit: fitView(100) }).width).toBe(180);
+    expect(fitView(15)).toEqual({ x: 0, y: 0, width: 720, height: 440 });
+    expect(fitView(60)).toEqual({ x: 0, y: 0, width: 1440, height: 880 });
+    expect(zoomView({ view: fitView(60), factor: 1000, focus: { x: 0, y: 0 }, fit: fitView(60) }).width).toBe(180);
   });
 
   it('pans the content along with the pointer', () => {

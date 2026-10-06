@@ -20,6 +20,7 @@ export function initOpenItems(page: Page) {
     /** „N von M“ note with „Mehr laden“ while the list holds only the newest open items. */
     capped: page.getByTestId('open-items-capped'),
     loadMore: page.getByTestId('open-items-load-more'),
+    deleteConfirm: page.getByTestId('open-item-delete-confirm'),
     reminderDialog: page.getByTestId('reminder-dialog'),
     /** „Anstehende Erinnerungen“ on the open-items page itself. */
     upcoming: page.getByRole('main').getByTestId('upcoming-reminders'),
@@ -35,6 +36,12 @@ export function initOpenItems(page: Page) {
       await locators.buttons.save.click();
       await expect(form).toBeHidden();
       await expect(row(title)).toBeVisible();
+    },
+    /** Deletes an open item through its „Löschen“ button and the confirmation dialog. */
+    remove: async (title: string) => {
+      await row(title).getByTestId('open-item-delete').click();
+      await locators.deleteConfirm.click();
+      await expect(row(title)).toHaveCount(0);
     },
     /** Sets the reminder of an open item to tomorrow via its „Erinnern“ dialog. */
     remindTomorrow: async (title: string) => {

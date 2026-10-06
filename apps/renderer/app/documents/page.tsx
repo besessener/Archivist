@@ -50,7 +50,7 @@ function DocumentsInner() {
   const topicSuffix = topicId ? `&topicId=${encodeURIComponent(topicId)}` : '';
 
   return (
-    <Page wide>
+    <Page>
       <PageHeader title="Dokumente" description="Alle archivierten und indexierten Dokumente. Klicke auf eine Zeile für Einzelheiten." />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-sm">

@@ -46,7 +46,7 @@ function DecisionsInner() {
   const selection = useSelection();
 
   return (
-    <Page wide className="lg:flex lg:h-full lg:flex-col">
+    <Page className="lg:flex lg:h-full lg:flex-col">
       <PageHeader
         title="Entscheidungen"
         description="Was wurde wann, von wem und warum entschieden? Unvollständige Entwürfe sind hervorgehoben."

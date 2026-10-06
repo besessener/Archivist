@@ -57,6 +57,8 @@ export class ChatDispatcher {
         return this.archiveReplies.excludePath(request);
       case 'contradiction_check':
         return this.archiveReplies.contradictionCheck(state);
+      case 'contradiction_resolve':
+        return this.archiveReplies.contradictionResolve(request);
       case 'relation_decide':
         return this.archiveReplies.relationDecide(request);
       default:

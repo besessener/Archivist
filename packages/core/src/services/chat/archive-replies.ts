@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { RELATION_TYPE_LABELS, type ArchivePlanItem, type DocumentRecord, type DocumentStatus, type Job, type StoredAgentAction } from '@archivist/shared';
+import { matchOpenItems } from '../open-item-matching';
 import { toErrorInfo } from '../../util/errors';
 import type { ConvState, Reply } from '../chat-state';
 import { CONTRADICTION_SCAN_JOB } from '../contradictions';
@@ -10,6 +11,12 @@ type Relation = ReturnType<ChatDeps['graph']['relationsOf']>[number];
 
 /** How long the chat waits for the scan job before it answers with what is known so far. */
 const SCAN_WAIT_MS = 20_000;
+
+const CONTRADICTION_RESOLUTION_LABELS = {
+  resolved: 'als aufgelöst markieren',
+  false_positive: 'als Fehlalarm markieren',
+  acknowledged: 'zur Kenntnis nehmen',
+} as const;
 
 const isInInbox = (d: DocumentRecord) => d.status === 'proposed' || d.status === 'staged';
 
@@ -172,6 +179,35 @@ export class ArchiveReplies {
       confidence: list.length ? Math.max(...list.map((c) => c.confidence)) : 0.5,
       state,
     };
+  }
+
+  /** Resolving is only ever a proposal card; without a clear hit the open contradictions are listed and the user names one. */
+  contradictionResolve({ conversationId, intent, state }: ChatRequest): Reply {
+    const resolution = intent.contradictionResolution ?? 'resolved';
+    const open = [...this.deps.contradictions.list({ status: 'detected' }), ...this.deps.contradictions.list({ status: 'acknowledged' })];
+    const reply = (content: string, extra: Partial<Reply> = {}): Reply => ({ intent: 'contradiction_resolve', content, confidence: 0.6, state, ...extra });
+    if (open.length === 0) return reply('Es gibt keine offenen Widersprüche.');
+    const hint = intent.query?.trim() ?? '';
+    const match = open.length === 1 && !hint ? { status: 'match' as const, item: open[0]! } : matchOpenItems({ hint, items: open });
+    if (match.status !== 'match') {
+      const candidates = match.status === 'ambiguous' ? match.items : open.slice(0, 5);
+      return reply(`Welchen Widerspruch meinst du?\n\n${candidates.map((c) => `• **${c.title}**`).join('\n')}`, { confidence: 0.4 });
+    }
+    const contradiction = match.item;
+    const action = this.deps.actions.propose({
+      actionType: 'resolve_contradiction',
+      label: `Widerspruch „${contradiction.title}“ ${CONTRADICTION_RESOLUTION_LABELS[resolution]}`,
+      rationale: 'Auf deinen Wunsch vorbereitet.',
+      confidence: 0.7,
+      affectedEntities: [{ type: 'contradiction', id: contradiction.id, label: contradiction.title }],
+      requiredConfirmation: 'confirm',
+      proposedParameters: { contradictionId: contradiction.id, resolution },
+      conversationId,
+    });
+    return reply(
+      `**${contradiction.title}**\n${contradiction.description}\n\nIch habe vorbereitet, ihn ${CONTRADICTION_RESOLUTION_LABELS[resolution]}. Bestätige die Karte, dann wird es ausgeführt.`,
+      { actions: [action] },
+    );
   }
 
   relationDecide({ conversationId, intent, state }: ChatRequest): Reply {

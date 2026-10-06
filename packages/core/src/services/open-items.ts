@@ -10,6 +10,7 @@ import type { AuditService } from './audit';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import { assertEditableStatusChange, newOpenItemRow, openItemIndexContent, plainPatchColumns, toOpenItem, type OpenItemRow } from './open-item-fields';
 import { ACTIVE_STATUSES, countOpenItemRows, openItemRows, type OpenItemFilter } from './open-item-list';
+import { deleteOpenItem } from './open-item-delete';
 import { matchOpenItems, type HintMatch } from './open-item-matching';
 import {
   OPEN_ITEM_STATUS_UNDO_TYPE,
@@ -329,6 +330,10 @@ export class OpenItemService {
     void this.reindex(id);
     this.deps.ctx.events.changed('openItems', 'status', 'reminders');
     return this.get(id);
+  }
+
+  delete(id: string, opts: { confirmed: boolean }): void {
+    deleteOpenItem(this.deps, id, opts);
   }
 
   /** Active items due before `today` (local calendar day, #77). */

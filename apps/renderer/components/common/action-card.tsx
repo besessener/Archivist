@@ -168,8 +168,13 @@ export function ActionCard({ action, onResolved }: { action: ActionRecord; onRes
     setCurrent(action);
   }, [action]);
   const { toast } = useToast();
-  // a big action runs as a job (#254): while it runs, the card reloads it whenever the job or the action changes
-  const running = useQuery('actions:get', { id: current.id }, { scopes: ['status'], jobs: true, enabled: current.status === 'approved' });
+  // a big action runs as a job (#254): while it runs, the card reloads it whenever the job or the action changes;
+  // an open one reloads too, so the same proposal shown twice (answer and context panel) stays in step
+  const running = useQuery(
+    'actions:get',
+    { id: current.id },
+    { scopes: ['status'], jobs: true, enabled: current.status === 'approved' || current.status === 'proposed' },
+  );
   useEffect(() => {
     if (running.data) setCurrent(running.data);
   }, [running.data]);

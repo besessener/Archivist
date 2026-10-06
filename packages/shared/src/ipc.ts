@@ -475,6 +475,8 @@ export const ipcContract = {
     }),
     OpenItem,
   ),
+  /** Deleting is a stage-2 action (explicit confirmation); undo restores the item from the audit log. */
+  'openItems:delete': channel(z.object({ id: Id, confirmed: Confirmed }), Ok),
   /** What would be sent for a solution proposal (without an LLM call) – for the confirmation dialog. */
   'openItems:solutionPreview': channel(z.object({ id: Id }), SolutionPreview),
   /** Generates a solution proposal via the LLM; in mode „vorher fragen“ only with confirmation. */

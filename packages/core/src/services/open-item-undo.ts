@@ -3,13 +3,14 @@ import { eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { openItems, reminders } from '../db/schema';
 import { nowIso } from '../util/ids';
-import type { KnowledgeGraphService, RelationChangeSet } from './knowledge-graph';
+import type { KnowledgeGraphService, NodeSnapshot, RelationChangeSet } from './knowledge-graph';
 import type { OpenItemRow } from './open-item-fields';
 import { syncReminderAt } from './reminders';
 import type { UndoService } from './undo';
 
 export const OPEN_ITEM_STATUS_UNDO_TYPE = 'open_item_status';
 export const OPEN_ITEM_UPDATE_UNDO_TYPE = 'open_item_update';
+export const OPEN_ITEM_DELETE_UNDO_TYPE = 'open_item_delete';
 
 export interface OpenItemUpdateUndo {
   id: string;
@@ -26,6 +27,13 @@ export interface OpenItemStatusUndo {
   afterUpdatedAt: string;
   /** Reminders ended on closing; undo brings them back. */
   reminders?: Array<{ id: string; status: string }>;
+}
+
+export interface OpenItemDeleteUndo {
+  item: OpenItemRow;
+  /** Graph node with its relations (`null` if it had none). */
+  node: NodeSnapshot | null;
+  reminders: Array<typeof reminders.$inferSelect>;
 }
 
 interface OpenItemUndoDeps {
@@ -49,6 +57,30 @@ function updateConflicts({ ctx, graph }: OpenItemUndoDeps, undoData: OpenItemUpd
   if (updatedAt === undefined) return [GONE];
   const conflicts = updatedAt === undoData.afterUpdatedAt ? [] : ['Der offene Punkt wurde seit der Bearbeitung verändert.'];
   return [...conflicts, ...graph.relationChangeConflicts(undoData.relations)];
+}
+
+function undoDelete({ ctx, graph, reindex }: OpenItemUndoDeps, { item, node, reminders: ownReminders }: OpenItemDeleteUndo): string {
+  const db = ctx.database.db;
+  const exists = (entityId: string | null) => (entityId && graph.getEntity(entityId) ? entityId : null);
+  const row: OpenItemRow = {
+    ...item,
+    topicId: exists(item.topicId),
+    projectId: exists(item.projectId),
+    responsiblePersonId: exists(item.responsiblePersonId),
+  };
+  let skipped = 0;
+  db.transaction(() => {
+    db.insert(openItems).values(row).run();
+    if (node) skipped = graph.restoreNode(node);
+    else graph.registerNode({ type: 'task', id: row.id, name: row.title, description: row.description });
+    for (const reminder of ownReminders) db.insert(reminders).values(reminder).run();
+    syncReminderAt(db, row.id);
+  });
+  void reindex(row.id);
+  ctx.events.changed('openItems', 'knowledge', 'status', 'reminders');
+  return skipped > 0
+    ? `Offener Punkt wiederhergestellt. ${skipped === 1 ? 'Eine Verknüpfung' : `${skipped} Verknüpfungen`} nicht, weil inzwischen entfernt.`
+    : 'Offener Punkt wiederhergestellt.';
 }
 
 function undoStatus({ ctx, reindex }: OpenItemUndoDeps, undoData: OpenItemStatusUndo): string {
@@ -82,11 +114,16 @@ function undoUpdate({ ctx, graph, reindex }: OpenItemUndoDeps, undoData: OpenIte
   return 'Bearbeitung des offenen Punkts rückgängig gemacht.';
 }
 
-/** Registers the undo handlers of closing and editing an open item. */
+/** Registers the undo handlers of closing, editing and deleting an open item. */
 export function registerOpenItemUndo(undo: UndoService, deps: OpenItemUndoDeps): void {
   undo.register(OPEN_ITEM_STATUS_UNDO_TYPE, {
     check: async (data) => statusConflicts(deps.ctx, data as OpenItemStatusUndo),
     run: async (data) => undoStatus(deps, data as OpenItemStatusUndo),
+  });
+  undo.register(OPEN_ITEM_DELETE_UNDO_TYPE, {
+    check: async (data) =>
+      updatedAtOf(deps.ctx, (data as OpenItemDeleteUndo).item.id) === undefined ? [] : ['Der offene Punkt ist bereits wiederhergestellt.'],
+    run: async (data) => undoDelete(deps, data as OpenItemDeleteUndo),
   });
   undo.register(OPEN_ITEM_UPDATE_UNDO_TYPE, {
     check: async (data) => updateConflicts(deps, data as OpenItemUpdateUndo),

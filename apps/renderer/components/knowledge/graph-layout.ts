@@ -4,13 +4,17 @@ type Node = NeighborhoodGraph['nodes'][number];
 type Body = { x: number; y: number; vx: number; vy: number };
 /** The bodies in node order (the order the forces are summed in) and the ideal edge length. */
 type Size = { width: number; height: number };
-type Layout = { bodies: Map<string, Body>; ids: string[]; spacing: number };
+type Pinnable = { body: Body; pinned: boolean };
+type Layout = { bodies: Map<string, Body>; ids: string[]; spacing: number; degrees: Map<string, number> };
 export type Point = { x: number; y: number };
 
 export const GRAPH_WIDTH = 720;
 export const GRAPH_HEIGHT = 440;
 const STEPS = 220;
-const NODES_PER_BASE_AREA = 25;
+const NODES_PER_BASE_AREA = 15;
+/** Space a node needs on screen: icon plus label. */
+const NODE_BOX = { width: 150, height: 64 };
+const SEPARATION_PASSES = 40;
 
 /** The layout area grows with the node count, so many nodes get room instead of being squeezed into the base frame. */
 export function layoutSize(nodeCount: number): Size {
@@ -68,7 +72,7 @@ function repel({ bodies, ids, spacing }: Layout) {
     }
 }
 
-function attract({ bodies, spacing }: Layout, edges: NeighborhoodGraph['edges']) {
+function attract({ bodies, spacing, degrees }: Layout, edges: NeighborhoodGraph['edges']) {
   for (const edge of edges) {
     const a = bodies.get(edge.source);
     const b = bodies.get(edge.target);
@@ -76,7 +80,8 @@ function attract({ bodies, spacing }: Layout, edges: NeighborhoodGraph['edges'])
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-    const force = (distance - spacing) / distance / 10;
+    // hubs with many edges would otherwise collapse their whole neighbourhood into one spot
+    const force = (distance - spacing) / distance / 10 / Math.sqrt(Math.max(degrees.get(edge.source) ?? 1, degrees.get(edge.target) ?? 1));
     a.vx += dx * force;
     a.vy += dy * force;
     b.vx -= dx * force;
@@ -91,6 +96,30 @@ function move({ body, temperature, size }: { body: Body; temperature: number; si
   body.vy *= 0.5;
 }
 
+/** Moves two overlapping boxes apart along the axis of the smaller overlap; a pinned body does not move. */
+function pushApart({ a, b, size }: { a: Pinnable; b: Pinnable; size: Size }) {
+  const overlapX = NODE_BOX.width - Math.abs(a.body.x - b.body.x);
+  const overlapY = NODE_BOX.height - Math.abs(a.body.y - b.body.y);
+  if (overlapX <= 0 || overlapY <= 0) return;
+  const horizontal = overlapX / NODE_BOX.width < overlapY / NODE_BOX.height;
+  const direction = (horizontal ? a.body.x - b.body.x : a.body.y - b.body.y) >= 0 ? 1 : -1;
+  const amount = (a.pinned || b.pinned ? 1 : 0.5) * (horizontal ? overlapX : overlapY) * direction;
+  for (const [{ body, pinned }, shift] of [
+    [a, amount],
+    [b, -amount],
+  ] as const) {
+    if (pinned) continue;
+    if (horizontal) body.x = Math.min(size.width - 40, Math.max(40, body.x + shift));
+    else body.y = Math.min(size.height - 30, Math.max(24, body.y + shift));
+  }
+}
+
+/** Pushes apart nodes whose boxes overlap; the centre stays put. */
+function separate({ bodies, ids }: Layout, { centerId, size }: { centerId: string; size: Size }) {
+  const pinnables = ids.map((id) => ({ body: bodies.get(id)!, pinned: id === centerId }));
+  for (let pass = 0; pass < SEPARATION_PASSES; pass += 1) pinnables.forEach((a, i) => pinnables.slice(i + 1).forEach((b) => pushApart({ a, b, size })));
+}
+
 function pinToCenter(body: Body, size: Size) {
   body.x = size.width / 2;
   body.y = size.height / 2;
@@ -102,7 +131,9 @@ export function layoutGraph(graph: NeighborhoodGraph): Map<string, Point> {
   const size = layoutSize(graph.nodes.length);
   const bodies = placeOnRings(graph.nodes, size);
   const ids = graph.nodes.map((node) => node.id);
-  const layout: Layout = { bodies, ids, spacing: Math.sqrt((size.width * size.height) / Math.max(ids.length, 1)) * 0.55 };
+  const degrees = new Map<string, number>();
+  for (const edge of graph.edges) for (const id of [edge.source, edge.target]) degrees.set(id, (degrees.get(id) ?? 0) + 1);
+  const layout: Layout = { bodies, ids, degrees, spacing: Math.sqrt((size.width * size.height) / Math.max(ids.length, 1)) * 0.55 };
   for (let step = 0; step < STEPS; step += 1) {
     repel(layout);
     attract(layout, graph.edges);
@@ -111,5 +142,6 @@ export function layoutGraph(graph: NeighborhoodGraph): Map<string, Point> {
       else move({ body, temperature: 1 - step / STEPS, size });
     }
   }
+  separate(layout, { centerId: graph.centerId, size });
   return new Map([...bodies].map(([id, body]) => [id, { x: body.x, y: body.y }]));
 }

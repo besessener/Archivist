@@ -44,7 +44,7 @@ export default function ScanPage() {
   const scan = settings.scan;
 
   return (
-    <Page wide>
+    <Page>
       <PageHeader
         title="Scan"
         description="Archivist kann Ordner auf diesem Computer nach neuen Dokumenten durchsuchen. Es wird nie etwas verändert, ohne dass du zustimmst."

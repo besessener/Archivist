@@ -7,7 +7,7 @@ import { useSubjectsOf } from '@/components/common/extra-subjects';
 import { LoadMore } from '@/components/common/load-more';
 import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
-import { CloseDialog, RelatedDialog, ReminderDialog } from '@/components/open-items/item-dialogs';
+import { CloseDialog, DeleteDialog, RelatedDialog, ReminderDialog } from '@/components/open-items/item-dialogs';
 import { ItemFormDialog } from '@/components/open-items/item-form-dialog';
 import { OpenItemRow, groupOf, type OpenItemActions, type OpenItemGroup } from '@/components/open-items/item-row';
 import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
@@ -36,6 +36,7 @@ export default function OpenItemsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<OpenItemRecord | null>(null);
   const [closeItem, setCloseItem] = useState<OpenItemRecord | null>(null);
+  const [deleteItem, setDeleteItem] = useState<OpenItemRecord | null>(null);
   const [remindItem, setRemindItem] = useState<OpenItemRecord | null>(null);
   const [relatedItem, setRelatedItem] = useState<OpenItemRecord | null>(null);
   const { settings } = useSettings();
@@ -51,6 +52,7 @@ export default function OpenItemsPage() {
     onRemind: setRemindItem,
     onRelated: setRelatedItem,
     onClose: setCloseItem,
+    onDelete: setDeleteItem,
     onChanged: () => void refetch(),
   };
 
@@ -109,6 +111,7 @@ export default function OpenItemsPage() {
       <ItemFormDialog key={`c-${createOpen}`} open={createOpen} onOpenChange={setCreateOpen} item={null} onSaved={() => void refetch()} />
       {editItem && <ItemFormDialog key={editItem.id} open onOpenChange={(open) => !open && setEditItem(null)} item={editItem} onSaved={() => void refetch()} />}
       <CloseDialog item={closeItem} onClose={() => setCloseItem(null)} onDone={() => void refetch()} />
+      <DeleteDialog item={deleteItem} onClose={() => setDeleteItem(null)} onDone={() => void refetch()} />
       <ReminderDialog item={remindItem} onClose={() => setRemindItem(null)} onDone={() => void refetch()} />
       <RelatedDialog item={relatedItem} onClose={() => setRelatedItem(null)} />
     </Page>

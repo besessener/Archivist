@@ -67,6 +67,32 @@ export function CloseDialog({ item, onClose, onDone }: ItemDialogProps) {
   );
 }
 
+export function DeleteDialog({ item, onClose, onDone }: ItemDialogProps) {
+  const { run } = useRun();
+  return (
+    <ConfirmDialog
+      open={item !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title="Offenen Punkt löschen?"
+      description={
+        item
+          ? `„${item.title}“ wird samt Erinnerungen aus Liste, Suche und Wissensgraph entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.`
+          : undefined
+      }
+      confirmLabel="Löschen"
+      confirmTestId="open-item-delete-confirm"
+      destructive
+      onConfirm={async () => {
+        if (!item) return;
+        const deleted = await run(() => call('openItems:delete', { id: item.id, confirmed: true }), { success: 'Punkt gelöscht.' });
+        if (!deleted) return;
+        onDone();
+        onClose();
+      }}
+    />
+  );
+}
+
 export function ReminderDialog({ item, onClose, onDone }: ItemDialogProps) {
   const { run, busy } = useRun();
   const { settings } = useSettings();

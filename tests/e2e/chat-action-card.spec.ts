@@ -29,4 +29,13 @@ test.describe('chat: proposal card follows the decision (#249)', () => {
     await expect(app.chat.locators.toasts.filter({ hasText: 'Aktion ausgeführt.' })).toBeVisible({ timeout: 30_000 });
     await expect(app.chat.locators.actionCards.last()).toHaveAttribute('data-status', 'executed');
   });
+
+  test('confirming in the context panel executes the action and updates the card under the answer', async ({ on, page }) => {
+    const app = on(page);
+
+    await app.chat.locators.panelActionCards.last().getByTestId('action-approve').click();
+
+    await expect(app.chat.locators.panelActionCards.last()).toHaveAttribute('data-status', 'executed', { timeout: 30_000 });
+    await expect(app.chat.locators.actionCards.last()).toHaveAttribute('data-status', 'executed', { timeout: 30_000 });
+  });
 });

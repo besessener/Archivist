@@ -25,6 +25,7 @@ Absichten (intent):
 - scan_start: Manuellen Scan nach neuen Dokumenten starten.
 - exclude_path: Datei oder Verzeichnis von künftigen Scans ausschließen.
 - contradiction_check: Inhaltliche Widersprüche zwischen Entscheidungen prüfen (nicht für Verzeichnisse oder Ordnung der Ablage: das ist archive_structure).
+- contradiction_resolve: Einen bereits gemeldeten Widerspruch auflösen, als Fehlalarm verwerfen oder zur Kenntnis nehmen („der Widerspruch zur Kündigungsfrist ist geklärt“, „das ist kein Widerspruch“). Setze contradictionResolution und nenne in query, welcher Widerspruch gemeint ist.
 - relation_decide: Eine vorgeschlagene Beziehung bestätigen oder ablehnen.
 - smalltalk / unknown.
 
