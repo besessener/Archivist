@@ -15,6 +15,18 @@ export function initSettings(page: Page) {
       notifications: page.getByTestId('tab-notifications'),
       backups: page.getByTestId('tab-backups'),
       audit: page.getByTestId('tab-audit'),
+      profile: page.getByTestId('tab-profile'),
+    },
+    /** Speech input (Profil): the model list, its download and deletion. */
+    speech: {
+      model: page.getByTestId('settings-speech-model'),
+      state: (name: string) => page.getByTestId(`settings-speech-state-${name}`),
+      install: page.getByTestId('settings-speech-install'),
+      download: page.getByTestId('settings-speech-download'),
+      cancel: page.getByTestId('settings-speech-cancel'),
+      error: page.getByTestId('settings-speech-error'),
+      remove: (name: string) => page.getByTestId(`settings-speech-remove-${name}`),
+      removeConfirm: page.getByTestId('settings-speech-remove-confirm'),
     },
     audit: {
       rows: page.getByTestId('audit-row'),

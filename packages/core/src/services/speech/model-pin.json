@@ -1,5 +1,14 @@
 {
-  "model": "small",
-  "revision": "",
-  "files": []
+  "small": {
+    "revision": "",
+    "files": []
+  },
+  "medium": {
+    "revision": "",
+    "files": []
+  },
+  "turbo": {
+    "revision": "",
+    "files": []
+  }
 }

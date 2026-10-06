@@ -20,7 +20,7 @@ test.describe('chat: speech input', () => {
     await page.waitForTimeout(1_500); // the synthetic microphone beeps once a second
     await dictation.toggle.click();
 
-    await expect(inputs.message).toHaveValue(/^Notiz: test-model hörte \d+ Werte$/);
+    await expect(inputs.message).toHaveValue(/^Notiz: test-small hörte \d+ Werte$/);
     await expect(dictation.toggle).toHaveAttribute('data-state', 'idle');
     await expect(messages).toHaveCount(0);
   });
@@ -96,6 +96,23 @@ test.describe('chat: speech input', () => {
     await expect(dictation.toggle).toHaveAttribute('data-state', 'recording');
 
     await expectNoSeriousA11yViolations(page, testInfo);
+  });
+
+  test('dictates with the model chosen in the settings', async ({ on, page }) => {
+    const { navigation, settings, chat } = on(page);
+    await navigation.do.open('settings');
+    await settings.locators.tabs.profile.click();
+    await settings.locators.speech.model.selectOption('medium');
+    await settings.locators.speech.install.click();
+    await expect(settings.locators.speech.state('medium')).toHaveText('heruntergeladen');
+    await navigation.do.open('chat');
+    await expect(chat.locators.dictation.toggle).toHaveAttribute('data-state', 'idle');
+
+    await chat.locators.dictation.toggle.click();
+    await page.waitForTimeout(1_500);
+    await chat.locators.dictation.toggle.click();
+
+    await expect(chat.locators.inputs.message).toHaveValue(/^test-medium hörte \d+ Werte$/);
   });
 
   test('has no serious or critical accessibility violations in the setup dialog', async ({ on, page }, testInfo) => {

@@ -1,3 +1,4 @@
+import type { SpeechModelName } from '@archivist/shared';
 import models from './models.json';
 import pin from './model-pin.json';
 
@@ -19,18 +20,13 @@ export interface SpeechModelSpec {
   files: SpeechModelFile[];
 }
 
-/** The models `npm run speech:pin -- --model <name>` can pin; `model-pin.json` (model, commit, files, checksums) is written by it, never by hand. */
-export type SpeechModelName = keyof typeof models;
+function specOf(name: SpeechModelName): SpeechModelSpec {
+  const { label, directory, repository } = models[name];
+  return { label, directory, baseUrl: `https://huggingface.co/${repository}/resolve`, revision: pin[name].revision, files: pin[name].files };
+}
 
-const chosen = models[pin.model as SpeechModelName];
-
-export const SPEECH_MODEL: SpeechModelSpec = {
-  label: chosen.label,
-  directory: chosen.directory,
-  baseUrl: `https://huggingface.co/${chosen.repository}/resolve`,
-  revision: pin.revision,
-  files: pin.files,
-};
+/** `model-pin.json` (commit, files and checksums per model) is written by `npm run speech:pin`, never by hand. */
+export const SPEECH_MODELS: Record<SpeechModelName, SpeechModelSpec> = { small: specOf('small'), medium: specOf('medium'), turbo: specOf('turbo') };
 
 export const totalBytes = (spec: SpeechModelSpec): number => spec.files.reduce((sum, file) => sum + file.bytes, 0);
 

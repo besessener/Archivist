@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Settings, SettingsPatch } from '@archivist/shared';
 import { SettingsService } from '../../packages/core/src/services/settings';
 
-type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent' | 'links';
+type SectionKey = 'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent' | 'links' | 'speech';
 
 /** Two valid non-default value sets per section; every field differs between A and B, so a single saved field is observable. */
 const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<string, unknown> }> = {
@@ -66,6 +66,10 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
   ocr: {
     a: { enabled: false, languages: 'eng' },
     b: { enabled: true, languages: 'deu+fra' },
+  },
+  speech: {
+    a: { model: 'turbo' },
+    b: { model: 'medium' },
   },
   links: {
     a: { autoPropose: false, maxProposalsPerEntry: 2 },
@@ -154,6 +158,7 @@ describe('SettingsPatch (Issue #55)', () => {
     expect(SettingsPatch.safeParse({ scan: { intervalMinutes: 1 } }).success).toBe(false);
     expect(SettingsPatch.safeParse({ ocr: { languages: 'deutsch' } }).success).toBe(false);
     expect(SettingsPatch.safeParse({ privacy: { llmMode: 'always' } }).success).toBe(false);
+    expect(SettingsPatch.safeParse({ speech: { model: 'gigantisch' } }).success).toBe(false);
   });
 });
 

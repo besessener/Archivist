@@ -20,7 +20,7 @@ Texterkennung läuft lokal mit `tesseract.js`; Sprachdaten liegen im Installatio
 
 ## Spracheingabe: lokal, nur Deutsch, ein Modell
 
-Die Spracheingabe nutzt Whisper „small“ (quantisiert) auf der CPU. Das ist für Diktate im Chat gedacht: Aufnahmen bis zwei Minuten, Erkennung ausschließlich Deutsch, kein Streaming (der Text erscheint nach dem Beenden der Aufnahme), kein Wake-Word. Ein größeres Modell (`medium`, `turbo`) wäre genauer, aber langsamer und größer; es wird beim Bauen mit `npm run speech:pin -- --model …` aus einer festen Liste gewählt, nicht in der Oberfläche. Die Grenzen sind bewusst gewählt. Das Modell kommt nicht im Installer mit, sondern per Download nach deiner Bestätigung, damit der Installer klein bleibt; im Modus „nur lokal“ lädt Archivist deshalb nichts nach.
+Die Spracheingabe nutzt Whisper (quantisiert) auf der CPU. Das ist für Diktate im Chat gedacht: Aufnahmen bis zwei Minuten, Erkennung ausschließlich Deutsch, kein Streaming (der Text erscheint nach dem Beenden der Aufnahme), kein Wake-Word. Du wählst unter Einstellungen → Profil → Spracheingabe aus einer festen Liste: „small“ (Standard) ist am schnellsten und kleinsten, „medium“ und „turbo“ erkennen Namen und Fachbegriffe besser, brauchen aber mehr Platz und länger; die Liste ist bewusst fest, weil jedes Modell auf eine geprüfte Version festgelegt sein muss (`npm run speech:pin`). Die Modelle kommen nicht im Installer mit, sondern per Download nach deiner Bestätigung, damit der Installer klein bleibt; im Modus „nur lokal“ lädt Archivist deshalb nichts nach.
 
 ## Kein Betriebssystem-Sandkasten für Parser
 
