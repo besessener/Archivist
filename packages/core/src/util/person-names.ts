@@ -171,13 +171,13 @@ export function parsePersonName(input: string): ParsedPersonName {
 }
 
 /** One word with a digit: an internal ID or code (K35, D12, R-204), never a name. */
-const IDENTIFIER = /^\S*\d\S*$/u;
+const isIdentifier = (name: string): boolean => !/\s/u.test(name) && /\d/u.test(name);
 
 /** True for pronouns, answer words ("ja", "nein", "unbekannt"), identifiers and text without letters: never a person. */
 export function isNotAPersonName(input: string): boolean {
   const parsed = parsePersonName(input);
   const key = parsed.comparisonKey;
-  if (!/\p{L}/u.test(key) || key.replace(/ /g, '').length < 2 || IDENTIFIER.test(parsed.cleanName)) return true;
+  if (!/\p{L}/u.test(key) || key.replace(/ /g, '').length < 2 || isIdentifier(parsed.cleanName)) return true;
   return NOT_A_PERSON.has(key) || NOT_A_PERSON.has(personNameKey(parsed.raw));
 }
 
