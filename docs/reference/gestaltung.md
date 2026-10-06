@@ -4,7 +4,7 @@ Farben, Flächen und Hervorhebungen des Renderers. Alle Werte sind Tokens in `ap
 
 ## Farbschema
 
-Einstellungen → Darstellung: **Wie das System** (Standard), **Hell** oder **Dunkel** (`appearance.theme`). Der Hauptprozess setzt `nativeTheme.themeSource`; `prefers-color-scheme` im Renderer folgt sofort, ohne Neustart.
+Einstellungen → Darstellung: **Wie das System** (Standard), **Hell** oder **Dunkel** (`appearance.theme`). Die Wahl gilt sofort, ohne Neustart: Der Hauptprozess setzt `nativeTheme.themeSource` (Menüs, Fensterrahmen, erster Aufbau), der Renderer setzt `data-theme` am `<html>` aus dem App-Status (`theme`). Die dunklen Tokens gelten bei `data-theme="dark"` und bei dunklem System ohne `data-theme="light"`.
 
 ## Flächen
 
