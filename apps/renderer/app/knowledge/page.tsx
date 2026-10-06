@@ -37,7 +37,7 @@ function KnowledgeInner() {
   };
 
   return (
-    <Page wide className="lg:flex lg:h-full lg:flex-col">
+    <Page className="lg:flex lg:h-full lg:flex-col">
       <PageHeader
         title="Wissen"
         description="Alles, was Archivist über deine Themen, Projekte und Personen weiß – und wie es zusammenhängt."
