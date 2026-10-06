@@ -8,12 +8,14 @@ import { useApp } from '@/lib/app-context';
 import { useQuery } from '@/lib/use-query';
 import { cn } from '@/lib/utils';
 
+type NavBadge = 'inbox' | 'insights' | 'openItems';
+
 interface NavItem {
   href: string;
   label: string;
   testId: string;
   icon: React.ComponentType<{ className?: string }>;
-  badge?: 'inbox' | 'insights';
+  badge?: NavBadge;
 }
 
 const ITEMS: NavItem[] = [
@@ -23,7 +25,7 @@ const ITEMS: NavItem[] = [
   { href: '/decisions/', label: 'Entscheidungen', testId: 'nav-decisions', icon: Gavel },
   { href: '/documents/', label: 'Dokumente', testId: 'nav-documents', icon: FileText },
   { href: '/timeline/', label: 'Timeline', testId: 'nav-timeline', icon: Clock },
-  { href: '/open-items/', label: 'Offene Punkte', testId: 'nav-open-items', icon: ListChecks },
+  { href: '/open-items/', label: 'Offene Punkte', testId: 'nav-open-items', icon: ListChecks, badge: 'openItems' },
   { href: '/insights/', label: 'Insights', testId: 'nav-insights', icon: Lightbulb, badge: 'insights' },
   { href: '/scan/', label: 'Scan', testId: 'nav-scan', icon: FolderSearch },
   { href: '/settings/', label: 'Einstellungen', testId: 'nav-settings', icon: Settings },
@@ -35,7 +37,12 @@ export function Sidebar() {
   // counts per status instead of the newest 1000 documents: the badge is exact and cheap (#214)
   const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
   const inboxCount = ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'].reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
-  const counts: Record<'inbox' | 'insights', number> = { inbox: inboxCount, insights: (status?.openInsights ?? 0) + (status?.openLinkProposals ?? 0) };
+  const { data: openItemCount } = useQuery('openItems:count', { onlyActive: true }, { scopes: ['openItems'] });
+  const counts: Record<NavBadge, number> = {
+    inbox: inboxCount,
+    openItems: openItemCount ?? 0,
+    insights: (status?.openInsights ?? 0) + (status?.openLinkProposals ?? 0),
+  };
 
   return (
     <nav aria-label="Hauptnavigation" className="flex h-full w-16 shrink-0 flex-col border-r bg-sidebar md:w-56">
