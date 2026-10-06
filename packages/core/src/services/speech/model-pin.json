@@ -1,14 +1,122 @@
 {
   "small": {
-    "revision": "",
-    "files": []
+    "revision": "36050c46d777d46dc4b5f43f6d90574fc38f8732",
+    "files": [
+      {
+        "path": "config.json",
+        "bytes": 2227,
+        "sha256": "457854d452f17661e197d74aee12b8e74fb75ba30ebfaa7426d0d61ea1e08a18"
+      },
+      {
+        "path": "generation_config.json",
+        "bytes": 3893,
+        "sha256": "f538b28220c6a6d6f1af1458d4141cacb4ef4963df3de98a19490440c412ddf0"
+      },
+      {
+        "path": "preprocessor_config.json",
+        "bytes": 339,
+        "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d"
+      },
+      {
+        "path": "tokenizer.json",
+        "bytes": 2480466,
+        "sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "bytes": 282683,
+        "sha256": "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce"
+      },
+      {
+        "path": "onnx/encoder_model_quantized.onnx",
+        "bytes": 92326160,
+        "sha256": "a43a83f3c5361cd591cfa7c36f14b43cf7cb22f47a415cc14a8d557be800fa92"
+      },
+      {
+        "path": "onnx/decoder_model_merged_quantized.onnx",
+        "bytes": 156750845,
+        "sha256": "ec07c3cbb64172c39791e26ee870a65ac22b458c36722bfe2776b3dbf741e0c9"
+      }
+    ]
   },
   "medium": {
-    "revision": "",
-    "files": []
+    "revision": "8c5b90880ab9f79487ab33613413431bf661d595",
+    "files": [
+      {
+        "path": "config.json",
+        "bytes": 2256,
+        "sha256": "a9c2ef0290a8fa3d203231dd01a074891b7f595d5d305ead2aac8ac5e6e47105"
+      },
+      {
+        "path": "generation_config.json",
+        "bytes": 3694,
+        "sha256": "c57f39da43ff86f60451a1c978743ca48fd995ac5d7e3c3534f856d0bed57770"
+      },
+      {
+        "path": "preprocessor_config.json",
+        "bytes": 339,
+        "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d"
+      },
+      {
+        "path": "tokenizer.json",
+        "bytes": 2480466,
+        "sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "bytes": 282683,
+        "sha256": "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce"
+      },
+      {
+        "path": "onnx/encoder_model_quantized.onnx",
+        "bytes": 313468028,
+        "sha256": "7d6b4a00e441271646327f8a71b6e1bd1a305013cd914b51ddd76919c59ee3af"
+      },
+      {
+        "path": "onnx/decoder_model_merged_quantized.onnx",
+        "bytes": 462661606,
+        "sha256": "2cdd6d06ebdf9d993d21117bfeeb7e9b399521b7766d3df77c54a85d6dcf3c08"
+      }
+    ]
   },
   "turbo": {
-    "revision": "",
-    "files": []
+    "revision": "360ebcde2559d60bb474678be3c1de9ef347d01a",
+    "files": [
+      {
+        "path": "config.json",
+        "bytes": 1332,
+        "sha256": "35cd83669f75bc2867f3b3a4461850392d5e308cd6ea951c3700539883c28df1"
+      },
+      {
+        "path": "generation_config.json",
+        "bytes": 3897,
+        "sha256": "16f95291d2f47c944d3c2b19390bba7965666555c1ea2a0bdc850d1fab45612f"
+      },
+      {
+        "path": "preprocessor_config.json",
+        "bytes": 340,
+        "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+      },
+      {
+        "path": "tokenizer.json",
+        "bytes": 2480617,
+        "sha256": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "bytes": 282843,
+        "sha256": "844b642c73a91359722f47b35705f7174686df33d252695d8572cf9ac03a6389"
+      },
+      {
+        "path": "onnx/encoder_model_quantized.onnx",
+        "bytes": 644822195,
+        "sha256": "d2f853dc3254fdc0079f55dd4433ea716ac98ec5574d3b475f288f2a77cebba9"
+      },
+      {
+        "path": "onnx/decoder_model_merged_quantized.onnx",
+        "bytes": 439936716,
+        "sha256": "61481bd3be3a445d5a4b9070e8f8b2c6cc4fbbbbdc9f0e7ed048a132b8b84e0d"
+      }
+    ]
   }
 }
