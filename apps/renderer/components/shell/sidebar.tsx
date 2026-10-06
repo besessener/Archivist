@@ -9,6 +9,8 @@ import { useQuery } from '@/lib/use-query';
 import { cn } from '@/lib/utils';
 
 type NavBadge = 'inbox' | 'insights' | 'openItems';
+/** One counter next to a navigation entry; `muted` ones (link proposals) are grey and follow the primary ones. */
+type NavCount = { value: number; ariaLabel: string; testIdSuffix: string; muted?: true };
 
 interface NavItem {
   href: string;
@@ -38,10 +40,15 @@ export function Sidebar() {
   const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
   const inboxCount = ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'].reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
   const { data: openItemCount } = useQuery('openItems:count', { onlyActive: true }, { scopes: ['openItems'] });
-  const counts: Record<NavBadge, number> = {
-    inbox: inboxCount,
-    openItems: openItemCount ?? 0,
-    insights: (status?.openInsights ?? 0) + (status?.openLinkProposals ?? 0),
+  const openInsights = status?.openInsights ?? 0;
+  const openLinkProposals = status?.openLinkProposals ?? 0;
+  const counts: Record<NavBadge, NavCount[]> = {
+    inbox: [{ value: inboxCount, ariaLabel: `${inboxCount} offen`, testIdSuffix: 'count' }],
+    openItems: [{ value: openItemCount ?? 0, ariaLabel: `${openItemCount ?? 0} offen`, testIdSuffix: 'count' }],
+    insights: [
+      { value: openInsights, ariaLabel: `offene Hinweise: ${openInsights}`, testIdSuffix: 'count' },
+      { value: openLinkProposals, ariaLabel: `offene Verknüpfungsvorschläge: ${openLinkProposals}`, testIdSuffix: 'links-count', muted: true },
+    ],
   };
 
   return (
@@ -58,7 +65,7 @@ export function Sidebar() {
       <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
         {ITEMS.map((item) => {
           const active = pathname.startsWith(item.href.slice(0, -1));
-          const count = item.badge ? counts[item.badge] : 0;
+          const shown = (item.badge ? counts[item.badge] : []).filter((count) => count.value > 0);
           return (
             <li key={item.href}>
               <Link
@@ -73,15 +80,20 @@ export function Sidebar() {
               >
                 <item.icon className="size-4 shrink-0" />
                 <span className="hidden flex-1 md:inline">{item.label}</span>
-                {count > 0 && (
-                  <Badge
-                    variant="default"
-                    data-testid={`${item.testId}-count`}
-                    className="absolute right-1 top-0.5 min-w-5 justify-center px-1.5 md:static"
-                    aria-label={`${count} offen`}
-                  >
-                    {count > 99 ? '99+' : count}
-                  </Badge>
+                {shown.length > 0 && (
+                  <span className="absolute right-1 top-0.5 flex flex-col items-end gap-0.5 md:static md:flex-row">
+                    {shown.map((count) => (
+                      <Badge
+                        key={count.testIdSuffix}
+                        variant={count.muted ? 'outline' : 'default'}
+                        data-testid={`${item.testId}-${count.testIdSuffix}`}
+                        className={cn('min-w-5 justify-center px-1.5', count.muted && 'border-muted-foreground/40 text-muted-foreground')}
+                        aria-label={count.ariaLabel}
+                      >
+                        {count.value > 99 ? '99+' : count.value}
+                      </Badge>
+                    ))}
+                  </span>
                 )}
               </Link>
             </li>

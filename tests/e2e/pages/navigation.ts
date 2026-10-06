@@ -11,6 +11,8 @@ export function initNavigation(page: Page) {
     link: (section: Section) => root.getByTestId(`nav-${section}`),
     /** The count badge of a section (only shown while the count is above zero). */
     count: (section: Section) => root.getByTestId(`nav-${section}-count`),
+    /** The grey second badge of Insights: open link proposals, counted apart from the findings. */
+    insightLinksCount: root.getByTestId('nav-insights-links-count'),
     /** The connection indicator in the header; its accessible name carries the state. */
     llmStatus: page.getByTestId('llm-status'),
     /** The popover the connection indicator opens. */

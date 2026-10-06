@@ -10,7 +10,7 @@ import { ENTITY_TYPE_LABELS } from '@/lib/nav';
 import { useRun } from '@/lib/use-run';
 import { GraphSelection, GraphTable, type GraphNodeRecord } from './graph-parts';
 import { GraphCanvas } from './graph-canvas';
-import { layoutGraph, mergeGraphs, type Point } from './graph-layout';
+import { GRAPH_HEIGHT, GRAPH_WIDTH, layoutGraph, mergeGraphs, type GraphLayout } from './graph-layout';
 import { cn } from '@/lib/utils';
 
 type Status = '' | 'confirmed' | 'proposed';
@@ -59,7 +59,10 @@ export function GraphView({ id }: { id: string }) {
     return () => window.removeEventListener('keydown', close);
   }, [fullscreen]);
 
-  const positions = useMemo(() => (graph ? layoutGraph(graph) : new Map<string, Point>()), [graph]);
+  const layout = useMemo<GraphLayout>(
+    () => (graph ? layoutGraph(graph) : { positions: new Map(), frame: { width: GRAPH_WIDTH, height: GRAPH_HEIGHT } }),
+    [graph],
+  );
   const nodeById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph]);
   const selectedNode = selected ? nodeById.get(selected) : undefined;
 
@@ -124,7 +127,7 @@ export function GraphView({ id }: { id: string }) {
         <>
           <GraphCanvas
             graph={graph}
-            positions={positions}
+            layout={layout}
             nodeById={nodeById}
             selected={selected}
             fullscreen={fullscreen}

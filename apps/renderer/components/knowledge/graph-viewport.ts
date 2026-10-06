@@ -1,12 +1,12 @@
-import { layoutSize, type Point } from './graph-layout';
+import type { Point, Size } from './graph-layout';
 
 /** The visible part of the graph in graph coordinates (the SVG viewBox). */
 export type ViewBox = { x: number; y: number; width: number; height: number };
 type ScreenRect = { left: number; top: number; width: number; height: number };
 
-/** The frame that shows the whole layout: its size is the layout area, which grows with the node count. */
-export function fitView(nodeCount: number): ViewBox {
-  return { x: 0, ...layoutSize(nodeCount), y: 0 };
+/** The view that shows the whole layout frame. */
+export function fitView(frame: Size): ViewBox {
+  return { x: 0, y: 0, ...frame };
 }
 
 /** Screen pixels per graph unit; the SVG keeps its aspect ratio, so the smaller axis wins. */
