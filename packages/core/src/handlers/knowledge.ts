@@ -120,6 +120,14 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
       services.notes.delete(input.id, { confirmed: input.confirmed, trigger: UI_TRIGGER });
       return { ok: true as const };
     },
+    'knowledge:subjectImpact': (input) => {
+      const { relations, records } = services.graph.subjectImpact(input.id);
+      return { relations, records };
+    },
+    'knowledge:deleteSubject': async (input) => {
+      await services.graph.deleteSubject(input.id, { actor: 'user', trigger: UI_TRIGGER });
+      return { ok: true as const };
+    },
     'knowledge:unlink': (input) => {
       services.graph.unlinkEntries(input.relationId, { trigger: UI_TRIGGER });
       return { ok: true as const };

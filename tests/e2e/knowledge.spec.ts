@@ -46,11 +46,27 @@ test.describe('knowledge: create new', () => {
     await k.do.create({ type: 'note', name: 'Mietvertrag Hauptstraße', description: 'Mietvertrag Hauptstraße' });
     await expect(k.heading()).toHaveText('Mietvertrag Hauptstraße');
 
-    await k.locators.buttons.deleteNote.click();
+    await k.locators.buttons.deleteEntry.click();
     await k.locators.buttons.confirmDelete.click();
 
     await expect(k.locators.toasts.filter({ hasText: 'Notiz gelöscht.' })).toBeVisible();
     await expect(k().filter({ hasText: 'Mietvertrag Hauptstraße' })).toHaveCount(0);
+  });
+
+  test('deletes a person after confirmation and removes it from the list', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('knowledge');
+    const k = app.knowledge;
+    await k.do.create({ type: 'person', name: 'Frieda Fehler' });
+    await expect(k.heading()).toHaveText('Frieda Fehler');
+
+    await k.locators.buttons.deleteEntry.click();
+    await expect(k.locators.confirmDialog).toContainText('Es hängt nichts daran.');
+    await k.locators.buttons.confirmDelete.click();
+
+    await expect(k.locators.toasts.filter({ hasText: 'Person gelöscht.' })).toBeVisible();
+    await expect(k().filter({ hasText: 'Frieda Fehler' })).toHaveCount(0);
   });
 
   test('proposes merging persons and projects, not only topics (#188)', async ({ llm, on, page }, testInfo) => {

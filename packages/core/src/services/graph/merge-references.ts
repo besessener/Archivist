@@ -58,8 +58,8 @@ export const REF_TABLES: Record<RefTableName, RefTableSpec> = {
 export const TOPIC_OR_PROJECT = new Set<string>(['topic', 'project']);
 
 export const refTable = (name: RefTableName): RefTableShape => REF_TABLES[name].table as RefTableShape;
-const column = (table: RefTableShape, name: string): SQLiteColumn => (table as unknown as Record<string, SQLiteColumn>)[name]!;
-const selection = (table: RefTableShape, columns: string[]): Record<string, SQLiteColumn> =>
+export const column = (table: RefTableShape, name: string): SQLiteColumn => (table as unknown as Record<string, SQLiteColumn>)[name]!;
+export const selection = (table: RefTableShape, columns: string[]): Record<string, SQLiteColumn> =>
   Object.fromEntries(columns.map((name) => [name, column(table, name)]));
 
 /** How the records of one merge step are rewritten. */

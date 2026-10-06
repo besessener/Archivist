@@ -227,14 +227,15 @@ export class ArchiveExecutor {
     if (categoryPath) this.deps.categories.create(categoryPath, { confirmed: true });
     // a name taken over unchanged from the document's analysis stays unconfirmed until the user uses it (#199)
     const fromDocument = (name: string, proposed: string | null | undefined) => normalizeName(name) === normalizeName(proposed ?? '');
-    const topic = topicName
-      ? graph.ensureEntity({ type: 'topic', name: topicName, description: null, fromDocument: fromDocument(topicName, proposal?.topic) })
-      : null;
-    const project = projectName
-      ? graph.ensureEntity({ type: 'project', name: projectName, description: null, fromDocument: fromDocument(projectName, proposal?.project) })
-      : null;
+    // a name the user deleted before is not created again from the analysis
+    const subject = (type: 'topic' | 'project', name: string | null, proposed: string | null | undefined) => {
+      if (!name || (fromDocument(name, proposed) && graph.isBlockedName({ type, name }))) return null;
+      return graph.ensureEntity({ type, name, description: null, fromDocument: fromDocument(name, proposed) });
+    };
+    const topic = subject('topic', topicName, proposal?.topic);
+    const project = subject('project', projectName, proposal?.project);
     // persons: every mention becomes a person (#274), the stored list uses canonical names
-    const people = this.deps.persons.resolveNames(proposal?.persons ?? row.persons, { context: 'document' });
+    const people = this.deps.persons.resolveNames(proposal?.persons ?? row.persons, { context: 'document', fromAnalysis: true });
     const claimed = this.db
       .update(documents)
       .set({
@@ -272,7 +273,7 @@ export class ArchiveExecutor {
         { confidence: 1, status: 'confirmed', sourceIds: [row.id] },
       );
     for (const personId of links.personIds) graph.link({ sourceId: personId, targetId: row.id, relationType: 'mentioned_in' }, mentionLink(row.id));
-    for (const tag of row.tags)
+    for (const tag of row.tags.filter((name) => !graph.isBlockedName({ type: 'tag', name })))
       graph.link(
         { sourceId: row.id, targetId: graph.ensureEntity({ type: 'tag', name: tag }).id, relationType: 'relates_to' },
         { confidence: 0.6, status: 'confirmed', sourceIds: [row.id] },

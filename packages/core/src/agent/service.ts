@@ -31,6 +31,7 @@ import { linkMethodTools } from './tools/link-methods';
 import { contradictionTools } from './tools/contradictions';
 import { linkTools } from './tools/links';
 import { metadataTools } from './tools/metadata';
+import { subjectDeleteTools } from './tools/subject-delete';
 import { readTools } from './tools/read';
 import { diagnosticTools } from './tools/diagnostics';
 import { researchTools } from './tools/research';
@@ -117,6 +118,7 @@ export class AgentService {
       ...knowledgeTools(deps),
       ...fileTools(deps),
       ...metadataTools(deps),
+      ...subjectDeleteTools(deps),
       ...linkTools(deps),
       ...linkMethodTools(deps),
       ...learningTools(deps),

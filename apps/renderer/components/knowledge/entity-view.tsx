@@ -14,13 +14,11 @@ import { EntityHeader, type EntityDialog } from '@/components/knowledge/entity-h
 import { EntityRelations } from '@/components/knowledge/entity-relations';
 import { GraphView } from '@/components/knowledge/graph-view';
 import { isMergeable, MergeDialog } from '@/components/knowledge/merge-dialog';
-import { ConfirmDialog } from '@/components/common/confirm-dialog';
+import { DeleteEntityDialog } from '@/components/knowledge/delete-dialog';
 import { NoteEditDialog } from '@/components/knowledge/note-edit-dialog';
 import { LinkDialog, LinkSuggestions, RelatedEntries } from '@/components/knowledge/related';
 import { Button } from '@/components/ui/button';
-import { call } from '@/lib/ipc';
 import { ENTITY_TYPE_LABELS, entityHref } from '@/lib/nav';
-import { useRun } from '@/lib/use-run';
 import { useQuery } from '@/lib/use-query';
 import type { ActionRecord } from '@/lib/types';
 
@@ -47,7 +45,6 @@ export function EntityView({ id }: { id: string }) {
   const [mergeAction, setMergeAction] = useState<ActionRecord | null>(null);
   const [graphOpen, setGraphOpen] = useState(false);
   const router = useRouter();
-  const { run } = useRun();
 
   if (detail.error && !detail.data) return <ErrorNote error={detail.error} onRetry={() => void detail.refetch()} />;
   if (!detail.data) return <Loading />;
@@ -89,20 +86,7 @@ export function EntityView({ id }: { id: string }) {
       {isTopic && <TopicDocuments topicId={id} />}
 
       {entity.type === 'note' && <NoteEditDialog {...dialogProps('edit')} note={entity} onSaved={closeAndRefetch} />}
-      {entity.type === 'note' && (
-        <ConfirmDialog
-          {...dialogProps('delete')}
-          title="Notiz löschen?"
-          description="Die Notiz wird aus Wissensgraph und Suche entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll."
-          confirmLabel="Löschen"
-          destructive
-          onConfirm={async () => {
-            const out = await run(() => call('knowledge:deleteNote', { id: entity.id, confirmed: true }), { success: 'Notiz gelöscht.' });
-            setDialog(null);
-            if (out) router.push('/knowledge/');
-          }}
-        />
-      )}
+      <DeleteEntityDialog entity={entity} {...dialogProps('delete')} onDeleted={() => router.push('/knowledge/')} />
 
       <LinkDialog {...dialogProps('link')} sourceId={entity.id} sourceName={entity.name} onLinked={closeAndRefetch} />
 

@@ -5,6 +5,7 @@ import { Check, FolderKanban, GitMerge, Link2, Pencil, Trash2, Waypoints } from 
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown, type WikiResolver } from '@/components/common/markdown';
 import { CASE_ENTRY_TYPES } from '@/components/knowledge/case-dialog';
+import { canDelete } from '@/components/knowledge/delete-dialog';
 import { isMergeable } from '@/components/knowledge/merge-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -114,8 +115,8 @@ function EntityActions({ entity, graphOpen, onToggleGraph, onOpenDialog }: Entit
           <Pencil aria-hidden /> Bearbeiten
         </Button>
       )}
-      {entity.type === 'note' && active && (
-        <Button variant="outline" size="sm" onClick={() => onOpenDialog('delete')} data-testid="note-delete">
+      {canDelete(entity) && (entity.type !== 'note' || active) && (
+        <Button variant="outline" size="sm" onClick={() => onOpenDialog('delete')} data-testid="knowledge-delete">
           <Trash2 aria-hidden /> Löschen
         </Button>
       )}

@@ -43,6 +43,7 @@ const ACTION_LABELS: Record<string, string> = {
   'entity.create': 'Eintrag angelegt',
   'entity.alias': 'Alternativen Namen hinzugefügt',
   'entity.merge': 'Einträge zusammengeführt',
+  'entity.delete': 'Eintrag gelöscht',
   'entity.rename': 'Eintrag umbenannt',
   'persons.auto_merge': 'Personen automatisch zusammengeführt',
   'persons.self_merge': 'Eigenen Personeneintrag zusammengeführt',

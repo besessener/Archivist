@@ -1,5 +1,5 @@
 import type { AgentActionProposal } from '@archivist/shared';
-import { riskOf, type RefState } from './registry';
+import { riskOf, type RefState, type ToolContext } from './registry';
 import type { Proposal } from './tool-executor';
 
 const STRUCTURE_PLAN_TOOL = 'propose_structure';
@@ -17,8 +17,8 @@ export const proposedText = (reason: string) =>
   `NICHT AUSGEFÜHRT – als Vorschlag vorbereitet (${reason}). Der Benutzer bestätigt ihn in der Karte unter deiner Antwort; sag ihm das und arbeite mit dem Rest weiter.`;
 
 /** Items of the run's proposal card; a structure plan becomes one item per group, so it can be confirmed in parts (#304). */
-export function proposalItems({ tool, args, label, reason }: Proposal): ProposalItem[] {
-  if (tool.name !== STRUCTURE_PLAN_TOOL) return [{ tool: tool.name, args, label, risk: riskOf(tool, args), reason }];
+export function proposalItems({ tool, args, label, reason }: Proposal, ctx: ToolContext): ProposalItem[] {
+  if (tool.name !== STRUCTURE_PLAN_TOOL) return [{ tool: tool.name, args, label, risk: riskOf(tool, args, ctx), reason }];
   return (args as { groups: Array<{ documents: string[]; folder: string }> }).groups.map((group) => ({
     tool: 'move_documents',
     args: group,

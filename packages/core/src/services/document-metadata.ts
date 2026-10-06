@@ -183,7 +183,7 @@ export class DocumentMetadataEditor {
           tags: [...row.tags, ...proposal.tags],
           persons: [...row.persons, ...proposal.persons],
         },
-        { createPersons: true },
+        { createPersons: true, fromAnalysis: true },
       ),
       ...(proposal.docType ? { docType: proposal.docType } : {}),
       ...(proposal.summary ? { summary: proposal.summary } : {}),
@@ -211,12 +211,17 @@ export class DocumentMetadataEditor {
     return this.afterEdit(id);
   }
 
-  private metadataChanges(patch: MetadataPatch, persons: { createPersons: boolean }): Partial<DocRow> {
+  private metadataChanges(patch: MetadataPatch, persons: { createPersons: boolean; fromAnalysis?: boolean }): Partial<DocRow> {
     const { graph } = this.deps;
     const set: Partial<DocRow> = { updatedAt: nowIso() };
     if (patch.title !== undefined && patch.title.trim()) set.title = patch.title.trim().slice(0, 200);
     if (patch.tags) set.tags = [...new Set(patch.tags.map((t) => t.trim()).filter(Boolean))];
-    if (patch.persons) set.persons = this.deps.persons.resolveNames(patch.persons, { context: 'document', create: persons.createPersons }).names;
+    if (patch.persons)
+      set.persons = this.deps.persons.resolveNames(patch.persons, {
+        context: 'document',
+        create: persons.createPersons,
+        fromAnalysis: persons.fromAnalysis,
+      }).names;
     if (patch.topic !== undefined) set.topicId = patch.topic?.trim() ? graph.ensureEntity({ type: 'topic', name: patch.topic }).id : null;
     if (patch.project !== undefined) set.projectId = patch.project?.trim() ? graph.ensureEntity({ type: 'project', name: patch.project }).id : null;
     return set;
