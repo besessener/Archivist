@@ -60,7 +60,7 @@ export function LinkMethodsSection() {
               ))}
             </Select>
           </Field>
-          <MinConfidenceSlider value={links.minConfidence ?? 0} disabled={busy} onCommit={(minConfidence) => void saveLinks({ minConfidence })} />
+          <MinConfidenceSlider value={links.minConfidence ?? 0} onCommit={(minConfidence) => void saveLinks({ minConfidence })} />
         </>
       )}
       <p className="text-sm" data-testid="links-unlinked-count">
@@ -95,10 +95,13 @@ export function LinkMethodsSection() {
 }
 
 /** Proposals below this confidence are neither made nor shown; the value is saved when the slider is released. */
-function MinConfidenceSlider({ value, disabled, onCommit }: { value: number; disabled: boolean; onCommit: (value: number) => void }) {
+function MinConfidenceSlider({ value, onCommit }: { value: number; onCommit: (value: number) => void }) {
   const [draft, setDraft] = useState(value);
   const percent = Math.round(draft * 100);
-  const commit = () => draft !== value && onCommit(draft);
+  const commit = (event: { currentTarget: { value: string } }) => {
+    const chosen = Number(event.currentTarget.value) / 100;
+    if (chosen !== value) onCommit(chosen);
+  };
   return (
     <Field
       label="Mindest-Konfidenz für Vorschläge"
@@ -114,7 +117,6 @@ function MinConfidenceSlider({ value, disabled, onCommit }: { value: number; dis
           step={5}
           className="w-48 accent-primary"
           value={percent}
-          disabled={disabled}
           onChange={(e) => setDraft(Number(e.target.value) / 100)}
           onPointerUp={commit}
           onKeyUp={commit}
