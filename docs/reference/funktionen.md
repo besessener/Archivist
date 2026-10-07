@@ -25,7 +25,7 @@ Der Chat ist die zentrale Schnittstelle.
 - **Ohne LLM** (nicht eingerichtet oder „nur lokal“) wertet der Chat regelbasiert aus und weist darauf hin, ohne es als Fehler zu markieren: „Wo ist …“, „Zeig …“ und „Finde …“ sind Suchen, keine Notizen; Sätze wie „noch nicht entschieden“ oder „ob wir …“ werden nicht zur Entscheidung. Nachrichten einer Unterhaltung laufen nacheinander. Antwortet eine Nachricht nicht auf eine Auswahl-Rückfrage („den zweiten“ gilt als Antwort), sagt der Chat, dass die ursprüngliche Anfrage nicht ausgeführt wurde.
 - Einen gemeldeten Widerspruch lösen Chat und Agent nur als Vorschlagskarte auf (aufgelöst, Fehlalarm oder zur Kenntnis genommen, optional mit dem Ersetzen der älteren Entscheidung); erst deine Bestätigung führt sie aus. Im Chat nennst du den Widerspruch beim Thema, ist er nicht eindeutig, fragt Archivist nach; der Agent nutzt dafür `list_contradictions` und `resolve_contradiction`. Die Widerspruchsprüfung im Chat nennt auch möglicherweise überholte Entscheidungen und sagt dazu, wenn sie noch läuft, fehlgeschlagen ist oder abgebrochen wurde; in Wissensantworten stehen widerrufene und ersetzte Entscheidungen hinter den aktuellen.
 - **Mehrere Absichten pro Nachricht** werden nacheinander ausgeführt; Rückfragen stellen die übrigen zurück, bis du antwortest (auch auf „ergänzen oder neu anlegen?“, eine Vorschlags- oder Ersetzen-Auswahl); „Wer ist verantwortlich?“, „Bis wann?“ und „Thema oder Projekt?“ halten nichts auf. Legt eine Nachricht mehrere offene Punkte an, gilt die Antwort auf „Bis wann?“ bzw. „Wer ist verantwortlich?“ für alle („für alle drei 31.12.2026“), außer sie nennt einzelne Punkte.
-- **Kontext**: Das LLM kennt die aktiven offenen Punkte, Entscheidungen und offenen Vorschläge des Gesprächs (nur Titel und Metadaten, mit IDs) sowie deinen Namen (Einstellungen → Über dich).
+- **Kontext**: Das LLM kennt die aktiven offenen Punkte, Entscheidungen und offenen Vorschläge des Gesprächs (nur Titel und Metadaten, mit IDs) sowie deinen Namen (Einstellungen → Allgemein).
 - **Rückfrage statt Raten** bei unklarer Absicht und **bevor eine unsichere „Entscheidung“ gespeichert wird** (Entscheidung / Ereignis / Notiz / nichts speichern).
 - **Ereignisse** („am 01.10.2026 eingereicht“) landen mit Datum in der Timeline.
 - **Antworten** mit Quellen, getrennten Fakten/Interpretation und sichtbaren Unsicherheiten. Wie Quellen geprüft werden: [LLM-Schnittstelle](llm-schnittstelle.md#antworten-auf-wissensfragen).
@@ -185,7 +185,7 @@ Die Oberfläche zeigt je Beziehung „automatisch“, „vom Agenten“, „von 
 - Bei mehreren Kandidaten: „Welche Monika ist gemeint?“ mit „Keine davon“.
 - Im Datenschutzmodus `auto` gibt das LLM einen unverbindlichen Hinweis (nur Namen).
 
-**Eigene Identität**: Genau eine Person ist „du“ (Badge **Du** auf der Wissen-Seite). Sie trägt den Namen aus Einstellungen → Über dich bzw. dem Einrichtungsdialog; ohne Namen den Platzhalter „Ich“, der beim Eintragen umbenannt oder mit einer vorhandenen Person dieses Namens zusammengeführt wird.
+**Eigene Identität**: Genau eine Person ist „du“ (Badge **Du** auf der Wissen-Seite). Sie trägt den Namen aus Einstellungen → Allgemein bzw. dem Einrichtungsdialog; ohne Namen den Platzhalter „Ich“, der beim Eintragen umbenannt oder mit einer vorhandenen Person dieses Namens zusammengeführt wird.
 
 - Im Chat und in den Beteiligten einer Entscheidung meinen „ich/mir/mich/mein …“ dich, in Dokumenten (Personenliste) meint „ich“ den Verfasser.
 - Dein Name, Spitznamen und andere Schreibweisen davon werden dir zugeordnet.
@@ -268,11 +268,11 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Sie zeigt auch **Ereignisse** (per Chat oder „Ereignis hinzufügen“ erfasst, durchsuchbar, im Wissensgraph). Titel, Datum, Beschreibung, Thema und Projekt lassen sich dort bearbeiten, rückgängig machbar im Änderungsprotokoll. Ereignisse lassen sich nach Bestätigung löschen; auch das ist rückgängig machbar.
 - **Erinnerungen** werden beim Start geprüft und zeitgesteuert ausgelöst, **solange die App läuft**.
 - Anstehende Erinnerungen stehen unter „Offene Punkte“ und in der Notification Bell und lassen sich dort **verschieben** oder **verwerfen**.
-- Eine Erinnerung für einen Tag ohne Uhrzeit erscheint um **08:00 Uhr Ortszeit** (Einstellungen → Hinweise → „Uhrzeit für Erinnerungen“).
+- Eine Erinnerung für einen Tag ohne Uhrzeit erscheint um **08:00 Uhr Ortszeit** (Einstellungen → Allgemein → „Uhrzeit für Erinnerungen“).
 - „Heute fällig“, „überfällig“ und die Tage der Timeline richten sich nach der **Ortszeit**, nicht nach UTC.
 - Die Glocke zeigt die letzten 50 offenen Benachrichtigungen, **„Ältere laden“** holt jeweils 50 weitere (`notifications:list` mit `offset`); „Alle als gelesen markieren“ setzt alle offenen als gelesen (auch die über der 50), „Alle leeren“ schließt sie.
 - Neue Einträge der Glocke tragen einen Punkt und einen fetten Titel; als gelesen gelten sie erst, wenn du die Glocke schließt. Ein Klick auf „Öffnen“ oder „Navigieren“ gilt als bearbeitet und schließt den Eintrag; unter „Zuletzt erledigt“ (eingeklappt) stehen die zehn zuletzt erledigten Einträge mit Datum.
-- Desktop-Benachrichtigungen: Einstellungen → Hinweise. Sie erscheinen nur, wenn die App-ID stimmt, siehe [Packaging – App-ID](packaging.md#app-id).
+- Desktop-Benachrichtigungen: Einstellungen → Allgemein. Sie erscheinen nur, wenn die App-ID stimmt, siehe [Packaging – App-ID](packaging.md#app-id).
 
 ## Job-Queue
 
@@ -303,7 +303,7 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 
 ## Updates
 
-- Einstellungen → Updates (`update:status`, `update:check`, `update:download`, `update:install`): Die installierte Windows-Version fragt bei GitHub nach dem neuesten Release; Vorabversionen und Commits zählen nicht. Beim Start passiert das von selbst (`updates.checkOnStartup`, Standard an, abschaltbar); „Nach Updates suchen“ prüft von Hand. Gibt es eine neuere Version, erscheint ein Hinweis.
+- Einstellungen → Wartung → Updates (`update:status`, `update:check`, `update:download`, `update:install`): Die installierte Windows-Version fragt bei GitHub nach dem neuesten Release; Vorabversionen und Commits zählen nicht. Beim Start passiert das von selbst (`updates.checkOnStartup`, Standard an, abschaltbar); „Nach Updates suchen“ prüft von Hand. Gibt es eine neuere Version, erscheint ein Hinweis.
 - Heruntergeladen wird erst nach „Herunterladen“, installiert erst nach „Jetzt installieren und neu starten“; beide Kanäle verlangen `confirmed: true`. Vor der Installation stoppt Archivist laufende Aufträge und schließt die Datenbank; Daten und Einstellungen bleiben unberührt.
 - Die portable EXE und die Entwicklungsversion zeigen nur den Grund, warum sie sich nicht aktualisieren.
 - Übertragen wird nur die Anfrage an GitHub (dabei sieht GitHub deine IP-Adresse und die Versionsnummer); kein Archivinhalt, nichts davon steht im Übertragungsprotokoll, das nur LLM-Anfragen erfasst.
@@ -315,11 +315,11 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Ein vollständiges Backup schlägt fehl, wenn der Archivordner nicht erreichbar oder trotz archivierter Dokumente leer ist, und sperrt Archiv-Dateioperationen während der Kopie.
 - Das Manifest (mit Dateizahl) wird zuletzt geschrieben; abgebrochene Backups zählen nie.
 - Nur nach einem erfolgreichen Backup werden die ältesten über „Anzahl aufbewahrter Backups“ (Standard 3) hinaus entfernt (getrennt je Art).
-- Backups liegen im Datenordner der Anwendung. Einstellungen → Backups zeigt die Größe der Datenbank und aller Backups und warnt ab 2 GB, siehe [Backups anlegen](../how-to/backups-anlegen.md#speicherbedarf).
+- Backups liegen im Datenordner der Anwendung. Einstellungen → Wartung → Backups zeigt die Größe der Datenbank und aller Backups und warnt ab 2 GB, siehe [Backups anlegen](../how-to/backups-anlegen.md#speicherbedarf).
 
 Bedienung: [Backups anlegen](../how-to/backups-anlegen.md), [Backup wiederherstellen](../how-to/backup-wiederherstellen.md).
 
-- **Wiederherstellen** (Einstellungen → Backups) merkt die Wiederherstellung vor und startet Archivist neu; beim Start wird die Datenbank ersetzt, die bisherige bleibt in `database/vor-wiederherstellung-…` und wird im Backups-Tab als „Stand vor der Wiederherstellung vom …“ als Quelle angeboten (nie von der Aufbewahrungsregel erfasst, eine `-wal`-Datei kommt mit; so lässt sich eine Wiederherstellung in der App zurücknehmen). Geprüft wird eine Kopie, das Backup selbst bleibt unverändert. Ein vollständiges Backup bringt fehlende Archivdateien zurück (nur wenn der Archivordner derselbe ist, nie überschreibend). Ein beschädigtes Backup wird abgelehnt. Lässt sich die Kopie zur Prüfung nicht anlegen (z. B. Laufwerk voll, fehlende Berechtigung), meldet Archivist diesen Grund statt „beschädigt“; nach der Prüfung bleibt keine `*.restoring*`-Datei im Datenbankordner zurück.
+- **Wiederherstellen** (Einstellungen → Wartung → Backups) merkt die Wiederherstellung vor und startet Archivist neu; beim Start wird die Datenbank ersetzt, die bisherige bleibt in `database/vor-wiederherstellung-…` und wird unter Wartung als „Stand vor der Wiederherstellung vom …“ als Quelle angeboten (nie von der Aufbewahrungsregel erfasst, eine `-wal`-Datei kommt mit; so lässt sich eine Wiederherstellung in der App zurücknehmen). Geprüft wird eine Kopie, das Backup selbst bleibt unverändert. Ein vollständiges Backup bringt fehlende Archivdateien zurück (nur wenn der Archivordner derselbe ist, nie überschreibend). Ein beschädigtes Backup wird abgelehnt. Lässt sich die Kopie zur Prüfung nicht anlegen (z. B. Laufwerk voll, fehlende Berechtigung), meldet Archivist diesen Grund statt „beschädigt“; nach der Prüfung bleibt keine `*.restoring*`-Datei im Datenbankordner zurück.
 - **Beschädigte Datenbank**: Der Start prüft die Datenbank (`quick_check`). Ist sie beschädigt, bietet Archivist das neueste unbeschädigte Backup an, statt mit einer Fehlermeldung abzubrechen.
 
 ## OCR

@@ -11,7 +11,7 @@ test.describe('colour scheme', () => {
     const app = on(page);
     await app.setup.do.complete(llm.url);
     await app.navigation.do.open('settings');
-    await app.settings.locators.tabs.appearance.click();
+    await app.settings.locators.tabs.general.click();
     await expect(app.settings.locators.theme).toHaveValue('system');
     await expect.poll(() => canvas(page)).toBe(LIGHT_CANVAS);
 
@@ -23,7 +23,7 @@ test.describe('colour scheme', () => {
 
     await app.navigation.do.open('chat');
     await app.navigation.do.open('settings');
-    await app.settings.locators.tabs.appearance.click();
+    await app.settings.locators.tabs.general.click();
     await expect(app.settings.locators.theme).toHaveValue('light');
   });
 });

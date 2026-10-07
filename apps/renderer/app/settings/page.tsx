@@ -17,7 +17,17 @@ import { Section } from '@/components/settings/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSettings } from '@/lib/use-settings';
 
-const TABS = ['llm', 'agent', 'archive', 'privacy', 'profile', 'appearance', 'notifications', 'logs', 'backups', 'updates', 'audit', 'jobs'];
+const TABS = ['llm', 'agent', 'archive', 'privacy', 'general', 'maintenance', 'audit', 'jobs'];
+
+// Former tab names from older deep links
+const TAB_ALIASES: Record<string, string> = {
+  profile: 'general',
+  appearance: 'general',
+  notifications: 'general',
+  logs: 'maintenance',
+  backups: 'maintenance',
+  updates: 'maintenance',
+};
 
 function SettingsInner() {
   const { settings, hasApiKey, loading, error, refetch } = useSettings();
@@ -31,7 +41,8 @@ function SettingsInner() {
 
   // Deep links: ?tab=agent&run=<id> (e.g. from the notification of a background run)
   useEffect(() => {
-    if (wantedTab && TABS.includes(wantedTab)) setTab(wantedTab);
+    const resolvedTab = wantedTab ? (TAB_ALIASES[wantedTab] ?? wantedTab) : null;
+    if (resolvedTab && TABS.includes(resolvedTab)) setTab(resolvedTab);
     setFocusRunId(wantedRun);
   }, [wantedTab, wantedRun]);
 
@@ -55,23 +66,11 @@ function SettingsInner() {
             <TabsTrigger value="privacy" data-testid="tab-privacy">
               Datenschutz
             </TabsTrigger>
-            <TabsTrigger value="profile" data-testid="tab-profile">
-              Über dich
+            <TabsTrigger value="general" data-testid="tab-general">
+              Allgemein
             </TabsTrigger>
-            <TabsTrigger value="appearance" data-testid="tab-appearance">
-              Darstellung
-            </TabsTrigger>
-            <TabsTrigger value="notifications" data-testid="tab-notifications">
-              Hinweise
-            </TabsTrigger>
-            <TabsTrigger value="logs" data-testid="tab-logs">
-              Protokolle
-            </TabsTrigger>
-            <TabsTrigger value="backups" data-testid="tab-backups">
-              Backups
-            </TabsTrigger>
-            <TabsTrigger value="updates" data-testid="tab-updates">
-              Updates
+            <TabsTrigger value="maintenance" data-testid="tab-maintenance">
+              Wartung
             </TabsTrigger>
             <TabsTrigger value="audit" data-testid="tab-audit">
               Änderungen
@@ -97,23 +96,15 @@ function SettingsInner() {
           <TabsContent value="privacy">
             <PrivacyTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
-          <TabsContent value="profile">
+          <TabsContent value="general" className="flex flex-col gap-4">
             <ProfileTab key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
-          </TabsContent>
-          <TabsContent value="appearance">
             <AppearanceTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
-          </TabsContent>
-          <TabsContent value="notifications">
             <NotificationsTab key={JSON.stringify(settings.notifications)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
-          <TabsContent value="logs">
-            <LogsTab key={JSON.stringify(settings.logs)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
-          </TabsContent>
-          <TabsContent value="backups">
+          <TabsContent value="maintenance" className="flex flex-col gap-4">
             <BackupsTab key={JSON.stringify(settings.backups)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
-          </TabsContent>
-          <TabsContent value="updates">
             <UpdatesTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <LogsTab key={JSON.stringify(settings.logs)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="audit">
             <AuditTab />
