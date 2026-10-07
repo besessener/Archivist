@@ -62,7 +62,7 @@ function SettingsInner() {
               Darstellung
             </TabsTrigger>
             <TabsTrigger value="notifications" data-testid="tab-notifications">
-              Benachrichtigungen
+              Hinweise
             </TabsTrigger>
             <TabsTrigger value="logs" data-testid="tab-logs">
               Protokolle
@@ -74,7 +74,7 @@ function SettingsInner() {
               Updates
             </TabsTrigger>
             <TabsTrigger value="audit" data-testid="tab-audit">
-              Änderungsprotokoll
+              Änderungen
             </TabsTrigger>
             <TabsTrigger value="jobs" data-testid="tab-jobs">
               Verarbeitung

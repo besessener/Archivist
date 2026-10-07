@@ -3,7 +3,7 @@ import { pageObject } from './page-object';
 
 type PrivacyMode = 'auto' | 'confirm' | 'local_only';
 
-/** Settings page: the "Datenschutz" area, the archive root in the "Archiv" area and the reminder time in "Benachrichtigungen". */
+/** Settings page: the "Datenschutz" area, the archive root in the "Archiv" area and the reminder time in "Hinweise". */
 export function initSettings(page: Page) {
   const dialog = page.getByTestId('archive-root-dialog');
   const locators = {
