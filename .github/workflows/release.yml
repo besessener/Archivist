@@ -53,6 +53,16 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
+      # electron-builder uploads the installer and portable EXE in parallel; both would create the missing release and one fails
+      - name: Create the GitHub Release up front
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=()
+          [[ "$TAG" == *-* ]] && flags+=(--prerelease)
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes "${flags[@]}"
       - name: Build, sign and publish as GitHub Release
         run: npm run release:win
         env:
