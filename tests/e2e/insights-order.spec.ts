@@ -34,4 +34,7 @@ test('Insights shows the findings first and the link proposals below; the naviga
   await expect(proposals).toBeVisible();
   expect((await finding.boundingBox())!.y).toBeLessThan((await proposals.boundingBox())!.y);
   await expectNoSeriousA11yViolations(page, testInfo);
+
+  await proposals.getByTestId('link-proposal-confirm').first().click();
+  await expect(nav.insightLinksCount).toBeHidden();
 });
