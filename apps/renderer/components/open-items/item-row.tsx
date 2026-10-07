@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import type { EntrySubjects } from '@archivist/shared';
-import { localDate, localToday } from '@archivist/shared';
 import { BellPlus, Check, MessageSquare, Network, Pencil, Trash2 } from 'lucide-react';
 import { TypeBadge } from '@/components/common/entity-chip';
 import { ExtraSubjectsNote } from '@/components/common/extra-subjects';
@@ -15,22 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { OPEN_ITEM_STATUS_LABELS } from '@/lib/labels';
 import { formatDate, relativeDay } from '@/lib/format';
 import type { OpenItemRecord } from '@/lib/types';
-import { toIsoDay } from '@/lib/utils';
-
-export type OpenItemGroup = 'overdue' | 'due' | 'open' | 'done';
-
-export function groupOf(item: OpenItemRecord): OpenItemGroup {
-  if (item.status === 'resolved' || item.status === 'dismissed') return 'done';
-  if (item.dueAt) {
-    const today = localToday();
-    const due = localDate(item.dueAt);
-    if (due < today) return 'overdue';
-    const inSevenDays = new Date();
-    inSevenDays.setDate(inSevenDays.getDate() + 7);
-    if (due <= toIsoDay(inSevenDays)) return 'due';
-  }
-  return 'open';
-}
+import type { OpenItemGroup } from '@/lib/open-item-groups';
 
 const STRIPES: Partial<Record<OpenItemGroup, 'danger' | 'warning'>> = { overdue: 'danger', due: 'warning' };
 

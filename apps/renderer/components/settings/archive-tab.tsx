@@ -31,6 +31,7 @@ export function ArchiveTab({ settings, reload }: TabProps) {
   const [confirmRelink, setConfirmRelink] = useState(false);
   const [relinkNote, setRelinkNote] = useState<string | null>(null);
   const [staleDays, setStaleDays] = useState(String(settings.consistency.staleOpenItemDays));
+  const [dueSoonDays, setDueSoonDays] = useState(String(settings.consistency.dueSoonDays));
   const [intervalH, setIntervalH] = useState(String(settings.consistency.intervalHours));
 
   async function verify() {
@@ -187,11 +188,31 @@ export function ArchiveTab({ settings, reload }: TabProps) {
           <Field label="Offene Punkte gelten als vergessen nach … Tagen" htmlFor="s-stale">
             <Input id="s-stale" type="number" min={1} value={staleDays} onChange={(e) => setStaleDays(e.target.value)} />
           </Field>
+          <Field label="Offene Punkte gelten als „Bald fällig“ … Tage vor der Frist" htmlFor="s-due-soon">
+            <Input
+              id="s-due-soon"
+              data-testid="settings-due-soon-days"
+              type="number"
+              min={1}
+              max={365}
+              value={dueSoonDays}
+              onChange={(e) => setDueSoonDays(e.target.value)}
+            />
+          </Field>
           <div>
             <Button
               variant="outline"
-              disabled={busy || !(Number(intervalH) >= 0) || !(Number(staleDays) >= 1)}
-              onClick={() => void save({ consistency: { intervalHours: Number(intervalH), staleOpenItemDays: Math.round(Number(staleDays)) } })}
+              data-testid="settings-consistency-save"
+              disabled={busy || !(Number(intervalH) >= 0) || !(Number(staleDays) >= 1) || !(Number(dueSoonDays) >= 1 && Number(dueSoonDays) <= 365)}
+              onClick={() =>
+                void save({
+                  consistency: {
+                    intervalHours: Number(intervalH),
+                    staleOpenItemDays: Math.round(Number(staleDays)),
+                    dueSoonDays: Math.round(Number(dueSoonDays)),
+                  },
+                })
+              }
             >
               Prüfintervalle speichern
             </Button>

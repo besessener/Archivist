@@ -14,7 +14,7 @@ Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (sie
 | `notifications` | `desktop`, `reminderTime` (Standard `08:00`) |
 | `logs` | `level`, `retentionDays` (Tage, die Logdateien, Einträge des Übertragungsprotokolls und gelesene Benachrichtigungen bleiben; alle Logdateien zusammen höchstens 50 MB, die ältesten zuerst) |
 | `backups` | `keep` (je Art, Standard 3; ein bereits gespeicherter Wert bleibt), `autoOnStartup`, `includeArchive` |
-| `consistency` | `onStartup`, `intervalHours` (0 = aus), `staleOpenItemDays` |
+| `consistency` | `onStartup`, `intervalHours` (0 = aus), `staleOpenItemDays`, `dueSoonDays` (Standard 7, 1–365: bis wann ein offener Punkt als „Bald fällig“ gilt) |
 | `speech` | `model` (`small`, `medium` oder `turbo`; die Einstellungen unter Archiv bieten genau diese drei an) |
 | `ocr` | `enabled`, `languages` (z. B. `deu+eng`; die Einstellungen bieten die mitgelieferten Sprachen Deutsch und Englisch an) |
 | `appearance` | `theme`: Farbschema `system` (Standard, wie das Betriebssystem), `light` oder `dark`; Einstellungen → Darstellung, gilt sofort |
