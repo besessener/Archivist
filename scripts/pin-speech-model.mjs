@@ -39,6 +39,8 @@ async function get(url) {
 }
 
 async function pin(repository) {
+  // The repository comes from models.json and ends up in the request path, so it must be a plain "owner/name".
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || repository.includes('..')) throw new Error(`Invalid repository: ${repository}`);
   const { sha: revision } = await (await get(`https://huggingface.co/api/models/${repository}`)).json();
   if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error(`Unexpected revision: ${revision}`);
   const files = [];
