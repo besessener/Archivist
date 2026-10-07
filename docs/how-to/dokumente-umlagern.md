@@ -33,6 +33,6 @@ Beim Verschieben gilt:
 
 ## Rückgängig machen
 
-Öffne **Einstellungen → Änderungsprotokoll** und wähl beim Umlagern **Rückgängig**. Die Zuordnungen werden exakt wiederhergestellt (samt Status). Danach lässt sich auch die ursprüngliche Archivierung noch rückgängig machen.
+Öffne **Einstellungen → Änderungen** und wähl beim Umlagern **Rückgängig**. Die Zuordnungen werden exakt wiederhergestellt (samt Status). Danach lässt sich auch die ursprüngliche Archivierung noch rückgängig machen.
 
 Wie Teilfehler beim Umlagern behandelt werden, steht in [Aktionsstufen und Schutzregeln – Teilfehler](../reference/aktionsstufen.md#teilfehler).

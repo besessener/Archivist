@@ -11,7 +11,7 @@ Sind 20 Vorschläge offen, legt kein Lauf neue an – erst wenn du entschieden h
 3. Prüf je Vorschlag den Beleg (z. B. die gemeinsame Textstelle) und wähl **Bestätigen** oder **Ablehnen**. Ein abgelehntes Paar wird nie wieder vorgeschlagen.
 4. Passen alle Vorschläge eines Eintrags, nimm bei dessen Gruppe **Alle bestätigen**. Das gilt für alle Vorschläge dieses Eintrags, auch auf weiteren Seiten. Nach Methode gruppiert gibt es das nicht: Eine ganze Methode auf einmal zu bestätigen, ginge am Eintrag vorbei.
 
-Jede Entscheidung ist ein Schritt im Änderungsprotokoll (Einstellungen → Änderungsprotokoll) und lässt sich dort rückgängig machen.
+Jede Entscheidung ist ein Schritt im Änderungsprotokoll (Einstellungen → Änderungen) und lässt sich dort rückgängig machen.
 
 ## Beim Eintrag prüfen
 

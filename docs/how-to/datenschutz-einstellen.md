@@ -46,7 +46,7 @@ Nicht maskiert werden Gesundheitsdaten, Namen, Adressen, Telefonnummern und E-Ma
 
 ## Verschlüsselte Verbindung sicherstellen
 
-Unabhängig vom Datenschutzmodus fragt die installierte Version beim Start bei GitHub nach einem neuen Release (nur die Anfrage, kein Archivinhalt); abschalten kannst du das unter **Einstellungen → Updates** ([Updates](../reference/funktionen.md#updates)).
+Unabhängig vom Datenschutzmodus fragt die installierte Version beim Start bei GitHub nach einem neuen Release (nur die Anfrage, kein Archivinhalt); abschalten kannst du das unter **Einstellungen → Wartung → Updates** ([Updates](../reference/funktionen.md#updates)).
 
 Archivist sendet nur über `https://` an einen fremden Rechner. Eine `http://`-Adresse ist nur für deinen eigenen Rechner erlaubt (`localhost`, `127.0.0.1`, `[::1]`, z. B. ein lokaler Ollama-Server). Trägst du unter **Einstellungen → KI** eine andere `http://`-Adresse ein, erscheint am Feld eine Meldung, und Speichern sowie der Verbindungstest bleiben gesperrt – verwende dann die `https://`-Adresse deines Anbieters. Das gilt ebenso für die eigene Adresse der Embeddings. Der API-Key geht dabei immer nur in einem Header an den Endpunkt ([LLM-Schnittstelle](../reference/llm-schnittstelle.md#anfragen)).
 
@@ -62,7 +62,7 @@ Dasselbe gilt für den **Datenordner**: Liegt er in einem Sync-Ordner, liegen Ei
 
 Im Agentenmodus kann der Agent mit `read_logs` das lokale Protokoll und mit `diagnose` den Zustand von Archivist lesen ([Archivist untersuchen](../reference/agentenmodus.md#archivist-untersuchen)). Was er dabei liest, ist Teil seiner Anfrage an das LLM – du steuerst es so:
 
-- **Protokoll:** Es enthält keine Schlüssel und keine Dokumentinhalte, aber Dateipfade und Fehlermeldungen. Zeilen, die ausgeschlossene Dateien, Ordner oder Dateitypen nennen, gibt `read_logs` nicht heraus. Alles andere geht, maskiert, an das LLM, sobald der Agent es liest. Dateipfade stehen bewusst darin (etwa die Ordner eines Scans), damit Fehler nachvollziehbar bleiben; Dateinamen von Dokumenten stehen nicht im Zweck der Übertragungen, dort nur die Dokument-ID. Das Protokoll selbst bleibt lokal; die Aufbewahrung stellst du unter Einstellungen → Protokolle (Stufe und Aufbewahrung) ein. Die Aufbewahrung gilt auch für das Übertragungsprotokoll und für längst gelesene Benachrichtigungen (Aufräumen beim Start und danach täglich), und alle Logdateien zusammen bleiben unter 50 MB (die ältesten gehen zuerst). Das Änderungsprotokoll, Chatverläufe und Agentenaktionen werden nie automatisch gelöscht.
+- **Protokoll:** Es enthält keine Schlüssel und keine Dokumentinhalte, aber Dateipfade und Fehlermeldungen. Zeilen, die ausgeschlossene Dateien, Ordner oder Dateitypen nennen, gibt `read_logs` nicht heraus. Alles andere geht, maskiert, an das LLM, sobald der Agent es liest. Dateipfade stehen bewusst darin (etwa die Ordner eines Scans), damit Fehler nachvollziehbar bleiben; Dateinamen von Dokumenten stehen nicht im Zweck der Übertragungen, dort nur die Dokument-ID. Das Protokoll selbst bleibt lokal; die Aufbewahrung stellst du unter Einstellungen → Wartung → Protokolle (Stufe und Aufbewahrung) ein. Die Aufbewahrung gilt auch für das Übertragungsprotokoll und für längst gelesene Benachrichtigungen (Aufräumen beim Start und danach täglich), und alle Logdateien zusammen bleiben unter 50 MB (die ältesten gehen zuerst). Das Änderungsprotokoll, Chatverläufe und Agentenaktionen werden nie automatisch gelöscht.
 - **Endpunkt-Messung:** `diagnose` sendet nur im Modus „automatisch“ eine feste Testanfrage an den Embedding-Endpunkt. Sie enthält keinen Dokumentinhalt, steht mit Zweck „Diagnose: Embedding-Endpunkt“ im Übertragungsprotokoll und entfällt in „vorher fragen“ und „nur lokal“.
 
 ## Ein Dokument endgültig aus Archivist entfernen
@@ -74,11 +74,11 @@ Lege das Dokument im Dokument-Dialog „In den Papierkorb“ und wähle unter **
 - die Vorschau der Übertragungen, an denen das Dokument beteiligt war (die Einträge selbst bleiben),
 - die Reste in der Datenbank: Gelöschtes überschreibt die Datenbank sofort mit Nullen; den Suchindex und das Schreibprotokoll räumt Archivist danach in kurzen Schritten auf, ohne das Fenster zu blockieren. Nur eine Datenbank aus einer älteren Version schreibt Archivist beim ersten Leeren einmal komplett neu, damit auch früher Gelöschtes verschwindet; das dauert bei großen Archiven einige Sekunden.
 
-Es bleibt, was aus dem Dokument entstanden ist: Entscheidungen, offene Punkte, Notizen und Erkenntnisse. Lösche sie bei Bedarf einzeln. **Ältere Backups enthalten den Text weiterhin**; Archivist schreibt sie nicht um. Lösche sie unter Einstellungen → Backups, wenn auch dort nichts bleiben soll.
+Es bleibt, was aus dem Dokument entstanden ist: Entscheidungen, offene Punkte, Notizen und Erkenntnisse. Lösche sie bei Bedarf einzeln. **Ältere Backups enthalten den Text weiterhin**; Archivist schreibt sie nicht um. Lösche sie unter Einstellungen → Wartung → Backups, wenn auch dort nichts bleiben soll.
 
 ## Änderungsprotokoll
 
-Das Änderungsprotokoll (Einstellungen → Änderungsprotokoll) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert.
+Das Änderungsprotokoll (Einstellungen → Änderungen) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert.
 
 ## Tokenverbrauch im Blick behalten und begrenzen
 

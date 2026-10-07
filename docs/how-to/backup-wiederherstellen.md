@@ -4,7 +4,7 @@ Ein Backup stellt die **Datenbank** wieder her (Entscheidungen, offene Punkte, W
 
 ## Aus der laufenden Anwendung
 
-1. Öffne **Einstellungen → Backups → Vorhandene Backups** und klick beim gewünschten Backup auf **Wiederherstellen**.
+1. Öffne **Einstellungen → Wartung → Backups → Vorhandene Backups** und klick beim gewünschten Backup auf **Wiederherstellen**.
 2. Bestätige den Dialog. Archivist bereitet die Wiederherstellung vor und startet neu.
 3. Beim Start ersetzt das Backup die Datenbank. Die bisherige Datenbank bleibt unter `database/vor-wiederherstellung-<Zeitstempel>/` im Datenordner erhalten und erscheint danach unter **Vorhandene Backups** als „Stand vor der Wiederherstellung vom …“ (siehe unten). Das Änderungsprotokoll der wiederhergestellten Datenbank vermerkt die Wiederherstellung. Lässt sich die bisherige Datenbank nicht vollständig beiseitelegen (z. B. weil eine Datei gerade von einem anderen Programm geöffnet ist), wird nichts ersetzt; Archivist meldet das und startet beim nächsten Mal mit der bisherigen Datenbank.
 

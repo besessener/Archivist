@@ -3,7 +3,7 @@ import { pageObject } from './page-object';
 
 type PrivacyMode = 'auto' | 'confirm' | 'local_only';
 
-/** Settings page: the "Datenschutz" area, the archive root in the "Archiv" area and the reminder time in "Benachrichtigungen". */
+/** Settings page: the "Datenschutz" area, the archive root in the "Archiv" area and the reminder time in "Hinweise". */
 export function initSettings(page: Page) {
   const dialog = page.getByTestId('archive-root-dialog');
   const locators = {
@@ -12,10 +12,8 @@ export function initSettings(page: Page) {
       privacy: page.getByTestId('tab-privacy'),
       agent: page.getByTestId('tab-agent'),
       archive: page.getByTestId('tab-archive'),
-      appearance: page.getByTestId('tab-appearance'),
-      notifications: page.getByTestId('tab-notifications'),
-      backups: page.getByTestId('tab-backups'),
-      updates: page.getByTestId('tab-updates'),
+      general: page.getByTestId('tab-general'),
+      maintenance: page.getByTestId('tab-maintenance'),
       audit: page.getByTestId('tab-audit'),
     },
     /** Speech input (Archiv, below the text recognition): the model list, its download and deletion. */
@@ -269,20 +267,20 @@ export function initSettings(page: Page) {
       return page.evaluate(() => (window as unknown as { exportedBlobs: Blob[] }).exportedBlobs.at(-1)!.text());
     },
     openBackups: async () => {
-      await locators.tabs.backups.click();
+      await locators.tabs.maintenance.click();
     },
     /** Chooses a colour scheme in „Darstellung“; it is saved and applied at once. */
     setTheme: async (theme: 'system' | 'light' | 'dark') => {
-      await locators.tabs.appearance.click();
+      await locators.tabs.general.click();
       await locators.theme.selectOption(theme);
       await expect(locators.theme).toBeEnabled();
     },
     openUpdates: async () => {
-      await locators.tabs.updates.click();
+      await locators.tabs.maintenance.click();
       await expect(locators.updates.status).toBeVisible();
     },
     openNotifications: async () => {
-      await locators.tabs.notifications.click();
+      await locators.tabs.general.click();
     },
     /** Moves the slider with the keyboard (one step is 5 %) and releases it, which saves. */
     setMinConfidenceSteps: async (steps: number) => {

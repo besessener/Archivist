@@ -2,7 +2,7 @@
 
 ## Von Hand sichern
 
-1. Öffne **Einstellungen → Backups → Backup erstellen**.
+1. Öffne **Einstellungen → Wartung → Backups → Backup erstellen**.
 2. Klick auf
    - **Metadaten sichern** – Datenbank-Snapshot (Entscheidungen, offene Punkte, Wissen) und Einstellungen ohne API-Key, aber **nicht** die Dokumentdateien, oder
    - **Alles sichern** – zusätzlich alle archivierten Dokumentdateien.
@@ -12,7 +12,7 @@ Ein vollständiges Backup schlägt fehl, wenn der Archivordner nicht erreichbar 
 
 ## Automatisch sichern
 
-Unter **Einstellungen → Backups → Optionen**:
+Unter **Einstellungen → Wartung → Backups → Optionen**:
 
 - **Beim Start automatisch sichern** einschalten,
 - **Automatische Backups enthalten das Archiv** – sonst nur Metadaten,
@@ -24,7 +24,7 @@ Unter **Einstellungen → Backups → Optionen**:
 
 Ein Metadaten-Backup ist eine volle Kopie der Datenbank, und die wächst mit dem Text deiner Dokumente (grob 50 bis 130 KB je Dokument mit mehreren Seiten Text). Bei 3 aufbewahrten Backups je Art belegen die Backups also etwa das Dreifache der Datenbank, bei vollständigen Backups zusätzlich das Archiv.
 
-Unter **Einstellungen → Backups → Speicherbedarf** siehst du die Größe der Datenbank und aller Backups zusammen. Ab 2 GB (aktuell belegt oder bei der eingestellten Anzahl möglich) erscheint eine Warnung; senke dann die **Anzahl aufbewahrter Backups** oder prüfe den freien Platz auf dem Laufwerk des Datenordners.
+Unter **Einstellungen → Wartung → Backups → Speicherbedarf** siehst du die Größe der Datenbank und aller Backups zusammen. Ab 2 GB (aktuell belegt oder bei der eingestellten Anzahl möglich) erscheint eine Warnung; senke dann die **Anzahl aufbewahrter Backups** oder prüfe den freien Platz auf dem Laufwerk des Datenordners.
 
 ## Nach einem Update zur alten Datenbank zurückkehren
 
