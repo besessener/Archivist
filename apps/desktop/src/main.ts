@@ -249,24 +249,6 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
-function buildMenu(): void {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    { role: 'editMenu' },
-    {
-      label: 'Ansicht',
-      submenu: [
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { role: 'togglefullscreen' },
-        ...(isDev ? [{ role: 'toggleDevTools' as const }, { role: 'reload' as const }] : []),
-      ],
-    },
-    { role: 'windowMenu' },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
 async function start(): Promise<void> {
   // The insecure fallback is allowed only in explicit test mode (CI without a keyring).
   if (testMode && process.platform === 'linux') safeStorage.setUsePlainTextEncryption(true);
@@ -317,7 +299,7 @@ async function start(): Promise<void> {
   registerIpc(appServices);
   forwardEvents(appServices);
   followThemeSetting(appServices);
-  buildMenu();
+  Menu.setApplicationMenu(null);
   createWindow();
   appServices.start();
 }
