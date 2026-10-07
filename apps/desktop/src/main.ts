@@ -29,6 +29,7 @@ import {
   type SpeechModelSpec,
 } from '@archivist/core';
 import { IPC_CHANNELS, type AppNotification, type SpeechModelName } from '@archivist/shared';
+import { autoUpdater } from 'electron-updater';
 import { appUserModelId } from './app-id';
 import { readUnpackagedEnv } from './test-environment';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
@@ -36,6 +37,7 @@ import { isExternalWebUrl } from './external-links';
 import { allowsMicrophoneCheck, allowsMicrophoneRequest } from './permissions';
 import { recoverFromDamagedDatabase, type RecoveryDeps } from './recovery';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
+import { UpdateController, unsupportedUpdateReason } from './updater';
 
 // Electron main process: lifecycle, secure windows, IPC allowlist and OS access; the business logic lives in @archivist/core.
 const unpackagedEnv = (name: string) => readUnpackagedEnv({ packaged: app.isPackaged, env: process.env }, name);
@@ -56,6 +58,17 @@ if (process.platform === 'win32') app.setAppUserModelId(appUserModelId({ package
 
 let services: Services | null = null;
 let mainWindow: BrowserWindow | null = null;
+
+const updates = new UpdateController({
+  updater: autoUpdater,
+  currentVersion: app.getVersion(),
+  unsupportedReason: unsupportedUpdateReason({ packaged: app.isPackaged, platform: process.platform, portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE) }),
+  onChange: (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:changed', status);
+  },
+  // the installer starts as soon as `quitAndInstall` runs, so jobs and the database must be closed before
+  prepareInstall: () => services?.shutdown({ jobTimeoutMs: JOB_INTERRUPT_TIMEOUT_MS }) ?? Promise.resolve(),
+});
 
 /** Quitting interrupts running jobs (they resume after the next start) and exits after a bounded time. */
 const quitter = new QuitController({
@@ -132,6 +145,14 @@ const host: HostApi = {
     if (testMode) return; // E2E: the test drives the application and must not lose it
     quitter.requestRelaunch();
     setTimeout(() => void quitter.quit(), RESTART_DELAY_MS); // the answer reaches the window first
+  },
+  updates: {
+    status: () => updates.status(),
+    check: () => updates.check(),
+    download: () => updates.download(),
+    install: () => {
+      setTimeout(() => void updates.install(), RESTART_DELAY_MS); // the answer reaches the window first
+    },
   },
 };
 
@@ -302,6 +323,7 @@ async function start(): Promise<void> {
   Menu.setApplicationMenu(null);
   createWindow();
   appServices.start();
+  if (appServices.settings.get().updates.checkOnStartup) void updates.check();
 }
 
 if (!app.requestSingleInstanceLock()) {

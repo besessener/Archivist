@@ -8,6 +8,7 @@ import { documentHandlers } from './handlers/documents';
 import { knowledgeHandlers } from './handlers/knowledge';
 import { recordHandlers } from './handlers/records';
 import { speechHandlers } from './handlers/speech';
+import { updateHandlers } from './handlers/update';
 import type { HandlerMap, HostApi } from './handlers/types';
 
 export type { HostApi } from './handlers/types';
@@ -21,6 +22,7 @@ export function createHandlers(services: Services, host: HostApi): HandlerMap {
     ...documentHandlers(services, host),
     ...knowledgeHandlers(services),
     ...speechHandlers(services),
+    ...updateHandlers(host),
   };
 }
 

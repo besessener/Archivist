@@ -13,7 +13,17 @@ fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
 
 // Native or otherwise unbundleable modules stay external and are shipped by electron-builder (see package.json dependencies).
-const external = ['electron', 'better-sqlite3', 'sharp', 'pdfjs-dist', 'pdfjs-dist/*', 'tesseract.js', '@napi-rs/canvas', '@huggingface/transformers'];
+const external = [
+  'electron',
+  'better-sqlite3',
+  'sharp',
+  'pdfjs-dist',
+  'pdfjs-dist/*',
+  'tesseract.js',
+  '@napi-rs/canvas',
+  '@huggingface/transformers',
+  'electron-updater',
+];
 const common = { bundle: true, platform: 'node', target: 'node22', format: 'cjs', sourcemap: true, external, logLevel: 'warning', legalComments: 'none' };
 
 await build({ ...common, entryPoints: [path.join(desktop, 'src/main.ts')], outfile: path.join(dist, 'main.cjs') });

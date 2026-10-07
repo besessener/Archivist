@@ -1,4 +1,13 @@
-import type { IpcChannel, IpcOutput, IpcParsedInput } from '@archivist/shared';
+import type { IpcChannel, IpcOutput, IpcParsedInput, UpdateStatus } from '@archivist/shared';
+
+/** App updates; only the Electron main process can check, download and install them. */
+export interface UpdateApi {
+  status(): UpdateStatus;
+  check(): Promise<UpdateStatus>;
+  download(): Promise<UpdateStatus>;
+  /** Closes the application shortly after the answer was sent and runs the installer. */
+  install(): void;
+}
 
 /** Operating-system-level functions that only the Electron main process can provide. */
 export interface HostApi {
@@ -13,6 +22,7 @@ export interface HostApi {
   saveFile?(defaultName: string): Promise<string | null>;
   /** Restarts the application shortly after the answer was sent (a restore takes effect on start). */
   restartApp?(): void;
+  updates?: UpdateApi;
 }
 
 type Handler<C extends IpcChannel> = (input: IpcParsedInput<C>) => Promise<IpcOutput<C>> | IpcOutput<C>;

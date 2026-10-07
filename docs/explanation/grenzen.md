@@ -46,6 +46,6 @@ Die Widerspruchserkennung ist zurückhaltend: Ohne LLM erkennt sie nur lexikalis
 
 Archivist wird nur für Windows gebaut, getestet und gepflegt. Die Entwicklung mit `npm run dev` funktioniert meist auch anderswo, wird dort aber nicht zugesichert; Tests laufen in der CI auf Ubuntu. Die Oberfläche ist ausschließlich Deutsch.
 
-## Kein Auto-Update
+## Updates nur in der installierten Version
 
-Releases werden als GitHub Release veröffentlicht, aber `electron-updater` ist nicht eingerichtet. Neue Versionen installierst du von Hand.
+Archivist aktualisiert sich selbst, aber nur die installierte Windows-Version und nur aus einem GitHub Release. Die portable EXE und die Entwicklungsversion bekommen keine Updates: Neue Versionen der portablen EXE lädst du von Hand herunter.

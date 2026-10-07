@@ -116,6 +116,11 @@ const AppearanceSettings = z.object({
   theme: ThemeChoice.default('system'),
 });
 
+const UpdateSettings = z.object({
+  /** Asks GitHub for a newer release at every start; installing always needs the user's confirmation. */
+  checkOnStartup: z.boolean().default(true),
+});
+
 export const Settings = z.object({
   setupCompleted: z.boolean().default(false),
   profile: ProfileSettings.default(() => ProfileSettings.parse({})),
@@ -133,6 +138,7 @@ export const Settings = z.object({
   links: LinkSettings.default(() => LinkSettings.parse({})),
   speech: SpeechSettings.default(() => SpeechSettings.parse({})),
   appearance: AppearanceSettings.default(() => AppearanceSettings.parse({})),
+  updates: UpdateSettings.default(() => UpdateSettings.parse({})),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -155,5 +161,6 @@ export const SettingsPatch = z.object({
   links: patchSchema(LinkSettings).optional(),
   speech: patchSchema(SpeechSettings).optional(),
   appearance: patchSchema(AppearanceSettings).optional(),
+  updates: patchSchema(UpdateSettings).optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

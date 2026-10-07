@@ -46,6 +46,8 @@ Nicht maskiert werden Gesundheitsdaten, Namen, Adressen, Telefonnummern und E-Ma
 
 ## Verschlüsselte Verbindung sicherstellen
 
+Unabhängig vom Datenschutzmodus fragt die installierte Version beim Start bei GitHub nach einem neuen Release (nur die Anfrage, kein Archivinhalt); abschalten kannst du das unter **Einstellungen → Updates** ([Updates](../reference/funktionen.md#updates)).
+
 Archivist sendet nur über `https://` an einen fremden Rechner. Eine `http://`-Adresse ist nur für deinen eigenen Rechner erlaubt (`localhost`, `127.0.0.1`, `[::1]`, z. B. ein lokaler Ollama-Server). Trägst du unter **Einstellungen → KI** eine andere `http://`-Adresse ein, erscheint am Feld eine Meldung, und Speichern sowie der Verbindungstest bleiben gesperrt – verwende dann die `https://`-Adresse deines Anbieters. Das gilt ebenso für die eigene Adresse der Embeddings. Der API-Key geht dabei immer nur in einem Header an den Endpunkt ([LLM-Schnittstelle](../reference/llm-schnittstelle.md#anfragen)).
 
 Hatte eine ältere Version eine solche Adresse gespeichert, sendet Archivist nichts an sie und zeigt die Meldung, bis du sie korrigierst.

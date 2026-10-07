@@ -15,6 +15,7 @@ export function initSettings(page: Page) {
       appearance: page.getByTestId('tab-appearance'),
       notifications: page.getByTestId('tab-notifications'),
       backups: page.getByTestId('tab-backups'),
+      updates: page.getByTestId('tab-updates'),
       audit: page.getByTestId('tab-audit'),
     },
     /** Speech input (Archiv, below the text recognition): the model list, its download and deletion. */
@@ -183,6 +184,12 @@ export function initSettings(page: Page) {
     },
     /** „Darstellung“: the colour scheme (System, Hell, Dunkel). */
     theme: page.getByTestId('settings-theme'),
+    /** „Updates“: the state line and, where the build can update itself, the buttons. */
+    updates: {
+      status: page.getByTestId('settings-update-status'),
+      check: page.getByTestId('settings-update-check'),
+      startup: page.getByTestId('settings-update-startup'),
+    },
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),
       saveReminderTime: page.getByTestId('settings-reminder-time-save'),
@@ -269,6 +276,10 @@ export function initSettings(page: Page) {
       await locators.tabs.appearance.click();
       await locators.theme.selectOption(theme);
       await expect(locators.theme).toBeEnabled();
+    },
+    openUpdates: async () => {
+      await locators.tabs.updates.click();
+      await expect(locators.updates.status).toBeVisible();
     },
     openNotifications: async () => {
       await locators.tabs.notifications.click();

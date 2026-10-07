@@ -76,6 +76,7 @@ const SETTING_LABELS: Record<string, string> = {
   'agent.webSearch': 'Websuche im Chat',
   'speech.model': 'Modell der Spracheingabe',
   'appearance.theme': 'Farbschema',
+  'updates.checkOnStartup': 'Beim Start nach Updates suchen',
   'links.autoPropose': 'Verknüpfungen automatisch vorschlagen',
   'links.maxProposalsPerEntry': 'Höchstens offene Verknüpfungsvorschläge je Eintrag',
   'links.minConfidence': 'Mindest-Konfidenz für Verknüpfungsvorschläge',
