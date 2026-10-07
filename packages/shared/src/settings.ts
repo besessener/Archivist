@@ -68,6 +68,8 @@ export const LinkSettings = z.object({
   autoPropose: z.boolean().default(true),
   /** At most this many open similarity proposals per entry (#271). */
   maxProposalsPerEntry: z.number().int().min(1).max(10).default(3),
+  /** Proposals with a lower confidence are neither made nor listed. */
+  minConfidence: z.number().min(0).max(1).default(0),
 });
 
 /** Who uses Archivist? Name and nicknames help to assign „ich/mir/mich“ and mentions of the user's own person. */

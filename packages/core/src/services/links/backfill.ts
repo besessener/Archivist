@@ -82,8 +82,8 @@ export class LinkBackfill {
 
   private proposalsAtLimit(): boolean {
     const open = this.sqlite
-      .prepare(`SELECT count(*) AS c FROM relations WHERE status = 'proposed' AND method IN (${sqlList(LINK_PROPOSAL_METHODS)})`)
-      .get() as { c: number };
+      .prepare(`SELECT count(*) AS c FROM relations WHERE status = 'proposed' AND method IN (${sqlList(LINK_PROPOSAL_METHODS)}) AND confidence >= ?`)
+      .get(this.deps.minConfidence?.() ?? 0) as { c: number };
     return open.c >= MAX_OPEN_PROPOSALS;
   }
 

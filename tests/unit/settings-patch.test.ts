@@ -79,8 +79,8 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
     b: { theme: 'light' },
   },
   links: {
-    a: { autoPropose: false, maxProposalsPerEntry: 2 },
-    b: { autoPropose: true, maxProposalsPerEntry: 5 },
+    a: { autoPropose: false, maxProposalsPerEntry: 2, minConfidence: 0.2 },
+    b: { autoPropose: true, maxProposalsPerEntry: 5, minConfidence: 0.7 },
   },
   agent: {
     a: {
