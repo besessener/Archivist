@@ -285,4 +285,23 @@ describe('Listing jobs for the job views', () => {
     expect(queue.list(10, { type: 'test.big' }).map((job) => job.id)).toEqual([done.id]);
     expect(queue.list(10, { activeOnly: true }).map((job) => job.id)).toEqual([waiting.id]);
   });
+
+  it('lists unfinished and failed jobs before newer finished ones, so a short list never hides what the counter counts', async () => {
+    const queue = await makeQueue(0);
+    queue.register('test.ok', { handler: async () => ({ summary: 'Fertig.' }) });
+    queue.register('test.broken', {
+      handler: async () => {
+        throw new Error('kaputt');
+      },
+    });
+    const broken = queue.enqueue('test.broken', { label: 'Kaputt', payload: {}, maxAttempts: 1 });
+    queue.start();
+    await queue.whenIdle();
+    const finished = queue.enqueue('test.ok', { label: 'Neu fertig', payload: {} });
+    await queue.whenIdle();
+    await queue.stop();
+    const waiting = queue.enqueue('test.other', { label: 'Wartet', payload: {} });
+
+    expect(queue.list(3).map((job) => job.id)).toEqual([waiting.id, broken.id, finished.id]);
+  });
 });

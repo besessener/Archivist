@@ -54,7 +54,7 @@ export function listJobs(db: AppContext['database']['db'], query: JobListFilter 
     .select(listColumns)
     .from(jobs)
     .where(and(...conditions))
-    .orderBy(desc(jobs.createdAt))
+    .orderBy(sql`case when ${jobs.status} in ('pending', 'running', 'failed') then 0 else 1 end`, desc(jobs.createdAt))
     .limit(query.limit)
     .all()
     .map(mapListedJob);
