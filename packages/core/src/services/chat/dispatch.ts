@@ -36,6 +36,8 @@ export class ChatDispatcher {
     switch (intent.intent) {
       case 'knowledge_question':
         return this.deps.answers.knowledgeQuestion({ ...request, history: historyLines(this.store.recent(conversationId, 7)) });
+      case 'idea_challenge':
+        return this.deps.answers.ideaChallenge({ ...request, history: historyLines(this.store.recent(conversationId, 7)) });
       case 'document_search':
         return this.lookups.documentSearch(request);
       case 'timeline_query':

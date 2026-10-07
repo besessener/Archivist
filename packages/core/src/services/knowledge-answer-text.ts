@@ -2,7 +2,7 @@ import type { KnowledgeAnswer, SourceReference } from '@archivist/shared';
 import { sourceDateLabel } from './knowledge-sources';
 
 /** The sources an answer may cite: prompt ids (S1, S2 …), the numbered sources and their public form. */
-interface CitableSources {
+export interface CitableSources {
   ids: Map<string, SourceReference>;
   numbered: SourceReference[];
   stripped: SourceReference[];

@@ -12,6 +12,7 @@ export const INTENTS = [
   'decision_supersede',
   'note_capture',
   'knowledge_question',
+  'idea_challenge',
   'document_search',
   'timeline_query',
   'event_record',
@@ -218,6 +219,20 @@ export const KnowledgeAnswer = z.object({
   confidence: Confidence,
 });
 export type KnowledgeAnswer = z.infer<typeof KnowledgeAnswer>;
+
+const CitedPoint = z.object({ statement: z.string(), sourceIds: z.array(z.string()) });
+
+/** LLM output for challenging an idea against the archive: points for, against and affected, each with its sources. */
+export const IdeaChallenge = z.object({
+  summary: z.string(),
+  against: z.array(CitedPoint).default([]),
+  supporting: z.array(CitedPoint).default([]),
+  affected: z.array(CitedPoint).default([]),
+  uncertainties: z.array(z.string()).default([]),
+  missingInformation: z.array(z.string()).default([]),
+  confidence: Confidence,
+});
+export type IdeaChallenge = z.infer<typeof IdeaChallenge>;
 
 /** LLM output for „Lösungsvorschlag generieren“ on an open item. */
 export const SolutionProposal = z.object({

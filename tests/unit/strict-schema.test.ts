@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { ChatAnalysis, ContradictionProposal, DocumentClassification, KnowledgeAnswer, SolutionProposal } from '@archivist/shared';
+import { ChatAnalysis, ContradictionProposal, DocumentClassification, IdeaChallenge, KnowledgeAnswer, SolutionProposal } from '@archivist/shared';
 import { LlmHints as EntityDuplicateHints } from '../../packages/core/src/services/cleanup/entity-duplicates';
 import { LlmHints as PersonQuestionHints } from '../../packages/core/src/services/cleanup/person-questions';
 import { toStrictJsonSchema } from '../../packages/core/src/services/llm/strict-schema';
@@ -32,6 +32,7 @@ describe('strict JSON schema from Zod', () => {
       ContradictionProposal,
       DocumentClassification,
       KnowledgeAnswer,
+      IdeaChallenge,
       SolutionProposal,
       NoteAnalysis,
       RelationKindHint,
