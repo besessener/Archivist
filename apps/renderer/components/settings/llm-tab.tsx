@@ -49,14 +49,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
   const chars = Number(maxChars);
   const baseUrlCheck = checkLlmBaseUrl(baseUrl);
   const baseUrlError = baseUrlCheck.ok ? undefined : baseUrlCheck.message;
-  const embeddingUrlCheck = checkLlmBaseUrl(embeddingUrl);
-  const embeddingUrlError = sameEmbeddingUrl
-    ? undefined
-    : embeddingUrlCheck.ok
-      ? embeddingUrl.trim()
-        ? undefined
-        : 'Gib eine Adresse an oder nutze dieselbe wie die KI.'
-      : embeddingUrlCheck.message;
+  const embeddingUrlError = sameEmbeddingUrl ? undefined : embeddingUrlProblem(embeddingUrl);
   const valid = timeout >= 1 && timeout <= 600 && chars >= 500 && chars <= 2000000 && !baseUrlError && !embeddingUrlError;
 
   return (
@@ -210,4 +203,10 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
       />
     </div>
   );
+}
+
+function embeddingUrlProblem(value: string): string | undefined {
+  const check = checkLlmBaseUrl(value);
+  if (!check.ok) return check.message;
+  return value.trim() ? undefined : 'Gib eine Adresse an oder nutze dieselbe wie die KI.';
 }

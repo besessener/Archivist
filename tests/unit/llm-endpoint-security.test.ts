@@ -22,7 +22,7 @@ function clientFor(settings: Pick<SettingsService, 'get'>) {
   const fetchImpl = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const headers: Record<string, string> = {};
     new Headers(init?.headers).forEach((value, key) => (headers[key] = value));
-    sent.push({ url: String(url), headers });
+    sent.push({ url: new Request(url).url, headers });
     return new Response(JSON.stringify({ output_text: 'OK', data: [{ embedding: [1, 2], index: 0 }] }), { status: 200 });
   };
   const ctx = { events: { emit: () => true }, logger: new Logger(null), database: {} };
