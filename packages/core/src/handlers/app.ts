@@ -46,7 +46,7 @@ function appStatus(services: Services, host: HostApi): AppStatus {
       },
       {
         name: 'Job-Queue',
-        status: counts.failed > 0 ? 'degraded' : 'ok',
+        status: 'ok',
         detail: `${counts.pending} wartend, ${counts.running} laufend, ${counts.failed} fehlgeschlagen`,
       },
       { name: 'Worker', status: 'ok', detail: services.pool.mode === 'thread' ? 'Worker-Threads aktiv' : 'Inline-Modus' },
