@@ -300,6 +300,13 @@ Die Archivprüfung läuft beim Start (Einstellungen → Archiv → „Beim Start
 - Beziehungen im Wissensgraph, die schon vorher bestanden (auch von dir bestätigte oder abgelehnte), bleiben erhalten; geänderte erhalten ihren vorherigen Status und ihre vorherige Confidence.
 - Undo löscht nie die einzige Kopie einer Datei, siehe [Aktionsstufen](aktionsstufen.md#stufen).
 
+## Updates
+
+- Einstellungen → Updates (`update:status`, `update:check`, `update:download`, `update:install`): Die installierte Windows-Version fragt bei GitHub nach dem neuesten Release; Vorabversionen und Commits zählen nicht. Beim Start passiert das von selbst (`updates.checkOnStartup`, Standard an, abschaltbar); „Nach Updates suchen“ prüft von Hand. Gibt es eine neuere Version, erscheint ein Hinweis.
+- Heruntergeladen wird erst nach „Herunterladen“, installiert erst nach „Jetzt installieren und neu starten“; beide Kanäle verlangen `confirmed: true`. Vor der Installation stoppt Archivist laufende Aufträge und schließt die Datenbank; Daten und Einstellungen bleiben unberührt.
+- Die portable EXE und die Entwicklungsversion zeigen nur den Grund, warum sie sich nicht aktualisieren.
+- Übertragen wird nur die Anfrage an GitHub (dabei sieht GitHub deine IP-Adresse und die Versionsnummer); kein Archivinhalt, nichts davon steht im Übertragungsprotokoll, das nur LLM-Anfragen erfasst.
+
 ## Backups
 
 - Konsistenter SQLite-Snapshot (Online-Backup-API) + Einstellungen ohne API-Key.

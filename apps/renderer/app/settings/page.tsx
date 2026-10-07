@@ -11,12 +11,13 @@ import { LlmTab } from '@/components/settings/llm-tab';
 import { AuditTab } from '@/components/settings/audit-tab';
 import { BackupsTab } from '@/components/settings/backups-tab';
 import { AppearanceTab, LogsTab, NotificationsTab, ProfileTab } from '@/components/settings/misc-tabs';
+import { UpdatesTab } from '@/components/settings/updates-tab';
 import { PrivacyTab } from '@/components/settings/privacy-tab';
 import { Section } from '@/components/settings/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSettings } from '@/lib/use-settings';
 
-const TABS = ['llm', 'agent', 'archive', 'privacy', 'profile', 'appearance', 'notifications', 'logs', 'backups', 'audit', 'jobs'];
+const TABS = ['llm', 'agent', 'archive', 'privacy', 'profile', 'appearance', 'notifications', 'logs', 'backups', 'updates', 'audit', 'jobs'];
 
 function SettingsInner() {
   const { settings, hasApiKey, loading, error, refetch } = useSettings();
@@ -69,6 +70,9 @@ function SettingsInner() {
             <TabsTrigger value="backups" data-testid="tab-backups">
               Backups
             </TabsTrigger>
+            <TabsTrigger value="updates" data-testid="tab-updates">
+              Updates
+            </TabsTrigger>
             <TabsTrigger value="audit" data-testid="tab-audit">
               Änderungsprotokoll
             </TabsTrigger>
@@ -107,6 +111,9 @@ function SettingsInner() {
           </TabsContent>
           <TabsContent value="backups">
             <BackupsTab key={JSON.stringify(settings.backups)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+          </TabsContent>
+          <TabsContent value="updates">
+            <UpdatesTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="audit">
             <AuditTab />

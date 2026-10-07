@@ -38,13 +38,13 @@ electronFuses:
 npmRebuild: false
 nodeGypRebuild: false
 # Publishing only via the release workflow (.github/workflows/release.yml, version tags v*): `npm run release:win`
-# uploads the installer and portable EXE to a GitHub Release. Without electron-updater no update metadata (latest.yml) is uploaded.
+# uploads the installer and portable EXE plus the update metadata (latest.yml) to a GitHub Release; electron-updater reads it.
 publish:
   provider: github
   owner: besessener
   repo: Archivist
   releaseType: release
-  publishAutoUpdate: false
+  publishAutoUpdate: true
 electronLanguages:
   - de
   - en-US

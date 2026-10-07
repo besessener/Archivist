@@ -18,6 +18,7 @@ Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (sie
 | `speech` | `model` (`small`, `medium` oder `turbo`; die Einstellungen unter Archiv bieten genau diese drei an) |
 | `ocr` | `enabled`, `languages` (z. B. `deu+eng`; die Einstellungen bieten die mitgelieferten Sprachen Deutsch und Englisch an) |
 | `appearance` | `theme`: Farbschema `system` (Standard, wie das Betriebssystem), `light` oder `dark`; Einstellungen → Darstellung, gilt sofort |
+| `updates` | `checkOnStartup`: bei jedem Start bei GitHub nach einer neueren Version fragen (Standard an); Einstellungen → Updates |
 | `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3), `minConfidence` (Mindest-Konfidenz, 0–1, Standard 0 = alles zeigen) |
 
 Der API-Key steht **nie** in `settings.json`, sondern verschlüsselt in `config/llm-api-key.enc`.

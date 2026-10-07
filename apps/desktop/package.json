@@ -26,6 +26,7 @@
     "@tesseract.js-data/deu": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.9",
     "pdfjs-dist": "^6.3.289",
     "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0"

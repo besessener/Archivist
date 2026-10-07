@@ -19,6 +19,7 @@ import {
 import { Confirmed, Empty, Ok, channel } from './ipc-channel';
 import { bulkChannels } from './ipc-bulk';
 import { speechChannels } from './ipc-speech';
+import { updateChannels } from './ipc-update';
 import { BulkEstimate, ImportedFolder, IndexStatus, ReanalysisProposal, StartedJob } from './bulk';
 import { AuditEntry, AuditVerification, LlmTransmission, LlmUsage, UndoRunResult } from './audit';
 import { ChatMessage, ChatSendResult, Conversation } from './chat';
@@ -684,6 +685,7 @@ export const ipcContract = {
 
   ...bulkChannels,
   ...speechChannels,
+  ...updateChannels,
 } as const;
 
 export type IpcContract = typeof ipcContract;
@@ -694,7 +696,7 @@ export type IpcParsedInput<C extends IpcChannel> = z.output<IpcContract[C]['inpu
 export type IpcOutput<C extends IpcChannel> = z.input<IpcContract[C]['output']>;
 
 /** Events main → renderer (also an explicit allowlist). */
-export const EVENT_CHANNELS = ['data:changed', 'job:updated', 'notification:new', 'status:changed', 'agent:progress'] as const;
+export const EVENT_CHANNELS = ['data:changed', 'job:updated', 'notification:new', 'status:changed', 'agent:progress', 'update:changed'] as const;
 export type EventChannel = (typeof EVENT_CHANNELS)[number];
 export const DataChangedPayload = z.object({ scopes: z.array(z.string()) });
 export type DataChangedPayload = z.infer<typeof DataChangedPayload>;

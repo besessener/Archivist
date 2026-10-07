@@ -60,5 +60,8 @@
   },
   "appearance": {
     "theme": "system"
+  },
+  "updates": {
+    "checkOnStartup": true
   }
 }

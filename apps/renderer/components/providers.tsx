@@ -2,12 +2,14 @@
 
 import { AppProvider } from '@/lib/app-context';
 import { ToastProvider } from '@/lib/toast';
+import { UpdateAnnouncer } from './shell/update-announcer';
 import { AppShell } from './shell/app-shell';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <AppProvider>
+        <UpdateAnnouncer />
         <AppShell>{children}</AppShell>
       </AppProvider>
     </ToastProvider>

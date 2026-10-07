@@ -6,7 +6,20 @@ import { Settings, SettingsPatch } from '@archivist/shared';
 import { SettingsService } from '../../packages/core/src/services/settings';
 
 type SectionKey =
-  'profile' | 'llm' | 'scan' | 'privacy' | 'notifications' | 'logs' | 'backups' | 'consistency' | 'ocr' | 'agent' | 'links' | 'speech' | 'appearance';
+  | 'profile'
+  | 'llm'
+  | 'scan'
+  | 'privacy'
+  | 'notifications'
+  | 'logs'
+  | 'backups'
+  | 'consistency'
+  | 'ocr'
+  | 'agent'
+  | 'links'
+  | 'speech'
+  | 'appearance'
+  | 'updates';
 
 /** Two valid non-default value sets per section; every field differs between A and B, so a single saved field is observable. */
 const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<string, unknown> }> = {
@@ -77,6 +90,10 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
   appearance: {
     a: { theme: 'dark' },
     b: { theme: 'light' },
+  },
+  updates: {
+    a: { checkOnStartup: false },
+    b: { checkOnStartup: true },
   },
   links: {
     a: { autoPropose: false, maxProposalsPerEntry: 2, minConfidence: 0.2 },

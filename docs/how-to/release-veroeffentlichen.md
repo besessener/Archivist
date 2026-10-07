@@ -25,9 +25,9 @@ Der Workflow `.github/workflows/release.yml`
 - prüft, dass Tag und Versionen übereinstimmen (`scripts/check-release-version.mjs`),
 - führt Typecheck, Lint und Tests aus,
 - ruft auf `windows-latest` `npm run release:win` auf (electron-builder `--publish always`, Provider `github`, `GITHUB_TOKEN` mit `contents: write`),
-- veröffentlicht Installer und portable EXE als **GitHub Release**.
+- veröffentlicht Installer, portable EXE und die Update-Metadaten (`latest.yml`) als **GitHub Release**.
 
-Tags mit Zusatz (`v1.2.3-beta.1`) erscheinen als Vorabversion. Merges auf `main` und Pull Requests bauen die Pakete nur. Auto-Update (`electron-updater`) ist nicht eingerichtet, deshalb werden keine Update-Metadaten hochgeladen.
+Tags mit Zusatz (`v1.2.3-beta.1`) erscheinen als Vorabversion. Merges auf `main` und Pull Requests bauen die Pakete nur. Die installierte Version findet ein neues Release über die Update-Metadaten und aktualisiert sich nach Bestätigung selbst ([Updates](../reference/funktionen.md#updates)); ein Release ohne `latest.yml` bliebe für sie unsichtbar.
 
 ## Signieren
 

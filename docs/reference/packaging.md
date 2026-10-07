@@ -40,7 +40,7 @@ Nur **Windows** (NSIS-Installer mit Auswahl des Installationsverzeichnisses + po
 - Versionen in `package.json` und `apps/desktop/package.json` müssen zum Tag passen (`scripts/check-release-version.mjs`).
 - Veröffentlicht über electron-builder `--publish always`, Provider `github`.
 - Tags mit Zusatz (`v1.2.3-beta.1`) erscheinen als Vorabversion.
-- Kein Auto-Update (`electron-updater`), daher keine Update-Metadaten.
+- Auto-Update (`electron-updater`): `publishAutoUpdate: true` lädt zusätzlich `latest.yml` und die Blockmaps hoch. Die installierte Version (NSIS) liest daraus das neueste Release; Vorabversionen und Commits auf `main` beachtet sie nicht. Die portable EXE aktualisiert sich nicht selbst. Bedienung: [Funktionen](funktionen.md#updates).
 
 ## Signierung
 
