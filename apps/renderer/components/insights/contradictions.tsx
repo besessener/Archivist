@@ -15,6 +15,8 @@ import { formatDate, formatDateTime } from '@/lib/format';
 import type { QueryState } from '@/lib/use-query';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
+import { GROUP_HEADING } from '@/components/common/page-header';
+import { cn } from '@/lib/utils';
 
 type Contradiction = IpcOutput<'contradictions:list'>[number];
 type Decision = IpcOutput<'decisions:list'>[number];
@@ -30,7 +32,7 @@ export function ContradictionsSection({
   const open = (contradictions.data ?? []).filter((contradiction) => contradiction.status === 'detected' || contradiction.status === 'acknowledged');
   return (
     <section aria-labelledby="contradictions" data-testid="contradictions">
-      <h2 id="contradictions" className="mb-2 flex items-center gap-2 text-sm font-semibold">
+      <h2 id="contradictions" className={cn(GROUP_HEADING, 'mb-2')}>
         <ShieldAlert className="size-4 text-warning" aria-hidden /> Widersprüche <Badge variant="secondary">{open.length}</Badge>
       </h2>
       {contradictions.error && !contradictions.data && <ErrorNote error={contradictions.error} onRetry={() => void contradictions.refetch()} />}
@@ -46,7 +48,7 @@ export function ContradictionsSection({
 
 function ContradictionCard({ contradiction, onResolve }: { contradiction: Contradiction; onResolve: () => void }) {
   return (
-    <li className="rounded-xl border border-warning/50 bg-card p-4" data-testid="contradiction-card">
+    <li className="rounded-xl border bg-card shadow-card p-4" data-stripe="danger" data-testid="contradiction-card">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h3 className="font-semibold">{contradiction.title}</h3>
         <div className="flex gap-1.5">

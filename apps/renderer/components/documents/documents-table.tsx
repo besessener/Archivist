@@ -26,7 +26,7 @@ export function DocumentsTable({ documents, subjects, selected, setSelected, onO
   const allChecked = documents.length > 0 && selectedCount === documents.length;
   const toggle = (id: string, on: boolean) => setSelected((previous) => withMembership(previous, { value: id, present: on }));
   return (
-    <div className="rounded-xl border bg-card">
+    <div className="rounded-xl border bg-card shadow-card">
       <Table data-testid="documents-table">
         <THead>
           <tr>

@@ -1,5 +1,19 @@
 import path from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  net,
+  Notification,
+  protocol,
+  safeStorage,
+  session,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import {
   AppError,
   createHandlers,
@@ -169,6 +183,17 @@ function forwardEvents(appServices: Services): void {
   });
 }
 
+/** The renderer's `prefers-color-scheme` follows `themeSource`, so the setting needs no renderer code. */
+function followThemeSetting(appServices: Services): void {
+  const apply = () => {
+    nativeTheme.themeSource = appServices.settings.get().appearance.theme;
+  };
+  apply();
+  appServices.events.on('data:changed', (change: { scopes: string[] }) => {
+    if (change.scopes.includes('settings')) apply();
+  });
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -177,7 +202,7 @@ function createWindow(): void {
     minHeight: 620,
     show: false,
     title: 'Archivist',
-    backgroundColor: '#0f1115',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#16161a' : '#f7f7f9',
     webPreferences: {
       preload: resource('preload.cjs'),
       contextIsolation: true,
@@ -291,6 +316,7 @@ async function start(): Promise<void> {
 
   registerIpc(appServices);
   forwardEvents(appServices);
+  followThemeSetting(appServices);
   buildMenu();
   createWindow();
   appServices.start();

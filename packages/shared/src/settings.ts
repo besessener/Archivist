@@ -104,6 +104,14 @@ const SpeechSettings = z.object({
   model: SpeechModelName.default('small'),
 });
 
+/** Colour scheme of the window; `system` follows the operating system. */
+export const ThemeChoice = z.enum(['system', 'light', 'dark']);
+export type ThemeChoice = z.infer<typeof ThemeChoice>;
+
+const AppearanceSettings = z.object({
+  theme: ThemeChoice.default('system'),
+});
+
 export const Settings = z.object({
   setupCompleted: z.boolean().default(false),
   profile: ProfileSettings.default(() => ProfileSettings.parse({})),
@@ -120,6 +128,7 @@ export const Settings = z.object({
   agent: AgentSettings.default(() => AgentSettings.parse({})),
   links: LinkSettings.default(() => LinkSettings.parse({})),
   speech: SpeechSettings.default(() => SpeechSettings.parse({})),
+  appearance: AppearanceSettings.default(() => AppearanceSettings.parse({})),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -141,5 +150,6 @@ export const SettingsPatch = z.object({
     .optional(),
   links: patchSchema(LinkSettings).optional(),
   speech: patchSchema(SpeechSettings).optional(),
+  appearance: patchSchema(AppearanceSettings).optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

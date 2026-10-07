@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { LOCAL_TIME } from '@archivist/shared';
+import { LOCAL_TIME, ThemeChoice } from '@archivist/shared';
+import { THEME_LABELS } from '@/lib/labels';
 import { Section, SwitchRow, useSaveSettings, type TabProps } from './shared';
 
 export function ProfileTab({ settings, reload }: TabProps) {
@@ -109,6 +110,30 @@ export function LogsTab({ settings, reload }: TabProps) {
           <Save aria-hidden /> Speichern
         </Button>
       </div>
+    </Section>
+  );
+}
+
+export function AppearanceTab({ settings, reload }: TabProps) {
+  const { save, busy } = useSaveSettings(reload);
+  return (
+    <Section title="Darstellung" description="Hell, dunkel oder wie in deinem Betriebssystem eingestellt. Die Änderung gilt sofort.">
+      <Field label="Farbschema" htmlFor="appearance-theme">
+        <Select
+          id="appearance-theme"
+          className="sm:w-64"
+          value={settings.appearance.theme}
+          disabled={busy}
+          onChange={(e) => void save({ appearance: { theme: ThemeChoice.parse(e.target.value) } })}
+          data-testid="settings-theme"
+        >
+          {ThemeChoice.options.map((choice) => (
+            <option key={choice} value={choice}>
+              {THEME_LABELS[choice]}
+            </option>
+          ))}
+        </Select>
+      </Field>
     </Section>
   );
 }

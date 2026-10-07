@@ -2,6 +2,7 @@
 
 :root {
   --background: #ffffff;
+  --canvas: #f7f7f9;
   --foreground: #1c1c21;
   --card: #ffffff;
   --card-foreground: #1c1c21;
@@ -15,22 +16,36 @@
   --muted-foreground: #62626d;
   --accent: #ececf1;
   --accent-foreground: #1c1c21;
-  --destructive: #d92d3b;
+  --destructive: #c22432;
+  --destructive-foreground: #ffffff;
   --success: #166534;
-  --warning: #854d0e;
+  --warning: #806000;
+  --warning-surface: #fdf1c4;
   --border: #e4e4ea;
   --input: #d4d4dc;
   --ring: #7c7ce8;
-  --sidebar: #f7f7f9;
+  --info: #1d4ed8;
+  --attention: #e0a800;
+  --sidebar: #efeff3;
   --user-bubble: #ececf1;
+  --card-shadow: 0 1px 2px rgb(24 24 40 / 0.05), 0 2px 6px -2px rgb(24 24 40 / 0.06);
+  --type-document: #2160c4;
+  --type-decision: #9a6700;
+  --type-person: #15803d;
+  --type-project: #7c3aed;
+  --type-topic: #0e7490;
+  --type-task: #be185d;
+  --tone: var(--primary);
   color-scheme: light;
 }
 
+/* Dark tokens twice: for the system scheme, and for the explicit choice in Einstellungen → Darstellung (`data-theme`). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --background: #16161a;
+    --canvas: #16161a;
     --foreground: #ececf0;
-    --card: #1d1d22;
+    --card: #1f1f25;
     --card-foreground: #ececf0;
     --popover: #212127;
     --popover-foreground: #ececf0;
@@ -42,20 +57,72 @@
     --muted-foreground: #9a9aa6;
     --accent: #2d2d35;
     --accent-foreground: #ececf0;
-    --destructive: #f0616d;
+    --destructive: #f47a84;
+    --destructive-foreground: #14141a;
     --success: #4ade80;
     --warning: #facc15;
+    --warning-surface: rgb(250 204 21 / 0.2);
     --border: #2e2e36;
     --input: #3a3a44;
     --ring: #8b8bf0;
-    --sidebar: #1a1a1f;
+    --info: #6ea8ff;
+    --attention: #e9a23b;
+    --sidebar: #111114;
     --user-bubble: #2d2d35;
+    --card-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.4);
+    --type-document: #6aa1f2;
+    --type-decision: #e9a23b;
+    --type-person: #4fcf83;
+    --type-project: #b08cf6;
+    --type-topic: #3fc0d4;
+    --type-task: #f074a8;
+    --tone: var(--primary);
     color-scheme: dark;
   }
 }
 
+:root[data-theme='dark'] {
+  --background: #16161a;
+  --canvas: #16161a;
+  --foreground: #ececf0;
+  --card: #1f1f25;
+  --card-foreground: #ececf0;
+  --popover: #212127;
+  --popover-foreground: #ececf0;
+  --primary: #8b8bf0;
+  --primary-foreground: #14141a;
+  --secondary: #2a2a31;
+  --secondary-foreground: #ececf0;
+  --muted: #25252b;
+  --muted-foreground: #9a9aa6;
+  --accent: #2d2d35;
+  --accent-foreground: #ececf0;
+  --destructive: #f47a84;
+  --destructive-foreground: #14141a;
+  --success: #4ade80;
+  --warning: #facc15;
+  --warning-surface: rgb(250 204 21 / 0.2);
+  --border: #2e2e36;
+  --input: #3a3a44;
+  --ring: #8b8bf0;
+  --info: #6ea8ff;
+  --attention: #e9a23b;
+  --sidebar: #111114;
+  --user-bubble: #2d2d35;
+  --card-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.4);
+  --type-document: #6aa1f2;
+  --type-decision: #e9a23b;
+  --type-person: #4fcf83;
+  --type-project: #b08cf6;
+  --type-topic: #3fc0d4;
+  --type-task: #f074a8;
+  --tone: var(--primary);
+  color-scheme: dark;
+}
+
 @theme inline {
   --color-background: var(--background);
+  --color-canvas: var(--canvas);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -70,13 +137,18 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-info: var(--info);
+  --color-tone: var(--tone);
   --color-sidebar: var(--sidebar);
   --color-user-bubble: var(--user-bubble);
+  --shadow-card: var(--card-shadow);
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -92,7 +164,7 @@
     height: 100%;
   }
   body {
-    background: var(--background);
+    background: var(--canvas);
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -104,6 +176,42 @@
   [role='button']:not([aria-disabled='true']) {
     cursor: pointer;
   }
+}
+
+/* Unlayered so a component's `border` utility cannot reset the stripe width. */
+[data-stripe='danger'] {
+  border-left: 3px solid var(--destructive);
+}
+[data-stripe='warning'] {
+  border-left: 3px solid var(--attention);
+}
+
+[data-tone='primary'] {
+  --tone: var(--primary);
+}
+[data-tone='document'] {
+  --tone: var(--type-document);
+}
+[data-tone='decision'] {
+  --tone: var(--type-decision);
+}
+[data-tone='person'] {
+  --tone: var(--type-person);
+}
+[data-tone='project'] {
+  --tone: var(--type-project);
+}
+[data-tone='topic'] {
+  --tone: var(--type-topic);
+}
+[data-tone='task'] {
+  --tone: var(--type-task);
+}
+[data-tone='danger'] {
+  --tone: var(--destructive);
+}
+[data-tone='neutral'] {
+  --tone: var(--muted-foreground);
 }
 
 @keyframes indeterminate {

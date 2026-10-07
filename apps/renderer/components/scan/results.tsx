@@ -138,7 +138,7 @@ export function ScanResults() {
         />
       )}
       {files.length > 0 && (
-        <div className="rounded-xl border bg-card">
+        <div className="rounded-xl border bg-card shadow-card">
           <Table data-testid="scan-results-table">
             <THead>
               <tr>

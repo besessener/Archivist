@@ -10,6 +10,7 @@ import { formatDate, relativeDay } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 import { useRun } from '@/lib/use-run';
 import { cn } from '@/lib/utils';
+import { GROUP_HEADING } from '@/components/common/page-header';
 
 type ReminderRecord = IpcOutput<'reminders:list'>[number];
 
@@ -49,8 +50,8 @@ export function UpcomingReminders({
 
   return (
     <section aria-labelledby={headingId} className={cn('flex flex-col gap-2', className)} data-testid="upcoming-reminders">
-      <h2 id={headingId} className="flex items-center gap-2 text-sm font-semibold">
-        <BellRing className="size-4 text-primary" aria-hidden /> Anstehende Erinnerungen
+      <h2 id={headingId} className={GROUP_HEADING}>
+        <BellRing className="size-4" aria-hidden /> Anstehende Erinnerungen
       </h2>
       <ul className="flex flex-col gap-2">
         {list.map((r) => (

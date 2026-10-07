@@ -30,7 +30,7 @@ function Group({ group, onArchive }: { group: ScanProposalGroup; onArchive: (req
   const target = group.project ?? group.topic;
 
   return (
-    <li className="rounded-xl border bg-card p-4" data-testid="scan-proposal">
+    <li className="rounded-xl border bg-card shadow-card p-4" data-testid="scan-proposal">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="font-semibold">{group.label}</h3>

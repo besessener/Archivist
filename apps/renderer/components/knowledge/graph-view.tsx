@@ -79,7 +79,7 @@ export function GraphView({ id }: { id: string }) {
   if (error && !graph) return <ErrorNote error={error as Error} />;
   return (
     <section
-      className={cn('flex flex-col gap-3', fullscreen && 'fixed inset-0 z-50 overflow-auto bg-background p-4')}
+      className={cn('flex flex-col gap-3', fullscreen && 'fixed inset-0 z-50 overflow-auto bg-canvas p-4')}
       data-testid="graph-view"
       data-fullscreen={fullscreen}
     >

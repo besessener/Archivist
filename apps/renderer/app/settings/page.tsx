@@ -10,13 +10,13 @@ import { ArchiveTab } from '@/components/settings/archive-tab';
 import { LlmTab } from '@/components/settings/llm-tab';
 import { AuditTab } from '@/components/settings/audit-tab';
 import { BackupsTab } from '@/components/settings/backups-tab';
-import { LogsTab, NotificationsTab, ProfileTab } from '@/components/settings/misc-tabs';
+import { AppearanceTab, LogsTab, NotificationsTab, ProfileTab } from '@/components/settings/misc-tabs';
 import { PrivacyTab } from '@/components/settings/privacy-tab';
 import { Section } from '@/components/settings/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSettings } from '@/lib/use-settings';
 
-const TABS = ['llm', 'agent', 'archive', 'privacy', 'profile', 'notifications', 'logs', 'backups', 'audit', 'jobs'];
+const TABS = ['llm', 'agent', 'archive', 'privacy', 'profile', 'appearance', 'notifications', 'logs', 'backups', 'audit', 'jobs'];
 
 function SettingsInner() {
   const { settings, hasApiKey, loading, error, refetch } = useSettings();
@@ -57,6 +57,9 @@ function SettingsInner() {
             <TabsTrigger value="profile" data-testid="tab-profile">
               Über dich
             </TabsTrigger>
+            <TabsTrigger value="appearance" data-testid="tab-appearance">
+              Darstellung
+            </TabsTrigger>
             <TabsTrigger value="notifications" data-testid="tab-notifications">
               Benachrichtigungen
             </TabsTrigger>
@@ -92,6 +95,9 @@ function SettingsInner() {
           </TabsContent>
           <TabsContent value="profile">
             <ProfileTab key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+          </TabsContent>
+          <TabsContent value="appearance">
+            <AppearanceTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="notifications">
             <NotificationsTab key={JSON.stringify(settings.notifications)} settings={settings} hasApiKey={hasApiKey} reload={reload} />

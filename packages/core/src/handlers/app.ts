@@ -36,6 +36,8 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     unreadNotifications: services.notifications.unreadCount(),
     openInsights: services.insights.openCount(),
     openLinkProposals: services.links.proposals({ limit: 1 }).total,
+    overdueOpenItems: services.openItems.overdue().length,
+    theme: settings.appearance.theme,
     services: [
       {
         name: 'Datenbank',
