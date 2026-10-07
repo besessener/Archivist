@@ -7,7 +7,7 @@ Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (sie
 | Bereich | Wichtige Felder |
 | --- | --- |
 | `profile` | `name`, `nicknames` – wer „ich“ ist |
-| `llm` | `baseUrl`, `model`, `reasoningEffort` (`none` bis `max`, leer = Standard des Modells), `timeoutMs`, `maxInputChars`, `embeddingModel`, `dailyTokenCap` (Tokens je Tag, leer = kein Limit) – siehe [LLM-Schnittstelle](llm-schnittstelle.md); `baseUrl`: `https://`, `http://` nur für `localhost`/`127.0.0.0/8`/`[::1]` |
+| `llm` | `baseUrl`, `model`, `reasoningEffort` (`none` bis `max`, leer = Standard des Modells), `timeoutMs`, `maxInputChars`, `embeddingModel`, `embeddingBaseUrl` (leer = die `baseUrl` der KI; gleiche Regeln für `https://`/`http://`), `dailyTokenCap` (Tokens je Tag, leer = kein Limit) – siehe [LLM-Schnittstelle](llm-schnittstelle.md); `baseUrl`: `https://`, `http://` nur für `localhost`/`127.0.0.0/8`/`[::1]` |
 | `archiveRoot` | Archivordner (Standard `<Dokumentenordner>/archive`; Warnung, wenn er in einem Cloud-Sync-Ordner liegt); mit archivierten Dokumenten nur über „Archiv umziehen“ oder „Nur Pfad ändern“ änderbar, siehe [Archivpfad ändern](../how-to/archivpfad-aendern.md) |
 | `scan` | `enabled`, `onStartup`, `periodic`, `intervalMinutes`, `maxFileSizeMb`, `allowedExtensions`, `autoAnalyze` |
 | `privacy` | `llmMode` (`auto` / `confirm` / `local_only`), `neverAnalyzeDirs`, `neverAnalyzeExtensions`, `neverAnalyzeFiles`, `maskPersonalData` (Standard an: IBAN, Kartennummern, Steuer-ID, Sozialversicherungsnummer und PINs durch Platzhalter ersetzen, siehe [Maskierung](aktionsstufen.md#llm-datenschutz)) |

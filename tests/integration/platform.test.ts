@@ -336,6 +336,12 @@ describe('Secrets, backups, settings', () => {
     expect(Settings.parse((await app.ok('settings:update', { llm: { baseUrl: 'https://example.openai.azure.com/openai/v1/' } })).settings).llm.baseUrl).toBe(
       'https://example.openai.azure.com/openai/v1',
     );
+    expect((await app.call('settings:update', { llm: { embeddingBaseUrl: 'http://embeddings.example.test/v1' } })).ok).toBe(false);
+    expect(
+      Settings.parse((await app.ok('settings:update', { llm: { embeddingBaseUrl: ' https://example.openai.azure.com/openai/v1/ ' } })).settings).llm
+        .embeddingBaseUrl,
+    ).toBe('https://example.openai.azure.com/openai/v1');
+    expect(Settings.parse((await app.ok('settings:update', { llm: { embeddingBaseUrl: '' } })).settings).llm.embeddingBaseUrl).toBe('');
     await app.cleanup();
   });
 

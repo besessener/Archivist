@@ -42,6 +42,9 @@ export function initSettings(page: Page) {
     llm: {
       baseUrl: page.getByTestId('settings-baseurl'),
       baseUrlError: page.getByTestId('s-baseurl-error'),
+      embeddingSameUrl: page.getByTestId('settings-embedding-same-url'),
+      embeddingBaseUrl: page.getByTestId('settings-embedding-baseurl'),
+      embeddingBaseUrlError: page.getByTestId('s-embed-url-error'),
       save: page.getByTestId('settings-save'),
       testConnection: page.getByTestId('settings-test-connection'),
       testResult: page.getByTestId('settings-test-result'),

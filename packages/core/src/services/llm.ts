@@ -312,11 +312,12 @@ export class LlmService {
   async embeddings(texts: string[], { purpose, documentIds = [] }: { purpose: string; documentIds?: string[] }): Promise<number[][]> {
     const llm = this.deps.settings.get().llm;
     const apiKey = this.deps.secrets.getApiKey();
-    if (!llm.baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
-    assertSecureBaseUrl(llm.baseUrl);
+    const baseUrl = llm.embeddingBaseUrl.trim() || llm.baseUrl;
+    if (!baseUrl || !llm.embeddingModel || !apiKey) throw new AppError('llm_error', 'Kein Embedding-Modell konfiguriert.');
+    assertSecureBaseUrl(baseUrl);
     return requestEmbeddings(
       {
-        url: endpointUrl(llm.baseUrl, 'embeddings'),
+        url: endpointUrl(baseUrl, 'embeddings'),
         apiKey,
         model: llm.embeddingModel,
         timeoutMs: llm.timeoutMs,

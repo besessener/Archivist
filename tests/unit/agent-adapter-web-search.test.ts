@@ -59,7 +59,7 @@ describe('web search of the provider', () => {
     const tools = t.sent[1]!.body.tools as Array<Record<string, unknown>>;
     expect(tools[0]).toMatchObject({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
     expect(tools[0]).not.toHaveProperty('cache_control');
-    expect(tools.at(-1)).toMatchObject({ name: 'move_documents', cache_control: { type: 'ephemeral' } });
+    expect(tools.at(-1)).toMatchObject({ name: 'move_documents', cache_control: { type: 'ephemeral', ttl: '1h' } });
   });
 
   it('Claude: a model or deployment without result filtering gets the basic web search, remembered', async () => {

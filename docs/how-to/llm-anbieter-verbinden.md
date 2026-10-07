@@ -6,7 +6,7 @@ Archivist spricht zwei Schnittstellen: die OpenAI-kompatible **Responses API** (
 
 1. Öffne **Einstellungen → KI** (beim ersten Start: Einrichtungsdialog).
 2. Trag **Base URL**, **API-Key** und **Modell** ein. Der Modellname muss exakt dem Deployment-Namen entsprechen.
-3. Optional: **Denktiefe (Reasoning)** („Standard des Modells“ sendet nichts, „keine“ schaltet das Denken ausdrücklich aus; „sehr hoch“ und „maximal“ nehmen die höchste Stufe, die dein Dienst kennt – siehe [Denktiefe](../reference/llm-schnittstelle.md#denktiefe)), Timeout, maximale Eingabegröße und ein **Embedding-Modell** (leer lassen für die lokale Ähnlichkeitssuche, siehe [Suche](../explanation/suche.md)).
+3. Optional: **Denktiefe (Reasoning)** („Standard des Modells“ sendet nichts, „keine“ schaltet das Denken ausdrücklich aus; „sehr hoch“ und „maximal“ nehmen die höchste Stufe, die dein Dienst kennt – siehe [Denktiefe](../reference/llm-schnittstelle.md#denktiefe)), Timeout, maximale Eingabegröße und ein **Embedding-Modell** (leer lassen für die lokale Ähnlichkeitssuche, siehe [Suche](../explanation/suche.md)). Die Embeddings gehen standardmäßig an dieselbe Adresse wie die KI; wählst du **Dieselbe Adresse wie die KI verwenden** ab, trägst du eine eigene ein, siehe [Claude auf Foundry mit Werkzeugen nutzen](#claude-auf-foundry-mit-werkzeugen-nutzen).
 4. Klick auf **Verbindung testen**. Der Test prüft eine Textantwort, eine strukturierte Antwort und einen echten Werkzeugaufruf mit Rückgabe und Streaming. Scheitern nur die strukturierten Antworten, zeigt Archivist das getrennt an.
 
 Beispiele für die Base URL:
@@ -24,6 +24,8 @@ Erkannt wird der Anthropic-Adapter an `api.anthropic.com` bzw. einer URL, die au
 ## Claude auf Foundry mit Werkzeugen nutzen
 
 Claude-Modelle auf Foundry bieten natives Tool-Calling nur am Anthropic-Endpunkt derselben Ressource. Trägst du den OpenAI-Endpunkt ein, schlägt der Verbindungsdialog `https://<resource>.services.ai.azure.com/anthropic` vor – übernimm ihn. Ohne natives Tool-Calling arbeitet der Chat mit der regelbasierten Auswertung statt im [Agentenmodus](../reference/agentenmodus.md).
+
+Der Anthropic-Endpunkt hat keinen `/embeddings`-Endpunkt. Nutzt du ein Embedding-Modell der Ressource (z. B. `text-embedding-3-small`), wähle unter **Einstellungen → KI** **Dieselbe Adresse wie die KI verwenden** ab und trag dort den OpenAI-Endpunkt derselben Ressource ein (`https://<resource>.openai.azure.com/openai/v1`). Der API-Key bleibt derselbe.
 
 ## Adapter manuell festlegen
 

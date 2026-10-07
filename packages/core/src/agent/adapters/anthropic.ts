@@ -129,6 +129,11 @@ export function turnUsage(usage: Anthropic.Beta.BetaUsage): TurnResult['usage'] 
   };
 }
 
+/** Tools and system instructions rarely change, so they stay cached for an hour (conversation turns keep the 5 minutes of the automatic cache). */
+function stableCache(off: Set<string>): { type: 'ephemeral'; ttl?: '1h' } {
+  return off.has('cache_ttl') ? { type: 'ephemeral' } : { type: 'ephemeral', ttl: '1h' };
+}
+
 /** Streamed tools get eager input streaming; the last tool is the first cache breakpoint. */
 function toolParams(req: TurnRequest, off: Set<string>): unknown[] {
   const tools: unknown[] = req.tools.map((t, i) => ({
@@ -136,7 +141,7 @@ function toolParams(req: TurnRequest, off: Set<string>): unknown[] {
     description: t.description,
     input_schema: t.parameters,
     ...(off.has('eager_streaming') ? {} : { eager_input_streaming: true }),
-    ...(i === req.tools.length - 1 ? { cache_control: { type: 'ephemeral' } } : {}),
+    ...(i === req.tools.length - 1 ? { cache_control: stableCache(off) } : {}),
   }));
   // web search (server tool) filtering its results before they reach the context; the basic one where that is not offered
   if (req.webSearch && !off.has('web_search')) {
@@ -185,7 +190,7 @@ export class AnthropicAdapter implements ProviderAdapter {
     return {
       model: this.model,
       max_tokens: req.maxOutputTokens,
-      system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: req.system, cache_control: stableCache(off) }],
       messages: toAnthropicMessages(req.messages, this.model),
       ...(tools.length ? { tools, tool_choice: { type: 'auto' } } : {}),
       ...(Object.keys(outputConfig).length ? { output_config: outputConfig } : {}),

@@ -50,6 +50,18 @@ describe('Re-embedding after the embedding model changed (#173)', () => {
     expect(staleIds('model-a')).toContain(id);
   });
 
+  it('queues a job when only the embedding endpoint changes', async () => {
+    await archivedDocument();
+    await app.ok('settings:update', { llm: { embeddingModel: 'model-a' } });
+    await app.services.jobs.whenIdle();
+    expect(reembedJobs()).toHaveLength(1);
+
+    await app.ok('settings:update', { llm: { embeddingBaseUrl: app.services.settings.get().llm.baseUrl } });
+    await app.services.jobs.whenIdle();
+
+    expect(reembedJobs()).toHaveLength(2);
+  });
+
   it('queues another job when the model changes again while a job is running', async () => {
     const id = await archivedDocument();
     let release = () => {};

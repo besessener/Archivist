@@ -3,7 +3,17 @@ import type { AdapterConfig } from './common';
 
 /** Optional features; an endpoint that rejects one gets requests without it from then on (#296). */
 export type Feature =
-  'web_location' | 'web_dynamic' | 'web_search' | 'effort' | 'json_format' | 'task_budget' | 'compaction' | 'eager_streaming' | 'top_cache' | 'fallbacks';
+  | 'web_location'
+  | 'web_dynamic'
+  | 'web_search'
+  | 'effort'
+  | 'json_format'
+  | 'task_budget'
+  | 'compaction'
+  | 'eager_streaming'
+  | 'cache_ttl'
+  | 'top_cache'
+  | 'fallbacks';
 
 const FEATURE_MENTIONS: Record<Feature, RegExp> = {
   // the specific features come first: „output_config.task_budget: …“ must switch off the task budget, not the effort
@@ -18,6 +28,7 @@ const FEATURE_MENTIONS: Record<Feature, RegExp> = {
   fallbacks: /fallback/i,
   json_format: /output_config\.format|output[_ ]format|json_schema|structured output/i,
   effort: /\beffort\b|output_config/i,
+  cache_ttl: /\bttl\b/i,
   top_cache: /cache_control/i,
 };
 

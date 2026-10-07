@@ -22,6 +22,7 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
       timeoutMs: 120000,
       maxInputChars: 50000,
       embeddingModel: 'emb-a',
+      embeddingBaseUrl: 'https://emb-a.example.com/v1',
       dailyTokenCap: 50000,
     },
     b: {
@@ -31,6 +32,7 @@ const SECTIONS: Record<SectionKey, { a: Record<string, unknown>; b: Record<strin
       timeoutMs: 30000,
       maxInputChars: 8000,
       embeddingModel: 'emb-b',
+      embeddingBaseUrl: '',
       dailyTokenCap: null,
     },
   },

@@ -26,6 +26,7 @@ function client() {
         baseUrl: 'https://llm.example.test/v1',
         model: 'test-model',
         embeddingModel: 'embed-model',
+        embeddingBaseUrl: '',
         maxInputChars: 10000,
         reasoningEffort: null,
         timeoutMs: 5000,
