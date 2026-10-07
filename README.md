@@ -52,7 +52,7 @@ Ausführlich: [Entwicklungsumgebung aufsetzen](docs/tutorials/entwicklungsumgebu
 
 ## Dokumentation
 
-Die vollständige Dokumentation liegt unter [`docs/`](docs/README.md), gegliedert nach [Diátaxis](https://diataxis.fr/):
+Webseite: <https://besessener.github.io/Archivist/>. Die vollständige Dokumentation liegt unter [`docs/`](docs/README.md), gegliedert nach [Diátaxis](https://diataxis.fr/):
 
 - **[Tutorials](docs/README.md#tutorials)** – Schritt für Schritt zum ersten Erfolg
 - **[Anleitungen](docs/README.md#anleitungen)** – konkrete Aufgaben lösen, z. B. [LLM-Anbieter verbinden](docs/how-to/llm-anbieter-verbinden.md) oder [Release veröffentlichen](docs/how-to/release-veroeffentlichen.md)

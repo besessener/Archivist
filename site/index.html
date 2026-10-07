@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Archivist – dein persönlicher Archivar</title>
+    <meta
+      name="description"
+      content="Archivist ist ein lokaler, agentischer KI-Archivar für Windows: Er speichert, versteht und verknüpft deine Dokumente, Entscheidungen und offenen Punkte, und nichts geht verloren."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top"><img src="favicon.svg" alt="" width="28" height="28" /> Archivist</a>
+      <nav aria-label="Seitennavigation">
+        <a href="#funktionen">Funktionen</a>
+        <a href="#vertrauen">Vertrauen</a>
+        <a href="#start">Loslegen</a>
+        <a href="#dokumentation">Dokumentation</a>
+        <a href="https://github.com/besessener/Archivist">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <h1>Archivist – dein persönlicher Archivar</h1>
+        <p class="lead">
+          Eine lokale Desktop-Anwendung für Windows, die deine Dokumente, Entscheidungen, offenen Punkte und dein Wissen nicht nur speichert, sondern versteht,
+          verknüpft und das Archiv aktiv konsistent hält.
+        </p>
+        <p class="actions">
+          <a class="button primary" href="https://github.com/besessener/Archivist/releases/latest">Für Windows herunterladen</a>
+          <a class="button" href="https://github.com/besessener/Archivist/blob/main/docs/tutorials/erste-schritte.md">Erste Schritte</a>
+        </p>
+        <picture>
+          <source srcset="img/chat-dark.png" media="(prefers-color-scheme: dark)" />
+          <img
+            class="shot"
+            src="img/chat-light.png"
+            width="1280"
+            height="800"
+            alt="Der Chat von Archivist: Eine Entscheidung wird festgehalten, die Antwort auf eine Frage nennt ihre Quellen."
+          />
+        </picture>
+      </section>
+
+      <section id="funktionen">
+        <h2>Was Archivist für dich tut</h2>
+        <div class="cards">
+          <article>
+            <h3>Chat als Schnittstelle</h3>
+            <p>Halte Entscheidungen fest, stelle Fragen und bekomme Antworten mit Quellen – belegte Fakten getrennt von Interpretation.</p>
+          </article>
+          <article>
+            <h3>Sicher archivieren</h3>
+            <p>
+              Dokumente landen in menschenlesbaren Ordnern. Nichts wird überschrieben, Gelöschtes landet im Papierkorb, jede Änderung lässt sich rückgängig
+              machen.
+            </p>
+          </article>
+          <article>
+            <h3>Wissensgraph und Suche</h3>
+            <p>Themen, Projekte, Personen und Dokumente sind verknüpft und auffindbar. Archivist schlägt Verknüpfungen mit Begründung vor – du entscheidest.</p>
+          </article>
+          <article>
+            <h3>Agent im Hintergrund</h3>
+            <p>Plant mehrere Schritte, nutzt Werkzeuge und prüft das Archiv auf Lücken, Dubletten und Widersprüche.</p>
+          </article>
+        </div>
+        <picture>
+          <source srcset="img/knowledge-dark.png" media="(prefers-color-scheme: dark)" />
+          <img
+            class="shot"
+            src="img/knowledge-light.png"
+            width="1280"
+            height="1000"
+            loading="lazy"
+            alt="Die Wissensseite von Archivist mit dem Graphen einer Notiz, die mit einem Thema und einer Person verknüpft ist."
+          />
+        </picture>
+      </section>
+
+      <section id="vertrauen">
+        <h2>Deine Daten bleiben deine</h2>
+        <p class="section-lead">Ein Archiv ist persönlich. Deshalb sind die Schutzregeln keine Einstellung, sondern fest eingebaut.</p>
+        <ul class="checks">
+          <li><strong>Keine Datei geht verloren.</strong> Archivist überschreibt nie und fasst deine Originale nicht an.</li>
+          <li><strong>Du bestätigst, bevor etwas passiert.</strong> Aktionen, die Dateien ändern, laufen nur nach deiner ausdrücklichen Bestätigung.</li>
+          <li>
+            <strong>Du entscheidest, was den Rechner verlässt.</strong> Ausschlüsse, Maskierung von Zugangsdaten und IBANs und ein Übertragungsprotokoll machen
+            jede Übertragung an die KI nachprüfbar. Im Modus „nur lokal“ geht nichts hinaus.
+          </li>
+          <li><strong>Dokumente sind Daten, keine Anweisungen.</strong> Text in einer E-Mail oder einem PDF kann Archivist nichts befehlen.</li>
+          <li><strong>Schlüssel bleiben verschlüsselt.</strong> Dein API-Key liegt nur im sicheren Speicher von Windows.</li>
+        </ul>
+        <p>
+          <a href="https://github.com/besessener/Archivist/blob/main/docs/explanation/sicherheitsmodell.md">Mehr zum Sicherheitsmodell</a>
+        </p>
+      </section>
+
+      <section id="start">
+        <h2>In drei Schritten loslegen</h2>
+        <ol class="steps">
+          <li>
+            <strong>Herunterladen.</strong> Installer oder portable EXE aus den
+            <a href="https://github.com/besessener/Archivist/releases/latest">GitHub Releases</a>.
+          </li>
+          <li><strong>Verbinden.</strong> Trage Base URL, API-Key und Modell deines KI-Anbieters ein und teste die Verbindung.</li>
+          <li><strong>Archivieren.</strong> Ziehe ein Dokument ins Fenster, prüfe den Vorschlag und bestätige.</li>
+        </ol>
+        <p>
+          Das Tutorial <a href="https://github.com/besessener/Archivist/blob/main/docs/tutorials/erste-schritte.md">Erste Schritte</a> führt dich in etwa 15
+          Minuten durch alles.
+        </p>
+      </section>
+
+      <section id="dokumentation">
+        <h2>Dokumentation</h2>
+        <p class="section-lead">Geordnet nach dem, was du gerade brauchst (<a href="https://diataxis.fr/">Diátaxis</a>).</p>
+        <div class="cards">
+          <a class="card-link" href="https://github.com/besessener/Archivist/tree/main/docs/tutorials">
+            <strong>Tutorials</strong>
+            <span>Schritt für Schritt zum ersten Erfolg</span>
+          </a>
+          <a class="card-link" href="https://github.com/besessener/Archivist/tree/main/docs/how-to">
+            <strong>Anleitungen</strong>
+            <span>Ein konkretes Ziel erreichen</span>
+          </a>
+          <a class="card-link" href="https://github.com/besessener/Archivist/tree/main/docs/reference">
+            <strong>Referenz</strong>
+            <span>Nachschlagen, wie es genau ist</span>
+          </a>
+          <a class="card-link" href="https://github.com/besessener/Archivist/tree/main/docs/explanation">
+            <strong>Hintergrund</strong>
+            <span>Verstehen, warum es so ist</span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Archivist steht unter der <a href="https://github.com/besessener/Archivist/blob/main/LICENSE">MIT-Lizenz</a>.
+        <a href="https://github.com/besessener/Archivist">Quellcode auf GitHub</a> ·
+        <a href="https://github.com/besessener/Archivist/releases">Releases</a>
+      </p>
+    </footer>
+  </body>
+</html>
