@@ -21,10 +21,10 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
       model,
       max_tokens: 4_000,
       stream: true,
-      system: [{ type: 'text', text: 'Du bist Archivist.', cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: 'Du bist Archivist.', cache_control: { type: 'ephemeral', ttl: '1h' } }],
       tools: [
         { name: 'find_documents', description: 'Dokumente finden', input_schema: TOOLS[0]!.parameters, eager_input_streaming: true },
-        { name: 'move_documents', description: 'Dokumente verschieben', input_schema: TOOLS[1]!.parameters, cache_control: { type: 'ephemeral' } },
+        { name: 'move_documents', description: 'Dokumente verschieben', input_schema: TOOLS[1]!.parameters, cache_control: { type: 'ephemeral', ttl: '1h' } },
       ],
       tool_choice: { type: 'auto' },
       output_config: { effort: 'xhigh', task_budget: { type: 'tokens', total: 20_000 } },
@@ -35,6 +35,8 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
     // only the last tool is the cache breakpoint; betas travel as header, not in the body
     expect((req!.body.tools as Array<Record<string, unknown>>)[0]).not.toHaveProperty('cache_control');
     expect(req!.body).not.toHaveProperty('betas');
+    // the automatic cache of the conversation keeps the default lifetime of 5 minutes
+    expect(req!.body.cache_control).toEqual({ type: 'ephemeral' });
     expect(logs[0]).toMatchObject({ endpoint: 'https://api.anthropic.com/v1/messages', model, success: true, documentIds: ['doc-1'] });
   });
 
@@ -189,6 +191,20 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
     expect(warns.map((w) => w.data)).toEqual([{ feature: 'task_budget' }]);
     await new AnthropicAdapter(config).turn(request([user('y')], { taskBudget: 100_000 }));
     expect(t.sent[2]!.body.output_config).toEqual({ effort: 'high' });
+  });
+
+  it('feature fallback: a 400 about the cache lifetime keeps the cache, now with the default lifetime, and remembers it', async () => {
+    const model = uniqueModel('claude-opus-5-5');
+    const t = fakeFetch(claudeError(400, 'system.0.cache_control.ttl: Extra inputs are not permitted'), claudeStream([{ type: 'text', text: 'ok' }]));
+    const { config, warns } = adapterSetup({ baseUrl: 'https://api.anthropic.com', model: model, fetchImpl: t.fetchImpl });
+    await new AnthropicAdapter(config).turn(request([user('x')]));
+    expect(t.sent).toHaveLength(2);
+    expect(t.sent[1]!.body.system).toEqual([{ type: 'text', text: 'Du bist Archivist.', cache_control: { type: 'ephemeral' } }]);
+    expect(t.sent[1]!.body.cache_control).toEqual({ type: 'ephemeral' });
+    expect((t.sent[1]!.body.tools as Array<Record<string, unknown>>).at(-1)!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(warns.map((w) => w.data)).toEqual([{ feature: 'cache_ttl' }]);
+    await new AnthropicAdapter(config).turn(request([user('y')]));
+    expect(t.sent[2]!.body.system).toEqual([{ type: 'text', text: 'Du bist Archivist.', cache_control: { type: 'ephemeral' } }]);
   });
 
   it('a 400 about context management switches compaction off; an unrelated 400 is not retried', async () => {
