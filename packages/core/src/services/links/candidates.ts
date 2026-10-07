@@ -69,7 +69,11 @@ export class LinkCandidates {
       found.set(hit.id, { id: hit.id, type: entity.type, name: entity.name, score: hit.score, method: 'similarity', reason });
     }
     for (const mention of this.mentions(entityId)) found.set(mention.id, mention);
-    return [...found.values()].toSorted((a, b) => b.score - a.score).slice(0, limit);
+    const min = this.deps.minConfidence?.() ?? 0;
+    return [...found.values()]
+      .filter((candidate) => candidate.score >= min)
+      .toSorted((a, b) => b.score - a.score)
+      .slice(0, limit);
   }
 
   /** „Das klingt nach Projekt X“: known topics and projects the entry names. */
@@ -90,8 +94,10 @@ export class LinkCandidates {
   private openSimilarityProposals(id: string): number {
     return (
       this.sqlite
-        .prepare(`SELECT count(*) AS c FROM relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND status = 'proposed' AND method = 'similarity'`)
-        .get(id, id) as { c: number }
+        .prepare(
+          `SELECT count(*) AS c FROM relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND status = 'proposed' AND method = 'similarity' AND confidence >= ?`,
+        )
+        .get(id, id, this.deps.minConfidence?.() ?? 0) as { c: number }
     ).c;
   }
 

@@ -149,11 +149,19 @@ export function createDomainServices(base: BaseServices) {
 
 /** The fixed link methods (Epic #269): the same functions for the UI and the agent tools (#313). */
 export function createLinkingServices(services: BaseServices & DomainServices) {
-  const { ctx, graph, audit, undo, search, insights, appState, llm, privacy, documents, contradictions, noteAnalysis } = services;
+  const { ctx, settings, graph, audit, undo, search, insights, appState, llm, privacy, documents, contradictions, noteAnalysis } = services;
   const cases = new CaseService({ ctx, graph, audit });
   const subjects = new SubjectService({ ctx, graph, audit, undo });
   const linkThresholds = new LinkThresholds(ctx, appState);
-  const links = new LinkMethodsService({ ctx, graph, search, insights, appState, thresholds: linkThresholds });
+  const links = new LinkMethodsService({
+    ctx,
+    graph,
+    search,
+    insights,
+    appState,
+    thresholds: linkThresholds,
+    minConfidence: () => settings.get().links.minConfidence,
+  });
   const topicNamer = new TopicNamer({ ctx, llm, privacy, docs: documents });
   const refiner = new RelationRefiner({ ctx, graph, llm, privacy, docs: documents, insights, contradictions, appState });
   links.setTopicNamer((cluster, signal) =>

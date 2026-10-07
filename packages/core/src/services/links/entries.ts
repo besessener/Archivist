@@ -14,6 +14,8 @@ export interface LinkDeps {
   insights: InsightService;
   appState: AppStateService;
   thresholds?: LinkThresholds;
+  /** The user's lowest confidence for a proposal (setting `links.minConfidence`). */
+  minConfidence?: () => number;
 }
 
 /** Knowledge entries the link methods connect (documents only once archived or indexed). */

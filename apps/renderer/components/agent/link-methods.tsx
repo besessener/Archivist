@@ -21,7 +21,7 @@ export function LinkMethodsSection() {
   const [message, setMessage] = useState<string | null>(null);
   const total = unlinked.data?.total;
   const links = settings.data?.settings.links;
-  const saveLinks = async (patch: { autoPropose?: boolean; maxProposalsPerEntry?: number }) => {
+  const saveLinks = async (patch: { autoPropose?: boolean; maxProposalsPerEntry?: number; minConfidence?: number }) => {
     const saved = await run(() => call('settings:update', { links: patch }), { errorTitle: 'Speichern fehlgeschlagen' });
     if (saved) void settings.refetch();
   };
@@ -60,6 +60,7 @@ export function LinkMethodsSection() {
               ))}
             </Select>
           </Field>
+          <MinConfidenceSlider value={links.minConfidence ?? 0} disabled={busy} onCommit={(minConfidence) => void saveLinks({ minConfidence })} />
         </>
       )}
       <p className="text-sm" data-testid="links-unlinked-count">
@@ -90,6 +91,38 @@ export function LinkMethodsSection() {
       )}
       <LearnedThresholds />
     </Section>
+  );
+}
+
+/** Proposals below this confidence are neither made nor shown; the value is saved when the slider is released. */
+function MinConfidenceSlider({ value, disabled, onCommit }: { value: number; disabled: boolean; onCommit: (value: number) => void }) {
+  const [draft, setDraft] = useState(value);
+  const percent = Math.round(draft * 100);
+  const commit = () => draft !== value && onCommit(draft);
+  return (
+    <Field
+      label="Mindest-Konfidenz für Vorschläge"
+      htmlFor="links-min-confidence"
+      hint="Vorschläge mit geringerer Sicherheit werden weder angelegt noch angezeigt. 0 % zeigt alles, höhere Werte zeigen nur die sichersten."
+    >
+      <div className="flex items-center gap-3">
+        <input
+          id="links-min-confidence"
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          className="w-48 accent-primary"
+          value={percent}
+          disabled={disabled}
+          onChange={(e) => setDraft(Number(e.target.value) / 100)}
+          onPointerUp={commit}
+          onKeyUp={commit}
+          data-testid="links-min-confidence"
+        />
+        <span className="w-12 text-sm tabular-nums">{percent} %</span>
+      </div>
+    </Field>
   );
 }
 

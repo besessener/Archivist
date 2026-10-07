@@ -118,6 +118,7 @@ export function initSettings(page: Page) {
     links: {
       startRun: page.getByTestId('links-start-run'),
       unlinkedCount: page.getByTestId('links-unlinked-count'),
+      minConfidence: page.getByLabel('Mindest-Konfidenz für Vorschläge'),
     },
     memory: {
       newEntry: page.getByTestId('memory-new'),
@@ -271,6 +272,11 @@ export function initSettings(page: Page) {
     },
     openNotifications: async () => {
       await locators.tabs.notifications.click();
+    },
+    /** Moves the slider with the keyboard (one step is 5 %) and releases it, which saves. */
+    setMinConfidenceSteps: async (steps: number) => {
+      await locators.links.minConfidence.focus();
+      for (let step = 0; step < steps; step += 1) await locators.links.minConfidence.press('ArrowRight');
     },
     setReminderTime: async (time: string) => {
       await locators.notifications.reminderTime.fill(time);

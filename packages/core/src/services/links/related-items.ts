@@ -80,10 +80,18 @@ export class RelatedItems {
     return new Set(rejected.flatMap((relation) => (relation.relationType === 'duplicate_of' ? [] : [otherEndOf(relation, id)])));
   }
 
+  /** Confirmed relations and the proposals that reach the user's minimum confidence. */
+  private shownRelations(id: string): GraphRelation[] {
+    const min = this.deps.minConfidence?.() ?? 0;
+    return this.deps.graph
+      .relationsOf(id, { statuses: ['proposed', 'confirmed'] })
+      .filter((relation) => relation.status === 'confirmed' || relation.confidence >= min);
+  }
+
   /** Scores the direct relations to entries; returns the shared nodes (hubs) the entry is linked to, not the user's own person. */
   private addDirect(id: string, slot: (other: string) => Connection): SharedNode[] {
     const hubs: SharedNode[] = [];
-    for (const relation of this.deps.graph.relationsOf(id, { statuses: ['proposed', 'confirmed'] })) {
+    for (const relation of this.shownRelations(id)) {
       const otherId = otherEndOf(relation, id);
       const other = this.deps.graph.getEntity(otherId);
       if (!other) continue;

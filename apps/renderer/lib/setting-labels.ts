@@ -78,6 +78,7 @@ const SETTING_LABELS: Record<string, string> = {
   'appearance.theme': 'Farbschema',
   'links.autoPropose': 'Verknüpfungen automatisch vorschlagen',
   'links.maxProposalsPerEntry': 'Höchstens offene Verknüpfungsvorschläge je Eintrag',
+  'links.minConfidence': 'Mindest-Konfidenz für Verknüpfungsvorschläge',
 };
 
 /** How the key of a record entry is shown; keys without an entry (model names) are the user's own words. */

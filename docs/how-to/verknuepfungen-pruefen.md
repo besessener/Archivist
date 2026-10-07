@@ -33,4 +33,4 @@ Der rückwirkende Lauf prüft nur Einträge, die neu oder seit der letzten Prüf
 
 ## Weniger oder keine Vorschläge
 
-Unter **Einstellungen → Agent → Agentenläufe → Verknüpfungen automatisch vorschlagen** schaltest du die automatischen Vorschläge ab oder begrenzt die offenen Vorschläge je Eintrag.
+Unter **Einstellungen → Agent → Agentenläufe → Verknüpfungen automatisch vorschlagen** schaltest du die automatischen Vorschläge ab oder begrenzt die offenen Vorschläge je Eintrag. Der Regler **Mindest-Konfidenz für Vorschläge** blendet unsichere Vorschläge aus: Was darunter liegt, wird weder neu vorgeschlagen noch in der Liste, im Zähler oder bei den verwandten Einträgen gezeigt. Schiebst du den Regler zurück, erscheinen bereits vorhandene Vorschläge wieder.
