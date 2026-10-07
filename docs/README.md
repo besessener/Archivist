@@ -33,6 +33,7 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [Datenbankschema ändern](how-to/datenbankschema-aendern.md)
 - [Den Agenten mit echten Modellen evaluieren](how-to/agent-evaluieren.md)
 - [Windows-Paket bauen und Release veröffentlichen](how-to/release-veroeffentlichen.md)
+- [Webseite pflegen und veröffentlichen](how-to/webseite-pflegen.md)
 
 ## Referenz
 

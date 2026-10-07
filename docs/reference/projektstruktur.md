@@ -19,6 +19,7 @@ archivist/
 │   └── eval/               Agent-Evaluation mit echten Modellen (nicht Teil von npm test)
 ├── scripts/                check-native.mjs, check-release-version.mjs, mutation-summary.mjs
 ├── docs/                   diese Dokumentation
+├── site/                   statische Webseite (GitHub Pages): index.html, style.css, img/
 ├── config.example.json     Beispielkonfiguration (ohne Zugangsdaten)
 └── .env.example            dokumentierte Umgebungsvariablen (werden nicht automatisch geladen)
 ```
