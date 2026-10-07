@@ -46,6 +46,29 @@ test.describe('open items: the form', () => {
     for (const name of ['Bearbeiten', 'Erinnern', 'Zusammenhänge', 'Löschen …']) await expect(overdue.getByRole('button', { name })).toBeVisible();
   });
 
+  test('the „Bald fällig“ window follows the setting', async ({ llm, on, page }) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('open-items');
+    const oi = app.openItems;
+    const inTenDays = new Date(Date.now() + 10 * 86_400_000).toLocaleDateString('sv-SE');
+    await oi.locators.buttons.create.click();
+    await oi.locators.inputs.title.fill('Vertrag kündigen');
+    await oi.locators.inputs.due.fill(inTenDays);
+    await oi.locators.buttons.save.click();
+    await expect(oi.locators.form).toBeHidden();
+    await expect(oi.row('Vertrag kündigen')).toHaveAttribute('data-group', 'open');
+
+    await app.navigation.do.open('settings');
+    await app.settings.do.openArchive();
+    await expect(app.settings.locators.consistency.dueSoonDays).toHaveValue('7');
+    await app.settings.locators.consistency.dueSoonDays.fill('14');
+    await app.settings.locators.consistency.save.click();
+
+    await app.navigation.do.open('open-items');
+    await expect(oi.row('Vertrag kündigen')).toHaveAttribute('data-group', 'due');
+  });
+
   test('deleting an item asks first and removes it only after confirming', async ({ llm, on, page }) => {
     const app = on(page);
     await app.setup.do.complete(llm.url);

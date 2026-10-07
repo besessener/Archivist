@@ -56,6 +56,8 @@ const ConsistencySettings = z.object({
   onStartup: z.boolean().default(true),
   intervalHours: z.number().min(0).default(24),
   staleOpenItemDays: z.number().int().min(1).default(30),
+  /** Open items due within this many days count as „Bald fällig“. */
+  dueSoonDays: z.number().int().min(1).max(365).default(7),
   /** Merge unambiguous person duplicates („Monika Lor-Zade (Chefin)“ = „Lor-Zade, Monika“) without asking. */
   autoMergePersons: z.boolean().default(true),
 });

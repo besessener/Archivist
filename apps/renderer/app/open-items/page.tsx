@@ -9,11 +9,12 @@ import { GROUP_HEADING, Page, PageHeader } from '@/components/common/page-header
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { CloseDialog, DeleteDialog, RelatedDialog, ReminderDialog } from '@/components/open-items/item-dialogs';
 import { ItemFormDialog } from '@/components/open-items/item-form-dialog';
-import { OpenItemRow, groupOf, type OpenItemActions, type OpenItemGroup } from '@/components/open-items/item-row';
+import { OpenItemRow, type OpenItemActions } from '@/components/open-items/item-row';
 import { UpcomingReminders } from '@/components/reminders/upcoming-reminders';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useApp } from '@/lib/app-context';
+import { dueWindow, groupOf, type DueWindow, type OpenItemGroup } from '@/lib/open-item-groups';
 import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
 import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
@@ -23,9 +24,9 @@ import { cn } from '@/lib/utils';
 const GROUPS = ['overdue', 'due', 'open', 'done'] as const;
 const GROUP_LABELS: Record<OpenItemGroup, string> = { overdue: 'Überfällig', due: 'Bald fällig', open: 'Offen', done: 'Erledigt' };
 
-function groupItems(items: OpenItemRecord[]): Record<OpenItemGroup, OpenItemRecord[]> {
+function groupItems(items: OpenItemRecord[], window: DueWindow): Record<OpenItemGroup, OpenItemRecord[]> {
   const groups: Record<OpenItemGroup, OpenItemRecord[]> = { overdue: [], due: [], open: [], done: [] };
-  for (const item of items) groups[groupOf(item)].push(item);
+  for (const item of items) groups[groupOf(item, window)].push(item);
   for (const key of ['overdue', 'due', 'open'] as const) groups[key].sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'));
   return groups;
 }
@@ -48,7 +49,8 @@ export default function OpenItemsPage() {
 
   const selection = useSelection();
   const subjects = useSubjectsOf(useMemo(() => (data ?? []).map((item) => item.id), [data]));
-  const groups = useMemo(() => groupItems(data ?? []), [data]);
+  const dueSoonDays = settings?.consistency.dueSoonDays;
+  const groups = useMemo(() => groupItems(data ?? [], dueWindow(dueSoonDays ?? 7)), [data, dueSoonDays]);
   const actions: OpenItemActions = {
     onEdit: setEditItem,
     onRemind: setRemindItem,

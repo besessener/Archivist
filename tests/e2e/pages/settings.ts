@@ -154,6 +154,10 @@ export function initSettings(page: Page) {
       confirm: page.getByTestId('category-migration-confirm'),
       job: page.getByTestId('category-migration-job'),
     },
+    consistency: {
+      dueSoonDays: page.getByTestId('settings-due-soon-days'),
+      save: page.getByTestId('settings-consistency-save'),
+    },
     ocr: {
       languages: page.getByTestId('settings-ocr-languages'),
       language: (code: 'deu' | 'eng') => page.getByTestId(`settings-ocr-language-${code}`),

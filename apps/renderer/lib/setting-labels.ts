@@ -41,6 +41,7 @@ const SETTING_LABELS: Record<string, string> = {
   'consistency.onStartup': 'Archivprüfung beim Start',
   'consistency.intervalHours': 'Intervall der Archivprüfung (Stunden)',
   'consistency.staleOpenItemDays': 'Offene Punkte gelten als vergessen nach (Tagen)',
+  'consistency.dueSoonDays': 'Offene Punkte gelten als „Bald fällig“ (Tage vor der Frist)',
   'consistency.autoMergePersons': 'Personen-Dubletten automatisch zusammenführen',
   'ocr.enabled': 'Texterkennung (OCR)',
   'ocr.languages': 'Texterkennung (OCR): Sprachen',
