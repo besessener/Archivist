@@ -10,6 +10,7 @@ const INTENT_LABELS: Partial<Record<ChatIntent['intent'], string>> = {
   decision_supersede: 'Entscheidung ersetzen',
   note_capture: 'Notiz',
   knowledge_question: 'Frage',
+  idea_challenge: 'Idee hinterfragen',
   document_search: 'Dokumentsuche',
   timeline_query: 'Zeitverlauf',
   event_record: 'Ereignis',

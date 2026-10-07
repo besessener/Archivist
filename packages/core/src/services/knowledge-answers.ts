@@ -13,7 +13,8 @@ import type { PrivacyService } from './privacy';
 import type { SearchService } from './search';
 import type { SettingsService } from './settings';
 import type { ConvState, Reply } from './chat-state';
-import { composeAnswer, localAnswer, type ComposedAnswer } from './knowledge-answer-text';
+import { composeAnswer, localAnswer, type CitableSources, type ComposedAnswer } from './knowledge-answer-text';
+import { askChallenge, composeChallenge } from './idea-challenge';
 import { SourceGatherer } from './knowledge-gathering';
 import { publicSource, sourceDateLabel, SourceReader, type GatheredSource } from './knowledge-sources';
 
@@ -37,6 +38,16 @@ export interface KnowledgeQuestion {
   /** Lines of the last turns, only to resolve references like „daran“ in the question (#156). */
   history?: string[];
 }
+
+/** The question as the answer step sees it. */
+interface AskedQuestion {
+  text: string;
+  intent: ChatIntent['intent'];
+  state: ConvState;
+  history?: string[];
+}
+
+type Compose = (question: AskedQuestion, ids: Map<string, GatheredSource>, citable: CitableSources) => Promise<ComposedAnswer>;
 
 /** Context list of a source of this type, and of a topic/project/person next to it. */
 const SOURCE_LIST: Partial<Record<string, keyof ChatContext>> = {
@@ -116,14 +127,23 @@ export class KnowledgeAnswerService {
     return context;
   }
 
-  async knowledgeQuestion({ text, intent, state, history = [] }: KnowledgeQuestion): Promise<Reply> {
+  knowledgeQuestion(question: KnowledgeQuestion): Promise<Reply> {
+    return this.answerFromArchive(question, (q, ids, citable) => this.askLlm(q, ids).then((answer) => composeAnswer(answer, citable)));
+  }
+
+  /** What speaks for and against an idea of the user, from the same sources as a knowledge answer; changes nothing. */
+  ideaChallenge(question: KnowledgeQuestion): Promise<Reply> {
+    return this.answerFromArchive(question, (q, ids, citable) => askChallenge(this.llm, q, ids).then((challenge) => composeChallenge(challenge, citable)));
+  }
+
+  private async answerFromArchive({ text, intent, state, history = [] }: KnowledgeQuestion, compose: Compose): Promise<Reply> {
     // the LLM's query, its alternative wordings (synonyms, other language) and the question itself (#164)
     const wordings = [intent.query?.trim() || text, ...(intent.alternativeQueries ?? []), text].map((q) => q.trim()).filter(Boolean);
     const queries = [...new Map(wordings.map((q) => [normalizeName(q), q])).values()].slice(0, 5);
     const gathered = await this.gatherer.gather(queries);
     if (gathered.length === 0)
       return {
-        intent: 'knowledge_question',
+        intent: intent.intent,
         content: `Dazu habe ich unter den archivierten Dokumenten, Entscheidungen, Ereignissen, offenen Punkten und Notizen nichts gefunden (gesucht nach ${queries.map((q) => `„${truncate(q, 60)}“`).join(', ')}). Das heißt nicht sicher, dass es dazu nichts gibt – vielleicht steht es mit anderen Worten in einem Dokument. Versuch es gern mit anderen Begriffen.`,
         confidence: 0.2,
         uncertainties: [
@@ -132,7 +152,11 @@ export class KnowledgeAnswerService {
         state,
       };
     const { sources, notes } = withinTimeRange(gathered, intent);
-    const reply = await this.answerKnowledge({ text: intent.segment?.trim() || text, state, history }, this.subjectFirst(sources, intent));
+    const reply = await this.answerKnowledge(
+      { text: intent.segment?.trim() || text, intent: intent.intent, state, history },
+      this.subjectFirst(sources, intent),
+      compose,
+    );
     return notes.length ? { ...reply, uncertainties: [...(reply.uncertainties ?? []), ...notes] } : reply;
   }
 
@@ -158,12 +182,12 @@ export class KnowledgeAnswerService {
     return [...sources.filter(matches), ...sources.filter((s) => !matches(s))];
   }
 
-  /** Answers a knowledge question from the gathered sources (LLM with citations, or a local list). */
-  private async answerKnowledge(question: { text: string; state: ConvState; history?: string[] }, sources: GatheredSource[]): Promise<Reply> {
+  /** Answers from the gathered sources (LLM with citations, or a local list). */
+  private async answerKnowledge(question: AskedQuestion, sources: GatheredSource[], compose: Compose): Promise<Reply> {
     const numbered = sources.map((s, i) => ({ ...s, title: `${i + 1}. ${s.title}` }));
     const stripped = numbered.map(publicSource);
     const local = (uncertainty: string, extra: Partial<Reply> = {}): Reply => ({
-      intent: 'knowledge_question',
+      intent: question.intent,
       content: localAnswer(numbered),
       sources: stripped,
       context: this.contextFromSources(stripped),
@@ -177,8 +201,8 @@ export class KnowledgeAnswerService {
     const ids = new Map(numbered.flatMap((s, i) => (s._local ? [] : [[`S${i + 1}`, s] as const])));
     if (ids.size === 0) return local(`Die passenden Dokumente sind nicht für die externe Analyse freigegeben. ${LOCAL_NOTE}`);
     try {
-      const answer = await this.askLlm(question, ids);
-      const reply = this.reply(composeAnswer(answer, { ids, numbered, stripped }), question.state);
+      const composed = await compose(question, ids, { ids, numbered, stripped });
+      const reply = this.reply(composed, question);
       return withLocalOnly(
         reply,
         stripped.filter((_, i) => numbered[i]?._local),
@@ -207,8 +231,8 @@ export class KnowledgeAnswerService {
     });
   }
 
-  private reply(composed: ComposedAnswer, state: ConvState): Reply {
-    return { intent: 'knowledge_question', ...composed, context: this.contextFromSources(composed.sources), state };
+  private reply(composed: ComposedAnswer, { intent, state }: AskedQuestion): Reply {
+    return { intent, ...composed, context: this.contextFromSources(composed.sources), state };
   }
 }
 

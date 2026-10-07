@@ -12,6 +12,7 @@ Absichten (intent):
 - decision_supersede: Eine neue Entscheidung ersetzt oder widerruft eine ältere.
 - note_capture: Wissen oder eine Notiz festhalten.
 - knowledge_question: Frage zum Archivwissen (Wann/Warum/Wer/Wie/„Haben wir jemals …“/Haltungsänderung/Widersprüche).
+- idea_challenge: Der Benutzer erwägt einen Plan oder eine Idee und will wissen, was dafür oder dagegen spricht („Ich überlege, den Mietvertrag zu kündigen“, „Hinterfrage: …“, „Spricht etwas dagegen, …?“). Es wird nichts gespeichert. Eine bereits getroffene Entscheidung ist decision_new, eine Frage nach vorhandenen Fakten knowledge_question. Setze query und alternativeQueries wie bei Fragen.
 - document_search: Dokumente suchen oder anzeigen (nicht, um ihre Verzeichnisse zu bewerten).
 - timeline_query: Chronologische Übersicht zu Thema/Projekt/Zeitraum.
 - event_record: Ein Ereignis mit Datum, das stattgefunden hat und in der Timeline stehen soll („am 01.10.2026 beim German Testing Day eingereicht“, „Kickoff war am 3. März“). Fülle event.title (kurz, Subjekt + Tat), event.occurredAt (ISO) und optional event.description sowie event.participants (nur ausdrücklich genannte beteiligte Personen; „ich“ bleibt „ich“). Eine Entscheidung ist es nur, wenn ausdrücklich etwas entschieden wurde; reine Berichte über Erledigtes sind Ereignisse.

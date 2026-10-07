@@ -93,6 +93,11 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Im Chat gehen bis zu sechs vorherige Nachrichten des Gesprächs mit, als Daten markiert und nur zum Auflösen von Bezügen wie „daran“, nie als Quelle für Fakten. Deine Nachrichten sind auf 280, Antworten auf 200 Zeichen gekürzt; Antworten aus dem Archiv (mit Quellen) erscheinen nur als Vermerk „Inhalt ausgelassen“. Ruft der Agent die geprüfte Wissensantwort als Werkzeug auf, geht kein Chatverlauf mit.
 - Über **bestätigte** Beziehungen der drei besten Treffer kommen bis zu drei weitere Einträge hinzu (höchstens zwei je Treffer, halbe Gewichtung), mit dem Vermerk „Hinzugekommen über die bestätigte Verknüpfung: …“. Vorgeschlagene, abgelehnte und veraltete Beziehungen werden nie genutzt; Freigaben gelten wie für Treffer.
 
+## Idee hinterfragen
+
+- Schema `IdeaChallenge`: Zusammenfassung sowie belegte Punkte „dagegen“, „dafür“ und „betroffen“, Unsicherheiten, Fehlendes. Gesendet werden die Idee, die Titel und Textstellen der Quellen und der Gesprächsverlauf wie bei Wissensfragen; Quellen, die nicht freigegeben sind, gehen nie hinaus und werden nur lokal zitiert.
+- Wie bei [Wissensfragen](#antworten-auf-wissensfragen) verwirft Archivist Punkte ohne gültigen Quellenbeleg und zeigt gefundene, aber nicht zitierte Quellen als „gefunden, nicht zitiert“. Die Anfrage steht im Übertragungsprotokoll (Zweck „Idee hinterfragen“).
+
 ## Analyse von Notizen
 
 - Schema `NoteAnalysis`: Thema, Projekt, Personen, Tags. Nur im Modus „automatisch“; sonst lokal.

@@ -2,6 +2,7 @@
 const OUTPUT_LIMITS: Record<string, number> = {
   DocumentClassification: 8000,
   KnowledgeAnswer: 4000,
+  IdeaChallenge: 4000,
   ChatIntent: 4000,
   SolutionProposal: 3000,
   NoteAnalysis: 2000,
