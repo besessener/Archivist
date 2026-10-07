@@ -174,6 +174,7 @@ export class SettingsService {
     if (!parsed.success) throw validationError('Ungültige Einstellungen.', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     const settings = parsed.data;
     if (patch.llm?.baseUrl !== undefined) settings.llm.baseUrl = checkedBaseUrl(settings.llm.baseUrl);
+    if (patch.llm?.embeddingBaseUrl !== undefined) settings.llm.embeddingBaseUrl = checkedBaseUrl(settings.llm.embeddingBaseUrl);
     if (patch.archiveRoot !== undefined) settings.archiveRoot = this.writableArchiveRoot(settings.archiveRoot);
     this.persist(settings);
     this.current = settings;

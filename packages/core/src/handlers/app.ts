@@ -111,7 +111,6 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
 
     'settings:get': () => ({ settings: services.settings.get(), hasApiKey: services.secrets.hasApiKey() }),
     'settings:update': (input) => {
-      const embeddingBefore = services.settings.get().llm.embeddingModel;
       if (input.archiveRoot !== undefined) {
         if (services.archive.isRootChangeActive())
           throw new AppError('archive_conflict', 'Der Archivordner wird gerade umgestellt. Bitte warte, bis das abgeschlossen ist.');
@@ -122,8 +121,9 @@ export function appHandlers(services: Services, host: HostApi): HandlerGroup<'ap
       const changes = settingsChanges(previous, settings);
       if (Object.keys(changes.after).length > 0)
         services.audit.log({ action: 'settings.change', actor: 'user', trigger: UI_TRIGGER, confirmed: true, before: changes.before, after: changes.after });
-      // vectors of another model are useless for the new one: move the entries over in the background (#173)
-      if (settings.llm.embeddingModel !== embeddingBefore) enqueueReembedding(services.jobs);
+      // vectors of another model or endpoint are useless for the new one: move the entries over in the background (#173)
+      if (settings.llm.embeddingModel !== previous.llm.embeddingModel || settings.llm.embeddingBaseUrl !== previous.llm.embeddingBaseUrl)
+        enqueueReembedding(services.jobs);
       // jobs paused by the daily token limit continue as soon as it no longer applies
       if (settings.llm.dailyTokenCap !== previous.llm.dailyTokenCap && !services.llm.tokenCapReached()) services.jobs.resumeTokenCapPaused();
       return { settings };

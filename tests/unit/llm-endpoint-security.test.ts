@@ -12,16 +12,17 @@ import { Logger } from '../../packages/core/src/util/logger';
 const API_KEY = 'sk-test-KEY-0123456789';
 const request = { instructions: 'Test', input: 'Hallo', purpose: 'Test' };
 
-const settingsWith = (llm: { baseUrl: string; embeddingModel?: string }) =>
-  Settings.parse({ llm: { model: 'test-model', ...llm }, privacy: { llmMode: 'auto' } });
+type LlmOverrides = { baseUrl: string; embeddingModel?: string; embeddingBaseUrl?: string };
+
+const settingsWith = (llm: LlmOverrides) => Settings.parse({ llm: { model: 'test-model', ...llm }, privacy: { llmMode: 'auto' } });
 
 /** LLM client over a fake endpoint that records every request it receives. */
 function clientFor(settings: Pick<SettingsService, 'get'>) {
-  const sent: Array<{ headers: Record<string, string> }> = [];
-  const fetchImpl = async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  const sent: Array<{ url: string; headers: Record<string, string> }> = [];
+  const fetchImpl = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const headers: Record<string, string> = {};
     new Headers(init?.headers).forEach((value, key) => (headers[key] = value));
-    sent.push({ headers });
+    sent.push({ url: String(url), headers });
     return new Response(JSON.stringify({ output_text: 'OK', data: [{ embedding: [1, 2], index: 0 }] }), { status: 200 });
   };
   const ctx = { events: { emit: () => true }, logger: new Logger(null), database: {} };
@@ -35,7 +36,7 @@ function clientFor(settings: Pick<SettingsService, 'get'>) {
   return { llm, sent };
 }
 
-const clientWith = (llm: { baseUrl: string; embeddingModel?: string }) => clientFor({ get: () => settingsWith(llm) });
+const clientWith = (llm: LlmOverrides) => clientFor({ get: () => settingsWith(llm) });
 
 describe('LLM client: one auth header per endpoint type (#209)', () => {
   it.each([
@@ -56,6 +57,30 @@ describe('LLM client: one auth header per endpoint type (#209)', () => {
     await llm.embeddings(['Text'], { purpose: 'Test' });
     expect(sent[0]!.headers).toMatchObject({ 'api-key': API_KEY });
     expect(sent[0]!.headers).not.toHaveProperty('authorization');
+  });
+});
+
+describe('LLM client: separate embedding endpoint', () => {
+  const baseUrl = 'https://resource.services.ai.azure.com/anthropic';
+  const embeddingBaseUrl = 'https://resource.openai.azure.com/openai/v1';
+
+  it('sends embeddings to the own endpoint while the LLM keeps its own', async () => {
+    const { llm, sent } = clientWith({ baseUrl, embeddingModel: 'embedding-model', embeddingBaseUrl });
+    await llm.embeddings(['Text'], { purpose: 'Test' });
+    expect(sent[0]!.url).toBe(`${embeddingBaseUrl}/embeddings`);
+    expect(sent[0]!.headers).toMatchObject({ 'api-key': API_KEY });
+  });
+
+  it('uses the base URL of the LLM while none is set', async () => {
+    const { llm, sent } = clientWith({ baseUrl: embeddingBaseUrl, embeddingModel: 'embedding-model' });
+    await llm.embeddings(['Text'], { purpose: 'Test' });
+    expect(sent[0]!.url).toBe(`${embeddingBaseUrl}/embeddings`);
+  });
+
+  it('refuses a clear-text remote embedding endpoint without sending anything', async () => {
+    const { llm, sent } = clientWith({ baseUrl, embeddingModel: 'embedding-model', embeddingBaseUrl: 'http://embeddings.example.test/v1' });
+    await expect(llm.embeddings(['Text'], { purpose: 'Test' })).rejects.toMatchObject({ category: 'validation_error' });
+    expect(sent).toHaveLength(0);
   });
 });
 

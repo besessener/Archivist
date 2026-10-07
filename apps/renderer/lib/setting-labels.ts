@@ -16,6 +16,7 @@ const SETTING_LABELS: Record<string, string> = {
   'llm.timeoutMs': 'Zeitlimit der KI (Millisekunden)',
   'llm.maxInputChars': 'Maximale Eingabegröße der KI (Zeichen)',
   'llm.embeddingModel': 'Embedding-Modell',
+  'llm.embeddingBaseUrl': 'Adresse der Embeddings (Base URL)',
   'llm.dailyTokenCap': 'Tageslimit (Tokens)',
   archiveRoot: 'Archivordner',
   'scan.enabled': 'Dokumentensuche',

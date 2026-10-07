@@ -24,7 +24,7 @@ Im Modus „vorher fragen“ fragt Archivist bei **Alle N neuen Dateien analysie
 
 ## Begrenzen, wie viel Text an das Embedding-Modell geht
 
-Mit einem Embedding-Modell im Modus `auto` geht der Text freigegebener Dokumente abschnittsweise an `/embeddings`. Wie viel davon, begrenzt **Einstellungen → KI → maximale Eingabegröße** (`llm.maxInputChars`, Standard 24 000 Zeichen): Pro Dokument gehen höchstens so viele Zeichen insgesamt hinaus, Titel jedes Abschnitts eingerechnet, vor der Maskierung. Der Rest des Dokuments bekommt nur lokale Vektoren. Willst du, dass von einem Dokument nur ein kleiner Anfang den Rechner verlässt, senke den Wert; willst du gar nichts senden, lass das Embedding-Modell leer oder wähle `confirm`.
+Mit einem Embedding-Modell im Modus `auto` geht der Text freigegebener Dokumente abschnittsweise an `/embeddings` (an die Adresse der KI oder an die eigene Adresse der Embeddings, wenn du eine eingetragen hast). Wie viel davon, begrenzt **Einstellungen → KI → maximale Eingabegröße** (`llm.maxInputChars`, Standard 24 000 Zeichen): Pro Dokument gehen höchstens so viele Zeichen insgesamt hinaus, Titel jedes Abschnitts eingerechnet, vor der Maskierung. Der Rest des Dokuments bekommt nur lokale Vektoren. Willst du, dass von einem Dokument nur ein kleiner Anfang den Rechner verlässt, senke den Wert; willst du gar nichts senden, lass das Embedding-Modell leer oder wähle `confirm`.
 
 ## Ordner, Dateitypen oder Dateien ausschließen
 
@@ -46,7 +46,7 @@ Nicht maskiert werden Gesundheitsdaten, Namen, Adressen, Telefonnummern und E-Ma
 
 ## Verschlüsselte Verbindung sicherstellen
 
-Archivist sendet nur über `https://` an einen fremden Rechner. Eine `http://`-Adresse ist nur für deinen eigenen Rechner erlaubt (`localhost`, `127.0.0.1`, `[::1]`, z. B. ein lokaler Ollama-Server). Trägst du unter **Einstellungen → KI** eine andere `http://`-Adresse ein, erscheint am Feld eine Meldung, und Speichern sowie der Verbindungstest bleiben gesperrt – verwende dann die `https://`-Adresse deines Anbieters. Der API-Key geht dabei immer nur in einem Header an den Endpunkt ([LLM-Schnittstelle](../reference/llm-schnittstelle.md#anfragen)).
+Archivist sendet nur über `https://` an einen fremden Rechner. Eine `http://`-Adresse ist nur für deinen eigenen Rechner erlaubt (`localhost`, `127.0.0.1`, `[::1]`, z. B. ein lokaler Ollama-Server). Trägst du unter **Einstellungen → KI** eine andere `http://`-Adresse ein, erscheint am Feld eine Meldung, und Speichern sowie der Verbindungstest bleiben gesperrt – verwende dann die `https://`-Adresse deines Anbieters. Das gilt ebenso für die eigene Adresse der Embeddings. Der API-Key geht dabei immer nur in einem Header an den Endpunkt ([LLM-Schnittstelle](../reference/llm-schnittstelle.md#anfragen)).
 
 Hatte eine ältere Version eine solche Adresse gespeichert, sendet Archivist nichts an sie und zeigt die Meldung, bis du sie korrigierst.
 

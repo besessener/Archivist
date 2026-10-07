@@ -8,7 +8,8 @@
     "reasoningEffort": "low",
     "timeoutMs": 60000,
     "maxInputChars": 24000,
-    "embeddingModel": ""
+    "embeddingModel": "",
+    "embeddingBaseUrl": ""
   },
   "archiveRoot": "~/Documents/Archivist/archive",
   "scan": {

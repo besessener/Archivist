@@ -28,6 +28,49 @@ test.describe('base URL of the LLM endpoint (#209)', () => {
     await expect(save).toBeEnabled();
   });
 
+  test('the embeddings use the address of the LLM unless an own one is given and saved', async ({ llm, on, page }, testInfo) => {
+    const app = on(page);
+    await app.setup.do.complete(llm.url);
+    await app.navigation.do.open('settings');
+    await app.settings.do.openLlm();
+    const { baseUrl, embeddingSameUrl, embeddingBaseUrl, embeddingBaseUrlError, save } = app.settings.locators.llm;
+
+    await expect(embeddingSameUrl).toBeChecked();
+    await expect(embeddingBaseUrl).toBeDisabled();
+    await expect(embeddingBaseUrl).toHaveValue(await baseUrl.inputValue());
+
+    await embeddingSameUrl.click();
+    await expect(embeddingBaseUrl).toBeEnabled();
+    await embeddingBaseUrl.fill('');
+    await expect(embeddingBaseUrlError).toContainText('Gib eine Adresse an');
+    await expect(save).toBeDisabled();
+
+    await embeddingBaseUrl.fill('http://embeddings.example.test/v1');
+    await expect(embeddingBaseUrlError).toContainText('Verwende https://');
+    await expect(embeddingBaseUrl).toHaveAttribute('aria-describedby', 's-embed-url-error');
+    await expect(save).toBeDisabled();
+    await expectNoSeriousA11yViolations(page, testInfo);
+
+    await embeddingBaseUrl.fill('https://embeddings.example.test/openai/v1');
+    await expect(embeddingBaseUrlError).toHaveCount(0);
+    await save.click();
+
+    await app.navigation.do.open('documents');
+    await app.navigation.do.open('settings');
+    await app.settings.do.openLlm();
+    await expect(embeddingSameUrl).not.toBeChecked();
+    await expect(embeddingBaseUrl).toHaveValue('https://embeddings.example.test/openai/v1');
+
+    await embeddingSameUrl.click();
+    await expect(embeddingBaseUrl).toBeDisabled();
+    await save.click();
+
+    await app.navigation.do.open('documents');
+    await app.navigation.do.open('settings');
+    await app.settings.do.openLlm();
+    await expect(embeddingSameUrl).toBeChecked();
+  });
+
   test('the setup wizard does not continue with a clear-text remote address', async ({ on, page }) => {
     const { setup } = on(page);
     await setup.locators.buttons.next.click();

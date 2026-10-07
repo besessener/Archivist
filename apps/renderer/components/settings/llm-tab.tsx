@@ -7,6 +7,7 @@ import { Field, Notice } from '@/components/common/states';
 import { AgentCapabilityNote } from '@/components/agent/capability-note';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CheckboxField } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { call } from '@/lib/ipc';
@@ -25,6 +26,8 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
   const [timeoutS, setTimeoutS] = useState(String(Math.round(settings.llm.timeoutMs / 1000)));
   const [maxChars, setMaxChars] = useState(String(settings.llm.maxInputChars));
   const [embedding, setEmbedding] = useState(settings.llm.embeddingModel);
+  const [sameEmbeddingUrl, setSameEmbeddingUrl] = useState(!settings.llm.embeddingBaseUrl);
+  const [embeddingUrl, setEmbeddingUrl] = useState(settings.llm.embeddingBaseUrl);
   const [apiKey, setApiKey] = useState('');
   const [clearOpen, setClearOpen] = useState(false);
   const [test, setTest] = useState<IpcOutput<'llm:testConnection'> | null>(null);
@@ -46,7 +49,15 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
   const chars = Number(maxChars);
   const baseUrlCheck = checkLlmBaseUrl(baseUrl);
   const baseUrlError = baseUrlCheck.ok ? undefined : baseUrlCheck.message;
-  const valid = timeout >= 1 && timeout <= 600 && chars >= 500 && chars <= 2000000 && !baseUrlError;
+  const embeddingUrlCheck = checkLlmBaseUrl(embeddingUrl);
+  const embeddingUrlError = sameEmbeddingUrl
+    ? undefined
+    : embeddingUrlCheck.ok
+      ? embeddingUrl.trim()
+        ? undefined
+        : 'Gib eine Adresse an oder nutze dieselbe wie die KI.'
+      : embeddingUrlCheck.message;
+  const valid = timeout >= 1 && timeout <= 600 && chars >= 500 && chars <= 2000000 && !baseUrlError && !embeddingUrlError;
 
   return (
     <div className="flex flex-col gap-4">
@@ -84,6 +95,31 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
           <Field label="Embedding-Modell (optional)" htmlFor="s-embed" hint="Leer lassen für die lokale Ähnlichkeitssuche." className="sm:col-span-2">
             <Input id="s-embed" value={embedding} onChange={(e) => setEmbedding(e.target.value)} />
           </Field>
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <CheckboxField
+              label="Dieselbe Adresse wie die KI verwenden"
+              checked={sameEmbeddingUrl}
+              onCheckedChange={(checked) => setSameEmbeddingUrl(checked === true)}
+              data-testid="settings-embedding-same-url"
+            />
+            <Field
+              label="Adresse der Embeddings (Base URL)"
+              htmlFor="s-embed-url"
+              error={embeddingUrlError}
+              hint="Nötig, wenn die KI keinen /embeddings-Endpunkt hat, z. B. Claude auf Foundry."
+            >
+              <Input
+                id="s-embed-url"
+                value={sameEmbeddingUrl ? baseUrl : embeddingUrl}
+                onChange={(e) => setEmbeddingUrl(e.target.value)}
+                disabled={sameEmbeddingUrl}
+                placeholder="https://…/openai/v1"
+                aria-invalid={embeddingUrlError ? true : undefined}
+                aria-describedby={embeddingUrlError ? 's-embed-url-error' : undefined}
+                data-testid="settings-embedding-baseurl"
+              />
+            </Field>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -98,6 +134,7 @@ export function LlmTab({ settings, hasApiKey, reload }: TabProps) {
                   timeoutMs: Math.round(timeout * 1000),
                   maxInputChars: Math.round(chars),
                   embeddingModel: embedding.trim(),
+                  embeddingBaseUrl: sameEmbeddingUrl ? '' : embeddingUrl.trim(),
                 },
               })
             }
