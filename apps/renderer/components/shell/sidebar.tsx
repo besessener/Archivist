@@ -14,7 +14,7 @@ type NavCount = { value: number; ariaLabel: string; testIdSuffix: string; emphas
 
 const COUNT_CLASSES: Record<NavCount['emphasis'], string> = {
   normal: 'border-transparent bg-foreground/10 text-foreground',
-  warning: 'border-transparent bg-warning-surface text-warning',
+  warning: 'border-transparent bg-attention text-neutral-950',
   urgent: 'border-transparent bg-destructive text-destructive-foreground',
   muted: 'border-muted-foreground/40 text-muted-foreground',
 };

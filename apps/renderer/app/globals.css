@@ -140,6 +140,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-attention: var(--attention);
   --color-warning-surface: var(--warning-surface);
   --color-border: var(--border);
   --color-input: var(--input);
