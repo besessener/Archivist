@@ -218,7 +218,7 @@ function followThemeSetting(appServices: Services): void {
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
-    height: 960,
+    height: 920,
     minWidth: 980,
     minHeight: 620,
     show: false,
