@@ -30,6 +30,15 @@ test.describe('open items: the form', () => {
     await oi.do.create('Zählerstand melden');
     await expect(app.navigation.locators.count('open-items')).toHaveAttribute('data-emphasis', 'normal');
 
+    const tomorrow = new Date(Date.now() + 86_400_000).toLocaleDateString('sv-SE');
+    await oi.locators.buttons.create.click();
+    await oi.locators.inputs.title.fill('Paket abholen');
+    await oi.locators.inputs.due.fill(tomorrow);
+    await oi.locators.buttons.save.click();
+    await expect(oi.locators.form).toBeHidden();
+    await expect(app.navigation.locators.count('open-items')).toHaveAttribute('data-emphasis', 'warning');
+    await expect(app.navigation.locators.count('open-items')).toHaveAttribute('aria-label', '2 offen, davon 1 bald fällig');
+
     const yesterday = new Date(Date.now() - 86_400_000).toLocaleDateString('sv-SE');
     await oi.locators.buttons.create.click();
     await oi.locators.inputs.title.fill('Steuererklärung abgeben');
@@ -42,7 +51,7 @@ test.describe('open items: the form', () => {
     await expect(overdue).toHaveAttribute('data-stripe', 'danger');
     await expect(oi.row('Zählerstand melden')).not.toHaveAttribute('data-stripe');
     await expect(app.navigation.locators.count('open-items')).toHaveAttribute('data-emphasis', 'urgent');
-    await expect(app.navigation.locators.count('open-items')).toHaveAttribute('aria-label', '2 offen, davon 1 überfällig');
+    await expect(app.navigation.locators.count('open-items')).toHaveAttribute('aria-label', '3 offen, davon 1 überfällig, 1 bald fällig');
     for (const name of ['Bearbeiten', 'Erinnern', 'Zusammenhänge', 'Löschen …']) await expect(overdue.getByRole('button', { name })).toBeVisible();
   });
 

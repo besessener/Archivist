@@ -341,6 +341,19 @@ export class OpenItemService {
     return this.list({ onlyActive: true }).filter((item) => item.dueAt && localDate(item.dueAt) < today);
   }
 
+  /** Active items due from `today` through `days` days ahead (local calendar days), i.e. „Bald fällig“. */
+  dueSoon(days: number, now = new Date()): OpenItem[] {
+    const today = localToday(now);
+    const until = new Date(now);
+    until.setDate(until.getDate() + days);
+    const last = localDate(until);
+    return this.list({ onlyActive: true }).filter((item) => {
+      if (!item.dueAt) return false;
+      const due = localDate(item.dueAt);
+      return due >= today && due <= last;
+    });
+  }
+
   /** Rebuilds the search index entry (e.g. after a merge changed names or references). */
   async reindex(id: string): Promise<void> {
     try {

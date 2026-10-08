@@ -31,6 +31,8 @@ export const AppStatus = z.object({
   openLinkProposals: z.number(),
   /** Active open items due before today (local day); the navigation shows their count in red. */
   overdueOpenItems: z.number(),
+  /** Active open items due within the „Bald fällig“ window (not overdue); the navigation counter turns yellow. */
+  dueSoonOpenItems: z.number(),
   /** Colour scheme chosen in the settings; the renderer applies it as `data-theme`. */
   theme: ThemeChoice,
   services: z.array(z.object({ name: z.string(), status: z.enum(['ok', 'degraded', 'error']), detail: z.string().nullable() })),
