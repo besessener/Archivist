@@ -102,8 +102,8 @@ function SettingsInner() {
             <NotificationsTab key={JSON.stringify(settings.notifications)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="maintenance" className="flex flex-col gap-4">
-            <BackupsTab key={JSON.stringify(settings.backups)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
             <UpdatesTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <BackupsTab key={JSON.stringify(settings.backups)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
             <LogsTab key={JSON.stringify(settings.logs)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="audit">
