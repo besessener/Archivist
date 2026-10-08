@@ -37,6 +37,7 @@ function appStatus(services: Services, host: HostApi): AppStatus {
     openInsights: services.insights.openCount(),
     openLinkProposals: services.links.proposals({ limit: 1 }).total,
     overdueOpenItems: services.openItems.overdue().length,
+    dueSoonOpenItems: services.openItems.dueSoon(settings.consistency.dueSoonDays).length,
     theme: settings.appearance.theme,
     services: [
       {

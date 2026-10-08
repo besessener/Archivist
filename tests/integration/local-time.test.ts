@@ -104,6 +104,7 @@ describe('Overdue and due today follow the local day (#77)', () => {
     useZoneAndClock('America/New_York', '2026-10-02T03:30:00Z'); // 2026-10-01 23:30 local
     expect(app.services.openItems.overdue()).toEqual([]);
     expect((await app.ok('app:getStatus', {})).overdueOpenItems).toBe(0);
+    expect((await app.ok('app:getStatus', {})).dueSoonOpenItems).toBe(1);
     await app.services.consistency.run({ trigger: 'test' });
     expect(await dueTitles()).toEqual(['Heute fällig: Rechnung prüfen']);
   });

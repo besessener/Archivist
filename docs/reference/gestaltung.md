@@ -52,6 +52,7 @@ Indigo (`--primary`) steht für Aktionen und Auswahl: Hauptbuttons, Links, Fokus
 | Darstellung | Wann |
 | --- | --- |
 | grau | offene Einträge (Inbox, offene Punkte, Hinweise) |
+| gelb | offene Punkte: mindestens einer bald fällig (`dueSoonOpenItems`, Fenster `consistency.dueSoonDays`), keiner überfällig |
 | rot | Inbox: mindestens ein Dokument fehlgeschlagen oder in Quarantäne; offene Punkte: mindestens einer überfällig (`overdueOpenItems` im App-Status) |
 | umrandet grau | offene Verknüpfungsvorschläge (nach den Hinweisen) |
 

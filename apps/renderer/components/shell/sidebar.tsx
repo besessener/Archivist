@@ -9,14 +9,20 @@ import { SECTIONS, sectionOf, type NavBadge } from '@/lib/sections';
 import { useQuery } from '@/lib/use-query';
 import { cn } from '@/lib/utils';
 
-/** One counter next to a navigation entry: `urgent` ones (overdue, failed) are red, `muted` ones (link proposals) grey after the others. */
-type NavCount = { value: number; ariaLabel: string; testIdSuffix: string; emphasis: 'normal' | 'urgent' | 'muted' };
+/** One counter next to a navigation entry: `urgent` ones (overdue, failed) are red, `warning` ones (due soon) yellow, `muted` ones (link proposals) grey after the others. */
+type NavCount = { value: number; ariaLabel: string; testIdSuffix: string; emphasis: 'normal' | 'warning' | 'urgent' | 'muted' };
 
 const COUNT_CLASSES: Record<NavCount['emphasis'], string> = {
   normal: 'border-transparent bg-foreground/10 text-foreground',
+  warning: 'border-transparent bg-warning-surface text-warning',
   urgent: 'border-transparent bg-destructive text-destructive-foreground',
   muted: 'border-muted-foreground/40 text-muted-foreground',
 };
+
+function openItemsAriaLabel(total: number, overdue: number, dueSoon: number): string {
+  const parts = [overdue > 0 && `${overdue} überfällig`, dueSoon > 0 && `${dueSoon} bald fällig`].filter(Boolean);
+  return parts.length > 0 ? `${total} offen, davon ${parts.join(', ')}` : `${total} offen`;
+}
 
 export function Sidebar() {
   const current = sectionOf(usePathname() ?? '');
@@ -27,6 +33,7 @@ export function Sidebar() {
   const inboxProblems = (byStatus?.failed ?? 0) + (byStatus?.quarantined ?? 0);
   const { data: openItemCount } = useQuery('openItems:count', { onlyActive: true }, { scopes: ['openItems'] });
   const overdue = status?.overdueOpenItems ?? 0;
+  const dueSoon = status?.dueSoonOpenItems ?? 0;
   const openInsights = status?.openInsights ?? 0;
   const openLinkProposals = status?.openLinkProposals ?? 0;
   const counts: Record<NavBadge, NavCount[]> = {
@@ -41,9 +48,9 @@ export function Sidebar() {
     openItems: [
       {
         value: openItemCount ?? 0,
-        ariaLabel: overdue > 0 ? `${openItemCount ?? 0} offen, davon ${overdue} überfällig` : `${openItemCount ?? 0} offen`,
+        ariaLabel: openItemsAriaLabel(openItemCount ?? 0, overdue, dueSoon),
         testIdSuffix: 'count',
-        emphasis: overdue > 0 ? 'urgent' : 'normal',
+        emphasis: overdue > 0 ? 'urgent' : dueSoon > 0 ? 'warning' : 'normal',
       },
     ],
     insights: [
