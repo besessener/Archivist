@@ -1,6 +1,6 @@
 {
   "name": "archivist-monorepo",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Archivist – dein persönlicher Archivar (lokale Desktop-Anwendung für Windows)",
   "license": "MIT",
