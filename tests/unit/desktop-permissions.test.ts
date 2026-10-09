@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { allowsMicrophoneCheck, allowsMicrophoneRequest } from '../../apps/desktop/src/permissions';
+import type { Session } from 'electron';
+import { allowsMicrophoneCheck, allowsMicrophoneRequest, restrictPermissions } from '../../apps/desktop/src/permissions';
 
 const own = { origin: 'app://archivist/chat/', fromMainWindow: true, trustedOrigins: ['app://archivist'] };
 
@@ -48,5 +49,36 @@ describe('microphone permission', () => {
     const dev = { ...own, origin: 'http://localhost:3000/chat/' };
     expect(allowsMicrophoneCheck({ ...dev, permission: 'media', mediaType: 'audio' })).toBe(false);
     expect(allowsMicrophoneCheck({ ...dev, trustedOrigins: ['app://archivist', 'http://localhost:3000'], permission: 'media', mediaType: 'audio' })).toBe(true);
+  });
+});
+
+describe('the session permission handlers', () => {
+  type RequestHandler = (contents: unknown, permission: string, respond: (granted: boolean) => void, details: object) => void;
+  type CheckHandler = (contents: unknown, permission: string, origin: string, details: object) => boolean;
+
+  function install() {
+    const handlers: { request?: RequestHandler; check?: CheckHandler } = {};
+    const mainWindow = { id: 'main' };
+    const session = {
+      setPermissionRequestHandler: (handler: RequestHandler) => (handlers.request = handler),
+      setPermissionCheckHandler: (handler: CheckHandler) => (handlers.check = handler),
+    } as unknown as Pick<Session, 'setPermissionRequestHandler' | 'setPermissionCheckHandler'>;
+    restrictPermissions(session, { trustedOrigins: ['app://archivist'], isMainWindow: (contents) => contents === (mainWindow as unknown) });
+    const request = (contents: unknown, permission: string, details: object) => {
+      let granted: boolean | undefined;
+      handlers.request?.(contents, permission, (answer) => (granted = answer), { requestingUrl: 'app://archivist/chat/', ...details });
+      return granted;
+    };
+    return { mainWindow, request, check: handlers.check! };
+  }
+
+  it('let only the main window’s pages use the microphone', () => {
+    const { mainWindow, request, check } = install();
+    expect(request(mainWindow, 'media', { mediaTypes: ['audio'] })).toBe(true);
+    expect(request({ id: 'other' }, 'media', { mediaTypes: ['audio'] })).toBe(false);
+    expect(request(mainWindow, 'media', { mediaTypes: ['video'] })).toBe(false);
+    expect(request(mainWindow, 'geolocation', {})).toBe(false);
+    expect(check(mainWindow, 'media', 'app://archivist', { mediaType: 'audio' })).toBe(true);
+    expect(check(null, 'media', 'app://archivist', { mediaType: 'audio' })).toBe(false);
   });
 });

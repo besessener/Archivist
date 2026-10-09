@@ -34,10 +34,10 @@ import { appUserModelId } from './app-id';
 import { readUnpackagedEnv } from './test-environment';
 import { JOB_INTERRUPT_TIMEOUT_MS, QuitController } from './lifecycle';
 import { isExternalWebUrl } from './external-links';
-import { allowsMicrophoneCheck, allowsMicrophoneRequest } from './permissions';
-import { recoverFromDamagedDatabase, type RecoveryDeps } from './recovery';
+import { restrictPermissions } from './permissions';
+import { RESTORE_QUESTION, recoverFromDamagedDatabase, type RecoveryDeps } from './recovery';
 import { APP_ORIGIN, serveRenderer } from './renderer-server';
-import { UpdateController, unsupportedUpdateReason } from './updater';
+import { createUpdateHost } from './updater';
 
 // Electron main process: lifecycle, secure windows, IPC allowlist and OS access; the business logic lives in @archivist/core.
 const unpackagedEnv = (name: string) => readUnpackagedEnv({ packaged: app.isPackaged, env: process.env }, name);
@@ -59,21 +59,15 @@ if (process.platform === 'win32') app.setAppUserModelId(appUserModelId({ package
 let services: Services | null = null;
 let mainWindow: BrowserWindow | null = null;
 
-const updates = new UpdateController({
-  updater: autoUpdater,
-  currentVersion: app.getVersion(),
-  unsupportedReason: unsupportedUpdateReason({ packaged: app.isPackaged, platform: process.platform, portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE) }),
-  onChange: (status) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:changed', status);
-  },
-  // the installer starts as soon as `quitAndInstall` runs, so jobs and the database must be closed before
-  prepareInstall: () => services?.shutdown({ jobTimeoutMs: JOB_INTERRUPT_TIMEOUT_MS }) ?? Promise.resolve(),
-});
+const sendToWindow = (channel: string, payload: unknown) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+};
 
 /** Quitting interrupts running jobs (they resume after the next start) and exits after a bounded time. */
 const quitter = new QuitController({
   shutdown: () => services?.shutdown({ jobTimeoutMs: JOB_INTERRUPT_TIMEOUT_MS }) ?? Promise.resolve(),
-  exit: (code) => app.exit(code),
+  // a macrotask later, so that electron-updater's asynchronous installer fallbacks (elevation) still start
+  exit: (code) => setImmediate(() => app.exit(code)),
   relaunch: () => app.relaunch(),
   log: (message, error) =>
     process.stderr.write(
@@ -81,27 +75,31 @@ const quitter = new QuitController({
     ),
 });
 
+const RESTART_DELAY_MS = 500;
+/** Quits once the IPC answer has reached the window. */
+const quitSoon = () => new Promise((resolve) => setTimeout(resolve, RESTART_DELAY_MS)).then(() => quitter.quit());
+
+const updates = createUpdateHost({
+  updater: autoUpdater,
+  build: { packaged: app.isPackaged, platform: process.platform, portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE) },
+  testVersion: unpackagedEnv('ARCHIVIST_TEST_UPDATE_VERSION'),
+  onChange: (status) => sendToWindow('update:changed', status),
+  quit: (startInstaller) => {
+    quitter.runBeforeExit(startInstaller);
+    return quitSoon();
+  },
+  log: (message, error) => services?.logger.error('update', message, { error }),
+});
+
 const recoveryDeps = (): RecoveryDeps => ({
   paths: resolveDataPaths({ root: dataRoot(), appDataRoot: appDataRoot() }),
   findNewestRestore: newestIntactSource,
   scheduleRestore,
-  askToRestore: ({ message }) =>
-    dialog.showMessageBoxSync({
-      type: 'error',
-      title: 'Datenbank beschädigt',
-      message: 'Die Datenbank von Archivist ist beschädigt.',
-      detail: message,
-      buttons: ['Backup wiederherstellen', 'Beenden'],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    }) === 0,
+  askToRestore: ({ message }) => dialog.showMessageBoxSync({ ...RESTORE_QUESTION, detail: message }) === 0,
   showError: (title, message) => dialog.showErrorBox(title, message),
   relaunch: () => app.relaunch(),
   exit: (code) => app.exit(code),
 });
-
-const RESTART_DELAY_MS = 500;
 
 // ARCHIVIST_DATA_DIR keeps everything below one folder; otherwise only documents stay in Documents, the application state goes to the per-user data folder
 const dataRoot = () => process.env.ARCHIVIST_DATA_DIR ?? path.join(app.getPath('documents'), 'Archivist');
@@ -144,16 +142,9 @@ const host: HostApi = {
   restartApp: () => {
     if (testMode) return; // E2E: the test drives the application and must not lose it
     quitter.requestRelaunch();
-    setTimeout(() => void quitter.quit(), RESTART_DELAY_MS); // the answer reaches the window first
+    void quitSoon();
   },
-  updates: {
-    status: () => updates.status(),
-    check: () => updates.check(),
-    download: () => updates.download(),
-    install: () => {
-      setTimeout(() => void updates.install(), RESTART_DELAY_MS); // the answer reaches the window first
-    },
-  },
+  updates,
 };
 
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
@@ -177,25 +168,22 @@ function registerIpc(appServices: Services): void {
 }
 
 function forwardEvents(appServices: Services): void {
-  const send = (channel: string, payload: unknown) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
-  };
   let timer: NodeJS.Timeout | null = null;
   const scopes = new Set<string>();
   appServices.events.on('data:changed', (change: { scopes: string[] }) => {
     for (const scope of change.scopes) scopes.add(scope);
     timer ??= setTimeout(() => {
-      send('data:changed', { scopes: [...scopes] });
+      sendToWindow('data:changed', { scopes: [...scopes] });
       scopes.clear();
       timer = null;
     }, 60);
   });
-  appServices.events.on('job:updated', (job) => send('job:updated', job));
-  appServices.events.on('status:changed', () => send('status:changed', {}));
+  appServices.events.on('job:updated', (job) => sendToWindow('job:updated', job));
+  appServices.events.on('status:changed', () => sendToWindow('status:changed', {}));
   // live steps of agent runs (#300); throttled in the agent service
-  appServices.events.on('agent:progress', (progress: unknown) => send('agent:progress', progress));
+  appServices.events.on('agent:progress', (progress: unknown) => sendToWindow('agent:progress', progress));
   appServices.events.on('notification:new', (notification: AppNotification) => {
-    send('notification:new', notification);
+    sendToWindow('notification:new', notification);
     if (appServices.settings.get().notifications.desktop && Notification.isSupported()) {
       const note = new Notification({ title: notification.title, body: notification.description.slice(0, 200), silent: notification.priority === 'low' });
       note.on('click', showMainWindow);
@@ -215,6 +203,10 @@ function followThemeSetting(appServices: Services): void {
   });
 }
 
+// the window's background until the page paints: the `--canvas` colours of apps/renderer/app/globals.css
+const DARK_CANVAS = '#16161a';
+const LIGHT_CANVAS = '#f7f7f9';
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -223,7 +215,7 @@ function createWindow(): void {
     minHeight: 620,
     show: false,
     title: 'Archivist',
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#16161a' : '#f7f7f9',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? DARK_CANVAS : LIGHT_CANVAS,
     webPreferences: {
       preload: resource('preload.cjs'),
       contextIsolation: true,
@@ -299,23 +291,10 @@ async function start(): Promise<void> {
     return new Response(served.body as ConstructorParameters<typeof Response>[0], { status: served.status, headers: served.headers });
   });
 
-  // Deny every permission (camera, location …) except the microphone for the app's own window (speech input in the chat)
-  const trustedOrigins = [APP_ORIGIN, ...(isDev ? [new URL(devUrl!).origin] : [])];
-  const fromMainWindow = (contents: Electron.WebContents | null) => mainWindow !== null && contents === mainWindow.webContents;
-  session.defaultSession.setPermissionRequestHandler((contents, permission, respond, details) =>
-    respond(
-      allowsMicrophoneRequest({
-        permission,
-        mediaTypes: 'mediaTypes' in details ? details.mediaTypes : undefined,
-        origin: details.requestingUrl,
-        fromMainWindow: fromMainWindow(contents),
-        trustedOrigins,
-      }),
-    ),
-  );
-  session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
-    allowsMicrophoneCheck({ permission, mediaType: details.mediaType, origin: requestingOrigin, fromMainWindow: fromMainWindow(contents), trustedOrigins }),
-  );
+  restrictPermissions(session.defaultSession, {
+    trustedOrigins: [APP_ORIGIN, ...(isDev ? [new URL(devUrl!).origin] : [])],
+    isMainWindow: (contents) => mainWindow !== null && contents === mainWindow.webContents,
+  });
 
   registerIpc(appServices);
   forwardEvents(appServices);

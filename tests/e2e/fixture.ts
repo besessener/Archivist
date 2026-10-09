@@ -22,6 +22,8 @@ export interface Workspace {
 interface Options {
   /** Folder name the data directory is placed in (e.g. "OneDrive" to run inside a cloud-synced folder). */
   dataParent: string;
+  /** A stand-in for the GitHub update check offers this version (empty: the development build cannot update). */
+  updateVersion: string;
 }
 
 interface Fixtures {
@@ -53,6 +55,7 @@ async function launch(env: Record<string, string>): Promise<ElectronApplication>
 
 export const test = base.extend<Fixtures & Options>({
   dataParent: ['', { option: true }],
+  updateVersion: ['', { option: true }],
 
   llm: async ({}, provide) => {
     const llm = await startFakeLlm();
@@ -82,7 +85,7 @@ export const test = base.extend<Fixtures & Options>({
     fs.rmSync(root, { recursive: true, force: true });
   },
 
-  electronApp: async ({ workspace, speechModel }, provide) => {
+  electronApp: async ({ workspace, speechModel, updateVersion }, provide) => {
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       ELECTRON_ENABLE_LOGGING: '1',
@@ -91,6 +94,7 @@ export const test = base.extend<Fixtures & Options>({
       ARCHIVIST_TEST_PICK_DIR: workspace.downloads,
       ARCHIVIST_TEST_SPEECH_MODELS: JSON.stringify(speechModel.models),
       ARCHIVIST_TEST_SPEECH_WORKER: path.resolve(__dirname, '../helpers/fake-speech-worker.mjs'),
+      ...(updateVersion ? { ARCHIVIST_TEST_UPDATE_VERSION: updateVersion } : {}),
     };
     delete env.DBUS_SESSION_BUS_ADDRESS; // an invalid bus only causes error messages from Chromium
     const app = await launch(env);
