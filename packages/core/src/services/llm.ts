@@ -19,6 +19,7 @@ import { maskedInput, previewOf } from './llm/prompt-text';
 import { ResponsesRunner } from './llm/responses-runner';
 import { waitFor } from './llm/retry-wait';
 import { structuredAnswer } from './llm/structured';
+import { claudeTransfer, responsesTransfer } from './llm/text-transfers';
 import { TokenLedger } from './llm/token-ledger';
 import { TransmissionLog } from './llm/transmission-log';
 import { UsageTally } from './llm/usage';
@@ -32,8 +33,6 @@ export { abortedError } from '../util/llm-errors';
 
 /** Every LLM request inside `llmCancelScope.run(signal, …)` uses this signal unless it brings its own (also nested services). */
 export const llmCancelScope = new AsyncLocalStorage<AbortSignal>();
-
-const isTimeout = (err: unknown) => err instanceof AppError && err.category === 'network_error' && /Zeitüberschreitung/.test(err.message);
 
 /** A stored URL from an older version may still be plain http:// on a remote host: nothing is sent to it. */
 function assertSecureBaseUrl(baseUrl: string): void {
@@ -144,20 +143,6 @@ export class LlmService {
     return this.completeViaResponses(prepared);
   }
 
-  private transmissionOf(prepared: PreparedRequest, endpoint: string): Transfer['transmission'] {
-    return {
-      purpose: prepared.request.purpose,
-      model: prepared.connection.model,
-      endpoint,
-      // the schema text counts although an enforced response format leaves it out: the size is an upper bound
-      bytes: Buffer.byteLength(prepared.sent + prepared.instructions + prepared.schemaText, 'utf8'),
-      redactions: prepared.redactions,
-      personalRedactions: prepared.personalRedactions,
-      documentIds: prepared.request.documentIds ?? [],
-      preview: prepared.preview,
-    };
-  }
-
   /** Runs the attempts of one transfer, keeps the endpoint status and the circuit breaker, and logs the transmission with its tokens and requests. */
   private async transfer(transfer: Transfer): Promise<string> {
     let success = false;
@@ -196,28 +181,7 @@ export class LlmService {
   }
 
   private completeViaResponses(prepared: PreparedRequest): Promise<string> {
-    const { connection, request, signal } = prepared;
-    const llm = this.deps.settings.get().llm;
-    const call = this.responses.prepare({
-      connection,
-      instructions: prepared.instructions,
-      schemaText: prepared.schemaText,
-      input: prepared.sent,
-      maxOutputTokens: request.maxOutputTokens,
-      json: request.json,
-      jsonSchema: request.jsonSchema,
-      reasoningEffort: llm.reasoningEffort,
-      timeoutMs: llm.timeoutMs,
-      signal,
-    });
-    return this.transfer({
-      transmission: this.transmissionOf(prepared, call.url),
-      source: connection.source,
-      signal,
-      // a hanging endpoint is asked at most twice (each attempt waits the full timeout), other transient errors three times
-      maxAttempts: (err) => (isTimeout(err) ? 2 : 3),
-      attempt: call.attempt,
-    });
+    return this.transfer(responsesTransfer(prepared, { runner: this.responses, llm: this.deps.settings.get().llm }));
   }
 
   /** Adapter for the configured endpoint: base URL (or the choice under „Erweitert“) decides (#296). */
@@ -251,34 +215,12 @@ export class LlmService {
     return this.retryDelayMs;
   }
 
-  /** Plain text via the Claude Messages API, with the same privacy gate, retries and transmission log as /responses. */
   private completeViaClaude(prepared: PreparedRequest): Promise<string> {
-    const { connection, request, signal } = prepared;
-    const config = this.adapterConfig(connection);
-    const effort = claudeTextEffort(this.deps.settings.get().llm.reasoningEffort);
-    const adapter = new AnthropicAdapter({ ...config, timeoutMs: this.deps.settings.get().llm.timeoutMs, log: () => undefined, fail: () => undefined });
-    return this.transfer({
-      transmission: this.transmissionOf(prepared, `${connection.baseUrl} (Messages API)`),
-      source: connection.source,
-      signal,
-      maxAttempts: () => 3,
-      attempt: async (tally) => {
-        const maxOutputTokens = request.maxOutputTokens ?? 16_000;
-        tally.countRequest();
-        const { text, usage } = await adapter.completeText({
-          system: prepared.instructions,
-          schemaText: prepared.schemaText,
-          jsonSchema: request.jsonSchema?.schema ?? null,
-          text: prepared.sent,
-          maxOutputTokens,
-          effort,
-          signal,
-        });
-        tally.add(usage);
-        if (!text.trim()) throw new AppError('llm_error', 'Das LLM lieferte eine leere Antwort.', { retryable: true });
-        return text;
-      },
-    });
+    const llm = this.deps.settings.get().llm;
+    const config = this.adapterConfig(prepared.connection);
+    // the transfer logs the transmission and keeps the endpoint status itself
+    const adapter = new AnthropicAdapter({ ...config, timeoutMs: llm.timeoutMs, log: () => undefined, fail: () => undefined });
+    return this.transfer(claudeTransfer(prepared, { adapter, effort: claudeTextEffort(llm.reasoningEffort) }));
   }
 
   /** Output limit for a structured answer, only where reasoning tokens cannot eat it: thinking depth „none“ outside Claude, whose current models always think. */
