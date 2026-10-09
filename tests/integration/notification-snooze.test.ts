@@ -1,5 +1,5 @@
 import type { AppNotification } from '@archivist/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -7,6 +7,7 @@ beforeEach(async () => {
   app = await createTestApp();
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await app.cleanup();
 });
 
@@ -78,5 +79,39 @@ describe('Snoozed notification keeps its actions (#79)', () => {
     const list = await open();
     expect(list).toHaveLength(1);
     expect(list[0]!.title).toBe('Erinnerung: Angebot');
+  });
+});
+
+describe('„Zuletzt erledigt“ in the bell (#362)', () => {
+  const notify = (title: string) => app.services.notifications.create({ title, description: '', type: 'system' });
+  const resolveAt = (id: string, iso: string) => {
+    vi.setSystemTime(new Date(iso));
+    app.services.notifications.resolve(id);
+  };
+  const recentTitles = async () => (await app.ok('notifications:recentlyResolved', {})).map((n) => n.title);
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+  });
+
+  it('leaves out a notification that is only snoozed until its reminder brings it back', async () => {
+    const done = notify('Erledigt');
+    const later = notify('Später');
+    await app.ok('notifications:resolve', { id: done.id });
+    await app.ok('notifications:snooze', { id: later.id, remindAt: '2099-01-01' });
+
+    expect(await recentTitles()).toEqual(['Erledigt']);
+  });
+
+  it('lists the most recently resolved first, also an old one resolved today, and at most ten', async () => {
+    vi.setSystemTime(new Date('2026-01-01T08:00:00Z'));
+    const old = notify('Alt, heute erledigt');
+    const others = Array.from({ length: 11 }, (_, index) => notify(`Neu ${index}`));
+    others.forEach((n, index) => resolveAt(n.id, `2026-02-01T08:${String(index).padStart(2, '0')}:00Z`));
+    resolveAt(old.id, '2026-03-01T08:00:00Z');
+
+    const titles = await recentTitles();
+    expect(titles).toHaveLength(10);
+    expect(titles.slice(0, 3)).toEqual(['Alt, heute erledigt', 'Neu 10', 'Neu 9']);
   });
 });

@@ -1,26 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CheckCheck, ChevronDown, ChevronRight } from 'lucide-react';
 import { NOTIFICATION_TYPE_LABELS } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format';
 import { useQuery } from '@/lib/use-query';
 
-const LIMIT = 10;
-
 /** Collapsed list of the most recently handled notifications, so the bell shows what is already done. */
-export function RecentlyResolvedNotifications({ enabled }: { enabled: boolean }) {
+export function RecentlyResolvedNotifications() {
   const [expanded, setExpanded] = useState(false);
-  const { data } = useQuery('notifications:list', { includeResolved: true, limit: 500 }, { scopes: ['notifications'], enabled: enabled && expanded });
-  const resolved = useMemo(
-    () =>
-      (data ?? [])
-        .filter((n) => n.resolvedAt)
-        .sort((a, b) => b.resolvedAt!.localeCompare(a.resolvedAt!))
-        .slice(0, LIMIT),
-    [data],
-  );
-  if (!enabled) return null;
+  const { data } = useQuery('notifications:recentlyResolved', {}, { scopes: ['notifications'], enabled: expanded });
+  const resolved = data ?? [];
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
   return (

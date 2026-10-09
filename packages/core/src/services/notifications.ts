@@ -1,4 +1,4 @@
-import type { AppNotification, NotificationType } from '@archivist/shared';
+import { ResolvedNotification, type AppNotification, type NotificationType } from '@archivist/shared';
 import { and, desc, eq, isNotNull, isNull, lt, notExists, sql } from 'drizzle-orm';
 import type { AppContext } from '../context';
 import { notifications, reminders } from '../db/schema';
@@ -9,6 +9,9 @@ type Row = typeof notifications.$inferSelect;
 
 /** Dedupe prefix of the notifications about decisions and open items found in a document. */
 export const EXTRACTED_NOTIFICATION_PREFIX = 'extracted:';
+
+/** How many handled notifications „Zuletzt erledigt“ in the bell shows. */
+const RECENTLY_RESOLVED_LIMIT = 10;
 
 export interface NotificationInput {
   title: string;
@@ -98,6 +101,18 @@ export class NotificationService {
       .offset(opts.offset ?? 0)
       .all();
     return rows.map(toNotification);
+  }
+
+  /** The most recently resolved notifications, newest first; a snoozed one is not done and stays out until it comes back. */
+  recentlyResolved(): ResolvedNotification[] {
+    return this.db
+      .select()
+      .from(notifications)
+      .where(and(isNotNull(notifications.resolvedAt), notExists(this.pendingSnooze())))
+      .orderBy(desc(notifications.resolvedAt), desc(notifications.id))
+      .limit(RECENTLY_RESOLVED_LIMIT)
+      .all()
+      .map((r) => ResolvedNotification.parse(toNotification(r)));
   }
 
   /** Open notifications whose dedupe key starts with the prefix. */
@@ -197,14 +212,18 @@ export class NotificationService {
   /** Deletes notifications that were read more than `days` days ago, except snoozed ones still waiting to come back (#79); returns how many. */
   pruneRead(days: number): number {
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
-    const snoozed = this.db
+    return this.db
+      .delete(notifications)
+      .where(and(isNotNull(notifications.readAt), lt(notifications.readAt, cutoff), notExists(this.pendingSnooze())))
+      .run().changes;
+  }
+
+  /** Correlated subquery: the notification of the outer query waits for its snooze reminder. */
+  private pendingSnooze() {
+    return this.db
       .select({ id: reminders.id })
       .from(reminders)
       .where(and(eq(reminders.targetType, 'notification'), eq(reminders.targetId, notifications.id), eq(reminders.status, 'pending')));
-    return this.db
-      .delete(notifications)
-      .where(and(isNotNull(notifications.readAt), lt(notifications.readAt, cutoff), notExists(snoozed)))
-      .run().changes;
   }
 
   /** Reopens a resolved notification (after "Später erinnern") as new and unread; null if it no longer exists. */

@@ -124,7 +124,7 @@ export function NotificationBell() {
             {unread > 0 && (
               <span
                 data-testid="bell-count"
-                className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white"
+                className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-destructive-foreground"
               >
                 {unread > 99 ? '99+' : unread}
               </span>
@@ -215,7 +215,7 @@ export function NotificationBell() {
               </div>
             )}
             <UpcomingReminders enabled={open} className="mt-3 border-t px-1 pt-3" />
-            <RecentlyResolvedNotifications enabled={open} />
+            <RecentlyResolvedNotifications />
           </div>
         </PopoverContent>
       </Popover>

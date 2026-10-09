@@ -23,6 +23,19 @@ test.describe('accessibility (axe, WCAG 2.2 AA)', () => {
       });
     }
 
+    test('every section in the dark scheme has no serious or critical violations', async ({ on, page }, testInfo) => {
+      const { navigation, settings } = on(page);
+      await navigation.do.open('settings');
+      await settings.do.setTheme('dark');
+      await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+
+      for (const section of SECTIONS) {
+        await navigation.do.open(section);
+        await expect(navigation.locators.link(section)).toHaveAttribute('aria-current', 'page');
+        await expectNoSeriousA11yViolations(page, testInfo);
+      }
+    });
+
     test('the page of proposed decisions has no serious or critical violations', async ({ on, page }, testInfo) => {
       const { decisions, navigation } = on(page);
       await navigation.do.open('decisions');
