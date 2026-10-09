@@ -1,7 +1,7 @@
 {
   "name": "archivist",
   "productName": "Archivist",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Archivist – dein persönlicher Archivar (lokale Desktop-Anwendung für Windows)",
   "author": {
     "name": "Matthias Eggert",
