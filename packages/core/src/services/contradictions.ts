@@ -7,7 +7,8 @@ import { newId, nowIso } from '../util/ids';
 import type { ActionService } from './actions';
 import { announce, pairContent, proposeSupersede, type ContradictionRow } from './contradiction-notices';
 import { ContradictionReviewer, MAX_REVIEWS_PER_CHECK, MAX_REVIEWS_PER_SCAN, type ReviewRun } from './contradiction-review';
-import { countContradictions, listContradictions, toContradiction, type ContradictionFilter } from './contradiction-list';
+import { countContradictions, isOpenContradiction, listContradictions, openRows, toContradiction, type ContradictionFilter } from './contradiction-list';
+import { checkSupersede, type ContradictionResolution } from './contradiction-resolution';
 import { compareLexically, relatedPairs, sharesScope } from './contradiction-rules';
 import { DocumentContradictionScanner } from './document-contradictions';
 import type { DecisionService } from './decisions';
@@ -83,6 +84,11 @@ export class ContradictionService {
     return listContradictions(this.db, filter, page);
   }
 
+  /** Contradictions not settled yet (detected or acknowledged), newest first. */
+  listOpen(): Contradiction[] {
+    return openRows(this.db).map(toContradiction);
+  }
+
   count(filter: ContradictionFilter = {}): number {
     return countContradictions(this.db, filter);
   }
@@ -97,13 +103,14 @@ export class ContradictionService {
     return `${DECISION_PAIR_PREFIX}${[a, b].sort().join('|')}`;
   }
 
+  private rowOfPair(a: string, b: string): ContradictionRow | undefined {
+    const byKey = eq(contradictions.dedupeKey, ContradictionService.pairKey(a, b));
+    return this.db.select().from(contradictions).where(byKey).get();
+  }
+
   /** The (latest) contradiction for this decision pair, whatever its status. */
   forPair(a: string, b: string): Contradiction | undefined {
-    const r = this.db
-      .select()
-      .from(contradictions)
-      .where(eq(contradictions.dedupeKey, ContradictionService.pairKey(a, b)))
-      .get();
+    const r = this.rowOfPair(a, b);
     return r ? toContradiction(r) : undefined;
   }
 
@@ -174,12 +181,7 @@ export class ContradictionService {
   /** Open contradictions whose decisions are no longer both active are resolved (with their insight and proposal); ones resolved only for that are raised again once both are active. */
   private reconcile(): void {
     for (const row of this.closedByDeactivation()) this.reopenIfActive(row, REACTIVATED);
-    const open = this.db
-      .select()
-      .from(contradictions)
-      .all()
-      .filter((c) => c.status === 'detected' || c.status === 'acknowledged');
-    for (const c of open) {
+    for (const c of openRows(this.db)) {
       const ofDocuments = !c.dedupeKey.startsWith(DECISION_PAIR_PREFIX);
       if (!c.affectedEntityIds.every((id) => (ofDocuments ? this.documentScanner.isCompared(id) : this.isActiveDecision(id))))
         this.close(c.id, {
@@ -202,7 +204,7 @@ export class ContradictionService {
   /** After the older decision was superseded by the newer one: the pair's contradiction is resolved. */
   settlePair(oldId: string, newId: string): void {
     const c = this.forPair(oldId, newId);
-    if (c && (c.status === 'detected' || c.status === 'acknowledged'))
+    if (c && isOpenContradiction(c))
       this.close(c.id, { resolution: 'resolved', by: 'system', reason: 'Die ältere Entscheidung wurde ersetzt.', cause: 'supersede' });
   }
 
@@ -248,11 +250,7 @@ export class ContradictionService {
   private reopenAfterUndo(decisionIds: string[]): void {
     for (const [index, first] of decisionIds.entries())
       for (const second of decisionIds.slice(index + 1)) {
-        const row = this.db
-          .select()
-          .from(contradictions)
-          .where(eq(contradictions.dedupeKey, ContradictionService.pairKey(first, second)))
-          .get();
+        const row = this.rowOfPair(first, second);
         if (row?.resolvedBySupersede && row.status === 'resolved') this.reopenIfActive(row, 'Die Ersetzung wurde rückgängig gemacht.');
       }
     for (const row of this.closedByDeactivation().filter((c) => c.affectedEntityIds.some((id) => decisionIds.includes(id))))
@@ -291,8 +289,7 @@ export class ContradictionService {
   }
 
   private async record([a, b]: [Decision, Decision], { reason, confidence }: Finding): Promise<Contradiction> {
-    const dedupeKey = ContradictionService.pairKey(a.id, b.id);
-    const existing = this.db.select().from(contradictions).where(eq(contradictions.dedupeKey, dedupeKey)).get();
+    const existing = this.rowOfPair(a.id, b.id);
     if (existing) return toContradiction(existing);
     const order = orderDecisions(this.db, [a, b]);
     const { older, newer, ordered } = order;
@@ -301,7 +298,7 @@ export class ContradictionService {
       ...pairContent(order, { reason, topic: a.topicName ?? b.topicName ?? a.projectName ?? 'diesem Thema' }),
       confidence,
       status: 'detected',
-      dedupeKey,
+      dedupeKey: ContradictionService.pairKey(a.id, b.id),
       createdAt: nowIso(),
       resolvedAt: null,
       resolvedBySupersede: false,
@@ -319,17 +316,18 @@ export class ContradictionService {
     return toContradiction(row);
   }
 
+  /** Settles a contradiction the user confirmed; superseding goes only within its own decisions and only with „aufgelöst“. */
   resolve(
     id: string,
-    {
-      resolution,
-      ...opts
-    }: { resolution: 'acknowledged' | 'resolved' | 'false_positive'; confirmed: boolean; supersedeOldDecisionId?: string; supersedeNewDecisionId?: string },
+    { resolution, ...opts }: { resolution: ContradictionResolution; confirmed: boolean; supersedeOldDecisionId?: string; supersedeNewDecisionId?: string },
   ): Contradiction {
     if (!opts.confirmed) throw new AppError('permission_error', 'Widersprüche dürfen nur nach ausdrücklicher Bestätigung aufgelöst werden.');
     const c = this.get(id);
-    if (opts.supersedeOldDecisionId && opts.supersedeNewDecisionId) {
-      this.deps.decisions.supersede({ oldId: opts.supersedeOldDecisionId, newId: opts.supersedeNewDecisionId, confirmed: true, trigger: 'contradiction' });
+    const { supersedeOldDecisionId: olderId, supersedeNewDecisionId: newerId } = opts;
+    if (olderId && newerId) {
+      const check = checkSupersede(c, { resolution, olderId, newerId });
+      if (!check.fits) throw new AppError('validation_error', check.reason);
+      this.deps.decisions.supersede({ oldId: olderId, newId: newerId, confirmed: true, trigger: 'contradiction' });
     }
     if (resolution === 'acknowledged') {
       this.db.update(contradictions).set({ status: resolution, resolvedAt: null }).where(eq(contradictions.id, id)).run();
@@ -339,7 +337,7 @@ export class ContradictionService {
         resolution,
         by: 'user',
         reason: resolution === 'resolved' ? 'Er wurde als aufgelöst markiert.' : 'Er wurde als Fehlalarm markiert.',
-        ...(resolution === 'resolved' && opts.supersedeOldDecisionId && opts.supersedeNewDecisionId ? { cause: 'supersede' as const } : {}),
+        ...(resolution === 'resolved' && olderId && newerId ? { cause: 'supersede' as const } : {}),
       });
     return this.get(c.id);
   }

@@ -1,8 +1,18 @@
 import fs from 'node:fs';
-import { RELATION_TYPE_LABELS, type ArchivePlanItem, type DocumentRecord, type DocumentStatus, type Job, type StoredAgentAction } from '@archivist/shared';
+import {
+  RELATION_TYPE_LABELS,
+  type ArchivePlanItem,
+  type Contradiction,
+  type DocumentRecord,
+  type DocumentStatus,
+  type Job,
+  type StoredAgentAction,
+} from '@archivist/shared';
 import { matchOpenItems } from '../open-item-matching';
 import { toErrorInfo } from '../../util/errors';
+import { truncate } from '../../util/text';
 import type { ConvState, Reply } from '../chat-state';
+import { decisionsOf, RESOLUTION_LABELS } from '../contradiction-resolution';
 import { CONTRADICTION_SCAN_JOB } from '../contradictions';
 import type { ChatDeps, ChatRequest } from './types';
 
@@ -11,12 +21,6 @@ type Relation = ReturnType<ChatDeps['graph']['relationsOf']>[number];
 
 /** How long the chat waits for the scan job before it answers with what is known so far. */
 const SCAN_WAIT_MS = 20_000;
-
-const CONTRADICTION_RESOLUTION_LABELS = {
-  resolved: 'als aufgelöst markieren',
-  false_positive: 'als Fehlalarm markieren',
-  acknowledged: 'zur Kenntnis nehmen',
-} as const;
 
 const isInInbox = (d: DocumentRecord) => d.status === 'proposed' || d.status === 'staged';
 
@@ -184,19 +188,19 @@ export class ArchiveReplies {
   /** Resolving is only ever a proposal card; without a clear hit the open contradictions are listed and the user names one. */
   contradictionResolve({ conversationId, intent, state }: ChatRequest): Reply {
     const resolution = intent.contradictionResolution ?? 'resolved';
-    const open = [...this.deps.contradictions.list({ status: 'detected' }), ...this.deps.contradictions.list({ status: 'acknowledged' })];
+    const open = this.deps.contradictions.listOpen();
     const reply = (content: string, extra: Partial<Reply> = {}): Reply => ({ intent: 'contradiction_resolve', content, confidence: 0.6, state, ...extra });
     if (open.length === 0) return reply('Es gibt keine offenen Widersprüche.');
     const hint = intent.query?.trim() ?? '';
     const match = open.length === 1 && !hint ? { status: 'match' as const, item: open[0]! } : matchOpenItems({ hint, items: open });
     if (match.status !== 'match') {
       const candidates = match.status === 'ambiguous' ? match.items : open.slice(0, 5);
-      return reply(`Welchen Widerspruch meinst du?\n\n${candidates.map((c) => `• **${c.title}**`).join('\n')}`, { confidence: 0.4 });
+      return reply(`Welchen Widerspruch meinst du?\n\n${candidates.map((c) => this.candidateLine(c)).join('\n')}`, { confidence: 0.4 });
     }
     const contradiction = match.item;
     const action = this.deps.actions.propose({
       actionType: 'resolve_contradiction',
-      label: `Widerspruch „${contradiction.title}“ ${CONTRADICTION_RESOLUTION_LABELS[resolution]}`,
+      label: `Widerspruch „${contradiction.title}“ ${RESOLUTION_LABELS[resolution].card}`,
       rationale: 'Auf deinen Wunsch vorbereitet.',
       confidence: 0.7,
       affectedEntities: [{ type: 'contradiction', id: contradiction.id, label: contradiction.title }],
@@ -205,9 +209,15 @@ export class ArchiveReplies {
       conversationId,
     });
     return reply(
-      `**${contradiction.title}**\n${contradiction.description}\n\nIch habe vorbereitet, ihn ${CONTRADICTION_RESOLUTION_LABELS[resolution]}. Bestätige die Karte, dann wird es ausgeführt.`,
+      `**${contradiction.title}**\n${contradiction.description}\n\nIch habe vorbereitet, ihn ${RESOLUTION_LABELS[resolution].sentence}. Bestätige die Karte, dann wird es ausgeführt.`,
       { actions: [action] },
     );
+  }
+
+  /** Contradictions between decisions of one topic share their title; their decisions tell them apart. */
+  private candidateLine(contradiction: Contradiction): string {
+    const decisions = decisionsOf(this.deps.decisions, contradiction).map((d) => `„${truncate(d.title, 60)}“`);
+    return `• **${contradiction.title}**${decisions.length ? `: ${decisions.join(' und ')}` : ''}`;
   }
 
   relationDecide({ conversationId, intent, state }: ChatRequest): Reply {
