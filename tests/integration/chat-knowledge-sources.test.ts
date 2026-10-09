@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DecisionInput } from '@archivist/shared';
+import { eq } from 'drizzle-orm';
+import { messages } from '../../packages/core/src/db/schema';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -47,6 +49,18 @@ describe('Knowledge answers get the matched passage (#157)', () => {
   beforeEach(async () => {
     app = await createTestApp({ privacy: 'auto' });
     app.llm.on('KnowledgeAnswer', () => answer);
+  });
+
+  it('stores the cited sources without their internal prompt fields', async () => {
+    await archiveText('umzug.txt', 'Beschluss: Die Plattform zieht nach Frankfurt um.', 'Protokoll Umzug', 'Umzug der Plattform.');
+    app.llm.on('KnowledgeAnswer', () => ({ ...answer, facts: [{ statement: 'Die Plattform zieht nach Frankfurt.', sourceIds: ['S1'] }] }));
+    app.llm.on('ChatIntent', () => ({ intent: 'knowledge_question', confidence: 0.9, rationale: 'test', query: 'Plattform Frankfurt' }));
+
+    const reply = await app.ok('chat:send', { text: 'Wohin zieht die Plattform um?' });
+
+    expect(reply.assistantMessage.sources[0]?.title).toBe('1. Protokoll Umzug');
+    const stored = app.services.ctx.database.db.select().from(messages).where(eq(messages.id, reply.assistantMessage.id)).get();
+    expect((stored?.sources as object[]).flatMap((s) => Object.keys(s)).filter((key) => key.startsWith('_'))).toEqual([]);
   });
 
   it('sends the chunk that contains the decisive sentence, not only summary and a few words', async () => {

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { messages } from '../../packages/core/src/db/schema';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -24,6 +26,10 @@ async function createLeaseDecision() {
   });
   await Promise.all(app.services.decisions.list().map((d) => app.services.decisions.reindex(d.id)));
 }
+
+/** Keys of the sources as stored with the message: internal prompt fields stay in the main process. */
+const storedSourceKeys = (messageId: string) =>
+  (app.services.ctx.database.db.select().from(messages).where(eq(messages.id, messageId)).get()?.sources as object[]).flatMap((s) => Object.keys(s));
 
 const challenge = (overrides: object = {}) => ({
   summary: 'Eine Kündigung widerspricht deiner Entscheidung vom März.',
@@ -63,6 +69,7 @@ describe('Challenging an idea against the archive', () => {
     expect(content).toContain('1 Aussage(n) des Modells ohne gültigen Quellenbeleg wurden verworfen.');
     expect(content).toContain('Fehlt: Kündigungsfrist');
     expect(message.sources.map((s) => s.title)).toContain('1. Mietvertrag Bern behalten');
+    expect(storedSourceKeys(message.id).filter((key) => key.startsWith('_'))).toEqual([]);
     expect(await app.ok('decisions:list', {})).toHaveLength(decisionsBefore);
     const call = app.llm.calls.find((c) => c.schema === 'IdeaChallenge')!;
     expect(call.input).toContain('Idee: Ich überlege, den Mietvertrag in Bern zu kündigen');
