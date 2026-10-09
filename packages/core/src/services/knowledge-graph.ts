@@ -7,7 +7,7 @@ import { subtopicPairs, subtreeOf } from './graph/hierarchy';
 import { LinkUndo, type LinkUndoData } from './graph/link-undo';
 import { EntityMerges } from './graph/merge';
 import type { MergeBatchResult, MergeOptions, MergeReindexer, MergeRequest, MergeResult } from './graph/merge-types';
-import { SubjectDeletion, type SubjectDeleteResult, type SubjectImpact } from './graph/subject-delete';
+import { SubjectDeletion, type SubjectDeleteOptions, type SubjectDeleteResult, type SubjectImpact } from './graph/subject-delete';
 import type { NeighborhoodGraph, NeighborhoodOptions } from './graph/neighborhood';
 import { GraphRelations, type AdoptedRelation, type LinkOptions, type LinkResult, type RelationChangeSet, type SystemUnlink } from './graph/relations';
 import type { RelationKey } from './graph/rows';
@@ -35,14 +35,14 @@ export class KnowledgeGraphService {
   private readonly ctx: AppContext;
 
   constructor(deps: KnowledgeGraphServiceDeps) {
-    ({ ctx: this.ctx } = deps);
     const { ctx, audit, undo } = deps;
+    this.ctx = ctx;
     this.entities = new GraphEntities(ctx);
     this.relations = new GraphRelations(ctx);
     this.views = new GraphViews(this.entities, this.relations);
     this.userLinks = new UserLinks({ ctx, audit, graph: { entities: this.entities, relations: this.relations } });
     this.merges = new EntityMerges({ ctx, audit, undo });
-    this.deletions = new SubjectDeletion({ ctx, audit, undo, snapshots: this.entities });
+    this.deletions = new SubjectDeletion({ ctx, audit, undo, nodes: this.entities });
     new LinkUndo(ctx).register(undo);
   }
 
@@ -88,13 +88,18 @@ export class KnowledgeGraphService {
     return this.entities.restore(snapshot);
   }
 
+  /** The id while that entry still exists, else null: a restored record drops references removed since. */
+  existingId(id: string | null): string | null {
+    return id && this.entities.get(id) ? id : null;
+  }
+
   /** What deleting a person, topic, project or tag would remove (see {@link deleteSubject}). */
   subjectImpact(id: string): SubjectImpact {
     return this.deletions.impact(id);
   }
 
-  /** Deletes a person, topic, project or tag with all its edges; its name stays blocked for the analysis. Undoable. */
-  deleteSubject(id: string, options: { actor: 'user' | 'agent'; trigger: string; reason?: string }): Promise<SubjectDeleteResult> {
+  /** Stage 2: deletes a person, topic, project or tag with all its edges; its name stays blocked for the analysis. Undoable. */
+  deleteSubject(id: string, options: SubjectDeleteOptions): Promise<SubjectDeleteResult> {
     return this.deletions.delete(id, options);
   }
 

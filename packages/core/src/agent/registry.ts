@@ -137,7 +137,7 @@ export interface AgentTool<A = unknown> {
   description: string;
   schema: z.ZodType<A>;
   /** read: changes nothing; write: changes the archive (logged, undoable); critical: always asks (#298). */
-  risk: ToolRisk | ((args: A, ctx?: ToolContext) => ToolRisk);
+  risk: ToolRisk | ((args: A, ctx: ToolContext) => ToolRisk);
   /** Plain-language label of a call („Suche pptx-Dateien“). */
   label: (args: A) => string;
   /** How many entries a call would change (mass action threshold); default 1 for write tools. */
@@ -151,7 +151,7 @@ export interface AgentTool<A = unknown> {
   run: (args: A, ctx: ToolContext) => Promise<ToolOutput>;
 }
 
-export const riskOf = <A>(tool: AgentTool<A>, args: A, ctx?: ToolContext): ToolRisk => (typeof tool.risk === 'function' ? tool.risk(args, ctx) : tool.risk);
+export const riskOf = <A>(tool: AgentTool<A>, args: A, ctx: ToolContext): ToolRisk => (typeof tool.risk === 'function' ? tool.risk(args, ctx) : tool.risk);
 
 /** Typed helper so that `run` sees the parsed argument type. */
 export function defineTool<S extends z.ZodType>(tool: Omit<AgentTool<z.output<S>>, 'schema'> & { schema: S }): AgentTool<unknown> {

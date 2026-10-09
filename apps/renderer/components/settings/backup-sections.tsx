@@ -24,7 +24,7 @@ function kindLabel(backup: BackupInfo): string {
   return backup.kind === 'full' ? 'Vollständig' : 'Nur Metadaten';
 }
 
-export function BackupsTab({ settings, reload }: TabProps) {
+export function BackupSections({ settings, reload }: TabProps) {
   const { save } = useSaveSettings(reload);
   const { run } = useRun();
   const list = useQuery('backup:list', {}, { scopes: ['settings', 'audit'] });

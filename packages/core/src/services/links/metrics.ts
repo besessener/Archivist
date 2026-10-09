@@ -19,10 +19,13 @@ export interface LinkageMetrics {
   history: LinkageSnapshot[];
 }
 
+type OpenByMethod = Array<{ key: string; count: number }>;
+
 /** The totals a snapshot takes from the orphan and proposal lists. */
 export interface LinkageTotals {
   orphans: () => number;
-  openProposals: () => number;
+  /** The open proposals per method, as the proposal list groups and counts them. */
+  openByMethod: () => OpenByMethod;
 }
 
 /** History of the linkage metrics (#292), one point per archive check. */
@@ -47,37 +50,43 @@ export class LinkageMetricsLog {
 
   /** How well the archive is linked right now, with the history of the archive checks. */
   metrics(): LinkageMetrics {
-    const methods = this.methodCounts();
-    return { current: this.snapshot(methods), methods, history: this.history() };
+    const { methods, current } = this.measure();
+    return { current, methods, history: this.history() };
   }
 
   /** Stores the current metrics as one point of the history; called by every archive check. */
   recordMetrics(): LinkageSnapshot {
-    const point = this.snapshot(this.methodCounts());
+    const point = this.measure().current;
     this.deps.appState.set(METRICS_HISTORY, JSON.stringify([...this.history(), point].slice(-MAX_METRICS_POINTS)));
     return point;
   }
 
-  /** Decisions of the user and open proposals per method of the automatic proposals (from the provenance of #270). */
-  private methodCounts(): LinkageMetrics['methods'] {
+  private measure(): Pick<LinkageMetrics, 'methods' | 'current'> {
+    const open = this.totals.openByMethod();
+    const methods = this.methodCounts(open);
+    return { methods, current: this.snapshot({ methods, open }) };
+  }
+
+  /** Decisions of the user (from the provenance of #270) and open proposals – those the list shows – per method of the automatic proposals. */
+  private methodCounts(openByMethod: OpenByMethod): LinkageMetrics['methods'] {
     const rows = this.sqlite
       .prepare(
         `SELECT r.method AS method,
            sum(CASE WHEN r.status = 'confirmed' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS confirmed,
-           sum(CASE WHEN r.status = 'rejected' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS rejected,
-           sum(CASE WHEN r.status = 'proposed' THEN 1 ELSE 0 END) AS open
+           sum(CASE WHEN r.status = 'rejected' AND r.resolved_by_user = 1 THEN 1 ELSE 0 END) AS rejected
          FROM relations r WHERE r.method IN (${sqlList(MEASURED_METHODS)}) AND (r.relation_type NOT IN (${sqlList(OWN_FLOW_TYPES)}) OR r.method = 'refinement')
          GROUP BY r.method`,
       )
-      .all() as Array<{ method: RelationMethod; confirmed: number; rejected: number; open: number }>;
-    const byMethod = new Map(rows.map((row) => [row.method, row]));
+      .all() as Array<{ method: RelationMethod; confirmed: number; rejected: number }>;
+    const decided = new Map(rows.map((row) => [row.method, row]));
+    const open = new Map(openByMethod.map((group) => [group.key, group.count]));
     return MEASURED_METHODS.map((method) => {
-      const { confirmed, rejected, open } = byMethod.get(method) ?? { confirmed: 0, rejected: 0, open: 0 };
-      return { method, label: RELATION_METHOD_LABELS[method], confirmed, rejected, open, rate: rateOf(confirmed, rejected) };
+      const { confirmed, rejected } = decided.get(method) ?? { confirmed: 0, rejected: 0 };
+      return { method, label: RELATION_METHOD_LABELS[method], confirmed, rejected, open: open.get(method) ?? 0, rate: rateOf(confirmed, rejected) };
     });
   }
 
-  private snapshot(methods: LinkageMetrics['methods']): LinkageSnapshot {
+  private snapshot({ methods, open }: { methods: LinkageMetrics['methods']; open: OpenByMethod }): LinkageSnapshot {
     const entries = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${entrySql('e', LINK_ENTRY_TYPES)}`).get() as { c: number }).c;
     const confirmed = methods.reduce((sum, method) => sum + method.confirmed, 0);
     const rejected = methods.reduce((sum, method) => sum + method.rejected, 0);
@@ -85,7 +94,7 @@ export class LinkageMetricsLog {
       at: new Date().toISOString(),
       entries,
       orphans: this.totals.orphans(),
-      openProposals: this.totals.openProposals(),
+      openProposals: open.reduce((sum, group) => sum + group.count, 0),
       confirmationRate: rateOf(confirmed, rejected),
     };
   }

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SPEECH_MAX_SAMPLES } from '@archivist/shared';
-import type { SpeechEngine } from '../../packages/core/src/services/speech/engine';
+import type { SpeechEngine, TranscribeOptions } from '../../packages/core/src/services/speech/engine';
 import { createTestApp, type TestApp } from '../helpers/harness';
 import { startSpeechModelServer, type SpeechModelServer } from '../helpers/speech-model-server';
 
@@ -13,7 +13,7 @@ class FakeEngine implements SpeechEngine {
   models: string[] = [];
   reply = '  Das ist   ein Test.\n';
   hold: Promise<void> | null = null;
-  async transcribe(samples: Float32Array, model: string) {
+  async transcribe(samples: Float32Array, { model }: TranscribeOptions) {
     this.heard.push(samples);
     this.models.push(model);
     await this.hold;

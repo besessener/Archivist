@@ -28,7 +28,8 @@ function spanningTree(root: number, neighbours: number[][]): Tree {
       queue.push(node);
     }
   const leaves = depth.map(() => 0);
-  for (const node of [...queue].reverse())
+  const childrenFirst = [...queue].reverse();
+  for (const node of childrenFirst)
     leaves[node] = Math.max(
       1,
       children[node]!.reduce((sum, child) => sum + leaves[child]!, 0),
@@ -40,18 +41,23 @@ function spanningTree(root: number, neighbours: number[][]): Tree {
 function placeRadially(tree: Tree, unit: number): Placement {
   const positions: Point[] = tree.depth.map(() => ({ x: 0, y: 0 }));
   const angles = tree.depth.map(() => 0);
-  const place = (node: number, from: number, width: number) => {
-    angles[node] = from + width / 2;
+  const place = ({ node, startAngle, wedgeAngle }: { node: number; startAngle: number; wedgeAngle: number }) => {
+    angles[node] = startAngle + wedgeAngle / 2;
     positions[node] = { x: Math.cos(angles[node]) * tree.depth[node]! * unit, y: Math.sin(angles[node]) * tree.depth[node]! * unit };
-    let start = from;
+    let childStart = startAngle;
     for (const child of tree.children[node]!) {
-      const share = (width * tree.leaves[child]!) / tree.leaves[node]!;
-      place(child, start, share);
-      start += share;
+      const childWedge = (wedgeAngle * tree.leaves[child]!) / tree.leaves[node]!;
+      place({ node: child, startAngle: childStart, wedgeAngle: childWedge });
+      childStart += childWedge;
     }
   };
-  place(tree.root, 0, 2 * Math.PI);
+  place({ node: tree.root, startAngle: 0, wedgeAngle: 2 * Math.PI });
   return { positions, angles };
+}
+
+/** The same direction as `angle`, written within half a turn of `reference`, so sort keys around it do not jump at ±π. */
+function angleClosestTo(angle: number, reference: number): number {
+  return reference + Math.atan2(Math.sin(angle - reference), Math.cos(angle - reference));
 }
 
 /** The direction of a node's neighbours other than its parent, as an angle close to the parent's; its own angle if it has none. */
@@ -66,8 +72,7 @@ function siblingKey({ node, parent, neighbours, placement }: { node: number; par
     y += otherY / length;
   }
   const angle = x === 0 && y === 0 ? placement.angles[node]! : Math.atan2(y, x);
-  const reference = placement.angles[parent]!;
-  return reference + Math.atan2(Math.sin(angle - reference), Math.cos(angle - reference));
+  return angleClosestTo(angle, placement.angles[parent]!);
 }
 
 /** Barycentre heuristic: siblings move towards the side where their other neighbours are, so cross links do not cut through branches. */

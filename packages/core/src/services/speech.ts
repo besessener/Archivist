@@ -87,9 +87,9 @@ export class SpeechService {
     this.lastError = null;
     ctx.logger.info('speech', 'Model download started', { model: spec.directory, bytes: store.totalBytes });
     void store
-      .install({ signal: download.abort.signal, onProgress: (received) => this.report(download, received) })
+      .install({ signal: download.abort.signal, onProgress: (received) => this.trackProgress(download, received) })
       .then(() => ctx.logger.info('speech', 'Model installed', { model: spec.directory }))
-      .catch((err: unknown) => this.failed(download, err))
+      .catch((err: unknown) => this.recordFailure(download, err))
       .finally(() => {
         this.download = null;
         ctx.events.changed('speech');
@@ -120,7 +120,7 @@ export class SpeechService {
     if (isSilent(samples)) return { text: '' };
     this.transcribing = true;
     try {
-      return { text: tidyTranscript(await this.deps.engine.transcribe(samples, spec.directory, this.shutdown.signal)) };
+      return { text: tidyTranscript(await this.deps.engine.transcribe(samples, { model: spec.directory, signal: this.shutdown.signal })) };
     } finally {
       this.transcribing = false;
     }
@@ -132,14 +132,14 @@ export class SpeechService {
     await this.deps.engine.close();
   }
 
-  /** Progress arrives per chunk; the window needs it a few times a second at most. */
-  private report(download: Download, received: number): void {
+  /** Progress arrives per chunk; the window gets one change event per 2 MB. */
+  private trackProgress(download: Download, received: number): void {
     const previous = download.receivedBytes;
     download.receivedBytes = received;
     if (Math.floor(received / PROGRESS_STEP_BYTES) !== Math.floor(previous / PROGRESS_STEP_BYTES)) this.deps.ctx.events.changed('speech');
   }
 
-  private failed(download: Download, err: unknown): void {
+  private recordFailure(download: Download, err: unknown): void {
     if (download.abort.signal.aborted) return;
     this.lastError = {
       model: download.model,

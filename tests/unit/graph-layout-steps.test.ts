@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { untangle } from '../../apps/renderer/components/knowledge/graph-crossings';
-import { countCrossings, distanceBetween, linksCross, segmentsCross, type Link } from '../../apps/renderer/components/knowledge/graph-geometry';
+import { distanceBetween, linksCrossIn, type Link, type Point } from '../../apps/renderer/components/knowledge/graph-geometry';
 import { radialStart } from '../../apps/renderer/components/knowledge/graph-radial';
 import { hopDistances, majorize } from '../../apps/renderer/components/knowledge/graph-stress';
+import { countCrossings } from '../helpers/graph';
 
 const at = (x: number, y: number) => ({ x, y });
+const segmentsCross = (first: [Point, Point], second: [Point, Point]) => linksCrossIn([...first, ...second])([0, 1], [2, 3]);
 
 describe('graph geometry', () => {
   it('counts segments that cross in their interiors, not ones that touch, meet or run in parallel', () => {
-    expect(segmentsCross(at(0, 0), at(2, 2), at(0, 2), at(2, 0))).toBe(true);
-    expect(segmentsCross(at(0, 0), at(2, 2), at(1, 1), at(3, 0))).toBe(false);
-    expect(segmentsCross(at(0, 0), at(1, 0), at(0, 1), at(1, 1))).toBe(false);
-    expect(segmentsCross(at(0, 0), at(2, 0), at(1, 0), at(3, 0))).toBe(false);
-    expect(segmentsCross(at(0, 0), at(1, 1), at(2, 0), at(3, -1))).toBe(false);
+    expect(segmentsCross([at(0, 0), at(2, 2)], [at(0, 2), at(2, 0)])).toBe(true);
+    expect(segmentsCross([at(0, 0), at(2, 2)], [at(1, 1), at(3, 0)])).toBe(false);
+    expect(segmentsCross([at(0, 0), at(1, 0)], [at(0, 1), at(1, 1)])).toBe(false);
+    expect(segmentsCross([at(0, 0), at(2, 0)], [at(1, 0), at(3, 0)])).toBe(false);
+    expect(segmentsCross([at(0, 0), at(1, 1)], [at(2, 0), at(3, -1)])).toBe(false);
   });
 
   it('never counts links that share a node', () => {
     const positions = [at(0, 0), at(2, 2), at(2, 0)];
-    expect(linksCross(positions, [0, 1], [0, 2])).toBe(false);
+    expect(linksCrossIn(positions)([0, 1], [0, 2])).toBe(false);
     expect(
       countCrossings(
         [at(0, 0), at(2, 2), at(0, 2), at(2, 0)],
@@ -44,6 +46,13 @@ describe('layout steps', () => {
       [2, 1, 0, 3],
       [3, 3, 3, 0],
     ]);
+  });
+
+  it('measures distances of a graph with hundreds of nodes', () => {
+    const path = Array.from({ length: 399 }, (_, node): Link => [node, node + 1]);
+    const distances = hopDistances(401, path);
+    expect(distances[0]![399]).toBe(399);
+    expect(distances[0]![400]).toBe(400);
   });
 
   it('starts every branch in its own wedge, one ring per step', () => {
@@ -106,5 +115,20 @@ describe('layout steps', () => {
     expect(countCrossings(untangled, links)).toBe(0);
     expect(untangled[0]).toEqual(at(0, 0));
     expect(new Set(untangled.map(({ x, y }) => `${x},${y}`))).toEqual(new Set(bowTie.map(({ x, y }) => `${x},${y}`)));
+  });
+
+  it('never trades a shorter line for an extra crossing', () => {
+    const positions = [at(976, 2297), at(1973, 3693), at(2261, 2197), at(3899, 2901), at(189, 2873), at(3838, 3914), at(1841, 2504), at(905, 790)];
+    const links: Link[] = [
+      [0, 3],
+      [0, 1],
+      [2, 7],
+      [3, 7],
+      [2, 3],
+      [1, 5],
+      [3, 4],
+    ];
+    expect(countCrossings(positions, links)).toBe(1);
+    expect(countCrossings(untangle({ positions, links, pinned: 0, unit: 170 }), links)).toBeLessThanOrEqual(1);
   });
 });

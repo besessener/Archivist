@@ -21,6 +21,7 @@ export class QuitController {
   private started = false;
   private relaunchRequested = false;
   private exited = false;
+  private beforeExit: (() => void)[] = [];
 
   constructor(private readonly deps: QuitDeps) {}
 
@@ -59,9 +60,21 @@ export class QuitController {
     this.relaunchRequested = true;
   }
 
+  /** Runs `hook` right before the process exits, e.g. to start the update installer once the database is closed. */
+  runBeforeExit(hook: () => void): void {
+    this.beforeExit.push(hook);
+  }
+
   private exit(code: number): void {
     if (this.exited) return;
     this.exited = true;
+    for (const hook of this.beforeExit) {
+      try {
+        hook();
+      } catch (err) {
+        this.deps.log?.('Error right before exiting', err);
+      }
+    }
     if (this.relaunchRequested) this.deps.relaunch();
     this.deps.exit(code);
   }

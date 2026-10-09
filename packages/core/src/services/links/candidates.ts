@@ -1,7 +1,7 @@
 import type { EntityType, RelationType } from '@archivist/shared';
 import { normalizeName, truncate } from '../../util/text';
 import { otherEndOf, type RelationKey } from '../graph/rows';
-import { isConnected, isEntry, LINK_ENTRY_TYPES, type LinkDeps } from './entries';
+import { isConnected, isEntry, LINK_ENTRY_TYPES, openProposalsAt, proposeLink, type LinkDeps } from './entries';
 
 /** Minimum cosine similarity for a proposal (#271); the lexical local vectors are noisier than embeddings, so their bar is higher. */
 export const MIN_SIMILARITY = { local: 0.5, embeddings: 0.45 };
@@ -69,9 +69,9 @@ export class LinkCandidates {
       found.set(hit.id, { id: hit.id, type: entity.type, name: entity.name, score: hit.score, method: 'similarity', reason });
     }
     for (const mention of this.mentions(entityId)) found.set(mention.id, mention);
-    const min = this.deps.minConfidence?.() ?? 0;
+    const minConfidence = this.deps.minConfidence();
     return [...found.values()]
-      .filter((candidate) => candidate.score >= min)
+      .filter((candidate) => candidate.score >= minConfidence)
       .toSorted((a, b) => b.score - a.score)
       .slice(0, limit);
   }
@@ -90,28 +90,17 @@ export class LinkCandidates {
     return out;
   }
 
-  /** Open similarity proposals of an entry (either direction). */
-  private openSimilarityProposals(id: string): number {
-    return (
-      this.sqlite
-        .prepare(
-          `SELECT count(*) AS c FROM relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND status = 'proposed' AND method = 'similarity' AND confidence >= ?`,
-        )
-        .get(id, id, this.deps.minConfidence?.() ?? 0) as { c: number }
-    ).c;
-  }
-
   /** Proposes similar entries as `related_to` (#271), at most `max` open ones per entry on both ends; returns the number new. */
   async proposeSimilar(id: string, options: { max?: number; propose?: SimilarProposer } = {}): Promise<number> {
     const max = options.max ?? MAX_SIMILAR_PROPOSALS;
     const propose = options.propose ?? this.proposeLink;
     if (!isEntry(this.sqlite, id)) return 0;
-    let room = max - this.openSimilarityProposals(id);
+    let room = max - openProposalsAt(this.deps, { id, method: 'similarity' });
     if (room <= 0) return 0;
     let created = 0;
     for (const candidate of await this.candidates(id, { limit: max * 2 })) {
       if (room <= 0) break;
-      if (candidate.method !== 'similarity' || this.openSimilarityProposals(candidate.id) >= max) continue;
+      if (candidate.method !== 'similarity' || openProposalsAt(this.deps, { id: candidate.id, method: 'similarity' }) >= max) continue;
       if (this.proposePair(propose, { key: { sourceId: id, targetId: candidate.id, relationType: 'related_to' }, candidate })) {
         created += 1;
         room -= 1;
@@ -131,7 +120,7 @@ export class LinkCandidates {
   }
 
   private readonly proposeLink: SimilarProposer = (key, proposal) =>
-    this.deps.graph.link(key, { status: 'proposed', method: 'similarity', ...proposal })?.created ?? false;
+    proposeLink(this.deps, { key, options: { method: 'similarity', ...proposal } })?.created ?? false;
 
   /** Proposes the open cases of confirmed members similar to the entry (#286); returns the number new. */
   async proposeCases(id: string): Promise<number> {
@@ -140,15 +129,14 @@ export class LinkCandidates {
     for (const [caseId, best] of await this.similarCases(id)) {
       if (isConnected(this.sqlite, { a: id, b: caseId })) continue;
       const found = this.deps.graph.getEntity(caseId)!;
-      const result = this.deps.graph.link(
-        { sourceId: id, targetId: caseId, relationType: 'belongs_to' },
-        {
-          status: 'proposed',
+      const result = proposeLink(this.deps, {
+        key: { sourceId: id, targetId: caseId, relationType: 'belongs_to' },
+        options: {
           confidence: best.score,
           method: 'similarity',
           evidence: `ähnlich wie „${truncate(best.via, 80)}“ aus dem Vorgang „${truncate(found.name, 60)}“`,
         },
-      );
+      });
       if (result?.created) created += 1;
     }
     return created;

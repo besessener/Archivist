@@ -60,7 +60,7 @@ export interface PersonResolution {
   parsed: ParsedPersonName;
   /** Resolution step that matched: exact name, alias, name without role/title, own identity, or newly created. */
   matchedBy: 'exact' | 'alias' | 'normalized' | 'self' | 'created' | null;
-  /** The mention is a pronoun/answer word ("ich", "ja", "unbekannt") or has no name in it; no person was created. */
+  /** No person was created: a pronoun/answer word ("ich", "ja", "unbekannt"), no name in it, or a name the user deleted (analysis only). */
   rejected: boolean;
   /** "ich", "mir", "mich", …: kept as text by {@link PersonService.resolveNames} outside documents. */
   selfReference: boolean;

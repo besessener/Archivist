@@ -40,7 +40,7 @@ import {
   NeighborhoodGraph,
   RelatedPage,
 } from './links';
-import { AppNotification, Contradiction, Insight, InsightKind, Reminder } from './notifications';
+import { AppNotification, Contradiction, Insight, InsightKind, Reminder, ResolvedNotification } from './notifications';
 import { OpenItem, OpenItemInput, OpenItemPatch, OpenItemStatus, SolutionPreview } from './open-items';
 import { ScanExclusion, ScanFile, ScanFileStatus, ScanProposalGroup, ScanRoot, ScanSummary } from './scan';
 import { AppStatus, LlmTestResult } from './status';
@@ -410,6 +410,7 @@ export const ipcContract = {
   'notifications:markAllRead': channel(Empty, z.object({ marked: z.number().int() })),
   'notifications:resolve': channel(z.object({ id: Id }), AppNotification),
   'notifications:resolveAll': channel(Empty, z.object({ resolved: z.number().int() })),
+  'notifications:recentlyResolved': channel(Empty, z.array(ResolvedNotification)),
   'notifications:snooze': channel(z.object({ id: Id, remindAt: IsoDate }), Reminder),
 
   // --- Insights / consistency / contradictions ---

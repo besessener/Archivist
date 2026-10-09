@@ -61,6 +61,8 @@ export const AppNotification = z.object({
   resolvedAt: IsoDate.nullable(),
 });
 export type AppNotification = z.infer<typeof AppNotification>;
+export const ResolvedNotification = AppNotification.extend({ resolvedAt: IsoDate });
+export type ResolvedNotification = z.infer<typeof ResolvedNotification>;
 
 export const InsightKind = z.enum([
   'assignment',

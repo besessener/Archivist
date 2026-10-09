@@ -46,7 +46,7 @@ export function RelationProvenance({ relation }: { relation: Pick<GraphRelation,
 const RELATED_PAGE = 10;
 
 /** Related entries strongest first with their reason (#276); with `link`, the section brings its own „Verknüpfen“ button (#277). */
-export function RelatedEntries({ id, link, scan = false }: { id: string; link?: { name: string }; scan?: boolean }) {
+export function RelatedEntries({ id, link, offerLinkSearch = false }: { id: string; link?: { name: string }; offerLinkSearch?: boolean }) {
   const [page, setPage] = useState(0);
   const [linkOpen, setLinkOpen] = useState(false);
   const [caseOpen, setCaseOpen] = useState(false);
@@ -75,9 +75,9 @@ export function RelatedEntries({ id, link, scan = false }: { id: string; link?: 
     <section data-testid="related-entries">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Verwandte Einträge{q.data ? ` (${total})` : ''}</h3>
-        {(link || scan) && (
+        {(link || offerLinkSearch) && (
           <span className="flex gap-1.5">
-            {scan && (
+            {offerLinkSearch && (
               <Button variant="outline" size="sm" disabled={busy} onClick={() => void searchLinks()} data-testid="related-scan">
                 <Search aria-hidden /> Verknüpfungen suchen
               </Button>

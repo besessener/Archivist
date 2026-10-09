@@ -1,5 +1,6 @@
 // Start with a damaged database: offers the newest intact backup; free of Electron so it can be unit-tested.
 import type { RestorePaths, RestoreSource } from '@archivist/core';
+import type { MessageBoxSyncOptions } from 'electron';
 
 export interface RecoveryDeps {
   paths: RestorePaths;
@@ -15,6 +16,17 @@ export interface RecoveryDeps {
 }
 
 const START_FAILED = 'Archivist konnte nicht gestartet werden';
+
+/** The restore offer as an Electron message box (`askToRestore` adds the details); button 0 restores. */
+export const RESTORE_QUESTION: MessageBoxSyncOptions = {
+  type: 'error',
+  title: 'Datenbank beschädigt',
+  message: 'Die Datenbank von Archivist ist beschädigt.',
+  buttons: ['Backup wiederherstellen', 'Beenden'],
+  defaultId: 0,
+  cancelId: 1,
+  noLink: true,
+};
 
 /** Handles a database found damaged at start: restore after the user's consent (the damaged file is kept), else quit. */
 export function recoverFromDamagedDatabase(deps: RecoveryDeps, problem: string): void {

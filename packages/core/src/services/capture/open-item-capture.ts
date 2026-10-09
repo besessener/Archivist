@@ -155,7 +155,7 @@ export class OpenItemCapture {
     const question = asked.length ? `\n\n_Optional:_ ${asked.map(askedQuestion).join(' ')}` : '';
     const selfNote =
       responsible.self && !this.deps.settings.get().profile.name.trim()
-        ? ' Hinterlege deinen Namen unter Einstellungen → Über dich, damit ich auch Dokumente mit deinem Namen dir zuordnen kann.'
+        ? ' Hinterlege deinen Namen unter Einstellungen → Allgemein → Über dich, damit ich auch Dokumente mit deinem Namen dir zuordnen kann.'
         : '';
     const due = item.dueAt ? ` (fällig ${item.dueAt.slice(0, 10)})` : '';
     const owner = item.responsibleName ? `, Verantwortlich: ${responsible.self ? 'du' : item.responsibleName}` : '';

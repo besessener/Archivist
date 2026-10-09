@@ -125,7 +125,7 @@ export function knowledgeHandlers(services: Services): HandlerGroup<'knowledge' 
       return { relations, records };
     },
     'knowledge:deleteSubject': async (input) => {
-      await services.graph.deleteSubject(input.id, { actor: 'user', trigger: UI_TRIGGER });
+      await services.graph.deleteSubject(input.id, { actor: 'user', trigger: UI_TRIGGER, confirmed: input.confirmed });
       return { ok: true as const };
     },
     'knowledge:unlink': (input) => {

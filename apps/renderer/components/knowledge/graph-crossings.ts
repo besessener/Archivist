@@ -1,46 +1,57 @@
-import { distanceBetween, linksCross, type Link, type Point } from './graph-geometry';
+import { distanceBetween, linksCrossIn, type Link, type Point } from './graph-geometry';
 
 /** How many nearby nodes each node tries to swap places with. */
 const SWAP_CANDIDATES = 10;
 const MAX_PASSES = 8;
-/** A crossing weighs as much as this many ideal edge lengths of extra line, so a swap does not trade one crossing for a long detour. */
-const CROSSING_WEIGHT = 2;
+/** Line length (in ideal edge lengths) a swap must save at least to count as shorter, so rounding noise cannot flip nodes back and forth. */
+const MIN_IMPROVEMENT = 1e-9;
 
-type Drawing = { positions: Point[]; links: Link[]; incident: number[][]; unit: number };
+type Drawing = { positions: Point[]; links: Link[]; incident: number[][]; unit: number; linksCross: (first: Link, second: Link) => boolean };
+/** Crossings and line length (in ideal edge lengths) of some links. */
+type Cost = { crossings: number; length: number };
 
-/** Crossings that involve at least one of the given links, plus their length in units; each crossing pair counts once. */
-function localCost({ positions, links, unit }: Drawing, involved: Set<number>): number {
+/** Crossings that involve at least one of the given links, plus their length; each crossing pair counts once. */
+function localCost({ positions, links, unit, linksCross }: Drawing, involved: Set<number>): Cost {
   let crossings = 0;
   let length = 0;
   for (const index of involved) {
     const link = links[index]!;
     length += distanceBetween(positions[link[0]]!, positions[link[1]]!) / unit;
-    for (let other = 0; other < links.length; other += 1)
-      if (linksCross(positions, link, links[other]!) && !(other <= index && involved.has(other))) crossings += 1;
+    for (let other = 0; other < links.length; other += 1) {
+      if (!linksCross(link, links[other]!)) continue;
+      const countedAlready = involved.has(other) && other <= index;
+      if (!countedAlready) crossings += 1;
+    }
   }
-  return crossings * CROSSING_WEIGHT + length;
+  return { crossings, length };
 }
 
-function swap(positions: Point[], a: number, b: number) {
-  [positions[a], positions[b]] = [positions[b]!, positions[a]!];
+/** Fewer crossings always win; line length only breaks ties. */
+function isCheaper(after: Cost, before: Cost): boolean {
+  if (after.crossings !== before.crossings) return after.crossings < before.crossings;
+  return after.length < before.length - MIN_IMPROVEMENT;
 }
 
-/** Swaps the two nodes if that lowers the local cost; returns whether it did. */
-function trySwap(drawing: Drawing, a: number, b: number): boolean {
-  const involved = new Set([...drawing.incident[a]!, ...drawing.incident[b]!]);
+function swap(positions: Point[], [node, other]: [number, number]) {
+  [positions[node], positions[other]] = [positions[other]!, positions[node]!];
+}
+
+/** Swaps the two nodes if that makes the drawing cheaper; returns whether it did. */
+function trySwap({ drawing, node, other }: { drawing: Drawing; node: number; other: number }): boolean {
+  const involved = new Set([...drawing.incident[node]!, ...drawing.incident[other]!]);
   if (involved.size === 0) return false;
   const before = localCost(drawing, involved);
-  swap(drawing.positions, a, b);
-  if (localCost(drawing, involved) < before - 1e-9) return true;
-  swap(drawing.positions, a, b);
+  swap(drawing.positions, [node, other]);
+  if (isCheaper(localCost(drawing, involved), before)) return true;
+  swap(drawing.positions, [node, other]);
   return false;
 }
 
-function isCrossed({ positions, links, incident }: Drawing, node: number): boolean {
-  return incident[node]!.some((index) => links.some((other) => linksCross(positions, links[index]!, other)));
+function isCrossed({ links, incident, linksCross }: Drawing, node: number): boolean {
+  return incident[node]!.some((index) => links.some((other) => linksCross(links[index]!, other)));
 }
 
-function nearest(positions: Point[], node: number, movable: number[]): number[] {
+function nearest({ positions, node, movable }: { positions: Point[]; node: number; movable: number[] }): number[] {
   return movable
     .filter((other) => other !== node)
     .map((other) => ({ other, distance: distanceBetween(positions[node]!, positions[other]!) }))
@@ -54,22 +65,20 @@ function swapPass(drawing: Drawing, movable: number[]): boolean {
   let improved = false;
   for (const node of movable) {
     if (!isCrossed(drawing, node)) continue;
-    for (const other of nearest(drawing.positions, node, movable)) if (trySwap(drawing, node, other)) improved = true;
+    for (const other of nearest({ positions: drawing.positions, node, movable })) if (trySwap({ drawing, node, other })) improved = true;
   }
   return improved;
 }
 
-/**
- * Removes edge crossings by letting nearby nodes swap places while that makes the drawing cheaper (crossings first, then line length).
- * Swapping keeps the set of occupied spots, so the spacing of the layout stays intact. The pinned node never moves.
- */
+/** Removes edge crossings by swapping nearby nodes (fewer crossings first, then shorter lines), which keeps the spacing; the pinned node stays. */
 export function untangle({ positions, links, pinned, unit }: { positions: Point[]; links: Link[]; pinned: number; unit: number }): Point[] {
   const incident: number[][] = positions.map(() => []);
-  for (const [index, [a, b]] of links.entries()) {
-    incident[a]!.push(index);
-    incident[b]!.push(index);
+  for (const [index, [node, other]] of links.entries()) {
+    incident[node]!.push(index);
+    incident[other]!.push(index);
   }
-  const drawing: Drawing = { positions: positions.map((point) => ({ ...point })), links, incident, unit };
+  const copy = positions.map((point) => ({ ...point }));
+  const drawing: Drawing = { positions: copy, links, incident, unit, linksCross: linksCrossIn(copy) };
   const movable = positions.map((_, node) => node).filter((node) => node !== pinned);
   for (let pass = 0; pass < MAX_PASSES; pass += 1) if (!swapPass(drawing, movable)) break;
   return drawing.positions;

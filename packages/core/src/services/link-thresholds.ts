@@ -17,7 +17,7 @@ const FULL_WEIGHT = 20;
 /** Methods with a graded score that can be made a little stricter; at the cap their strongest proposals still pass. */
 const LEARNABLE = {
   similarity: { cap: 0.1, measure: 'Mindest-Ähnlichkeit' },
-  date_person: { cap: 0.1, measure: 'Mindest-Konfidenz' },
+  date_person: { cap: 0.1, measure: 'Mindest-Sicherheit' },
 } as const satisfies Partial<Record<RelationMethod, { cap: number; measure: string }>>;
 export type LearnableMethod = keyof typeof LEARNABLE;
 

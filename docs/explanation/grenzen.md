@@ -18,7 +18,7 @@ Die auf npm verfügbare Version von SheetJS hat bekannte, ungepatchte Schwachste
 
 Texterkennung läuft lokal mit `tesseract.js`; Sprachdaten liegen im Installationspaket. Das macht den Installer größer, aber ein gescanntes Dokument verlässt dafür nie den Rechner. PDFs werden seitenweise erkannt, aber höchstens 40 Seiten ohne Textebene je Dokument; weitere Seiten bleiben ungelesen und das Dokument zeigt das offen an („Text teilweise gelesen“). Details: [Funktionen – OCR](../reference/funktionen.md#ocr).
 
-## Spracheingabe: lokal, nur Deutsch, ein Modell
+## Spracheingabe: lokal, nur Deutsch, feste Modellliste
 
 Die Spracheingabe nutzt Whisper (quantisiert) auf der CPU. Das ist für Diktate im Chat gedacht: Aufnahmen bis zwei Minuten, Erkennung ausschließlich Deutsch, kein Streaming (der Text erscheint nach dem Beenden der Aufnahme), kein Wake-Word. Du wählst unter Einstellungen → Archiv → Spracheingabe aus einer festen Liste: „small“ (Standard) ist am schnellsten und kleinsten, „medium“ und „turbo“ erkennen Namen und Fachbegriffe besser, brauchen aber mehr Platz und länger; die Liste ist bewusst fest, weil jedes Modell auf eine geprüfte Version festgelegt sein muss (`npm run speech:pin`). Die Modelle kommen nicht im Installer mit, sondern per Download nach deiner Bestätigung, damit der Installer klein bleibt; im Modus „nur lokal“ lädt Archivist deshalb nichts nach.
 

@@ -56,6 +56,8 @@ Indigo (`--primary`) steht für Aktionen und Auswahl: Hauptbuttons, Links, Fokus
 | rot | Inbox: mindestens ein Dokument fehlgeschlagen oder in Quarantäne; offene Punkte: mindestens einer überfällig (`overdueOpenItems` im App-Status) |
 | umrandet grau | offene Verknüpfungsvorschläge (nach den Hinweisen) |
 
+Der zugängliche Name eines Zählers beginnt mit der Zahl: „3 offen, davon 1 überfällig“, „2 Hinweise offen“, „1 Verknüpfungsvorschlag offen“.
+
 ## Statusstreifen
 
 Ein Streifen am linken Rand einer Karte (`data-stripe`) zeigt ihren Zustand, bevor man ein Badge liest:
@@ -63,7 +65,7 @@ Ein Streifen am linken Rand einer Karte (`data-stripe`) zeigt ihren Zustand, bev
 | Streifen | Karten |
 | --- | --- |
 | rot (`danger`) | offener Punkt überfällig; Entscheidung widerrufen; Widerspruch; Inbox-Dokument fehlgeschlagen oder in Quarantäne |
-| gelb (`warning`) | offener Punkt in den nächsten 7 Tagen fällig; Entscheidung im Entwurf; Hinweis auf abgelaufene, veraltete oder vermutlich ersetzte Angaben |
+| gelb (`warning`) | offener Punkt innerhalb von `consistency.dueSoonDays` Tagen fällig (Standard 7); Entscheidung im Entwurf; Hinweis auf abgelaufene, veraltete oder vermutlich ersetzte Angaben |
 
 ## Aktionen auf Karten
 
@@ -75,4 +77,4 @@ Seitentitel: `text-2xl`. Gruppen von Karten („Überfällig“, Arten von Hinwe
 
 ## Kontrast
 
-Text erfüllt WCAG 2.2 AA (4,5:1) auf Karte und Arbeitsfläche, in beiden Farbschemata; `accessibility.spec.ts` prüft das helle Schema mit axe. Farbe ist nie das einzige Signal: Streifen und Zähler stehen neben Badge, Gruppe oder zugänglichem Namen.
+Text erfüllt WCAG 2.2 AA (4,5:1) auf Karte und Arbeitsfläche, in beiden Farbschemata; `accessibility.spec.ts` prüft beide Schemata mit axe (das dunkle für jeden Bereich der Navigation). Zahlen auf rotem Grund nutzen `--destructive-foreground`, nie festes Weiß. Farbe ist nie das einzige Signal: Streifen und Zähler stehen neben Badge, Gruppe oder zugänglichem Namen.

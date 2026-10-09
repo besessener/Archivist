@@ -1,7 +1,7 @@
 import { localDate, type EntityType } from '@archivist/shared';
 import type { CreatedEntry } from '../../util/origin-scope';
 import { truncate } from '../../util/text';
-import { isLinked, type LinkDeps } from './entries';
+import { isLinked, openProposalsAt, proposeLink, type LinkDeps } from './entries';
 
 /** Up to this many entries created together are linked pairwise; more are linked in a chain (#272). */
 const MAX_PAIRWISE = 6;
@@ -14,7 +14,7 @@ const BUSINESS_DATE: Array<{ table: string; column: string; type: EntityType; ex
   { table: 'decisions', column: 'decided_at', type: 'decision' },
   { table: 'documents', column: 'document_date', type: 'document', extra: "AND x.status IN ('archived','indexed_only')" },
 ];
-/** Most same-day proposals per entry: every pair on a busy day would grow quadratically. */
+/** Most open same-day proposals per entry (either end): every pair on a busy day would grow quadratically. */
 const MAX_DATE_PERSON = 3;
 /** Confidence of a same-day proposal with one shared person (#278); every further person adds 0.1. */
 const DATE_PERSON_BASE = 0.6;
@@ -41,10 +41,10 @@ export class CoOriginLinks {
     for (const [a, b] of request.pairs) {
       if (a === b || isLinked(this.sqlite, { a, b })) continue;
       const { evidence, sourceIds } = request;
-      const result = this.deps.graph.link(
-        { sourceId: a, targetId: b, relationType: 'related_to' },
-        { status: 'proposed', confidence: 0.7, method: 'co_origin', evidence, sourceIds },
-      );
+      const result = proposeLink(this.deps, {
+        key: { sourceId: a, targetId: b, relationType: 'related_to' },
+        options: { confidence: 0.7, method: 'co_origin', evidence, sourceIds },
+      });
       if (result?.created) created += 1;
     }
     return created;
@@ -116,6 +116,8 @@ export class CoOriginLinks {
   proposeSameDayPerson(id: string): number {
     const day = this.businessDay(id);
     if (!day) return 0;
+    const room = MAX_DATE_PERSON - this.openDatePerson(id);
+    if (room <= 0) return 0;
     const persons = this.personsOf(id);
     if (!persons.size) return 0;
     // more shared persons, more confidence; the learned raise (#275) holds back the weakest ones first
@@ -124,18 +126,22 @@ export class CoOriginLinks {
     for (const otherId of this.sameDayEntries({ id, day })) {
       const shared = [...this.personsOf(otherId).entries()].filter(([personId]) => persons.has(personId)).map(([, name]) => `„${name}“`);
       const confidence = Math.min(0.8, DATE_PERSON_BASE + 0.1 * (shared.length - 1));
-      if (!shared.length || confidence < bar) continue;
+      if (!shared.length || confidence < bar || this.openDatePerson(otherId) >= MAX_DATE_PERSON) continue;
       found.push({ otherId, confidence, evidence: `Am ${germanDay(day)} mit ${shared.join(', ')}` });
     }
     let created = 0;
-    for (const { otherId, confidence, evidence } of found.toSorted((a, b) => b.confidence - a.confidence).slice(0, MAX_DATE_PERSON)) {
-      const result = this.deps.graph.link(
-        { sourceId: id, targetId: otherId, relationType: 'related_to' },
-        { status: 'proposed', confidence, method: 'date_person', evidence },
-      );
+    for (const { otherId, confidence, evidence } of found.toSorted((a, b) => b.confidence - a.confidence).slice(0, room)) {
+      const result = proposeLink(this.deps, {
+        key: { sourceId: id, targetId: otherId, relationType: 'related_to' },
+        options: { confidence, method: 'date_person', evidence },
+      });
       if (result?.created) created += 1;
     }
     return created;
+  }
+
+  private openDatePerson(id: string): number {
+    return openProposalsAt(this.deps, { id, method: 'date_person' });
   }
 
   /** Other entries on the same local day that are not linked with the entry yet. */

@@ -63,6 +63,25 @@ describe('quitting the application', () => {
     expect(calls).toEqual(['relaunch', 'exit:0']);
   });
 
+  it('runs a hook (the update installer) right before the process exits, also after the deadline', async () => {
+    const { quitter, calls } = setup(() => new Promise<void>(() => undefined));
+    quitter.runBeforeExit(() => calls.push('installer'));
+    const done = quitter.quit();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await done;
+    expect(calls).toEqual(['installer', 'exit:0']);
+  });
+
+  it('exits the process even if the hook before exiting fails', async () => {
+    const { quitter, calls, log } = setup(() => Promise.resolve());
+    quitter.runBeforeExit(() => {
+      throw new Error('kein Installer');
+    });
+    await quitter.quit();
+    expect(calls).toEqual(['exit:0']);
+    expect(log).toHaveBeenCalledWith('Error right before exiting', expect.any(Error));
+  });
+
   it('has a default deadline of at most ten seconds', () => {
     expect(QUIT_DEADLINE_MS).toBeLessThanOrEqual(10_000);
   });

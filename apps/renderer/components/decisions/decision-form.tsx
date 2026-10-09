@@ -311,8 +311,7 @@ export function DecisionFormDialog({
           onConfirm={persist}
         >
           <p className="text-sm text-muted-foreground">
-            {fieldsChanged ? 'Deine übrigen Änderungen werden vorher gespeichert. ' : ''}Das lässt sich unter Einstellungen → Änderungsprotokoll rückgängig
-            machen.
+            {fieldsChanged ? 'Deine übrigen Änderungen werden vorher gespeichert. ' : ''}Das lässt sich unter Einstellungen → Änderungen rückgängig machen.
           </p>
         </ConfirmDialog>
       </DialogContent>

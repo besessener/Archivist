@@ -97,6 +97,7 @@ export function recordHandlers(services: Services): HandlerGroup<RecordChannelPr
     'notifications:markAllRead': () => ({ marked: services.notifications.markAllRead() }),
     'notifications:resolve': (input) => services.notifications.resolve(input.id),
     'notifications:resolveAll': () => ({ resolved: services.notifications.resolveAll() }),
+    'notifications:recentlyResolved': () => services.notifications.recentlyResolved(),
     'notifications:snooze': (input) => {
       const notification = services.notifications.get(input.id);
       services.notifications.resolve(input.id);

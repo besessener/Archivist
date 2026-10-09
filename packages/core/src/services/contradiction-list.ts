@@ -1,8 +1,13 @@
 import type { Contradiction } from '@archivist/shared';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/database';
 import { contradictions } from '../db/schema';
 import type { ContradictionRow } from './contradiction-notices';
+
+/** Not settled yet: newly detected, or seen and acknowledged. */
+const OPEN_CONTRADICTION_STATUSES: ReadonlyArray<Contradiction['status']> = ['detected', 'acknowledged'];
+
+export const isOpenContradiction = (c: { status: string }) => OPEN_CONTRADICTION_STATUSES.some((status) => status === c.status);
 
 export interface ContradictionFilter {
   status?: Contradiction['status'];
@@ -39,4 +44,14 @@ export function listContradictions(db: Db, filter: ContradictionFilter, page?: {
 
 export function countContradictions(db: Db, filter: ContradictionFilter): number {
   return db.select({ n: count() }).from(contradictions).where(condition(filter)).get()?.n ?? 0;
+}
+
+/** The open contradictions, newest first. */
+export function openRows(db: Db): ContradictionRow[] {
+  return db
+    .select()
+    .from(contradictions)
+    .where(inArray(contradictions.status, [...OPEN_CONTRADICTION_STATUSES]))
+    .orderBy(desc(contradictions.createdAt), desc(contradictions.id))
+    .all();
 }

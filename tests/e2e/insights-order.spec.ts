@@ -24,8 +24,8 @@ test('Insights shows the findings first and the link proposals below; the naviga
   await expect(page.getByTestId('related-entry').filter({ hasText: 'Heizung Wartung' })).toBeVisible();
 
   const nav = app.navigation.locators;
-  await expect(nav.count('insights')).toHaveAccessibleName('offene Hinweise: 1');
-  await expect(nav.insightLinksCount).toHaveAccessibleName('offene Verknüpfungsvorschläge: 1');
+  await expect(nav.count('insights')).toHaveAccessibleName('1 Hinweis offen');
+  await expect(nav.insightLinksCount).toHaveAccessibleName('1 Verknüpfungsvorschlag offen');
 
   await app.navigation.do.open('insights');
   const finding = app.insights.card('Hinweis 1');

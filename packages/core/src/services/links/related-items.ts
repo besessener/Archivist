@@ -1,7 +1,7 @@
 import type { EntityType, GraphRelation } from '@archivist/shared';
 import { relationReason } from '../graph/relation-reason';
 import { otherEndOf } from '../graph/rows';
-import { isEntry, LINK_ENTRY_TYPES, type LinkDeps } from './entries';
+import { isEntry, LINK_ENTRY_TYPES, reachesMinConfidence, type LinkDeps } from './entries';
 
 /** An entry related to another one – directly or over shared topics, projects, persons, tags or cases (#276). */
 export interface RelatedItem {
@@ -82,10 +82,9 @@ export class RelatedItems {
 
   /** Confirmed relations and the proposals that reach the user's minimum confidence. */
   private shownRelations(id: string): GraphRelation[] {
-    const min = this.deps.minConfidence?.() ?? 0;
     return this.deps.graph
       .relationsOf(id, { statuses: ['proposed', 'confirmed'] })
-      .filter((relation) => relation.status === 'confirmed' || relation.confidence >= min);
+      .filter((relation) => relation.status === 'confirmed' || reachesMinConfidence(this.deps, relation.confidence));
   }
 
   /** Scores the direct relations to entries; returns the shared nodes (hubs) the entry is linked to, not the user's own person. */

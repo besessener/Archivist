@@ -23,8 +23,11 @@ Datenordner der Anwendung (Standard: %APPDATA%\Archivist\)
 ├── config/        settings.json (nicht geheim) und llm-api-key.enc (verschlüsselt)
 ├── logs/          strukturierte JSON-Logs (ohne Schlüssel/Dokumentinhalte); der Agent liest sie mit `read_logs`; nach `logs.retentionDays` Tagen und über 50 MB insgesamt (älteste zuerst) gelöscht
 ├── backups/       Datenbank- und Metadaten-Backups
+├── .updaterId     zufällige Kennung dieser Installation, die die Update-Suche bei jeder Anfrage an GitHub mitschickt (installierte Windows-Version)
 └── layout-migration.json   Marker des einmaligen Umzugs aus der alten Ablage (siehe unten)
 ```
+
+Ein heruntergeladenes Update liegt bis zur Installation in `%LOCALAPPDATA%\archivist-updater\pending\` (Installer und `update-info.json`); der nächste Download ersetzt es. Siehe [Updates](funktionen.md#updates).
 
 Der Archivordner selbst lässt sich getrennt davon verlegen: [Archivpfad ändern](../how-to/archivpfad-aendern.md). Liegt er in einem Ordner von OneDrive, Dropbox, iCloud Drive oder Google Drive (erkannt am Ordnernamen im Pfad), warnt Archivist in der Einrichtung, unter Einstellungen → Archiv und vor dem Ändern des Archivordners: Deine Dokumente lägen dann auch beim Cloud-Anbieter.
 
@@ -61,4 +64,5 @@ Dateien in `quarantine/` erscheinen in der Inbox unter „Quarantäne“: „Ord
 - Die Datenbank wächst mit dem Text der Dokumente (grob 50 bis 130 KB je Dokument mit mehreren Seiten Text). Jedes Metadaten-Backup ist eine volle Kopie davon, siehe [Backups anlegen](../how-to/backups-anlegen.md#speicherbedarf).
 - Embeddings liegen als BLOB in SQLite. Zu einem Vektor des Embedding-Modells wird ein lokaler Hash-Vektor daneben gespeichert (`chunks.local_embedding`), damit die Suche ohne erreichbaren Endpunkt weiter greift.
 - Das Übertragungsprotokoll (`llm_transmissions`) und gelesene Benachrichtigungen werden nach `logs.retentionDays` Tagen gelöscht, erledigte Jobs nach 30 Tagen. Eine Benachrichtigung, die du auf später verschoben hast, bleibt, bis ihre Erinnerung fällig ist, damit sie mit ihren Aktionen zurückkommt. Das Änderungsprotokoll (`audit_log`, Hash-Kette), Chatverläufe und Agentenaktionen werden nie automatisch gelöscht.
+- `blocked_subjects` hält Name und Aliasse jeder gelöschten Person, jedes gelöschten Themas, Projekts oder Schlagworts, damit die automatische Erkennung sie nicht wieder anlegt; der gelöschte Eintrag selbst steht in den Undo-Daten des Änderungsprotokolls. Beides bleibt, bis du das Löschen rückgängig machst.
 - Die Tabelle `app_state` speichert u. a. den Zeitpunkt der letzten Archivprüfung.

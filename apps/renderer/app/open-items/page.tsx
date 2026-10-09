@@ -20,6 +20,7 @@ import { useQuery } from '@/lib/use-query';
 import { useSettings } from '@/lib/use-settings';
 import type { OpenItemRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { DUE_SOON_DAYS_DEFAULT } from '@archivist/shared';
 
 const GROUPS = ['overdue', 'due', 'open', 'done'] as const;
 const GROUP_LABELS: Record<OpenItemGroup, string> = { overdue: 'Überfällig', due: 'Bald fällig', open: 'Offen', done: 'Erledigt' };
@@ -50,7 +51,7 @@ export default function OpenItemsPage() {
   const selection = useSelection();
   const subjects = useSubjectsOf(useMemo(() => (data ?? []).map((item) => item.id), [data]));
   const dueSoonDays = settings?.consistency.dueSoonDays;
-  const groups = useMemo(() => groupItems(data ?? [], dueWindow(dueSoonDays ?? 7)), [data, dueSoonDays]);
+  const groups = useMemo(() => groupItems(data ?? [], dueWindow(dueSoonDays ?? DUE_SOON_DAYS_DEFAULT)), [data, dueSoonDays]);
   const actions: OpenItemActions = {
     onEdit: setEditItem,
     onRemind: setRemindItem,

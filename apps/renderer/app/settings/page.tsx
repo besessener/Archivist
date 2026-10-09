@@ -9,9 +9,10 @@ import { AgentTab } from '@/components/settings/agent-tab';
 import { ArchiveTab } from '@/components/settings/archive-tab';
 import { LlmTab } from '@/components/settings/llm-tab';
 import { AuditTab } from '@/components/settings/audit-tab';
-import { BackupsTab } from '@/components/settings/backups-tab';
-import { AppearanceTab, LogsTab, NotificationsTab, ProfileTab } from '@/components/settings/misc-tabs';
-import { UpdatesTab } from '@/components/settings/updates-tab';
+import { BackupSections } from '@/components/settings/backup-sections';
+import { AppearanceSection, NotificationsSection, ProfileSection } from '@/components/settings/general-sections';
+import { LogsSection } from '@/components/settings/logs-section';
+import { UpdatesSection } from '@/components/settings/updates-section';
 import { PrivacyTab } from '@/components/settings/privacy-tab';
 import { Section } from '@/components/settings/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,7 +20,7 @@ import { useSettings } from '@/lib/use-settings';
 
 const TABS = ['llm', 'agent', 'archive', 'privacy', 'general', 'maintenance', 'audit', 'jobs'];
 
-// Former tab names from older deep links
+// Former tab names, now sections: older deep links and stored notification targets still use them
 const TAB_ALIASES: Record<string, string> = {
   profile: 'general',
   appearance: 'general',
@@ -97,14 +98,14 @@ function SettingsInner() {
             <PrivacyTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="general" className="flex flex-col gap-4">
-            <ProfileTab key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
-            <AppearanceTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
-            <NotificationsTab key={JSON.stringify(settings.notifications)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <ProfileSection key={JSON.stringify(settings.profile)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <AppearanceSection settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <NotificationsSection key={JSON.stringify(settings.notifications)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="maintenance" className="flex flex-col gap-4">
-            <UpdatesTab settings={settings} hasApiKey={hasApiKey} reload={reload} />
-            <BackupsTab key={JSON.stringify(settings.backups)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
-            <LogsTab key={JSON.stringify(settings.logs)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <UpdatesSection settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <BackupSections key={JSON.stringify(settings.backups)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
+            <LogsSection key={JSON.stringify(settings.logs)} settings={settings} hasApiKey={hasApiKey} reload={reload} />
           </TabsContent>
           <TabsContent value="audit">
             <AuditTab />

@@ -16,7 +16,7 @@ export interface GateInput {
 export function gateDecision({ tool, args, risk, ctx, massThreshold }: GateInput): GateDecision {
   if (risk === 'read') return { kind: 'run' };
   const userAsked = ctx.trigger === 'chat' && userAsksForChange(`${ctx.userText}\n${ctx.lastAnswer ?? ''}`);
-  const unmet = learningBlock({ tool, args, ctx, userAsked });
+  const unmet = ownWordsBlock({ tool, args, ctx, userAsked });
   if (unmet) return unmet;
   // pages from the web are no more trustworthy than documents: without the user's own request nothing changes
   if (ctx.webContent && !ctx.tainted && !userAsked)
@@ -34,15 +34,15 @@ export function gateDecision({ tool, args, risk, ctx, massThreshold }: GateInput
   return { kind: 'run' };
 }
 
-/** Learning and deleting-what-was-learned tools run only on the user's own words (and a „ja“ to the wording of rules). */
-function learningBlock({ tool, args, ctx, userAsked }: { tool: AgentTool<unknown>; args: unknown; ctx: ToolContext; userAsked: boolean }): GateDecision | null {
+/** Learning and deleting tools run only on the user's own words in the chat (and a „ja“ to the wording of rules). */
+function ownWordsBlock({ tool, args, ctx, userAsked }: { tool: AgentTool<unknown>; args: unknown; ctx: ToolContext; userAsked: boolean }): GateDecision | null {
   if (tool.requiresUserInstruction && !(ctx.trigger === 'chat' && userTeaches(ctx.userText, ctx.lastAnswer)))
     return {
       kind: 'block',
       reason: 'Gespeichert wird nur auf ausdrücklichen Wunsch des Benutzers. Frag zuerst mit ask_user nach, ob du dir das merken sollst.',
     };
   if (tool.requiresUserRequest && !userAsked)
-    return { kind: 'block', reason: 'Gelerntes löschst du nur auf ausdrücklichen Wunsch des Benutzers. Frag zuerst mit ask_user nach.' };
+    return { kind: 'block', reason: 'Gelöscht wird nur auf ausdrücklichen Wunsch des Benutzers. Frag zuerst mit ask_user nach.' };
   if (tool.needsConfirmedText?.(args) && !userAgrees(ctx.lastAnswer))
     return {
       kind: 'block',

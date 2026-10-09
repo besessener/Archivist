@@ -39,7 +39,7 @@
   color-scheme: light;
 }
 
-/* Dark tokens twice: for the system scheme, and for the explicit choice in Einstellungen → Darstellung (`data-theme`). */
+/* Dark tokens twice, for the system scheme and for the choice in Allgemein → Darstellung (`data-theme`); theme-tokens.test.ts keeps them equal. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --background: #16161a;
@@ -54,7 +54,7 @@
     --secondary: #2a2a31;
     --secondary-foreground: #ececf0;
     --muted: #25252b;
-    --muted-foreground: #9a9aa6;
+    --muted-foreground: #a1a1ad;
     --accent: #2d2d35;
     --accent-foreground: #ececf0;
     --destructive: #f47a84;
@@ -94,7 +94,7 @@
   --secondary: #2a2a31;
   --secondary-foreground: #ececf0;
   --muted: #25252b;
-  --muted-foreground: #9a9aa6;
+  --muted-foreground: #a1a1ad;
   --accent: #2d2d35;
   --accent-foreground: #ececf0;
   --destructive: #f47a84;

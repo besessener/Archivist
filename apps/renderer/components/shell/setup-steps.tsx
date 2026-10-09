@@ -74,7 +74,7 @@ export function WelcomeStep({
       <Field
         label="Dein Name (optional)"
         htmlFor="setup-profile-name"
-        hint="Damit „ich“ im Chat und Dokumente mit deinem Namen dir zugeordnet werden. Später unter Einstellungen → Über dich änderbar."
+        hint="Damit „ich“ im Chat und Dokumente mit deinem Namen dir zugeordnet werden. Später unter Einstellungen → Allgemein → Über dich änderbar."
       >
         <Input
           id="setup-profile-name"

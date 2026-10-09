@@ -57,7 +57,7 @@ describe('Creating new open items completely (#41)', () => {
     expect(item.responsibleName).toBe('Ich');
     expect(app.services.graph.getEntity(item.responsiblePersonId!)!.isSelf).toBe(true);
     expect(r.assistantMessage.content).toContain('Verantwortlich: du');
-    expect(r.assistantMessage.content).toContain('Einstellungen → Über dich');
+    expect(r.assistantMessage.content).toContain('Einstellungen → Allgemein → Über dich');
     expect(app.services.graph.findByName('person', 'mir')).toBeFalsy();
   });
 

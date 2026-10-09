@@ -214,7 +214,7 @@ export function ArchiveTab({ settings, reload }: TabProps) {
                 })
               }
             >
-              Prüfintervalle speichern
+              Speichern
             </Button>
           </div>
         </div>

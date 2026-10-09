@@ -301,4 +301,19 @@ describe('Background link run with the link-method tools (#313)', () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]!.description).toContain('1 Vorschlag/Vorschläge warten auf deine Bestätigung.');
   });
+
+  it('backfill_links at 20 open proposals says that they wait for the user instead of inviting another call', async () => {
+    const ids: string[] = [];
+    for (let index = 0; index <= 20; index += 1)
+      ids.push((await app.ok('knowledge:createEntity', { type: 'note', name: `Merkzettel ${index}`, description: `Punkt ${index}` })).entity.id);
+    for (let index = 0; index < 20; index += 1)
+      app.services.graph.link(
+        { sourceId: ids[index]!, targetId: ids[index + 1]!, relationType: 'related_to' },
+        { status: 'proposed', method: 'agent', confidence: 0.9 },
+      );
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'backfill_links', args: {} }] }, { text: 'Fertig.' });
+    await app.ok('chat:send', { text: 'Verknüpfe bitte mein ganzes Archiv' });
+    expect(lastToolOutput(app)).toContain('20 Vorschläge warten auf die Prüfung durch den Benutzer');
+    expect(lastToolOutput(app)).not.toContain('ein weiterer Aufruf');
+  });
 });

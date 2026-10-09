@@ -18,7 +18,7 @@ export const LlmSettings = z.object({
   embeddingModel: z.string().default(''),
   /** Base URL of /embeddings; empty = the base URL of the LLM. */
   embeddingBaseUrl: z.string().default(''),
-  /** Daily token limit (input, cache reads and output); null = no limit. Background jobs pause when it is reached, the chat asks first. */
+  /** Daily token limit (input, cache reads, cache writes and output); null = no limit. Background jobs pause when it is reached, the chat asks first. */
   dailyTokenCap: z.number().int().min(1000).max(10_000_000_000).nullable().default(null),
 });
 
@@ -52,12 +52,15 @@ const BackupSettings = z.object({
   autoOnStartup: z.boolean().default(false),
   includeArchive: z.boolean().default(false),
 });
+/** Default of `consistency.dueSoonDays`, also used while the settings are still loading. */
+export const DUE_SOON_DAYS_DEFAULT = 7;
+
 const ConsistencySettings = z.object({
   onStartup: z.boolean().default(true),
   intervalHours: z.number().min(0).default(24),
   staleOpenItemDays: z.number().int().min(1).default(30),
   /** Open items due within this many days count as „Bald fällig“. */
-  dueSoonDays: z.number().int().min(1).max(365).default(7),
+  dueSoonDays: z.number().int().min(1).max(365).default(DUE_SOON_DAYS_DEFAULT),
   /** Merge unambiguous person duplicates („Monika Lor-Zade (Chefin)“ = „Lor-Zade, Monika“) without asking. */
   autoMergePersons: z.boolean().default(true),
 });

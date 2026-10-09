@@ -22,7 +22,7 @@ describe('Deleting a subject', () => {
     const person = graph().ensureEntity({ type: 'person', name: 'K35' });
     graph().addAlias(person.id, 'Kay');
 
-    const result = await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual' });
+    const result = await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual', confirmed: true });
 
     expect(result.impact.relations + result.impact.records.length).toBe(0);
     expect(graph().getEntity(person.id)).toBeUndefined();
@@ -46,8 +46,8 @@ describe('Deleting a subject', () => {
 
     const impact = graph().subjectImpact(topic.id);
     expect(impact.records).toEqual([expect.objectContaining({ table: 'documents', id, main: true })]);
-    await graph().deleteSubject(topic.id, { actor: 'user', trigger: 'manual' });
-    await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual' });
+    await graph().deleteSubject(topic.id, { actor: 'user', trigger: 'manual', confirmed: true });
+    await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual', confirmed: true });
 
     const after = app.services.documents.getRow(id);
     expect(after.topicId).toBeNull();
@@ -70,14 +70,14 @@ describe('Deleting a subject', () => {
     const self = app.services.self.ensure();
     const note = await app.services.notes.create({ title: 'Notiz', content: 'Inhalt der Notiz' });
 
-    await expect(graph().deleteSubject(self.id, { actor: 'user', trigger: 'manual' })).rejects.toThrow(/selbst/);
-    await expect(graph().deleteSubject(note.id, { actor: 'user', trigger: 'manual' })).rejects.toThrow(/keine Person/);
+    await expect(graph().deleteSubject(self.id, { actor: 'user', trigger: 'manual', confirmed: true })).rejects.toThrow(/selbst/);
+    await expect(graph().deleteSubject(note.id, { actor: 'user', trigger: 'manual', confirmed: true })).rejects.toThrow(/keine Person/);
     expect(graph().getEntity(self.id)).toBeDefined();
   });
 
   it('does not create a deleted name again from the analysis, but a manual entry still works', async () => {
     const person = graph().ensureEntity({ type: 'person', name: 'Frank Tenzer' });
-    await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual' });
+    await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual', confirmed: true });
 
     const analysed = app.services.persons.resolveNames(['Frank Tenzer', 'Anna Berg'], { context: 'document', fromAnalysis: true });
     expect(analysed.names).toEqual(['Anna Berg']);
@@ -88,7 +88,7 @@ describe('Deleting a subject', () => {
 
   it('does not take a deleted topic over from a document again', async () => {
     graph().ensureEntity({ type: 'topic', name: 'Umzug' });
-    await graph().deleteSubject(graph().findByName('topic', 'Umzug')!.id, { actor: 'user', trigger: 'manual' });
+    await graph().deleteSubject(graph().findByName('topic', 'Umzug')!.id, { actor: 'user', trigger: 'manual', confirmed: true });
 
     const id = await archived(app, { name: 'brief.txt', content: 'Brief zum Umzug', folder: 'Privat/wohnen', topic: 'Umzug' });
 
@@ -96,9 +96,16 @@ describe('Deleting a subject', () => {
     expect(app.services.documents.getRow(id).topicId).toBeNull();
   });
 
+  it('refuses without an explicit confirmation', async () => {
+    const topic = graph().ensureEntity({ type: 'topic', name: 'Hauskauf' });
+
+    await expect(graph().deleteSubject(topic.id, { actor: 'user', trigger: 'manual', confirmed: false })).rejects.toThrow(/Bestätigung/);
+    expect(graph().getEntity(topic.id)).toBeDefined();
+  });
+
   it('blocks the undo when the name was created again meanwhile', async () => {
     const person = graph().ensureEntity({ type: 'person', name: 'Frank Tenzer' });
-    await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual' });
+    await graph().deleteSubject(person.id, { actor: 'user', trigger: 'manual', confirmed: true });
     graph().ensureEntity({ type: 'person', name: 'Frank Tenzer' });
 
     const undone = await app.ok('audit:undo', { auditId: (await deletions())[0]!.id });
@@ -163,9 +170,13 @@ describe('The delete_subject tool', () => {
   it('runs in the chat: direct without links, as a proposal card with links, undone with the run', async () => {
     graph().ensureEntity({ type: 'person', name: 'K35' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'delete_subject', args: { subject: 'K35', type: 'person' } }] }, { text: 'Gelöscht.' });
-    await app.ok('chat:send', { text: 'Lösche die Person K35' });
+    const first = await app.ok('chat:send', { text: 'Lösche die Person K35' });
     expect(lastToolOutput(app)).toContain('gelöscht');
     expect(graph().findByName('person', 'K35')).toBeUndefined();
+
+    expect((await app.ok('agent:undoRun', { runId: first.assistantMessage.runId! })).undone).toBe(1);
+    expect(graph().findByName('person', 'K35')).toBeDefined();
+    expect(graph().isBlockedName({ type: 'person', name: 'K35' })).toBe(false);
 
     await archived(app, { name: 'a.txt', content: 'Inhalt', folder: 'Privat/wohnen', topic: 'Umzug' });
     app.llm.agent = scriptedTurns({ calls: [{ name: 'delete_subject', args: { subject: 'Umzug' } }] }, { text: 'Ich habe es vorbereitet.' });
@@ -175,6 +186,42 @@ describe('The delete_subject tool', () => {
     expect(card).toBeDefined();
 
     await app.ok('actions:resolve', { actionId: card.id, decision: 'approve', confirmed: true });
+    expect(graph().findByName('topic', 'Umzug')).toBeUndefined();
+  });
+});
+
+describe("Deleting a subject only on the user's own request", () => {
+  const scriptDelete = (subject: string) => {
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'delete_subject', args: { subject } }] }, { text: 'ok' });
+  };
+
+  it('does not delete when the user only asks a question', async () => {
+    const topic = graph().ensureEntity({ type: 'topic', name: 'Umzug' });
+    scriptDelete('Umzug');
+
+    await app.ok('chat:send', { text: 'Wer ist eigentlich zuständig für Umzug?' });
+
+    expect(lastToolOutput(app)).toContain('ausdrücklichen Wunsch');
+    expect(graph().getEntity(topic.id)).toBeDefined();
+    expect(graph().isBlockedName({ type: 'topic', name: 'Umzug' })).toBe(false);
+  });
+
+  it('does not delete in a background run', async () => {
+    const person = graph().ensureEntity({ type: 'person', name: 'Kai Uhl' });
+    scriptDelete('Kai Uhl');
+
+    await app.services.agent.runBackground('archive_check');
+
+    expect(graph().getEntity(person.id)).toBeDefined();
+    expect(graph().isBlockedName({ type: 'person', name: 'Kai Uhl' })).toBe(false);
+  });
+
+  it('deletes on an explicit request', async () => {
+    graph().ensureEntity({ type: 'topic', name: 'Umzug' });
+    scriptDelete('Umzug');
+
+    await app.ok('chat:send', { text: 'Lösche das Thema Umzug' });
+
     expect(graph().findByName('topic', 'Umzug')).toBeUndefined();
   });
 });

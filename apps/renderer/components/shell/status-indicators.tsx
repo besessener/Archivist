@@ -39,7 +39,7 @@ export function JobsIndicator() {
         >
           {running > 0 ? <Loader2 className="animate-spin" aria-hidden /> : <Activity aria-hidden />}
           <span className="hidden lg:inline">{running > 0 ? `${running} in Arbeit` : 'Verarbeitung'}</span>
-          {failed > 0 && <span className="rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">{failed}</span>}
+          {failed > 0 && <span className="rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-destructive-foreground">{failed}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[26rem]" data-testid="jobs-popover">

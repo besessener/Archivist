@@ -22,6 +22,11 @@ export const GraphEntity = z.object({
   updatedAt: IsoDate,
 });
 export type GraphEntity = z.infer<typeof GraphEntity>;
+
+/** Named subjects the user can delete; records (decisions, notes …) have their own delete. */
+export const DeletableSubjectType = z.enum(['person', 'topic', 'project', 'tag']);
+export type DeletableSubjectType = z.infer<typeof DeletableSubjectType>;
+export const isDeletableSubjectType = (type: string): type is DeletableSubjectType => DeletableSubjectType.safeParse(type).success;
 export const GraphRelation = z.object({
   id: Id,
   sourceEntityId: Id,

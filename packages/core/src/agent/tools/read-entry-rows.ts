@@ -100,7 +100,13 @@ const insightRows = (deps: ToolDeps, { args, matches }: EntryFilter): SourcedRow
   deps.insights
     .list({ status: (args.status as 'open') ?? 'open' })
     .filter((i) => matches(i.title, i.explanation))
-    .map((i) => ({ id: i.id, date: i.createdAt, text: `Hinweis „${truncate(i.title, 100)}“ (${i.kind}) – ${truncate(i.explanation, 160)}` }));
+    .map((i) => ({
+      id: i.id,
+      date: i.createdAt,
+      text: quotesHiddenDocument(deps, i.sourceIds)
+        ? `Hinweis (${i.kind}) ${HIDDEN_ENTRY}`
+        : `Hinweis „${truncate(i.title, 100)}“ (${i.kind}) – ${truncate(i.explanation, 160)}`,
+    }));
 
 const caseRows = (deps: ToolDeps, { args, matches }: EntryFilter): SourcedRow[] =>
   deps.graph
@@ -139,6 +145,14 @@ function fromHiddenOnly(deps: ToolDeps, sourceIds: readonly string[]): boolean {
   return sourceIds.every((id) => {
     const row = deps.docs.findRow(id);
     return row !== undefined && !deps.privacy.mayShareDocument(deps.docs.get(id));
+  });
+}
+
+/** A text quoting its documents (a notice, a contradiction) is hidden as soon as one of them may not be shared. */
+export function quotesHiddenDocument(deps: ToolDeps, sourceIds: readonly string[]): boolean {
+  return sourceIds.some((id) => {
+    const row = deps.docs.findRow(id);
+    return row !== undefined && !deps.privacy.mayShareDocument(row);
   });
 }
 

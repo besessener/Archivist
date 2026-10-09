@@ -29,9 +29,13 @@ Identische Dokumente erkennt Archivist an der Prüfsumme der Datei oder des Text
 Jede Methode sieht etwas anderes:
 
 - **Ähnlicher Inhalt** findet Zusammenhänge ohne gemeinsames Thema. Mit lokalen Vektoren ist die Schwelle höher, weil diese nur Wörter vergleichen und sich Texte eines Archivs schon durch gemeinsame Kopfzeilen ähneln (siehe [Wie die Suche funktioniert](suche.md)). Höchstens drei offene Vorschläge je Eintrag halten die Liste prüfbar.
-- **Gleicher Tag + gleiche Person** verbindet das Protokoll mit dem Termin und der Entscheidung desselben Tages. Gezählt wird das fachliche Datum, nicht der Tag der Erfassung – sonst wäre alles verwandt, was du an einem Abend nachträgst. Du selbst zählst nicht als gemeinsame Person, sonst hinge fast alles zusammen.
+- **Gleicher Tag + gleiche Person** verbindet das Protokoll mit dem Termin und der Entscheidung desselben Tages. Gezählt wird das fachliche Datum, nicht der Tag der Erfassung – sonst wäre alles verwandt, was du an einem Abend nachträgst. Du selbst zählst nicht als gemeinsame Person, sonst hinge fast alles zusammen. An einem vollen Tag wüchse die Zahl der Paare quadratisch; deshalb bleiben je Eintrag höchstens drei offen.
 - **Gemeinsam entstanden** hält fest, was eine Nachricht oder ein Dokument gleichzeitig hervorgebracht hat.
 - **Die Analyse von Notizen** gibt Notizen Thema, Projekt, Personen und Tags wie Dokumenten. Das LLM wird dafür nur im Modus „automatisch“ gefragt; sonst genügen bekannte Namen und `#Hashtags`.
+
+## Warum höchstens 20 offene Vorschläge
+
+Ein Vorschlag nützt nur, wenn du ihn prüfst. Ein Stapel von Hunderten ungeprüfter Vorschläge wird überblättert, und die guten gehen darin unter. Deshalb legt keine automatische Methode neue an, solange 20 auf dich warten; die Prüfung neuer Einträge wartet, bis du entschieden hast, und geht dann von selbst weiter. Die Mindest-Sicherheit wirkt in dieselbe Richtung: Was darunter liegt, entsteht gar nicht erst, statt die Liste nur unsichtbar zu füllen. Was du selbst anstößt, etwa „Verknüpfungen suchen“ beim Eintrag, zählt nicht dazu: Da schaust du gerade hin.
 
 ## Verwandt heißt nicht nur direkt verknüpft
 

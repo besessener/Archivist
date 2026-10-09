@@ -1,4 +1,5 @@
 import type { UpdateStatus } from '@archivist/shared';
+import { updateFailureMessage } from './update-messages';
 
 // App updates from GitHub Releases; free of Electron so it can be unit-tested (the real `autoUpdater` is injected).
 
@@ -10,7 +11,8 @@ export interface UpdateInfoLike {
 export interface UpdaterLike {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
-  checkForUpdates(): Promise<{ updateInfo: UpdateInfoLike } | null>;
+  /** `isUpdateAvailable` is false for an older or the same release, and for one this installation may not take yet. */
+  checkForUpdates(): Promise<{ isUpdateAvailable: boolean; updateInfo: UpdateInfoLike } | null>;
   downloadUpdate(): Promise<unknown>;
   quitAndInstall(isSilent: boolean, isForceRunAfter: boolean): void;
   on(event: 'download-progress', listener: (progress: { percent: number }) => void): unknown;
@@ -18,22 +20,26 @@ export interface UpdaterLike {
 
 export interface UpdateControllerDeps {
   updater: UpdaterLike;
-  currentVersion: string;
-  /** German reason why this build cannot update itself (development, portable version …), or null. */
-  unsupportedReason: string | null;
+  /** `idle`, or `unsupported` with the reason (see `initialUpdateStatus`). */
+  initialStatus: UpdateStatus;
   onChange(status: UpdateStatus): void;
-  /** Closes the application cleanly, then runs the installer. */
-  prepareInstall(): Promise<void>;
+  /** Quits through the bounded quit path (database closed, deadline) and calls `startInstaller` right before the process exits. */
+  quit(startInstaller: () => void): Promise<void>;
+  /** Records the real cause of a failure in Archivist's log; the user reads a German message instead. */
+  log(message: string, error: unknown): void;
 }
 
-const CHECK_FAILED = 'Die Suche nach Updates ist fehlgeschlagen. Prüfe deine Internetverbindung und versuche es später erneut.';
-const DOWNLOAD_FAILED = 'Das Update konnte nicht heruntergeladen werden. Versuche es später erneut.';
+/** A new check would discard what is under way or ready: a check, a download, a downloaded installer, the installation. */
+const CHECK_BLOCKING_STATES: readonly UpdateStatus['state'][] = ['unsupported', 'checking', 'downloading', 'downloaded', 'installing'];
+
+const INSTALL_SILENTLY = true;
+const START_AFTER_INSTALL = true;
 
 export class UpdateController {
   private current: UpdateStatus;
 
   constructor(private readonly deps: UpdateControllerDeps) {
-    this.current = deps.unsupportedReason === null ? { state: 'idle' } : { state: 'unsupported', reason: deps.unsupportedReason };
+    this.current = deps.initialStatus;
     deps.updater.autoDownload = false; // the user confirms every download
     deps.updater.autoInstallOnAppQuit = false; // …and every installation
     deps.updater.on('download-progress', ({ percent }) => {
@@ -46,14 +52,14 @@ export class UpdateController {
   }
 
   async check(): Promise<UpdateStatus> {
-    if (this.current.state === 'unsupported' || this.current.state === 'checking' || this.current.state === 'downloading') return this.current;
+    if (CHECK_BLOCKING_STATES.includes(this.current.state)) return this.current;
     this.set({ state: 'checking' });
     try {
       const result = await this.deps.updater.checkForUpdates();
-      const version = result?.updateInfo.version;
-      this.set(version && version !== this.deps.currentVersion ? { state: 'available', version } : { state: 'upToDate' });
-    } catch {
-      this.set({ state: 'error', message: CHECK_FAILED });
+      this.set(result?.isUpdateAvailable ? { state: 'available', version: result.updateInfo.version } : { state: 'upToDate' });
+    } catch (error) {
+      this.deps.log('Update check failed', error);
+      this.set({ state: 'error', message: updateFailureMessage('check', error) });
     }
     return this.current;
   }
@@ -65,17 +71,23 @@ export class UpdateController {
     try {
       await this.deps.updater.downloadUpdate();
       this.set({ state: 'downloaded', version });
-    } catch {
-      this.set({ state: 'error', message: DOWNLOAD_FAILED });
+    } catch (error) {
+      this.deps.log('Update download failed', error);
+      this.set({ state: 'error', message: updateFailureMessage('download', error) });
     }
     return this.current;
   }
 
-  /** Installs a downloaded update: shuts the application down cleanly first, then hands over to the installer. */
+  /** Installs a downloaded update: quits Archivist cleanly, then hands over to the installer. */
   async install(): Promise<void> {
     if (this.current.state !== 'downloaded') return;
-    await this.deps.prepareInstall();
-    this.deps.updater.quitAndInstall(true, true);
+    this.set({ state: 'installing', version: this.current.version });
+    try {
+      await this.deps.quit(() => this.deps.updater.quitAndInstall(INSTALL_SILENTLY, START_AFTER_INSTALL));
+    } catch (error) {
+      this.deps.log('Update installation failed', error);
+      this.set({ state: 'error', message: updateFailureMessage('install', error) });
+    }
   }
 
   private set(next: UpdateStatus): void {
@@ -84,10 +96,38 @@ export class UpdateController {
   }
 }
 
-/** Why this build cannot update itself; null when it can (installed Windows version). */
-export function unsupportedUpdateReason(env: { packaged: boolean; platform: string; portable: boolean }): string | null {
-  if (!env.packaged) return 'In der Entwicklungsversion gibt es keine Updates.';
-  if (env.platform !== 'win32') return 'Updates gibt es nur für Windows.';
-  if (env.portable) return 'In der portablen Version sind Updates nicht möglich. Lade die neue Version von GitHub herunter.';
-  return null;
+/** `idle` for the installed Windows version; otherwise `unsupported` with the reason this build cannot update itself. */
+export function initialUpdateStatus(env: { packaged: boolean; platform: string; portable: boolean }): UpdateStatus {
+  if (!env.packaged) return { state: 'unsupported', reason: 'In der Entwicklungsversion gibt es keine Updates.' };
+  if (env.platform !== 'win32') return { state: 'unsupported', reason: 'Updates gibt es nur für Windows.' };
+  if (env.portable) return { state: 'unsupported', reason: 'In der portablen Version sind Updates nicht möglich. Lade die neue Version von GitHub herunter.' };
+  return { state: 'idle' };
+}
+
+export interface UpdateHostOptions extends Omit<UpdateControllerDeps, 'initialStatus'> {
+  /** How this build runs; decides whether it can update itself. */
+  build: { packaged: boolean; platform: string; portable: boolean };
+  /** E2E (`ARCHIVIST_TEST_UPDATE_VERSION`): a stand-in offers this version, and installing quits nothing (the test keeps the app). */
+  testVersion?: string;
+}
+
+/** The update controller of the main process, with the E2E stand-in in place of electron-updater when a test asks for it. */
+export function createUpdateHost({ build, testVersion, ...deps }: UpdateHostOptions): UpdateController {
+  if (!testVersion) return new UpdateController({ ...deps, initialStatus: initialUpdateStatus(build) });
+  return new UpdateController({ ...deps, updater: fakeUpdater(testVersion), initialStatus: { state: 'idle' }, quit: async () => undefined });
+}
+
+/** E2E stand-in for electron-updater: always offers `version`, downloads at once; installing is left to the test. */
+export function fakeUpdater(version: string): UpdaterLike {
+  const progressListeners: ((progress: { percent: number }) => void)[] = [];
+  return {
+    autoDownload: false,
+    autoInstallOnAppQuit: false,
+    checkForUpdates: async () => ({ isUpdateAvailable: true, updateInfo: { version } }),
+    downloadUpdate: async () => {
+      for (const listener of progressListeners) listener({ percent: 50 });
+    },
+    quitAndInstall: () => undefined,
+    on: (_event, listener) => progressListeners.push(listener),
+  };
 }

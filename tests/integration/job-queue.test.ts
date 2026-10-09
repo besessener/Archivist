@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { jobs } from '../../packages/core/src/db/schema';
 import { JobQueueService, retryDelayMs } from '../../packages/core/src/services/jobs';
 import { AppError, fsError } from '../../packages/core/src/util/errors';
 import { createTestApp, type TestApp } from '../helpers/harness';
@@ -303,5 +304,17 @@ describe('Listing jobs for the job views', () => {
     const waiting = queue.enqueue('test.other', { label: 'Wartet', payload: {} });
 
     expect(queue.list(3).map((job) => job.id)).toEqual([waiting.id, broken.id, finished.id]);
+  });
+
+  it('lists a running job first, then waiting, then failed ones, so newer failures never push out what is running', async () => {
+    const addJob = (id: string, status: string, createdAt: string) =>
+      app.services.database.db.insert(jobs).values({ id, type: 'test.order', label: id, status, createdAt }).run();
+    addJob('running', 'running', '2026-01-01T08:00:00.000Z');
+    addJob('waiting', 'pending', '2026-01-02T08:00:00.000Z');
+    for (let day = 3; day <= 6; day += 1) addJob(`failed-${day}`, 'failed', `2026-01-0${day}T08:00:00.000Z`);
+    addJob('done', 'succeeded', '2026-01-07T08:00:00.000Z');
+
+    expect(app.services.jobs.list(2).map((job) => job.id)).toEqual(['running', 'waiting']);
+    expect(app.services.jobs.list(7).map((job) => job.id)).toEqual(['running', 'waiting', 'failed-6', 'failed-5', 'failed-4', 'failed-3', 'done']);
   });
 });

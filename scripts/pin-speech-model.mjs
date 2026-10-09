@@ -1,9 +1,4 @@
-// Pins the Whisper models of the speech input: resolves the newest commit of each repository, downloads the files the
-// app needs and writes commit, sizes and SHA-256 per model to packages/core/src/services/speech/model-pin.json.
-// Usage: npm run speech:pin                    pins all models (small, medium, turbo; about 2 GB of download)
-//        npm run speech:pin -- --model small   pins just that one and keeps the others (only these names are accepted)
-// A model that fails (e.g. HTTP 404) keeps its old pin; the script then exits with an error after writing the rest.
-// Needs network access to huggingface.co. Run it again to move to newer commits, then commit the changed file.
+// Pins commit, sizes and SHA-256 of each speech model into model-pin.json; usage in docs/reference/befehle.md (`npm run speech:pin`).
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

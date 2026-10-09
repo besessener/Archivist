@@ -20,7 +20,7 @@ import { SecretService, type SecretCipher } from '../services/secret';
 import { SelfService } from '../services/self';
 import { SettingsService, settingsLoadNotification } from '../services/settings';
 import { SpeechService, type SpeechModel } from '../services/speech';
-import { WorkerSpeechEngine, type SpeechEngine } from '../services/speech/engine';
+import { SPEECH_IDLE_MS, SPEECH_TIMEOUT_MS, WorkerSpeechEngine, type SpeechEngine } from '../services/speech/engine';
 import { SPEECH_MODELS, type SpeechModelSpec } from '../services/speech/model-manifest';
 import { SpeechModelStore } from '../services/speech/model-store';
 import { UndoService } from '../services/undo';
@@ -162,6 +162,7 @@ function createSpeech({
   };
   const models = { small: modelOf('small'), medium: modelOf('medium'), turbo: modelOf('turbo') };
   const engine =
-    options.speech?.engine ?? new WorkerSpeechEngine({ workerFile: options.speechWorkerFile ?? null, modelsDir, idleMs: 5 * 60_000, timeoutMs: 5 * 60_000 });
+    options.speech?.engine ??
+    new WorkerSpeechEngine({ workerFile: options.speechWorkerFile ?? null, modelsDir, idleMs: SPEECH_IDLE_MS, timeoutMs: SPEECH_TIMEOUT_MS });
   return new SpeechService({ ctx, privacy, settings, models, engine });
 }

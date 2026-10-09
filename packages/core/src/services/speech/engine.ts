@@ -1,9 +1,20 @@
 import { Worker } from 'node:worker_threads';
 import { AppError } from '../../util/errors';
 
+/** How long an unused worker keeps the model in memory. */
+export const SPEECH_IDLE_MS = 5 * 60_000;
+/** How long one transcription may take. */
+export const SPEECH_TIMEOUT_MS = 5 * 60_000;
+
+export interface TranscribeOptions {
+  /** Folder name of the installed model. */
+  model: string;
+  signal: AbortSignal;
+}
+
 export interface SpeechEngine {
-  /** `samples`: 16 kHz mono floats in [-1, 1]; `model`: folder name of the installed model. Resolves with the recognised German text. */
-  transcribe(samples: Float32Array, model: string, signal: AbortSignal): Promise<string>;
+  /** `samples`: 16 kHz mono floats in [-1, 1]. Resolves with the recognised German text. */
+  transcribe(samples: Float32Array, options: TranscribeOptions): Promise<string>;
   /** Frees the loaded model. */
   close(): Promise<void>;
 }
@@ -31,7 +42,7 @@ export class WorkerSpeechEngine implements SpeechEngine {
 
   constructor(private readonly options: WorkerEngineOptions) {}
 
-  async transcribe(samples: Float32Array, model: string, signal: AbortSignal): Promise<string> {
+  async transcribe(samples: Float32Array, { model, signal }: TranscribeOptions): Promise<string> {
     signal.throwIfAborted();
     this.clearIdleTimer();
     const worker = this.worker ?? this.spawn();

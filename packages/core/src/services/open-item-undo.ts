@@ -61,12 +61,11 @@ function updateConflicts({ ctx, graph }: OpenItemUndoDeps, undoData: OpenItemUpd
 
 function undoDelete({ ctx, graph, reindex }: OpenItemUndoDeps, { item, node, reminders: ownReminders }: OpenItemDeleteUndo): string {
   const db = ctx.database.db;
-  const exists = (entityId: string | null) => (entityId && graph.getEntity(entityId) ? entityId : null);
   const row: OpenItemRow = {
     ...item,
-    topicId: exists(item.topicId),
-    projectId: exists(item.projectId),
-    responsiblePersonId: exists(item.responsiblePersonId),
+    topicId: graph.existingId(item.topicId),
+    projectId: graph.existingId(item.projectId),
+    responsiblePersonId: graph.existingId(item.responsiblePersonId),
   };
   let skipped = 0;
   db.transaction(() => {

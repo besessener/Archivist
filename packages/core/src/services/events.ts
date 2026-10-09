@@ -299,12 +299,11 @@ export class EventService {
 
   /** Undo of `delete`: restores the event with its id, graph node, relations and search entry. */
   private restore(undoData: EventDeleteUndo): string {
-    const exists = (entityId: string | null) => (entityId && this.deps.graph.getEntity(entityId) ? entityId : null);
     const keptEvent = undoData.event.duplicateOfId && this.row(undoData.event.duplicateOfId);
     const row: Row = {
       ...undoData.event,
-      topicId: exists(undoData.event.topicId),
-      projectId: exists(undoData.event.projectId),
+      topicId: this.deps.graph.existingId(undoData.event.topicId),
+      projectId: this.deps.graph.existingId(undoData.event.projectId),
       duplicateOfId: keptEvent ? undoData.event.duplicateOfId : null,
     };
     let skipped = 0;

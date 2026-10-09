@@ -8,6 +8,12 @@ import type { FetchLike } from '../../agent/adapters/common';
 import { AppError } from '../../util/errors';
 import { fileUrl, totalBytes, type SpeechModelFile, type SpeechModelSpec } from './model-manifest';
 
+interface DownloadOptions {
+  target: string;
+  signal: AbortSignal;
+  onBytes: (bytes: number) => void;
+}
+
 export interface InstallOptions {
   signal: AbortSignal;
   /** Bytes received so far over all files. */
@@ -60,11 +66,13 @@ export class SpeechModelStore {
     await fsp.rm(partial, { recursive: true, force: true });
     try {
       let received = 0;
-      const count = (bytes: number) => {
+      const addReceived = (bytes: number) => {
         received += bytes;
         onProgress(received);
       };
-      for (const file of this.spec.files) await this.download(file, path.join(partial, ...file.path.split('/')), signal, count);
+      for (const file of this.spec.files) {
+        await this.download(file, { target: path.join(partial, ...file.path.split('/')), signal, onBytes: addReceived });
+      }
       await fsp.rm(this.directory, { recursive: true, force: true });
       await fsp.rename(partial, this.directory);
     } catch (err) {
@@ -83,7 +91,7 @@ export class SpeechModelStore {
     return totalBytes(this.spec);
   }
 
-  private async download(file: SpeechModelFile, target: string, signal: AbortSignal, onBytes: (bytes: number) => void): Promise<void> {
+  private async download(file: SpeechModelFile, { target, signal, onBytes }: DownloadOptions): Promise<void> {
     const response = await this.fetchImpl(fileUrl(this.spec, file), { signal }).catch((err: unknown) => {
       throw signal.aborted ? err : downloadFailed(err);
     });

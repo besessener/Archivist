@@ -285,11 +285,9 @@ describe('Capturing on the agent path (#307) – counterparts of the rule-based 
 
   it('open items: „ich“ is the user (with name or as the placeholder „Ich“ with a hint); a duplicate is completed instead', async () => {
     app = await agentApp();
-    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_open_item', args: { title: 'Zahnarzt anrufen', responsible: 'mir' } }] }, () => {
-      expect(toolOutputs(app).at(-1)).toContain('Einstellungen → Über dich');
-      return { text: 'ok' };
-    });
+    app.llm.agent = scriptedTurns({ calls: [{ name: 'create_open_item', args: { title: 'Zahnarzt anrufen', responsible: 'mir' } }] }, { text: 'ok' });
     await app.ok('chat:send', { text: 'Zahnarzt anrufen bleibt an mir hängen' });
+    expect(toolOutputs(app).at(-1)).toContain('Einstellungen → Allgemein → Über dich');
     let item = (await app.ok('openItems:list', {}))[0]!;
     expect(item.responsibleName).toBe('Ich');
     expect(app.services.graph.getEntity(item.responsiblePersonId!)!.isSelf).toBe(true);

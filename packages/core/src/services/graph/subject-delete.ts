@@ -1,24 +1,32 @@
-import type { EntityType } from '@archivist/shared';
+import { isDeletableSubjectType, type EntityType } from '@archivist/shared';
 import { eq, or, sql, type SQL } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import type { Db } from '../../db/database';
-import { entities, relations } from '../../db/schema';
+import { entities } from '../../db/schema';
 import { AppError } from '../../util/errors';
 import { nowIso } from '../../util/ids';
 import { normalizeName } from '../../util/text';
 import type { AuditService } from '../audit';
 import type { UndoService } from '../undo';
 import { blockNames, unblockNames } from './blocked-names';
-import type { NodeSnapshot } from './entities';
-import { REF_TABLES, REF_TABLE_NAMES, TOPIC_OR_PROJECT, column, fingerprints, refTable, selection } from './merge-references';
-import { emptyRefSets, type MergeReindexer, type RefRow, type RefSets, type RefTableName } from './merge-types';
-import { entityRow, otherEndOf, relationRowsOf, type EntityRow } from './rows';
+import type { GraphEntities, NodeSnapshot } from './entities';
+import {
+  REF_TABLES,
+  REF_TABLE_NAMES,
+  TOPIC_OR_PROJECT,
+  applyRefChange,
+  changedColumns,
+  column,
+  fingerprints,
+  refTable,
+  selection,
+  type RefChange,
+} from './merge-references';
+import { emptyRefSets, type MergeReindexer, type RefBefore, type RefRow, type RefSets, type RefTableName } from './merge-types';
+import { entityRow, relationRowsOf, type EntityRow } from './rows';
 
 /** Audit undo type of a deleted subject. */
 export const SUBJECT_DELETE_UNDO_TYPE = 'entity.delete';
-
-/** Named subjects the user can delete; records (decisions, notes …) have their own delete. */
-export const DELETABLE_SUBJECT_TYPES = new Set<string>(['person', 'topic', 'project', 'tag']);
 
 const CHANGED_SCOPES = ['knowledge', 'documents', 'decisions', 'openItems', 'events'] as const;
 const ACTIVE_RELATION = new Set(['proposed', 'confirmed']);
@@ -51,27 +59,24 @@ export interface SubjectDeleteResult {
   relationsRemoved: number;
 }
 
-interface RecordChange {
-  table: RefTableName;
-  row: RefRow;
-  next: RefRow;
-  columns: string[];
-}
-
 interface DeleteUndoData {
   snapshot: NodeSnapshot;
-  refs: Array<{ table: RefTableName; id: string; before: RefRow }>;
+  refs: RefBefore[];
   blockedIds: string[];
   /** Fingerprints of the changed records right after the deletion; any difference blocks the undo. */
   after: Record<string, string | null>;
 }
 
+/** How the subject can appear in the records of one table. */
 interface Subject {
   entity: EntityRow;
   names: Set<string>;
-  listColumn: string | undefined;
-  responsible: boolean;
-  mainSlots: boolean;
+  /** The table's column listing names of this type (persons, participants, tags). */
+  nameListColumn: string | undefined;
+  /** A person can be the responsible person of an open item. */
+  canBeResponsible: boolean;
+  /** A topic or project can be a record's main topic or project. */
+  occupiesTopicOrProject: boolean;
 }
 
 function subjectOf(entity: EntityRow, table: RefTableName): Subject {
@@ -79,35 +84,39 @@ function subjectOf(entity: EntityRow, table: RefTableName): Subject {
   return {
     entity,
     names: new Set([entity.normalizedName, ...entity.aliases.map(normalizeName)]),
-    listColumn: spec.lists[entity.type as EntityType],
-    responsible: spec.responsible === true && entity.type === 'person',
-    mainSlots: TOPIC_OR_PROJECT.has(entity.type),
+    nameListColumn: spec.lists[entity.type as EntityType],
+    canBeResponsible: spec.responsible === true && entity.type === 'person',
+    occupiesTopicOrProject: TOPIC_OR_PROJECT.has(entity.type),
   };
 }
 
 /** The record as it is left without the subject (pure). */
 function withoutSubject(row: RefRow, subject: Subject): RefRow {
   const next: RefRow = { ...row };
-  if (subject.mainSlots) for (const slot of ['topicId', 'projectId']) if (next[slot] === subject.entity.id) next[slot] = null;
-  if (subject.responsible && next.responsiblePersonId === subject.entity.id) next.responsiblePersonId = null;
-  if (subject.listColumn) next[subject.listColumn] = (next[subject.listColumn] as string[]).filter((name) => !subject.names.has(normalizeName(name)));
+  const { id } = subject.entity;
+  if (subject.occupiesTopicOrProject) {
+    for (const slot of ['topicId', 'projectId']) if (next[slot] === id) next[slot] = null;
+  }
+  if (subject.canBeResponsible && next.responsiblePersonId === id) next.responsiblePersonId = null;
+  const listColumn = subject.nameListColumn;
+  if (listColumn) next[listColumn] = (next[listColumn] as string[]).filter((name) => !subject.names.has(normalizeName(name)));
   return next;
 }
 
-function conditionsOf(table: RefTableName, subject: Subject): SQL[] {
+function referencingConditions(table: RefTableName, subject: Subject): SQL[] {
   const shape = refTable(table);
   const conditions: SQL[] = [];
-  if (subject.mainSlots) conditions.push(eq(shape.topicId, subject.entity.id), eq(shape.projectId, subject.entity.id));
-  if (subject.responsible) conditions.push(eq(column(shape, 'responsiblePersonId'), subject.entity.id));
-  if (subject.listColumn) conditions.push(sql`${column(shape, subject.listColumn)} != '[]'`);
+  if (subject.occupiesTopicOrProject) conditions.push(eq(shape.topicId, subject.entity.id), eq(shape.projectId, subject.entity.id));
+  if (subject.canBeResponsible) conditions.push(eq(column(shape, 'responsiblePersonId'), subject.entity.id));
+  if (subject.nameListColumn) conditions.push(sql`${column(shape, subject.nameListColumn)} != '[]'`);
   return conditions;
 }
 
 /** Documents, decisions, open items and events that reference the subject by id or by name. */
-function recordChanges(db: Db, entity: EntityRow): RecordChange[] {
+function recordChanges(db: Db, entity: EntityRow): RefChange[] {
   return REF_TABLE_NAMES.flatMap((table) => {
     const subject = subjectOf(entity, table);
-    const conditions = conditionsOf(table, subject);
+    const conditions = referencingConditions(table, subject);
     if (conditions.length === 0) return [];
     const shape = refTable(table);
     const rows = db
@@ -117,21 +126,21 @@ function recordChanges(db: Db, entity: EntityRow): RecordChange[] {
       .all() as RefRow[];
     return rows.flatMap((row) => {
       const next = withoutSubject(row, subject);
-      const columns = REF_TABLES[table].columns.filter((name) => name !== 'updatedAt' && JSON.stringify(next[name]) !== JSON.stringify(row[name]));
+      const columns = changedColumns(table, { row, next });
       return columns.length ? [{ table, row, next, columns }] : [];
     });
   });
 }
 
-const isMain = (change: RecordChange) => change.columns.some((name) => name === 'topicId' || name === 'projectId');
+const isMain = (change: RefChange) => change.columns.some((name) => name === 'topicId' || name === 'projectId');
 
-function impactOf(db: Db, entity: EntityRow): SubjectImpact {
+function impactOf(db: Db, { entity, changes }: { entity: EntityRow; changes: RefChange[] }): SubjectImpact {
   return {
     id: entity.id,
     type: entity.type as EntityType,
     name: entity.name,
     relations: relationRowsOf(db, entity.id).filter((relation) => ACTIVE_RELATION.has(relation.status)).length,
-    records: recordChanges(db, entity).map((change) => ({
+    records: changes.map((change) => ({
       table: change.table,
       id: String(change.row.id),
       title: String(change.row.title),
@@ -140,7 +149,15 @@ function impactOf(db: Db, entity: EntityRow): SubjectImpact {
   };
 }
 
-export type SubjectDeletionDeps = { ctx: AppContext; audit: AuditService; undo: UndoService; snapshots: { snapshot: (id: string) => NodeSnapshot | null } };
+export type SubjectDeletionDeps = { ctx: AppContext; audit: AuditService; undo: UndoService; nodes: Pick<GraphEntities, 'snapshot' | 'remove' | 'restore'> };
+
+export interface SubjectDeleteOptions {
+  actor: 'user' | 'agent';
+  trigger: string;
+  /** Stage 2: only with the user's explicit confirmation (the dialog, or the request in the chat). */
+  confirmed: boolean;
+  reason?: string;
+}
 
 /** Deleting a named subject (person, topic, project, tag) with all its edges; the name stays blocked for the analysis; exact undo. */
 export class SubjectDeletion {
@@ -148,10 +165,12 @@ export class SubjectDeletion {
 
   private readonly ctx: AppContext;
   private readonly audit: AuditService;
-  private readonly snapshots: SubjectDeletionDeps['snapshots'];
+  private readonly nodes: SubjectDeletionDeps['nodes'];
 
   constructor(deps: SubjectDeletionDeps) {
-    ({ ctx: this.ctx, audit: this.audit, snapshots: this.snapshots } = deps);
+    this.ctx = deps.ctx;
+    this.audit = deps.audit;
+    this.nodes = deps.nodes;
     deps.undo.register(SUBJECT_DELETE_UNDO_TYPE, {
       check: async (data) => this.conflicts(data as DeleteUndoData),
       run: (data) => this.restore(data as DeleteUndoData),
@@ -168,25 +187,23 @@ export class SubjectDeletion {
 
   /** What deleting the subject would remove; throws for the user's own person and for entries that are no named subject. */
   impact(id: string): SubjectImpact {
-    return impactOf(this.db, this.deletable(id));
+    const entity = this.deletable(id);
+    return impactOf(this.db, { entity, changes: recordChanges(this.db, entity) });
   }
 
-  async delete(id: string, options: { actor: 'user' | 'agent'; trigger: string; reason?: string }): Promise<SubjectDeleteResult> {
+  async delete(id: string, options: SubjectDeleteOptions): Promise<SubjectDeleteResult> {
+    if (!options.confirmed) throw new AppError('permission_error', 'Das Löschen eines Eintrags erfordert eine ausdrückliche Bestätigung.');
     const entity = this.deletable(id);
     const changes = recordChanges(this.db, entity);
-    const impact = impactOf(this.db, entity);
-    const snapshot = this.snapshots.snapshot(id);
+    const impact = impactOf(this.db, { entity, changes });
+    const snapshot = this.nodes.snapshot(id);
     if (!snapshot) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
     const reindex = emptyRefSets();
     const now = nowIso();
     const auditId = this.ctx.database.transaction(() => {
-      const refs = changes.map((change) => this.clear(change, now));
+      const refs = changes.map((change) => applyRefChange(this.db, { ...change, now }));
       for (const ref of refs) reindex[ref.table].add(ref.id);
-      this.db
-        .delete(relations)
-        .where(or(eq(relations.sourceEntityId, id), eq(relations.targetEntityId, id)))
-        .run();
-      this.db.delete(entities).where(eq(entities.id, id)).run();
+      this.nodes.remove(id);
       const blockedIds = blockNames(this.db, { type: entity.type as EntityType, names: [entity.name, ...entity.aliases] });
       const data: DeleteUndoData = {
         snapshot,
@@ -217,22 +234,8 @@ export class SubjectDeletion {
     const entity = entityRow(this.db, id);
     if (!entity) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
     if (entity.isSelf) throw new AppError('validation_error', 'Du selbst kannst nicht gelöscht werden.');
-    if (!DELETABLE_SUBJECT_TYPES.has(entity.type))
-      throw new AppError('validation_error', `„${entity.name}“ ist keine Person, kein Thema, Projekt oder Schlagwort.`);
+    if (!isDeletableSubjectType(entity.type)) throw new AppError('validation_error', `„${entity.name}“ ist keine Person, kein Thema, Projekt oder Schlagwort.`);
     return entity;
-  }
-
-  private clear(change: RecordChange, now: string): DeleteUndoData['refs'][number] {
-    const id = String(change.row.id);
-    const before: RefRow = { updatedAt: change.row.updatedAt ?? null };
-    const set: RefRow = { updatedAt: now };
-    for (const name of change.columns) {
-      before[name] = change.row[name] ?? null;
-      set[name] = change.next[name] ?? null;
-    }
-    const shape = refTable(change.table);
-    this.db.update(shape).set(set).where(eq(shape.id, id)).run();
-    return { table: change.table, id, before };
   }
 
   private conflicts(data: DeleteUndoData): string[] {
@@ -252,11 +255,7 @@ export class SubjectDeletion {
     const reindex = emptyRefSets();
     let skipped = 0;
     this.ctx.database.transaction(() => {
-      this.db.insert(entities).values(snapshot.node).run();
-      for (const relation of snapshot.relations) {
-        if (!entityRow(this.db, otherEndOf(relation, snapshot.node.id))) skipped += 1;
-        else this.db.insert(relations).values(relation).onConflictDoNothing().run();
-      }
+      skipped = this.nodes.restore(snapshot);
       for (const ref of data.refs) {
         const shape = refTable(ref.table);
         this.db.update(shape).set(ref.before).where(eq(shape.id, ref.id)).run();

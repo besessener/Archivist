@@ -1,6 +1,8 @@
 import type { EntityType, RelationMethod } from '@archivist/shared';
 import type { AppContext } from '../../context';
 import type { AppStateService } from '../app-state';
+import type { LinkOptions, LinkResult } from '../graph/relations';
+import type { RelationKey } from '../graph/rows';
 import type { InsightService } from '../insights';
 import type { KnowledgeGraphService } from '../knowledge-graph';
 import type { LinkThresholds } from '../link-thresholds';
@@ -15,7 +17,7 @@ export interface LinkDeps {
   appState: AppStateService;
   thresholds?: LinkThresholds;
   /** The user's lowest confidence for a proposal (setting `links.minConfidence`). */
-  minConfidence?: () => number;
+  minConfidence: () => number;
 }
 
 /** Knowledge entries the link methods connect (documents only once archived or indexed). */
@@ -61,6 +63,28 @@ export function isLinked(sqlite: Sqlite, pair: { a: string; b: string }): boolea
       )
       .get(pair.a, pair.b, pair.b, pair.a),
   );
+}
+
+/** Open proposals of a method at an entry (either end) that reach the user's minimum confidence. */
+export function openProposalsAt(deps: LinkDeps, at: { id: string; method: RelationMethod }): number {
+  const row = deps.ctx.database.sqlite
+    .prepare(
+      `SELECT count(*) AS c FROM relations WHERE (source_entity_id = @id OR target_entity_id = @id) AND status = 'proposed' AND method = @method AND confidence >= @minConfidence`,
+    )
+    .get({ ...at, minConfidence: deps.minConfidence() }) as { c: number };
+  return row.c;
+}
+
+/** What an automatic method proposes: always `proposed`, with the confidence the user's minimum is measured against. */
+type ProposalOptions = Omit<LinkOptions, 'status' | 'confidence'> & { confidence: number };
+
+/** Reaches the user's minimum confidence for proposals (setting `links.minConfidence`). */
+export const reachesMinConfidence = (deps: Pick<LinkDeps, 'minConfidence'>, confidence: number): boolean => confidence >= deps.minConfidence();
+
+/** Every automatic method proposes through here (#381): below the user's minimum confidence nothing is stored. */
+export function proposeLink(deps: LinkDeps, proposal: { key: RelationKey; options: ProposalOptions }): LinkResult | null {
+  if (!reachesMinConfidence(deps, proposal.options.confidence)) return null;
+  return deps.graph.link(proposal.key, { ...proposal.options, status: 'proposed' });
 }
 
 /** Reads a JSON list from the app state; anything unreadable counts as empty. */

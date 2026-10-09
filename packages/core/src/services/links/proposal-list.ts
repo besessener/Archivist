@@ -19,11 +19,15 @@ export interface LinkProposalPage {
 
 export type ProposalGrouping = 'method' | 'entry';
 
+/** No automatic method adds proposals while this many wait for review: more come once the user has decided (#361). */
+const MAX_OPEN_PROPOSALS = 20;
+
+/** The open proposals the list shows; binds `@minConfidence`. */
 function proposalSql(groupBy: ProposalGrouping) {
   return {
     from: `FROM relations r JOIN entities s ON s.id = r.source_entity_id JOIN entities t ON t.id = r.target_entity_id
         WHERE r.status = 'proposed' AND r.method IN (${sqlList(LINK_PROPOSAL_METHODS)}) AND (r.relation_type NOT IN (${sqlList(OWN_FLOW_TYPES)}) OR r.method = 'refinement')
-          AND s.duplicate_of_id IS NULL AND t.duplicate_of_id IS NULL AND r.confidence >= ?`,
+          AND s.duplicate_of_id IS NULL AND t.duplicate_of_id IS NULL AND r.confidence >= @minConfidence`,
     key: groupBy === 'method' ? 'r.method' : 'r.source_entity_id',
     sort: groupBy === 'method' ? 'r.method' : 's.normalized_name, r.source_entity_id',
   };
@@ -41,13 +45,13 @@ export class LinkProposalList {
   proposals(options: { groupBy?: ProposalGrouping; limit?: number; offset?: number } = {}): LinkProposalPage {
     const groupBy = options.groupBy ?? 'method';
     const query = proposalSql(groupBy);
-    const min = this.deps.minConfidence?.() ?? 0;
+    const params = { minConfidence: this.deps.minConfidence() };
     const groups = (
       this.sqlite
         .prepare(
           `SELECT ${query.key} AS key, min(s.name) AS name, count(*) AS count ${query.from} GROUP BY ${query.key} ORDER BY min(${query.sort.split(',')[0]}), ${query.key}`,
         )
-        .all(min) as Array<{ key: string; name: string; count: number }>
+        .all(params) as Array<{ key: string; name: string; count: number }>
     ).map((group) => ({
       key: group.key,
       label: groupBy === 'method' ? (RELATION_METHOD_LABELS[group.key as RelationMethod] ?? group.key) : group.name,
@@ -55,7 +59,7 @@ export class LinkProposalList {
     }));
     const rows = this.sqlite
       .prepare(`SELECT r.id AS id, ${query.key} AS groupKey ${query.from} ORDER BY ${query.sort}, r.confidence DESC, r.id LIMIT ? OFFSET ?`)
-      .all(min, options.limit ?? 50, options.offset ?? 0) as Array<{ id: string; groupKey: string }>;
+      .all(params, options.limit ?? 50, options.offset ?? 0) as Array<{ id: string; groupKey: string }>;
     const items = rows.flatMap((row) => this.proposalOf(row));
     return { total: groups.reduce((sum, group) => sum + group.count, 0), groups, items };
   }
@@ -78,9 +82,18 @@ export class LinkProposalList {
   /** Confirms or rejects every open proposal of a group („Alle bestätigen“, #280) – one undo step. */
   decideGroup(group: { groupBy: ProposalGrouping; key: string }, decision: { status: 'confirmed' | 'rejected'; trigger?: string }): number {
     const query = proposalSql(group.groupBy);
-    const ids = (
-      this.sqlite.prepare(`SELECT r.id AS id ${query.from} AND ${query.key} = ?`).all(this.deps.minConfidence?.() ?? 0, group.key) as Array<{ id: string }>
-    ).map((row) => row.id);
+    const rows = this.sqlite
+      .prepare(`SELECT r.id AS id ${query.from} AND ${query.key} = @key`)
+      .all({ minConfidence: this.deps.minConfidence(), key: group.key }) as Array<{ id: string }>;
+    const ids = rows.map((row) => row.id);
     return this.deps.graph.decideRelations(ids, { status: decision.status, trigger: decision.trigger });
   }
+}
+
+/** True while the open proposals the list and its badge count reach the cap: then no automatic method adds more (#361). */
+export function proposalsAtLimit(deps: LinkDeps): boolean {
+  const open = deps.ctx.database.sqlite.prepare(`SELECT count(*) AS c ${proposalSql('method').from}`).get({ minConfidence: deps.minConfidence() }) as {
+    c: number;
+  };
+  return open.c >= MAX_OPEN_PROPOSALS;
 }

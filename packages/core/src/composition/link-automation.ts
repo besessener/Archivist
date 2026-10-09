@@ -32,6 +32,14 @@ const KIND_LABEL: Partial<Record<string, string>> = {
 type ChatLinksPayload = { entries: Array<{ id: string; type: EntityType }>; messageId: string; conversationId: string };
 export type LinkProposalNotifier = (created: number) => void;
 
+/** The pass over new and changed entries (job `links.similar`); `sameAs` decides which queued or running pass covers a new request. */
+const similarJob = (sameAs: (payload: unknown, status: 'pending' | 'running') => boolean) => ({
+  label: 'Verknüpfungen für neue Einträge suchen',
+  payload: {},
+  maxAttempts: 2,
+  sameAs,
+});
+
 /** ONE notification for open link proposals (#280): updated in place while unread, a new one once it was read or dismissed. */
 export function createLinkProposalNotifier(services: {
   links: LinkMethodsService;
@@ -70,7 +78,7 @@ export function chatLinkCallbacks(services: WiredServices, notifyLinkProposals: 
   const { settings, links, jobs } = services;
   return {
     createdTogether: (entries: Array<{ id: string; type: EntityType }>, message: { id: string; text: string }) => {
-      if (settings.get().links.autoPropose)
+      if (settings.get().links.autoPropose && !links.proposalsAtLimit())
         notifyLinkProposals(links.linkCreatedTogether(entries, { evidence: `Aus derselben Nachricht: „${message.text}“`, sourceIds: [message.id] }));
     },
     suggestLinks: (entries: Array<{ id: string; type: EntityType }>, reply: { messageId: string; conversationId: string }) => {
@@ -89,7 +97,7 @@ function addLinkConsistencyCheck(services: WiredServices, notifyLinkProposals: L
     const topics = settings.get().links.autoPropose ? await links.proposeClusterTopics() : 0;
     if (topics) count('topic_cluster', topics);
     // the LLM refines confirmed „verwandt“ links only in privacy mode „automatisch“
-    if (settings.get().links.autoPropose) {
+    if (settings.get().links.autoPropose && !links.proposalsAtLimit()) {
       const refined = await refiner.run({ max: 10 });
       if (refined) count('relation_refinement', refined);
       notifyLinkProposals(refined);
@@ -105,12 +113,18 @@ function addEntryTriggers(services: WiredServices, notifyLinkProposals: LinkProp
   search.onIndexed(({ id }) => {
     if (!settings.get().links.autoPropose || !links.queueSimilar([id])) return;
     // a job that has not started yet takes the entry along; a running one picks it up before it ends
-    jobs.enqueue(LINK_SIMILAR_JOB, {
-      label: 'Verknüpfungen für neue Einträge suchen',
-      payload: {},
-      maxAttempts: 2,
-      sameAs: (_p, status) => status === 'pending',
-    });
+    jobs.enqueue(
+      LINK_SIMILAR_JOB,
+      similarJob((_p, status) => status === 'pending'),
+    );
+  });
+  // a pass stopped at the cap of open proposals goes on once the user has decided; a running pass needs no second one
+  events.on('data:changed', (change: { scopes: string[] }) => {
+    if (!change.scopes.includes('knowledge') || !settings.get().links.autoPropose || !links.hasPendingChecks() || links.proposalsAtLimit()) return;
+    jobs.enqueue(
+      LINK_SIMILAR_JOB,
+      similarJob(() => true),
+    );
   });
   const enqueueNoteAnalysis = (entry: { id: string; type: string }) => {
     if (entry.type !== 'note' || !settings.get().links.autoPropose) return;
@@ -123,9 +137,9 @@ function addEntryTriggers(services: WiredServices, notifyLinkProposals: LinkProp
   };
   events.on('entry:created', enqueueNoteAnalysis);
   events.on('entry:updated', enqueueNoteAnalysis);
-  // entries extracted from the same document belong together (#272)
+  // entries extracted from the same document belong together (#272); at the cap the pass after indexing proposes them later
   events.on('entry:created', (entry: { id: string }) => {
-    if (!settings.get().links.autoPropose) return;
+    if (!settings.get().links.autoPropose || links.proposalsAtLimit()) return;
     try {
       notifyLinkProposals(links.linkSameDocument(entry.id));
     } catch (err) {
@@ -161,10 +175,15 @@ async function suggestChatLinks(services: WiredServices, job: JobContext<ChatLin
   return { summary: `${ids.length} Verknüpfung(en) angeboten` };
 }
 
-function linkRunDescription(proposed: number, topics: number): string {
+/** Open proposals the run stopped at, as a sentence for the user. */
+const waitingText = (waiting: number) => `${waiting} Vorschläge warten auf deine Prüfung – erst danach geht es weiter.`;
+
+function linkRunDescription(found: { proposed: number; topics: number; waiting: number }): string {
+  const { proposed, topics, waiting } = found;
   return [
     proposed ? `${proposed} Verknüpfung${proposed === 1 ? '' : 'en'} vorgeschlagen.` : null,
     topics ? `${topics} neue${topics === 1 ? 's Thema' : ' Themen'} vorgeschlagen.` : null,
+    waiting ? waitingText(waiting) : null,
     'Du entscheidest, was übernommen wird.',
   ]
     .filter(Boolean)
@@ -176,6 +195,7 @@ async function runLinkBackfill(services: WiredServices, job: JobContext<{ trigge
   const { links, notifications, settings } = services;
   let processed = 0;
   let proposed = 0;
+  let stoppedAtLimit: boolean;
   for (;;) {
     job.throwIfCancelled();
     const step = await links.backfill({
@@ -186,21 +206,24 @@ async function runLinkBackfill(services: WiredServices, job: JobContext<{ trigge
     });
     processed += step.processed;
     proposed += step.proposed;
+    stoppedAtLimit = step.stoppedAtLimit;
     if (step.done || !step.processed) break;
   }
   job.throwIfCancelled();
   job.report(null, 'Suche Gruppen ähnlicher Einträge ohne Thema');
   const topics = await links.proposeClusterTopics({ signal: job.signal });
-  if (proposed || topics)
+  const waiting = stoppedAtLimit ? links.proposals({ limit: 1 }).total : 0;
+  if (proposed || topics || waiting)
     notifications.create({
       title: 'Verknüpfungsvorschläge',
-      description: linkRunDescription(proposed, topics),
+      description: linkRunDescription({ proposed, topics, waiting }),
       type: 'assignment_proposal',
       priority: 'low',
       proposedActions: [{ label: 'Hinweise ansehen', kind: 'navigate', target: '/insights/' }],
       dedupeKey: `link-run:${job.id}`,
     });
-  return { summary: `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${topics} Themen vorgeschlagen` };
+  const summary = `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${topics} Themen vorgeschlagen`;
+  return { summary: waiting ? `${summary}. ${waitingText(waiting)}` : summary };
 }
 
 function registerLinkJobs(services: WiredServices, notifyLinkProposals: LinkProposalNotifier): void {
@@ -209,6 +232,10 @@ function registerLinkJobs(services: WiredServices, notifyLinkProposals: LinkProp
   jobs.register<{ trigger?: string }>(LINK_RUN_JOB, { handler: (job) => runLinkBackfill(services, job) });
   jobs.register<{ noteId: string }>(NOTE_ANALYZE_JOB, {
     handler: async (job) => {
+      if (links.proposalsAtLimit()) {
+        links.deferNoteAnalysis(job.payload.noteId);
+        return { summary: 'Zurückgestellt: Verknüpfungsvorschläge warten auf deine Prüfung' };
+      }
       const analysis = await noteAnalysis.analyze(job.payload.noteId, { signal: job.signal });
       notifyLinkProposals(analysis?.proposed ?? 0);
       return { summary: analysis ? `${analysis.proposed} Verknüpfungen vorgeschlagen, ${analysis.outdated} veraltet` : 'Notiz nicht (mehr) vorhanden' };
@@ -216,7 +243,7 @@ function registerLinkJobs(services: WiredServices, notifyLinkProposals: LinkProp
   });
   jobs.register(LINK_SIMILAR_JOB, {
     handler: async (job) => {
-      const similar = await links.runPendingSimilar({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
+      const similar = await links.runPendingChecks({ max: settings.get().links.maxProposalsPerEntry, signal: job.signal });
       notifyLinkProposals(similar.proposed);
       job.throwIfCancelled();
       return { summary: `${similar.processed} Einträge geprüft, ${similar.proposed} Verknüpfungen vorgeschlagen` };

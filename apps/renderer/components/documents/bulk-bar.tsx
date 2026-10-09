@@ -176,7 +176,7 @@ function ResultNote({ result, onDismiss }: { result: Result; onDismiss: () => vo
         </ul>
       )}
       {result.kind === 'reprocess' && <p>Den Fortschritt siehst du bei den Aufgaben. Neue Metadaten erscheinen als Vorschlag im jeweiligen Dokument.</p>}
-      {result.kind === 'assign' && <p>Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.</p>}
+      {result.kind === 'assign' && <p>Rückgängig machen kannst du das unter Einstellungen → Änderungen.</p>}
       <Button size="icon-sm" variant="ghost" className="absolute right-1 top-1" aria-label="Hinweis schließen" onClick={onDismiss}>
         <X aria-hidden />
       </Button>
