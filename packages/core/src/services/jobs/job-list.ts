@@ -43,6 +43,14 @@ const mapListedJob = (row: ListedRow): Job => ({
   finishedAt: row.finishedAt,
 });
 
+/** Jobs that need attention come first in this order, so a running one is never pushed out by newer failures. */
+const ATTENTION_ORDER = ['running', 'pending', 'failed'] as const;
+
+const attentionRank = sql.join(
+  [sql`case ${jobs.status}`, ...ATTENTION_ORDER.map((status, rank) => sql`when ${status} then ${rank}`), sql`else ${ATTENTION_ORDER.length} end`],
+  sql` `,
+);
+
 export interface JobListFilter {
   type?: string;
   activeOnly?: boolean;
@@ -54,7 +62,7 @@ export function listJobs(db: AppContext['database']['db'], query: JobListFilter 
     .select(listColumns)
     .from(jobs)
     .where(and(...conditions))
-    .orderBy(sql`case when ${jobs.status} in ('pending', 'running', 'failed') then 0 else 1 end`, desc(jobs.createdAt))
+    .orderBy(attentionRank, desc(jobs.createdAt))
     .limit(query.limit)
     .all()
     .map(mapListedJob);
