@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { fitView, panView, screenScale, toGraphPoint, zoomView } from '../../apps/renderer/components/knowledge/graph-viewport';
+import {
+  fitView,
+  panView,
+  screenScale,
+  toGraphPoint,
+  wheelGesture,
+  wheelPan,
+  wheelZoomFactor,
+  zoomView,
+} from '../../apps/renderer/components/knowledge/graph-viewport';
 
 const FULL_VIEW = fitView({ width: 720, height: 440 });
 const rect = { left: 10, top: 20, width: 720, height: 440 };
@@ -35,5 +44,23 @@ describe('graph viewport', () => {
 
   it('pans the content along with the pointer', () => {
     expect(panView({ view: FULL_VIEW, delta: { x: 30, y: -10 } })).toEqual({ ...FULL_VIEW, x: -30, y: 10 });
+  });
+
+  it('zooms only with Ctrl or a pinch, pans with the plain wheel in fullscreen and leaves it to the page otherwise', () => {
+    expect(wheelGesture({ ctrlKey: true, fullscreen: false })).toBe('zoom');
+    expect(wheelGesture({ ctrlKey: true, fullscreen: true })).toBe('zoom');
+    expect(wheelGesture({ ctrlKey: false, fullscreen: true })).toBe('pan');
+    expect(wheelGesture({ ctrlKey: false, fullscreen: false })).toBe('page-scroll');
+  });
+
+  it('zooms in when the wheel turns up and out by the same amount when it turns down', () => {
+    expect(wheelZoomFactor(-100)).toBeGreaterThan(1);
+    expect(wheelZoomFactor(100)).toBeLessThan(1);
+    expect(wheelZoomFactor(-100) * wheelZoomFactor(100)).toBeCloseTo(1);
+    expect(wheelZoomFactor(0)).toBe(1);
+  });
+
+  it('moves the view along with the wheel, in graph units', () => {
+    expect(wheelPan({ view: FULL_VIEW, wheel: { deltaX: 40, deltaY: -20 }, scale: 2 })).toEqual({ ...FULL_VIEW, x: 20, y: -10 });
   });
 });

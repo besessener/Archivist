@@ -7,9 +7,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { GraphEdge, GraphLegend, GraphNode, type GraphNodeRecord } from './graph-parts';
 import type { GraphLayout, Point } from './graph-layout';
-import { fitView, panView, screenScale, toGraphPoint, zoomView, type ViewBox } from './graph-viewport';
+import { fitView, panView, screenScale, toGraphPoint, wheelGesture, wheelPan, wheelZoomFactor, zoomView, type ViewBox } from './graph-viewport';
 
-const WHEEL_STEP = 1.0015;
 const BUTTON_STEP = 1.4;
 
 type Props = {
@@ -22,7 +21,7 @@ type Props = {
   onToggleFullscreen: () => void;
 };
 
-/** The SVG with wheel zoom, drag to pan and a fullscreen toggle; the view resets when the centre entry changes. */
+/** The SVG with Ctrl+wheel or pinch zoom, drag to pan and a fullscreen toggle; the view resets when the layout frame changes. */
 export function GraphCanvas({ graph, layout, nodeById, selected, fullscreen, onSelect, onToggleFullscreen }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<{ last: Point } | null>(null);
@@ -34,28 +33,36 @@ export function GraphCanvas({ graph, layout, nodeById, selected, fullscreen, onS
   const viewRef = useRef(view);
   viewRef.current = view;
 
-  useEffect(() => setView(fitRef.current), [graph.centerId, frame.width, frame.height]);
+  useEffect(() => setView(fitRef.current), [frame.width, frame.height]);
 
   const zoomAtCenter = (factor: number) => {
     const current = viewRef.current;
     setView(zoomView({ view: current, factor, focus: { x: current.x + current.width / 2, y: current.y + current.height / 2 }, fit: fitRef.current }));
   };
 
-  // React registers wheel listeners as passive, so the page would scroll along; a native one can prevent that.
+  // React registers wheel listeners as passive, so they cannot stop the page from scrolling or zooming; a native one can.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const onWheel = (event: WheelEvent) => {
+      const gesture = wheelGesture({ ctrlKey: event.ctrlKey, fullscreen });
+      if (gesture === 'page-scroll') return;
       event.preventDefault();
       const current = viewRef.current;
-      const focus = toGraphPoint({ view: current, rect: svg.getBoundingClientRect(), client: { x: event.clientX, y: event.clientY } });
-      setView(zoomView({ view: current, factor: WHEEL_STEP ** -event.deltaY, focus, fit: fitRef.current }));
+      const rect = svg.getBoundingClientRect();
+      if (gesture === 'pan') {
+        setView(wheelPan({ view: current, wheel: event, scale: screenScale({ view: current, rect }) }));
+        return;
+      }
+      const focus = toGraphPoint({ view: current, rect, client: { x: event.clientX, y: event.clientY } });
+      setView(zoomView({ view: current, factor: wheelZoomFactor(event.deltaY), focus, fit: fitRef.current }));
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [fullscreen]);
 
   const startPan = (event: PointerEvent<SVGSVGElement>) => {
+    if (event.button !== 0 || !event.isPrimary) return;
     if ((event.target as Element).closest('[data-testid="graph-node"]')) return;
     drag.current = { last: { x: event.clientX, y: event.clientY } };
     event.currentTarget.setPointerCapture(event.pointerId);
