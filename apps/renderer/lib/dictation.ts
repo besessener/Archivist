@@ -1,3 +1,5 @@
+import { SPEECH_MAX_SAMPLES } from '@archivist/shared';
+
 /** Averages the channels of a recording into one. */
 export function mixToMono(channels: Float32Array[]): Float32Array {
   const first = channels[0];
@@ -12,6 +14,11 @@ export function toInt16(samples: Float32Array): Int16Array<ArrayBuffer> {
   const pcm = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i++) pcm[i] = Math.round(Math.max(-1, Math.min(1, samples[i]!)) * 32_767);
   return pcm;
+}
+
+/** The recording as the main process takes it; a late automatic stop overshoots the limit, so the overrun is cut off. */
+export function toSpeechAudio(channels: Float32Array[]): Int16Array<ArrayBuffer> {
+  return toInt16(mixToMono(channels.map((channel) => channel.subarray(0, SPEECH_MAX_SAMPLES))));
 }
 
 /** `75` → `1:15`. */

@@ -1,8 +1,8 @@
 import { SPEECH_SAMPLE_RATE } from '@archivist/shared';
-import { mixToMono, toInt16 } from './dictation';
+import { toSpeechAudio } from './dictation';
 
 export interface Recorder {
-  /** Ends the recording and resolves with 16-bit PCM, 16 kHz, mono. */
+  /** Ends the recording and resolves with 16-bit PCM, 16 kHz, mono, cut at the longest dictation. */
   stop(): Promise<Int16Array<ArrayBuffer>>;
   /** Ends the recording and drops it. */
   cancel(): void;
@@ -13,7 +13,7 @@ async function decode(blob: Blob): Promise<Int16Array<ArrayBuffer>> {
   const context = new AudioContext({ sampleRate: SPEECH_SAMPLE_RATE });
   try {
     const audio = await context.decodeAudioData(await blob.arrayBuffer());
-    return toInt16(mixToMono(Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel))));
+    return toSpeechAudio(Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel)));
   } finally {
     void context.close();
   }

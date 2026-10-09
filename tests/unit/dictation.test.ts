@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { describeMicrophoneError, formatDuration, joinDictation, mixToMono, toInt16 } from '../../apps/renderer/lib/dictation';
+import { SPEECH_MAX_SAMPLES, SPEECH_SAMPLE_RATE, SpeechAudio } from '@archivist/shared';
+import { describeMicrophoneError, formatDuration, joinDictation, mixToMono, toInt16, toSpeechAudio } from '../../apps/renderer/lib/dictation';
 
 describe('dictation audio', () => {
   it('keeps a single channel as it is and averages several', () => {
@@ -11,6 +12,18 @@ describe('dictation audio', () => {
 
   it('converts floats to 16-bit samples and clips what is out of range', () => {
     expect([...toInt16(Float32Array.of(0, 1, -1, 0.5, 2, -3))]).toEqual([0, 32_767, -32_767, 16_384, 32_767, -32_767]);
+  });
+
+  it('cuts a recording that ran past the limit so the main process still takes it', () => {
+    const overrun = Math.round(SPEECH_SAMPLE_RATE * 120.25);
+    const audio = toSpeechAudio([new Float32Array(overrun).fill(0.5), new Float32Array(overrun).fill(-0.5)]);
+    expect(audio).toHaveLength(SPEECH_MAX_SAMPLES);
+    expect(audio[0]).toBe(0);
+    expect(SpeechAudio.safeParse(audio).success).toBe(true);
+  });
+
+  it('keeps a recording within the limit whole', () => {
+    expect([...toSpeechAudio([Float32Array.of(0.5, -1)])]).toEqual([16_384, -32_767]);
   });
 });
 

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /** Whisper reads 16 kHz mono audio. */
 export const SPEECH_SAMPLE_RATE = 16_000;
-/** Longest dictation: the renderer stops the recording there, the service rejects anything longer. */
+/** Longest dictation: the renderer stops the recording there and cuts any overrun, the service rejects anything longer. */
 export const SPEECH_MAX_SECONDS = 120;
 export const SPEECH_MAX_SAMPLES = SPEECH_SAMPLE_RATE * SPEECH_MAX_SECONDS;
 
