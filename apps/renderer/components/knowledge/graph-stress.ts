@@ -2,7 +2,9 @@ import { neighbourLists, type Link, type Point } from './graph-geometry';
 
 const MAJORIZATION_ROUNDS = 300;
 /** Below this largest move per round (in units of the ideal edge length) the layout counts as settled. */
-const SETTLED = 0.0005;
+const SETTLED_MOVE_IN_UNITS = 0.0005;
+/** How far apart, per index step, two nodes on the same spot are nudged so they get a direction. */
+const COINCIDENT_NUDGE = 1e-3;
 
 /** Hop counts from one node by breadth-first search; unreachable nodes stay at -1. */
 function hopsFrom(start: number, neighbours: number[][]): number[] {
@@ -24,35 +26,44 @@ function hopsFrom(start: number, neighbours: number[][]): number[] {
 export function hopDistances(nodeCount: number, links: Link[]): number[][] {
   const neighbours = neighbourLists(nodeCount, links);
   const hops = neighbours.map((_, node) => hopsFrom(node, neighbours));
-  const unreachable = Math.max(1, ...hops.flat()) + 1;
+  // a loop, not Math.max(...): spreading nodeCount² values as arguments overflows the call stack
+  const longest = hops.reduce((most, row) => row.reduce((rowMost, hop) => Math.max(rowMost, hop), most), 1);
+  const unreachable = longest + 1;
   return hops.map((row) => row.map((hop) => (hop === -1 ? unreachable : hop)));
 }
 
 type Majorization = { xs: Float64Array; ys: Float64Array; ideals: Float64Array; weights: Float64Array; pinned: number };
 
-/** One Gauss-Seidel round of stress majorization; returns the largest move. */
-function majorizeRound({ xs, ys, ideals, weights, pinned }: Majorization): number {
+/** Weighted mean of where every other node wants this one: at its ideal distance, in the current direction. */
+function targetPosition({ xs, ys, ideals, weights }: Majorization, node: number): Point {
   const count = xs.length;
+  let weightedX = 0;
+  let weightedY = 0;
+  let weightSum = 0;
+  for (let other = 0; other < count; other += 1) {
+    if (other === node) continue;
+    const pair = node * count + other;
+    // identical positions have no direction; nudge apart along a fixed, index-dependent axis
+    const dx = xs[node]! - xs[other]! || (node - other) * COINCIDENT_NUDGE;
+    const dy = ys[node]! - ys[other]!;
+    const stretch = ideals[pair]! / Math.sqrt(dx * dx + dy * dy);
+    weightedX += weights[pair]! * (xs[other]! + dx * stretch);
+    weightedY += weights[pair]! * (ys[other]! + dy * stretch);
+    weightSum += weights[pair]!;
+  }
+  return { x: weightedX / weightSum, y: weightedY / weightSum };
+}
+
+/** One Gauss-Seidel round of stress majorization; returns the largest move. */
+function majorizeRound(state: Majorization): number {
+  const { xs, ys, pinned } = state;
   let largestMove = 0;
-  for (let i = 0; i < count; i += 1) {
-    if (i === pinned) continue;
-    let x = 0;
-    let y = 0;
-    let total = 0;
-    for (let j = 0; j < count; j += 1) {
-      if (j === i) continue;
-      const pair = i * count + j;
-      // identical positions have no direction; nudge apart along a fixed, index-dependent axis
-      const dx = xs[i]! - xs[j]! || (i - j) * 1e-3;
-      const dy = ys[i]! - ys[j]!;
-      const scale = ideals[pair]! / Math.sqrt(dx * dx + dy * dy);
-      x += weights[pair]! * (xs[j]! + dx * scale);
-      y += weights[pair]! * (ys[j]! + dy * scale);
-      total += weights[pair]!;
-    }
-    largestMove = Math.max(largestMove, Math.abs(x / total - xs[i]!) + Math.abs(y / total - ys[i]!));
-    xs[i] = x / total;
-    ys[i] = y / total;
+  for (let node = 0; node < xs.length; node += 1) {
+    if (node === pinned) continue;
+    const target = targetPosition(state, node);
+    largestMove = Math.max(largestMove, Math.abs(target.x - xs[node]!) + Math.abs(target.y - ys[node]!));
+    xs[node] = target.x;
+    ys[node] = target.y;
   }
   return largestMove;
 }
@@ -67,6 +78,6 @@ export function majorize({ positions, distances, pinned, unit }: { positions: Po
     weights: ideals.map((ideal) => (ideal === 0 ? 0 : 1 / (ideal * ideal))),
     pinned,
   };
-  for (let round = 0; round < MAJORIZATION_ROUNDS; round += 1) if (majorizeRound(state) < SETTLED * unit) break;
+  for (let round = 0; round < MAJORIZATION_ROUNDS; round += 1) if (majorizeRound(state) < SETTLED_MOVE_IN_UNITS * unit) break;
   return positions.map((_, node) => ({ x: state.xs[node]!, y: state.ys[node]! }));
 }

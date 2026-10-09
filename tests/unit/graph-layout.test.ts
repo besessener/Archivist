@@ -1,7 +1,8 @@
 import type { NeighborhoodGraph } from '@archivist/shared';
 import { describe, expect, it } from 'vitest';
 import { GRAPH_HEIGHT, GRAPH_WIDTH, layoutGraph } from '../../apps/renderer/components/knowledge/graph-layout';
-import { countCrossings, type Link } from '../../apps/renderer/components/knowledge/graph-geometry';
+import type { Link } from '../../apps/renderer/components/knowledge/graph-geometry';
+import { countCrossings } from '../helpers/graph';
 
 type GraphNode = NeighborhoodGraph['nodes'][number];
 type GraphEdge = NeighborhoodGraph['edges'][number];
@@ -104,6 +105,20 @@ describe('layoutGraph', () => {
     // the long axis lies horizontal
     const ys = [...positions.values()].map((point) => point.y);
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(Math.max(...ys) - Math.min(...ys));
+  });
+
+  it('lays out a graph with hundreds of nodes after many expansions', () => {
+    const hubs = Array.from({ length: 20 }, (_, hub) => `hub${hub}`);
+    const leaves = hubs.flatMap((hub) => Array.from({ length: 19 }, (_, leaf) => `${hub}-${leaf}`));
+    const graph: NeighborhoodGraph = {
+      centerId: 'c',
+      nodes: [node('c', 0), ...hubs.map((id) => node(id, 1)), ...leaves.map((id) => node(id, 2))],
+      edges: [...hubs.map((hub) => edge('c', hub)), ...leaves.map((leaf) => edge(leaf.split('-')[0]!, leaf))],
+      truncated: false,
+    };
+    const { positions } = layoutGraph(graph);
+    expect(positions.size).toBe(401);
+    for (const point of positions.values()) expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true);
   });
 
   it('places nodes without edges, ignores edges to unknown nodes and handles an empty graph', () => {

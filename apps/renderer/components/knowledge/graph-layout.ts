@@ -48,20 +48,25 @@ function toLinks(graph: NeighborhoodGraph, indexOf: Map<string, number>): Link[]
   return [...links.values()];
 }
 
+/** Angle of the drawing's long axis: the principal axis of the positions' scatter matrix. */
+function principalAxisAngle(positions: Point[]): number {
+  const meanX = positions.reduce((sum, point) => sum + point.x, 0) / positions.length;
+  const meanY = positions.reduce((sum, point) => sum + point.y, 0) / positions.length;
+  let scatterX = 0;
+  let scatterY = 0;
+  let scatterXY = 0;
+  for (const point of positions) {
+    scatterX += (point.x - meanX) ** 2;
+    scatterY += (point.y - meanY) ** 2;
+    scatterXY += (point.x - meanX) * (point.y - meanY);
+  }
+  return Math.atan2(2 * scatterXY, scatterX - scatterY) / 2;
+}
+
 /** Turns the drawing around the pinned node so its long axis lies horizontal, matching the wide frame. */
 function orient(positions: Point[], pinned: number): Point[] {
   const origin = positions[pinned]!;
-  const meanX = positions.reduce((sum, point) => sum + point.x, 0) / positions.length;
-  const meanY = positions.reduce((sum, point) => sum + point.y, 0) / positions.length;
-  let xx = 0;
-  let yy = 0;
-  let xy = 0;
-  for (const point of positions) {
-    xx += (point.x - meanX) ** 2;
-    yy += (point.y - meanY) ** 2;
-    xy += (point.x - meanX) * (point.y - meanY);
-  }
-  const angle = -Math.atan2(2 * xy, xx - yy) / 2;
+  const angle = -principalAxisAngle(positions);
   const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
   return positions.map(({ x, y }) => ({
     x: origin.x + (x - origin.x) * cos - (y - origin.y) * sin,
@@ -70,49 +75,58 @@ function orient(positions: Point[], pinned: number): Point[] {
 }
 
 /** Moves two overlapping boxes apart along the axis of the smaller overlap; a pinned node does not move. */
-function pushApart(positions: Point[], [a, b]: Link, pinned: number) {
-  const first = positions[a]!;
-  const second = positions[b]!;
+function pushApart({ positions, pair: [node, other], pinned }: { positions: Point[]; pair: Link; pinned: number }) {
+  const first = positions[node]!;
+  const second = positions[other]!;
   const overlapX = NODE_BOX.width - Math.abs(first.x - second.x);
   const overlapY = NODE_BOX.height - Math.abs(first.y - second.y);
   if (overlapX <= 0 || overlapY <= 0) return;
   const horizontal = overlapX / NODE_BOX.width < overlapY / NODE_BOX.height;
+  const overlap = horizontal ? overlapX : overlapY;
   const direction = (horizontal ? first.x - second.x : first.y - second.y) >= 0 ? 1 : -1;
-  const amount = (a === pinned || b === pinned ? 1 : 0.5) * (horizontal ? overlapX : overlapY) * direction;
-  for (const [node, shift] of [
-    [a, amount],
-    [b, -amount],
-  ] as const) {
-    if (node === pinned) continue;
-    const point = positions[node]!;
-    positions[node] = horizontal ? { x: point.x + shift, y: point.y } : { x: point.x, y: point.y + shift };
-  }
+  // when one of them is pinned, the other moves the whole way alone
+  const shareEach = node === pinned || other === pinned ? 1 : 0.5;
+  const shift = shareEach * overlap * direction;
+  const move = (moved: number, by: number) => {
+    if (moved === pinned) return;
+    const point = positions[moved]!;
+    positions[moved] = horizontal ? { x: point.x + by, y: point.y } : { x: point.x, y: point.y + by };
+  };
+  move(node, shift);
+  move(other, -shift);
 }
 
 /** Pushes apart nodes whose boxes overlap, so labels stay readable; the pinned node stays put. */
 function separate(positions: Point[], pinned: number): Point[] {
   const result = positions.map((point) => ({ ...point }));
   for (let pass = 0; pass < SEPARATION_PASSES; pass += 1)
-    for (let a = 0; a < result.length; a += 1) for (let b = a + 1; b < result.length; b += 1) pushApart(result, [a, b], pinned);
+    for (let node = 0; node < result.length; node += 1)
+      for (let other = node + 1; other < result.length; other += 1) pushApart({ positions: result, pair: [node, other], pinned });
   return result;
+}
+
+/** The smallest box around all positions. */
+function bounds(positions: Point[]): { left: number; right: number; top: number; bottom: number } {
+  return positions.reduce(
+    (box, { x, y }) => ({ left: Math.min(box.left, x), right: Math.max(box.right, x), top: Math.min(box.top, y), bottom: Math.max(box.bottom, y) }),
+    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity },
+  );
 }
 
 /** The smallest frame in the base aspect ratio, at least the base size, around all nodes; positions move so it starts at 0,0. */
 function frame(positions: Point[]): { positions: Point[]; frame: Size } {
-  const left = Math.min(...positions.map((point) => point.x)) - MARGIN.side;
-  const right = Math.max(...positions.map((point) => point.x)) + MARGIN.side;
-  const top = Math.min(...positions.map((point) => point.y)) - MARGIN.top;
-  const bottom = Math.max(...positions.map((point) => point.y)) + MARGIN.bottom;
+  const box = bounds(positions);
+  const left = box.left - MARGIN.side;
+  const right = box.right + MARGIN.side;
+  const top = box.top - MARGIN.top;
+  const bottom = box.bottom + MARGIN.bottom;
   const growth = Math.max(1, (right - left) / GRAPH_WIDTH, (bottom - top) / GRAPH_HEIGHT);
   const size = { width: GRAPH_WIDTH * growth, height: GRAPH_HEIGHT * growth };
   const shift = { x: (size.width - (right - left)) / 2 - left, y: (size.height - (bottom - top)) / 2 - top };
   return { positions: positions.map(({ x, y }) => ({ x: x + shift.x, y: y + shift.y })), frame: size };
 }
 
-/**
- * Stress layout: distances on screen follow the number of steps between entries, starting from a radial tree around the centre.
- * Then nearby nodes swap places to remove edge crossings, and overlapping labels are pushed apart. Deterministic.
- */
+/** Deterministic stress layout from a radial tree around the centre, then crossings removed and overlapping labels pushed apart. */
 export function layoutGraph(graph: NeighborhoodGraph): GraphLayout {
   if (graph.nodes.length === 0) return { positions: new Map(), frame: { width: GRAPH_WIDTH, height: GRAPH_HEIGHT } };
   const indexOf = new Map(graph.nodes.map((node, index) => [node.id, index]));
