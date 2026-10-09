@@ -25,6 +25,7 @@ export function initOpenItems(page: Page) {
     /** „Erledigt“ group heading: collapsed by default, expands on click. */
     doneToggle: page.getByTestId('open-group-done-toggle'),
     deleteConfirm: page.getByTestId('open-item-delete-confirm'),
+    deleteCancel: page.getByTestId('confirm-dialog').getByRole('button', { name: 'Abbrechen' }),
     reminderDialog: page.getByTestId('reminder-dialog'),
     /** „Anstehende Erinnerungen“ on the open-items page itself. */
     upcoming: page.getByRole('main').getByTestId('upcoming-reminders'),
@@ -33,6 +34,7 @@ export function initOpenItems(page: Page) {
     bellUpcoming: bellPanel.getByTestId('upcoming-reminders'),
   };
   const row = (title: string) => locators.rows.filter({ hasText: title });
+  const deleteButton = (title: string) => row(title).getByTestId('open-item-delete');
   const interactions = {
     create: async (title: string) => {
       await locators.buttons.create.click();
@@ -43,9 +45,15 @@ export function initOpenItems(page: Page) {
     },
     /** Deletes an open item through its „Löschen“ button and the confirmation dialog. */
     remove: async (title: string) => {
-      await row(title).getByTestId('open-item-delete').click();
+      await deleteButton(title).click();
       await locators.deleteConfirm.click();
       await expect(row(title)).toHaveCount(0);
+    },
+    /** Opens the deletion of an open item and backs out with „Abbrechen“. */
+    cancelDelete: async (title: string) => {
+      await deleteButton(title).click();
+      await locators.deleteCancel.click();
+      await expect(locators.deleteConfirm).toBeHidden();
     },
     /** Sets the reminder of an open item to tomorrow via its „Erinnern“ dialog. */
     remindTomorrow: async (title: string) => {

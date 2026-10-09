@@ -3,7 +3,7 @@ import { pageObject } from './page-object';
 
 type PrivacyMode = 'auto' | 'confirm' | 'local_only';
 
-/** Settings page: the "Datenschutz" area, the archive root in the "Archiv" area and the reminder time in "Hinweise". */
+/** Settings page: the "Datenschutz" area, the archive root in the "Archiv" area and the reminder time in "Allgemein → Benachrichtigungen". */
 export function initSettings(page: Page) {
   const dialog = page.getByTestId('archive-root-dialog');
   const locators = {
@@ -117,7 +117,7 @@ export function initSettings(page: Page) {
     links: {
       startRun: page.getByTestId('links-start-run'),
       unlinkedCount: page.getByTestId('links-unlinked-count'),
-      minConfidence: page.getByLabel('Mindest-Konfidenz für Vorschläge'),
+      minConfidence: page.getByLabel('Mindest-Sicherheit für Vorschläge'),
     },
     memory: {
       newEntry: page.getByTestId('memory-new'),
@@ -182,11 +182,14 @@ export function initSettings(page: Page) {
     },
     /** „Darstellung“: the colour scheme (System, Hell, Dunkel). */
     theme: page.getByTestId('settings-theme'),
-    /** „Updates“: the state line and, where the build can update itself, the buttons. */
+    /** „Updates“: the state line and, where the build can update itself, the buttons; the announcement is a toast on every page. */
     updates: {
       status: page.getByTestId('settings-update-status'),
       check: page.getByTestId('settings-update-check'),
+      download: page.getByTestId('settings-update-download'),
+      install: page.getByTestId('settings-update-install'),
       startup: page.getByTestId('settings-update-startup'),
+      announcement: page.getByTestId('toast').filter({ hasText: 'ist verfügbar' }),
     },
     notifications: {
       reminderTime: page.getByTestId('settings-reminder-time'),

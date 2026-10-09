@@ -37,7 +37,7 @@ export function DecisionStatusField({
       htmlFor="d-status"
       hint={
         statusLocked
-          ? 'Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.'
+          ? 'Rückgängig machen kannst du das unter Einstellungen → Änderungen.'
           : pendingCritical
             ? 'Wird erst nach deiner Bestätigung übernommen und lässt sich im Änderungsprotokoll rückgängig machen.'
             : undefined

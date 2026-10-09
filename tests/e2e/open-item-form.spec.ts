@@ -86,8 +86,7 @@ test.describe('open items: the form', () => {
     await oi.do.create('Alte Idee');
     await expect(app.navigation.locators.count('open-items')).toHaveText('1');
 
-    await oi.row('Alte Idee').getByTestId('open-item-delete').click();
-    await page.getByRole('button', { name: 'Abbrechen' }).click();
+    await oi.do.cancelDelete('Alte Idee');
     await expect(oi.row('Alte Idee')).toBeVisible();
 
     await oi.do.remove('Alte Idee');

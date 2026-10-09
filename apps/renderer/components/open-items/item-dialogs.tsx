@@ -76,7 +76,7 @@ export function DeleteDialog({ item, onClose, onDone }: ItemDialogProps) {
       title="Offenen Punkt löschen?"
       description={
         item
-          ? `„${item.title}“ wird samt Erinnerungen aus Liste, Suche und Wissensgraph entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.`
+          ? `„${item.title}“ wird samt Erinnerungen aus Liste, Suche und Wissensgraph entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungen.`
           : undefined
       }
       confirmLabel="Löschen"
@@ -113,7 +113,7 @@ export function ReminderDialog({ item, onClose, onDone }: ItemDialogProps) {
         </DialogHeader>
         {existing && <p className="text-sm text-muted-foreground">Aktuell geplant für {formatDate(existing.remindAt)}.</p>}
         <p className="text-xs text-muted-foreground" data-testid="reminder-time-hint">
-          Erinnerungen erscheinen am gewählten Tag um {reminderTime} Uhr (Ortszeit, änderbar unter Einstellungen → Benachrichtigungen).
+          Erinnerungen erscheinen am gewählten Tag um {reminderTime} Uhr (Ortszeit, änderbar unter Einstellungen → Allgemein → Benachrichtigungen).
         </p>
         <QuickDate
           disabled={busy || !item}
@@ -154,7 +154,7 @@ export function RelatedDialog({ item, onClose }: Pick<ItemDialogProps, 'item' | 
           <DialogTitle>Zusammenhänge</DialogTitle>
           <DialogDescription>{item?.title}</DialogDescription>
         </DialogHeader>
-        {item && <RelatedEntries id={item.id} link={{ name: item.title }} scan />}
+        {item && <RelatedEntries id={item.id} link={{ name: item.title }} offerLinkSearch />}
       </DialogContent>
     </Dialog>
   );

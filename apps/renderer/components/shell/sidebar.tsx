@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Archive, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useApp } from '@/lib/app-context';
+import { plural } from '@/lib/format';
 import { SECTIONS, sectionOf, type NavBadge } from '@/lib/sections';
 import { useQuery } from '@/lib/use-query';
 import { cn } from '@/lib/utils';
@@ -31,7 +32,7 @@ export function Sidebar() {
   const { data: byStatus } = useQuery('documents:counts', {}, { scopes: ['documents'], jobs: true });
   const inboxCount = ['staged', 'analyzing', 'proposed', 'failed', 'quarantined'].reduce((n, s) => n + (byStatus?.[s] ?? 0), 0);
   const inboxProblems = (byStatus?.failed ?? 0) + (byStatus?.quarantined ?? 0);
-  const { data: openItemCount } = useQuery('openItems:count', { onlyActive: true }, { scopes: ['openItems'] });
+  const { data: activeOpenItems = 0 } = useQuery('openItems:count', { onlyActive: true }, { scopes: ['openItems'] });
   const overdue = status?.overdueOpenItems ?? 0;
   const dueSoon = status?.dueSoonOpenItems ?? 0;
   const openInsights = status?.openInsights ?? 0;
@@ -47,15 +48,20 @@ export function Sidebar() {
     ],
     openItems: [
       {
-        value: openItemCount ?? 0,
-        ariaLabel: openItemsAriaLabel(openItemCount ?? 0, overdue, dueSoon),
+        value: activeOpenItems,
+        ariaLabel: openItemsAriaLabel(activeOpenItems, overdue, dueSoon),
         testIdSuffix: 'count',
         emphasis: overdue > 0 ? 'urgent' : dueSoon > 0 ? 'warning' : 'normal',
       },
     ],
     insights: [
-      { value: openInsights, ariaLabel: `offene Hinweise: ${openInsights}`, testIdSuffix: 'count', emphasis: 'normal' },
-      { value: openLinkProposals, ariaLabel: `offene Verknüpfungsvorschläge: ${openLinkProposals}`, testIdSuffix: 'links-count', emphasis: 'muted' },
+      { value: openInsights, ariaLabel: `${plural(openInsights, ['Hinweis', 'Hinweise'])} offen`, testIdSuffix: 'count', emphasis: 'normal' },
+      {
+        value: openLinkProposals,
+        ariaLabel: `${plural(openLinkProposals, ['Verknüpfungsvorschlag', 'Verknüpfungsvorschläge'])} offen`,
+        testIdSuffix: 'links-count',
+        emphasis: 'muted',
+      },
     ],
   };
 

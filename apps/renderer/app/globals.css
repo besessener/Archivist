@@ -39,7 +39,7 @@
   color-scheme: light;
 }
 
-/* Dark tokens twice: for the system scheme, and for the explicit choice in Einstellungen → Darstellung (`data-theme`). */
+/* Dark tokens twice, for the system scheme and for the choice in Allgemein → Darstellung (`data-theme`); theme-tokens.test.ts keeps them equal. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --background: #16161a;

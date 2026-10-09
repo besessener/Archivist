@@ -97,7 +97,7 @@ export function DecisionDetail({ id, onEdit, onDeleted }: { id: string; onEdit: 
           )}
           <DecisionHints id={decision.id} />
           <DecisionFields decision={decision} />
-          <RelatedEntries id={decision.id} link={{ name: decision.title }} scan />
+          <RelatedEntries id={decision.id} link={{ name: decision.title }} offerLinkSearch />
           {action && (
             <div data-testid="supersede-action">
               <h3 className="mb-2 text-sm font-semibold">Vorschlag</h3>
@@ -113,7 +113,7 @@ export function DecisionDetail({ id, onEdit, onDeleted }: { id: string; onEdit: 
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Entscheidung löschen?"
-        description={`„${decision.title}“ wird aus Entscheidungen, Suche und Wissensgraph entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.`}
+        description={`„${decision.title}“ wird aus Entscheidungen, Suche und Wissensgraph entfernt. Rückgängig machen kannst du das unter Einstellungen → Änderungen.`}
         confirmLabel="Löschen"
         confirmTestId="decision-delete-confirm"
         destructive

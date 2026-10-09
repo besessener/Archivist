@@ -100,7 +100,7 @@ export function BulkAssignBar({ ids, noun, onClear, onDone }: { ids: string[]; n
       )}
       {done !== null && (
         <Notice tone="info" title={`${plural(done, noun)} zugeordnet`} role="status" className="relative" data-testid="entries-bulk-result">
-          <p>Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.</p>
+          <p>Rückgängig machen kannst du das unter Einstellungen → Änderungen.</p>
           <Button size="icon-sm" variant="ghost" className="absolute right-1 top-1" aria-label="Hinweis schließen" onClick={() => setDone(null)}>
             <X aria-hidden />
           </Button>
