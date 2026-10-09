@@ -3,7 +3,7 @@ name: Release
 env:
   NEXT_TELEMETRY_DISABLED: 1
 
-# Publishes the installer and portable EXE as a GitHub Release as soon as a version tag (v1.2.3) is pushed.
+# Publishes the installer and portable EXE as a GitHub Release (a draft until every file is uploaded) when a version tag (v1.2.3) is pushed.
 # Merges to main and pull requests still only build the packages (see ci.yml).
 on:
   push:
@@ -53,17 +53,17 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
-      # electron-builder uploads the installer and portable EXE in parallel; both would create the missing release and one fails
-      - name: Create the GitHub Release up front
+      # Parallel uploads would each create a missing release; a draft also stays invisible to installed apps until latest.yml is up.
+      - name: Create the GitHub Release up front as a draft
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          flags=()
+          flags=(--draft)
           [[ "$TAG" == *-* ]] && flags+=(--prerelease)
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes "${flags[@]}"
-      - name: Build, sign and publish as GitHub Release
+      - name: Build, sign and upload to the draft release
         run: npm run release:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,3 +72,9 @@ jobs:
           # Secrets: WIN_CSC_LINK (Base64-encoded .pfx) and WIN_CSC_KEY_PASSWORD. If they are missing, the build stays unsigned.
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Publish the GitHub Release once every file is uploaded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false

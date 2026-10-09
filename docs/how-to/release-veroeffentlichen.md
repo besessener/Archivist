@@ -12,7 +12,12 @@ Der letzte Schritt (Ressourcen-Bearbeitung/Signierung der `.exe`) braucht **Wind
 
 ## Release veröffentlichen
 
-1. Erhöhe die Version in `package.json` **und** `apps/desktop/package.json`.
+1. Erhöhe die Version im Wurzelpaket und in allen Workspaces auf einmal; das aktualisiert auch deren Einträge in `package-lock.json`:
+
+   ```bash
+   npm version 1.2.3 --workspaces --include-workspace-root --no-git-tag-version
+   ```
+
 2. Merge auf `main`.
 3. Tagge und pushe:
 
@@ -24,10 +29,11 @@ Der Workflow `.github/workflows/release.yml`
 
 - prüft, dass Tag und Versionen übereinstimmen (`scripts/check-release-version.mjs`),
 - führt Typecheck, Lint und Tests aus,
-- ruft auf `windows-latest` `npm run release:win` auf (electron-builder `--publish always`, Provider `github`, `GITHUB_TOKEN` mit `contents: write`),
-- veröffentlicht Installer, portable EXE und die Update-Metadaten (`latest.yml`) als **GitHub Release**.
+- legt auf `windows-latest` das GitHub Release als **Entwurf** an,
+- ruft `npm run release:win` auf (electron-builder `--publish always`, Provider `github`, `GITHUB_TOKEN` mit `contents: write`), das Installer, portable EXE und die Update-Metadaten (`latest.yml`) in diesen Entwurf hochlädt,
+- veröffentlicht den Entwurf erst danach (`gh release edit <tag> --draft=false`). Schlägt der Build fehl, bleibt nur ein Entwurf zurück, den installierte Versionen nicht sehen; ein erneuter Lauf lädt in denselben Entwurf hoch.
 
-Tags mit Zusatz (`v1.2.3-beta.1`) erscheinen als Vorabversion. Merges auf `main` und Pull Requests bauen die Pakete nur. Die installierte Version findet ein neues Release über die Update-Metadaten und aktualisiert sich nach Bestätigung selbst ([Updates](../reference/funktionen.md#updates)); ein Release ohne `latest.yml` bliebe für sie unsichtbar.
+Tags mit Zusatz (`v1.2.3-beta.1`) erscheinen als Vorabversion. Merges auf `main` und Pull Requests bauen die Pakete nur. Die installierte Version findet ein neues Release über die Update-Metadaten und aktualisiert sich nach Bestätigung selbst ([Updates](../reference/funktionen.md#updates)). Sie fragt GitHub nach dem neuesten veröffentlichten Release; fehlt dort `latest.yml`, meldet sie „noch nicht vollständig veröffentlicht“. Deshalb wird ein Release erst veröffentlicht, wenn alle Dateien hochgeladen sind.
 
 ## Signieren
 
@@ -40,4 +46,4 @@ Ohne Zertifikat bleiben die Pakete unsigniert und SmartScreen zeigt eine Warnung
 
 ## Die gepackte App prüfen
 
-`npm run pack -w archivist` baut die App ohne Installer nach `apps/desktop/release/`. Die E2E-Tests laufen nur gegen den ungepackten Build: Die Test-Umgebungsvariablen (`ARCHIVIST_TEST_MODE`, `ARCHIVIST_TEST_PICK_DIR`) wirken in einer gepackten App bewusst nicht. Den Start der gepackten App prüfst du von Hand.
+`npm run pack -w archivist` baut die App ohne Installer nach `apps/desktop/release/`. Die E2E-Tests laufen nur gegen den ungepackten Build: Die Test-Umgebungsvariablen (`ARCHIVIST_TEST_MODE`, `ARCHIVIST_TEST_PICK_DIR`, `ARCHIVIST_TEST_UPDATE_VERSION` …) wirken in einer gepackten App bewusst nicht. Den Start der gepackten App prüfst du von Hand.
