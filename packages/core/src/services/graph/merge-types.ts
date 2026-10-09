@@ -52,6 +52,8 @@ export type MergeReindexer = (refs: MergeReindexRefs) => Promise<void>;
 export type RefTableName = keyof MergeReindexRefs;
 export type RefRow = Record<string, string | string[] | null>;
 export type RefSets = Record<RefTableName, Set<string>>;
+/** The values a change overwrote in one record, as its undo writes them back. */
+export type RefBefore = { table: RefTableName; id: string; before: RefRow };
 
 /** Exact prior state of one merge (undo data). */
 export interface MergeStep {
@@ -59,7 +61,7 @@ export interface MergeStep {
   sources: EntityRow[];
   relationsDeleted: RelationRow[];
   relationsUpdated: RelationRow[];
-  refs: Array<{ table: RefTableName; id: string; before: RefRow }>;
+  refs: RefBefore[];
 }
 
 export interface MergeUndoData {

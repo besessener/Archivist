@@ -93,12 +93,11 @@ function undoUpdate({ ctx, graph, reindex }: DecisionUndoDeps, undoData: Decisio
 /** Undo of a deletion: the decision comes back with its id, graph node and relations; a topic or project removed since is dropped from it. */
 function undoDelete({ ctx, graph, reindex }: DecisionUndoDeps, undoData: DecisionDeleteUndo): string {
   const db = ctx.database.db;
-  const exists = (entityId: string | null) => (entityId && graph.getEntity(entityId) ? entityId : null);
   const { decision, node } = undoData;
   let skippedRelations = 0;
   db.transaction(() => {
     db.insert(decisions)
-      .values({ ...decision, topicId: exists(decision.topicId), projectId: exists(decision.projectId) })
+      .values({ ...decision, topicId: graph.existingId(decision.topicId), projectId: graph.existingId(decision.projectId) })
       .run();
     if (node) skippedRelations = graph.restoreNode(node);
     else graph.registerNode({ type: 'decision', id: decision.id, name: decision.title, description: decision.decisionText });

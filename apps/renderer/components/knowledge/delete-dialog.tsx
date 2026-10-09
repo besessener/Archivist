@@ -1,6 +1,6 @@
 'use client';
 
-import type { IpcOutput } from '@archivist/shared';
+import { isDeletableSubjectType, type IpcOutput } from '@archivist/shared';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { call } from '@/lib/ipc';
 import { useQuery } from '@/lib/use-query';
@@ -50,10 +50,8 @@ const DELETIONS: Partial<Record<Entity['type'], Deletion>> = {
   },
 };
 
-/** Entries of the knowledge page that can be deleted (the user's own person and documents are never offered). */
-export const canDelete = (entity: Entity): boolean => !entity.isSelf && entity.type in DELETIONS;
-
-const isSubject = (type: Entity['type']) => type === 'person' || type === 'topic' || type === 'project' || type === 'tag';
+/** Entries of the knowledge page that can be deleted (never the user's own person, documents or notes discarded as duplicates). */
+export const canDelete = (entity: Entity): boolean => !entity.isSelf && entity.type in DELETIONS && !(entity.type === 'note' && entity.duplicateOfId);
 
 function ImpactNote({ impact }: { impact: Impact }) {
   const lost = impact.records.filter((record) => record.main);
@@ -88,14 +86,14 @@ export interface DeleteEntityDialogProps {
 export function DeleteEntityDialog({ entity, open, onOpenChange, onDeleted }: DeleteEntityDialogProps) {
   const { run } = useRun();
   const deletion = DELETIONS[entity.type];
-  const impact = useQuery('knowledge:subjectImpact', { id: entity.id }, { scopes: ['knowledge'], enabled: open && isSubject(entity.type) });
+  const impact = useQuery('knowledge:subjectImpact', { id: entity.id }, { scopes: ['knowledge'], enabled: open && isDeletableSubjectType(entity.type) });
   if (!deletion) return null;
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title={deletion.title}
-      description={`„${entity.name}“: ${deletion.effect} Rückgängig machen kannst du das unter Einstellungen → Änderungsprotokoll.`}
+      description={`„${entity.name}“: ${deletion.effect} Rückgängig machen kannst du das unter Einstellungen → Änderungen.`}
       confirmLabel="Löschen"
       destructive
       onConfirm={async () => {

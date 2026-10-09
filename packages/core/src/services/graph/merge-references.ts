@@ -4,7 +4,7 @@ import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Db } from '../../db/database';
 import { decisions, documents, events, openItems } from '../../db/schema';
 import { normalizeName } from '../../util/text';
-import type { RefRow, RefTableName, StepContext } from './merge-types';
+import type { RefBefore, RefRow, RefTableName, StepContext } from './merge-types';
 import { replaceNames } from './names';
 import { entityRow, relationRow, type EntityRow } from './rows';
 
@@ -61,6 +61,32 @@ export const refTable = (name: RefTableName): RefTableShape => REF_TABLES[name].
 export const column = (table: RefTableShape, name: string): SQLiteColumn => (table as unknown as Record<string, SQLiteColumn>)[name]!;
 export const selection = (table: RefTableShape, columns: string[]): Record<string, SQLiteColumn> =>
   Object.fromEntries(columns.map((name) => [name, column(table, name)]));
+
+/** One record before and after a merge or deletion, with the columns that differ. */
+export interface RefChange {
+  table: RefTableName;
+  row: RefRow;
+  next: RefRow;
+  columns: string[];
+}
+
+/** The reference columns that differ between a record and its rewritten form (updatedAt aside). */
+export const changedColumns = (table: RefTableName, { row, next }: { row: RefRow; next: RefRow }): string[] =>
+  REF_TABLES[table].columns.filter((name) => name !== 'updatedAt' && JSON.stringify(next[name]) !== JSON.stringify(row[name]));
+
+/** Writes the changed columns of one record and returns what they held before. */
+export function applyRefChange(db: Db, change: RefChange & { now: string }): RefBefore {
+  const id = String(change.row.id);
+  const before: RefRow = { updatedAt: change.row.updatedAt ?? null };
+  const set: RefRow = { updatedAt: change.now };
+  for (const name of change.columns) {
+    before[name] = change.row[name] ?? null;
+    set[name] = change.next[name] ?? null;
+  }
+  const table = refTable(change.table);
+  db.update(table).set(set).where(eq(table.id, id)).run();
+  return { table: change.table, id, before };
+}
 
 /** How the records of one merge step are rewritten. */
 interface Rewrite {
@@ -141,19 +167,12 @@ function rehangTable(db: Db, plan: { change: StepContext; rewrite: Rewrite; tabl
   let updated = 0;
   for (const row of rows) {
     const next = rewrittenRow(row, plan);
-    const changed = spec.columns.filter((name) => name !== 'updatedAt' && JSON.stringify(next[name]) !== JSON.stringify(row[name]));
-    if (changed.length === 0) continue;
-    const id = String(row.id);
-    const before: RefRow = { updatedAt: row.updatedAt ?? null };
-    const set: RefRow = { updatedAt: change.now };
-    for (const name of changed) {
-      before[name] = row[name] ?? null;
-      set[name] = next[name] ?? null;
-    }
-    db.update(table).set(set).where(eq(table.id, id)).run();
-    change.step.refs.push({ table: tableRewrite.name, id, before });
-    change.ledger.touched.add(`${tableRewrite.name}:${id}`);
-    change.ledger.reindex[tableRewrite.name].add(id);
+    const columns = changedColumns(tableRewrite.name, { row, next });
+    if (columns.length === 0) continue;
+    const ref = applyRefChange(db, { table: tableRewrite.name, row, next, columns, now: change.now });
+    change.step.refs.push(ref);
+    change.ledger.touched.add(`${ref.table}:${ref.id}`);
+    change.ledger.reindex[ref.table].add(ref.id);
     updated += 1;
   }
   return updated;

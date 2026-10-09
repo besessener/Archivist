@@ -158,8 +158,8 @@ describe('agent duplicate tools', () => {
     const dup = await archived('Angebot alt.txt', 'Angebot Version 1', { title: 'Angebot alt' });
     const tool = tools.get('mark_duplicates')!;
     const args = tool.schema.parse({ keep: ctx.refs.doc(keep), duplicates: [ctx.refs.doc(dup)], as: 'duplicate', action: 'mark' });
-    expect(riskOf(tool, args)).toBe('write');
-    expect(riskOf(tool, tool.schema.parse({ keep: 'D1', duplicates: ['D2'], action: 'delete' }))).toBe('critical');
+    expect(riskOf(tool, args, ctx)).toBe('write');
+    expect(riskOf(tool, tool.schema.parse({ keep: 'D1', duplicates: ['D2'], action: 'delete' }), ctx)).toBe('critical');
 
     const out = await tool.run(args, ctx);
 

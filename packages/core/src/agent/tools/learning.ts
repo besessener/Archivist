@@ -1,27 +1,11 @@
 import { z } from 'zod';
-import { RuleDefinition, WorkflowDefinition, type EntityType, type MemoryKind, type RuleDefinition as Rule } from '@archivist/shared';
+import { isDeletableSubjectType, RuleDefinition, WorkflowDefinition, type MemoryKind, type RuleDefinition as Rule } from '@archivist/shared';
 import { truncate } from '../../util/text';
 import { folderOf } from '../../services/archive-structure';
 import { defineTool, list, optText, type AgentTool } from '../registry';
 import { fillPattern } from '../../services/rename-pattern';
 import { ruleClash } from '../rule-overlap';
-import { allDocs, docLine, resolveDocs, type ToolDeps, type ToolScope } from './common';
-import { DELETABLE_SUBJECT_TYPES } from '../../services/graph/subject-delete';
-
-const ENTRY_LABEL: Partial<Record<EntityType, string>> = {
-  document: 'ein Dokument',
-  decision: 'eine Entscheidung',
-  topic: 'ein Thema',
-  project: 'ein Projekt',
-  person: 'eine Person',
-  event: 'ein Ereignis',
-  question: 'ein offener Punkt',
-  task: 'ein offener Punkt',
-  note: 'eine Notiz',
-  category: 'ein Ordner',
-  tag: 'ein Schlagwort',
-  case: 'ein Vorgang',
-};
+import { allDocs, docLine, resolveDocs, typeWithArticle, type ToolDeps, type ToolScope } from './common';
 
 const KIND_LABEL: Record<MemoryKind, string> = { rule: 'Regel', workflow: 'Ablauf', correction: 'Korrektur', preference: 'Vorliebe', fact: 'Wissen' };
 
@@ -213,8 +197,8 @@ export function learningTools(deps: ToolDeps): AgentTool[] {
       run: async (a, ctx) => {
         const other = deps.graph.getEntity(ctx.refs.resolve(a.id) ?? a.id);
         if (other) {
-          const hint = DELETABLE_SUBJECT_TYPES.has(other.type) ? ' – zum Löschen delete_subject verwenden' : '';
-          return { content: `„${a.id}“ ist ${ENTRY_LABEL[other.type] ?? 'ein Eintrag'}, nichts Gelerntes${hint}.`, isError: true };
+          const hint = isDeletableSubjectType(other.type) ? ' – zum Löschen delete_subject verwenden' : '';
+          return { content: `„${a.id}“ ist ${typeWithArticle(other.type)}, nichts Gelerntes${hint}.`, isError: true };
         }
         const entry = memory.get(a.id);
         memory.remove(a.id);

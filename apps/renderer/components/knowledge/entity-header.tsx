@@ -46,7 +46,7 @@ function EntityBadges({ entity }: { entity: Entity }) {
     <div className="flex flex-wrap items-center gap-2">
       <TypeBadge type={entity.type}>{ENTITY_TYPE_LABELS[entity.type]}</TypeBadge>
       {entity.isSelf && (
-        <Badge variant="success" data-testid="entity-self" title="Das bist du (Einstellungen → Über dich)">
+        <Badge variant="success" data-testid="entity-self" title="Das bist du (Einstellungen → Allgemein → Über dich)">
           Du
         </Badge>
       )}
@@ -113,7 +113,7 @@ function EntityActions({ entity, graphOpen, onToggleGraph, onOpenDialog }: Entit
           <Pencil aria-hidden /> Bearbeiten
         </Button>
       )}
-      {canDelete(entity) && (entity.type !== 'note' || active) && (
+      {canDelete(entity) && (
         <Button variant="outline" size="sm" onClick={() => onOpenDialog('delete')} data-testid="knowledge-delete">
           <Trash2 aria-hidden /> Löschen
         </Button>

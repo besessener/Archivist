@@ -99,20 +99,26 @@ export const STATUS_LABEL: Partial<Record<DocumentStatus, string>> = {
   quarantined: 'in Quarantäne',
 };
 
-export const TYPE_LABEL: Partial<Record<EntityType, string>> = {
-  document: 'Dokument',
-  decision: 'Entscheidung',
-  topic: 'Thema',
-  project: 'Projekt',
-  person: 'Person',
-  event: 'Ereignis',
-  question: 'offener Punkt',
-  task: 'offener Punkt',
-  note: 'Notiz',
-  category: 'Ordner',
-  tag: 'Schlagwort',
-  case: 'Vorgang',
+/** German noun of every entry type with its indefinite article. */
+const TYPE_NOUN: Record<EntityType, { article: 'ein' | 'eine'; label: string }> = {
+  document: { article: 'ein', label: 'Dokument' },
+  decision: { article: 'eine', label: 'Entscheidung' },
+  topic: { article: 'ein', label: 'Thema' },
+  project: { article: 'ein', label: 'Projekt' },
+  person: { article: 'eine', label: 'Person' },
+  event: { article: 'ein', label: 'Ereignis' },
+  question: { article: 'ein', label: 'offener Punkt' },
+  task: { article: 'ein', label: 'offener Punkt' },
+  note: { article: 'eine', label: 'Notiz' },
+  category: { article: 'ein', label: 'Ordner' },
+  tag: { article: 'ein', label: 'Schlagwort' },
+  case: { article: 'ein', label: 'Vorgang' },
 };
+
+export const TYPE_LABEL: Partial<Record<EntityType, string>> = Object.fromEntries(Object.entries(TYPE_NOUN).map(([type, noun]) => [type, noun.label]));
+
+/** „eine Person“, „ein Thema“ … */
+export const typeWithArticle = (type: EntityType): string => `${TYPE_NOUN[type].article} ${TYPE_NOUN[type].label}`;
 
 /** The services and the context of the run a tool call works with. */
 export interface ToolScope {
