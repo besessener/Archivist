@@ -16,8 +16,8 @@ export interface OpenItemDeleteDeps {
 }
 
 /** Stage 2: deletes an open item with its reminders, graph node and search entry; the audit entry carries everything the undo restores. */
-export function deleteOpenItem({ ctx, graph, search, audit }: OpenItemDeleteDeps, id: string, opts: { confirmed: boolean }): void {
-  if (!opts.confirmed) throw new AppError('permission_error', 'Das Löschen eines offenen Punkts erfordert eine ausdrückliche Bestätigung.');
+export function deleteOpenItem({ ctx, graph, search, audit }: OpenItemDeleteDeps, { id, confirmed }: { id: string; confirmed: boolean }): void {
+  if (!confirmed) throw new AppError('permission_error', 'Das Löschen eines offenen Punkts erfordert eine ausdrückliche Bestätigung.');
   const db = ctx.database.db;
   const item = db.select().from(openItems).where(eq(openItems.id, id)).get();
   if (!item) throw new AppError('validation_error', 'Offener Punkt nicht gefunden.');
@@ -27,16 +27,17 @@ export function deleteOpenItem({ ctx, graph, search, audit }: OpenItemDeleteDeps
     db.delete(reminders).where(ownReminders).run();
     db.delete(openItems).where(eq(openItems.id, id)).run();
     graph.removeNode(id);
-  });
-  search.remove(id);
-  audit.log({
-    action: 'open_item.delete',
-    actor: 'user',
-    trigger: 'manual',
-    confirmed: true,
-    entityIds: [id],
-    before: { title: item.title, status: item.status, dueAt: item.dueAt },
-    undo: { type: OPEN_ITEM_DELETE_UNDO_TYPE, data: undoData },
+    audit.log({
+      action: 'open_item.delete',
+      actor: 'user',
+      trigger: 'manual',
+      confirmed: true,
+      entityIds: [id],
+      before: { title: item.title, status: item.status, dueAt: item.dueAt },
+      undo: { type: OPEN_ITEM_DELETE_UNDO_TYPE, data: undoData },
+    });
+    // last: the in-memory vector index does not roll back with the transaction
+    search.remove(id);
   });
   ctx.events.changed('openItems', 'knowledge', 'status', 'reminders');
 }

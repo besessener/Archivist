@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers/harness';
 
 let app: TestApp;
@@ -38,5 +38,21 @@ describe('Deleting an open item with undo', () => {
     const { id } = await deleteAudit();
     expect((await app.ok('audit:undo', { auditId: id })).undone).toBe(true);
     expect((await app.ok('audit:undo', { auditId: id })).undone).toBe(false);
+  });
+
+  it('leaves the item, its reminder and search hit in place when the audit entry cannot be written', async () => {
+    const item = await app.ok('openItems:create', { title: 'Heizung entlüften', priority: 'normal', sourceIds: [], confidence: 0.9 });
+    await app.ok('reminders:create', { targetType: 'open_item', targetId: item.id, title: 'Heizung', remindAt: '2099-01-01T08:00:00.000Z' });
+    await app.services.openItems.reindex(item.id);
+    vi.spyOn(app.services.audit, 'log').mockImplementationOnce(() => {
+      throw new Error('audit log unavailable');
+    });
+
+    expect((await app.call('openItems:delete', { id: item.id, confirmed: true })).ok).toBe(false);
+
+    expect(app.services.openItems.get(item.id).title).toBe('Heizung entlüften');
+    expect(app.services.graph.getEntity(item.id)).toBeDefined();
+    expect(await app.ok('reminders:list', {})).toHaveLength(1);
+    expect((await app.services.search.search('Heizung', { types: ['task'] })).map((h) => h.id)).toContain(item.id);
   });
 });

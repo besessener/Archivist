@@ -1,8 +1,7 @@
 import { localDate, localToday, OpenItemSolution, type OpenItem, type OpenItemInput, type OpenItemPatch, type OpenItemStatus } from '@archivist/shared';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { entities, messages, openItems, reminders } from '../db/schema';
-import { syncReminderAt } from './reminders';
+import { entities, messages, openItems } from '../db/schema';
 import { AppError } from '../util/errors';
 import { newId, nowIso } from '../util/ids';
 import { normalizeDateInput } from '../util/dates';
@@ -10,15 +9,10 @@ import type { AuditService } from './audit';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import { assertEditableStatusChange, newOpenItemRow, openItemIndexContent, plainPatchColumns, toOpenItem, type OpenItemRow } from './open-item-fields';
 import { ACTIVE_STATUSES, countOpenItemRows, openItemRows, type OpenItemFilter } from './open-item-list';
+import { closeOpenItem, type OpenItemClosing } from './open-item-close';
 import { deleteOpenItem } from './open-item-delete';
 import { matchOpenItems, type HintMatch } from './open-item-matching';
-import {
-  OPEN_ITEM_STATUS_UNDO_TYPE,
-  OPEN_ITEM_UPDATE_UNDO_TYPE,
-  registerOpenItemUndo,
-  type OpenItemStatusUndo,
-  type OpenItemUpdateUndo,
-} from './open-item-undo';
+import { OPEN_ITEM_UPDATE_UNDO_TYPE, registerOpenItemUndo, type OpenItemUpdateUndo } from './open-item-undo';
 import { mentionContext, type PersonService } from './persons';
 import { previousValues } from './previous-values';
 import type { SearchService } from './search';
@@ -293,47 +287,15 @@ export class OpenItemService {
     return this.get(id);
   }
 
-  /** Stage 2: closing only with explicit confirmation and an undo entry; `resolutionNote` says how it was solved or why dropped. */
-  close(id: string, { status, ...opts }: { status: 'resolved' | 'dismissed'; confirmed: boolean; trigger?: string; resolutionNote?: string | null }): OpenItem {
-    if (!opts.confirmed) throw new AppError('permission_error', 'Das Schließen eines offenen Punkts erfordert eine ausdrückliche Bestätigung.');
-    const current = this.row(id);
-    const updatedAt = nowIso();
-    const resolutionNote = opts.resolutionNote?.trim() || null;
-    // open reminders of the item end with it (undo restores them)
-    const ended = this.db
-      .select({ id: reminders.id, status: reminders.status })
-      .from(reminders)
-      .where(and(eq(reminders.targetType, 'open_item'), eq(reminders.targetId, id), inArray(reminders.status, ['pending', 'fired'])))
-      .all();
-    this.db.transaction(() => {
-      this.db.update(openItems).set({ status, updatedAt, resolutionNote }).where(eq(openItems.id, id)).run();
-      for (const reminder of ended) this.db.update(reminders).set({ status: 'dismissed' }).where(eq(reminders.id, reminder.id)).run();
-      syncReminderAt(this.db, id);
-    });
-    const undoData: OpenItemStatusUndo = {
-      id,
-      previousStatus: current.status as OpenItemStatus,
-      previousNote: current.resolutionNote,
-      afterUpdatedAt: updatedAt,
-      reminders: ended,
-    };
-    this.deps.audit.log({
-      action: 'open_item.close',
-      actor: 'user',
-      trigger: opts.trigger ?? 'manual',
-      confirmed: true,
-      entityIds: [id],
-      before: { status: current.status },
-      after: { status, resolutionNote },
-      undo: { type: OPEN_ITEM_STATUS_UNDO_TYPE, data: undoData },
-    });
+  /** Stage 2: closing only with explicit confirmation and an undo entry (see {@link closeOpenItem}). */
+  close(id: string, closing: OpenItemClosing): OpenItem {
+    closeOpenItem(this.deps, { id, ...closing });
     void this.reindex(id);
-    this.deps.ctx.events.changed('openItems', 'status', 'reminders');
     return this.get(id);
   }
 
   delete(id: string, opts: { confirmed: boolean }): void {
-    deleteOpenItem(this.deps, id, opts);
+    deleteOpenItem(this.deps, { id, confirmed: opts.confirmed });
   }
 
   /** Active items due before `today` (local calendar day, #77). */
