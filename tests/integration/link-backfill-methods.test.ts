@@ -183,4 +183,16 @@ describe('Retroactive link run with all methods (#279)', () => {
     expect(byMethod().similarity).toBe(proposed);
     expect(await app.services.links.backfill({ maxEntries: 10 })).toMatchObject({ processed: 1, done: true });
   });
+
+  it('entries checked when they were created are not checked again: no second paid analysis of a note', async () => {
+    app = await createTestApp({ privacy: 'auto', autoLinks: true });
+    app.llm.on('NoteAnalysis', () => ({ topic: null, project: null, persons: [], tags: ['notiz'] }));
+    await app.services.notes.create({ title: 'Statiker', content: 'Statiker anrufen.' });
+    app.services.eventRecords.create({ title: 'Baubesprechung', occurredAt: '2026-09-01', participants: ['Anna Berger'], sourceIds: [] });
+    await app.services.jobs.whenIdle();
+    expect(app.llm.calls.filter((c) => c.schema === 'NoteAnalysis')).toHaveLength(1);
+
+    expect(await app.services.links.backfill()).toMatchObject({ processed: 0, done: true });
+    expect(app.llm.calls.filter((c) => c.schema === 'NoteAnalysis')).toHaveLength(1);
+  });
 });

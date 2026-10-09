@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Play, Undo2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Field } from '@/components/common/states';
@@ -21,20 +21,21 @@ export function LinkMethodsSection() {
   const [message, setMessage] = useState<string | null>(null);
   const total = unlinked.data?.total;
   const links = settings.data?.settings.links;
-  const saveLinks = async (patch: { autoPropose?: boolean; maxProposalsPerEntry?: number; minConfidence?: number }) => {
+  const saveLinks = async (patch: { autoPropose?: boolean; maxProposalsPerEntry?: number; minConfidence?: number }): Promise<boolean> => {
     const saved = await run(() => call('settings:update', { links: patch }), { errorTitle: 'Speichern fehlgeschlagen' });
     if (saved) void settings.refetch();
+    return Boolean(saved);
   };
   return (
     <Section
       title="Verknüpfungen vorschlagen"
-      description="Neue und geänderte Einträge prüft Archivist selbst. Der Lauf hier geht das ganze Archiv erneut durch und schlägt ähnliche Einträge als Verknüpfung sowie neue Themen für ähnliche Einträge ohne Thema vor. Läuft lokal; bestätigt wird nur, was du übernimmst."
+      description="Neue und geänderte Einträge prüft Archivist selbst. Der Lauf hier geht das ganze Archiv erneut durch und schlägt ähnliche Einträge als Verknüpfung sowie neue Themen für ähnliche Einträge ohne Thema vor. Ähnliche Einträge sucht Archivist lokal; im Datenschutzmodus „automatisch“ analysiert die KI deine Notizen und benennt neue Themen. Bestätigt wird nur, was du übernimmst."
     >
       {links && (
         <>
           <SwitchRow
             label="Verknüpfungen automatisch vorschlagen"
-            hint="Nach jedem neuen oder geänderten Eintrag sucht Archivist lokal nach ähnlichen Einträgen; Einträge aus derselben Nachricht oder demselben Dokument gehören zusammen. Alles bleibt ein Vorschlag."
+            hint="Nach jedem neuen oder geänderten Eintrag sucht Archivist lokal nach ähnlichen Einträgen; Einträge aus derselben Nachricht oder demselben Dokument gehören zusammen. Alles bleibt ein Vorschlag. Warten 20 Vorschläge auf deine Prüfung, kommen neue erst, wenn du entschieden hast."
           >
             <Switch
               checked={links.autoPropose}
@@ -60,7 +61,7 @@ export function LinkMethodsSection() {
               ))}
             </Select>
           </Field>
-          <MinConfidenceSlider value={links.minConfidence ?? 0} onCommit={(minConfidence) => void saveLinks({ minConfidence })} />
+          <MinConfidenceSlider value={links.minConfidence ?? 0} onCommit={(minConfidence) => saveLinks({ minConfidence })} />
         </>
       )}
       <p className="text-sm" data-testid="links-unlinked-count">
@@ -94,17 +95,29 @@ export function LinkMethodsSection() {
   );
 }
 
-/** Proposals below this confidence are neither made nor shown; the value is saved when the slider is released. */
-function MinConfidenceSlider({ value, onCommit }: { value: number; onCommit: (value: number) => void }) {
+/** Proposals below this confidence are neither made nor shown; the value is saved on the native `change` (release, key or assistive technology). */
+function MinConfidenceSlider({ value, onCommit }: { value: number; onCommit: (value: number) => Promise<boolean> }) {
   const [draft, setDraft] = useState(value);
+  const slider = useRef<HTMLInputElement>(null);
+  // a value saved elsewhere shows up, but never under the user's hand while the own saves land
+  useEffect(() => {
+    if (document.activeElement !== slider.current) setDraft(value);
+  }, [value]);
+  useEffect(() => {
+    const element = slider.current;
+    if (!element) return;
+    const commit = async () => {
+      const chosen = Number(element.value) / 100;
+      if (chosen !== value && !(await onCommit(chosen))) setDraft(value);
+    };
+    const onChange = () => void commit();
+    element.addEventListener('change', onChange);
+    return () => element.removeEventListener('change', onChange);
+  }, [value, onCommit]);
   const percent = Math.round(draft * 100);
-  const commit = (event: { currentTarget: { value: string } }) => {
-    const chosen = Number(event.currentTarget.value) / 100;
-    if (chosen !== value) onCommit(chosen);
-  };
   return (
     <Field
-      label="Mindest-Konfidenz für Vorschläge"
+      label="Mindest-Sicherheit für Vorschläge"
       htmlFor="links-min-confidence"
       hint="Vorschläge mit geringerer Sicherheit werden weder angelegt noch angezeigt. 0 % zeigt alles, höhere Werte zeigen nur die sichersten."
     >
@@ -116,10 +129,9 @@ function MinConfidenceSlider({ value, onCommit }: { value: number; onCommit: (va
           max={100}
           step={5}
           className="w-48 accent-primary"
+          ref={slider}
           value={percent}
           onChange={(e) => setDraft(Number(e.target.value) / 100)}
-          onPointerUp={commit}
-          onKeyUp={commit}
           data-testid="links-min-confidence"
         />
         <span className="w-12 text-sm tabular-nums">{percent} %</span>

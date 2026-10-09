@@ -7,7 +7,7 @@ import { CoOriginLinks } from './links/co-origin';
 import { isEntry, type LinkDeps } from './links/entries';
 import { LinkageMetricsLog, type LinkageMetrics, type LinkageSnapshot } from './links/metrics';
 import { OrphanLinks, type OrphanPage } from './links/orphans';
-import { LinkProposalList, type LinkProposalPage, type ProposalGrouping } from './links/proposal-list';
+import { LinkProposalList, proposalsAtLimit, type LinkProposalPage, type ProposalGrouping } from './links/proposal-list';
 import { RelatedItems, type RelatedItem } from './links/related-items';
 import { TopicClusters, type TopicCluster, type TopicNamer } from './links/topic-clusters';
 
@@ -36,7 +36,7 @@ export class LinkMethodsService {
     this.orphanLinks = new OrphanLinks(this.deps, this.linkCandidates);
     this.linkage = new LinkageMetricsLog(this.deps, {
       orphans: () => this.orphanLinks.orphans({ limit: 1 }).total,
-      openProposals: () => this.proposalList.proposals({ limit: 1 }).total,
+      openByMethod: () => this.proposalList.proposals({ groupBy: 'method', limit: 0 }).groups,
     });
     this.topicClusters = new TopicClusters(this.deps, this.linkCandidates);
     this.coOrigin = new CoOriginLinks(this.deps);
@@ -149,9 +149,24 @@ export class LinkMethodsService {
     return this.runs.queueSimilar(ids);
   }
 
-  /** Works through the remembered entries (job `links.similar`). */
-  async runPendingSimilar(opts: { max?: number; signal?: AbortSignal } = {}): Promise<{ processed: number; proposed: number }> {
-    return this.runs.runPendingSimilar(opts);
+  /** Works through the remembered entries and the deferred notes (job `links.similar`), up to the cap of open proposals. */
+  async runPendingChecks(opts: ScanOptions = {}): Promise<{ processed: number; proposed: number }> {
+    return this.runs.runPendingChecks(opts);
+  }
+
+  /** Entries or notes wait for the job `links.similar`. */
+  hasPendingChecks(): boolean {
+    return this.runs.hasPendingChecks();
+  }
+
+  /** A note whose analysis waited for the cap of open proposals (#361) is analysed by the next pass. */
+  deferNoteAnalysis(id: string): void {
+    this.runs.deferNoteAnalysis(id);
+  }
+
+  /** As many proposals wait for review as the automatic methods may leave open (#361): none of them adds more. */
+  proposalsAtLimit(): boolean {
+    return proposalsAtLimit(this.deps);
   }
 
   /** Every entry counts as unchecked again, so the next retroactive run goes through the whole archive. */

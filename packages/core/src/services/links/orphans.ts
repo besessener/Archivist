@@ -1,6 +1,7 @@
 import type { EntityType } from '@archivist/shared';
 import { relationTypeFor, type LinkCandidate, type LinkCandidates } from './candidates';
-import { entrySql, isEntry, LINK_ENTRY_TYPES, type LinkDeps } from './entries';
+import { entrySql, isEntry, LINK_ENTRY_TYPES, proposeLink, type LinkDeps } from './entries';
+import { proposalsAtLimit } from './proposal-list';
 
 export interface OrphanPage {
   total: number;
@@ -27,7 +28,7 @@ function orphanExplanation(counts: { withTargets: number; rest: number }): strin
   const { withTargets, rest } = counts;
   return [
     withTargets
-      ? `Für ${withTargets === 1 ? 'einen davon' : `${withTargets} davon`} gibt es passende Ziele – du findest sie oben unter „Verknüpfungsvorschläge“.`
+      ? `Für ${withTargets === 1 ? 'einen davon' : `${withTargets} davon`} gibt es passende Ziele – du findest sie unter „Verknüpfungsvorschläge“.`
       : null,
     rest
       ? `${rest === 1 ? 'Einer hat' : `${rest} haben`} noch kein passendes Ziel; verknüpfe ${rest === 1 ? 'ihn' : 'sie'} in der Detailansicht unter „Verwandte Einträge“.`
@@ -84,7 +85,7 @@ export class OrphanLinks {
     const batch = [...orphanIds.filter((id) => id > cursor), ...orphanIds.filter((id) => id <= cursor)].slice(0, options.maxEntries ?? 50);
     let proposed = 0;
     for (const id of batch) {
-      if (options.signal?.aborted) break;
+      if (options.signal?.aborted || proposalsAtLimit(this.deps)) break;
       try {
         for (const candidate of await this.candidates.candidates(id, { limit: 2 })) if (this.propose(id, candidate)) proposed += 1;
       } catch (err) {
@@ -97,15 +98,10 @@ export class OrphanLinks {
 
   /** Stores the candidate as a proposal; true if it is new. */
   private propose(id: string, candidate: LinkCandidate): boolean {
-    const result = this.deps.graph.link(
-      { sourceId: id, targetId: candidate.id, relationType: relationTypeFor(candidate) },
-      {
-        status: 'proposed',
-        confidence: candidate.score,
-        method: candidate.method,
-        evidence: candidate.reason,
-      },
-    );
+    const result = proposeLink(this.deps, {
+      key: { sourceId: id, targetId: candidate.id, relationType: relationTypeFor(candidate) },
+      options: { confidence: candidate.score, method: candidate.method, evidence: candidate.reason },
+    });
     return result?.created ?? false;
   }
 

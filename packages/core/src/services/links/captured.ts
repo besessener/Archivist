@@ -2,7 +2,7 @@ import type { EntityType, GraphEntity, GraphRelation } from '@archivist/shared';
 import type { CreatedEntry } from '../../util/origin-scope';
 import { otherEndOf } from '../graph/rows';
 import { relationTypeFor, type LinkCandidates } from './candidates';
-import { LINK_PROPOSAL_METHODS, OWN_FLOW_TYPES, type LinkDeps } from './entries';
+import { LINK_PROPOSAL_METHODS, OWN_FLOW_TYPES, proposeLink, reachesMinConfidence, type LinkDeps } from './entries';
 
 /** A link suggestion after capturing (#283): the stored proposal with both ends. */
 export interface CapturedSuggestion {
@@ -50,15 +50,10 @@ export class CapturedSuggestions {
     const found: CapturedSuggestion[] = [];
     for (const candidate of await this.candidates.candidates(entry.id, { limit: request.limit })) {
       if (own.has(candidate.id)) continue;
-      const relation = this.deps.graph.link(
-        { sourceId: entry.id, targetId: candidate.id, relationType: relationTypeFor(candidate) },
-        {
-          status: 'proposed',
-          confidence: candidate.score,
-          method: candidate.method,
-          evidence: candidate.reason,
-        },
-      );
+      const relation = proposeLink(this.deps, {
+        key: { sourceId: entry.id, targetId: candidate.id, relationType: relationTypeFor(candidate) },
+        options: { confidence: candidate.score, method: candidate.method, evidence: candidate.reason },
+      });
       if (relation?.status === 'proposed')
         found.push({ relation, entry: endOf(entry), target: { id: candidate.id, type: candidate.type, name: candidate.name }, score: candidate.score });
     }
@@ -71,7 +66,7 @@ export class CapturedSuggestions {
       const otherId = otherEndOf(relation, entry.id);
       const other = this.deps.graph.getEntity(otherId);
       const reviewed = relation.method && LINK_PROPOSAL_METHODS.includes(relation.method) && !OWN_FLOW_TYPES.includes(relation.relationType);
-      if (!other || own.has(otherId) || !reviewed) return [];
+      if (!other || own.has(otherId) || !reviewed || !reachesMinConfidence(this.deps, relation.confidence)) return [];
       return [{ relation, entry: endOf(entry), target: endOf(other), score: relation.confidence }];
     });
   }

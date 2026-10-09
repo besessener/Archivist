@@ -51,7 +51,7 @@ export function createDomainServices(base: BaseServices) {
   const openItems = new OpenItemService({ ctx, graph, persons, search, audit, undo });
   const eventRecords = new EventService({ ctx, graph, search, audit, persons, undo });
   const notes = new NoteService({ ctx, graph, search, audit, undo });
-  const noteAnalysis = new NoteAnalysisService({ ctx, graph, persons, llm, privacy });
+  const noteAnalysis = new NoteAnalysisService({ ctx, graph, persons, llm, privacy, minConfidence: () => settings.get().links.minConfidence });
   const memory = new MemoryService(ctx);
   const agentRuns = new AgentRunService({ ctx, audit, undo });
   registerCreatedUndo({ ctx, undo, graph, search });

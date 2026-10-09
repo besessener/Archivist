@@ -25,6 +25,14 @@ function candidateLine(scope: ToolScope, candidate: LinkCandidate): string {
   return `  → ${entryLine(scope, candidate)} (${Math.round(candidate.score * 100)} %, ${reason})`;
 }
 
+/** How a backfill call ended, for the model: at the cap another call does nothing until the user has decided. */
+function backfillOutcome(result: { done: boolean; remaining: number; waiting: number }): string {
+  if (result.done) return 'Das Archiv ist vollständig durchlaufen.';
+  if (result.waiting)
+    return `Angehalten: ${result.waiting} Vorschläge warten auf die Prüfung durch den Benutzer. Erst danach schlägt der Lauf weitere vor; bis dahin bringt ein erneuter Aufruf nichts.`;
+  return `Noch ${result.remaining} Einträge – ein weiterer Aufruf macht weiter.`;
+}
+
 /** Up to 3 link proposals right after capturing an entry, for the agent to offer (#283); a failing search never fails the capture. */
 export async function linkHint(scope: ToolScope, id: string | null): Promise<string> {
   if (!id) return '';
@@ -184,7 +192,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
     defineTool({
       name: 'backfill_links',
       description:
-        'Rückwirkender Verknüpfungslauf über das bestehende Archiv: schlägt für jeden Eintrag ähnliche Einträge als Verknüpfung VOR (nie bestätigt; abgelehnte Paare nie wieder). Prüft nur Einträge, die neu oder seit der letzten Prüfung geändert sind, bis zu maxEntries je Aufruf – ein weiterer Aufruf macht mit den übrigen weiter.',
+        'Rückwirkender Verknüpfungslauf über das bestehende Archiv: schlägt für jeden Eintrag ähnliche Einträge als Verknüpfung VOR (nie bestätigt; abgelehnte Paare nie wieder). Prüft nur Einträge, die neu oder seit der letzten Prüfung geändert sind, bis zu maxEntries je Aufruf – ein weiterer Aufruf macht mit den übrigen weiter. Warten zu viele Vorschläge auf die Prüfung durch den Benutzer, hält der Lauf an, bis er entschieden hat.',
       schema: z.object({ maxEntries: z.number().int().min(1).max(2000).default(200) }),
       risk: 'write',
       // proposals change no entry: they do not count towards the mass-action threshold
@@ -198,7 +206,7 @@ export function linkMethodTools(deps: ToolDeps): AgentTool[] {
           onProgress: (done, total) => ctx.job?.report(done / total, `${done} von ${total} Einträgen geprüft`),
         });
         return {
-          content: `${result.processed} Einträge geprüft, ${result.proposed} Verknüpfungen vorgeschlagen. ${result.done ? 'Das Archiv ist vollständig durchlaufen.' : `Noch ${result.remaining} Einträge – ein weiterer Aufruf macht weiter.`}`,
+          content: `${result.processed} Einträge geprüft, ${result.proposed} Verknüpfungen vorgeschlagen. ${backfillOutcome({ ...result, waiting: result.stoppedAtLimit ? links.proposals({ limit: 1 }).total : 0 })}`,
           summary: `${result.proposed} vorgeschlagen`,
           change: result.proposed ? `${result.proposed} Verknüpfungen vorgeschlagen` : undefined,
           changed: 0,

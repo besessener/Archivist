@@ -80,7 +80,7 @@ export function EntityView({ id }: { id: string }) {
 
       <EntityRelations detail={detail.data} onChanged={refetch} />
 
-      <RelatedEntries id={entity.id} scan={entity.type === 'note' || entity.type === 'event'} />
+      <RelatedEntries id={entity.id} offerLinkSearch={entity.type === 'note' || entity.type === 'event'} />
       <LinkSuggestions id={entity.id} />
 
       {isTopic && <TopicDocuments topicId={id} />}

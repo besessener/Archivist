@@ -134,7 +134,7 @@ function DocumentDetail({ doc, onChanged, onTrashed }: { doc: DocRecord; onChang
 
       {(doc.status === 'archived' || doc.status === 'indexed_only') && !editing && <ReanalysisSection doc={doc} onChanged={onChanged} />}
 
-      {(doc.status === 'archived' || doc.status === 'indexed_only') && <RelatedEntries id={doc.id} link={{ name: doc.title }} scan />}
+      {(doc.status === 'archived' || doc.status === 'indexed_only') && <RelatedEntries id={doc.id} link={{ name: doc.title }} offerLinkSearch />}
 
       <DialogFooter className="sm:justify-between">
         <div className="flex flex-wrap gap-2">

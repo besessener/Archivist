@@ -4,6 +4,7 @@ import type { AppContext } from '../context';
 import { promptNow } from '../util/dates';
 import { normalizeName, truncate } from '../util/text';
 import { matchKnownNames, snapToKnown } from './classifier';
+import { reachesMinConfidence } from './links/entries';
 import { relevantNames } from './relevant-names';
 import type { KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
@@ -35,6 +36,8 @@ const RELATION_OF: Record<'topic' | 'project' | 'person' | 'tag', RelationType> 
   tag: 'relates_to',
 };
 const ANALYSED_TYPES = new Set<EntityType>(['topic', 'project', 'person', 'tag']);
+/** Confidence of the proposals: what the language model found, what the note names literally. */
+const CONFIDENCE: Record<NoteFindings['via'], number> = { llm: 0.7, local: 0.6 };
 
 /** Hashtags like „#steuer“ in a note's text. */
 const HASHTAG = /(?:^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]{1,40})/gu;
@@ -52,7 +55,15 @@ function namesIn(text: string, entries: Array<Pick<GraphEntity, 'name' | 'aliase
     .map((e) => e.name);
 }
 
-export type NoteAnalysisServiceDeps = { ctx: AppContext; graph: KnowledgeGraphService; persons: PersonService; llm: LlmService; privacy: PrivacyService };
+export type NoteAnalysisServiceDeps = {
+  ctx: AppContext;
+  graph: KnowledgeGraphService;
+  persons: PersonService;
+  llm: LlmService;
+  privacy: PrivacyService;
+  /** The user's lowest confidence for a proposal (setting `links.minConfidence`). */
+  minConfidence: () => number;
+};
 
 /** Analyses notes like documents (#273) into PROPOSED relations; a rerun marks what it no longer finds `outdated`, the user's decisions stay. */
 export class NoteAnalysisService {
@@ -61,9 +72,14 @@ export class NoteAnalysisService {
   private readonly persons: PersonService;
   private readonly llm: LlmService;
   private readonly privacy: PrivacyService;
+  private readonly minConfidence: () => number;
 
   constructor(deps: NoteAnalysisServiceDeps) {
-    ({ ctx: this.ctx, graph: this.graph, persons: this.persons, llm: this.llm, privacy: this.privacy } = deps);
+    ({ ctx: this.ctx, graph: this.graph, persons: this.persons, llm: this.llm, privacy: this.privacy, minConfidence: this.minConfidence } = deps);
+  }
+
+  private reachesMinConfidence(via: NoteFindings['via']): boolean {
+    return reachesMinConfidence({ minConfidence: this.minConfidence }, CONFIDENCE[via]);
   }
 
   /** Finds topic, project, persons and tags of a note (no change). */
@@ -111,10 +127,13 @@ export class NoteAnalysisService {
   async analyze(noteId: string, opts: { signal?: AbortSignal } = {}): Promise<{ proposed: number; outdated: number } | null> {
     const note = this.graph.getEntity(noteId);
     if (note?.type !== 'note' || note.duplicateOfId) return null;
+    // below the user's minimum nothing is proposed: no paid request, no topic or tag created for it
+    if (!this.reachesMinConfidence('llm')) return { proposed: 0, outdated: 0 };
     const f = await this.findings(note, opts);
     // the note may have been removed or changed while the language model answered
     const now = this.graph.getEntity(noteId);
     if (!now || now.updatedAt !== note.updatedAt) return null;
+    if (!this.reachesMinConfidence(f.via)) return { proposed: 0, outdated: 0 };
     const evidence = (label: string, name: string) => (f.via === 'llm' ? `Analyse der Notiz: ${label} „${name}“` : `„${name}“ steht in der Notiz`);
     const targets: Array<{ id: string; type: 'topic' | 'project' | 'person' | 'tag'; evidence: string }> = [];
     if (f.topic && !this.graph.isBlockedName({ type: 'topic', name: f.topic }))
@@ -143,7 +162,7 @@ export class NoteAnalysisService {
         { sourceId: noteId, targetId: t.id, relationType: RELATION_OF[t.type] },
         {
           status: 'proposed',
-          confidence: f.via === 'llm' ? 0.7 : 0.6,
+          confidence: CONFIDENCE[f.via],
           method: 'analysis',
           evidence: t.evidence,
         },
