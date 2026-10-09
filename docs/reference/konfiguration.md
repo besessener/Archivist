@@ -19,7 +19,7 @@ Einstellungen liegen in `config/settings.json` im Datenordner der Anwendung (sie
 | `ocr` | `enabled`, `languages` (z. B. `deu+eng`; die Einstellungen bieten die mitgelieferten Sprachen Deutsch und Englisch an) |
 | `appearance` | `theme`: Farbschema `system` (Standard, wie das Betriebssystem), `light` oder `dark`; Einstellungen → Allgemein, gilt sofort |
 | `updates` | `checkOnStartup`: bei jedem Start bei GitHub nach einer neueren Version fragen (Standard an); Einstellungen → Wartung → Updates |
-| `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3), `minConfidence` (Mindest-Konfidenz, 0–1, Standard 0 = alles zeigen) |
+| `links` | `autoPropose` (Verknüpfungen automatisch vorschlagen, Standard an), `maxProposalsPerEntry` (offene Ähnlichkeitsvorschläge je Eintrag, 1–10, Standard 3), `minConfidence` (Mindest-Sicherheit für Vorschläge, 0–1, Standard 0 = alles zeigen) |
 
 Der API-Key steht **nie** in `settings.json`, sondern verschlüsselt in `config/llm-api-key.enc`.
 
@@ -40,5 +40,6 @@ Archivist liest **keine** `.env`-Dateien automatisch. Die Variablen werden vor d
 | `ARCHIVIST_TEST_PICK_DIR` | nur Tests, nur ungepackt: ersetzt den nativen Ordnerauswahl-Dialog |
 | `ARCHIVIST_TEST_SPEECH_MODELS` | nur Tests, nur ungepackt: JSON mit den Modellen der Spracheingabe je Name (Host, Commit, Dateien mit Größe und SHA-256), die ein Test-Server ausliefert |
 | `ARCHIVIST_TEST_SPEECH_WORKER` | nur Tests, nur ungepackt: Pfad eines Stand-in-Workers statt `speech-worker.cjs` (kein echtes Whisper) |
+| `ARCHIVIST_TEST_UPDATE_VERSION` | nur Tests, nur ungepackt: ein Stand-in statt der Update-Suche bei GitHub bietet diese Version an; „Installieren“ beendet die App nicht |
 | `ARCHIVIST_EVAL_*` | Agent-Evaluation, siehe [Den Agenten evaluieren](../how-to/agent-evaluieren.md#1-anbieter-konfigurieren) |
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | Code-Signierung beim lokalen Packen, siehe [Signieren](../how-to/release-veroeffentlichen.md#signieren) |

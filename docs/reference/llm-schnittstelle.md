@@ -90,13 +90,13 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Fakten müssen auf tatsächlich bereitgestellte Quellen verweisen. Aussagen mit ungültigem Quellenbeleg werden verworfen und als Unsicherheit ausgewiesen.
 - Bleibt keine belegte Aussage übrig, erscheint die Antwort des Modells nur als „Nicht belegt (Einschätzung des Modells)“, die Einschätzung wird auf „sehr unsicher“ gesetzt (Hinweis „Bitte prüfe diese Antwort“), und gefundene, aber nicht zitierte Quellen sind als „gefunden, nicht zitiert“ gekennzeichnet.
 - Zu gefundenen Entscheidungen kommen ihre Quelldokumente mit der passenden Textstelle in den Prompt.
-- Im Chat gehen bis zu sechs vorherige Nachrichten des Gesprächs mit, als Daten markiert und nur zum Auflösen von Bezügen wie „daran“, nie als Quelle für Fakten. Deine Nachrichten sind auf 280, Antworten auf 200 Zeichen gekürzt; Antworten aus dem Archiv (mit Quellen) erscheinen nur als Vermerk „Inhalt ausgelassen“. Ruft der Agent die geprüfte Wissensantwort als Werkzeug auf, geht kein Chatverlauf mit.
+- Im Chat gehen bis zu sechs vorherige Nachrichten des Gesprächs mit, als Daten markiert und nur zum Auflösen von Bezügen wie „daran“, nie als Quelle für Fakten. Deine Nachrichten sind auf 280, Antworten auf 200 Zeichen gekürzt; Antworten aus dem Archiv (mit Quellen) erscheinen nur als Vermerk „Inhalt ausgelassen“. Ruft der Agent die geprüfte Wissensantwort als Werkzeug auf, geht kein Chatverlauf mit. Das Ergebnis, das der Agent zurückbekommt und an das LLM weitergibt, nennt nicht freigegebene Quellen nur als „Dokument [nicht freigegeben]“ – ohne Titel, Textstelle und Datum.
 - Über **bestätigte** Beziehungen der drei besten Treffer kommen bis zu drei weitere Einträge hinzu (höchstens zwei je Treffer, halbe Gewichtung), mit dem Vermerk „Hinzugekommen über die bestätigte Verknüpfung: …“. Vorgeschlagene, abgelehnte und veraltete Beziehungen werden nie genutzt; Freigaben gelten wie für Treffer.
 
 ## Idee hinterfragen
 
 - Schema `IdeaChallenge`: Zusammenfassung sowie belegte Punkte „dagegen“, „dafür“ und „betroffen“, Unsicherheiten, Fehlendes. Gesendet werden die Idee, die Titel und Textstellen der Quellen und der Gesprächsverlauf wie bei Wissensfragen; Quellen, die nicht freigegeben sind, gehen nie hinaus und werden nur lokal zitiert.
-- Wie bei [Wissensfragen](#antworten-auf-wissensfragen) verwirft Archivist Punkte ohne gültigen Quellenbeleg und zeigt gefundene, aber nicht zitierte Quellen als „gefunden, nicht zitiert“. Die Anfrage steht im Übertragungsprotokoll (Zweck „Idee hinterfragen“).
+- Wie bei [Wissensfragen](#antworten-auf-wissensfragen) verwirft Archivist Punkte ohne gültigen Quellenbeleg und zeigt gefundene, aber nicht zitierte Quellen als „gefunden, nicht zitiert“. Die Anfrage steht im Übertragungsprotokoll (Zweck „Idee hinterfragen“). Der Agent nutzt dieselbe Prüfung als Werkzeug `challenge_idea`: ohne Chatverlauf, und nicht freigegebene Quellen erscheinen in seinem Ergebnis wie bei der geprüften Wissensantwort nur als „Dokument [nicht freigegeben]“.
 
 ## Analyse von Notizen
 

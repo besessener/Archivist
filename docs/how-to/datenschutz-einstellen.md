@@ -78,7 +78,7 @@ Es bleibt, was aus dem Dokument entstanden ist: Entscheidungen, offene Punkte, N
 
 ## Änderungsprotokoll
 
-Das Änderungsprotokoll (Einstellungen → Änderungen) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert.
+Das Änderungsprotokoll (Einstellungen → Änderungen) bleibt lokal und geht nie an das LLM. Es hält bei Bearbeitungen von Entscheidungen Texte und Daten vorher und nachher fest und bei Einstellungsänderungen den alten und neuen Wert (Einstellungen enthalten keine Schlüssel; die liegen im Schlüsselspeicher). Gelöschte Entscheidungen bleiben als Undo-Daten im Protokoll gespeichert. Ebenso gelöschte Personen, Themen, Projekte und Schlagwörter (mit Name, Aliassen und Beschreibung); ihr Name und ihre Aliasse stehen zusätzlich in der Sperrliste `blocked_subjects`, damit die automatische Erkennung sie nicht wieder anlegt. Beides bleibt, bis du das Löschen rückgängig machst.
 
 ## Tokenverbrauch im Blick behalten und begrenzen
 

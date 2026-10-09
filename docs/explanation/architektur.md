@@ -1,6 +1,6 @@
 # Architektur
 
-Archivist ist eine lokale Desktop-Anwendung aus Electron, Next.js und TypeScript. Alles ist JavaScript/TypeScript – **kein Python, kein HTTP-Backend, keine Datenbankinstallation, kein Docker**. Alle Daten (Metadaten, Embeddings, Logs, Dateien) liegen lokal; nach außen spricht Archivist nur mit dem von dir konfigurierten LLM-Endpunkt und, einmalig nach deiner Bestätigung, mit `huggingface.co` für das Modell der Spracheingabe.
+Archivist ist eine lokale Desktop-Anwendung aus Electron, Next.js und TypeScript. Alles ist JavaScript/TypeScript – **kein Python, kein HTTP-Backend, keine Datenbankinstallation, kein Docker**. Alle Daten (Metadaten, Embeddings, Logs, Dateien) liegen lokal; nach außen spricht Archivist nur mit dem von dir konfigurierten LLM-Endpunkt, einmalig nach deiner Bestätigung mit `huggingface.co` für das Modell der Spracheingabe und beim Start mit GitHub, um nach einem neuen Release zu fragen (ohne Archivdaten; abschaltbar unter Einstellungen → Wartung → Updates).
 
 ```
 ┌────────────────────────── Electron ───────────────────────────┐

@@ -15,7 +15,7 @@ Decision-Rückfragen, Agentenläufe gegen beide Anbieter-Formate (OpenAI Respons
 - Der Fake-LLM-Server antwortet nur dann mit Werkzeugaufrufen, wenn eine Spec Agenten-Runden vorgibt (`llm.agentTurns`); alle anderen Specs laufen über den regelbasierten Chat.
 - Page Objects (`tests/e2e/pages`) mit `locators` und `do`, sodass die Specs wie eine Beschreibung des Verhaltens lesen.
 - Die Spracheingabe läuft im E2E mit dem künstlichen Mikrofon von Chromium (`--use-fake-device-for-media-stream`), einem lokalen Modell-Server (`tests/helpers/speech-model-server.ts`) und einem Stand-in-Worker (`tests/helpers/fake-speech-worker.mjs`); echtes Whisper läuft in keinem Test.
-- `accessibility.spec.ts` prüft jeden Bereich der Navigation mit axe-core (WCAG 2.2 AA); schwere und kritische Verstöße lassen den Test fehlschlagen.
+- `accessibility.spec.ts` prüft jeden Bereich der Navigation mit axe-core (WCAG 2.2 AA), im hellen und im dunklen Farbschema; schwere und kritische Verstöße lassen den Test fehlschlagen.
 - Lokal: `npm run build && xvfb-run -a npx playwright test` (unter Windows ohne `xvfb-run`).
 
 ## Agent-Evaluation (`tests/eval`)

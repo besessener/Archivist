@@ -52,7 +52,7 @@ Pro Gespräch umschaltbar, auch per „frag mich diesmal vorher“.
 
 **Immer nachgefragt** wird – in jedem Modus – bei:
 
-- Löschen (Dokumente in den Papierkorb legen, `mark_duplicates` mit `delete`; mit zweiter Bestätigung),
+- Löschen (Dokumente in den Papierkorb legen, `mark_duplicates` mit `delete`; mit zweiter Bestätigung); Personen, Themen, Projekte und Schlagwörter löscht der Agent ohnehin nur, wenn du es im Chat selbst verlangst (`delete_subject`),
 - Änderungen an Originaldateien außerhalb des Archivs,
 - Datenschutz-Einstellungen,
 - neuen Hauptkategorien,
@@ -92,7 +92,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 
 - `find_documents` filtert nach Endung, Name, Ordner, Thema, Projekt, Typ, Person, Tag, Dokument- und Archivierungsdatum, Größe und Status, sortiert und seitenweise, mit Gesamtzahl und Ergebnismenge `S…` (`within` grenzt eine frühere Menge ein). Ergebnismengen beliebiger Größe werden vollständig aufgelöst.
 - `related` liefert dieselbe Liste wie „Verwandte Einträge“ in der Oberfläche (direkte Beziehungen und gemeinsame Projekte, Vorgänge, Themen, Personen, Tags, nach Stärke, seitenweise); `depth: 2` nennt auch die Nachbarn der Nachbarn.
-- Einträge, die nur aus nicht freigegebenen Dokumenten stammen, nennt `list_entries` ohne Inhalt.
+- Einträge, die nur aus nicht freigegebenen Dokumenten stammen, nennt `list_entries` ohne Inhalt. Hinweise (`kind: insight`) zitieren ihre Quellen, etwa ein Widerspruch zwischen zwei Dokumenten; sie erscheinen schon ohne Inhalt, wenn eines ihrer Dokumente nicht freigegeben ist.
 
 ## Duplikate und Versionen
 
@@ -113,6 +113,13 @@ Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nu
 - `match_payments`: ordnet Rechnungen Buchungen aus Kontoauszügen zu (Rechnungsnummer oder Betrag) und nennt offene Rechnungen und Zahlungen ohne Rechnung.
 - `timeline`: Zeitlinie zu `topic`, `project` oder Zeitraum. Mit `case` (Vorgang) werden Dokumente, Entscheidungen, offene Punkte, Ereignisse und Notizen des Vorgangs chronologisch verschränkt; vorgeschlagene, nicht bestätigte Zuordnungen zählen nicht.
 - `verified_answer` schließt eine Recherche mit der geprüften Antwortlogik des Chats ab: Quellen suchen, Aussagen gegen Belege prüfen, Unsicheres unter „Unsicherheiten“ kennzeichnen.
+- `challenge_idea` hinterfragt eine Idee oder einen Plan („Ich überlege, …“) mit derselben Logik wie „Idee hinterfragen“ im Chat: „Dagegen spricht“, „Dafür spricht“, „Das wäre betroffen“, jeder Punkt mit gültigem Quellenbeleg. Ändert nichts (Stufe `read`).
+- Was `verified_answer` und `challenge_idea` an das Modell zurückgeben, nennt nicht freigegebene Dokumente nur als „Dokument [nicht freigegeben]“, ohne Titel und Text.
+
+## Widersprüche
+
+- `list_contradictions` nennt die offenen Widersprüche (erkannt oder zur Kenntnis genommen) mit ID, Titel, Beschreibung und den beiden Entscheidungen als K-IDs. Zitiert ein Widerspruch ein nicht freigegebenes Dokument, steht statt Titel und Beschreibung „[nicht freigegeben]“.
+- `resolve_contradiction` legt nur eine Vorschlagskarte an: aufgelöst, Fehlalarm oder zur Kenntnis genommen; erst deine Bestätigung führt sie aus. Nur zusammen mit „aufgelöst“ kann die neuere Entscheidung des Widerspruchs (`newer`) die ältere (`older`) ersetzen; andere Entscheidungen oder solche, die nicht mehr gelten, lehnt das Werkzeug ab. Die Karte nennt das Ersetzen („„B“ ersetzt „A““) und beide Entscheidungen.
 
 ## Wissen erfassen
 
@@ -122,7 +129,7 @@ Alle Werkzeuge rechnen und vergleichen deterministisch; das Modell übernimmt nu
 - Ist beim Ersetzen nicht eindeutig, welche ältere Entscheidung gemeint ist, nennt `record_decision` die Kandidaten mit ihren K-IDs; nach der Rückfrage legt `supersede_decision` die Vorschlagskarte an. Als überholt markiert wird erst nach deiner Bestätigung.
 - `create_subject` legt nur an, was es noch nicht gibt. Eine Person erkennt es auch ohne Titel oder Rolle („Dr. Thomas Müller“) und unter deinem Profilnamen oder Spitznamen als dich selbst; dann meldet es den vorhandenen Eintrag, und „Lauf rückgängig“ löscht ihn nicht.
 - `set_metadata` ändert bei Entscheidungen, offenen Punkten und Ereignissen auch Titel, Personen (Beteiligte bzw. Verantwortliche) und Datum (Entscheidungsdatum, Fälligkeit, Ereignisdatum).
-- `delete_subject` löscht eine Person, ein Thema, ein Projekt oder ein Schlagwort (K-ID oder eindeutiger Name, `type` nur zur Eindeutigkeit, `reason` fürs Protokoll) mit allen Verknüpfungen, Aliassen und Namenslisten-Einträgen. Bei mehreren Treffern meldet es die Kandidaten, den Benutzer selbst löscht es nie. Dokumente, die dadurch ihr Hauptthema oder -projekt verlieren, nennt die Antwort; verschoben wird nichts. Der Name bleibt für die automatische Erkennung gesperrt (Tabelle `blocked_subjects`), `create_subject` und die Oberfläche legen ihn weiter an. Stufe `write`, wenn nichts daran hängt, sonst `critical` (immer Vorschlag mit Rückfrage). Rückgängig im Änderungsprotokoll oder mit dem Lauf. Für Gelerntes gilt `forget`, für Doppelte `merge_subjects`.
+- `delete_subject` löscht eine Person, ein Thema, ein Projekt oder ein Schlagwort (K-ID oder eindeutiger Name, `type` nur zur Eindeutigkeit, `reason` fürs Protokoll) mit allen Verknüpfungen, Aliassen und Namenslisten-Einträgen. Bei mehreren Treffern meldet es die Kandidaten, den Benutzer selbst löscht es nie. Dokumente, die dadurch ihr Hauptthema oder -projekt verlieren, nennt die Antwort; verschoben wird nichts. Der Name bleibt für die automatische Erkennung gesperrt (Tabelle `blocked_subjects`), `create_subject` und die Oberfläche legen ihn weiter an. Es läuft nur, wenn deine eigene Nachricht im Chat eine Änderung verlangt (wie `forget`), nie in Hintergrundläufen oder auf eine bloße Frage. Dann Stufe `write`, wenn nichts daran hängt, sonst `critical` (immer Vorschlag mit Rückfrage). Rückgängig im Änderungsprotokoll oder mit dem Lauf. Für Gelerntes gilt `forget`, für Doppelte `merge_subjects`.
 - Datumsangaben ohne Jahr: „31.10.“ ist bei einer Entscheidung der letzte 31. Oktober, bei einer Erinnerung oder Fälligkeit der nächste.
 
 ## Verknüpfungsmethoden
@@ -134,7 +141,7 @@ Die festen Methoden aus Epic #269 als eigene Werkzeuge, mit denselben Service-Fu
 | `suggest_links` | ähnliche Einträge (Kosinus der gespeicherten Abschnittsvektoren; lokale Hash-Vektoren mit höherer Schwelle als echte Embeddings) und genannte Themen/Projekte, bis zu 3 je Eintrag |
 | `find_unlinked_entries` | Einträge ohne bestätigte oder vorgeschlagene Beziehung (ein Ordner allein zählt nicht), seitenweise, rein per SQL |
 | `find_topic_clusters`, `propose_topic` | Gruppen ähnlicher Einträge ohne Thema als Hinweis „Neues Thema ‚…‘ anlegen?“; „Ja“ legt an und ordnet zu (rückgängig machbar), „Nein“ wird gemerkt |
-| `backfill_links` | rückwirkender Lauf über das Archiv mit allen Methoden (ähnlich, gleicher Tag + Person, gleiches Quelldokument, Analyse von Notizen); prüft nur neue oder geänderte Einträge (Markierung je Eintrag) |
+| `backfill_links` | rückwirkender Lauf über das Archiv mit allen Methoden (ähnlich, gleicher Tag + Person, gleiches Quelldokument, Analyse von Notizen); prüft nur neue oder geänderte Einträge (Markierung je Eintrag); hält an, solange 20 Vorschläge auf deine Prüfung warten, und sagt das dem Agenten |
 | `linkage_report` | Verknüpfungsgrad: Anteil verwaister Einträge, offene Vorschläge, Bestätigungsquote je Methode, Verlauf der Archivprüfungen und die aus Ablehnungen gelernten Schwellen (nur lesen) |
 | `reset_learned_thresholds` | setzt die gelernten Schwellen zurück; nicht rückgängig machbar, fragt deshalb immer (kritisch) |
 
