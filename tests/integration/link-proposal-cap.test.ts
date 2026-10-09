@@ -56,9 +56,9 @@ describe('At most 20 open proposals for the automatic link methods (#361)', () =
     app.services.database.sqlite.prepare('UPDATE entities SET duplicate_of_id = ? WHERE id = ?').run(kept, hub);
     expect(app.services.links.proposals().total).toBe(0);
 
-    const result = await app.services.links.backfill();
-    expect(result.processed).toBeGreaterThan(0);
-    expect(result.stoppedAtLimit).toBe(false);
+    // One entry only: the run's own new proposals could otherwise reach the cap within the same call
+    const result = await app.services.links.backfill({ maxEntries: 1 });
+    expect(result).toMatchObject({ processed: 1, stoppedAtLimit: false });
   });
 
   it('the archive check proposes no targets for entries without links while 20 proposals are open', async () => {
