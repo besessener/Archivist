@@ -34,7 +34,7 @@ Archivist ist ein persönlicher, agentischer KI-Archivar für genau einen Benutz
 - **Wissensgraph und hybride Suche** – Themen, Projekte, Personen und Dokumente sind verknüpft und auffindbar; Archivist schlägt Verknüpfungen mit Begründung vor, du entscheidest.
 - **Agent** – plant mehrere Schritte, nutzt Werkzeuge und prüft das Archiv im Hintergrund auf Lücken, Dubletten und Widersprüche.
 
-> **Stand:** Version 0.1 für Windows. Was Archivist kann, steht in den [Funktionen](docs/reference/funktionen.md), was es bewusst nicht kann, unter [Bewusste Abweichungen und ehrliche Grenzen](docs/explanation/grenzen.md).
+> **Stand:** Version 0.1 für Windows. Was Archivist kann, steht in den [Funktionen](docs/reference/funktionen.md).
 
 ## Installation
 
@@ -71,7 +71,7 @@ Webseite: <https://besessener.github.io/Archivist/>. Die vollständige Dokumenta
 
 ## Verwandte Projekte
 
-Archivist, PlayMonkey und flakipype sind aus derselben agentischen Idee entstanden und teilen Grundregeln, Qualitätsprüfungen und den Aufbau der Dokumentation (beide auf Englisch):
+Archivist, PlayMonkey und flakipype sind aus derselben agentischen Idee entstanden und teilen Grundregeln, Qualitätsprüfungen und den Aufbau der Dokumentation:
 
 - [PlayMonkey](https://github.com/besessener/PlayMonkey) – Monkey-Testing für Websites in Testumgebungen: klickt zufällig, aber reproduzierbar, und meldet jeden Fehler mit den Schritten zum Nachstellen.
 - [flakipype](https://github.com/besessener/flakipype) – findet, erklärt und behebt instabile („flaky“) GitHub-Actions-Pipelines per Pull Request.
