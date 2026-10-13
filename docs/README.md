@@ -30,6 +30,7 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 
 **Archivist entwickeln**
 
+- [Mitmachen](../CONTRIBUTING.md) – einrichten, arbeiten, Pull Request öffnen, veröffentlichen.
 - [Datenbankschema ändern](how-to/datenbankschema-aendern.md) – Tabellen ändern, Migration erzeugen und prüfen.
 - [Den Agenten mit echten Modellen evaluieren](how-to/agent-evaluieren.md) – `npm run eval:agent`, kostet Geld.
 - [Windows-Paket bauen und Release veröffentlichen](how-to/release-veroeffentlichen.md) – lokal bauen, signieren und veröffentlichen.

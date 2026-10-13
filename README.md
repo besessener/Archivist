@@ -38,7 +38,7 @@ Archivist ist ein persönlicher, agentischer KI-Archivar für genau einen Benutz
 
 ## Installation
 
-Lade Installer oder portable EXE aus den [GitHub Releases](https://github.com/besessener/Archivist/releases). Schritt für Schritt: [Erste Schritte](docs/tutorials/erste-schritte.md).
+Lade Installer oder portable EXE aus den [GitHub Releases](https://github.com/besessener/Archivist/releases); dort stehen auch die Änderungen je Version. Schritt für Schritt: [Erste Schritte](docs/tutorials/erste-schritte.md).
 
 ## Benutzung
 
@@ -58,7 +58,7 @@ npm run dev            # Next.js-Dev-Server + Electron mit Hot Reload
 npm test               # Unit- und Integrationstests
 ```
 
-Ausführlich: [Entwicklungsumgebung aufsetzen](docs/tutorials/entwicklungsumgebung.md) und [npm-Befehle](docs/reference/befehle.md).
+Ausführlich: [Entwicklungsumgebung aufsetzen](docs/tutorials/entwicklungsumgebung.md), [npm-Befehle](docs/reference/befehle.md) und [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Dokumentation
 
