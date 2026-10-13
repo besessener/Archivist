@@ -1,7 +1,5 @@
 # Archivist
 
-***Archivist – dein persönlicher Archivar***
-
 ![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen?logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&logoColor=white)
 ![Electron](https://img.shields.io/badge/desktop-Electron-47848F?logo=electron&logoColor=white)
@@ -27,6 +25,8 @@
 [![Last commit](https://img.shields.io/github/last-commit/besessener/Archivist)](https://github.com/besessener/Archivist/commits/main)
 [![License: MIT](https://img.shields.io/github/license/besessener/Archivist)](LICENSE)
 
+***Dein persönlicher Archivar.***
+
 Archivist ist ein persönlicher, agentischer KI-Archivar für genau einen Benutzer: eine lokale Desktop-Anwendung für Windows (Electron + Next.js + TypeScript), die Dokumente, Entscheidungen, offene Punkte und Wissen nicht nur speichert, sondern versteht, verknüpft und das Archiv aktiv konsistent hält.
 
 - **Chat als Schnittstelle** – Entscheidungen festhalten, Fragen stellen, Antworten mit Quellen.
@@ -34,9 +34,19 @@ Archivist ist ein persönlicher, agentischer KI-Archivar für genau einen Benutz
 - **Wissensgraph und hybride Suche** – Themen, Projekte, Personen und Dokumente sind verknüpft und auffindbar; Archivist schlägt Verknüpfungen mit Begründung vor, du entscheidest.
 - **Agent** – plant mehrere Schritte, nutzt Werkzeuge und prüft das Archiv im Hintergrund auf Lücken, Dubletten und Widersprüche.
 
+> **Stand:** Version 0.1 für Windows. Was Archivist kann, steht in den [Funktionen](docs/reference/funktionen.md), was es bewusst nicht kann, unter [Bewusste Abweichungen und ehrliche Grenzen](docs/explanation/grenzen.md).
+
 ## Installation
 
-Lade Installer oder portable EXE aus den [GitHub Releases](https://github.com/besessener/Archivist/releases) und folge dem Tutorial [Erste Schritte](docs/tutorials/erste-schritte.md).
+Lade Installer oder portable EXE aus den [GitHub Releases](https://github.com/besessener/Archivist/releases). Schritt für Schritt: [Erste Schritte](docs/tutorials/erste-schritte.md).
+
+## Benutzung
+
+1. **Verbinden.** Trage Base URL, API-Key und Modell deines KI-Anbieters ein und teste die Verbindung.
+2. **Archivieren.** Ziehe ein Dokument ins Fenster, prüfe den Vorschlag und bestätige.
+3. **Fragen.** Halte im Chat Entscheidungen fest und frag nach ihnen; die Antworten nennen ihre Quellen.
+
+Weiter geht es mit [LLM-Anbieter verbinden](docs/how-to/llm-anbieter-verbinden.md), [Verzeichnisse scannen](docs/how-to/verzeichnisse-scannen.md), [Datenschutz einstellen](docs/how-to/datenschutz-einstellen.md) und [Backups anlegen](docs/how-to/backups-anlegen.md).
 
 ## Entwicklung
 
@@ -58,6 +68,13 @@ Webseite: <https://besessener.github.io/Archivist/>. Die vollständige Dokumenta
 - **[Anleitungen](docs/README.md#anleitungen)** – konkrete Aufgaben lösen, z. B. [LLM-Anbieter verbinden](docs/how-to/llm-anbieter-verbinden.md) oder [Release veröffentlichen](docs/how-to/release-veroeffentlichen.md)
 - **[Referenz](docs/README.md#referenz)** – genaues Verhalten nachschlagen, z. B. [Funktionen](docs/reference/funktionen.md) oder [Aktionsstufen](docs/reference/aktionsstufen.md)
 - **[Hintergrund](docs/README.md#hintergrund)** – verstehen, warum es so ist, z. B. [Architektur](docs/explanation/architektur.md) oder [Sicherheitsmodell](docs/explanation/sicherheitsmodell.md)
+
+## Verwandte Projekte
+
+Archivist, PlayMonkey und flakipype sind aus derselben agentischen Idee entstanden und teilen Grundregeln, Qualitätsprüfungen und den Aufbau der Dokumentation (beide auf Englisch):
+
+- [PlayMonkey](https://github.com/besessener/PlayMonkey) – Monkey-Testing für Websites in Testumgebungen: klickt zufällig, aber reproduzierbar, und meldet jeden Fehler mit den Schritten zum Nachstellen.
+- [flakipype](https://github.com/besessener/flakipype) – findet, erklärt und behebt instabile („flaky“) GitHub-Actions-Pipelines per Pull Request.
 
 ## Lizenz
 
