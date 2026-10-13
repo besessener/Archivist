@@ -1,6 +1,6 @@
 # Webseite pflegen und veröffentlichen
 
-Die Webseite von Archivist liegt unter `site/` als reines HTML und CSS, ohne Build-Schritt. Sie erscheint auf <https://besessener.github.io/Archivist/>.
+Die Webseite von Archivist liegt unter `site/` als reines HTML und CSS, ohne Build-Schritt. Sie erscheint auf <https://besessener.github.io/Archivist/>. Aufbau, Abschnitte und Stylesheet teilt sie mit den Seiten von [PlayMonkey](https://besessener.github.io/PlayMonkey/) und [flakipype](https://besessener.github.io/flakipype/); nur Texte, Bilder, Icon und die Farbtokens oben in `style.css` unterscheiden sich. Eine Änderung am Aufbau oder am gemeinsamen Teil von `style.css` gehört in alle drei Seiten.
 
 ## Einmalig: GitHub Pages einschalten
 
@@ -9,8 +9,8 @@ Die Webseite von Archivist liegt unter `site/` als reines HTML und CSS, ohne Bui
 
 ## Inhalt ändern
 
-1. Bearbeite `site/index.html` oder `site/style.css`; Texte sind Deutsch und sprechen mit „du“ ([Texte und Ansprache](../reference/texte-und-ansprache.md)).
-2. Öffne die Seite lokal, z. B. mit `npx serve site`, und prüfe Hell und Dunkel (Farben des Systems).
+1. Bearbeite `site/index.html` oder `site/style.css`; Texte sind Deutsch, sprechen mit „du“ ([Texte und Ansprache](../reference/texte-und-ansprache.md)) und passen zur [README](../../README.md) und zum [Sicherheitsmodell](../explanation/sicherheitsmodell.md). Was die Seite verspricht, muss der Code halten; halte den Stand-Hinweis aktuell.
+2. Öffne die Seite lokal, z. B. mit `npx serve site`, und prüfe Hell und Dunkel (Farben des Systems) und ein handybreites Fenster.
 3. Führe `npm run format:check` aus; Prettier prüft auch `site/`.
 
 Sobald eine Änderung unter `site/` auf `main` landet, veröffentlicht der Workflow `pages.yml` die Seite. Von Hand startest du ihn unter Actions → Pages → **Run workflow**.

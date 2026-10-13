@@ -204,14 +204,34 @@ h3 {
   color: var(--muted-foreground);
 }
 
+.card-link strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .card-link:hover {
   border-color: var(--primary);
 }
 
-#vertrauen {
+.panel {
   padding-inline: clamp(1rem, 4vw, 2.5rem);
   border-radius: 1rem;
   background: var(--canvas);
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, monospace;
+  font-size: 0.9em;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--canvas);
+  line-height: 1.5;
 }
 
 .checks,
@@ -222,6 +242,22 @@ h3 {
 .checks li,
 .steps li {
   margin-bottom: 0.75rem;
+}
+
+.status {
+  max-width: 44rem;
+  margin: 0 auto 1.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  color: var(--muted-foreground);
+  font-size: 0.95rem;
+}
+
+.terminal {
+  margin: 1.5rem 0 0;
+  text-align: left;
+  box-shadow: var(--shadow);
 }
 
 .site-footer {

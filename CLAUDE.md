@@ -18,6 +18,10 @@ open items and knowledge, and keeps the archive consistent. Features:
   client, agent. `packages/core/`.
 - **Shared**: Zod schemas and the IPC contract. `packages/shared/`.
 - **Packaging**: Windows only, in CI on `windows-latest`. Tests run on Ubuntu.
+- **Siblings**: [PlayMonkey](https://github.com/besessener/PlayMonkey) and
+  [flakipype](https://github.com/besessener/flakipype) share these rules, the
+  docs layout and the `site/` layout; a change to a shared rule or layout is
+  mirrored there.
 
 ## Read before you touch
 
@@ -149,6 +153,8 @@ and say so; never work around it quietly. Reasoning lives in
 npm install
 npm run dev          # Next.js dev server + Electron with hot reload
 ```
+
+All commands: [befehle.md](docs/reference/befehle.md).
 
 ## Definition of done
 
