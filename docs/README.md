@@ -62,4 +62,4 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 
 Verwandte Projekte mit derselben Idee und demselben Aufbau der Dokumentation:
 [PlayMonkey](https://github.com/besessener/PlayMonkey/blob/main/docs/README.md) und
-[flakipype](https://github.com/besessener/flakipype/blob/main/docs/README.md) (beide Englisch).
+[flakipype](https://github.com/besessener/flakipype/blob/main/docs/README.md).

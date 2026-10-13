@@ -71,7 +71,7 @@ Webseite: <https://besessener.github.io/Archivist/>. Die vollständige Dokumenta
 
 ## Verwandte Projekte
 
-Archivist, PlayMonkey und flakipype sind aus derselben agentischen Idee entstanden und teilen Grundregeln, Qualitätsprüfungen und den Aufbau der Dokumentation (beide auf Englisch):
+Archivist, PlayMonkey und flakipype sind aus derselben agentischen Idee entstanden und teilen Grundregeln, Qualitätsprüfungen und den Aufbau der Dokumentation:
 
 - [PlayMonkey](https://github.com/besessener/PlayMonkey) – Monkey-Testing für Websites in Testumgebungen: klickt zufällig, aber reproduzierbar, und meldet jeden Fehler mit den Schritten zum Nachstellen.
 - [flakipype](https://github.com/besessener/flakipype) – findet, erklärt und behebt instabile („flaky“) GitHub-Actions-Pipelines per Pull Request.
