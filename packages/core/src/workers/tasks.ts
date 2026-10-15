@@ -2,6 +2,7 @@ import type { Stats } from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { parseDocument, MIME_BY_EXT } from '../parsers';
+import { prepareModelImage, type ModelImage } from '../parsers/model-image';
 import type { ParsedDocument, ParseOptions } from '../parsers/parsed-document';
 import { sha256File } from '../util/hash';
 import { isInside } from '../util/paths';
@@ -204,6 +205,7 @@ export interface TaskMap {
   scanDirectory: { in: ScanDirectoryInput; out: ScanDirectoryResult };
   extractDocument: { in: { path: string; options?: ParseOptions }; out: ParsedDocument };
   cosineTopK: { in: CosineTopKInput; out: { index: number; score: number }[] };
+  modelImage: { in: { path: string }; out: ModelImage };
 }
 export type TaskName = keyof TaskMap;
 
@@ -212,4 +214,5 @@ export const tasks: { [K in TaskName]: (input: TaskMap[K]['in']) => Promise<Task
   scanDirectory,
   extractDocument: ({ path: file, options }) => parseDocument(file, options),
   cosineTopK: async (input) => cosineTopK(input),
+  modelImage: ({ path: file }) => prepareModelImage(file),
 };

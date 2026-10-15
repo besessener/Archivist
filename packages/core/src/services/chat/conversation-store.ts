@@ -1,4 +1,4 @@
-import type { ChatContext, ChatMessage, Conversation, SourceReference, StoredAgentAction } from '@archivist/shared';
+import type { ChatAttachment, ChatContext, ChatMessage, Conversation, SourceReference, StoredAgentAction } from '@archivist/shared';
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import type { AppContext } from '../../context';
 import { conversations, messages } from '../../db/schema';
@@ -130,8 +130,8 @@ export class ConversationStore {
     return this.db.select({ n: count() }).from(messages).where(eq(messages.conversationId, conversationId)).get()?.n ?? 0;
   }
 
-  saveUserMessage(conversationId: string, text: string): ChatMessage {
-    return this.insert(this.row(conversationId, { role: 'user', content: text }));
+  saveUserMessage(conversationId: string, message: { text: string; attachments: ChatAttachment[] }): ChatMessage {
+    return this.insert({ ...this.row(conversationId, { role: 'user', content: message.text }), attachments: message.attachments });
   }
 
   saveAssistantMessage(conversationId: string, reply: Reply): ChatMessage {
@@ -189,6 +189,7 @@ export class ConversationStore {
       errorMessage: null,
       quickReplies: [],
       runId: null,
+      attachments: [],
       createdAt: nowIso(),
     };
   }
@@ -214,6 +215,7 @@ export class ConversationStore {
       errorMessage: r.errorMessage,
       quickReplies: r.quickReplies,
       runId: r.runId,
+      attachments: r.attachments as ChatAttachment[],
     };
   }
 }

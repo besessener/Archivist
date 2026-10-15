@@ -9,6 +9,16 @@ export type RelationRow = typeof relations.$inferSelect;
 /** Statuses that count as a current, visible assignment. */
 export const ACTIVE_STATUSES: RelationStatus[] = ['proposed', 'confirmed'];
 
+/** Confidence of a proposal that names none of its own: the agent's and the refiner's. */
+export const PROPOSAL_CONFIDENCE = 0.6;
+
+/** A proposal below the user's minimum confidence (`links.minConfidence`) counts nowhere; every other relation is unaffected. */
+export const reachesThreshold = (relation: Pick<GraphRelation, 'status' | 'confidence'>, minConfidence: number): boolean =>
+  relation.status !== 'proposed' || relation.confidence >= minConfidence;
+
+/** The same rule in SQL for the relation alias; binds `@minConfidence`. */
+export const reachesThresholdSql = (alias: string): string => `(${alias}.status <> 'proposed' OR ${alias}.confidence >= @minConfidence)`;
+
 /** Identifies a relation: both ends and its type. */
 export interface RelationKey {
   sourceId: string;

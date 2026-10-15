@@ -19,9 +19,16 @@ export type { NodeSnapshot } from './graph/entities';
 export { LINK_MANY_UNDO_TYPE, type LinkManyUndoData } from './graph/link-undo';
 export type { MergeRequest } from './graph/merge-types';
 export { relationReason } from './graph/relation-reason';
+export { PROPOSAL_CONFIDENCE } from './graph/rows';
 export type { RelationChangeSet } from './graph/relations';
 
-export type KnowledgeGraphServiceDeps = { ctx: AppContext; audit: AuditService; undo: UndoService };
+export type KnowledgeGraphServiceDeps = {
+  ctx: AppContext;
+  audit: AuditService;
+  undo: UndoService;
+  /** The user's lowest confidence for a proposal (setting `links.minConfidence`): below it a proposal is shown nowhere. */
+  minConfidence: () => number;
+};
 
 /** Knowledge graph over entity and relation tables in SQLite. */
 export class KnowledgeGraphService {
@@ -35,11 +42,11 @@ export class KnowledgeGraphService {
   private readonly ctx: AppContext;
 
   constructor(deps: KnowledgeGraphServiceDeps) {
-    const { ctx, audit, undo } = deps;
+    const { ctx, audit, undo, minConfidence } = deps;
     this.ctx = ctx;
     this.entities = new GraphEntities(ctx);
     this.relations = new GraphRelations(ctx);
-    this.views = new GraphViews(this.entities, this.relations);
+    this.views = new GraphViews(this.entities, this.relations, minConfidence);
     this.userLinks = new UserLinks({ ctx, audit, graph: { entities: this.entities, relations: this.relations } });
     this.merges = new EntityMerges({ ctx, audit, undo });
     this.deletions = new SubjectDeletion({ ctx, audit, undo, nodes: this.entities });
@@ -189,7 +196,12 @@ export class KnowledgeGraphService {
     this.relations.revertChanges(changes);
   }
 
-  /** Entities connected to `entityId` via active (not rejected) relations. */
+  /** Open proposals of the entry that reach the user's minimum confidence – the ones the user can see and decide. */
+  proposalsOf(entityId: string): GraphRelation[] {
+    return this.views.proposalsOf(entityId);
+  }
+
+  /** Entities connected to `entityId` via active (not rejected) relations; proposals below the user's minimum do not count. */
   neighbors(entityId: string, opts: { types?: EntityType[]; relationTypes?: RelationType[] } = {}): GraphEntity[] {
     return this.views.neighbors(entityId, opts);
   }

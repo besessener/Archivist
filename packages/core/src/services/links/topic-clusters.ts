@@ -3,6 +3,7 @@ import type { EntityType, GraphEntity } from '@archivist/shared';
 import { currentRun } from '../../agent/scope';
 import { newId } from '../../util/ids';
 import { tokenize, truncate } from '../../util/text';
+import { reachesThresholdSql } from '../graph/rows';
 import type { LinkCandidates } from './candidates';
 import { entrySql, TOPIC_ENTRY_TYPES, type LinkDeps } from './entries';
 
@@ -93,10 +94,10 @@ export class TopicClusters {
       .prepare(
         `SELECT e.id, e.type, e.name FROM entities e WHERE ${entrySql('e', TOPIC_ENTRY_TYPES)} AND NOT EXISTS (
           SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = e.id THEN r.target_entity_id ELSE r.source_entity_id END
-          WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND o.type IN ('topic','project'))
+          WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND ${reachesThresholdSql('r')} AND o.type IN ('topic','project'))
         ORDER BY e.created_at DESC LIMIT ?`,
       )
-      .all(max) as Member[];
+      .all({ minConfidence: this.deps.minConfidence() }, max) as Member[];
   }
 
   /** Groups from a minimum size on, with a local name suggestion; groups the user already answered are not offered again. */

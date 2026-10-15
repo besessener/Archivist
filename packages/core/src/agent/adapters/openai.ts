@@ -3,7 +3,7 @@ import { abortedError, mapHttpError } from '../../util/llm-errors';
 import { parseRetryAfter } from '../../util/retry-after';
 import { AppError } from '../../util/errors';
 import type { AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
-import { authHeaders, previewOf, rejectedFeatures, requestAbort, uniqueSources, userTimeZone, type AdapterConfig } from './common';
+import { authHeaders, imageNote, previewOf, rejectedFeatures, requestAbort, uniqueSources, userTimeZone, type AdapterConfig } from './common';
 import { textOf, toResponsesInput, type OutputItem } from './openai-items';
 
 export { toResponsesInput } from './openai-items';
@@ -196,6 +196,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
         outputTokens: usage?.outputTokens ?? null,
         cacheReadTokens: usage?.cacheReadTokens ?? null,
         cacheWriteTokens: usage?.cacheWriteTokens ?? null,
+        ...imageNote(req),
       });
     }
   }
@@ -215,7 +216,7 @@ export class OpenAiResponsesAdapter implements ProviderAdapter {
     const full: Record<string, unknown> = {
       model: this.model,
       instructions: req.system,
-      input: toResponsesInput(req.messages, this.model),
+      input: toResponsesInput(req.messages, { model: this.model, images: req.images }),
       tools: functions,
       tool_choice: 'auto',
       store: false,

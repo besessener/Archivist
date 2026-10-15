@@ -90,6 +90,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 
 ## Lesen
 
+- **Anhänge einer Nachricht** kommen ohne Werkzeug: Die Nachricht trägt je Anhang „Angehängt: D… „Name“ (.Typ, Größe)“ und den Textanfang (6 000 Zeichen, als Daten markiert), Bilder zusätzlich als Bild ([Bilder im Chat](llm-schnittstelle.md#bilder-im-chat)). Den Rest eines langen Anhangs liest `read_document` mit derselben D-ID. Code: `agent/attachments.ts`.
 - `find_documents` filtert nach Endung, Name, Ordner, Thema, Projekt, Typ, Person, Tag, Dokument- und Archivierungsdatum, Größe und Status, sortiert und seitenweise, mit Gesamtzahl und Ergebnismenge `S…` (`within` grenzt eine frühere Menge ein). Ergebnismengen beliebiger Größe werden vollständig aufgelöst.
 - `related` liefert dieselbe Liste wie „Verwandte Einträge“ in der Oberfläche (direkte Beziehungen und gemeinsame Projekte, Vorgänge, Themen, Personen, Tags, nach Stärke, seitenweise); `depth: 2` nennt auch die Nachbarn der Nachbarn.
 - Einträge, die nur aus nicht freigegebenen Dokumenten stammen, nennt `list_entries` ohne Inhalt. Hinweise (`kind: insight`) zitieren ihre Quellen, etwa ein Widerspruch zwischen zwei Dokumenten; sie erscheinen schon ohne Inhalt, wenn eines ihrer Dokumente nicht freigegeben ist.
@@ -139,7 +140,7 @@ Die festen Methoden aus Epic #269 als eigene Werkzeuge, mit denselben Service-Fu
 | Werkzeug | Methode |
 | --- | --- |
 | `suggest_links` | ähnliche Einträge (Kosinus der gespeicherten Abschnittsvektoren; lokale Hash-Vektoren mit höherer Schwelle als echte Embeddings) und genannte Themen/Projekte, bis zu 3 je Eintrag |
-| `find_unlinked_entries` | Einträge ohne bestätigte oder vorgeschlagene Beziehung (ein Ordner allein zählt nicht), seitenweise, rein per SQL |
+| `find_unlinked_entries` | Einträge ohne bestätigte oder vorgeschlagene Beziehung (ein Ordner allein zählt nicht, ein Vorschlag unter der Mindest-Sicherheit auch nicht), seitenweise, rein per SQL |
 | `find_topic_clusters`, `propose_topic` | Gruppen ähnlicher Einträge ohne Thema als Hinweis „Neues Thema ‚…‘ anlegen?“; „Ja“ legt an und ordnet zu (rückgängig machbar), „Nein“ wird gemerkt |
 | `backfill_links` | rückwirkender Lauf über das Archiv mit allen Methoden (ähnlich, gleicher Tag + Person, gleiches Quelldokument, Analyse von Notizen); prüft nur neue oder geänderte Einträge (Markierung je Eintrag); hält an, solange 20 Vorschläge auf deine Prüfung warten, und sagt das dem Agenten |
 | `linkage_report` | Verknüpfungsgrad: Anteil verwaister Einträge, offene Vorschläge, Bestätigungsquote je Methode, Verlauf der Archivprüfungen und die aus Ablehnungen gelernten Schwellen (nur lesen) |
@@ -150,7 +151,7 @@ Weitere Werkzeuge für die Verknüpfungen:
 | Werkzeug | Zweck |
 | --- | --- |
 | `set_metadata` | `topic`/`project` ersetzen das Hauptthema bzw. -projekt (Ablage). `addTopics`/`addProjects` ergänzen weitere – wer noch keins hat, bekommt es als Hauptthema –, `removeTopics`/`removeProjects` entfernen weitere; `case` ordnet einem vorhandenen Vorgang zu; `addTags` gilt für alle Arten von Einträgen. Ergänzungen sind wie die Sammelzuordnung ein Rückgängig-Schritt |
-| `link` | auch `subtopic_of`: ein Thema oder Projekt unter ein anderes einordnen (keine Kreise) |
+| `link` | auch `subtopic_of`: ein Thema oder Projekt unter ein anderes einordnen (keine Kreise). Aus eigenem Antrieb nur ein Vorschlag mit Sicherheit 0,6 – liegt die Mindest-Sicherheit darüber, keiner; was der Benutzer ausdrücklich verlangt, wird bestätigt verknüpft |
 | `update_note` | Titel und Text einer Notiz ändern (nur auf Wunsch); ohne neuen Titel bleibt der bisherige. `[[Name]]` verlinkt, unbekannte Namen meldet das Werkzeug zum Anlegen |
 | `case_overview` | ein Vorgang mit Status, offenen Punkten und Verlauf (nur lesen; Dokumentnamen nur mit Freigabe) |
 | `list_subjects` | zeigt bei Unterthemen das Oberthema |

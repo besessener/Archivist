@@ -1,22 +1,18 @@
 import type { DocumentProposal } from '@archivist/shared';
-import { and, eq, sql } from 'drizzle-orm';
-import { documents, relations } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { documents } from '../../db/schema';
+import { shownProposalIds } from '../links/proposal-list';
 import type { CheckRun } from './findings';
 
-/** Proposed relations with low confidence that nobody decided yet: one aggregated hint. */
+/** Proposals of the review list with low confidence that nobody decided yet: one aggregated hint; below the user's minimum none count. */
 export function checkLowConfidenceRelations(run: CheckRun): void {
-  const ids = run.deps.ctx.database.db
-    .select({ id: relations.id })
-    .from(relations)
-    .where(and(eq(relations.status, 'proposed'), sql`${relations.confidence} <= 0.5`))
-    .all()
-    .map((row) => row.id);
+  const ids = shownProposalIds(run.deps.ctx.database.sqlite, { minConfidence: run.deps.settings.get().links.minConfidence, atMost: 0.5 });
   if (ids.length === 0) return;
   run.findings.insightKeys.add('low-rel');
   run.deps.insights.upsert({
     kind: 'low_confidence_relation',
     title: `${ids.length} ungeklärte Beziehung(en) mit geringer Sicherheit`,
-    explanation: 'Diese vorgeschlagenen Beziehungen wurden noch nicht bestätigt oder abgelehnt. Prüfe sie im Bereich „Wissen“.',
+    explanation: 'Diese vorgeschlagenen Verknüpfungen wurden noch nicht bestätigt oder abgelehnt. Prüfe sie unten unter „Verknüpfungsvorschläge“.',
     confidence: 0.5,
     sourceIds: ids,
     dedupeKey: 'low-rel',

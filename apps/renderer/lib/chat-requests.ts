@@ -50,7 +50,7 @@ export function createChatRequestStore() {
     },
     /** Remembers the message until its reply arrives; `sendFn` returns `undefined` on an error it has shown, which discards it. */
     async send(
-      { conversationId, content }: { conversationId: string | null; content: string },
+      { conversationId, content, attachments = [] }: { conversationId: string | null; content: string; attachments?: ChatMessage['attachments'] },
       sendFn: () => Promise<ChatSendOutcome | undefined>,
     ): Promise<ChatSendOutcome | undefined> {
       const now = new Date();
@@ -69,6 +69,7 @@ export function createChatRequestStore() {
         intent: null,
         errorMessage: null,
         quickReplies: [],
+        attachments,
       };
       update({ ...state, requests: [...state.requests, { id, conversationId, message, result: null }] });
       let outcome: ChatSendOutcome | undefined;

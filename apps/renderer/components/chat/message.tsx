@@ -6,6 +6,7 @@ import { AlertCircle, ExternalLink, FileText, HelpCircle } from 'lucide-react';
 import { RunSummary } from '@/components/agent/run-summary';
 import { ActionCard } from '@/components/common/action-card';
 import { DocumentDialog } from '@/components/documents/document-dialog';
+import { SentAttachments } from './attachment-chips';
 import { isLinkSuggestion, LinkSuggestions } from './link-suggestions';
 import { EntityIcon } from '@/components/common/entity-chip';
 import { Markdown } from '@/components/common/markdown';
@@ -99,7 +100,10 @@ export function ChatBubble({
         className={cn('max-w-[min(48rem,92%)] text-sm', isUser ? 'rounded-2xl bg-user-bubble px-4 py-2.5' : 'w-full')}
       >
         {isUser ? (
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          <>
+            {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+            <SentAttachments attachments={message.attachments ?? []} />
+          </>
         ) : (
           <div className="flex flex-col gap-3">
             {message.content && <Markdown text={message.content} />}

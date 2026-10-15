@@ -13,6 +13,7 @@ import { createToolContext, type RefStore, type ToolContext, type ToolRegistry }
 import { AgentRunner, type RunnerOptions, type RunOutcome } from './runner';
 import type { RunProgress } from './run-progress';
 import type { AgentRunService } from './runs';
+import type { PreparedAttachments } from './attachments';
 import { maskingOf } from '../util/redact';
 import { maskSecrets } from './security';
 import type { ToolDeps } from './tools/common';
@@ -38,6 +39,8 @@ export interface ExecuteOptions {
   redactions?: number;
   /** Of `redactions`: personal data. */
   personalRedactions?: number;
+  /** What the user attached to the message: pictures for this run, documents sent along, an instruction found in them. */
+  attachments?: Pick<PreparedAttachments, 'images' | 'shared' | 'instruction'>;
 }
 
 export interface ExecutionResult {
@@ -133,6 +136,8 @@ export class AgentRunExecutor {
       lastAnswer: options.lastAnswer,
       job: options.job ?? null,
     });
+    for (const id of options.attachments?.shared ?? []) ctx.shared.add(id);
+    ctx.tainted = options.attachments?.instruction ?? null;
     const learned = this.learned(settings.agent);
     const progress = startProgress(runId, conversationId);
     this.deps.progress.show(progress);
@@ -179,6 +184,7 @@ export class AgentRunExecutor {
       logger: this.deps.ctx.logger,
       // web search runs in chat only; background runs never leave the archive (#301)
       webSearch: kind === 'chat' && agent.webSearch,
+      images: options.attachments?.images,
       propose: (proposal) => {
         setup.proposals.push(...proposalItems(proposal, ctx));
         return proposedText(proposal.reason);

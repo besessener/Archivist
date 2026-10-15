@@ -1,5 +1,6 @@
 import type { EntityType } from '@archivist/shared';
 import { relationTypeFor, type LinkCandidate, type LinkCandidates } from './candidates';
+import { reachesThresholdSql } from '../graph/rows';
 import { entrySql, isEntry, LINK_ENTRY_TYPES, proposeLink, type LinkDeps } from './entries';
 import { proposalsAtLimit } from './proposal-list';
 
@@ -13,15 +14,15 @@ const ORPHAN_CURSOR = 'links.orphans.cursor';
 /** The one bundled hint about entries without a link (#290). */
 export const ORPHAN_INSIGHT = 'orphan-entries';
 
-/** Entries without any confirmed or proposed relation (#290); a folder (category) alone does not count. */
+/** Entries without any confirmed or proposed relation (#290); a folder (category) alone does not count, nor a proposal below the minimum. Binds `@minConfidence`. */
 const ORPHAN_WHERE = `${entrySql('e', LINK_ENTRY_TYPES)} AND NOT EXISTS (
       SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = e.id THEN r.target_entity_id ELSE r.source_entity_id END
-      WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND o.type <> 'category')`;
+      WHERE (r.source_entity_id = e.id OR r.target_entity_id = e.id) AND r.status IN ('proposed','confirmed') AND ${reachesThresholdSql('r')} AND o.type <> 'category')`;
 
-/** Relation of the entry with the status to anything but a folder. */
+/** Relation of the entry with the status to anything but a folder, a proposal only at the minimum; binds `@minConfidence`. */
 const LINK_TO_NON_FOLDER = (status: 'confirmed' | 'proposed') =>
   `SELECT 1 FROM relations r JOIN entities o ON o.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
-           WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status = '${status}' AND o.type <> 'category' LIMIT 1`;
+           WHERE (r.source_entity_id = ? OR r.target_entity_id = ?) AND r.status = '${status}' AND ${reachesThresholdSql('r')} AND o.type <> 'category' LIMIT 1`;
 
 /** The bundled hint text: who has targets in the proposal list, who still needs a link by hand. */
 function orphanExplanation(counts: { withTargets: number; rest: number }): string {
@@ -51,21 +52,25 @@ export class OrphanLinks {
   }
 
   /** Plain SQL, no texts are loaded (#213); paged, with the total. */
+  private get threshold() {
+    return { minConfidence: this.deps.minConfidence() };
+  }
+
   orphans(page: { limit?: number; offset?: number } = {}): OrphanPage {
-    const total = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${ORPHAN_WHERE}`).get() as { c: number }).c;
+    const total = (this.sqlite.prepare(`SELECT count(*) AS c FROM entities e WHERE ${ORPHAN_WHERE}`).get(this.threshold) as { c: number }).c;
     const items = this.sqlite
       .prepare(`SELECT e.id, e.type, e.name, e.created_at AS createdAt FROM entities e WHERE ${ORPHAN_WHERE} ORDER BY e.created_at, e.id LIMIT ? OFFSET ?`)
-      .all(page.limit ?? 50, page.offset ?? 0) as OrphanPage['items'];
+      .all(this.threshold, page.limit ?? 50, page.offset ?? 0) as OrphanPage['items'];
     return { total, items };
   }
 
   private hasLink(id: string, status: 'confirmed' | 'proposed'): boolean {
-    return Boolean(this.sqlite.prepare(LINK_TO_NON_FOLDER(status)).get(id, id, id));
+    return Boolean(this.sqlite.prepare(LINK_TO_NON_FOLDER(status)).get(this.threshold, id, id, id));
   }
 
   /** Proposes up to two targets per orphan, continuing where the last run stopped, and keeps ONE bundled hint up to date. */
   async checkOrphans(options: { propose?: boolean; maxEntries?: number; signal?: AbortSignal } = {}): Promise<{ pending: number; proposed: number }> {
-    const orphanIds = (this.sqlite.prepare(`SELECT e.id FROM entities e WHERE ${ORPHAN_WHERE} ORDER BY e.id`).all() as Array<{ id: string }>).map(
+    const orphanIds = (this.sqlite.prepare(`SELECT e.id FROM entities e WHERE ${ORPHAN_WHERE} ORDER BY e.id`).all(this.threshold) as Array<{ id: string }>).map(
       (row) => row.id,
     );
     const proposed = options.propose !== false && orphanIds.length ? await this.proposeTargets(orphanIds, options) : 0;

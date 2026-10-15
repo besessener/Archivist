@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RelationType } from '@archivist/shared';
+import { PROPOSAL_CONFIDENCE } from '../../services/knowledge-graph';
 import { truncate } from '../../util/text';
 import { userAgrees, userAsksForChange } from '../security';
 import { defineTool, list, optText, type AgentTool, type ToolContext } from '../registry';
@@ -29,9 +30,7 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
       ids = [subject.id, ...graph.neighbors(subject.id).map((e) => e.id)];
     } else return { error: 'Gib entry oder subject an.' };
     const wanted = a.relationIds?.length ? new Set(a.relationIds) : null;
-    const proposals = [...new Map(ids.flatMap((id) => graph.relationsOf(id, { statuses: ['proposed'] })).map((r) => [r.id, r])).values()].filter(
-      (r) => !wanted || wanted.has(r.id),
-    );
+    const proposals = [...new Map(ids.flatMap((id) => graph.proposalsOf(id)).map((r) => [r.id, r])).values()].filter((r) => !wanted || wanted.has(r.id));
     return { proposals };
   };
   // the model's claim „the user asked for it“ only counts when the user's own words ask for a change
@@ -56,6 +55,12 @@ export function linkTools(deps: ToolDeps): AgentTool[] {
         const target = ctx.refs.resolve(a.b);
         if (!source || !target) return { content: `Unbekannte ID(s).${unknownNote([a.a, a.b].filter((r) => !ctx.refs.resolve(r)))}`, isError: true };
         const status = a.onUserRequest && userAsked(ctx) ? 'confirmed' : 'proposed';
+        const minConfidence = deps.settings.get().links.minConfidence;
+        if (status === 'proposed' && PROPOSAL_CONFIDENCE < minConfidence)
+          return {
+            content: `Kein Vorschlag: Die Mindestsicherheit für Verknüpfungsvorschläge (${Math.round(minConfidence * 100)} %) liegt über der eines Vorschlags des Agenten. Verlangt der Benutzer die Verknüpfung ausdrücklich, setze onUserRequest=true.`,
+            summary: 'unter der Mindestsicherheit',
+          };
         const rejected = graph.rejectedBetween({ a: source, b: target });
         if (rejected && status === 'proposed')
           return {

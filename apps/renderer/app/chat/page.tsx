@@ -9,6 +9,7 @@ import { ChatBubble } from '@/components/chat/message';
 import { LoadMore } from '@/components/common/load-more';
 import { ErrorNote } from '@/components/common/states';
 import { useApp } from '@/lib/app-context';
+import { useChatAttachments } from '@/lib/use-chat-attachments';
 import { chatRequests, mergeChatMessages, requestsFor } from '@/lib/chat-requests';
 import { call } from '@/lib/ipc';
 import { usePageWindow, useWindowedQuery } from '@/lib/use-page-window';
@@ -25,8 +26,9 @@ function aiNoticeFor({ settings, hasApiKey }: Settings): string {
 }
 
 export default function ChatPage() {
-  const { setContextMessage } = useApp();
+  const { setContextMessage, setDropTarget } = useApp();
   const { run } = useRun();
+  const attachments = useChatAttachments();
   // Running requests and the selected conversation live outside the page so that they survive switching tabs.
   const { requests, activeConversationId } = useSyncExternalStore(chatRequests.subscribe, chatRequests.getSnapshot, chatRequests.getSnapshot);
   const conversationId = activeConversationId ?? null;
@@ -103,11 +105,13 @@ export default function ChatPage() {
   const send = useCallback(
     async (raw: string) => {
       const content = raw.trim();
-      if (!content || working) return;
+      const attached = attachments.ready.map(({ documentId, name, ext }) => ({ documentId, name, ext }));
+      if ((!content && !attached.length) || working || attachments.importing) return;
       setText('');
+      attachments.clear();
       // The request keeps running in the main process and stays in the shared store, even if the page is left in the meantime.
-      const sent = await chatRequests.send({ conversationId, content }, () =>
-        run(() => call('chat:send', { text: content, ...(conversationId ? { conversationId } : {}) }), {
+      const sent = await chatRequests.send({ conversationId, content, attachments: attached }, () =>
+        run(() => call('chat:send', { text: content, attachments: attached.map((a) => a.documentId), ...(conversationId ? { conversationId } : {}) }), {
           errorTitle: 'Nachricht konnte nicht gesendet werden',
         }),
       );
@@ -115,8 +119,15 @@ export default function ChatPage() {
       // Error: put the text back into the input field, unless something new is already there
       else setText((current) => current || content);
     },
-    [conversationId, working, run, conversations],
+    [conversationId, working, run, conversations, attachments],
   );
+
+  // files dropped on the chat are attached to the next message instead of only landing in the inbox
+  const addAttachments = attachments.add;
+  useEffect(() => {
+    setDropTarget({ hint: 'Sie werden an deine Nachricht angehängt und landen zugleich in der Inbox.', take: (files) => void addAttachments(files) });
+    return () => setDropTarget(null);
+  }, [setDropTarget, addAttachments]);
 
   async function newConversation() {
     const created = await run(() => call('chat:newConversation'));
@@ -167,7 +178,15 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <ChatComposer text={text} onTextChange={setText} inputRef={inputRef} working={working} onSend={(raw) => void send(raw)} aiNotice={aiNotice} />
+      <ChatComposer
+        text={text}
+        onTextChange={setText}
+        inputRef={inputRef}
+        working={working}
+        onSend={(raw) => void send(raw)}
+        aiNotice={aiNotice}
+        attachments={attachments}
+      />
     </div>
   );
 }

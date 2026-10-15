@@ -10,6 +10,7 @@ import { Page, PageHeader } from '@/components/common/page-header';
 import { EmptyState, ErrorNote, Loading } from '@/components/common/states';
 import { AnalyzeImportDialog } from '@/components/inbox/analyze-import-dialog';
 import { InboxDocCard } from '@/components/inbox/doc-card';
+import { ImportFilesButton } from '@/components/inbox/import-files-button';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Select } from '@/components/ui/select';
@@ -68,6 +69,7 @@ function InboxContent() {
       <PageHeader
         title="Inbox"
         description="Neue Dokumente warten hier auf deine Entscheidung. Archivist macht Vorschläge – es wird nichts verschoben, bevor du es bestätigst."
+        actions={<ImportFilesButton />}
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter">
@@ -140,7 +142,7 @@ function InboxContent() {
         <EmptyState
           icon={<InboxIcon />}
           title="Die Inbox ist leer"
-          description="Zieh Dateien in das Fenster oder wähle im Chat „Dateien auswählen“, um Dokumente hinzuzufügen."
+          description="Zieh Dateien in das Fenster, wähle „Dateien importieren“ oder häng sie im Chat an deine Nachricht an."
           action={
             <Button asChild variant="outline">
               <Link href="/chat/">Zum Chat</Link>

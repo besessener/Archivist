@@ -1,6 +1,6 @@
-import type { ChatIntent, ChatMessage, Conversation } from '@archivist/shared';
+import type { ChatAttachResult, ChatAttachment, ChatIntent, ChatMessage, Conversation } from '@archivist/shared';
 import type { AppContext } from '../context';
-import { toErrorInfo } from '../util/errors';
+import { AppError, toErrorInfo } from '../util/errors';
 import { collectCreated, type CreatedEntry } from '../util/origin-scope';
 import type { ActionService } from './actions';
 import type { ArchiveService } from './archive';
@@ -8,6 +8,7 @@ import { mergeReplies, type ConvState, type Reply } from './chat-state';
 import { llmCancelScope } from './llm';
 import type { AgentService } from '../agent/service';
 import { tokenCapOverride } from '../util/token-cap';
+import { importAttachment } from './chat/attachment-import';
 import { ConversationStore } from './chat/conversation-store';
 import { ChatDispatcher } from './chat/dispatch';
 import { ChatFlow } from './chat/flow';
@@ -22,6 +23,18 @@ type CreatedTogether = (entries: CreatedEntry[], message: { id: string; text: st
 type SuggestLinks = (entries: CreatedEntry[], reply: { messageId: string; conversationId: string }) => void;
 
 type SentMessage = { conversationId: string; userMessage: ChatMessage; assistantMessage: ChatMessage };
+
+/** What the user sends: the text and the ids of the documents attached to it. */
+export interface OutgoingMessage {
+  text: string;
+  attachments: string[];
+}
+
+/** Collects what a reply creates; `attachments` are the documents the agent sees with the message. */
+interface ReplyTarget {
+  created: CreatedEntry[];
+  attachments: string[];
+}
 
 export type ChatServiceDeps = Omit<ChatDeps, 'actions' | 'archive'>;
 
@@ -119,10 +132,17 @@ export class ChatService {
     return this.rules.classify(text, state);
   }
 
+  /** Imports picked files for the next message, one after another; the result keeps the order of `paths`. */
+  async attach(paths: string[]): Promise<ChatAttachResult> {
+    const results: ChatAttachResult = [];
+    for (const path of paths) results.push(await importAttachment(this.services.docs, path));
+    return results;
+  }
+
   /** Requests of one conversation run one after the other: each reads the state its predecessor saved (#251). */
-  send(conversationId: string | undefined, text: string): Promise<SentMessage> {
-    if (!conversationId) return this.process(undefined, text);
-    const current = (this.queues.get(conversationId) ?? Promise.resolve()).then(() => this.process(conversationId, text));
+  send(conversationId: string | undefined, message: OutgoingMessage): Promise<SentMessage> {
+    if (!conversationId) return this.process(undefined, message);
+    const current = (this.queues.get(conversationId) ?? Promise.resolve()).then(() => this.process(conversationId, message));
     const settled = current.then(
       () => undefined,
       () => undefined,
@@ -134,16 +154,19 @@ export class ChatService {
     return current;
   }
 
-  private async process(conversationId: string | undefined, text: string): Promise<SentMessage> {
-    const conversation = this.store.forMessage(conversationId, text);
-    const userMessage = this.store.saveUserMessage(conversation, text);
+  private async process(conversationId: string | undefined, { text, attachments: ids }: OutgoingMessage): Promise<SentMessage> {
+    const attachments = this.attachmentsOf(ids);
+    const conversation = this.store.forMessage(conversationId, text.trim() || attachments.map((a) => a.name).join(', '));
+    const userMessage = this.store.saveUserMessage(conversation, { text, attachments });
     // the UI already shows the message while the reply is still being produced (e.g. after switching tabs)
     this.ctx.events.changed('chat');
     const state = this.store.state(conversation);
     // everything this message creates (also before an error or a cancel) belongs together (#272)
     const created: CreatedEntry[] = [];
     const gate = this.capGate(text, state);
-    const reply = gate.kind === 'ask' ? gate.reply : await this.proceed(gate, { conversationId: conversation, created });
+    // a message held at the token limit is sent later without its attachments; they stay on the saved message
+    const target = { conversationId: conversation, created, attachments: gate.kind === 'proceed' && gate.text === text ? ids : [] };
+    const reply = gate.kind === 'ask' ? gate.reply : await this.proceed(gate, target);
     if (created.length > 1) this.notify('Linking entries of one message failed', () => this.createdTogether?.(created, { id: userMessage.id, text }));
     const assistantMessage = this.store.saveAssistantMessage(conversation, reply);
     // never on the path of the answer: the suggestions follow in a job of their own (#283)
@@ -183,20 +206,29 @@ export class ChatService {
   }
 
   /** Replies past the token limit gate, ignoring the limit when the user chose to continue. */
-  private proceed(gate: Extract<CapGate, { kind: 'proceed' }>, target: { conversationId: string; created: CreatedEntry[] }): Promise<Reply> {
-    const reply = () => this.replyTo({ conversationId: target.conversationId, text: gate.text, state: gate.state }, target.created);
+  private proceed(gate: Extract<CapGate, { kind: 'proceed' }>, target: ReplyTarget & { conversationId: string }): Promise<Reply> {
+    const reply = () => this.replyTo({ conversationId: target.conversationId, text: gate.text, state: gate.state }, target);
     return gate.override ? tokenCapOverride.run(true, reply) : reply();
   }
 
+  /** The documents behind attached ids, in order; an unknown id fails the message before anything is saved. */
+  private attachmentsOf(ids: string[]): ChatAttachment[] {
+    return [...new Set(ids)].map((id) => {
+      const row = this.services.docs.findRow(id);
+      if (!row) throw new AppError('validation_error', 'Ein angehängtes Dokument gibt es nicht mehr.');
+      return { documentId: row.id, name: row.originalName, ext: row.ext };
+    });
+  }
+
   /** The reply to a message: by the agent, else by the rule-based flow; on cancel or error what is already done stays. */
-  private async replyTo(turn: ChatTurn, created: CreatedEntry[]): Promise<Reply> {
+  private async replyTo(turn: ChatTurn, { created, attachments }: ReplyTarget): Promise<Reply> {
     const { conversationId } = turn;
     this.progress.set(conversationId, { replies: [], state: turn.state });
     this.running.get(conversationId)?.abort();
     const controller = new AbortController();
     this.running.set(conversationId, controller);
     try {
-      const reply = async () => (await this.agentReply(turn)) ?? (await llmCancelScope.run(controller.signal, () => this.flow.handle(turn)));
+      const reply = async () => (await this.agentReply(turn, attachments)) ?? (await llmCancelScope.run(controller.signal, () => this.flow.handle(turn)));
       return await collectCreated(reply, created);
     } catch (err) {
       const done = this.progress.get(conversationId) ?? { replies: [], state: turn.state };
@@ -222,10 +254,10 @@ export class ChatService {
   }
 
   /** Runs the message through the agent; null when the agent cannot (then the rule-based evaluation applies). */
-  private async agentReply({ conversationId, text, state }: ChatTurn): Promise<Reply | null> {
+  private async agentReply({ conversationId, text, state }: ChatTurn, attachments: string[]): Promise<Reply | null> {
     // an open question of the rule-based flow (from before the agent mode) is still answered by that flow
     if (!this.agent || state.pending || !(await this.agent.ensureCapable())) return null;
-    const result = await this.agent.chat(conversationId, { text, state: state.agent ?? {} });
+    const result = await this.agent.chat(conversationId, { text, attachments, state: state.agent ?? {} });
     return {
       intent: 'agent',
       content: result.content,

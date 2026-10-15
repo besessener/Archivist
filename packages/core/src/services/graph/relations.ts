@@ -5,7 +5,7 @@ import { currentRun } from '../../agent/scope';
 import { entities, relations } from '../../db/schema';
 import { AppError } from '../../util/errors';
 import { newId, nowIso } from '../../util/ids';
-import { ACTIVE_STATUSES, findRelationRow, mapRelation, otherEndOf, relationRow, relationRowsOf, type RelationKey, type RelationRow } from './rows';
+import { ACTIVE_STATUSES, findRelationRow, mapRelation, relationRow, relationRowsOf, type RelationKey, type RelationRow } from './rows';
 
 export interface LinkOptions {
   confidence?: number;
@@ -322,11 +322,5 @@ export class GraphRelations {
       this.db.update(relations).set({ status, confidence, sourceIds, updatedAt: now }).where(eq(relations.id, changed.id)).run();
     }
     this.ctx.events.changed('knowledge');
-  }
-
-  /** The other ends of the entity's current relations. */
-  activeNeighborIds(entityId: string, relationTypes?: RelationType[]): string[] {
-    const current = this.of(entityId, { statuses: ACTIVE_STATUSES, types: relationTypes });
-    return [...new Set(current.map((relation) => otherEndOf(relation, entityId)))];
   }
 }

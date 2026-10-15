@@ -1,6 +1,29 @@
-import type { AgentMode } from '@archivist/shared';
+import type { AgentMode, SourceReference } from '@archivist/shared';
 import { webSourcesMarkdown } from './prompt';
+import type { AgentChatState } from './registry';
 import type { RunOutcome } from './runner';
+
+/** Run log task of a message that only carries attachments. */
+export const ATTACHMENTS_TASK = 'Angehängte Dateien ansehen';
+
+/** One chat message for the agent: the user's text, the ids of the documents attached to it and the conversation's state. */
+export interface AgentChatMessage {
+  text: string;
+  attachments: string[];
+  state: AgentChatState;
+}
+
+export interface AgentChatReply {
+  content: string;
+  sources: SourceReference[];
+  actionIds: string[];
+  quickReplies: string[];
+  runId: string;
+  errorMessage: string | null;
+  uncertainties: string[];
+  state: AgentChatState;
+  status: RunOutcome['status'];
+}
 
 const ASK_RE =
   /\b(?:frag(?:e)?\s+mich\s+(?:diesmal\s+|lieber\s+|bitte\s+)?(?:vorher|zuerst|erst)|vorher\s+fragen|erst\s+fragen|nur\s+vorschlagen|modus\s+„?fragen)/i;

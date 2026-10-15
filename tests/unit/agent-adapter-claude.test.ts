@@ -109,7 +109,7 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
       { role: 'tool', results: [{ callId: 'call:1/x', name: 'find_documents', content: '', isError: false }] },
       user('weiter'),
     ];
-    expect(toAnthropicMessages(history, 'claude-opus-5-5')).toEqual([
+    expect(toAnthropicMessages(history, { model: 'claude-opus-5-5' })).toEqual([
       { role: 'user', content: [{ type: 'text', text: 'a' }] },
       {
         role: 'assistant',
@@ -127,7 +127,7 @@ describe('Claude adapter via the Anthropic SDK (#296)', () => {
       },
     ]);
     // the same model of another provider would not get foreign raw blocks either
-    expect(JSON.stringify(toAnthropicMessages(history, 'gpt-5'))).not.toContain('ENC');
+    expect(JSON.stringify(toAnthropicMessages(history, { model: 'gpt-5' }))).not.toContain('ENC');
   });
 
   it('parses the stream: text deltas, tool_use with input_json_delta, thinking, usage incl. cache tokens', async () => {

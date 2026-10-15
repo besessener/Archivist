@@ -162,7 +162,6 @@ test.describe('older notifications (#228)', () => {
     await setup.do.complete(llm.url);
     for (let n = 1; n <= 52; n += 1) {
       await inbox.do.importFile(workspace.addDownload(`einzeln-${n}.txt`, `Einzelne Datei ${n} mit eigenem Inhalt ${n * 6007}.`));
-      await inbox.locators.closeImportCard.click();
     }
 
     await expect(async () => {

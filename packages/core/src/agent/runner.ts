@@ -6,7 +6,7 @@ import type { UserQuestion } from './ask-user';
 import { addUsage, budgetTokens, emptyUsage } from './pricing';
 import type { ToolContext, ToolRegistry } from './registry';
 import { NOT_RUN, ToolExecutor, errorResult, webSearchStep, type ProposeChange } from './tool-executor';
-import type { AgentMessage, AgentToolCall, AgentToolResult, ProviderAdapter, TurnRequest, TurnResult, WebSource } from './types';
+import type { AgentMessage, AgentToolCall, AgentToolResult, ModelImages, ProviderAdapter, TurnRequest, TurnResult, WebSource } from './types';
 
 /** After this many blocked repetitions the run stops. */
 const MAX_LOOP_HITS = 3;
@@ -37,6 +37,8 @@ export interface RunnerOptions {
   masking?: RedactionOptions;
   /** Offer the provider's web search (chat runs only, setting „Websuche“). */
   webSearch?: boolean;
+  /** Pictures of the message's attachments; they go with every request of this run. */
+  images?: ModelImages;
   propose: ProposeChange;
   onStep?: (step: AgentStep, all: AgentStep[]) => void;
   onText?: (delta: string, round: number) => void;
@@ -320,6 +322,7 @@ export class AgentRunner {
       redactions: this.tools.redactions,
       personalRedactions: this.tools.personalRedactions,
       webSearch: this.options.webSearch ?? false,
+      ...(this.options.images?.size ? { images: this.options.images } : {}),
       cacheKey: this.options.ctx.conversationId ? `chat:${this.options.ctx.conversationId}` : `run:${this.options.ctx.runId}`,
       signal,
     };

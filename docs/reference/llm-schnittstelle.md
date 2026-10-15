@@ -78,6 +78,14 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 - Die Statusanzeige in der Kopfzeile folgt dem letzten Ergebnis eines Aufrufs mit den **gespeicherten** Einstellungen: Textanfragen, strukturierte Antworten, Embeddings (auch die Messung der Diagnose) und Agentenanfragen. „Fehler“ steht auch, wenn der Endpunkt antwortet, die strukturierte Antwort aber auch nach der einen Korrekturanfrage nicht dem Format entspricht; der nächste gelungene Aufruf setzt den Status zurück. Ein Verbindungstest mit noch nicht gespeicherten Werten (Einstellungen, Einrichtung) ändert weder den Status noch den 60-Sekunden-Schutz. Im Datenschutzmodus „nur lokal“ zeigt die Anzeige „Nur lokal“ statt eines Verbindungszustands.
 - Der Chat fällt auf eine regelbasierte Auswertung bzw. lokale Trefferlisten zurück und kennzeichnet das deutlich.
 
+## Bilder im Chat
+
+- Hängst du im Chat ein Bild (PNG/JPG) an deine Nachricht ([Funktionen](funktionen.md#chat)), geht im Agentenlauf dieser Nachricht das Bild selbst an das Modell: OpenAI-kompatibel als `input_image` (Data-URL), Claude als `image`-Block (`base64`). Das Modell muss Bilder verstehen (Vision); ein reines Textmodell lehnt die Anfrage ab, der Lauf endet dann mit dessen Fehlermeldung.
+- Vorher dreht Archivist das Bild nach EXIF, verkleinert es auf höchstens 1 568 Pixel an der längsten Kante, legt Transparenz auf Weiß und speichert es neu als JPEG. Die EXIF-Daten (etwa Aufnahmeort und Kamera) gehen dabei nicht mit.
+- **Bildinhalte werden nicht maskiert.** Die Maskierung arbeitet auf Text; was auf dem Bild steht (eine IBAN auf einem fotografierten Kontoauszug), geht so hinaus, wie es ist. Der zum Bild erkannte Text (OCR) und der Dateiname gehen dagegen maskiert mit. Das Übertragungsprotokoll vermerkt jede solche Anfrage mit dem Hinweis „N Bild(er) übertragen – Bildinhalte werden nicht maskiert“ und nennt das Dokument.
+- Das Bild geht nur, wenn das Dokument zur Übertragung freigegeben ist: Ausschlüsse (Dokument, Ordner, Dateityp, Scan-Ordner) und „nur lokal“ gelten wie immer. Dass du es selbst anhängst, gilt im Modus „vorher fragen“ als Freigabe für diese Nachricht. Ein ausgeschlossenes Dokument erscheint nur als „Angehängt: D1 [nicht freigegeben] (.png)“ – ohne Namen, Text und Bild.
+- Das Bild geht nur mit den Anfragen des Laufs seiner Nachricht. Im Verlauf bleibt nur der Text des Anhangs (Name, Typ, Textanfang); spätere Nachrichten schicken das Bild nicht erneut. Wird das Dokument später ausgeschlossen, geht auch dieser Text nicht mehr mit („Anhang ausgeblendet“).
+
 ## Lange Dokumente
 
 - Die Klassifikation (Schema `DocumentClassification`) sendet einen Text, der mit dem Prompt nicht in `llm.maxInputChars` passt, in bis zu 6 aufeinanderfolgenden Teilen. Jeder Teil nennt im Prompt „Teil i von n“, der Text bleibt als Daten markiert. Die Teilgröße rechnet mit dem längsten möglichen Prompt (die längsten bekannten Themen- und Projektnamen), sodass kein Teil in der Mitte gekürzt wird.
@@ -106,7 +114,7 @@ Konfigurierbar (nichts davon ist im Code verdrahtet):
 
 ## Schutz vor Prompt-Injection
 
-- Dokumenttexte, Verlauf und Kontextlisten sind in jedem Prompt als Daten markiert.
+- Dokumenttexte, Verlauf und Kontextlisten sind in jedem Prompt als Daten markiert – auch der Text eines im Chat angehängten Dokuments. Enthält er Anweisungen an den Agenten, gilt der Lauf wie nach einem solchen Werkzeugergebnis als belastet: Änderungen braucht deine eigene Bitte, die Antwort nennt den Hinweis. Nur dein eigener Text zählt als Bitte, nie der eines Anhangs.
 - Agentenmodus: Wird ein Dokument nach dem Lesen ausgeschlossen oder sein Ordner gesperrt, gehen frühere Werkzeugergebnisse und Antworten, die es nennen, nicht erneut mit; im Verlauf steht stattdessen „Ergebnis ausgeblendet“. Gedankenblöcke des Anbieters (Thinking, Reasoning) früherer Antworten entfallen dann ganz.
 - Vorschläge führt der Chat nur nach einem eindeutigen „ja“ des Benutzers aus, nie auf eine Einordnung des Modells hin.
 - Frühere Antworten aus dem Archiv gehen nicht als Text in die Intent-Erkennung ein.

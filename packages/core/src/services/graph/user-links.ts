@@ -19,7 +19,7 @@ import {
   type LinkUndoData,
 } from './link-undo';
 import type { GraphRelations } from './relations';
-import { entityRow, findRelationRow, mapRelation, relationRow, type RelationKey, type RelationRow } from './rows';
+import { entityRow, findRelationRow, mapRelation, PROPOSAL_CONFIDENCE, relationRow, type RelationKey, type RelationRow } from './rows';
 
 export interface LinkEntriesOptions {
   status: 'confirmed' | 'proposed';
@@ -111,7 +111,7 @@ export class UserLinks {
   private linkAsAsked(key: RelationKey, options: LinkEntriesOptions): boolean {
     const confirmed = options.status === 'confirmed';
     const result = this.graph.relations.link(key, {
-      confidence: options.confidence ?? (confirmed ? 1 : 0.6),
+      confidence: options.confidence ?? (confirmed ? 1 : PROPOSAL_CONFIDENCE),
       status: options.status,
       resolvedByUser: confirmed,
       // proposals of the fixed link methods are the system's, not the user's (#270)

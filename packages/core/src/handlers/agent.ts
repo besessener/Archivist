@@ -65,7 +65,8 @@ export function agentHandlers(services: Services, host: HostApi): HandlerGroup<'
       return { ok: true as const };
     },
 
-    'chat:send': (input) => services.chat.send(input.conversationId, input.text),
+    'chat:send': (input) => services.chat.send(input.conversationId, { text: input.text, attachments: input.attachments }),
+    'chat:attach': (input) => services.chat.attach(input.paths),
     'chat:cancel': (input) => ({ cancelled: services.chat.cancel(input.conversationId) }),
     'chat:history': (input) => services.chat.history(input.conversationId, { limit: input.limit, offset: input.offset }),
     'chat:historyCount': (input) => services.chat.historyCount(input.conversationId),

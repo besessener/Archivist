@@ -6,7 +6,7 @@ import type { AppStateService } from './app-state';
 import type { ContradictionService } from './contradictions';
 import type { DocumentService } from './documents';
 import type { InsightService } from './insights';
-import type { KnowledgeGraphService } from './knowledge-graph';
+import { PROPOSAL_CONFIDENCE, type KnowledgeGraphService } from './knowledge-graph';
 import type { LlmService } from './llm';
 import type { PrivacyService } from './privacy';
 
@@ -39,6 +39,8 @@ export interface RelationRefinerDeps {
   insights: InsightService;
   contradictions: ContradictionService;
   appState: AppStateService;
+  /** The user's lowest confidence for a link proposal (setting `links.minConfidence`). */
+  minConfidence: () => number;
 }
 
 /** The kind of a link, more precisely (#284): an LLM hint for confirmed `related_to` pairs in mode „automatisch“, shareable content only, as a proposal. */
@@ -51,9 +53,11 @@ export class RelationRefiner {
   private readonly insights: InsightService;
   private readonly contradictions: ContradictionService;
   private readonly appState: AppStateService;
+  private readonly minConfidence: () => number;
 
   constructor(deps: RelationRefinerDeps) {
     ({
+      minConfidence: this.minConfidence,
       ctx: this.ctx,
       graph: this.graph,
       llm: this.llm,
@@ -84,6 +88,18 @@ export class RelationRefiner {
     return `${e.name}\n${truncate(e.description ?? '', 600)}`;
   }
 
+  /** A refined link is a proposal of `PROPOSAL_CONFIDENCE`: below the user's minimum it would be shown nowhere. */
+  private linkAllowed(): boolean {
+    return PROPOSAL_CONFIDENCE >= this.minConfidence();
+  }
+
+  /** Without a link to propose only a decision pair can still yield something (a contradiction or a supersede card). */
+  private worthAsking(relationId: string): boolean {
+    if (this.linkAllowed()) return true;
+    const r = this.graph.getRelation(relationId);
+    return r !== undefined && this.graph.getEntity(r.sourceEntityId)?.type === 'decision' && this.graph.getEntity(r.targetEntityId)?.type === 'decision';
+  }
+
   /** Asks about up to `max` confirmed `related_to` pairs not asked about before. Returns the number of hints. */
   async run(opts: { max?: number; signal?: AbortSignal } = {}): Promise<number> {
     if (this.privacy.mode() !== 'auto' || !this.llm.canUseInBackground()) return 0;
@@ -94,7 +110,8 @@ export class RelationRefiner {
         .all() as Array<{ id: string }>
     )
       .map((r) => r.id)
-      .filter((id) => !done.has(id))
+      // a pair left out for the minimum is not marked as asked: it comes up again once the minimum allows a link
+      .filter((id) => !done.has(id) && this.worthAsking(id))
       .slice(0, opts.max ?? 10);
     let hints = 0;
     for (const relationId of pairs) {
@@ -163,9 +180,10 @@ export class RelationRefiner {
       });
       return true;
     }
+    if (!this.linkAllowed()) return false;
     const created = this.graph.link(
       { sourceId: src.id, targetId: tgt.id, relationType: hint.kind },
-      { status: 'proposed', confidence: 0.6, method: 'refinement', evidence: reason },
+      { status: 'proposed', confidence: PROPOSAL_CONFIDENCE, method: 'refinement', evidence: reason },
     );
     return Boolean(created?.created);
   }

@@ -94,10 +94,17 @@ describe('Archive check: notification only for new findings', () => {
   it('reports new findings once and stays silent on the next run when nothing is added', async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
     const app = await startApp((a) => a.services.settings.update({ consistency: { onStartup: false } }));
-    await app.ok('openItems:create', { title: 'Angebot prüfen', dueAt: '2026-01-05' });
+    // an open item that is also documented as done: an insight on the Insights page
+    const openAndDone = async (title: string) => {
+      const done = await app.ok('openItems:create', { title });
+      await app.ok('openItems:close', { id: done.id, status: 'resolved', confirmed: true });
+      await app.ok('openItems:create', { title });
+    };
+    await openAndDone('Angebot prüfen');
 
     const first = await app.services.consistency.run({ trigger: 'interval' });
     expect(first.newFindings).toBeGreaterThan(0);
+    expect(first.newFindings, 'exactly what the Insights page lists').toBe(app.services.insights.openCount());
     expect(completionNotices(app)).toHaveLength(1);
     expect(completionNotices(app)[0]!.title).toMatch(/^Archivprüfung: \d+ neue[rn]? Hinweis/);
 
@@ -106,10 +113,24 @@ describe('Archive check: notification only for new findings', () => {
     expect(second.summary).toMatch(/^Nichts Neues – /);
     expect(completionNotices(app)).toHaveLength(1);
 
-    // a further finding is new again
-    await app.ok('openItems:create', { title: 'Vertrag kündigen', dueAt: '2026-01-06' });
+    // a further insight is new again
+    await openAndDone('Vertrag kündigen');
     const third = await app.services.consistency.run({ trigger: 'interval' });
-    expect(third.newFindings).toBeGreaterThan(0);
+    expect(third.newFindings).toBe(1);
     expect(completionNotices(app)).toHaveLength(2);
+  });
+
+  it('counts only insights as new: an overdue item notifies in the bell but is no „neuer Hinweis“ on the Insights page', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'archivist-rhythm-'));
+    const app = await startApp((a) => a.services.settings.update({ consistency: { onStartup: false } }));
+    await app.ok('openItems:create', { title: 'Angebot prüfen', dueAt: '2026-01-05' });
+
+    const run = await app.services.consistency.run({ trigger: 'interval' });
+
+    expect(app.services.notifications.list().some((n) => n.type === 'open_item_overdue')).toBe(true);
+    // what remains is the item's own insight (no link yet), not its overdue notice
+    expect(app.services.insights.list({ status: 'open' }).map((insight) => insight.kind)).toEqual(['orphan_entries']);
+    expect(run.newFindings).toBe(1);
+    expect(completionNotices(app)[0]!.title).toBe('Archivprüfung: 1 neuer Hinweis');
   });
 });

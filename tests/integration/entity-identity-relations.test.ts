@@ -131,12 +131,26 @@ describe('relation semantics (#189)', () => {
     expect(relationsOf(anna.id).some((r) => r.relationType === 'produced')).toBe(false);
   });
 
-  it('the low-confidence review also covers relations at exactly 0.5', async () => {
+  it('the low-confidence review also covers proposals at exactly 0.5', async () => {
     const a = graph().ensureEntity({ type: 'topic', name: 'Alpha' });
     const b = graph().ensureEntity({ type: 'topic', name: 'Beta' });
-    graph().link({ sourceId: a.id, targetId: b.id, relationType: 'related_to' }, { confidence: 0.5, status: 'proposed' });
+    graph().link({ sourceId: a.id, targetId: b.id, relationType: 'related_to' }, { confidence: 0.5, status: 'proposed', method: 'similarity' });
     await app.services.consistency.run({ trigger: 'test' });
     expect(app.services.insights.list({ status: 'open' }).some((insight) => insight.kind === 'low_confidence_relation')).toBe(true);
+  });
+
+  it('the low-confidence review counts only what the proposal list shows: not below the minimum, not without a link method', async () => {
+    const [a, b, c] = ['Alpha', 'Beta', 'Gamma'].map((name) => graph().ensureEntity({ type: 'topic', name }));
+    graph().link({ sourceId: a!.id, targetId: b!.id, relationType: 'related_to' }, { confidence: 0.4, status: 'proposed', method: 'similarity' });
+    graph().link({ sourceId: a!.id, targetId: c!.id, relationType: 'related_to' }, { confidence: 0.3, status: 'proposed' });
+    app.services.settings.update({ links: { minConfidence: 0.45 } });
+    await app.services.consistency.run({ trigger: 'test' });
+    expect(app.services.insights.list({ status: 'open' }).some((insight) => insight.kind === 'low_confidence_relation')).toBe(false);
+
+    app.services.settings.update({ links: { minConfidence: 0.35 } });
+    await app.services.consistency.run({ trigger: 'test' });
+    const hint = app.services.insights.list({ status: 'open' }).find((insight) => insight.kind === 'low_confidence_relation');
+    expect(hint?.title).toBe('1 ungeklärte Beziehung(en) mit geringer Sicherheit');
   });
 
   it('a decision field mirror is shown as automatic until the user decides on it', async () => {

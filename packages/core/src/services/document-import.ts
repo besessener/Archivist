@@ -11,7 +11,7 @@ import { LLM_ANALYSIS_ATTEMPTS } from './analysis-retry';
 import { DOCUMENT_ANALYZE_BATCH_JOB, type AnalyzeBatchPayload } from './document-batch';
 import { DOCUMENT_IMPORT_FOLDER_JOB, type ImportFolderPayload } from './document-import-folder';
 import { folderRefusal } from './document-import-guard';
-import type { DocumentDeps } from './document-model';
+import type { DocumentDeps, ImportOptions } from './document-model';
 import type { TaskPriority } from '../workers/pool';
 
 const MAX_IMPORT_BYTES = 500 * 1024 * 1024;
@@ -51,8 +51,10 @@ const creationDay = (stat: { birthtimeMs: number; birthtime: Date; mtime: Date }
 
 interface ImportBatch {
   autoLlm: boolean;
-  /** Several files in one go: no notification per file, the batch reports once. */
+  /** Several files in one go: one batch analysis instead of a job per file. */
   quiet: boolean;
+  /** Per-file notifications (failure, duplicate, quarantine); off for batches and chat attachments. */
+  notify: boolean;
   /** `user` when the user picked or dropped the files, `background` for a folder import job. */
   priority: TaskPriority;
   out: ImportResult;
@@ -109,11 +111,12 @@ export class DocumentImporter {
   }
 
   /** Imports the paths: files are copied now, folders become a job each. One file is analysed by its own job, several by one batch job. */
-  async importPaths(inputPaths: string[], opts: { allowLlm?: boolean } = {}): Promise<ImportResult> {
+  async importPaths(inputPaths: string[], opts: ImportOptions = {}): Promise<ImportResult> {
     const allowLlm = opts.allowLlm ?? this.deps.privacy.mode() === 'auto';
     const batch: ImportBatch = {
       autoLlm: allowLlm,
       quiet: inputPaths.length > 1,
+      notify: inputPaths.length === 1 && opts.notify !== false,
       priority: 'user',
       out: { imported: [], duplicates: [], rejected: [], folders: [] },
     };
@@ -128,6 +131,7 @@ export class DocumentImporter {
     const batch: ImportBatch = {
       autoLlm: opts.allowLlm,
       quiet: true,
+      notify: false,
       priority: 'background',
       out: { imported: [], duplicates: [], rejected: [], folders: [] },
     };
@@ -169,7 +173,7 @@ export class DocumentImporter {
       const error = err as NodeJS.ErrnoException;
       this.deps.ctx.logger.error('documents', 'Import failed', { error: err, path: input });
       batch.out.rejected.push({ path: input, reason: importFailureReason(error) });
-      if (!batch.quiet)
+      if (batch.notify)
         this.deps.notifications.create({
           title: 'Dateiimport fehlgeschlagen',
           description: `${path.basename(input)}: ${error.message}`,
@@ -205,7 +209,7 @@ export class DocumentImporter {
       await fsp.unlink(staged); // our own temporary copy
       state.staging.path = null;
       out.duplicates.push({ path: input, existingDocumentId: duplicate.id });
-      if (!state.batch.quiet) this.notifyDuplicate(checked.real, duplicate);
+      if (state.batch.notify) this.notifyDuplicate(checked.real, duplicate);
       return;
     }
     const doc = this.deps.documents.insertDocument({
@@ -260,7 +264,7 @@ export class DocumentImporter {
   }
 
   /** Records a copy of a file whose content does not match its extension as `quarantined` (once per content), unparsed. */
-  private async quarantine(file: CheckedFile, batch: Pick<ImportBatch, 'quiet' | 'priority'>): Promise<void> {
+  private async quarantine(file: CheckedFile, batch: Pick<ImportBatch, 'notify' | 'priority'>): Promise<void> {
     const sha = await this.deps.pool.run('hashFile', { path: file.real }, { priority: batch.priority });
     const existing = this.db
       .select()
@@ -290,7 +294,7 @@ export class DocumentImporter {
       paths: [file.real, copy],
       success: true,
     });
-    if (batch.quiet) return;
+    if (!batch.notify) return;
     this.deps.notifications.create({
       title: 'Datei in Quarantäne',
       description: `„${doc.originalName}“: ${quarantineReason(file.ext)} Die Datei wurde nicht importiert.`,
