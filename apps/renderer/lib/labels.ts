@@ -1,3 +1,4 @@
+import { SUPPORTED_EXTENSIONS } from '@archivist/shared';
 import type {
   ArchiveMode,
   BackgroundLimitKind,
@@ -130,6 +131,9 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
 };
 
 export const SUPPORTED_TYPES_TEXT = 'pdf, docx, pptx, xlsx, txt, md, eml, png, jpg, jpeg';
+
+/** `accept` of the file pickers. */
+export const SUPPORTED_EXTENSIONS_ACCEPT = SUPPORTED_EXTENSIONS.map((ext) => `.${ext}`).join(',');
 
 const structuredFailed = (test: LlmTestResult) => test.ok && test.structured?.ok === false;
 

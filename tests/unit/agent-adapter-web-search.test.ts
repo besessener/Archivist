@@ -185,7 +185,9 @@ describe('web search of the provider', () => {
     );
     expect(res.text).toBe('255 € im Monat.');
     expect(res.web).toEqual({ queries: ['Kindergeld 2026'], sources: [{ url: 'https://example.org/kg', title: 'Kindergeld' }] });
-    const input = toResponsesInput([user('Kindergeld?'), { role: 'assistant', text: res.text, toolCalls: [], provider: 'openai', model, raw: res.raw }], model);
+    const input = toResponsesInput([user('Kindergeld?'), { role: 'assistant', text: res.text, toolCalls: [], provider: 'openai', model, raw: res.raw }], {
+      model,
+    });
     expect(input).toEqual([
       { role: 'user', content: 'Kindergeld?' },
       { type: 'reasoning', id: 'rs_1', encrypted_content: 'ENC', summary: [] },

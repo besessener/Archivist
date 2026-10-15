@@ -1,3 +1,4 @@
+import { AttachmentReader } from '../agent/attachments';
 import { AgentService } from '../agent/service';
 import { AgentFileJobs } from '../agent/file-jobs';
 import type { Job } from '@archivist/shared';
@@ -59,6 +60,7 @@ export function createAgent(services: WiredServices, enqueueConsistency: (trigge
     runs: agentRuns,
     appState,
     memory,
+    attachments: new AttachmentReader({ ctx, settings: services.settings, pool: services.pool, docs: services.documents, privacy: services.privacy }),
   });
   return { agent, agentFileJobs, logReader, diagnostics };
 }

@@ -20,7 +20,7 @@ function hasFiles(e: React.DragEvent): boolean {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { bridgeAvailable, status, statusError, importFiles } = useApp();
+  const { bridgeAvailable, status, statusError, importFiles, dropTarget } = useApp();
   const pathname = usePathname() ?? '';
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
@@ -42,9 +42,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       depth.current = 0;
       setDragging(false);
       const files = Array.from(e.dataTransfer.files);
-      if (files.length > 0) void importFiles(files);
+      if (files.length === 0) return;
+      if (dropTarget) dropTarget.take(files);
+      else void importFiles(files);
     },
-    [importFiles],
+    [importFiles, dropTarget],
   );
 
   if (!bridgeAvailable) return <NoBridge />;
@@ -109,8 +111,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-primary bg-card px-10 py-8 text-center shadow-lg">
                   <FileUp className="size-8 text-primary" aria-hidden />
-                  <p className="font-medium">Dateien oder Ordner hier ablegen</p>
-                  <p className="text-sm text-muted-foreground">Die Dateien landen zuerst in der Inbox – nichts wird ohne deine Bestätigung archiviert.</p>
+                  <p className="font-medium">{dropTarget ? 'Dateien hier ablegen' : 'Dateien oder Ordner hier ablegen'}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {dropTarget?.hint ?? 'Die Dateien landen zuerst in der Inbox – nichts wird ohne deine Bestätigung archiviert.'}
+                  </p>
                 </div>
               </div>
             )}

@@ -14,7 +14,9 @@ Die Ablage bleibt außerdem **ohne Archivist verständlich** – lesbare Ordner 
 
 Der Standardmodus `confirm` fragt vor jeder externen Analyse. Das ist bewusst unbequem: Die Entscheidung, ob ein Kontoauszug an einen Cloud-Dienst geht, soll nicht nebenbei fallen. Wer mehr Komfort will, wählt `auto`; wer gar nichts senden will, `local_only` – Archivist funktioniert dann mit lokaler Klassifikation, lokaler Suche und regelbasiertem Chat weiter.
 
-Die Spracheingabe hält sich daran: Aufnahmen werden lokal in Text umgewandelt und weder gespeichert noch gesendet, weil Audio sich – anders als Text – nicht maskieren lässt. Die einzige Verbindung nach außen ist der einmalige Download des Modells; er überträgt nichts von dir, geschieht nur nach deiner Bestätigung und nie im Modus `local_only`. Das Modell ist auf einen Commit festgelegt und wird beim Download gegen Prüfsummen geprüft.
+Die Spracheingabe hält sich daran: Aufnahmen werden lokal in Text umgewandelt und weder gespeichert noch gesendet, weil Audio sich – anders als Text – nicht maskieren lässt.
+
+Bilder, die du im Chat an eine Nachricht hängst, sind die eine bewusste Ausnahme: Sie gehen als Bild an das Modell, damit es sehen kann, was darauf ist – und ein Bild lässt sich ebenso wenig maskieren wie Audio. Die Ausnahme ist eng gefasst: Sie gilt nur für Bilder, die du selbst anhängst, nur im Lauf dieser einen Nachricht, nie für ausgeschlossene Dokumente und nie im Modus `local_only`. EXIF-Daten werden vorher entfernt, und das Übertragungsprotokoll vermerkt jedes übertragene Bild ausdrücklich als unmaskiert. Bilder im Archiv sieht der Agent sonst nie, nur ihren erkannten Text. Die einzige Verbindung nach außen ist der einmalige Download des Modells; er überträgt nichts von dir, geschieht nur nach deiner Bestätigung und nie im Modus `local_only`. Das Modell ist auf einen Commit festgelegt und wird beim Download gegen Prüfsummen geprüft.
 
 Drei Mechanismen sorgen dafür, dass die Wahl auch an unerwarteten Stellen gilt:
 

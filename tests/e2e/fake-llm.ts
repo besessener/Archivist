@@ -15,6 +15,8 @@ export interface FakeLlmServer {
   delayMs: number;
   /** Agent turns, the last one repeats; unset, the endpoint has no tool calling and the chat stays rule-based. */
   agentTurns: AgentTurn[] | null;
+  /** `input` of every agent request (connection test excluded), in order. */
+  agentInputs: unknown[];
   /** false: the connection test's structured (JSON) request gets an invalid answer, as from an endpoint without working JSON mode. */
   structuredAnswers: boolean;
   close(): Promise<void>;
@@ -25,6 +27,7 @@ interface Control {
   structuredAnswers: boolean;
   agentTurns: AgentTurn[] | null;
   agentRound: number;
+  agentInputs: unknown[];
 }
 
 interface ParsedRequest {
@@ -144,6 +147,7 @@ function textAnswer(schema: string, input: string): string {
 function nextAgentTurn(control: Control, request: ParsedRequest): AgentTurn {
   if (request.tools?.some((tool) => tool.name === 'echo'))
     return JSON.stringify(request.input).includes('function_call_output') ? { text: 'OK' } : { calls: [{ name: 'echo', args: { text: 'archivist' } }] };
+  control.agentInputs.push(request.input);
   const turns = control.agentTurns ?? [];
   const turn = turns[Math.min(control.agentRound, turns.length - 1)] ?? { text: 'OK' };
   control.agentRound += 1;
@@ -165,7 +169,7 @@ function answerAgent(control: Control, request: ParsedRequest, response: http.Se
 /** Minimal OpenAI-compatible endpoint (Responses API) for the E2E test. */
 export async function startFakeLlm(): Promise<FakeLlmServer> {
   const calls: FakeLlmServer['calls'] = [];
-  const control: Control = { delayMs: 0, structuredAnswers: true, agentTurns: null, agentRound: 0 };
+  const control: Control = { delayMs: 0, structuredAnswers: true, agentTurns: null, agentRound: 0, agentInputs: [] };
   const answer = (request: ParsedRequest, response: http.ServerResponse) => {
     // without agent turns a tool request gets a plain text answer, as from an endpoint without tool calling
     if (request.tools?.length && control.agentTurns) {
@@ -199,6 +203,7 @@ export async function startFakeLlm(): Promise<FakeLlmServer> {
   return {
     url: `http://127.0.0.1:${port}/v1`,
     calls,
+    agentInputs: control.agentInputs,
     get delayMs() {
       return control.delayMs;
     },

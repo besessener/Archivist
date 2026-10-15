@@ -91,13 +91,13 @@ describe('OpenAI Responses adapter (#297)', () => {
         { type: 'function_call', call_id: 'c1', name: 'find_documents', arguments: '{"ext":"md"}' },
       ],
     };
-    expect(toResponsesInput([own], 'gpt-5')).toEqual([
+    expect(toResponsesInput([own], { model: 'gpt-5' })).toEqual([
       { type: 'reasoning', id: 'rs_1', encrypted_content: 'ENC', summary: [] },
       { role: 'assistant', content: 'Ich suche.' },
       { type: 'function_call', call_id: 'c1', name: 'find_documents', arguments: '{"ext":"md"}' },
     ]);
     // another model of the same provider: reasoning items belong to their model
-    expect(toResponsesInput([own], 'gpt-5-mini')).toEqual([
+    expect(toResponsesInput([own], { model: 'gpt-5-mini' })).toEqual([
       { role: 'assistant', content: 'Ich suche.' },
       { type: 'function_call', call_id: 'c1', name: 'find_documents', arguments: '{"ext":"md"}' },
     ]);
@@ -115,10 +115,10 @@ describe('OpenAI Responses adapter (#297)', () => {
       { role: 'assistant', text: 'ok', toolCalls: [], provider: 'openai', model: 'gpt-5', raw: res.raw },
       user('weiter'),
     ];
-    expect(toResponsesInput(history, 'gpt-5')).toEqual([compaction, { role: 'assistant', content: 'ok' }, { role: 'user', content: 'weiter' }]);
+    expect(toResponsesInput(history, { model: 'gpt-5' })).toEqual([compaction, { role: 'assistant', content: 'ok' }, { role: 'user', content: 'weiter' }]);
     // another model cannot read the encrypted item: it gets the whole history
-    expect(toResponsesInput(history, 'gpt-5-mini')).toHaveLength(3);
-    expect(JSON.stringify(toResponsesInput(history, 'gpt-5-mini'))).not.toContain('SUMMARY');
+    expect(toResponsesInput(history, { model: 'gpt-5-mini' })).toHaveLength(3);
+    expect(JSON.stringify(toResponsesInput(history, { model: 'gpt-5-mini' }))).not.toContain('SUMMARY');
 
     await adapter.turn(request([user('x')], { tools: [] }));
     expect(t.sent[1]!.body).not.toHaveProperty('context_management');

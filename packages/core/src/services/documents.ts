@@ -19,7 +19,7 @@ import { FolderImport } from './document-import-folder';
 import { DocumentIndexRepair } from './document-index';
 import { DocumentMetadataEditor, type MetadataPatch } from './document-metadata';
 import { DocumentReanalysis } from './document-reanalysis';
-import { isArchivedStatus, type DocRow, type DocumentDeps, type NewDocument } from './document-model';
+import { isArchivedStatus, type DocRow, type DocumentDeps, type ImportOptions, type NewDocument } from './document-model';
 import { countDocumentList, documentCounts, queryDocumentList, type DocumentListQuery, type DocumentListRows } from './document-queries';
 import { documentRecord, newDocumentRow, searchContent } from './document-record';
 import { DocumentRereader } from './document-reread';
@@ -164,7 +164,7 @@ export class DocumentService {
   }
 
   /** File upload: copied into the inbox, checked, hashed and queued for analysis; the original stays unchanged. */
-  importPaths(inputPaths: string[], opts: { allowLlm?: boolean } = {}): Promise<ImportResult> {
+  importPaths(inputPaths: string[], opts: ImportOptions = {}): Promise<ImportResult> {
     return this.importer.importPaths(inputPaths, opts);
   }
 

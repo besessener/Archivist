@@ -1,11 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicFoundry } from '@anthropic-ai/foundry-sdk';
 import { abortedError } from '../../util/llm-errors';
-import type { AgentMessage, AgentToolCall, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
+import type { AgentMessage, AgentToolCall, ModelImages, ProviderAdapter, StopReason, StreamEvent, TurnRequest, TurnResult, WebSearchActivity } from '../types';
 import { claudeError } from './anthropic-errors';
 import { withFeatureFallback } from './anthropic-features';
 import { completeClaudeText, type ClaudeTextInput, type ClaudeTextUsage } from './anthropic-text';
-import { previewOf, rejectedFeatures, replayRaw, uniqueSources, userTimeZone, type AdapterConfig } from './common';
+import { imageNote, previewOf, rejectedFeatures, replayRaw, uniqueSources, userParts, userTimeZone, type AdapterConfig } from './common';
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
@@ -75,8 +75,16 @@ function assistantBlocks(message: Extract<AgentMessage, { role: 'assistant' }>, 
   return blocks;
 }
 
+function userBlocks(message: Extract<AgentMessage, { role: 'user' }>, images: ModelImages | undefined): ContentBlockParam[] {
+  return userParts(message, images).map((part) =>
+    part.kind === 'text'
+      ? { type: 'text', text: part.text }
+      : { type: 'image', source: { type: 'base64', media_type: part.image.mediaType, data: part.image.data } },
+  );
+}
+
 /** Provider-neutral history → Messages API messages; consecutive results and texts of the user side form one message. */
-export function toAnthropicMessages(messages: AgentMessage[], model: string): MessageParam[] {
+export function toAnthropicMessages(messages: AgentMessage[], target: { model: string; images?: ModelImages }): MessageParam[] {
   const out: MessageParam[] = [];
   const pushUser = (blocks: ContentBlockParam[]) => {
     const last = out.at(-1);
@@ -84,10 +92,10 @@ export function toAnthropicMessages(messages: AgentMessage[], model: string): Me
     else out.push({ role: 'user', content: blocks });
   };
   for (const message of messages) {
-    if (message.role === 'user') pushUser([{ type: 'text', text: message.content }]);
+    if (message.role === 'user') pushUser(userBlocks(message, target.images));
     else if (message.role === 'tool') pushUser(toolResultBlocks(message));
     else {
-      const blocks = assistantBlocks(message, model);
+      const blocks = assistantBlocks(message, target.model);
       if (blocks.length) out.push({ role: 'assistant', content: blocks });
     }
   }
@@ -191,7 +199,7 @@ export class AnthropicAdapter implements ProviderAdapter {
       model: this.model,
       max_tokens: req.maxOutputTokens,
       system: [{ type: 'text', text: req.system, cache_control: stableCache(off) }],
-      messages: toAnthropicMessages(req.messages, this.model),
+      messages: toAnthropicMessages(req.messages, { model: this.model, images: req.images }),
       ...(tools.length ? { tools, tool_choice: { type: 'auto' } } : {}),
       ...(Object.keys(outputConfig).length ? { output_config: outputConfig } : {}),
       // automatic caching of the growing history (last cacheable block)
@@ -245,6 +253,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         outputTokens: usage?.outputTokens ?? null,
         cacheReadTokens: usage?.cacheReadTokens ?? null,
         cacheWriteTokens: usage?.cacheWriteTokens ?? null,
+        ...imageNote(req),
       });
     }
   }

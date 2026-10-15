@@ -9,9 +9,11 @@ import { useApp } from '@/lib/app-context';
 import { joinDictation } from '@/lib/dictation';
 import { useDictation } from '@/lib/use-dictation';
 import { useQuery } from '@/lib/use-query';
-import { SUPPORTED_TYPES_TEXT } from '@/lib/labels';
+import { SUPPORTED_EXTENSIONS_ACCEPT, SUPPORTED_TYPES_TEXT } from '@/lib/labels';
+import type { useChatAttachments } from '@/lib/use-chat-attachments';
+import { AttachmentChips } from './attachment-chips';
 
-const ACCEPT = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.markdown,.eml,.png,.jpg,.jpeg';
+type ChatAttachments = ReturnType<typeof useChatAttachments>;
 
 const MIN_INPUT_HEIGHT = 36;
 /** Maximum height of the input field: 60% of the window height (a fixed value when prerendering without a window). */
@@ -25,11 +27,13 @@ export interface ChatComposerProps {
   working: boolean;
   onSend: (text: string) => void;
   aiNotice: string;
+  attachments: ChatAttachments;
 }
 
-/** Input field with file picker and a resize handle; it grows with the text unless resized by hand. */
-export function ChatComposer({ text, onTextChange, inputRef, working, onSend, aiNotice }: ChatComposerProps) {
-  const { importFiles, importFolder } = useApp();
+/** Input field with attachments, file picker and a resize handle; it grows with the text unless resized by hand. */
+export function ChatComposer({ text, onTextChange, inputRef, working, onSend, aiNotice, attachments }: ChatComposerProps) {
+  const { importFolder } = useApp();
+  const canSend = !working && !attachments.importing && (text.trim().length > 0 || attachments.ready.length > 0);
   const fileRef = useRef<HTMLInputElement>(null);
   const speech = useQuery('speech:status', {}, { scopes: ['speech', 'settings'] });
   const dictation = useDictation({
@@ -94,6 +98,7 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
       >
         <span className="h-1 w-10 rounded-full bg-border group-hover:bg-muted-foreground" aria-hidden />
       </div>
+      <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
       <form
         className="mx-auto flex w-full max-w-3xl 2xl:max-w-5xl items-end gap-2 rounded-2xl border bg-card p-2 shadow-xs focus-within:border-ring"
         onSubmit={(e) => {
@@ -105,23 +110,23 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
           ref={fileRef}
           type="file"
           multiple
-          accept={ACCEPT}
+          accept={SUPPORTED_EXTENSIONS_ACCEPT}
           className="sr-only"
           tabIndex={-1}
           data-testid="file-input"
-          aria-label="Dateien auswählen"
+          aria-label="Dateien anhängen"
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
             e.target.value = '';
-            if (files.length > 0) void importFiles(files);
+            if (files.length > 0) void attachments.add(files);
           }}
         />
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="Dateien auswählen"
-          title={`Dateien auswählen (${SUPPORTED_TYPES_TEXT})`}
+          aria-label="Dateien anhängen"
+          title={`Dateien oder Bilder an die Nachricht anhängen (${SUPPORTED_TYPES_TEXT}) – sie werden auch archiviert`}
           data-testid="file-pick"
           onClick={() => fileRef.current?.click()}
         >
@@ -163,13 +168,13 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
           onFinish={() => void dictation.finish()}
           onCancel={dictation.cancel}
         />
-        <Button type="submit" size="icon" disabled={working || !text.trim()} aria-label="Senden" data-testid="chat-send">
+        <Button type="submit" size="icon" disabled={!canSend} aria-label="Senden" data-testid="chat-send">
           <SendHorizontal aria-hidden />
         </Button>
       </form>
       <DictationNote status={speech.data} state={dictation.state} seconds={dictation.seconds} onCancel={dictation.cancel} />
       <p className="mx-auto mt-1.5 max-w-3xl 2xl:max-w-5xl text-center text-[11px] text-muted-foreground" data-testid="chat-ai-notice">
-        {aiNotice} Dateien (PDF, Word, PowerPoint, Excel, Text, E-Mail, Bilder) und ganze Ordner kannst du auch einfach in das Fenster ziehen.
+        {aiNotice} Dateien und Bilder kannst du auch in das Fenster ziehen, um sie anzuhängen.
       </p>
     </div>
   );

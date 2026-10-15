@@ -12,6 +12,14 @@ export function initChat(page: Page) {
       message: root.getByTestId('chat-input'),
     },
     resizeHandle: root.getByTestId('chat-resize'),
+    /** Attachments of the next message: the paperclip's file input and one chip per file (`data-state`: importing, ready, rejected). */
+    attachments: {
+      fileInput: root.getByTestId('file-input'),
+      chips: root.getByTestId('chat-attachment'),
+      remove: root.getByTestId('chat-attachment-remove'),
+      /** Attachments shown in a sent message's bubble. */
+      sent: root.getByTestId('chat-message-attachments'),
+    },
     messages: root.getByTestId('chat-message'),
     /** „Archivist denkt nach …“ while a request is running. */
     thinking: root.getByTestId('chat-loading'),
@@ -68,6 +76,12 @@ export function initChat(page: Page) {
     send: async (text: string) => {
       await locators.inputs.message.fill(text);
       await locators.buttons.send.click();
+    },
+    /** Attaches files to the next message (paperclip) and waits until none is still being taken over. */
+    attach: async (files: string[]) => {
+      await locators.attachments.fileInput.setInputFiles(files);
+      await expect(locators.attachments.chips).toHaveCount(files.length);
+      await expect(locators.attachments.chips.and(page.locator('[data-state="importing"]'))).toHaveCount(0);
     },
     lastReply: () => locators.messages.last(),
     /** „Bestätigen“ on the last proposal card. */

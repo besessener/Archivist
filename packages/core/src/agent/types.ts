@@ -1,4 +1,5 @@
 import type { AgentAdapterId, AgentEffort, AgentUsage } from '@archivist/shared';
+import type { ModelImage } from '../parsers/model-image';
 
 export interface AgentToolCall {
   id: string;
@@ -13,9 +14,20 @@ export interface AgentToolResult {
   isError: boolean;
 }
 
+/** A document attached to the user's message: its masked, data-marked text; `image` when its picture goes along in that run. */
+export interface AgentAttachment {
+  documentId: string;
+  ref: string;
+  text: string;
+  image: boolean;
+}
+
+/** Pictures of attached images by document id; they go only to the run of their message and are never stored in the history. */
+export type ModelImages = ReadonlyMap<string, ModelImage>;
+
 /** Provider-neutral history (#295, #297); `raw` keeps the provider's own blocks, replayed only to the same provider and model. */
 export type AgentMessage =
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string; attachments?: AgentAttachment[] }
   | {
       role: 'assistant';
       text: string;
@@ -53,6 +65,8 @@ export interface TurnRequest {
   personalRedactions?: number;
   /** Offer the provider's own web search (server-side tool); only in chat runs. */
   webSearch?: boolean;
+  /** Pictures for the attachments of this run's user message. */
+  images?: ModelImages;
   /** Groups requests that share a prefix for the provider's prompt cache (OpenAI `prompt_cache_key`): the conversation, else the run. */
   cacheKey?: string;
   signal?: AbortSignal;

@@ -42,6 +42,12 @@ export interface NewDocument {
   documentDate?: string | null;
 }
 
+export interface ImportOptions {
+  allowLlm?: boolean;
+  /** false: no per-file notification (a chat attachment reports in the chat). */
+  notify?: boolean;
+}
+
 /** What the parts of the document service use of the service itself (typed by shape to keep the modules acyclic). */
 export interface DocumentAccess {
   findRow(id: string): DocRow | undefined;

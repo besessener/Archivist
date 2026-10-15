@@ -1,6 +1,6 @@
 import { ASK_USER } from './ask-user';
 import { NOT_RUN, errorResult } from './tool-executor';
-import type { AgentMessage, AgentToolCall } from './types';
+import type { AgentAttachment, AgentMessage, AgentToolCall } from './types';
 
 /** Upper bound for the history that goes to the model (characters of the serialized messages). */
 const MAX_HISTORY_CHARS = 600_000;
@@ -30,14 +30,20 @@ export function historyWindow(history: AgentMessage[], maxChars = MAX_HISTORY_CH
   return lastUser === -1 ? history.slice(-1) : history.slice(lastUser);
 }
 
-/** The user's (masked) message as the next turn; the answer to an open question becomes its tool result (#295). */
-export function userTurn(pending: AgentToolCall[], masked: string): { messages: AgentMessage[]; answersQuestion: boolean } {
-  if (!pending.length) return { messages: [{ role: 'user', content: masked }], answersQuestion: false };
+/** The user's (masked) message as the next turn; the answer to an open question becomes its tool result (#295), attachments follow it. */
+export function userTurn(
+  pending: AgentToolCall[],
+  message: { masked: string; attachments: AgentAttachment[] },
+): { messages: AgentMessage[]; answersQuestion: boolean } {
+  const { masked, attachments } = message;
+  const user = (content: string): AgentMessage => ({ role: 'user', content, ...(attachments.length ? { attachments } : {}) });
+  if (!pending.length) return { messages: [user(masked)], answersQuestion: false };
   const answersQuestion = pending.some((c) => c.name === ASK_USER);
   const results = pending.map((c) =>
     c.name === ASK_USER ? { callId: c.id, name: c.name, content: `Antwort des Benutzers: ${masked}`, isError: false } : errorResult(c, NOT_RUN),
   );
   const messages: AgentMessage[] = [{ role: 'tool', results }];
-  if (!answersQuestion) messages.push({ role: 'user', content: masked });
+  if (!answersQuestion) messages.push(user(masked));
+  else if (attachments.length) messages.push(user(''));
   return { messages, answersQuestion };
 }

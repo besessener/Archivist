@@ -10,6 +10,7 @@ export const TASK_TIMEOUT_MS: Record<TaskName, number> = {
   extractDocument: 15 * 60_000,
   scanDirectory: 60 * 60_000,
   cosineTopK: 30_000,
+  modelImage: 60_000,
 };
 
 const TIMEOUT_MESSAGE: Record<TaskName, string> = {
@@ -17,6 +18,7 @@ const TIMEOUT_MESSAGE: Record<TaskName, string> = {
   extractDocument: 'Das Einlesen der Datei hat zu lange gedauert und wurde abgebrochen.',
   scanDirectory: 'Das Durchsuchen des Ordners hat zu lange gedauert und wurde abgebrochen.',
   cosineTopK: 'Die Suche hat zu lange gedauert und wurde abgebrochen.',
+  modelImage: 'Das Vorbereiten des Bildes hat zu lange gedauert und wurde abgebrochen.',
 };
 
 /** Extraction (OCR) can hold a worker for minutes; with more than one worker it never takes the last free one. */

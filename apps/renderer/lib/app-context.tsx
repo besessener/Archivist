@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppStatus } from '@archivist/shared';
+import { filePaths, PATH_UNKNOWN } from './file-paths';
 import { call, getBridge } from './ipc';
 import { scopesOf, subscribe } from './events';
 import { useToast } from './toast';
@@ -26,6 +27,15 @@ interface AppContextValue {
   importing: boolean;
   importState: ImportState | null;
   dismissImport: () => void;
+  /** A page that takes dropped files itself (the chat attaches them); without one, a drop imports into the inbox. */
+  dropTarget: DropTarget | null;
+  setDropTarget: (target: DropTarget | null) => void;
+}
+
+export interface DropTarget {
+  /** Shown on the drop overlay. */
+  hint: string;
+  take: (files: File[]) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -39,6 +49,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [contextMessage, setContextMessage] = useState<ChatMessage | null>(null);
   const [importState, setImportState] = useState<ImportState | null>(null);
   const [importing, setImporting] = useState(false);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const refreshStatus = useCallback(async () => {
@@ -113,21 +124,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const importFiles = useCallback(
     async (files: File[]) => {
-      const bridge = getBridge();
-      if (!bridge || files.length === 0) return;
-      const paths: string[] = [];
-      const localRejected: ImportResult['rejected'] = [];
-      for (const f of files) {
-        let p: string;
-        try {
-          p = bridge.getPathForFile(f);
-        } catch {
-          p = '';
-        }
-        if (p) paths.push(p);
-        else localRejected.push({ path: f.name, reason: 'Der Dateipfad konnte nicht ermittelt werden (z. B. bei Dateien aus dem Browser oder aus Archiven).' });
-      }
-      await importPaths(paths, localRejected);
+      if (!getBridge() || files.length === 0) return;
+      const { paths, unknown } = filePaths(files);
+      await importPaths(
+        paths,
+        unknown.map((name) => ({ path: name, reason: PATH_UNKNOWN })),
+      );
     },
     [importPaths],
   );
@@ -156,8 +158,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       importing,
       importState,
       dismissImport,
+      dropTarget,
+      setDropTarget,
     }),
-    [checked, bridgeAvailable, status, statusError, refreshStatus, contextMessage, importFiles, importing, importState, dismissImport],
+    [checked, bridgeAvailable, status, statusError, refreshStatus, contextMessage, importFiles, importing, importState, dismissImport, dropTarget],
   );
 
   if (!checked) return null;

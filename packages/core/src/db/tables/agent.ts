@@ -44,6 +44,8 @@ export const messages = sqliteTable(
     quickReplies: jsonArr('quick_replies'),
     /** Agent run that produced the answer (#300). */
     runId: text('run_id'),
+    /** Documents the user attached to the message (`ChatAttachment[]`). */
+    attachments: text('attachments', { mode: 'json' }).$type<ArchivistJson>().notNull().default([]),
     createdAt: text('created_at').notNull(),
   },
   (t) => [index('messages_conv_idx').on(t.conversationId, t.createdAt)],

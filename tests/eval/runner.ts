@@ -241,7 +241,7 @@ async function chatMessages({ services, task, transcript }: TaskSession): Promis
     const previous = transcript.replies.at(-1);
     const text = typeof message === 'string' ? message : previous ? message(previous) : null;
     if (text === null) return;
-    const response = await services.chat.send(conversationId, text);
+    const response = await services.chat.send(conversationId, { text, attachments: [] });
     conversationId = response.conversationId;
     const reply = response.assistantMessage;
     const run = reply.runId ? services.agentRuns.get(reply.runId) : null;

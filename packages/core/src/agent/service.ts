@@ -1,13 +1,14 @@
-import type { AgentCapability, AgentProgress, AgentRun, LlmTestResult, SourceReference } from '@archivist/shared';
+import type { AgentCapability, AgentProgress, AgentRun, LlmTestResult } from '@archivist/shared';
 import type { AppContext } from '../context';
 import type { AppStateService } from '../services/app-state';
 import type { LlmOverrides, LlmService } from '../services/llm';
 import { askUserTool } from './ask-user';
+import type { AttachmentReader } from './attachments';
 import { BackgroundSchedule, type EnqueueBackground } from './background-schedule';
 import { backgroundNotification, backgroundTask, handledInbox, type BackgroundKind } from './background-tasks';
 import { executeProposalBatch, type BatchParams } from './batch';
 import { AgentCapabilityService } from './capability';
-import { modeOverrideIn, quickReplies, replyContent } from './chat-reply';
+import { ATTACHMENTS_TASK, modeOverrideIn, quickReplies, replyContent, type AgentChatMessage, type AgentChatReply } from './chat-reply';
 import { CorrectionLearner } from './corrections';
 import { AgentShutdownError } from './file-jobs';
 import { AgentHistoryStore } from './history-store';
@@ -17,7 +18,6 @@ import type { MemoryService } from './memory';
 import { RefStore, ToolRegistry, type AgentChatState } from './registry';
 import { AgentRunExecutor, type ExecutionResult } from './run-execution';
 import { RunProgress } from './run-progress';
-import type { RunOutcome } from './runner';
 import type { AgentRunService, UndoRunResult } from './runs';
 import { maskingOf } from '../util/redact';
 import { maskSecrets } from './security';
@@ -55,18 +55,6 @@ export interface BackgroundOptions {
   onStart?: (runId: string) => void;
 }
 
-export interface AgentChatReply {
-  content: string;
-  sources: SourceReference[];
-  actionIds: string[];
-  quickReplies: string[];
-  runId: string;
-  errorMessage: string | null;
-  uncertainties: string[];
-  state: AgentChatState;
-  status: RunOutcome['status'];
-}
-
 interface ChatTurn {
   result: ExecutionResult;
   refs: RefStore;
@@ -88,6 +76,7 @@ export interface AgentServiceDeps {
   runs: AgentRunService;
   appState: AppStateService;
   memory: MemoryService;
+  attachments: AttachmentReader;
 }
 
 /** Agent mode (Epic #294): chat and background runs with modes, exceptions, run log with undo, privacy filter and limits. */
@@ -105,9 +94,11 @@ export class AgentService {
   private readonly llm: LlmService;
   private readonly runs: AgentRunService;
   private readonly memory: MemoryService;
+  private readonly attachments: AttachmentReader;
 
-  constructor({ ctx, tools: deps, llm, runs, appState, memory }: AgentServiceDeps) {
+  constructor({ ctx, tools: deps, llm, runs, appState, memory, attachments }: AgentServiceDeps) {
     this.deps = deps;
+    this.attachments = attachments;
     this.llm = llm;
     this.runs = runs;
     this.memory = memory;
@@ -211,7 +202,7 @@ export class AgentService {
 
   // ---------- chat ----------
   /** Runs one message of a conversation through the agent. Requests of one conversation run one after another (#251). */
-  chat(conversationId: string, message: { text: string; state: AgentChatState }): Promise<AgentChatReply> {
+  chat(conversationId: string, message: AgentChatMessage): Promise<AgentChatReply> {
     const previous = SERIAL.get(conversationId) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(() => this.chatNow(conversationId, message));
     SERIAL.set(conversationId, next);
@@ -221,27 +212,30 @@ export class AgentService {
     return next;
   }
 
-  private async chatNow(conversationId: string, { text, state }: { text: string; state: AgentChatState }): Promise<AgentChatReply> {
+  private async chatNow(conversationId: string, { text, attachments, state }: AgentChatMessage): Promise<AgentChatReply> {
     const override = modeOverrideIn(text) ?? state.mode ?? null;
     const refs = new RefStore(state.refs ?? { ids: {}, sets: {} });
     const history = this.history.replayable(conversationId, refs);
-    const { text: masked, count: redactions, personalData: personalRedactions } = maskSecrets(text, maskingOf(this.deps.settings.get()));
-    const turn = userTurn(pendingCalls(history), masked);
+    const { text: masked, count, personalData } = maskSecrets(text, maskingOf(this.deps.settings.get()));
+    const attached = await this.attachments.prepare(attachments, refs);
+    const turn = userTurn(pendingCalls(history), { masked, attachments: attached.attachments });
     const lastAnswer = turn.answersQuestion ? text : null;
+    // only the user's own words count as their request – never the text of an attachment
     const userText = lastAnswer && state.task ? `${state.task}\n${text}` : text;
     const writer = this.history.turnWriter(conversationId, turn.messages);
     const result = await this.executor.execute({
       conversationId,
       trigger: 'chat',
-      task: userText,
+      task: userText.trim() || ATTACHMENTS_TASK,
       mode: override ?? this.deps.settings.get().agent.mode,
       refs,
       history: [...history, ...turn.messages],
       persist: writer.persist,
       userText,
       lastAnswer,
-      redactions,
-      personalRedactions,
+      redactions: count + attached.redactions,
+      personalRedactions: personalData + attached.personalRedactions,
+      attachments: attached,
     });
     writer.close(result.run.id);
     return this.reply({ result, refs, state, override, userText });

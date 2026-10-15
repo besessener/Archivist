@@ -5,7 +5,19 @@ const DOC_REF_RE = /\bD\d{1,5}\b/g;
 export const WITHHELD_RESULT = 'Ergebnis ausgeblendet: Es nannte Dokumente, die inzwischen nicht mehr für die Übertragung freigegeben sind.';
 export const WITHHELD_TEXT = '[Antwort ausgeblendet: Sie nannte Dokumente, die inzwischen nicht mehr freigegeben sind.]';
 
+export const WITHHELD_ATTACHMENT = '[Anhang ausgeblendet: Das Dokument ist inzwischen nicht mehr für die Übertragung freigegeben.]';
+
 const mentions = (text: string, withdrawn: ReadonlySet<string>) => [...text.matchAll(DOC_REF_RE)].some((m) => withdrawn.has(m[0]));
+
+type UserMessage = Extract<AgentMessage, { role: 'user' }>;
+
+function withholdAttachments(message: UserMessage, withdrawn: ReadonlySet<string>): UserMessage {
+  if (!message.attachments?.some((a) => withdrawn.has(a.ref))) return message;
+  return {
+    ...message,
+    attachments: message.attachments.map((a) => (withdrawn.has(a.ref) ? { ...a, text: `${a.ref}: ${WITHHELD_ATTACHMENT}`, image: false } : a)),
+  };
+}
 
 /** Replay filter (#202, #301): results and answers naming withdrawn documents are replaced, provider blocks dropped except the open newest. */
 export function withholdWithdrawn(history: readonly AgentMessage[], withdrawn: ReadonlySet<string>): AgentMessage[] {
@@ -14,7 +26,10 @@ export function withholdWithdrawn(history: readonly AgentMessage[], withdrawn: R
   // an answer built on a withheld result may quote it without naming the document, so it is withheld too
   let builtOnWithheld = false;
   return history.map((m, i) => {
-    if (m.role === 'user') builtOnWithheld = false;
+    if (m.role === 'user') {
+      builtOnWithheld = false;
+      return withholdAttachments(m, withdrawn);
+    }
     if (m.role === 'tool') {
       if (!m.results.some((r) => mentions(r.content, withdrawn))) return m;
       builtOnWithheld = true;

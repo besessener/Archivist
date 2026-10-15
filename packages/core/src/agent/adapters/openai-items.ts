@@ -1,5 +1,5 @@
-import type { AgentMessage } from '../types';
-import { replayRaw } from './common';
+import type { AgentMessage, ModelImages } from '../types';
+import { replayRaw, userParts } from './common';
 
 /** Output item of the Responses API as far as the adapter reads it. */
 export interface OutputItem {
@@ -19,10 +19,25 @@ export interface OutputItem {
 
 type AssistantMessage = Extract<AgentMessage, { role: 'assistant' }>;
 
+/** A plain user message stays a string; with attachments it becomes text and image parts. */
+function userItem(message: Extract<AgentMessage, { role: 'user' }>, images: ModelImages | undefined): unknown {
+  const parts = userParts(message, images);
+  if (parts.length === 1 && parts[0]!.kind === 'text') return { role: 'user', content: parts[0]!.text };
+  return {
+    role: 'user',
+    content: parts.map((part) =>
+      part.kind === 'text'
+        ? { type: 'input_text', text: part.text }
+        : { type: 'input_image', image_url: `data:${part.image.mediaType};base64,${part.image.data}` },
+    ),
+  };
+}
+
 /** Provider-neutral history → Responses API input items; the latest compaction item stands for everything before it. */
-export function toResponsesInput(messages: AgentMessage[], model: string): unknown[] {
+export function toResponsesInput(messages: AgentMessage[], target: { model: string; images?: ModelImages }): unknown[] {
+  const { model } = target;
   const items = messages.flatMap((message): unknown[] => {
-    if (message.role === 'user') return [{ role: 'user', content: message.content }];
+    if (message.role === 'user') return [userItem(message, target.images)];
     if (message.role === 'tool') return toolOutputs(message);
     if (replayRaw(message, { provider: 'openai', model }) && Array.isArray(message.raw)) return (message.raw as OutputItem[]).flatMap(replayedItem);
     return assistantItems(message);

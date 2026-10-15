@@ -1,10 +1,11 @@
 import { expect, type Page } from '@playwright/test';
 import { pageObject } from './page-object';
 
-/** File import (file picker, equivalent to the drag-and-drop path) and the inbox with classification proposals. */
+/** File import („Dateien importieren“ on the inbox page, equivalent to the drag-and-drop path) and the inbox with classification proposals. */
 export function initInbox(page: Page) {
   const locators = {
-    fileInput: page.getByTestId('file-input'),
+    fileInput: page.getByTestId('inbox-file-input'),
+    inboxLink: page.getByRole('navigation', { name: 'Hauptnavigation' }).getByTestId('nav-inbox'),
     /** The import progress card bottom left; it covers what lies beneath until closed. */
     importCard: page.getByTestId('import-card'),
     /** Folder import via the folder picker (in tests ARCHIVIST_TEST_PICK_DIR names the folder). */
@@ -82,14 +83,14 @@ export function initInbox(page: Page) {
     },
   };
   const interactions = {
+    /** Opens the inbox and imports the file there (the inbox has no import card: its list shows the file). */
     importFile: async (file: string) => {
+      await locators.inboxLink.click();
       await locators.fileInput.setInputFiles(file);
     },
-    /** Imports several files at once and closes the import card again. */
     importFiles: async (files: string[]) => {
+      await locators.inboxLink.click();
       await locators.fileInput.setInputFiles(files);
-      await locators.closeImportCard.click();
-      await expect(locators.importCard).toBeHidden();
     },
     /** Waits for the first entry including its proposal and checks that the proposal shows the given target. */
     waitForProposal: async (target: string) => {

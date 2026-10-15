@@ -94,7 +94,7 @@ Jede Service-Klasse bleibt unter dem Pfad aus der Tabelle; ihre Teile liegen dan
 
 | Service | Teile | Inhalt |
 | --- | --- | --- |
-| `ChatService` | `services/chat/` | Gesprächsspeicher, Intent-Erkennung (LLM und regelbasiert), Ablauf einer Nachricht, Rückfragen, Antworten zu Suche, Archiv und Vorschlägen |
+| `ChatService` | `services/chat/` | Gesprächsspeicher, Intent-Erkennung (LLM und regelbasiert), Ablauf einer Nachricht, Rückfragen, Antworten zu Suche, Archiv und Vorschlägen, Import angehängter Dateien (`attachment-import.ts`) |
 | `CaptureService` | `services/capture/` | Erfassen von Entscheidungen (inkl. Ersetzen), offenen Punkten, Erinnerungen, Notizen und Ereignissen |
 | `KnowledgeGraphService` | `services/graph/` | Entitäten, Beziehungen, Ansichten, Nachbarschaftsgraph, Verknüpfungen des Benutzers, Zusammenführen und Umbenennen mit Undo |
 | `LinkMethodsService` | `services/links/` | Kandidaten, Vorschlagsliste, verwandte und verwaiste Einträge, Kennzahlen, Themen aus Gruppen, gemeinsamer Ursprung, rückwirkender Lauf |

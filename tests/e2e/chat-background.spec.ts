@@ -48,6 +48,7 @@ test.describe('chat: request in the background', () => {
     // one file at a time: each gets its own analysis job (several files at once share one batch job)
     await app.inbox.do.importFiles([workspace.addDownload('nachtrag-1.txt', 'Nachtrag eins.')]);
     await app.inbox.do.importFiles([workspace.addDownload('nachtrag-2.txt', 'Nachtrag zwei.')]);
+    await app.navigation.do.open('chat');
     await app.chat.do.approveLastAction();
 
     await expect(app.chat.locators.actionCards.last()).toHaveAttribute('data-status', 'approved', { timeout: 30_000 });

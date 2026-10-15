@@ -90,6 +90,7 @@ Für die Schwelle zählt, was ein Aufruf tatsächlich ändern würde: `apply_rul
 
 ## Lesen
 
+- **Anhänge einer Nachricht** kommen ohne Werkzeug: Die Nachricht trägt je Anhang „Angehängt: D… „Name“ (.Typ, Größe)“ und den Textanfang (6 000 Zeichen, als Daten markiert), Bilder zusätzlich als Bild ([Bilder im Chat](llm-schnittstelle.md#bilder-im-chat)). Den Rest eines langen Anhangs liest `read_document` mit derselben D-ID. Code: `agent/attachments.ts`.
 - `find_documents` filtert nach Endung, Name, Ordner, Thema, Projekt, Typ, Person, Tag, Dokument- und Archivierungsdatum, Größe und Status, sortiert und seitenweise, mit Gesamtzahl und Ergebnismenge `S…` (`within` grenzt eine frühere Menge ein). Ergebnismengen beliebiger Größe werden vollständig aufgelöst.
 - `related` liefert dieselbe Liste wie „Verwandte Einträge“ in der Oberfläche (direkte Beziehungen und gemeinsame Projekte, Vorgänge, Themen, Personen, Tags, nach Stärke, seitenweise); `depth: 2` nennt auch die Nachbarn der Nachbarn.
 - Einträge, die nur aus nicht freigegebenen Dokumenten stammen, nennt `list_entries` ohne Inhalt. Hinweise (`kind: insight`) zitieren ihre Quellen, etwa ein Widerspruch zwischen zwei Dokumenten; sie erscheinen schon ohne Inhalt, wenn eines ihrer Dokumente nicht freigegeben ist.

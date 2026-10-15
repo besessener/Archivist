@@ -1,7 +1,8 @@
 import type { LlmTransmission } from '@archivist/shared';
 import { AppError } from '../../util/errors';
 import { abortedError } from '../../util/llm-errors';
-import type { AgentMessage } from '../types';
+import type { ModelImage } from '../../parsers/model-image';
+import type { AgentMessage, ModelImages, TurnRequest } from '../types';
 
 export type FetchLike = typeof fetch;
 
@@ -56,11 +57,31 @@ export function authHeaders(url: string, apiKey: string): Record<string, string>
   return { Authorization: `Bearer ${apiKey}` };
 }
 
+export type UserPart = { kind: 'text'; text: string } | { kind: 'image'; image: ModelImage };
+
+/** The user's text, then each attachment's data block and – within the run of its message – its picture. */
+export function userParts(message: Extract<AgentMessage, { role: 'user' }>, images: ModelImages | undefined): UserPart[] {
+  const parts: UserPart[] = message.content.trim() ? [{ kind: 'text', text: message.content }] : [];
+  for (const attachment of message.attachments ?? []) {
+    parts.push({ kind: 'text', text: attachment.text });
+    const image = attachment.image ? images?.get(attachment.documentId) : undefined;
+    if (image) parts.push({ kind: 'image', image });
+  }
+  return parts.length ? parts : [{ kind: 'text', text: message.content }];
+}
+
+/** Transmission log note for a request that carries pictures: their content cannot be masked. */
+export function imageNote(req: Pick<TurnRequest, 'messages' | 'images'>): { note?: string } {
+  const count = req.messages.flatMap((m) => (m.role === 'user' ? userParts(m, req.images) : [])).filter((p) => p.kind === 'image').length;
+  if (!count) return {};
+  return { note: `${count === 1 ? '1 Bild' : `${count} Bilder`} übertragen – Bildinhalte werden nicht maskiert` };
+}
+
 /** Last user text of a request (preview in the transmission log). */
 export function previewOf(messages: AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]!;
-    if (m.role === 'user') return m.content.slice(0, 280);
+    if (m.role === 'user') return (m.content.trim() || (m.attachments ?? []).map((a) => a.text).join('\n')).slice(0, 280);
     if (m.role === 'tool' && m.results.length) return `[Werkzeugergebnis ${m.results[0]!.name}] ${m.results[0]!.content.slice(0, 240)}`;
   }
   return '';
