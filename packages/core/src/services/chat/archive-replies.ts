@@ -246,15 +246,15 @@ export class ArchiveReplies {
     return { intent: 'relation_decide', content: `Diese Beziehungen sind noch ungeklärt:\n\n${lines.join('\n')}`, actions, confidence: 0.7, state };
   }
 
-  /** Proposed relations of the named topic/project, otherwise of all entries (each relation once). */
+  /** Proposed relations of the named topic/project, otherwise of all entries (each relation once); below the user's minimum none. */
   private proposedRelations(name: string | null | undefined): Relation[] {
     const { graph } = this.deps;
     const subject = name ? (graph.findByNameOrAlias('topic', name) ?? graph.findByNameOrAlias('project', name)) : undefined;
-    if (subject) return graph.relationsOf(subject.id, { statuses: ['proposed'] });
+    if (subject) return graph.proposalsOf(subject.id);
     const seen = new Set<string>();
     return graph
       .listEntities({ limit: 200 })
-      .flatMap((e) => graph.relationsOf(e.id, { statuses: ['proposed'] }))
+      .flatMap((e) => graph.proposalsOf(e.id))
       .filter((r) => {
         if (seen.has(r.id)) return false;
         seen.add(r.id);

@@ -1,7 +1,7 @@
 import { localToday } from '@archivist/shared';
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { AppContext } from '../context';
-import { insights as insightsTable, notifications as notificationsTable } from '../db/schema';
+import { insights as insightsTable } from '../db/schema';
 import { newId } from '../util/ids';
 import { checkExpiredDecisions, checkIncompleteDecisions, checkSuperseded } from './archive-check/decisions';
 import { checkAssignments, checkDuplicates, checkSimilarDocuments, checkedDocuments } from './archive-check/documents';
@@ -22,7 +22,7 @@ export interface ConsistencyReport {
   notifications: number;
   contradictions: number;
   byKind: Record<string, number>;
-  /** Hints that were not open before this run (new or reopened insights, new notifications). */
+  /** Insights that were not open before this run (new or reopened); notifications are not counted. */
   newFindings: number;
   /** Short German summary for the job history. */
   summary: string;
@@ -146,16 +146,10 @@ export class ConsistencyService {
     return { insights: total, notifications: findings.notifications, contradictions: run.contradictions, byKind: findings.byKind, newFindings, summary };
   }
 
-  /** Ids of open insights and unresolved notifications (except completion notices); compared before and after a run. */
+  /** Ids of open insights, compared before and after a run: „N neue Hinweise“ counts what the Insights page lists, never notifications. */
   private openFindingIds(): Set<string> {
-    const db = this.ctx.database.db;
-    const open = db.select({ id: insightsTable.id }).from(insightsTable).where(eq(insightsTable.status, 'open')).all();
-    const unresolved = db
-      .select({ id: notificationsTable.id })
-      .from(notificationsTable)
-      .where(and(isNull(notificationsTable.resolvedAt), ne(notificationsTable.type, 'consistency_done')))
-      .all();
-    return new Set([...open, ...unresolved].map((row) => row.id));
+    const open = this.ctx.database.db.select({ id: insightsTable.id }).from(insightsTable).where(eq(insightsTable.status, 'open')).all();
+    return new Set(open.map((row) => row.id));
   }
 
   /** Periodic check from the last run on (also across restarts); `startupCheckQueued` counts a check queued at startup as that run. */

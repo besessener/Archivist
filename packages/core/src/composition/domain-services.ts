@@ -163,7 +163,17 @@ export function createLinkingServices(services: BaseServices & DomainServices) {
     minConfidence: () => settings.get().links.minConfidence,
   });
   const topicNamer = new TopicNamer({ ctx, llm, privacy, docs: documents });
-  const refiner = new RelationRefiner({ ctx, graph, llm, privacy, docs: documents, insights, contradictions, appState });
+  const refiner = new RelationRefiner({
+    ctx,
+    graph,
+    llm,
+    privacy,
+    docs: documents,
+    insights,
+    contradictions,
+    appState,
+    minConfidence: () => settings.get().links.minConfidence,
+  });
   links.setTopicNamer((cluster, signal) =>
     topicNamer.name(cluster, { known: graph.listEntities({ type: 'topic', limit: 200, confirmedOnly: true }).map((topic) => topic.name), signal }),
   );

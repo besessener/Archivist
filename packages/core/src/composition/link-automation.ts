@@ -40,32 +40,63 @@ const similarJob = (sameAs: (payload: unknown, status: 'pending' | 'running') =>
   sameAs,
 });
 
+const NOTICE_KEY = 'links.notification.key';
+const NOTICE_PREFIX = 'link-proposals:';
+const RUN_NOTICE_PREFIX = 'link-run:';
+
+type NoticeServices = { links: LinkMethodsService; appState: AppStateService; notifications: NotificationService };
+
+/** Writes the notice about `open` waiting proposals under `key` (new, or in place while it is unresolved). */
+function writeProposalNotice(notifications: NotificationService, notice: { key: string; open: number }): void {
+  const { key, open } = notice;
+  notifications.create({
+    title: 'Verknüpfungsvorschläge',
+    description: `${open === 1 ? 'Ein Vorschlag wartet' : `${open} Vorschläge warten`} auf deine Prüfung. Du entscheidest, was übernommen wird.`,
+    type: 'assignment_proposal',
+    priority: 'low',
+    proposedActions: [{ label: 'Vorschläge prüfen', kind: 'navigate', target: '/insights/' }],
+    dedupeKey: key,
+  });
+}
+
 /** ONE notification for open link proposals (#280): updated in place while unread, a new one once it was read or dismissed. */
-export function createLinkProposalNotifier(services: {
-  links: LinkMethodsService;
-  appState: AppStateService;
-  notifications: NotificationService;
-}): LinkProposalNotifier {
+export function createLinkProposalNotifier(services: NoticeServices): LinkProposalNotifier {
   const { links, appState, notifications } = services;
   return (created) => {
     if (created <= 0) return;
     const open = links.proposals({ limit: 1 }).total;
     if (!open) return;
-    let key = appState.get('links.notification.key');
+    let key = appState.get(NOTICE_KEY);
     const current = key ? notifications.byDedupeKey(key) : null;
     if (!key || current?.readAt || current?.resolvedAt) {
-      key = `link-proposals:${Date.now()}`;
-      appState.set('links.notification.key', key);
+      key = `${NOTICE_PREFIX}${Date.now()}`;
+      appState.set(NOTICE_KEY, key);
     }
-    notifications.create({
-      title: 'Verknüpfungsvorschläge',
-      description: `${open === 1 ? 'Ein Vorschlag wartet' : `${open} Vorschläge warten`} auf deine Prüfung. Du entscheidest, was übernommen wird.`,
-      type: 'assignment_proposal',
-      priority: 'low',
-      proposedActions: [{ label: 'Vorschläge prüfen', kind: 'navigate', target: '/insights/' }],
-      dedupeKey: key,
-    });
+    writeProposalNotice(notifications, { key, open });
   };
+}
+
+/** The link notices follow the list: deciding, undo or a higher minimum confidence update the count, and once nothing waits they close. */
+function keepLinkNoticesCurrent(services: NoticeServices & Pick<WiredServices, 'events' | 'insights'>): void {
+  const { events, links, appState, notifications, insights } = services;
+  const refresh = () => {
+    const notices = notifications.openByDedupePrefix(NOTICE_PREFIX);
+    const runNotices = notifications.openByDedupePrefix(RUN_NOTICE_PREFIX);
+    if (!notices.length && !runNotices.length) return;
+    const open = links.proposals({ limit: 1 }).total;
+    if (open === 0) {
+      for (const notice of notices) notifications.resolve(notice.id);
+      // a run's notice may also announce topics: it stays while one of them waits
+      if (!insights.count({ status: 'open', kind: 'topic_cluster' })) for (const notice of runNotices) notifications.resolve(notice.id);
+      return;
+    }
+    const key = appState.get(NOTICE_KEY);
+    const current = key ? notifications.byDedupeKey(key) : null;
+    if (key && current && !current.readAt && !current.resolvedAt) writeProposalNotice(notifications, { key, open });
+  };
+  events.on('data:changed', (change: { scopes: string[] }) => {
+    if (change.scopes.some((scope) => scope === 'knowledge' || scope === 'settings' || scope === 'insights')) refresh();
+  });
 }
 
 /** A check that is still queued or running covers a new request (startup, interval and manual triggers can meet). */
@@ -220,7 +251,7 @@ async function runLinkBackfill(services: WiredServices, job: JobContext<{ trigge
       type: 'assignment_proposal',
       priority: 'low',
       proposedActions: [{ label: 'Hinweise ansehen', kind: 'navigate', target: '/insights/' }],
-      dedupeKey: `link-run:${job.id}`,
+      dedupeKey: `${RUN_NOTICE_PREFIX}${job.id}`,
     });
   const summary = `${processed} Einträge geprüft, ${proposed} Verknüpfungen und ${topics} Themen vorgeschlagen`;
   return { summary: waiting ? `${summary}. ${waitingText(waiting)}` : summary };
@@ -256,4 +287,5 @@ export function registerLinkAutomation(services: WiredServices, notifyLinkPropos
   addLinkConsistencyCheck(services, notifyLinkProposals);
   addEntryTriggers(services, notifyLinkProposals);
   registerLinkJobs(services, notifyLinkProposals);
+  keepLinkNoticesCurrent(services);
 }

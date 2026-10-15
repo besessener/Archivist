@@ -1,10 +1,10 @@
-import type { EntityDetail, EntityType, GraphEntity, GraphRelation, RelationType } from '@archivist/shared';
+import type { EntityDetail, EntityType, GraphEntity, GraphRelation, RelationStatus, RelationType } from '@archivist/shared';
 import { AppError } from '../../util/errors';
 import type { GraphEntities } from './entities';
 import { buildNeighborhood, type GraphReader, type NeighborhoodGraph, type NeighborhoodOptions } from './neighborhood';
 import { relationReason } from './relation-reason';
 import type { GraphRelations } from './relations';
-import { ACTIVE_STATUSES, otherEndOf } from './rows';
+import { ACTIVE_STATUSES, otherEndOf, reachesThreshold } from './rows';
 
 /** An entry connected to another one, with the path and the reason (#276, #289). */
 export interface RelatedEntry {
@@ -26,16 +26,29 @@ export interface RelatedQuery {
 const byClosenessAndStrength = (a: RelatedEntry, b: RelatedEntry) =>
   a.depth - b.depth || Number(b.relation.status === 'confirmed') - Number(a.relation.status === 'confirmed') || b.relation.confidence - a.relation.confidence;
 
-/** Read-only views of an entry's surroundings: neighbours, related entries, detail and graph. */
+/** Read-only views of an entry's surroundings: neighbours, related entries, detail and graph – proposals below the user's minimum left out. */
 export class GraphViews {
   constructor(
     private readonly entities: GraphEntities,
     private readonly relations: GraphRelations,
+    private readonly minConfidence: () => number,
   ) {}
 
+  /** Relations of the entry the user may see. */
+  private shownOf(entityId: string, filter: { statuses?: RelationStatus[]; types?: RelationType[] }): GraphRelation[] {
+    const min = this.minConfidence();
+    return this.relations.of(entityId, filter).filter((relation) => reachesThreshold(relation, min));
+  }
+
   neighbors(entityId: string, filter: { types?: EntityType[]; relationTypes?: RelationType[] }): GraphEntity[] {
-    const found = this.entities.byIds(this.relations.activeNeighborIds(entityId, filter.relationTypes));
+    const current = this.shownOf(entityId, { statuses: ACTIVE_STATUSES, types: filter.relationTypes });
+    const found = this.entities.byIds([...new Set(current.map((relation) => otherEndOf(relation, entityId)))]);
     return filter.types ? found.filter((entity) => filter.types!.includes(entity.type)) : found;
+  }
+
+  /** Open proposals of the entry that reach the user's minimum confidence. */
+  proposalsOf(entityId: string): GraphRelation[] {
+    return this.shownOf(entityId, { statuses: ['proposed'] });
   }
 
   /** Neighbours up to `depth` (1 or 2) over current relations, each with its reason (#276, #289). */
@@ -56,7 +69,7 @@ export class GraphViews {
   }
 
   private visit(step: { id: string; from: string; level: number; via: GraphEntity | null; found: Map<string, RelatedEntry> }): void {
-    for (const relation of this.relations.of(step.from, { statuses: ACTIVE_STATUSES })) {
+    for (const relation of this.shownOf(step.from, { statuses: ACTIVE_STATUSES })) {
       const otherId = otherEndOf(relation, step.from);
       if (otherId === step.id || step.found.has(otherId)) continue;
       const other = this.entities.get(otherId);
@@ -76,7 +89,7 @@ export class GraphViews {
     const entity = this.entities.get(id);
     if (!entity) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
     // outdated relations are history only: the detail view shows current assignments (and user rejections)
-    const current = this.relations.of(id, {}).filter((relation) => relation.status !== 'outdated');
+    const current = this.shownOf(id, {}).filter((relation) => relation.status !== 'outdated');
     const otherIds = [...new Set(current.map((relation) => otherEndOf(relation, id)))];
     const others = new Map(this.entities.byIds(otherIds).map((other) => [other.id, other]));
     return {
@@ -94,7 +107,7 @@ export class GraphViews {
     if (!center) throw new AppError('validation_error', 'Eintrag nicht gefunden.');
     const reader: GraphReader = {
       getEntity: (entityId) => this.entities.get(entityId),
-      relationsOf: (entityId, filter) => this.relations.of(entityId, filter),
+      relationsOf: (entityId, filter) => this.shownOf(entityId, filter),
     };
     return buildNeighborhood(reader, { center, options });
   }

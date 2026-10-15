@@ -95,7 +95,7 @@ export function createBaseServices(options: CreateServicesOptions) {
   const privacy = new PrivacyService(settings);
   const speech = createSpeech({ ctx, privacy, settings, options });
   const embedding = new EmbeddingService({ settings, llm, logger: ctx.logger });
-  const graph = new KnowledgeGraphService({ ctx, audit, undo });
+  const graph = new KnowledgeGraphService({ ctx, audit, undo, minConfidence: () => settings.get().links.minConfidence });
   const persons = new PersonService(ctx, graph);
   const self = new SelfService({ ctx, settings, graph });
   persons.setSelfResolver(self.resolver);

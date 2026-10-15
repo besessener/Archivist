@@ -90,6 +90,12 @@ export class LinkProposalList {
   }
 }
 
+/** Ids of the open proposals the list shows whose confidence is at most `atMost` (the archive check's hint on unsure links). */
+export function shownProposalIds(sqlite: LinkDeps['ctx']['database']['sqlite'], query: { minConfidence: number; atMost: number }): string[] {
+  const rows = sqlite.prepare(`SELECT r.id AS id ${proposalSql('method').from} AND r.confidence <= @atMost ORDER BY r.id`).all(query) as Array<{ id: string }>;
+  return rows.map((row) => row.id);
+}
+
 /** True while the open proposals the list and its badge count reach the cap: then no automatic method adds more (#361). */
 export function proposalsAtLimit(deps: LinkDeps): boolean {
   const open = deps.ctx.database.sqlite.prepare(`SELECT count(*) AS c ${proposalSql('method').from}`).get({ minConfidence: deps.minConfidence() }) as {
