@@ -34,7 +34,7 @@ Archivist ist ein persönlicher, agentischer KI-Archivar für genau einen Benutz
 - **Wissensgraph und hybride Suche** – Themen, Projekte, Personen und Dokumente sind verknüpft und auffindbar; Archivist schlägt Verknüpfungen mit Begründung vor, du entscheidest.
 - **Agent** – plant mehrere Schritte, nutzt Werkzeuge und prüft das Archiv im Hintergrund auf Lücken, Dubletten und Widersprüche.
 
-> **Stand:** Version 0.1 für Windows. Was Archivist kann, steht in den [Funktionen](docs/reference/funktionen.md).
+> **Stand:** Version 0.2 für Windows. Was Archivist kann, steht in den [Funktionen](docs/reference/funktionen.md).
 
 ## Installation
 
