@@ -153,7 +153,7 @@ describe('rendering a decision', () => {
     expect(toDecision(row({ origin: null, topicId: null }), nameOf)).toMatchObject({ origin: null, topicName: null });
   });
 
-  it('formats all fields readably', () => {
+  it('formats all fields readably, without a confidence percentage', () => {
     expect(formatDecision(decision())).toBe(
       [
         '**Wann:** 2026-03-02',
@@ -164,7 +164,6 @@ describe('rendering a decision', () => {
         '**Auswirkungen:** Migration nötig',
         '**Alternativen:** MySQL; SQLite',
         '**Status:** Gültig',
-        '**Sicherheit:** 86 %',
       ].join('\n'),
     );
   });

@@ -142,7 +142,6 @@ export function formatDecision(d: Decision): string {
     `**Alternativen:** ${d.alternatives.length ? d.alternatives.join('; ') : '–'}`,
     `**Status:** ${DECISION_STATUS_LABELS[d.status]}`,
     ...(d.supersededBy.length ? [`**Ersetzt durch:** ${d.supersededBy.map((successor) => successor.title).join('; ')}`] : []),
-    `**Sicherheit:** ${Math.round(d.confidence * 100)} %`,
   ].join('\n');
 }
 
