@@ -71,10 +71,11 @@ Webseite: <https://besessener.github.io/Archivist/>. Die vollständige Dokumenta
 
 ## Verwandte Projekte
 
-Archivist, PlayMonkey und flakipype sind aus derselben agentischen Idee entstanden und teilen Grundregeln, Qualitätsprüfungen und den Aufbau der Dokumentation:
+Archivist, PlayMonkey, flakipype und WOMBOT sind aus derselben agentischen Idee entstanden und teilen Grundregeln, Qualitätsprüfungen und den Aufbau der Dokumentation:
 
 - [PlayMonkey](https://github.com/besessener/PlayMonkey) – Monkey-Testing für Websites in Testumgebungen: klickt zufällig, aber reproduzierbar, und meldet jeden Fehler mit den Schritten zum Nachstellen.
 - [flakipype](https://github.com/besessener/flakipype) – findet, erklärt und behebt instabile („flaky“) GitHub-Actions-Pipelines per Pull Request.
+- [WOMBOT](https://github.com/besessener/WOMBOT) – ein Agent für Microsoft 365 Copilot, der in Mail, Teams und Besprechungen findet, wer dir was zugesagt hat, mit Status und Quelle; er liest nur.
 
 ## Lizenz
 
