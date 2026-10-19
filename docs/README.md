@@ -61,5 +61,6 @@ Die Dokumentation folgt [Diátaxis](https://diataxis.fr/): Sie ist nach dem geor
 - [Bewusste Abweichungen und ehrliche Grenzen](explanation/grenzen.md) – was anders gebaut ist und was Archivist bewusst nicht kann.
 
 Verwandte Projekte mit derselben Idee und demselben Aufbau der Dokumentation:
-[PlayMonkey](https://github.com/besessener/PlayMonkey/blob/main/docs/README.md) und
-[flakipype](https://github.com/besessener/flakipype/blob/main/docs/README.md).
+[PlayMonkey](https://github.com/besessener/PlayMonkey/blob/main/docs/README.md),
+[flakipype](https://github.com/besessener/flakipype/blob/main/docs/README.md) und
+[WOMBOT](https://github.com/besessener/WOMBOT/blob/main/docs/README.md).
