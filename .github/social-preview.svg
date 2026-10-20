@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <rect width="1280" height="640" fill="#1f3a5f"/>
+  <g transform="translate(130 160) scale(0.625)">
+    <rect width="512" height="512" rx="112" fill="#f4f1ea" fill-opacity="0.06"/>
+    <g fill="none" stroke="#f4f1ea" stroke-width="22" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M96 168h320v64H96z"/>
+      <path d="M112 232v176h288V232"/>
+      <path d="M208 296h96"/>
+    </g>
+    <circle cx="256" cy="120" r="22" fill="#e0a43a"/>
+  </g>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="530" y="315" font-size="112" font-weight="700" fill="#f4f1ea">Archivist</text>
+    <rect x="534" y="345" width="96" height="8" rx="4" fill="#e0a43a"/>
+    <text x="530" y="420" font-size="44" fill="#f4f1ea" fill-opacity="0.8">dein persönlicher Archivar</text>
+  </g>
+</svg>
