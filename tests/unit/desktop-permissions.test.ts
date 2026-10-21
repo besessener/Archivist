@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Session } from 'electron';
-import { allowsMicrophoneCheck, allowsMicrophoneRequest, restrictPermissions } from '../../apps/desktop/src/permissions';
+import { allowsClipboardWrite, allowsMicrophoneCheck, allowsMicrophoneRequest, restrictPermissions } from '../../apps/desktop/src/permissions';
 
 const own = { origin: 'app://archivist/chat/', fromMainWindow: true, trustedOrigins: ['app://archivist'] };
 
@@ -52,6 +52,22 @@ describe('microphone permission', () => {
   });
 });
 
+describe('clipboard permission', () => {
+  it('lets the main window’s own pages write to the clipboard', () => {
+    expect(allowsClipboardWrite({ ...own, permission: 'clipboard-sanitized-write' })).toBe(true);
+  });
+
+  it('never lets a page read the clipboard', () => {
+    expect(allowsClipboardWrite({ ...own, permission: 'clipboard-read' })).toBe(false);
+    expect(allowsClipboardWrite({ ...own, permission: 'deprecated-sync-clipboard-read' })).toBe(false);
+  });
+
+  it('refuses other windows and pages that are not Archivist’s own', () => {
+    expect(allowsClipboardWrite({ ...own, fromMainWindow: false, permission: 'clipboard-sanitized-write' })).toBe(false);
+    expect(allowsClipboardWrite({ ...own, origin: 'https://example.com', permission: 'clipboard-sanitized-write' })).toBe(false);
+  });
+});
+
 describe('the session permission handlers', () => {
   type RequestHandler = (contents: unknown, permission: string, respond: (granted: boolean) => void, details: object) => void;
   type CheckHandler = (contents: unknown, permission: string, origin: string, details: object) => boolean;
@@ -80,5 +96,14 @@ describe('the session permission handlers', () => {
     expect(request(mainWindow, 'geolocation', {})).toBe(false);
     expect(check(mainWindow, 'media', 'app://archivist', { mediaType: 'audio' })).toBe(true);
     expect(check(null, 'media', 'app://archivist', { mediaType: 'audio' })).toBe(false);
+  });
+
+  it('let only the main window’s pages write to the clipboard, never read it', () => {
+    const { mainWindow, request, check } = install();
+    expect(request(mainWindow, 'clipboard-sanitized-write', {})).toBe(true);
+    expect(request({ id: 'other' }, 'clipboard-sanitized-write', {})).toBe(false);
+    expect(request(mainWindow, 'clipboard-read', {})).toBe(false);
+    expect(check(mainWindow, 'clipboard-sanitized-write', 'app://archivist', {})).toBe(true);
+    expect(check(mainWindow, 'clipboard-read', 'app://archivist', {})).toBe(false);
   });
 });

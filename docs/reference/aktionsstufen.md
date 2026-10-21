@@ -78,7 +78,7 @@ Einstellungen → Datenschutz. Bedienung: [Datenschutz einstellen](../how-to/dat
 ## Electron
 
 - `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, kein `eval`.
-- Navigation und `window.open` gesperrt, Berechtigungsanfragen abgelehnt. **Einzige Ausnahme:** das Mikrofon (genau `audio`, nie die Kamera) für das Hauptfenster auf `app://archivist` – die Spracheingabe im Chat. Der Renderer fragt erst nach einem Klick auf das Mikrofon; die Aufnahme bleibt im Renderer-Speicher und geht nur über `speech:transcribe` an den lokalen Worker.
+- Navigation und `window.open` gesperrt, Berechtigungsanfragen abgelehnt. **Zwei Ausnahmen**, beide nur für das Hauptfenster auf `app://archivist`: das Mikrofon (genau `audio`, nie die Kamera) für die Spracheingabe im Chat und das Schreiben in die Zwischenablage (`clipboard-sanitized-write`) für „Antwort kopieren“. Der Renderer fragt erst nach einem Klick auf das Mikrofon; die Aufnahme bleibt im Renderer-Speicher und geht nur über `speech:transcribe` an den lokalen Worker. Die Zwischenablage lesen darf der Renderer nicht; Einfügen mit Strg+V braucht keine Berechtigung.
 - Auslieferung über ein eigenes `app://`-Protokoll (kein HTTP-Server, kein `file://`) mit strenger CSP: `default-src 'none'`, Skripte nur `self` + SHA-256-Hashes der von Next.js erzeugten Inline-Skripte, `connect-src 'self'`.
 - IPC: explizite Kanal-Allowlist, Absender-Prüfung (Frame-URL + WebContents), Zod-Validierung von Ein- **und** Ausgaben.
 - Der Renderer hat keinen Zugriff auf Node, Dateisystem, Datenbank, Shell oder Credential Store. Dateien öffnet nur der Main-Prozess und nur solche, die Archivist kennt.
