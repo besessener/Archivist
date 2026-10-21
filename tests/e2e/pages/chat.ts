@@ -83,6 +83,11 @@ export function initChat(page: Page) {
       await expect(locators.attachments.chips).toHaveCount(files.length);
       await expect(locators.attachments.chips.and(page.locator('[data-state="importing"]'))).toHaveCount(0);
     },
+    /** Pastes the clipboard into the message field (Ctrl+V). */
+    paste: async () => {
+      await locators.inputs.message.focus();
+      await page.keyboard.press('Control+V');
+    },
     lastReply: () => locators.messages.last(),
     /** „Bestätigen“ on the last proposal card. */
     approveLastAction: async () => {

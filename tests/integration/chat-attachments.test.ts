@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../helpers/harness';
@@ -62,6 +63,44 @@ describe('attaching files in the chat', () => {
     expect(results[0]).toMatchObject({ path: folder, reason: expect.stringContaining('Ordner') });
     expect(results[1]).toMatchObject({ path: program, reason: expect.stringContaining('.exe') });
     expect(await app.ok('jobs:list', { limit: 10, type: 'documents.importFolder' })).toEqual([]);
+  });
+
+  it('imports pasted content without a source path and leaves no temporary file behind', async () => {
+    app = await agentApp();
+    app.services.settings.update({ ocr: { enabled: false } });
+    const image = await uniqueImage();
+    const temporary = () => fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('archivist-attachment-'));
+    const before = temporary();
+
+    const pasted = await app.ok('chat:attachContent', { name: 'Eingefügtes Bild 2026-10-21 14-03-12.png', content: new Uint8Array(image) });
+
+    expect(pasted).toMatchObject({
+      kind: 'attached',
+      path: 'Eingefügtes Bild 2026-10-21 14-03-12.png',
+      attachment: { name: 'Eingefügtes Bild 2026-10-21 14-03-12.png', ext: 'png' },
+    });
+    if (pasted.kind !== 'attached') throw new Error('not attached');
+    const document = await app.ok('documents:get', { id: pasted.attachment.documentId });
+    expect(document.sourcePath).toBeNull();
+    expect(fs.readdirSync(app.services.paths.inbox)).toEqual(['Eingefügtes Bild 2026-10-21 14-03-12.png']);
+    expect(temporary()).toEqual(before);
+    const again = await app.ok('chat:attachContent', { name: 'image.png', content: new Uint8Array(image) });
+    expect(again, 'the same picture again attaches the existing document').toMatchObject({
+      kind: 'attached',
+      attachment: { documentId: pasted.attachment.documentId },
+    });
+  });
+
+  it('refuses pasted content of an unsupported type or with a foreign name, and content that does not match its name', async () => {
+    app = await agentApp();
+    const gif = await app.ok('chat:attachContent', { name: 'animation.gif', content: new Uint8Array(Buffer.from('GIF89a')) });
+    expect(gif).toMatchObject({ kind: 'rejected', path: 'animation.gif', reason: expect.stringContaining('.gif') });
+    const escape = await app.ok('chat:attachContent', { name: '../../notiz.txt', content: new Uint8Array(Buffer.from('Notiz')) });
+    expect(escape).toMatchObject({ kind: 'attached', attachment: { name: 'notiz.txt' } });
+    const fake = await app.ok('chat:attachContent', { name: 'foto.png', content: new Uint8Array(Buffer.from('kein Bild')) });
+    expect(fake).toMatchObject({ kind: 'rejected', reason: expect.stringContaining('Quarantäne') });
+    const quarantined = await app.ok('documents:list', { status: 'quarantined' });
+    expect(quarantined.map((document) => document.sourcePath)).toEqual([null]);
   });
 });
 

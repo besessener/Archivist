@@ -22,7 +22,16 @@ import { speechChannels } from './ipc-speech';
 import { updateChannels } from './ipc-update';
 import { BulkEstimate, ImportedFolder, IndexStatus, ReanalysisProposal, StartedJob } from './bulk';
 import { AuditEntry, AuditVerification, LlmTransmission, LlmUsage, UndoRunResult } from './audit';
-import { CHAT_ATTACHMENT_LIMIT, ChatAttachResult, ChatMessage, ChatSendInput, ChatSendResult, Conversation } from './chat';
+import {
+  CHAT_ATTACHMENT_LIMIT,
+  ChatAttachContentInput,
+  ChatAttachOutcome,
+  ChatAttachResult,
+  ChatMessage,
+  ChatSendInput,
+  ChatSendResult,
+  Conversation,
+} from './chat';
 import { Decision, DecisionInput, DecisionPatch, DecisionStatus } from './decisions';
 import { DocumentRecord, DocumentStatus, TrashEntry } from './documents';
 import { EventInput, EventRecord } from './events';
@@ -127,6 +136,8 @@ export const ipcContract = {
   'chat:send': channel(ChatSendInput, ChatSendResult),
   /** Imports picked files for the next message like any upload, but without notifications; a duplicate attaches the existing document. */
   'chat:attach': channel(z.object({ paths: z.array(z.string().min(1)).min(1).max(CHAT_ATTACHMENT_LIMIT) }), ChatAttachResult),
+  /** Imports a file the renderer only has the content of (a pasted image) the same way, without recording a source path. */
+  'chat:attachContent': channel(ChatAttachContentInput, ChatAttachOutcome),
   'chat:cancel': channel(z.object({ conversationId: Id.optional() }), z.object({ cancelled: z.number().int() })),
   /** A page of a conversation counted from its newest message (offset 0 = the newest `limit`); each page is ordered oldest first. */
   'chat:history': channel(z.object({ conversationId: Id, ...Paging }), z.array(ChatMessage)),

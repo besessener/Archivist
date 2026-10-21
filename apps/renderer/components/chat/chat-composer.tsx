@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { DictationButton, DictationNote } from '@/components/chat/dictation';
 import { useApp } from '@/lib/app-context';
 import { joinDictation } from '@/lib/dictation';
+import { pastedFiles } from '@/lib/pasted-files';
 import { useDictation } from '@/lib/use-dictation';
 import { useQuery } from '@/lib/use-query';
 import { SUPPORTED_EXTENSIONS_ACCEPT, SUPPORTED_TYPES_TEXT } from '@/lib/labels';
@@ -147,6 +148,12 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
           ref={inputRef}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
+          onPaste={(e) => {
+            const files = pastedFiles(e.clipboardData, new Date());
+            if (!files.length) return;
+            e.preventDefault();
+            void attachments.add(files);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -174,7 +181,7 @@ export function ChatComposer({ text, onTextChange, inputRef, working, onSend, ai
       </form>
       <DictationNote status={speech.data} state={dictation.state} seconds={dictation.seconds} onCancel={dictation.cancel} />
       <p className="mx-auto mt-1.5 max-w-3xl 2xl:max-w-5xl text-center text-[11px] text-muted-foreground" data-testid="chat-ai-notice">
-        {aiNotice} Dateien und Bilder kannst du auch in das Fenster ziehen, um sie anzuhängen.
+        {aiNotice} Dateien und Bilder kannst du auch in das Fenster ziehen oder mit Strg+V einfügen, um sie anzuhängen.
       </p>
     </div>
   );

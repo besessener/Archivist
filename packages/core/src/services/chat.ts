@@ -1,4 +1,4 @@
-import type { ChatAttachResult, ChatAttachment, ChatIntent, ChatMessage, Conversation } from '@archivist/shared';
+import type { ChatAttachContentInput, ChatAttachOutcome, ChatAttachResult, ChatAttachment, ChatIntent, ChatMessage, Conversation } from '@archivist/shared';
 import type { AppContext } from '../context';
 import { AppError, toErrorInfo } from '../util/errors';
 import { collectCreated, type CreatedEntry } from '../util/origin-scope';
@@ -8,7 +8,7 @@ import { mergeReplies, type ConvState, type Reply } from './chat-state';
 import { llmCancelScope } from './llm';
 import type { AgentService } from '../agent/service';
 import { tokenCapOverride } from '../util/token-cap';
-import { importAttachment } from './chat/attachment-import';
+import { importAttachment, importAttachmentContent } from './chat/attachment-import';
 import { ConversationStore } from './chat/conversation-store';
 import { ChatDispatcher } from './chat/dispatch';
 import { ChatFlow } from './chat/flow';
@@ -137,6 +137,11 @@ export class ChatService {
     const results: ChatAttachResult = [];
     for (const path of paths) results.push(await importAttachment(this.services.docs, path));
     return results;
+  }
+
+  /** Imports a file the renderer has only the content of, e.g. an image pasted from the clipboard. */
+  attachContent(file: ChatAttachContentInput): Promise<ChatAttachOutcome> {
+    return importAttachmentContent(this.services.docs, file);
   }
 
   /** Requests of one conversation run one after the other: each reads the state its predecessor saved (#251). */
