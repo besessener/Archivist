@@ -6,6 +6,7 @@ import { AlertCircle, ExternalLink, FileText, HelpCircle } from 'lucide-react';
 import { RunSummary } from '@/components/agent/run-summary';
 import { ActionCard } from '@/components/common/action-card';
 import { DocumentDialog } from '@/components/documents/document-dialog';
+import { AnswerTools, RawAnswer } from './answer-tools';
 import { SentAttachments } from './attachment-chips';
 import { isLinkSuggestion, LinkSuggestions } from './link-suggestions';
 import { EntityIcon } from '@/components/common/entity-chip';
@@ -91,6 +92,7 @@ export function ChatBubble({
   onQuickReply?: (text: string) => void;
 }) {
   const isUser = message.role === 'user';
+  const [raw, setRaw] = useState(false);
   return (
     <div className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}>
       <div
@@ -106,7 +108,8 @@ export function ChatBubble({
           </>
         ) : (
           <div className="flex flex-col gap-3">
-            {message.content && <Markdown text={message.content} />}
+            {message.content && (raw ? <RawAnswer text={message.content} /> : <Markdown text={message.content} />)}
+            {message.content && !pending && <AnswerTools text={message.content} raw={raw} onToggleRaw={() => setRaw((shown) => !shown)} />}
             {message.errorMessage && (
               <div role="alert" className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/8 p-3" data-testid="chat-error">
                 <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />

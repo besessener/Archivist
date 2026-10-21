@@ -13,7 +13,7 @@ export interface PermissionContext {
 const fromTrustedPage = ({ origin, fromMainWindow, trustedOrigins }: PermissionContext): boolean =>
   fromMainWindow && trustedOrigins.some((trusted) => origin === trusted || origin.startsWith(`${trusted}/`));
 
-/** The one permission Archivist grants: the microphone (and nothing else, not the camera either), to its own page. */
+/** The microphone (not the camera, alone or together with it), for Archivist's own page. */
 export function allowsMicrophoneRequest({ permission, mediaTypes, ...context }: PermissionContext & { permission: string; mediaTypes?: string[] }): boolean {
   return permission === 'media' && mediaTypes?.length === 1 && mediaTypes[0] === 'audio' && fromTrustedPage(context);
 }
@@ -22,23 +22,22 @@ export function allowsMicrophoneCheck({ permission, mediaType, ...context }: Per
   return permission === 'media' && mediaType === 'audio' && fromTrustedPage(context);
 }
 
-/** Denies every permission (camera, location …) except the microphone for the main window's own pages (speech input in the chat). */
+/** Writing to the clipboard (copying a chat answer); reading it stays denied, pasting needs no permission. */
+export function allowsClipboardWrite({ permission, ...context }: PermissionContext & { permission: string }): boolean {
+  return permission === 'clipboard-sanitized-write' && fromTrustedPage(context);
+}
+
+/** Denies every permission (camera, location, reading the clipboard …) except the microphone and clipboard writes for the main window's own pages. */
 export function restrictPermissions(
   session: Pick<Session, 'setPermissionRequestHandler' | 'setPermissionCheckHandler'>,
   { trustedOrigins, isMainWindow }: { trustedOrigins: string[]; isMainWindow: (contents: WebContents | null) => boolean },
 ): void {
-  session.setPermissionRequestHandler((contents, permission, respond, details) =>
-    respond(
-      allowsMicrophoneRequest({
-        permission,
-        mediaTypes: 'mediaTypes' in details ? details.mediaTypes : undefined,
-        origin: details.requestingUrl,
-        fromMainWindow: isMainWindow(contents),
-        trustedOrigins,
-      }),
-    ),
-  );
-  session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
-    allowsMicrophoneCheck({ permission, mediaType: details.mediaType, origin: requestingOrigin, fromMainWindow: isMainWindow(contents), trustedOrigins }),
-  );
+  session.setPermissionRequestHandler((contents, permission, respond, details) => {
+    const context = { permission, origin: details.requestingUrl, fromMainWindow: isMainWindow(contents), trustedOrigins };
+    respond(allowsMicrophoneRequest({ ...context, mediaTypes: 'mediaTypes' in details ? details.mediaTypes : undefined }) || allowsClipboardWrite(context));
+  });
+  session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    const context = { permission, origin: requestingOrigin, fromMainWindow: isMainWindow(contents), trustedOrigins };
+    return allowsMicrophoneCheck({ ...context, mediaType: details.mediaType }) || allowsClipboardWrite(context);
+  });
 }

@@ -28,6 +28,12 @@ export function initChat(page: Page) {
     sourceOpenFile: root.getByTestId('chat-source-open'),
     /** The document dialog a source card opens in place. */
     sourceDialog: page.getByTestId('document-dialog'),
+    /** Below an answer: „Antwort kopieren“, the raw-text switch and the answer as written while it is on. */
+    answer: {
+      copy: root.getByTestId('chat-copy'),
+      rawToggle: root.getByTestId('chat-raw-toggle'),
+      raw: root.getByTestId('chat-message-raw'),
+    },
     /** In-app links in an answer (weekly review, agent answers). */
     appLinks: root.getByTestId('app-link'),
     conversationSelect: root.getByTestId('conversation-select'),
@@ -89,6 +95,13 @@ export function initChat(page: Page) {
       await page.keyboard.press('Control+V');
     },
     lastReply: () => locators.messages.last(),
+    copyLastReply: async () => {
+      await locators.messages.last().getByTestId('chat-copy').click();
+    },
+    /** Switches the last answer between formatted and raw text. */
+    toggleRawText: async () => {
+      await locators.messages.last().getByTestId('chat-raw-toggle').click();
+    },
     /** „Bestätigen“ on the last proposal card. */
     approveLastAction: async () => {
       await locators.actionCards.last().getByTestId('action-approve').click();
