@@ -20,14 +20,26 @@ export const CHAT_ATTACHMENT_LIMIT = 10;
 export const ChatAttachment = z.object({ documentId: Id, name: z.string(), ext: z.string() });
 export type ChatAttachment = z.infer<typeof ChatAttachment>;
 
+/** One attached file: attached as a document, or why not. */
+export const ChatAttachOutcome = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('attached'), path: z.string(), attachment: ChatAttachment }),
+  z.object({ kind: z.literal('rejected'), path: z.string(), reason: z.string() }),
+]);
+export type ChatAttachOutcome = z.infer<typeof ChatAttachOutcome>;
+
 /** Per picked path, in order: attached as a document, or why not. */
-export const ChatAttachResult = z.array(
-  z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('attached'), path: z.string(), attachment: ChatAttachment }),
-    z.object({ kind: z.literal('rejected'), path: z.string(), reason: z.string() }),
-  ]),
-);
+export const ChatAttachResult = z.array(ChatAttachOutcome);
 export type ChatAttachResult = z.infer<typeof ChatAttachResult>;
+
+/** Largest file the chat takes by content (pasted images, files without a place on disk). */
+export const CHAT_CONTENT_MAX_BYTES = 50 * 1024 * 1024;
+
+/** A file without a place on disk, e.g. an image pasted from the clipboard: its name and content. */
+export const ChatAttachContentInput = z.object({
+  name: z.string().min(1).max(255),
+  content: z.instanceof(Uint8Array).refine((bytes) => bytes.length <= CHAT_CONTENT_MAX_BYTES, { message: 'Die Datei ist zu groß.' }),
+});
+export type ChatAttachContentInput = z.infer<typeof ChatAttachContentInput>;
 
 export const ChatSendInput = z
   .object({

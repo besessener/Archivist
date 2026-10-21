@@ -46,6 +46,8 @@ export interface ImportOptions {
   allowLlm?: boolean;
   /** false: no per-file notification (a chat attachment reports in the chat). */
   notify?: boolean;
+  /** true: the path is our own temporary copy of pasted content, so no source path is recorded. */
+  temporarySource?: boolean;
 }
 
 /** What the parts of the document service use of the service itself (typed by shape to keep the modules acyclic). */

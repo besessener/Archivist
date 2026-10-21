@@ -128,7 +128,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const { paths, unknown } = filePaths(files);
       await importPaths(
         paths,
-        unknown.map((name) => ({ path: name, reason: PATH_UNKNOWN })),
+        unknown.map((file) => ({ path: file.name, reason: PATH_UNKNOWN })),
       );
     },
     [importPaths],

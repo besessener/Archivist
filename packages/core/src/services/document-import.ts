@@ -57,6 +57,8 @@ interface ImportBatch {
   notify: boolean;
   /** `user` when the user picked or dropped the files, `background` for a folder import job. */
   priority: TaskPriority;
+  /** False when the file is our own temporary copy (pasted content): no source path is recorded. */
+  recordSource: boolean;
   out: ImportResult;
 }
 
@@ -118,6 +120,7 @@ export class DocumentImporter {
       quiet: inputPaths.length > 1,
       notify: inputPaths.length === 1 && opts.notify !== false,
       priority: 'user',
+      recordSource: !opts.temporarySource,
       out: { imported: [], duplicates: [], rejected: [], folders: [] },
     };
     for (const input of inputPaths) await this.importOne(input, batch);
@@ -133,6 +136,7 @@ export class DocumentImporter {
       quiet: true,
       notify: false,
       priority: 'background',
+      recordSource: true,
       out: { imported: [], duplicates: [], rejected: [], folders: [] },
     };
     for (const input of files) await this.importOne(input, batch);
@@ -217,7 +221,7 @@ export class DocumentImporter {
       ext: checked.ext,
       size: checked.size,
       sha256: sha,
-      sourcePath: checked.real,
+      sourcePath: state.batch.recordSource ? checked.real : null,
       stagedPath: staged,
       folderLlmAllowed: this.deps.documents.folderLlmAllowedFor(checked.real),
       documentDate: checked.createdOn,
@@ -264,7 +268,7 @@ export class DocumentImporter {
   }
 
   /** Records a copy of a file whose content does not match its extension as `quarantined` (once per content), unparsed. */
-  private async quarantine(file: CheckedFile, batch: Pick<ImportBatch, 'notify' | 'priority'>): Promise<void> {
+  private async quarantine(file: CheckedFile, batch: Pick<ImportBatch, 'notify' | 'priority' | 'recordSource'>): Promise<void> {
     const sha = await this.deps.pool.run('hashFile', { path: file.real }, { priority: batch.priority });
     const existing = this.db
       .select()
@@ -279,7 +283,7 @@ export class DocumentImporter {
       ext: file.ext,
       size: file.size,
       sha256: sha,
-      sourcePath: file.real,
+      sourcePath: batch.recordSource ? file.real : null,
       stagedPath: copy,
       status: 'quarantined',
       processingError: quarantineReason(file.ext),
