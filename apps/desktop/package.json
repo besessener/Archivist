@@ -25,7 +25,7 @@
     "@napi-rs/canvas": "^1.0.9",
     "@tesseract.js-data/deu": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.1.1",
     "electron-updater": "^6.8.9",
     "pdfjs-dist": "^6.4.299",
     "sharp": "^0.35.5",
@@ -34,7 +34,7 @@
   "devDependencies": {
     "@archivist/core": "*",
     "@archivist/shared": "*",
-    "electron": "44.7.0",
+    "electron": "45.3.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2"
   },
