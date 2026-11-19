@@ -19,7 +19,7 @@
     "@huggingface/transformers": "^4.3.1",
     "@tesseract.js-data/deu": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.1.1",
     "drizzle-orm": "^0.45.4",
     "entities": "^8.1.0",
     "jszip": "^3.10.2",
